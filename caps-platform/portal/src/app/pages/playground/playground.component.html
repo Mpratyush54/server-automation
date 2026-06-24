@@ -1,0 +1,150 @@
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+  <div>
+    <h2 style="margin:0;font-size:1.5rem;font-weight:700;">API Playground</h2>
+    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:4px 0 0 0;">Interactive developer playground and live documentation for CAPS platform APIs</p>
+  </div>
+</div>
+
+<div class="playground-container" style="display:grid;grid-template-columns:280px 1fr;gap:24px;min-height:calc(100vh - 200px);align-items:start;">
+  
+  <!-- Left Side: API Lists -->
+  <div class="card" style="padding:16px;margin:0;height:100%;max-height:750px;overflow-y:auto;display:flex;flex-direction:column;gap:20px;">
+    <div *ngFor="let g of groups">
+      <div style="font-size:0.75rem;font-weight:700;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">
+        {{ g.name }}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <button *ngFor="let ep of g.endpoints" 
+                (click)="selectEndpoint(ep)"
+                class="api-item" 
+                [ngClass]="{'active': selectedEndpoint === ep}"
+                style="display:flex;align-items:center;gap:10px;text-align:left;width:100%;padding:10px 12px;background:none;border:1px solid transparent;border-radius:10px;cursor:pointer;transition:all 0.2s;">
+          <span class="badge-method" [ngClass]="ep.method.toLowerCase()" style="font-size:0.65rem;font-weight:800;padding:2px 6px;border-radius:4px;min-width:44px;text-align:center;">
+            {{ ep.method }}
+          </span>
+          <span class="api-path" style="font-family:monospace;font-size:0.8rem;color:var(--color-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-grow:1;">
+            {{ ep.path }}
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Side: Details & Request Runner -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;height:100%;">
+    
+    <!-- Middle Section: Selected API Details & Input Variables -->
+    <div class="card" style="margin:0;height:100%;display:flex;flex-direction:column;">
+      <div *ngIf="selectedEndpoint" style="display:flex;flex-direction:column;height:100%;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <span class="badge-method" [ngClass]="selectedEndpoint.method.toLowerCase()" style="font-size:0.75rem;font-weight:800;padding:4px 8px;border-radius:6px;">
+            {{ selectedEndpoint.method }}
+          </span>
+          <span style="font-family:monospace;font-size:1.1rem;font-weight:700;color:#fff;">
+            {{ selectedEndpoint.path }}
+          </span>
+        </div>
+        <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;margin-bottom:20px;line-height:1.5;">
+          {{ selectedEndpoint.description }}
+        </p>
+
+        <hr style="border:0;border-top:1px solid var(--border-glass);margin-bottom:20px;">
+
+        <div style="flex-grow:1;overflow-y:auto;max-height:450px;padding-right:4px;">
+          <!-- Path Parameters -->
+          <div *ngIf="getParametersByType('path').length > 0" style="margin-bottom:20px;">
+            <h3 style="font-size:0.8rem;text-transform:uppercase;color:var(--color-text-secondary);margin-top:0;margin-bottom:12px;letter-spacing:0.05em;">Path Parameters</h3>
+            <div *ngFor="let p of getParametersByType('path')" class="form-group">
+              <label>{{ p.name }} <span *ngIf="p.required" style="color:var(--danger)">*</span></label>
+              <input [(ngModel)]="p.value" [placeholder]="p.placeholder || 'Value'">
+            </div>
+          </div>
+
+          <!-- Query Parameters -->
+          <div *ngIf="getParametersByType('query').length > 0" style="margin-bottom:20px;">
+            <h3 style="font-size:0.8rem;text-transform:uppercase;color:var(--color-text-secondary);margin-top:0;margin-bottom:12px;letter-spacing:0.05em;">Query Parameters</h3>
+            <div *ngFor="let p of getParametersByType('query')" class="form-group">
+              <label>{{ p.name }} <span *ngIf="p.required" style="color:var(--danger)">*</span></label>
+              <input [(ngModel)]="p.value" [placeholder]="p.placeholder || 'Value'">
+              <div *ngIf="p.description" style="font-size:0.75rem;color:var(--color-text-muted);margin-top:4px;">{{ p.description }}</div>
+            </div>
+          </div>
+
+          <!-- Request Body Fields -->
+          <div *ngIf="getParametersByType('body').length > 0" style="margin-bottom:20px;">
+            <h3 style="font-size:0.8rem;text-transform:uppercase;color:var(--color-text-secondary);margin-top:0;margin-bottom:12px;letter-spacing:0.05em;">Request Body Properties</h3>
+            <div *ngFor="let p of getParametersByType('body')" class="form-group">
+              <label>{{ p.name }} <span *ngIf="p.required" style="color:var(--danger)">*</span></label>
+              <input [(ngModel)]="p.value" [placeholder]="p.placeholder || 'Value'">
+              <div *ngIf="p.description" style="font-size:0.75rem;color:var(--color-text-muted);margin-top:4px;">{{ p.description }}</div>
+            </div>
+          </div>
+
+          <div *ngIf="selectedEndpoint.parameters.length === 0" style="color:var(--color-text-muted);font-size:0.85rem;text-align:center;padding:24px 0;">
+            No parameters required for this endpoint.
+          </div>
+        </div>
+
+        <button class="btn btn-primary" (click)="executeRequest()" [disabled]="executing" style="display:flex;width:100%;justify-content:center;box-sizing:border-box;margin-top:20px;">
+          {{ executing ? 'Request Executing...' : 'Send Request' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Right Section: Auth Token Override & Response Details -->
+    <div style="display:flex;flex-direction:column;gap:24px;height:100%;">
+      
+      <!-- Session Settings Card -->
+      <div class="card" style="margin:0;padding:18px;">
+        <h2 style="font-size:1rem;margin-top:0;margin-bottom:12px;border:0;padding:0;">Client Headers</h2>
+        <div class="form-group" style="margin:0;">
+          <label>Authorization Token (Bearer JWT)</label>
+          <input [(ngModel)]="authToken" placeholder="Paste custom JWT token here..." style="font-family:monospace;font-size:0.8rem;">
+        </div>
+      </div>
+
+      <!-- Live Execution Response Console Card -->
+      <div class="card" style="margin:0;flex-grow:1;display:flex;flex-direction:column;min-height:400px;">
+        <h2>Response Viewer</h2>
+        <div style="flex-grow:1;display:flex;flex-direction:column;">
+          
+          <!-- Metadatas: Code and Latency -->
+          <div *ngIf="responseStatus !== null" style="display:flex;gap:16px;margin-bottom:16px;">
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              <span style="font-size:0.75rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;">Status</span>
+              <span class="badge" [ngClass]="{
+                'badge-active': responseStatus >= 200 && responseStatus < 300,
+                'badge-pending': responseStatus >= 300 && responseStatus < 400,
+                'badge-failed': responseStatus >= 400
+              }" style="font-size:0.8rem;padding:4px 10px;">
+                {{ responseStatus }}
+              </span>
+            </div>
+            
+            <div *ngIf="responseLatency !== null" style="display:flex;flex-direction:column;gap:4px;">
+              <span style="font-size:0.75rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;">Latency</span>
+              <span style="font-size:0.9rem;font-weight:700;color:#fff;">{{ responseLatency }} ms</span>
+            </div>
+          </div>
+
+          <!-- Console Console logs / JSON result box -->
+          <div style="flex-grow:1;background:rgba(0,0,0,0.3);border:1px solid var(--border-glass);border-radius:12px;padding:16px;max-height:420px;overflow:auto;position:relative;">
+            <div *ngIf="responseBody !== null" style="margin:0;font-family:monospace;font-size:0.8rem;white-space:pre-wrap;color:var(--color-text-primary);">
+              {{ responseBody | json }}
+            </div>
+            <div *ngIf="responseBody === null && !executing" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--color-text-muted);font-size:0.85rem;">
+              Send request to see live response payload.
+            </div>
+            <div *ngIf="executing" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--primary);font-size:0.85rem;font-weight:600;">
+              Sending request...
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>

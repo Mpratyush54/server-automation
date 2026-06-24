@@ -1,0 +1,25 @@
+<div class="card">
+  <h2>Register Service</h2>
+  <div class="form-group"><label>Service Name</label><input [(ngModel)]="reg.serviceName" placeholder="my-api-service"></div>
+  <div class="form-group"><label>Project Name</label><input [(ngModel)]="reg.projectName" placeholder="my-project"></div>
+  <div class="form-group"><label>Environment</label><select [(ngModel)]="reg.environmentName"><option>development</option><option>staging</option><option>production</option></select></div>
+  <div class="form-group"><label>Version</label><input [(ngModel)]="reg.version" placeholder="1.0.0"></div>
+  <div class="form-group"><label>DB Types (comma-separated)</label><input [(ngModel)]="reg.dbTypes" placeholder="postgres,redis,mongo"></div>
+  <button class="btn btn-primary" (click)="register()" [disabled]="!reg.serviceName">Register</button>
+</div>
+
+<div class="card">
+  <h2>Registered Services</h2>
+  <table>
+    <thead><tr><th>Service</th><th>Project</th><th>Version</th><th>DB Types</th><th>Last Heartbeat</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr *ngFor="let s of registrations">
+        <td>{{ s.serviceName }}</td><td>{{ s.projectId }}</td><td>{{ s.version }}</td>
+        <td>{{ s.dbTypes?.join(', ') || '-' }}</td>
+        <td>{{ s.lastHeartbeat ? (s.lastHeartbeat | date:'short') : 'never' }}</td>
+        <td><span class="badge" [class.badge-active]="s.isActive" [class.badge-failed]="!s.isActive">{{ s.isActive ? 'Active' : 'Inactive' }}</span></td>
+      </tr>
+      <tr *ngIf="registrations.length === 0"><td colspan="6">No services registered yet</td></tr>
+    </tbody>
+  </table>
+</div>

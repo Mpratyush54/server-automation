@@ -1,0 +1,24 @@
+<nav class="sidebar">
+  <div class="logo">CAPS Platform</div>
+  <ul class="nav-links">
+    <li><a routerLink="/dashboard" routerLinkActive="active">🏠 Dashboard</a></li>
+    <li><a routerLink="/projects" routerLinkActive="active">📦 Projects</a></li>
+    <li><a routerLink="/preview-urls" routerLinkActive="active">🔗 Preview URLs</a></li>
+    <li><a routerLink="/clickup" routerLinkActive="active">📋 ClickUp</a></li>
+    <li *ngIf="isTechLeadOrDevOps"><a routerLink="/audit-logs" routerLinkActive="active">📜 Audit Logs</a></li>
+    <li *ngIf="isDevOps"><a routerLink="/users" routerLinkActive="active">👥 Users</a></li>
+    <li><a routerLink="/playground" routerLinkActive="active">🧪 API Docs</a></li>
+    <li *ngIf="isDevOps"><a routerLink="/settings" routerLinkActive="active">⚙️ Platform Settings</a></li>
+
+    <li style="margin-top: 16px; margin-bottom: 4px; padding-left: 16px; font-size: 0.7rem; text-transform: uppercase; color: var(--color-text-secondary); font-weight: 700; letter-spacing: 0.05em;">Infrastructure</li>
+    <li *ngIf="isDevOps"><a routerLink="/infrastructure" routerLinkActive="active">🖥️ Cluster Overview</a></li>
+    <li><a href="http://argocd.pratyushes.dev" target="_blank" style="font-size: 0.85rem;">🐙 ArgoCD ↗</a></li>
+    <li><a href="http://grafana.pratyushes.dev" target="_blank" style="font-size: 0.85rem;">📊 Grafana ↗</a></li>
+    <li><a href="http://infisical.pratyushes.dev" target="_blank" style="font-size: 0.85rem;">🔐 Infisical ↗</a></li>
+    <li><a href="http://portainer.pratyushes.dev" target="_blank" style="font-size: 0.85rem;">🐳 Portainer ↗</a></li>
+
+    <li style="margin-top:auto;border-top:1px solid var(--border-glass);padding-top:12px;">
+      <a href="javascript:void(0)" (click)="logout()" style="color:var(--danger)">🚪 Logout</a>
+    </li>
+  </ul>
+</nav>

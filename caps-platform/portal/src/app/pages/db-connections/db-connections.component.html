@@ -1,0 +1,22 @@
+<div class="card">
+  <h2>Register DB Connection</h2>
+  <div class="form-group"><label>Project ID</label><input [(ngModel)]="newConn.projectId"></div>
+  <div class="form-group"><label>DB Type</label><select [(ngModel)]="newConn.dbType"><option value="postgres">PostgreSQL</option><option value="mongo">MongoDB</option><option value="redis">Redis</option></select></div>
+  <div class="form-group"><label>Pool Size</label><input type="number" [(ngModel)]="newConn.poolSize"></div>
+  <button class="btn btn-primary" (click)="create()" [disabled]="!newConn.projectId">Register</button>
+</div>
+
+<div class="card">
+  <h2>Database Connections</h2>
+  <table>
+    <thead><tr><th>Project</th><th>Type</th><th>Pool Size</th><th>Status</th><th>Last Heartbeat</th><th></th></tr></thead>
+    <tbody>
+      <tr *ngFor="let c of connections">
+        <td>{{ c.projectId }}</td><td>{{ c.dbType }}</td><td>{{ c.poolSize }}</td>
+        <td><span class="badge" [class.badge-active]="c.status==='connected'" [class.badge-failed]="c.status==='error'">{{ c.status }}</span></td>
+        <td>{{ c.lastHeartbeat ? (c.lastHeartbeat | date:'short') : 'never' }}</td>
+        <td><button class="btn btn-danger btn-sm" (click)="delete(c.id)">Delete</button></td>
+      </tr>
+    </tbody>
+  </table>
+</div>

@@ -1,0 +1,829 @@
+<div class="card" *ngIf="project" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(59, 130, 246, 0.05)); border-color: rgba(139, 92, 246, 0.2);">
+  <div style="display:flex;justify-content:space-between;align-items:center;">
+    <div>
+      <h2 style="font-size:1.75rem;margin:0;border:none;padding:0;background:linear-gradient(to right, #fff, #94a3b8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">{{ project.name }}</h2>
+      <p style="color:var(--color-text-secondary);margin:8px 0 0 0;font-size:0.95rem;">{{ project.description || 'No description provided' }}</p>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <span class="badge badge-active" style="font-size:0.8rem;padding:6px 14px;background-color:rgba(139,92,246,0.15);color:var(--primary);border-color:rgba(139,92,246,0.3);">{{ project.stack }}</span>
+      <span class="badge badge-active" style="font-size:0.8rem;padding:6px 14px;">{{ project.isActive ? 'Active' : 'Archived' }}</span>
+    </div>
+  </div>
+</div>
+
+<!-- Tab Navigation Bar -->
+<div style="display:flex;gap:8px;margin-bottom:24px;border-bottom:1px solid var(--border-glass);padding-bottom:12px;overflow-x:auto;">
+  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'deployments'" (click)="switchTab('deployments')">🚀 Deployments</button>
+  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'metrics'" (click)="switchTab('metrics')">📊 Metrics</button>
+  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'api-metrics'" (click)="switchTab('api-metrics')">⚡ API Latency</button>
+  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'logs'" (click)="switchTab('logs')">📝 Logs</button>
+  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'config'" (click)="switchTab('config')">⚙️ Config</button>
+  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'storage'" (click)="switchTab('storage')">📁 Storage</button>
+  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'environments'" (click)="switchTab('environments')">🌐 Environments</button>
+  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'sdk-tokens'" (click)="switchTab('sdk-tokens')">🔑 SDK Tokens</button>
+  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'gitops'" (click)="switchTab('gitops')">🐙 GitOps / ArgoCD</button>
+  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'databases'" (click)="switchTab('databases')">🗄️ Databases</button>
+</div>
+
+<!-- DEPLOYMENTS TAB -->
+<div *ngIf="activeTab === 'deployments'" class="grid-2">
+  <div class="card">
+    <h2>Trigger Deployment</h2>
+    <div class="form-group">
+      <label>Target Environment</label>
+      <select [(ngModel)]="deployDto.environmentId" style="width:100%;">
+        <option *ngFor="let env of project?.environments" [value]="env.id">{{ env.name | uppercase }}</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Version</label>
+      <input [(ngModel)]="deployDto.version" placeholder="1.0.0" style="width:100%;">
+    </div>
+    <div class="form-group">
+      <label>Git Branch</label>
+      <input [(ngModel)]="deployDto.branch" placeholder="feature/CU-842-auth-fix" style="width:100%;">
+    </div>
+    <div class="form-group">
+      <label>Commit SHA</label>
+      <input [(ngModel)]="deployDto.commitSha" placeholder="a3f92c1" style="width:100%;">
+    </div>
+    <div class="form-group">
+      <label>Docker Image Tag</label>
+      <input [(ngModel)]="deployDto.imageTag" placeholder="v1.0.0" style="width:100%;">
+    </div>
+    <div *ngIf="role === 'developer' && deployDto.environmentId === 'production'" style="margin-bottom:15px;color:var(--danger);font-size:0.85rem;font-weight:600;">
+      ⚠️ Developers are not authorized to deploy directly to production.
+    </div>
+    <button class="btn btn-primary" (click)="deploy()" [disabled]="!deployDto.version || (role === 'developer' && deployDto.environmentId === 'production')" style="width:100%;">Deploy Service</button>
+  </div>
+
+  <div class="card" style="flex:2;">
+    <h2>Deployment History</h2>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Version</th>
+            <th>Branch / Commit</th>
+            <th>Status</th>
+            <th>Deployed At</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let dep of deployments">
+            <td>
+              <div style="font-weight:700;">{{ dep.version }}</div>
+              <div style="font-size:0.75rem;color:var(--color-text-secondary);">Tag: {{ dep.imageTag }}</div>
+            </td>
+            <td>
+              <div style="font-family:monospace;font-size:0.85rem;">{{ dep.branch }}</div>
+              <div style="font-size:0.75rem;color:var(--color-text-secondary);font-family:monospace;">SHA: {{ dep.commitSha }}</div>
+            </td>
+            <td>
+              <span class="badge" 
+                [class.badge-active]="dep.status === 'deployed' || dep.status === 'active'"
+                [class.badge-pending]="dep.status === 'pending' || dep.status === 'deploying'"
+                [class.badge-failed]="dep.status === 'failed'">
+                {{ dep.status }}
+              </span>
+            </td>
+            <td>{{ dep.deployedAt || dep.createdAt | date:'short' }}</td>
+            <td>
+              <div style="display:flex;gap:4px;">
+                <button class="btn btn-sm btn-danger" *ngIf="role !== 'developer'" (click)="rollback(dep.id)">Rollback</button>
+                <button class="btn btn-sm" *ngIf="role === 'devops'" (click)="restartDeploy(dep.id)">Restart</button>
+              </div>
+            </td>
+          </tr>
+          <tr *ngIf="deployments.length === 0">
+            <td colspan="5" style="text-align:center;color:var(--color-text-muted);">No deployment history found</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- METRICS TAB -->
+<div *ngIf="activeTab === 'metrics'">
+  <div class="grid-3">
+    <div class="card" style="border-left: 4px solid var(--primary);">
+      <h2>CPU Average</h2>
+      <div class="stat">{{ aggregatedMetrics.cpuAvg | number:'1.1-1' }}%</div>
+      <div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:6px;">Last 100 heartbeats</div>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--success);">
+      <h2>Memory Average</h2>
+      <div class="stat">{{ aggregatedMetrics.memoryAvg | number:'1.1-1' }} MB</div>
+      <div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:6px;">RAM usage overhead</div>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--danger);">
+      <h2>Error Rate (5xx)</h2>
+      <div class="stat">{{ aggregatedMetrics.errorRate | number:'1.2-2' }}%</div>
+      <div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:6px;">Average response status codes</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Real-time Heartbeats</h2>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>CPU Usage</th>
+            <th>Memory</th>
+            <th>Uptime</th>
+            <th>Avg Response</th>
+            <th>Error Rates</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let m of metrics">
+            <td>{{ m.timestamp | date:'mediumTime' }}</td>
+            <td>{{ m.cpuPct | number:'1.1-1' }}%</td>
+            <td>{{ m.memoryMb | number:'1.0-0' }} MB</td>
+            <td>{{ m.uptimeS }}s</td>
+            <td>{{ m.avgResponseMs }}ms <span style="font-size:0.75rem;color:var(--color-text-muted);">p95: {{ m.p95ResponseMs }}ms</span></td>
+            <td>4xx: {{ m.errors4xx }} | 5xx: {{ m.errors5xx }}</td>
+          </tr>
+          <tr *ngIf="metrics.length === 0">
+            <td colspan="6" style="text-align:center;color:var(--color-text-muted);">No live heartbeat data. Boot up service SDK to stream metrics.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- API METRICS / LATENCY TAB -->
+<div *ngIf="activeTab === 'api-metrics'">
+  <div class="card" style="margin-bottom:20px; padding:20px; background: linear-gradient(135deg, rgba(16,185,129,0.05), rgba(6,182,212,0.05)); border-color:rgba(16,185,129,0.2);">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:20px;">
+      <div>
+        <h2 style="margin:0; border:0; padding:0; font-size:1.1rem;">⚡ Per-Route API Latency</h2>
+        <p style="color:var(--color-text-secondary); font-size:0.8rem; margin:4px 0 0 0;">Real-time endpoint performance tracked by the Node.js SDK middleware</p>
+      </div>
+      <button class="btn btn-sm btn-primary" (click)="loadApiMetrics()">Refresh</button>
+    </div>
+    <div class="grid-3" style="margin-bottom:20px;">
+      <div class="card" style="margin:0; padding:16px; border-left:4px solid #10b981; background:rgba(16,185,129,0.05);">
+        <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:700;">Routes Tracked</div>
+        <div style="font-size:2rem; font-weight:800; color:#10b981; margin-top:4px;">{{ apiMetrics.length }}</div>
+      </div>
+      <div class="card" style="margin:0; padding:16px; border-left:4px solid #f59e0b; background:rgba(245,158,11,0.05);">
+        <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:700;">Slowest (p95)</div>
+        <div style="font-size:2rem; font-weight:800; color:#f59e0b; margin-top:4px;">{{ getSlowestEndpoint() }}ms</div>
+      </div>
+      <div class="card" style="margin:0; padding:16px; border-left:4px solid #ef4444; background:rgba(239,68,68,0.05);">
+        <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:700;">Highest Error Route</div>
+        <div style="font-size:2rem; font-weight:800; color:#ef4444; margin-top:4px;">{{ getHighestErrorRate() }}%</div>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Method</th><th>Route</th><th>Requests</th>
+            <th>Avg</th><th>p50</th><th>p95</th><th>p99</th>
+            <th>4xx</th><th>5xx</th><th>Last Hit</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let m of apiMetrics">
+            <td><span class="badge" 
+              [style.background-color]="m._id?.method === 'GET' ? 'rgba(16,185,129,0.15)' : m._id?.method === 'POST' ? 'rgba(59,130,246,0.15)' : m._id?.method === 'DELETE' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'"
+              [style.color]="m._id?.method === 'GET' ? '#10b981' : m._id?.method === 'POST' ? '#60a5fa' : m._id?.method === 'DELETE' ? '#ef4444' : '#f59e0b'"
+              style="font-size:0.7rem;font-weight:800;font-family:monospace;">{{ m._id?.method }}</span></td>
+            <td style="font-family:monospace;font-size:0.82rem;color:#e2e8f0;">{{ m._id?.route }}</td>
+            <td style="font-weight:700;color:#f8fafc;">{{ m.count | number }}</td>
+            <td style="color:#94a3b8;">{{ m.avgDuration | number:'1.0-0' }}ms</td>
+            <td style="color:#34d399;font-weight:600;">{{ (m.p50 || 0) | number:'1.0-0' }}ms</td>
+            <td [style.color]="(m.p95 || 0) > 500 ? '#f59e0b' : '#94a3b8'">{{ (m.p95 || 0) | number:'1.0-0' }}ms</td>
+            <td [style.color]="(m.p99 || 0) > 1000 ? '#ef4444' : '#94a3b8'">{{ (m.p99 || 0) | number:'1.0-0' }}ms</td>
+            <td [style.color]="m.errors4xx > 0 ? '#f59e0b' : '#64748b'">{{ m.errors4xx }}</td>
+            <td [style.color]="m.errors5xx > 0 ? '#ef4444' : '#64748b'">{{ m.errors5xx }}</td>
+            <td style="font-size:0.75rem;color:var(--color-text-muted);">{{ m.lastSeen | date:'shortTime' }}</td>
+          </tr>
+          <tr *ngIf="apiMetrics.length === 0">
+            <td colspan="10" style="text-align:center;color:var(--color-text-muted);padding:40px;">
+              No API metrics yet. Install SDK and call <code style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:4px;">caps.expressMiddleware()</code>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card" style="padding:24px;background:rgba(15,23,42,0.5);border-color:rgba(99,102,241,0.2);">
+    <h2 style="font-size:1rem;margin-bottom:12px;border:0;padding:0;color:#c4b5fd;">🔌 Node.js Integration</h2>
+    <pre style="background:#0b0f19;padding:16px;border-radius:8px;font-size:0.78rem;color:#34d399;overflow-x:auto;margin:0;">const caps = require('&#64;caps/sdk-node');
+
+await caps.init(&#123;
+  projectName: '{{ project?.name }}',
+  platformUrl: 'http://your-caps-server',
+  environmentName: 'production',
+&#125;);
+
+// Attaches to Express — zero-overhead tracking
+app.use(caps.expressMiddleware());
+caps.captureConsole(); // forward all console.*</pre>
+  </div>
+</div>
+
+<!-- LOGS TAB -->
+<div *ngIf="activeTab === 'logs'">
+  <div class="card" style="margin-bottom:16px;padding:16px;">
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+      <div class="form-group" style="margin:0;flex:1;min-width:150px;">
+        <select [(ngModel)]="searchLogQuery.level" (change)="loadLogs()" style="padding:8px 12px;">
+          <option value="">All Log Levels</option>
+          <option value="INFO">INFO</option>
+          <option value="WARN">WARN</option>
+          <option value="ERROR">ERROR</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;flex:3;min-width:250px;">
+        <input [(ngModel)]="searchLogQuery.search" (keyup.enter)="loadLogs()" placeholder="Search logs (press Enter)..." style="padding:8px 12px;width:100%;">
+      </div>
+      <button class="btn btn-primary" (click)="loadLogs()">Filter</button>
+    </div>
+  </div>
+
+  <div class="card" style="background:#000;border:1px solid #1e293b;padding:16px;border-radius:12px;">
+    <h2 style="border:none;margin-bottom:12px;font-size:1rem;color:var(--color-text-secondary);font-family:monospace;">Loki Live Log Stream</h2>
+    <div style="height:350px;overflow-y:auto;font-family:monospace;font-size:0.85rem;line-height:1.6;color:#38bdf8;padding:8px;background:#05050a;border-radius:6px;display:flex;flex-direction:column;gap:4px;">
+      <div *ngFor="let log of logs" style="display:flex;gap:10px;">
+        <span style="color:#64748b;">[{{ log.timestamp | date:'HH:mm:ss.SSS' }}]</span>
+        <span [style.color]="log.level === 'ERROR' ? '#ef4444' : log.level === 'WARN' ? '#f59e0b' : '#34d399'" style="font-weight:700;">{{ log.level }}</span>
+        <span style="color:#cbd5e1;">{{ log.message }}</span>
+        <span *ngIf="log.fields && log.fields.error" style="color:#ef4444;font-size:0.8rem;">(Err: {{ log.fields.error }})</span>
+      </div>
+      <div *ngIf="logs.length === 0" style="color:var(--color-text-muted);text-align:center;padding-top:100px;">
+        No logs matches search criteria. Boot up SDK client to log queries.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIG TAB -->
+<div *ngIf="activeTab === 'config'" class="grid-2">
+  <div class="card" *ngIf="role !== 'developer'">
+    <h2>Set Environment Value</h2>
+    <div class="form-group">
+      <label>Config Key</label>
+      <input [(ngModel)]="newConfig.key" placeholder="database.pool_size" style="width:100%;">
+    </div>
+    <div class="form-group">
+      <label>Config Value</label>
+      <textarea [(ngModel)]="newConfig.value" placeholder="25" style="width:100%;height:100px;"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Environment Scope</label>
+      <select [(ngModel)]="newConfig.environmentId" style="width:100%;">
+        <option value="">Global (All Environments)</option>
+        <option *ngFor="let env of project?.environments" [value]="env.id">{{ env.name | uppercase }}</option>
+      </select>
+    </div>
+    <div class="form-group" style="flex-direction:row;align-items:center;gap:10px;">
+      <input type="checkbox" [(ngModel)]="newConfig.isSecret" id="isSec">
+      <label for="isSec" style="margin:0;cursor:pointer;">Is Secret Value (Mask in outputs)</label>
+    </div>
+    <button class="btn btn-primary" (click)="addConfig()" [disabled]="!newConfig.key || !newConfig.value" style="width:100%;">Save Configuration</button>
+  </div>
+
+  <div class="card" style="flex:2;">
+    <h2>Runtime Configuration</h2>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Value</th>
+            <th>Scope</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let item of configs | keyvalue">
+            <td style="font-family:monospace;font-weight:700;">{{ item.key }}</td>
+            <td style="font-family:monospace;">{{ item.value }}</td>
+            <td><span class="badge badge-active">Active</span></td>
+            <td>
+              <button class="btn btn-sm btn-danger" *ngIf="role === 'devops'" (click)="deleteConfig(item.key)">Delete</button>
+            </td>
+          </tr>
+          <tr *ngIf="(configs | keyvalue).length === 0">
+            <td colspan="4" style="text-align:center;color:var(--color-text-muted);">No runtime configurations defined</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- STORAGE TAB -->
+<div *ngIf="activeTab === 'storage'">
+  <div class="card">
+    <h2>Storage Quota Usage</h2>
+    <div style="display:flex;justify-content:space-between;font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:8px;">
+      <span>Total Storage Used: {{ formatBytes(storageAnalytics.totalBytes) }}</span>
+      <span>Quota: 1.00 GB</span>
+    </div>
+    <div style="width:100%;height:10px;background:rgba(255,255,255,0.05);border-radius:99px;overflow:hidden;border:1px solid var(--border-glass);">
+      <div [style.width.%]="(storageAnalytics.totalBytes / (1024 * 1024 * 1024)) * 100" style="height:100%;background:linear-gradient(to right, var(--primary), #3b82f6);border-radius:99px;"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>File Attachments</h2>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Filename</th>
+            <th>Category / Type</th>
+            <th>Provider</th>
+            <th>Size</th>
+            <th>Uploaded At</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let file of files">
+            <td>
+              <div style="font-weight:600;">{{ file.originalName }}</div>
+              <div style="font-size:0.75rem;color:var(--color-text-secondary);font-family:monospace;">ID: {{ file.id }}</div>
+            </td>
+            <td>
+              <div class="badge badge-active" style="background-color:rgba(255,255,255,0.05);color:#fff;border-color:var(--border-glass);">{{ file.category || 'general' }}</div>
+              <div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:4px;">{{ file.mimeType }}</div>
+            </td>
+            <td><span class="badge badge-active" style="color:#60a5fa;border-color:rgba(96,165,250,0.25);">{{ file.provider | uppercase }}</span></td>
+            <td>{{ formatBytes(file.size) }}</td>
+            <td>{{ file.createdAt | date:'short' }}</td>
+            <td>
+              <div style="display:flex;gap:4px;">
+                <a [href]="file.cdnUrl" target="_blank" class="btn btn-sm btn-primary" style="text-decoration:none;">Download</a>
+                <button class="btn btn-sm btn-danger" (click)="deleteFile(file.id)">Delete</button>
+              </div>
+            </td>
+          </tr>
+          <tr *ngIf="files.length === 0">
+            <td colspan="6" style="text-align:center;color:var(--color-text-muted);">No file uploads registered for this project. Utilize `caps.storage.upload` to upload logs, certificates or media.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ENVIRONMENTS TAB -->
+<div *ngIf="activeTab === 'environments'">
+  <div class="grid-3">
+    <div class="card" *ngFor="let env of project?.environments">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <span class="badge badge-active" style="font-size:0.85rem;background-color:rgba(96,165,250,0.1);color:#60a5fa;border-color:rgba(96,165,250,0.2);">{{ env.name | uppercase }}</span>
+        <span class="badge badge-active">ONLINE</span>
+      </div>
+      <div style="margin-top:16px;">
+        <div style="font-size:0.75rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;letter-spacing:0.05em;">Kubernetes Namespace</div>
+        <div style="font-family:monospace;font-size:0.9rem;margin-top:4px;">{{ env.namespace }}</div>
+      </div>
+      <div style="margin-top:14px;">
+        <div style="font-size:0.75rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;letter-spacing:0.05em;">Routing Domain</div>
+        <div style="font-family:monospace;font-size:0.9rem;margin-top:4px;"><a href="http://{{ env.domain }}" target="_blank">{{ env.domain }}</a></div>
+      </div>
+      <div *ngIf="env.name === 'preview'" style="margin-top:14px;border-top:1px solid var(--border-glass);padding-top:10px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:0.8rem;color:var(--danger);font-weight:600;">⌛ Expiry: 71h 59m</span>
+        <button class="btn btn-sm btn-danger" style="padding:4px 8px;font-size:0.75rem;">Terminate Now</button>
+      </div>
+    </div>
+    <div *ngIf="!project?.environments?.length" style="color:var(--color-text-muted);">No environments configured</div>
+  </div>
+</div>
+
+<!-- SDK TOKENS TAB -->
+<div *ngIf="activeTab === 'sdk-tokens'">
+  <div class="grid-2">
+    <!-- Generate Token Card -->
+    <div class="card" *ngIf="role === 'devops' || role === 'tech_lead'">
+      <h2>Generate SDK Token</h2>
+      <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;margin-bottom:20px;">
+        Generate an API key that your service can use with `&#64;caps/sdk-node` or `caps-sdk-python` to authenticate and register.
+      </p>
+
+      <div class="form-group">
+        <label>Token Description / Name</label>
+        <input [(ngModel)]="newKeyName" placeholder="e.g. Production Service Key" style="width:100%;">
+      </div>
+
+      <button class="btn btn-primary" (click)="createToken()" [disabled]="!newKeyName.trim()" style="width:100%; margin-top: 10px;">
+        Generate Token
+      </button>
+
+      <!-- Newly Generated Plaintext Token Alert -->
+      <div *ngIf="generatedKeyPlaintext" class="card" style="border: 1px solid var(--primary); background: rgba(139, 92, 246, 0.05); padding: 16px; margin-top: 20px;">
+        <h3 style="color: var(--primary); margin-top: 0; font-size: 1rem;">Token Generated Successfully</h3>
+        <p style="font-size: 0.8rem; color: var(--color-text-secondary); margin-bottom: 12px;">
+          ⚠️ Copy this key now! You will not be able to see it again.
+        </p>
+        <div style="position:relative;background:rgba(0,0,0,0.3);padding:12px;border-radius:6px;border:1px solid var(--border-glass);color:#fff;font-family:monospace;font-size:0.85rem;word-break:break-all;display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <span>{{ generatedKeyPlaintext }}</span>
+        </div>
+        <button class="btn btn-sm" (click)="clearGeneratedToken()">Dismiss</button>
+      </div>
+    </div>
+
+    <!-- Active Tokens Table -->
+    <div class="card" style="flex:2;">
+      <h2>Active SDK Tokens</h2>
+      <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;margin-bottom:20px;">
+        Authorized keys that are currently active for this project.
+      </p>
+
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Token Prefix</th>
+              <th>Status</th>
+              <th>Created At</th>
+              <th *ngIf="role === 'devops'">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let t of tokens">
+              <td style="font-weight:600;color:#fff;">{{ t.name }}</td>
+              <td style="font-family:monospace;font-size:0.85rem;">{{ t.token }}</td>
+              <td><span class="badge badge-active">{{ t.status | uppercase }}</span></td>
+              <td>{{ t.createdAt | date:'short' }}</td>
+              <td *ngIf="role === 'devops'">
+                <button class="btn btn-sm btn-danger" (click)="revokeToken(t.id)">Revoke</button>
+              </td>
+            </tr>
+            <tr *ngIf="tokens.length === 0">
+              <td [attr.colspan]="role === 'devops' ? 5 : 4" style="text-align:center;color:var(--color-text-muted);">
+                No SDK credentials configured for this project.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- GITOPS / ARGOCD TAB -->
+<div *ngIf="activeTab === 'gitops'">
+  <!-- ArgoCD Application Summary Card -->
+  <div class="card mb-6" style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.4), rgba(15, 23, 42, 0.6)); border: 1px solid rgba(139, 92, 246, 0.15); margin-top:20px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+      <div>
+        <h2 style="font-size:1.25rem; margin:0; border:0; padding:0; color:#fff; display:flex; align-items:center; gap:8px;">
+          🐙 GitOps Application Controller (ArgoCD)
+        </h2>
+        <p style="color:var(--color-text-secondary); font-size:0.8rem; margin:4px 0 0 0;">
+          Syncing state from branch: <span style="font-family:monospace; color:var(--primary);">{{ project?.deployments[0]?.branch || 'main' }}</span>
+        </p>
+      </div>
+      
+      <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:0.75rem; color:var(--color-text-secondary); text-transform:uppercase; font-weight:600;">Sync Status:</span>
+          <span *ngIf="argoStatus?.syncStatus === 'Synced'" class="badge badge-active" style="background-color:rgba(16,185,129,0.15); color:#10b981; border-color:rgba(16,185,129,0.3);">
+            SYNCED
+          </span>
+          <span *ngIf="argoStatus?.syncStatus === 'OutOfSync'" class="badge badge-failed" style="background-color:rgba(239,68,68,0.15); color:#ef4444; border-color:rgba(239,68,68,0.3);">
+            OUT OF SYNC
+          </span>
+          <span *ngIf="argoStatus?.syncStatus !== 'Synced' && argoStatus?.syncStatus !== 'OutOfSync'" class="badge badge-pending" style="background-color:rgba(245,158,11,0.15); color:#f59e0b; border-color:rgba(245,158,11,0.3);">
+            {{ argoStatus?.syncStatus || 'OFFLINE' }}
+          </span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:0.75rem; color:var(--color-text-secondary); text-transform:uppercase; font-weight:600;">App Health:</span>
+          <span *ngIf="argoStatus?.healthStatus === 'Healthy'" class="badge badge-active" style="background-color:rgba(16,185,129,0.15); color:#10b981; border-color:rgba(16,185,129,0.3);">
+            HEALTHY
+          </span>
+          <span *ngIf="argoStatus?.healthStatus === 'Degraded'" class="badge badge-failed" style="background-color:rgba(239,68,68,0.15); color:#ef4444; border-color:rgba(239,68,68,0.3);">
+            DEGRADED
+          </span>
+          <span *ngIf="argoStatus?.healthStatus === 'Progressing'" class="badge badge-pending" style="background-color:rgba(245,158,11,0.15); color:#f59e0b; border-color:rgba(245,158,11,0.3);">
+            PROGRESSING
+          </span>
+          <span *ngIf="argoStatus?.healthStatus !== 'Healthy' && argoStatus?.healthStatus !== 'Degraded' && argoStatus?.healthStatus !== 'Progressing'" class="badge badge-pending" style="background-color:rgba(100,116,139,0.15); color:#cbd5e1; border-color:rgba(100,116,139,0.3);">
+            {{ argoStatus?.healthStatus || 'UNKNOWN' }}
+          </span>
+        </div>
+        <a href="http://argocd.pratyushes.dev/applications/{{ argoStatus?.appName || (project?.name + '-staging' | lowercase) }}" target="_blank" class="btn btn-sm btn-primary" style="display:inline-flex; align-items:center; gap:6px; font-weight:600; padding:6px 12px; font-size:0.75rem; text-decoration:none;">
+          External ArgoCD Console ↗
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Connection Status Warning -->
+  <div *ngIf="!argoStatus?.connected" class="card mb-6" style="background:rgba(245,158,11,0.1); border-color:rgba(245,158,11,0.25); color:#fde047; padding:12px 18px; font-size:0.85rem;">
+    ⚠️ <strong>ArgoCD Controller Disconnected:</strong> Could not retrieve real-time ArgoCD status: {{ argoStatus?.error || 'unreachable' }}. Showing local GitOps state. You can still access the <a href="http://argocd.pratyushes.dev" target="_blank" style="color:var(--primary); font-weight:600; text-decoration:underline;">ArgoCD external console</a>.
+  </div>
+
+  <!-- ArgoCD Visual Resource Tree Layout -->
+  <div class="card" style="padding: 24px; background: rgba(10, 15, 30, 0.4); border: 1px solid var(--border-glass);">
+    <h2>Application Resource Topology</h2>
+    <p style="color:var(--color-text-secondary); font-size:0.8rem; margin-top:0; margin-bottom:30px;">
+      Interactive diagram representing active Kubernetes manifests and container replicas.
+    </p>
+
+    <!-- ArgoCD Tree Diagram -->
+    <div style="display: flex; flex-direction: column; gap: 32px; align-items: center; position: relative;">
+      
+      <!-- Level 1: Git Repo -> ArgoCD App -->
+      <div style="display: flex; gap: 40px; align-items: center; justify-content: center; width: 100%; flex-wrap: wrap;">
+        <!-- Git Source Node -->
+        <div class="card text-center" style="margin:0; padding:12px 20px; width:220px; border-color:rgba(255,255,255,0.08); background:rgba(0,0,0,0.3);">
+          <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:700;">Git Repository</div>
+          <div style="font-family:monospace; font-size:0.85rem; font-weight:600; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:4px;">
+            {{ project?.name }}
+          </div>
+          <div style="font-size:0.75rem; color:var(--primary); font-family:monospace; margin-top:2px;">
+            {{ project?.deployments[0]?.branch || 'main' }}
+          </div>
+        </div>
+
+        <div style="font-size: 1.5rem; color: var(--color-text-muted);">➡️</div>
+
+        <!-- Argo Application Node -->
+        <div class="card text-center" style="margin:0; padding:12px 20px; width:220px; border-color:var(--primary); background:rgba(139,92,246,0.05); box-shadow:0 0 15px rgba(139,92,246,0.15);">
+          <div style="font-size:0.7rem; text-transform:uppercase; color:var(--primary); font-weight:800; letter-spacing:0.05em;">ArgoCD Application</div>
+          <div style="font-family:monospace; font-size:0.85rem; font-weight:600; color:#fff; margin-top:4px;">
+            {{ project?.name }}-app
+          </div>
+          <div style="font-size:0.7rem; color:#10b981; font-weight:600; margin-top:2px;">
+            ● Synced
+          </div>
+        </div>
+      </div>
+
+      <div style="font-size: 1.25rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
+
+      <!-- Level 2: K8s Infrastructure Services Split -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 40px; width: 100%;">
+        
+        <!-- Left Wing: Deployments -> Pods -->
+        <div style="display: flex; flex-direction: column; gap: 24px; align-items: center; border-right: 1px dashed rgba(255,255,255,0.05); padding-right: 20px;">
+          <h4 style="margin: 0; font-size: 0.8rem; text-transform: uppercase; color: var(--color-text-secondary); letter-spacing: 0.05em;">Compute Resources</h4>
+          
+          <!-- Deployment Node -->
+          <div class="card text-center" style="margin:0; padding:12px 20px; width:200px; border-color:#60a5fa; background:rgba(96,165,250,0.05);">
+            <div style="font-size:0.7rem; text-transform:uppercase; color:#60a5fa; font-weight:700;">K8s Deployment</div>
+            <div style="font-family:monospace; font-size:0.8rem; font-weight:600; color:#fff; margin-top:4px;">
+              {{ project?.name }}-dep
+            </div>
+            <div style="font-size:0.7rem; color:#10b981; margin-top:2px;">
+              Status: Healthy
+            </div>
+          </div>
+
+          <div style="font-size: 1rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
+
+          <!-- ReplicaSet Node -->
+          <div class="card text-center" style="margin:0; padding:12px 20px; width:200px; border-color:rgba(255,255,255,0.05); background:rgba(0,0,0,0.25);">
+            <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:700;">ReplicaSet</div>
+            <div style="font-family:monospace; font-size:0.75rem; color:#cbd5e1; margin-top:4px;">
+              {{ project?.name }}-dep-7bf9dc
+            </div>
+            <div style="font-size:0.7rem; color:var(--color-text-secondary); margin-top:2px;">
+              Replicas: {{ pods.length || 1 }} active
+            </div>
+          </div>
+
+          <div style="font-size: 1rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
+
+          <!-- Pods Leaf Nodes Grid -->
+          <div style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
+            <div class="card" *ngFor="let pod of pods" style="margin:0; padding:12px; border:1px solid rgba(255,255,255,0.05); background:rgba(0,0,0,0.35); position:relative;"
+              [style.border-color]="pod.status === 'Running' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'">
+              
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-family:monospace; font-size:0.8rem; font-weight:600; color:#fff; max-width:70%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                  {{ pod.name }}
+                </span>
+                <span class="badge" [ngClass]="{'badge-active': pod.status === 'Running', 'badge-failed': pod.status !== 'Running'}">
+                  {{ pod.status }}
+                </span>
+              </div>
+              
+              <div style="font-size:0.75rem; color:var(--color-text-secondary); margin-bottom:10px;">
+                Node: {{ pod.node }} &bull; Restarts: {{ pod.restarts }} &bull; Age: {{ pod.age }}
+              </div>
+
+              <div style="display:flex; gap:6px;">
+                <button class="btn btn-sm" (click)="openPodLogs(pod)" style="flex:1; font-size:0.7rem; padding:4px 0;">
+                  Logs
+                </button>
+                <button class="btn btn-sm btn-danger" (click)="restartPod(pod)" style="flex:1; font-size:0.7rem; padding:4px 0;" *ngIf="role === 'devops'">
+                  Restart
+                </button>
+              </div>
+            </div>
+
+            <div *ngIf="pods.length === 0" class="card text-center" style="margin:0; padding:16px; color:var(--color-text-muted); font-size:0.8rem;">
+              No active pods found. Trigger a deployment first.
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Wing: Ingress / Routing Services -->
+        <div style="display: flex; flex-direction: column; gap: 24px; align-items: center; padding-left: 20px;">
+          <h4 style="margin: 0; font-size: 0.8rem; text-transform: uppercase; color: var(--color-text-secondary); letter-spacing: 0.05em;">Network Routing</h4>
+
+          <!-- Service Node -->
+          <div class="card text-center" style="margin:0; padding:12px 20px; width:200px; border-color:#34d399; background:rgba(52,211,153,0.05);">
+            <div style="font-size:0.7rem; text-transform:uppercase; color:#34d399; font-weight:700;">K8s Service</div>
+            <div style="font-family:monospace; font-size:0.8rem; font-weight:600; color:#fff; margin-top:4px;">
+              {{ project?.name }}-svc
+            </div>
+            <div style="font-size:0.7rem; color:var(--color-text-secondary); margin-top:2px;">
+              Type: ClusterIP
+            </div>
+          </div>
+
+          <div style="font-size: 1rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
+
+          <!-- Ingress Node -->
+          <div class="card text-center" style="margin:0; padding:12px 20px; width:200px; border-color:#fb7185; background:rgba(251,113,133,0.05);">
+            <div style="font-size:0.7rem; text-transform:uppercase; color:#fb7185; font-weight:700;">Ingress Controller</div>
+            <div style="font-family:monospace; font-size:0.75rem; color:#cbd5e1; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+              {{ project?.name }}-ingress
+            </div>
+            <div style="font-size:0.7rem; color:var(--color-text-secondary); margin-top:2px;">
+              SSL Redirect: active
+            </div>
+          </div>
+
+          <div style="font-size: 1rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
+
+          <!-- Target Router URL Card -->
+          <div class="card text-center" style="margin:0; padding:14px; width:100%; border-color:rgba(255,255,255,0.05); background:rgba(0,0,0,0.3);">
+            <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:600;">Ingress Route Domain</div>
+            <div style="font-family:monospace; font-size:0.85rem; font-weight:700; margin-top:4px;">
+              <a href="http://{{ project?.domain || project?.name + '.capskengeri.com' }}" target="_blank" style="color:var(--primary); text-decoration:none;">
+                {{ project?.domain || project?.name + '.capskengeri.com' }}
+              </a>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- DATABASES TAB -->
+<div *ngIf="activeTab === 'databases'">
+  <div class="grid-2">
+<!-- Provision New Database (DevOps Only) -->
+<div *ngIf="role === 'devops'" style="margin-bottom:20px;">
+
+  <!-- One-time credentials display -->
+  <div *ngIf="provisionedCreds" class="card" style="background:rgba(16,185,129,0.05); border:2px solid rgba(16,185,129,0.4); padding:24px; margin-bottom:20px;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+      <div>
+        <h2 style="margin:0; border:0; padding:0; color:#10b981; font-size:1rem;">🎉 Database Provisioned Successfully</h2>
+        <p style="color:#34d399; font-size:0.8rem; margin:4px 0 0 0; font-weight:600;">⚠️ Save these credentials now — the password will NOT be shown again</p>
+      </div>
+      <button class="btn btn-sm" (click)="dismissProvisionedCreds()" style="color:#64748b;">Dismiss</button>
+    </div>
+    <div style="background:#0b0f19; border-radius:8px; padding:20px; font-family:monospace; font-size:0.82rem;">
+      <div style="display:grid; grid-template-columns: 140px 1fr; gap:8px 16px;">
+        <span style="color:#64748b;">Database Name:</span><span style="color:#34d399; font-weight:700;">{{ provisionedCreds.dbName }}</span>
+        <span style="color:#64748b;">Username:</span><span style="color:#60a5fa;">{{ provisionedCreds.username }}</span>
+        <span style="color:#64748b;">Password:</span><span style="color:#f8fafc; background:rgba(255,255,255,0.08); padding:2px 8px; border-radius:4px;">{{ provisionedCreds.password }}</span>
+        <span style="color:#64748b;">Host:</span><span style="color:#f8fafc;">{{ provisionedCreds.host }}:{{ provisionedCreds.port }}</span>
+        <span style="color:#64748b; grid-column:1;">Connection String:</span>
+        <span style="color:#a78bfa; word-break:break-all; grid-column:2;">{{ provisionedCreds.connectionString }}</span>
+      </div>
+    </div>
+    <p style="color:var(--color-text-secondary); font-size:0.78rem; margin:12px 0 0 0;">These credentials have been automatically stored in Infisical for this project's environment variables.</p>
+  </div>
+
+  <!-- Provision Form -->
+  <div class="card" style="padding:24px; background: linear-gradient(135deg, rgba(99,102,241,0.05), rgba(139,92,246,0.05)); border-color:rgba(99,102,241,0.2);">
+    <h2 style="margin:0 0 4px 0; border:0; padding:0; font-size:1.1rem;">🗄️ Provision New Database</h2>
+    <p style="color:var(--color-text-secondary); font-size:0.82rem; margin:4px 0 20px 0;">Creates an isolated PostgreSQL database with a unique user scoped to this project + environment. Credentials are auto-synced to Infisical.</p>
+    <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+      <div class="form-group" style="margin:0; flex:1; min-width:180px;">
+        <label>Environment</label>
+        <select [(ngModel)]="newDb.dbType" style="width:100%;">
+          <option value="production">Production</option>
+          <option value="staging">Staging</option>
+          <option value="preview">Preview / Feature</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" (click)="provisionDb(newDb.dbType)" [disabled]="provisioningDb"
+        style="white-space:nowrap; padding:10px 24px;">
+        <span *ngIf="!provisioningDb">⚡ Provision Database</span>
+        <span *ngIf="provisioningDb">Creating...</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+    <!-- Active Connections List -->
+    <div class="card" style="flex:2;">
+      <h2>Project Database Connections</h2>
+      <p style="color:var(--color-text-secondary); font-size:0.85rem; margin-top:0; margin-bottom:20px;">
+        Active database pools allocated to this service's environment.
+      </p>
+
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>DB Type</th>
+              <th>Status</th>
+              <th>Pool Size</th>
+              <th>Metrics (Active/Idle)</th>
+              <th>Connection Test</th>
+              <th *ngIf="role === 'devops'">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let db of dbConnections">
+              <td>
+                <span class="badge" [ngClass]="{
+                  'badge-active': db.dbType === 'postgres',
+                  'badge-pending': db.dbType === 'mongo',
+                  'badge-failed': db.dbType === 'redis'
+                }" style="border-radius:6px; font-weight:700;">
+                  {{ db.dbType | uppercase }}
+                </span>
+              </td>
+              <td>
+                <span class="badge" [ngClass]="{'badge-active': db.status === 'connected', 'badge-failed': db.status !== 'connected'}">
+                  {{ db.status | uppercase }}
+                </span>
+              </td>
+              <td style="font-weight:600;">{{ db.poolSize }} connections</td>
+              <td style="font-family:monospace; font-size:0.85rem;">
+                <span style="color:#10b981;">Active: {{ db.activeCount || 0 }}</span> / 
+                <span style="color:var(--color-text-secondary);">Idle: {{ db.idleCount || 0 }}</span>
+              </td>
+              <td>
+                <button class="btn btn-sm" (click)="testDbConnection(db.id)" [disabled]="testingDbId === db.id">
+                  {{ testingDbId === db.id ? 'Testing...' : '🧪 Test Ping' }}
+                </button>
+              </td>
+              <td *ngIf="role === 'devops'">
+                <button class="btn btn-sm btn-danger" (click)="deleteDbConnection(db.id)">Remove</button>
+              </td>
+            </tr>
+            <tr *ngIf="dbConnections.length === 0">
+              <td [attr.colspan]="role === 'devops' ? 6 : 5" style="text-align:center; color:var(--color-text-muted); padding:24px;">
+                No active database connection configurations found.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Pod Logs Terminal Modal Overlay -->
+<div *ngIf="showLogsModal" style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); display:flex; justify-content:center; align-items:center; z-index:1000; padding:20px;">
+  <div class="card" style="width:100%; max-width:900px; height:80vh; max-height:700px; display:flex; flex-direction:column; padding:0; overflow:hidden; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);">
+    <!-- Modal Header -->
+    <div style="padding:16px 24px; border-bottom:1px solid var(--border-glass); display:flex; justify-content:space-between; align-items:center; background:rgba(30,41,59,0.3);">
+      <div>
+        <span style="font-size:0.7rem; color:var(--primary); text-transform:uppercase; font-weight:700; letter-spacing:0.05em;">
+          LOG STREAMER — {{ selectedPodNamespace }}
+        </span>
+        <h3 style="margin:4px 0 0 0; border:0; padding:0; font-size:1.1rem; color:#fff; font-family:monospace;">
+          {{ selectedPodName }}
+        </h3>
+      </div>
+      <button class="btn btn-sm" (click)="closeLogsModal()" style="font-size:1.2rem; line-height:1; padding:4px 8px;">
+        &times;
+      </button>
+    </div>
+
+    <!-- Terminal Output -->
+    <div style="flex-grow:1; background:#0b0f19; padding:20px; overflow-y:auto; font-family:Consolas, Monaco, 'Andale Mono', monospace; font-size:0.82rem; line-height:1.5; color:#34d399; position:relative;">
+      <pre style="margin:0; white-space:pre-wrap; word-break:break-all;">{{ podLogsText }}</pre>
+      
+      <div *ngIf="loadingLogs" style="position:absolute; bottom:12px; right:20px; background:rgba(11,15,25,0.9); border:1px solid var(--border-glass); border-radius:4px; padding:4px 8px; font-size:0.7rem; color:var(--color-text-secondary);">
+        ● Tailing live logs...
+      </div>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div style="padding:12px 24px; border-top:1px solid var(--border-glass); display:flex; justify-content:flex-end; gap:8px; background:rgba(15,23,42,0.4);">
+      <button class="btn btn-sm" (click)="fetchPodLogs()">Refresh Logs</button>
+      <button class="btn btn-sm btn-primary" (click)="closeLogsModal()">Close Terminal</button>
+    </div>
+  </div>
+</div>

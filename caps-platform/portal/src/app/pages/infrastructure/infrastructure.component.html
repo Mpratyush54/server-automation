@@ -1,0 +1,393 @@
+<!-- Connection Health Panel -->
+<div class="card mb-6" style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.6), rgba(15, 23, 42, 0.8)); border: 1px solid rgba(255,255,255,0.06); padding: 18px 24px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+    <div>
+      <h2 style="font-size:1.25rem; margin:0; border:0; padding:0; color:#fff; display:flex; align-items:center; gap:8px;">
+        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background-color:#10b981; box-shadow:0 0 8px #10b981;" *ngIf="k8sConnected"></span>
+        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background-color:#f59e0b; box-shadow:0 0 8px #f59e0b;" *ngIf="!k8sConnected"></span>
+        System Connection Health
+      </h2>
+      <p style="color:var(--color-text-secondary); font-size:0.8rem; margin:4px 0 0 0;">Real-time heartbeat indicators for CAPS control-plane dependencies</p>
+    </div>
+    
+    <div style="display:flex; gap:16px; align-items:center;">
+      <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.03); padding:6px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+        <span style="font-size:0.75rem; color:var(--color-text-secondary); text-transform:uppercase; font-weight:600;">PostgreSQL:</span>
+        <span class="badge" [ngClass]="{'badge-active': systemStatus.postgres === 'connected', 'badge-failed': systemStatus.postgres !== 'connected'}">
+          {{ systemStatus.postgres | uppercase }}
+        </span>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.03); padding:6px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+        <span style="font-size:0.75rem; color:var(--color-text-secondary); text-transform:uppercase; font-weight:600;">MongoDB:</span>
+        <span class="badge" [ngClass]="{'badge-active': systemStatus.mongodb === 'connected', 'badge-failed': systemStatus.mongodb !== 'connected'}">
+          {{ systemStatus.mongodb | uppercase }}
+        </span>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.03); padding:6px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+        <span style="font-size:0.75rem; color:var(--color-text-secondary); text-transform:uppercase; font-weight:600;">K8s Cluster:</span>
+        <span class="badge" [ngClass]="{'badge-active': k8sConnected, 'badge-failed': !k8sConnected}">
+          {{ (k8sConnected ? 'CONNECTED' : 'OFFLINE') }}
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Disconnected Warning Bar -->
+<div *ngIf="!k8sConnected" class="card mb-6" style="background:rgba(239,68,68,0.1); border-color:rgba(239,68,68,0.25); color:#fca5a5; padding:12px 18px; display:flex; align-items:center; gap:12px; font-size:0.85rem;">
+  <span style="font-size:1.2rem;">⚠️</span>
+  <div>
+    <strong>Kubernetes Cluster Unreachable.</strong> Node agent was unable to connect using local `kubectl`. Showing cached mock topology for evaluation. Live deployment triggers are currently disabled.
+  </div>
+</div>
+
+<div style="margin-bottom:24px;">
+  <h2 style="margin:0;font-size:1.5rem;font-weight:700;">Infrastructure Dashboard</h2>
+  <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:4px 0 0 0;">Kubernetes cluster nodes, namespaces, active pods and telemetry logs</p>
+</div>
+
+<!-- Tabs Navigation -->
+<div style="display:flex;gap:12px;margin-bottom:24px;border-bottom:1px solid var(--border-glass);padding-bottom:12px; overflow-x:auto;">
+  <button class="btn" [ngClass]="{'btn-primary': activeTab === 'nodes'}" (click)="selectTab('nodes')">🖥️ Cluster Nodes</button>
+  <button class="btn" [ngClass]="{'btn-primary': activeTab === 'namespaces'}" (click)="selectTab('namespaces')">🏷️ Namespaces</button>
+  <button class="btn" [ngClass]="{'btn-primary': activeTab === 'pods'}" (click)="selectTab('pods')">📦 Live Pods (ArgoCD)</button>
+  <button class="btn" [ngClass]="{'btn-primary': activeTab === 'bootstrap'}" (click)="selectTab('bootstrap')">⚙️ Node Bootstrap</button>
+  <button class="btn" [ngClass]="{'btn-primary': activeTab === 'metrics'}" (click)="selectTab('metrics')">📈 Cluster Telemetry</button>
+</div>
+
+<!-- Nodes Tab -->
+<div *ngIf="activeTab === 'nodes'" class="card" style="padding:0;overflow:hidden;">
+  <table>
+    <thead>
+      <tr>
+        <th>Node Name</th>
+        <th>IP Address</th>
+        <th>Role</th>
+        <th>Status</th>
+        <th>CPU Allocation</th>
+        <th>Memory Allocation</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let n of nodes">
+        <td style="font-weight:600;color:#fff;">{{ n.name }}</td>
+        <td style="font-family:monospace; font-size:0.9rem;">{{ n.ip }}</td>
+        <td><span class="badge" [ngClass]="{'badge-active': n.role === 'master', 'badge-pending': n.role === 'worker'}">{{ n.role | uppercase }}</span></td>
+        <td><span class="badge" [ngClass]="{'badge-active': n.status === 'Ready', 'badge-failed': n.status !== 'Ready'}">{{ n.status }}</span></td>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="flex-grow:1;height:8px;background:rgba(255,255,255,0.05);border-radius:4px;overflow:hidden;">
+              <div [style.width]="n.cpu" style="height:100%;background:var(--primary);border-radius:4px;"></div>
+            </div>
+            <span style="font-size:0.8rem;font-weight:600;min-width:32px;">{{ n.cpu }}</span>
+          </div>
+        </td>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="flex-grow:1;height:8px;background:rgba(255,255,255,0.05);border-radius:4px;overflow:hidden;">
+              <div [style.width]="n.memory" style="height:100%;background:var(--success);border-radius:4px;"></div>
+            </div>
+            <span style="font-size:0.8rem;font-weight:600;min-width:32px;">{{ n.memory }}</span>
+          </div>
+        </td>
+      </tr>
+      <tr *ngIf="nodes.length === 0">
+        <td colspan="6" style="text-align:center; color:var(--color-text-muted); padding:24px;">No nodes found in cluster. Check connection status.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Namespaces Tab -->
+<div *ngIf="activeTab === 'namespaces'" class="card" style="padding:0;overflow:hidden;">
+  <table>
+    <thead>
+      <tr>
+        <th>Namespace</th>
+        <th>Status</th>
+        <th>Age</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let ns of namespaces">
+        <td style="font-weight:600;color:#fff;font-family:monospace;">{{ ns.name }}</td>
+        <td><span class="badge" [ngClass]="{'badge-active': ns.status === 'Active', 'badge-failed': ns.status !== 'Active'}">{{ ns.status }}</span></td>
+        <td>{{ ns.age }}</td>
+      </tr>
+      <tr *ngIf="namespaces.length === 0">
+        <td colspan="3" style="text-align:center; color:var(--color-text-muted); padding:24px;">No namespaces retrieved.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Live Pods Tab (ArgoCD View) -->
+<div *ngIf="activeTab === 'pods'">
+  <!-- Filter Panel -->
+  <div class="card mb-6" style="padding: 16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <label style="font-size:0.85rem; font-weight:600; color:var(--color-text-secondary);">Namespace Filter:</label>
+      <select [(ngModel)]="selectedNamespace" (change)="loadPods()" style="padding:6px 12px; border-radius:6px;">
+        <option value="all">All Namespaces</option>
+        <option *ngFor="let ns of namespaces" [value]="ns.name">{{ ns.name }}</option>
+      </select>
+    </div>
+    
+    <button class="btn btn-sm" (click)="loadPods()" style="display:flex; align-items:center; gap:6px;">
+      🔄 Refresh Pods
+    </button>
+  </div>
+
+  <!-- Pod Topology Grid -->
+  <div class="grid-3">
+    <div class="card" *ngFor="let pod of pods" style="border: 1px solid rgba(255,255,255,0.05); transition: transform 0.2s, border-color 0.2s; position:relative; overflow:hidden;"
+      [style.border-color]="pod.status === 'Running' ? 'rgba(16,185,129,0.15)' : pod.status === 'Pending' ? 'rgba(245,158,11,0.2)' : 'rgba(239,68,68,0.2)'">
+      
+      <!-- Colored Status Glow Bar -->
+      <div style="position:absolute; top:0; left:0; right:0; height:3px;"
+        [style.background-color]="pod.status === 'Running' ? '#10b981' : pod.status === 'Pending' ? '#f59e0b' : '#ef4444'">
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:12px;">
+        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:70%;">
+          <span style="font-size:0.7rem; color:var(--primary); text-transform:uppercase; font-weight:700; letter-spacing:0.05em; font-family:monospace;">
+            {{ pod.namespace }}
+          </span>
+          <h3 style="font-size:0.95rem; margin:4px 0 0 0; border:0; padding:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#fff;" [title]="pod.name">
+            {{ pod.name }}
+          </h3>
+        </div>
+        <span class="badge" 
+          [ngClass]="{'badge-active': pod.status === 'Running', 'badge-pending': pod.status === 'Pending', 'badge-failed': pod.status !== 'Running' && pod.status !== 'Pending'}">
+          {{ pod.status }}
+        </span>
+      </div>
+
+      <div style="background:rgba(0,0,0,0.2); padding:10px; border-radius:6px; margin-bottom:14px; font-size:0.8rem; border:1px solid rgba(255,255,255,0.02);">
+        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+          <span style="color:var(--color-text-secondary);">Node:</span>
+          <span style="font-family:monospace; color:#fff;">{{ pod.node }}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+          <span style="color:var(--color-text-secondary);">Restarts:</span>
+          <span [style.color]="pod.restarts > 0 ? '#f87171' : '#fff'" style="font-weight:600;">{{ pod.restarts }}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+          <span style="color:var(--color-text-secondary);">Uptime / Age:</span>
+          <span style="color:#fff;">{{ pod.age }}</span>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-sm" (click)="openPodLogs(pod)" style="flex:1; font-size:0.75rem; padding:6px 0; background:rgba(255,255,255,0.05);">
+          📋 View Logs
+        </button>
+        <button class="btn btn-sm btn-danger" (click)="restartPod(pod)" style="flex:1; font-size:0.75rem; padding:6px 0;">
+          ⚡ Restart
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="pods.length === 0" class="card text-center" style="padding:48px;">
+    <p style="color:var(--color-text-muted); margin:0;">No pods registered in selected namespace.</p>
+  </div>
+</div>
+
+<!-- Logs Modal Overlay -->
+<div *ngIf="showLogsModal" style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); display:flex; justify-content:center; align-items:center; z-index:1000; padding:20px;">
+  <div class="card" style="width:100%; max-width:900px; height:80vh; max-height:700px; display:flex; flex-direction:column; padding:0; overflow:hidden; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);">
+    <!-- Modal Header -->
+    <div style="padding:16px 24px; border-bottom:1px solid var(--border-glass); display:flex; justify-content:space-between; align-items:center; background:rgba(30,41,59,0.3);">
+      <div>
+        <span style="font-size:0.7rem; color:var(--primary); text-transform:uppercase; font-weight:700; letter-spacing:0.05em;">
+          LOG STREAMER — {{ selectedPodNamespace }}
+        </span>
+        <h3 style="margin:4px 0 0 0; border:0; padding:0; font-size:1.1rem; color:#fff; font-family:monospace;">
+          {{ selectedPodName }}
+        </h3>
+      </div>
+      <button class="btn btn-sm" (click)="closeLogsModal()" style="font-size:1.2rem; line-height:1; padding:4px 8px;">
+        &times;
+      </button>
+    </div>
+
+    <!-- Terminal Output -->
+    <div style="flex-grow:1; background:#0b0f19; padding:20px; overflow-y:auto; font-family:Consolas, Monaco, 'Andale Mono', monospace; font-size:0.82rem; line-height:1.5; color:#34d399; position:relative;">
+      <pre style="margin:0; white-space:pre-wrap; word-break:break-all;">{{ podLogsText }}</pre>
+      
+      <div *ngIf="loadingLogs" style="position:absolute; bottom:12px; right:20px; background:rgba(11,15,25,0.9); border:1px solid var(--border-glass); border-radius:4px; padding:4px 8px; font-size:0.7rem; color:var(--color-text-secondary);">
+        ● Tailing live logs...
+      </div>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div style="padding:12px 24px; border-top:1px solid var(--border-glass); display:flex; justify-content:flex-end; gap:8px; background:rgba(15,23,42,0.4);">
+      <button class="btn btn-sm" (click)="fetchPodLogs()">Refresh Logs</button>
+      <button class="btn btn-sm btn-primary" (click)="closeLogsModal()">Close Terminal</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bootstrap Tab -->
+<div *ngIf="activeTab === 'bootstrap'">
+  <div class="card mb-6">
+    <h2>Add Fresh Cluster Node</h2>
+    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;margin-bottom:20px;">Generate a one-time join token and provision VPS nodes to automatically join the KVM8 cluster.</p>
+    
+    <button class="btn btn-primary" (click)="generateJoinToken()" [disabled]="loadingToken">
+      {{ loadingToken ? 'Generating...' : 'Generate Join Command' }}
+    </button>
+
+    <div *ngIf="joinCommand" style="margin-top:20px;">
+      <div style="font-size:0.8rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;margin-bottom:6px;">SSH Command (Run on fresh VPS)</div>
+      <div style="position:relative;background:rgba(0,0,0,0.3);padding:16px;border-radius:10px;border:1px solid var(--border-glass);color:var(--primary);font-family:monospace;font-size:0.85rem;word-break:break-all;">
+        {{ joinCommand }}
+      </div>
+      <p style="margin:8px 0 0 0;font-size:0.75rem;color:var(--color-text-muted);">Join token expires in 1 hour.</p>
+    </div>
+  </div>
+
+  <div class="card" style="padding:0;overflow:hidden;">
+    <h2 style="padding:24px 24px 0 24px;border:0;margin:0;">Bootstrap Run History</h2>
+    <table style="margin-top:12px;">
+      <thead>
+        <tr>
+          <th>Node IP</th>
+          <th>Hostname</th>
+          <th>Status</th>
+          <th>Bootstrapped At</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let h of bootstrapHistory">
+          <td>{{ h.nodeIp }}</td>
+          <td style="font-family:monospace;">{{ h.hostname }}</td>
+          <td><span class="badge badge-active">{{ h.status | uppercase }}</span></td>
+          <td>{{ h.date | date:'medium' }}</td>
+        </tr>
+        <tr *ngIf="bootstrapHistory.length === 0">
+          <td colspan="4" style="text-align:center; color:var(--color-text-muted); padding:24px;">No bootstrap records.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Cluster Metrics Tab (Grafana Dashboard View) -->
+<div *ngIf="activeTab === 'metrics'">
+  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:24px;">
+    <!-- CPU Chart Card -->
+    <div class="card" style="padding:20px; overflow:hidden;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 style="font-size:0.95rem; text-transform:uppercase; font-weight:700; color:var(--primary); border:0; padding:0; margin:0;">
+          Aggregate CPU Load
+        </h3>
+        <span style="font-size:1.25rem; font-weight:800; color:#fff;">
+          {{ cpuHistory[cpuHistory.length - 1].toFixed(1) }}%
+        </span>
+      </div>
+      
+      <!-- SVG Render Line Chart -->
+      <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-glass); border-radius: 8px; padding: 8px 4px; position:relative;">
+        <svg viewBox="0 0 600 200" style="width:100%; height:180px; display:block; overflow:visible;">
+          <defs>
+            <linearGradient id="cpuGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--primary)" stop-opacity="0.35"></stop>
+              <stop offset="100%" stop-color="var(--primary)" stop-opacity="0.00"></stop>
+            </linearGradient>
+          </defs>
+          <!-- Grid Lines -->
+          <line x1="15" y1="15" x2="585" y2="15" stroke="rgba(255,255,255,0.03)" stroke-dasharray="3"></line>
+          <line x1="15" y1="65" x2="585" y2="65" stroke="rgba(255,255,255,0.03)" stroke-dasharray="3"></line>
+          <line x1="15" y1="115" x2="585" y2="115" stroke="rgba(255,255,255,0.03)" stroke-dasharray="3"></line>
+          <line x1="15" y1="165" x2="585" y2="165" stroke="rgba(255,255,255,0.03)" stroke-dasharray="3"></line>
+          <line x1="15" y1="185" x2="585" y2="185" stroke="rgba(255,255,255,0.08)"></line>
+          
+          <!-- Area and Line Paths -->
+          <path [attr.d]="cpuAreaPath" fill="url(#cpuGrad)"></path>
+          <path [attr.d]="cpuPath" fill="none" stroke="var(--primary)" stroke-width="2.5" stroke-linecap="round"></path>
+        </svg>
+      </div>
+      <p style="color:var(--color-text-secondary); font-size:0.75rem; text-align:center; margin:8px 0 0 0;">
+        Live cluster core compute pool telemetry (updated every 3s)
+      </p>
+    </div>
+
+    <!-- Memory Chart Card -->
+    <div class="card" style="padding:20px; overflow:hidden;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 style="font-size:0.95rem; text-transform:uppercase; font-weight:700; color:var(--success); border:0; padding:0; margin:0;">
+          Memory Allocation
+        </h3>
+        <span style="font-size:1.25rem; font-weight:800; color:#fff;">
+          {{ memoryHistory[memoryHistory.length - 1].toFixed(1) }}%
+        </span>
+      </div>
+      
+      <!-- SVG Render Line Chart -->
+      <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-glass); border-radius: 8px; padding: 8px 4px; position:relative;">
+        <svg viewBox="0 0 600 200" style="width:100%; height:180px; display:block; overflow:visible;">
+          <defs>
+            <linearGradient id="memGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--success)" stop-opacity="0.35"></stop>
+              <stop offset="100%" stop-color="var(--success)" stop-opacity="0.00"></stop>
+            </linearGradient>
+          </defs>
+          <!-- Grid Lines -->
+          <line x1="15" y1="15" x2="585" y2="15" stroke="rgba(255,255,255,0.03)" stroke-dasharray="3"></line>
+          <line x1="15" y1="65" x2="585" y2="65" stroke="rgba(255,255,255,0.03)" stroke-dasharray="3"></line>
+          <line x1="15" y1="115" x2="585" y2="115" stroke="rgba(255,255,255,0.03)" stroke-dasharray="3"></line>
+          <line x1="15" y1="165" x2="585" y2="165" stroke="rgba(255,255,255,0.03)" stroke-dasharray="3"></line>
+          <line x1="15" y1="185" x2="585" y2="185" stroke="rgba(255,255,255,0.08)"></line>
+          
+          <!-- Area and Line Paths -->
+          <path [attr.d]="memoryAreaPath" fill="url(#memGrad)"></path>
+          <path [attr.d]="memoryPath" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linecap="round"></path>
+        </svg>
+      </div>
+      <p style="color:var(--color-text-secondary); font-size:0.75rem; text-align:center; margin:8px 0 0 0;">
+        Allocated memory: {{ ((memoryHistory[memoryHistory.length - 1] / 100) * 16).toFixed(1) }} GB / 16.0 GB total
+      </p>
+    </div>
+
+    <!-- Network Bandwidth Card -->
+    <div class="card" style="padding:20px; overflow:hidden;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 style="font-size:0.95rem; text-transform:uppercase; font-weight:700; color:var(--warning); border:0; padding:0; margin:0;">
+          Network Ingress/Egress
+        </h3>
+        <span style="font-size:1.25rem; font-weight:800; color:#fff;">
+          {{ networkHistory[networkHistory.length - 1].toFixed(0) }} Mbps
+        </span>
+      </div>
+      
+      <!-- SVG Render Line Chart -->
+      <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-glass); border-radius: 8px; padding: 8px 4px; position:relative;">
+        <svg viewBox="0 0 600 200" style="width:100%; height:180px; display:block; overflow:visible;">
+          <defs>
+            <linearGradient id="netGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--warning)" stop-opacity="0.35"></stop>
+              <stop offset="100%" stop-color="var(--warning)" stop-opacity="0.00"></stop>
+            </linearGradient>
+          </defs>
+          <!-- Grid Lines -->
+          <line x1="15" y1="15" x2="585" y2="15" stroke="rgba(255,255,255,0.03)" stroke-dasharray="3"></line>
+          <line x1="15" y1="65" x2="585" y2="65" stroke="rgba(255,255,255,0.03)" stroke-dasharray="3"></line>
+          <line x1="15" y1="115" x2="585" y2="115" stroke="rgba(255,255,255,0.03)" stroke-dasharray="3"></line>
+          <line x1="15" y1="165" x2="585" y2="165" stroke="rgba(255,255,255,0.03)" stroke-dasharray="3"></line>
+          <line x1="15" y1="185" x2="585" y2="185" stroke="rgba(255,255,255,0.08)"></line>
+          
+          <!-- Area and Line Paths -->
+          <path [attr.d]="networkAreaPath" fill="url(#netGrad)"></path>
+          <path [attr.d]="networkPath" fill="none" stroke="var(--warning)" stroke-width="2.5" stroke-linecap="round"></path>
+        </svg>
+      </div>
+      <p style="color:var(--color-text-secondary); font-size:0.75rem; text-align:center; margin:8px 0 0 0;">
+        Wildcard Ingress/Egress rate through preview loadbalancer
+      </p>
+    </div>
+  </div>
+</div>

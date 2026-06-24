@@ -1,0 +1,23 @@
+<div class="card">
+  <h2>Storage Analytics</h2>
+  <div class="form-group"><label>Project ID</label><input [(ngModel)]="projectId"></div>
+  <button class="btn btn-primary" (click)="loadAnalytics()" [disabled]="!projectId">Load</button>
+</div>
+
+<div class="grid-3" *ngIf="analytics">
+  <div class="card"><h2>Total Files</h2><div class="stat">{{ analytics.totalFiles }}</div></div>
+  <div class="card"><h2>Total Size</h2><div class="stat">{{ analytics.totalSize | number }} bytes</div></div>
+  <div class="card"><h2>By Provider</h2><div *ngFor="let p of analytics.byProvider | keyvalue">{{ p.key }}: {{ p.value }} bytes</div></div>
+</div>
+
+<div class="card">
+  <h2>Files</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Bucket</th><th>Provider</th><th>Size</th><th>Date</th></tr></thead>
+    <tbody>
+      <tr *ngFor="let f of files">
+        <td>{{ f.originalName }}</td><td>{{ f.bucket }}</td><td>{{ f.provider }}</td><td>{{ f.size | number }} B</td><td>{{ f.createdAt | date:'short' }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>

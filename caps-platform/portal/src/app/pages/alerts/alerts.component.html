@@ -1,0 +1,23 @@
+<div class="card">
+  <h2>Create Alert Rule</h2>
+  <div class="form-group"><label>Project ID</label><input [(ngModel)]="newAlert.projectId"></div>
+  <div class="form-group"><label>Metric</label><select [(ngModel)]="newAlert.metric"><option>cpu</option><option>memory</option><option>latency</option><option>errorRate</option></select></div>
+  <div class="form-group"><label>Operator</label><select [(ngModel)]="newAlert.operator"><option value=">">Greater than</option><option value="<">Less than</option><option value="==">Equal to</option></select></div>
+  <div class="form-group"><label>Threshold</label><input type="number" [(ngModel)]="newAlert.threshold" step="0.1"></div>
+  <button class="btn btn-primary" (click)="createAlert()" [disabled]="!newAlert.projectId || !newAlert.threshold">Create</button>
+</div>
+
+<div class="card">
+  <h2>Alert Rules</h2>
+  <table>
+    <thead><tr><th>Project</th><th>Metric</th><th>Condition</th><th>Threshold</th><th>Enabled</th><th></th></tr></thead>
+    <tbody>
+      <tr *ngFor="let a of alerts">
+        <td>{{ a.projectId }}</td><td>{{ a.config?.metric }}</td>
+        <td>{{ a.config?.operator }}</td><td>{{ a.config?.threshold }}</td>
+        <td>{{ a.isEnabled ? 'Yes' : 'No' }}</td>
+        <td><button class="btn btn-danger btn-sm" (click)="deleteAlert(a.id)">Delete</button></td>
+      </tr>
+    </tbody>
+  </table>
+</div>

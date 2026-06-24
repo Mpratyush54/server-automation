@@ -1,0 +1,19 @@
+<div class="card">
+  <h2>Query Metrics</h2>
+  <div class="form-group"><label>Project ID</label><input [(ngModel)]="query.projectId"></div>
+  <div class="form-group"><label>Service Name</label><input [(ngModel)]="query.serviceName"></div>
+  <button class="btn btn-primary" (click)="load()" [disabled]="!query.projectId">Load</button>
+</div>
+
+<div class="grid-3" *ngIf="aggregated.length">
+  <div class="card" *ngFor="let a of aggregated">
+    <h2>{{ a._id.serviceName }} ({{ a._id.environmentId }})</h2>
+    <div style="margin-top:8px;">
+      <div style="display:flex;justify-content:space-between;"><span>CPU</span><span>{{ a.avgCpu?.toFixed(2) }}%</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Memory</span><span>{{ a.avgMemory?.toFixed(2) }} MB</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Latency</span><span>{{ a.avgLatency?.toFixed(2) }} ms</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Error Rate</span><span>{{ a.avgErrorRate?.toFixed(4) }}%</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Total Requests</span><span>{{ a.totalRequests }}</span></div>
+    </div>
+  </div>
+</div>

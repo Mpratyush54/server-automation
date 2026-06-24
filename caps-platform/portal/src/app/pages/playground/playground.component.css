@@ -1,0 +1,53 @@
+/* API Documentation & Playground Styles */
+
+.api-item {
+  border: 1px solid transparent;
+}
+
+.api-item:hover {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  border-color: var(--border-glass) !important;
+}
+
+.api-item.active {
+  background-color: rgba(139, 92, 246, 0.08) !important;
+  border-color: rgba(139, 92, 246, 0.3) !important;
+}
+
+.api-item.active .api-path {
+  color: #fff !important;
+}
+
+.badge-method {
+  text-transform: uppercase;
+}
+
+.badge-method.get {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.badge-method.post {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.badge-method.put {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #facc15;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.badge-method.delete {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.badge-method.patch {
+  background-color: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.25);
+}

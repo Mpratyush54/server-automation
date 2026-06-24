@@ -1,0 +1,593 @@
+<!-- NAV -->
+<nav class="landing-nav">
+  <a class="logo" routerLink="/landing">CAPS Platform</a>
+  <div style="display:flex;gap:20px;align-items:center;">
+    <a (click)="setActive('setup')" style="cursor:pointer">Docs</a>
+    <a (click)="setActive('api')" style="cursor:pointer">API</a>
+    <a routerLink="/login" class="btn btn-primary" style="padding:8px 16px;font-size:0.8rem;border-radius:8px;">Open Console</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <h1>Self-Hosted PaaS<br>Control Center</h1>
+  <p>CAPS is an internal Platform-as-a-Service that manages deployments, databases, monitoring, CI/CD pipelines, and infrastructure — all from a single control plane.</p>
+  <div class="hero-actions">
+    <button class="btn btn-primary" (click)="setActive('setup')">Setup Guide</button>
+    <button class="btn" (click)="setActive('api')">API Reference</button>
+    <a routerLink="/login" class="btn" style="text-decoration:none;">Open Console &rarr;</a>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<div style="max-width:1000px;margin:0 auto 60px;padding:0 24px;">
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="icon">&#x1F680;</div>
+      <h4>One-Click Deploys</h4>
+      <p>Push to Git and get automatic preview environments. Merge to main for staging/production deploys.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">&#x1F5C4;</div>
+      <h4>Database Provisioning</h4>
+      <p>Provision PostgreSQL, MongoDB, and Redis instances with automatic backups and restore.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">&#x1F4CA;</div>
+      <h4>Real-Time Monitoring</h4>
+      <p>API latency metrics (p50/p95/p99), live log streaming, error tracking, and alerting.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">&#x1F512;</div>
+      <h4>RBAC &amp; Secrets</h4>
+      <p>Granular permissions, role management, Infisical-powered secret injection, and audit logs.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">&#x1F4E6;</div>
+      <h4>Multi-SDK Support</h4>
+      <p>Node.js, Python, React, and Angular SDKs with auto-registration, metrics, and bug reporting.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">&#x2699;&#xFE0F;</div>
+      <h4>Infrastructure as Code</h4>
+      <p>Bootstrap script deploys k3s, ArgoCD, Prometheus, Grafana, Loki, and MinIO to your cluster.</p>
+    </div>
+  </div>
+</div>
+
+<!-- DOCS -->
+<div class="docs-layout">
+  <aside class="docs-sidebar">
+    <ul>
+      <li *ngFor="let s of sections">
+        <a [class.active]="activeSection === s.id" (click)="setActive(s.id)" style="cursor:pointer">{{ s.label }}</a>
+      </li>
+    </ul>
+  </aside>
+
+  <div class="docs-content">
+
+    <!-- OVERVIEW -->
+    <section id="overview">
+      <h2>Overview</h2>
+      <p>CAPS (Cloud Application Platform Services) is a self-hosted PaaS that provides a unified control plane for deploying, managing, and monitoring your applications. It runs on Kubernetes (k3s) and integrates with GitLab/GitHub for CI/CD, ClickUp for project tracking, and Infisical for secrets management.</p>
+      <h3>Architecture</h3>
+      <pre [innerHTML]="codeExamples['arch']"></pre>
+      <h3>Core Components</h3>
+      <ul>
+        <li><strong>API Server</strong> — Express.js REST API on port 3000</li>
+        <li><strong>Portal</strong> — Angular 19 admin dashboard on port 4200</li>
+        <li><strong>PostgreSQL</strong> — Primary database (users, projects, deployments, entities)</li>
+        <li><strong>MongoDB</strong> — Logs, metrics, bug reports, feature flags, SDK events</li>
+        <li><strong>Loki</strong> — Log aggregation (optional)</li>
+        <li><strong>MinIO / S3</strong> — File storage and database backups</li>
+      </ul>
+    </section>
+
+    <!-- SETUP -->
+    <section id="setup">
+      <h2>Setup Guide</h2>
+      <p>Follow these steps after cloning the repository to get CAPS running locally.</p>
+
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>Clone the repository</h4>
+          <pre [innerHTML]="codeExamples['clone']"></pre>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>Install API dependencies &amp; start</h4>
+          <pre [innerHTML]="codeExamples['api-install']"></pre>
+          <p>The API starts on <code class="inline-code">http://localhost:3000</code>. It connects to PostgreSQL (port 5432) and MongoDB (port 27017) on localhost by default.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>Install Portal dependencies &amp; start</h4>
+          <pre [innerHTML]="codeExamples['portal-install']"></pre>
+          <p>The portal starts on <code class="inline-code">http://localhost:4200</code>.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>Seed demo users (including admin)</h4>
+          <pre [innerHTML]="codeExamples['seed']"></pre>
+          <p>This creates:</p>
+          <ul>
+            <li><strong>admin&#64;caps.io</strong> — Admin (full access)</li>
+            <li><strong>devops&#64;caps.io</strong> — DevOps Engineer</li>
+            <li><strong>sarah&#64;caps.io</strong> — Tech Lead</li>
+            <li><strong>john&#64;caps.io</strong> — Developer</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <h4>Login</h4>
+          <pre [innerHTML]="codeExamples['login-curl']"></pre>
+          <p>Use the returned <code class="inline-code">token</code> in all subsequent requests as <code class="inline-code">Authorization: Bearer token</code>.</p>
+        </div>
+      </div>
+
+      <h3>Environment Variables</h3>
+      <pre [innerHTML]="codeExamples['env-vars']"></pre>
+    </section>
+
+    <!-- AUTH -->
+    <section id="auth">
+      <h2>Authentication</h2>
+      <p>CAPS uses JWT (JSON Web Tokens) for authentication. All protected endpoints require the <code class="inline-code">Authorization: Bearer token</code> header.</p>
+
+      <h3>Login</h3>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/auth/login</span>
+        <div class="desc">Authenticate with email. Returns JWT token and user object.</div>
+      </div>
+      <pre [innerHTML]="codeExamples['login-request']"></pre>
+      <pre [innerHTML]="codeExamples['login-response']"></pre>
+
+      <h3>SDK Tokens</h3>
+      <p>SDK tokens use the format <code class="inline-code">sdk-projectId:secret</code> and bypass user authentication. They are used by the Node.js and Python SDKs to send metrics, logs, and bug reports.</p>
+
+      <h3>GitLab OAuth</h3>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/auth/gitlab</span>
+        <div class="desc">Redirect to GitLab OAuth. Auto-provisions users on first login with DEVELOPER role.</div>
+      </div>
+    </section>
+
+    <!-- API REFERENCE -->
+    <section id="api">
+      <h2>API Reference</h2>
+      <p>Base URL: <code class="inline-code">http://localhost:3000/api</code></p>
+
+      <h3>Users &amp; RBAC</h3>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/users</span>
+        <span class="auth-badge">DEVOPS, TECH_LEAD</span>
+        <div class="desc">List all users.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/users/me</span>
+        <span class="auth-badge">AUTH</span>
+        <div class="desc">Get current user profile.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-patch">PATCH</span>
+        <span class="path">/api/users/me</span>
+        <span class="auth-badge">AUTH</span>
+        <div class="desc">Update own profile (name, avatarUrl).</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/users</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">Create a user directly.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/users/invite</span>
+        <span class="auth-badge">users.create</span>
+        <div class="desc">Invite a user by email with optional role assignment.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-put">PUT</span>
+        <span class="path">/api/users/:id</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">Update user details.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-patch">PATCH</span>
+        <span class="path">/api/users/:id/role</span>
+        <span class="auth-badge">users.assign-role</span>
+        <div class="desc">Change a user's role and custom role assignment.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-delete">DELETE</span>
+        <span class="path">/api/users/:id</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">Delete a user.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/users/:id/permissions</span>
+        <span class="auth-badge">AUTH</span>
+        <div class="desc">Get effective permissions for a user (preset + custom role).</div>
+      </div>
+
+      <h3>Roles</h3>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/roles</span>
+        <span class="auth-badge">users.list</span>
+        <div class="desc">List all roles (system + custom).</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/roles/:id</span>
+        <span class="auth-badge">users.list</span>
+        <div class="desc">Get role details with permissions.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/roles</span>
+        <span class="auth-badge">users.create</span>
+        <div class="desc">Create a custom role with specific permissions.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-put">PUT</span>
+        <span class="path">/api/roles/:id</span>
+        <span class="auth-badge">users.update</span>
+        <div class="desc">Update a custom role's name, permissions, or status.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-delete">DELETE</span>
+        <span class="path">/api/roles/:id</span>
+        <span class="auth-badge">users.delete</span>
+        <div class="desc">Delete a custom role. Unassigns users automatically.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/permissions</span>
+        <span class="auth-badge">users.list</span>
+        <div class="desc">List all available permission keys.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/roles/:id/permissions/validate</span>
+        <span class="auth-badge">users.update</span>
+        <div class="desc">Validate permission strings before saving.</div>
+      </div>
+
+      <h3>Projects</h3>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/projects</span>
+        <span class="auth-badge">AUTH</span>
+        <div class="desc">List all projects with environments and deployments.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/projects</span>
+        <span class="auth-badge">DEVOPS, TECH_LEAD</span>
+        <div class="desc">Create a new project.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-put">PUT</span>
+        <span class="path">/api/projects/:id</span>
+        <span class="auth-badge">DEVOPS, TECH_LEAD</span>
+        <div class="desc">Update project settings.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-delete">DELETE</span>
+        <span class="path">/api/projects/:id</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">Delete a project.</div>
+      </div>
+
+      <h3>Deployments</h3>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/deploy</span>
+        <span class="auth-badge">ALL ROLES</span>
+        <div class="desc">Trigger a deployment for a project.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/deployments/:id/terminate</span>
+        <span class="auth-badge">ALL ROLES</span>
+        <div class="desc">Terminate a deployment.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/deployments/:id/restart</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">Restart a deployment.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-patch">PATCH</span>
+        <span class="path">/api/deployments/:id/scale</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">Scale a deployment.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/rollback</span>
+        <span class="auth-badge">DEVOPS, TECH_LEAD</span>
+        <div class="desc">Rollback to a previous deployment.</div>
+      </div>
+
+      <h3>Databases</h3>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/projects/:id/databases/provision</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">Provision a new PostgreSQL database for a project.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/db-connections</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">Create a database connection.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-delete">DELETE</span>
+        <span class="path">/api/db-connections/:id</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">Delete a database connection.</div>
+      </div>
+
+      <h3>Config &amp; Feature Flags</h3>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/config</span>
+        <span class="auth-badge">AUTH</span>
+        <div class="desc">Get project configuration.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/config</span>
+        <span class="auth-badge">DEVOPS, TECH_LEAD</span>
+        <div class="desc">Create or update project configuration.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/config/feature-flags</span>
+        <span class="auth-badge">DEVOPS, TECH_LEAD</span>
+        <div class="desc">Create or toggle a feature flag.</div>
+      </div>
+
+      <h3>Alerts</h3>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/alerts</span>
+        <span class="auth-badge">AUTH</span>
+        <div class="desc">List all alerts.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/alerts</span>
+        <span class="auth-badge">DEVOPS, TECH_LEAD</span>
+        <div class="desc">Create an alert rule.</div>
+      </div>
+
+      <h3>Logs &amp; Metrics</h3>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/logs</span>
+        <span class="auth-badge">AUTH</span>
+        <div class="desc">Query logs from MongoDB with search and filters.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/metrics</span>
+        <span class="auth-badge">AUTH</span>
+        <div class="desc">Get raw metrics from MongoDB.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/sdk/api-metrics</span>
+        <span class="auth-badge">AUTH</span>
+        <div class="desc">Get aggregated API latency metrics (p50/p95/p99 per route).</div>
+      </div>
+
+      <h3>Settings</h3>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/settings/smtp</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">List SMTP configurations.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/settings/smtp</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">Create or update SMTP config.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/settings/smtp/:id/test</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">Send a test email.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/settings/storage</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">List storage providers.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/settings/storage</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">Create or update a storage provider.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/settings/storage/:id/test</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">Test a storage provider connection.</div>
+      </div>
+
+      <h3>Infrastructure</h3>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/bootstrap/nodes</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">List Kubernetes nodes.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/bootstrap/pods</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">List pods across namespaces.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-delete">DELETE</span>
+        <span class="path">/api/bootstrap/pods/:namespace/:podName</span>
+        <span class="auth-badge">DEVOPS</span>
+        <div class="desc">Delete a pod.</div>
+      </div>
+
+      <h3>CI/CD &amp; Webhooks</h3>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/cicd/register-webhook/:projectId</span>
+        <span class="auth-badge">DEVOPS, TECH_LEAD</span>
+        <div class="desc">Auto-register webhook on GitHub/GitLab for a project.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/webhooks/github</span>
+        <span class="auth-badge">AUTH</span>
+        <div class="desc">GitHub webhook receiver (push, PR events).</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/webhooks/gitlab</span>
+        <span class="auth-badge">AUTH</span>
+        <div class="desc">GitLab webhook receiver (push, MR events).</div>
+      </div>
+
+      <h3>SDK Endpoints</h3>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/sdk/logs</span>
+        <span class="auth-badge">SDK TOKEN</span>
+        <div class="desc">Batch-upload logs from SDK. Saves to MongoDB, forwards to Loki.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/sdk/api-metrics</span>
+        <span class="auth-badge">SDK TOKEN</span>
+        <div class="desc">Upload per-route API latency records.</div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/api/sdk/bug-report</span>
+        <span class="auth-badge">SDK TOKEN</span>
+        <div class="desc">Submit a bug report with console logs, network timeline, screenshot.</div>
+      </div>
+
+      <h3>Audit Logs</h3>
+      <div class="api-endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/api/audit-logs</span>
+        <span class="auth-badge">DEVOPS, TECH_LEAD</span>
+        <div class="desc">View all audit log entries.</div>
+      </div>
+    </section>
+
+    <!-- SDK -->
+    <section id="sdk">
+      <h2>SDK Usage</h2>
+
+      <h3>Node.js SDK</h3>
+      <pre [innerHTML]="codeExamples['node-init']"></pre>
+
+      <h3>Python SDK</h3>
+      <pre [innerHTML]="codeExamples['python-init']"></pre>
+
+      <h3>React / Next.js SDK</h3>
+      <pre [innerHTML]="codeExamples['react-init']"></pre>
+
+      <h3>Angular SDK</h3>
+      <pre [innerHTML]="codeExamples['angular-init']"></pre>
+    </section>
+
+    <!-- RBAC -->
+    <section id="rbac">
+      <h2>Roles &amp; Permissions</h2>
+      <p>CAPS has 5 built-in role presets plus fully custom roles with 60+ granular permissions.</p>
+
+      <h3>System Roles</h3>
+      <table>
+        <thead>
+          <tr><th>Role</th><th>Description</th><th>Key Permissions</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>admin</strong></td><td>Full system access</td><td>All permissions</td></tr>
+          <tr><td><strong>devops</strong></td><td>Infrastructure &amp; deployment management</td><td>users.create, databases.provision, settings.manage, cluster.manage</td></tr>
+          <tr><td><strong>tech_lead</strong></td><td>Project &amp; deployment oversight</td><td>projects.create, deployments.trigger, config.update, alerts.manage</td></tr>
+          <tr><td><strong>developer</strong></td><td>Basic project access</td><td>projects.read, deployments.trigger, logs.read</td></tr>
+          <tr><td><strong>viewer</strong></td><td>Read-only access</td><td>projects.read, metrics.read</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Creating Custom Roles</h3>
+      <pre [innerHTML]="codeExamples['create-role']"></pre>
+
+      <h3>Assigning Custom Roles to Users</h3>
+      <pre [innerHTML]="codeExamples['assign-role']"></pre>
+      <p>Custom role permissions are <strong>merged</strong> with the user's preset role permissions. A developer with a custom "database-admin" role will have both developer permissions AND database permissions.</p>
+    </section>
+
+    <!-- WEBHOOKS -->
+    <section id="webhooks">
+      <h2>Webhooks</h2>
+      <p>CAPS can receive webhooks from GitHub and GitLab to automatically trigger deployments.</p>
+
+      <h3>GitHub</h3>
+      <ul>
+        <li><strong>Endpoint:</strong> <code class="inline-code">POST /api/webhooks/github</code></li>
+        <li><strong>Signature:</strong> Verified via <code class="inline-code">X-Hub-Signature-256</code> (HMAC SHA256)</li>
+        <li><strong>Events:</strong> <code class="inline-code">push</code> (preview on feature, staging on main), <code class="inline-code">pull_request</code> (preview on open/sync, terminate on close)</li>
+      </ul>
+
+      <h3>GitLab</h3>
+      <ul>
+        <li><strong>Endpoint:</strong> <code class="inline-code">POST /api/webhooks/gitlab</code></li>
+        <li><strong>Token:</strong> Verified via <code class="inline-code">X-Gitlab-Token</code></li>
+        <li><strong>Events:</strong> <code class="inline-code">Push Hook</code> (same logic as GitHub), <code class="inline-code">Merge Request Hook</code> (preview on open, terminate on close/merge)</li>
+      </ul>
+
+      <h3>Auto-Register Webhook</h3>
+      <pre [innerHTML]="codeExamples['register-webhook']"></pre>
+
+      <h3>Environment Variables</h3>
+      <pre [innerHTML]="codeExamples['wh-gh']"></pre>
+    </section>
+
+  </div>
+</div>
+
+<!-- BACK TO LOGIN -->
+<div class="back-to-login">
+  <a routerLink="/login" class="btn btn-primary" style="text-decoration:none;border-radius:12px;padding:10px 20px;font-size:0.85rem;">
+    Open Console &rarr;
+  </a>
+</div>

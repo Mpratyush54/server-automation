@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*
+!.env.example
+*.log
+.cache/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+package-lock.json
+.next/
+*.tsbuildinfo

@@ -1,0 +1,24 @@
+{
+  "name": "caps-platform-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CAPS Platform - Internal PaaS",
+  "scripts": {
+    "install:all": "cd caps-platform/api && npm install && cd ../portal && npm install && cd ../../caps-sdk-node && npm install",
+    "build:api": "cd caps-platform/api && npm run build",
+    "build:portal": "cd caps-platform/portal && npm run build",
+    "build:sdk": "cd caps-sdk-node && npm run build",
+    "build:all": "npm run build:api && npm run build:portal && npm run build:sdk",
+    "start:api": "cd caps-platform/api && npm start",
+    "start:api:dev": "cd caps-platform/api && npm run dev",
+    "start:portal": "cd caps-platform/portal && npx ng serve",
+    "start:portal:prod": "cd caps-platform/portal && npx ng serve --proxy-config proxy.conf.json",
+    "start": "concurrently \"npm run start:api:dev\" \"npm run start:portal\"",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:build": "docker-compose build"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}

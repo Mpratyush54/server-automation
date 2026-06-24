@@ -1,0 +1,13 @@
+<div class="app-layout" *ngIf="!isLoginPage && !isLandingPage">
+  <app-sidebar></app-sidebar>
+  <main class="main-content">
+    <app-header [title]="pageTitle"></app-header>
+    <div class="content">
+      <router-outlet></router-outlet>
+    </div>
+  </main>
+</div>
+
+<div *ngIf="isLoginPage || isLandingPage">
+  <router-outlet></router-outlet>
+</div>

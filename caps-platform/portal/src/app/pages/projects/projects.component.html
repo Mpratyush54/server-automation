@@ -1,0 +1,27 @@
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <h2>All Projects</h2>
+  <button class="btn btn-primary" (click)="showCreate = !showCreate">+ New Project</button>
+</div>
+
+<div class="card" *ngIf="showCreate">
+  <h2>Create Project</h2>
+  <div class="form-group"><label>Name</label><input [(ngModel)]="newProject.name" placeholder="my-service"></div>
+  <div class="form-group"><label>Stack</label><select [(ngModel)]="newProject.stack"><option value="nodejs">Node.js</option><option value="angular">Angular</option><option value="python">Python</option><option value="static">Static</option></select></div>
+  <div class="form-group"><label>Repository URL</label><input [(ngModel)]="newProject.repositoryUrl"></div>
+  <button class="btn btn-success" (click)="create()" [disabled]="!newProject.name">Create</button>
+  <button class="btn" (click)="showCreate=false" style="margin-left:8px;">Cancel</button>
+</div>
+
+<table>
+  <thead><tr><th>Name</th><th>Stack</th><th>Environments</th><th>Deployments</th><th>Created</th><th></th></tr></thead>
+  <tbody>
+    <tr *ngFor="let p of projects">
+      <td><a [routerLink]="['/projects', p.id]">{{ p.name }}</a></td>
+      <td><span class="badge badge-active">{{ p.stack }}</span></td>
+      <td>{{ p.environments?.length || 0 }}</td>
+      <td>{{ p.deployments?.length || 0 }}</td>
+      <td>{{ p.createdAt | date:'short' }}</td>
+      <td><button class="btn btn-danger btn-sm" (click)="delete(p.id)">Delete</button></td>
+    </tr>
+  </tbody>
+</table>

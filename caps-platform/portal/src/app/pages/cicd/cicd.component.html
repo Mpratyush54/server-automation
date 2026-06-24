@@ -1,0 +1,28 @@
+<div class="card">
+  <h2>CI/CD Templates</h2>
+  <div class="form-group"><label>Project Name</label><input [(ngModel)]="projectName" placeholder="my-service"></div>
+  <div class="form-group"><label>Stack</label><select [(ngModel)]="stack"><option value="nodejs">Node.js</option><option value="angular">Angular</option><option value="python">Python</option><option value="static">Static</option></select></div>
+</div>
+
+<div class="grid-2" *ngIf="projectName">
+  <div class="card">
+    <h2>Dockerfile</h2>
+    <button class="btn btn-primary btn-sm" (click)="loadDockerfile()">Generate</button>
+    <pre *ngIf="dockerfile">{{ dockerfile }}</pre>
+  </div>
+  <div class="card">
+    <h2>.gitlab-ci.yml</h2>
+    <button class="btn btn-primary btn-sm" (click)="loadGitlabCi()">Generate</button>
+    <pre *ngIf="gitlabCi">{{ gitlabCi }}</pre>
+  </div>
+  <div class="card">
+    <h2>Helm Chart</h2>
+    <button class="btn btn-primary btn-sm" (click)="loadHelm()">Generate</button>
+    <pre *ngIf="helm">{{ helm | json }}</pre>
+  </div>
+  <div class="card">
+    <h2>Kubernetes Manifests</h2>
+    <button class="btn btn-primary btn-sm" (click)="loadK8s()">Generate</button>
+    <pre *ngIf="k8s">{{ k8s | json }}</pre>
+  </div>
+</div>

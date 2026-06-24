@@ -1,0 +1,50 @@
+<div style="margin-bottom:24px;">
+  <h2 style="margin:0;font-size:1.5rem;font-weight:700;">Audit Logs</h2>
+  <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:4px 0 0 0;">Chronological system action logs for tracking administrator operations</p>
+</div>
+
+<div class="card" style="padding:0;overflow:hidden;">
+  <table>
+    <thead>
+      <tr>
+        <th>User</th>
+        <th>Action</th>
+        <th>Target Type</th>
+        <th>Client IP</th>
+        <th>Timestamp</th>
+        <th>Metadata Detail</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let log of logs">
+        <td>
+          <div style="line-height:1.2;">
+            <span style="font-weight:600;color:#fff;">{{ log.userName }}</span>
+            <div style="font-size:0.75rem;color:var(--color-text-secondary);">{{ log.userEmail }}</div>
+          </div>
+        </td>
+        <td>
+          <span style="font-family:monospace;font-size:0.85rem;font-weight:600;color:var(--primary);">
+            {{ log.action }}
+          </span>
+        </td>
+        <td>
+          <span class="badge badge-pending" style="font-size:0.7rem;">
+            {{ log.targetType }}
+          </span>
+        </td>
+        <td style="font-family:monospace;font-size:0.85rem;">{{ log.ip || '127.0.0.1' }}</td>
+        <td>{{ log.performedAt | date:'medium' }}</td>
+        <td>
+          <pre *ngIf="log.metadataStr" style="margin:0;font-family:monospace;font-size:0.75rem;background:rgba(0,0,0,0.3);padding:6px;border-radius:6px;border:1px solid var(--border-glass);color:var(--color-text-secondary);max-width:300px;overflow-x:auto;">{{ log.metadataStr }}</pre>
+          <span *ngIf="!log.metadataStr" style="color:var(--color-text-muted);">—</span>
+        </td>
+      </tr>
+      <tr *ngIf="logs.length === 0">
+        <td colspan="6" style="text-align:center;color:var(--color-text-muted);padding:32px;">
+          No audit log actions recorded in control plane database.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>

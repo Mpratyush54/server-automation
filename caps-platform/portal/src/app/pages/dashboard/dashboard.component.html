@@ -1,0 +1,44 @@
+<div class="grid-4">
+  <div class="card">
+    <h2>Total Projects</h2>
+    <div class="stat">{{ stats.projects }}</div>
+  </div>
+  <div class="card">
+    <h2>Active Deployments</h2>
+    <div class="stat">{{ stats.deployments }}</div>
+  </div>
+  <div class="card">
+    <h2>Registered Services</h2>
+    <div class="stat">{{ stats.services }}</div>
+  </div>
+  <div class="card">
+    <h2>Storage Used</h2>
+    <div class="stat">{{ stats.storage }}</div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Recent Deployments</h2>
+    <table>
+      <thead><tr><th>Project</th><th>Version</th><th>Status</th><th>Date</th></tr></thead>
+      <tbody>
+        <tr *ngFor="let d of recentDeployments">
+          <td>{{ d.projectId }}</td>
+          <td>{{ d.version }}</td>
+          <td><span class="badge" [class.badge-active]="d.status==='active'" [class.badge-pending]="d.status==='pending'" [class.badge-failed]="d.status==='failed'">{{ d.status }}</span></td>
+          <td>{{ d.createdAt | date:'short' }}</td>
+        </tr>
+        <tr *ngIf="recentDeployments.length === 0"><td colspan="4">No deployments yet</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>System Health</h2>
+    <div *ngFor="let s of systemHealth" style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #e2e8f0;">
+      <span>{{ s.name }}</span>
+      <span class="badge" [class.badge-active]="s.status==='running'" [class.badge-failed]="s.status!=='running'">{{ s.status }}</span>
+    </div>
+  </div>
+</div>

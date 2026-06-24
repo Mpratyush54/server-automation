@@ -1,0 +1,61 @@
+<div style="margin-bottom:24px;">
+  <h2 style="margin:0;font-size:1.5rem;font-weight:700;">Preview Environments</h2>
+  <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:4px 0 0 0;">Active feature branch deployments with 72-hour automated decay</p>
+</div>
+
+<div class="card" style="padding:0;overflow:hidden;">
+  <table>
+    <thead>
+      <tr>
+        <th>Project</th>
+        <th>Branch Name</th>
+        <th>Live Preview URL</th>
+        <th>ClickUp Task ID</th>
+        <th>Deployed At</th>
+        <th>TTL Remaining</th>
+        <th style="text-align:right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let p of previews">
+        <td style="font-weight:600;color:#fff;">{{ p.projectName }}</td>
+        <td>
+          <span style="font-family: monospace; background: rgba(255,255,255,0.05); padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; border: 1px solid var(--border-glass);">
+            {{ p.branch }}
+          </span>
+        </td>
+        <td>
+          <a [href]="p.previewUrl" target="_blank" style="display:inline-flex;align-items:center;gap:6px;">
+            {{ p.previewUrl }}
+            <svg style="width:14px;height:14px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </a>
+        </td>
+        <td>
+          <span *ngIf="p.clickupTaskId" class="badge badge-pending" style="font-size:0.7rem;">
+            CU-{{ p.clickupTaskId }}
+          </span>
+          <span *ngIf="!p.clickupTaskId" style="color:var(--color-text-muted);">—</span>
+        </td>
+        <td>{{ p.deployedAt | date:'medium' }}</td>
+        <td>
+          <span class="badge" [ngClass]="{
+            'badge-active': p.remainingTime !== 'Expired' && !p.remainingTime.startsWith('0'),
+            'badge-failed': p.remainingTime === 'Expired'
+          }" style="font-size:0.7rem;">
+            {{ p.remainingTime }}
+          </span>
+        </td>
+        <td style="text-align:right;">
+          <button class="btn btn-danger btn-sm" (click)="terminate(p.id)">Terminate</button>
+        </td>
+      </tr>
+      <tr *ngIf="previews.length === 0">
+        <td colspan="7" style="text-align:center;color:var(--color-text-muted);padding:32px;">
+          No active preview environments running on Kubernetes namespace.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
