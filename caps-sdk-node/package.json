@@ -1,5 +1,5 @@
 {
-  "name": "@caps/sdk-node",
+  "name": "@mpratyush54/sdk-node",
   "version": "1.0.0",
   "description": "CAPS Platform Node.js SDK - Auto-registration, metrics, logging, config, storage, DB connections",
   "main": "dist/index.js",
@@ -27,5 +27,7 @@
     "jest": "^30.4.2",
     "ts-jest": "^29.4.11",
     "typescript": "^5.3.0"
-  }
+  },
+  "files": ["dist"],
+  "license": "MIT"
 }

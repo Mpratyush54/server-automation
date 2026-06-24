@@ -1,5 +1,5 @@
-import { NgModule, Provider } from '@angular/core';
-import { HTTP_INTERCEPTORS, ErrorHandler } from '@angular/common/http';
+import { NgModule, Provider, ErrorHandler } from '@angular/core';
+import { HTTP_INTERCEPTORS } from '@angular/common/http';
 import { CAPS_CONFIG, CapsConfig } from './caps-config';
 import { CapsHttpInterceptor } from './http-interceptor';
 import { CapsErrorHandler } from './error-handler';
