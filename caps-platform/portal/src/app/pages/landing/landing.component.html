@@ -8,9 +8,30 @@
   </div>
 </nav>
 
+<!-- ANIMATED GRID LINES -->
+<div class="bg-animated-lines">
+  <div class="bg-line h-line-1"></div>
+  <div class="bg-line h-line-2"></div>
+  <div class="bg-line h-line-3"></div>
+  <div class="bg-line vertical v-line-1"></div>
+  <div class="bg-line vertical v-line-2"></div>
+  <div class="bg-line vertical v-line-3"></div>
+</div>
+
 <!-- HERO -->
-<div class="hero">
+<div class="hero" style="position: relative; overflow: hidden;" (mousemove)="onMouseMove($event)">
   <div class="hero-glow"></div>
+  
+  <!-- CURSOR TRAIL CONTAINER -->
+  <div class="cursor-trails-container">
+    <div *ngFor="let p of floatingCommands" 
+         class="cursor-trail-particle"
+         [style.left.px]="p.x"
+         [style.top.px]="p.y"
+         [style.transform]="'translate(-50%, -50%) scale(' + p.scale + ') rotate(' + p.angle + 'deg)'">
+      {{ p.text }}
+    </div>
+  </div>
   <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(91,110,245,0.12); border:1px solid rgba(91,110,245,0.25); color:var(--accent-primary); font-family:var(--font-code); font-size:0.68rem; font-weight:700; padding:3px 10px; border-radius:999px; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:18px;">
     🚀 Open Source &amp; Free Forever
   </div>
@@ -882,3 +903,4 @@
     Open Console &rarr;
   </a>
 </div>
+

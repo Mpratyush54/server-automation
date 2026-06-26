@@ -289,6 +289,10 @@ pre {
   background-color: transparent !important;
   color: #e2e8f0 !important;
   box-shadow: none !important;
+  font-family: 'Fira Code', 'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, monospace !important;
+  font-size: 0.72rem !important;
+  line-height: 1.6 !important;
+  letter-spacing: 0.03em !important;
 }
 
 code {
@@ -438,31 +442,148 @@ code {
   border-color: #475569;
 }
 
-/* Terminal Console Syntax Highlighting */
-.t-comment {
-  color: #64748b; /* Slate 500 */
-  font-style: italic;
+/* Terminal Console Syntax Highlighting & Styles by Language */
+.lang-bash, .lang-plain {
+  font-family: 'Fira Code', 'SF Mono', Monaco, Consolas, monospace !important;
 }
 
-.t-keyword {
-  color: #c084fc; /* Purple 400 */
-  font-weight: 500;
+.lang-javascript, .lang-typescript, .lang-json, .lang-js {
+  font-family: 'JetBrains Mono', monospace !important;
 }
 
-.t-string {
-  color: #34d399; /* Emerald 400 */
+.lang-python {
+  font-family: 'Share Tech Mono', monospace !important;
+  font-size: 0.76rem !important;
 }
 
-.t-number {
-  color: #fb923c; /* Amber 400 */
+.lang-env {
+  font-family: 'Courier Prime', 'Courier New', Courier, monospace !important;
+  font-size: 0.75rem !important;
 }
 
-.t-prompt {
-  color: #10b981; /* Emerald 500 */
+/* 1. Bash & Plain (Cyan commands, Emerald prompts) */
+.lang-bash .t-comment, .lang-plain .t-comment { color: #526075; font-style: italic; }
+.lang-bash .t-keyword, .lang-plain .t-keyword { color: #ff79c6; }
+.lang-bash .t-string, .lang-plain .t-string { color: #f1fa8c; }
+.lang-bash .t-number, .lang-plain .t-number { color: #bd93f9; }
+.lang-bash .t-prompt, .lang-plain .t-prompt {
+  color: #50fa7b;
   font-weight: bold;
+  text-shadow: 0 0 4px rgba(80, 250, 123, 0.35);
+}
+.lang-bash .t-command, .lang-plain .t-command {
+  color: #8be9fd;
+  font-weight: 600;
+  text-shadow: 0 0 4px rgba(139, 233, 253, 0.35);
 }
 
-.t-command {
-  color: #38bdf8; /* Sky 400 */
-  font-weight: 500;
+/* 2. JS / TS / JSON (Dracula Cyber Pink keywords, Emerald strings) */
+.lang-javascript .t-comment, .lang-json .t-comment, .lang-js .t-comment { color: #6272a4; font-style: italic; }
+.lang-javascript .t-keyword, .lang-json .t-keyword, .lang-js .t-keyword { color: #ff79c6; font-weight: bold; }
+.lang-javascript .t-string, .lang-json .t-string, .lang-js .t-string { color: #50fa7b; }
+.lang-javascript .t-number, .lang-json .t-number, .lang-js .t-number { color: #bd93f9; }
+.lang-javascript .t-command, .lang-json .t-command, .lang-js .t-command { color: #8be9fd; }
+
+/* 3. Python (Matrix Green strings, Neon Orange keywords) */
+.lang-python .t-comment { color: #4a5d6e; font-style: italic; }
+.lang-python .t-keyword { color: #ffb86c; font-weight: 600; }
+.lang-python .t-string { color: #50fa7b; }
+.lang-python .t-number { color: #ff5555; }
+.lang-python .t-command { color: #f1fa8c; }
+
+/* 4. Environment Variables (Amber CRT color scheme) */
+.lang-env .t-comment { color: #5c6370; font-style: italic; }
+.lang-env .t-keyword {
+  color: #ffb86c;
+  font-weight: 600;
+  text-shadow: 0 0 3px rgba(255, 184, 108, 0.25);
+}
+.lang-env .t-string { color: #f8fafc; }
+
+/* Background animated laser lines (clearly visible & glowing) */
+.bg-animated-lines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+.bg-line {
+  position: absolute;
+  opacity: 0.18; /* Increased opacity to make them clearly visible */
+}
+.bg-line:not(.vertical) {
+  height: 2px; /* Thicker for visibility */
+  width: 100%;
+  background: linear-gradient(90deg, transparent, rgba(91, 110, 245, 0.3), var(--accent-primary), rgba(91, 110, 245, 0.3), transparent);
+  box-shadow: 0 0 6px rgba(91, 110, 245, 0.4);
+  animation: slide-h 10s infinite linear;
+}
+.bg-line.vertical {
+  width: 2px; /* Thicker for visibility */
+  height: 100%;
+  background: linear-gradient(180deg, transparent, rgba(91, 110, 245, 0.3), var(--accent-primary), rgba(91, 110, 245, 0.3), transparent);
+  box-shadow: 0 0 6px rgba(91, 110, 245, 0.4);
+  animation: slide-v 12s infinite linear;
+}
+
+@keyframes slide-h {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+@keyframes slide-v {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.h-line-1 { top: 15%; animation-delay: 0s; animation-duration: 9s; }
+.h-line-2 { top: 45%; animation-delay: 2s; animation-duration: 12s; }
+.h-line-3 { top: 75%; animation-delay: 4s; animation-duration: 8s; }
+.v-line-1 { left: 10%; animation-delay: 1s; animation-duration: 14s; }
+.v-line-2 { left: 40%; animation-delay: 3s; animation-duration: 11s; }
+.v-line-3 { left: 80%; animation-delay: 5s; animation-duration: 16s; }
+
+/* Interactive Cursor Commands Trail (Local to Hero Container) */
+.cursor-trails-container {
+  position: absolute; /* Localized instead of fixed */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+  overflow: hidden;
+}
+
+.cursor-trail-particle {
+  position: absolute;
+  font-family: 'Fira Code', 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #8be9fd; /* Cyber cyan text */
+  background: rgba(13, 17, 26, 0.95);
+  border: 1px solid rgba(139, 233, 253, 0.35);
+  border-radius: 4px;
+  padding: 3px 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 6px rgba(139, 233, 253, 0.2);
+  white-space: nowrap;
+  animation: floatUpAndFade 1.5s forwards cubic-bezier(0.1, 0.8, 0.3, 1);
+  opacity: 0;
+}
+
+@keyframes floatUpAndFade {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.7);
+  }
+  15% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -80px) scale(1.05) rotate(5deg); /* Relative translation upward */
+  }
 }

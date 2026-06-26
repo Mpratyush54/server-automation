@@ -28,6 +28,19 @@ export class LandingComponent implements OnInit, OnDestroy {
   codeExamples: Record<string, SafeHtml> = {};
   copiedState: Record<string, boolean> = {};
 
+  floatingCommands: Array<{ text: string, x: number, y: number, id: number, opacity: number, scale: number, angle: number }> = [];
+  private particleId = 0;
+  private lastX = 0;
+  private lastY = 0;
+  private commandList = [
+    'kubectl get pods', 'git commit -m "feat: init"', 'docker-compose up -d', 
+    'helm install caps ./charts', 'terraform apply', 'npm run dev', 'git push origin main', 
+    'kubectl logs -f pod-abc', 'docker build -t caps-api .', 'curl -X POST /api/auth/login', 
+    'git clone https://github.com/...', 'ng serve --port 4200', 'python app.py', 
+    'pip install caps-sdk-python', 'loki-stack', 'kubectl apply -f manifests/', 
+    'npm install @caps/sdk-react', 'docker ps', 'kubectl get namespaces', 'git status'
+  ];
+
   constructor(
     private sanitizer: DomSanitizer,
     @Inject(PLATFORM_ID) private platformId: Object
@@ -239,35 +252,41 @@ GITLAB_TOKEN=glpat-xxxxx             # For auto-registering webhooks on GitLab`;
       .replace(/}/g, '&#125;');
 
     if (language === 'bash' || language === 'sh') {
-      esc = esc
-        .replace(/(#.*)/g, '<span class="t-comment">$1</span>')
-        .replace(/^(\$\s+)/gm, '<span class="t-prompt">$1</span>')
-        .replace(/\b(curl|git|npm|ng|pip|cd|node)\b/g, '<span class="t-command">$1</span>')
-        .replace(/(['"])(.*?)\1/g, '<span class="t-string">$1$2$1</span>');
-    } else if (language === 'javascript' || language === 'typescript' || language === 'json') {
-      esc = esc.replace(/(\/\/.*)/g, '<span class="t-comment">$1</span>');
-      esc = esc.replace(/(['"`])(.*?)\1/g, '<span class="t-string">$1$2$1</span>');
-      const keywords = ['const', 'require', 'await', 'import', 'from', 'export', 'default', 'new', 'class', 'private', 'public', 'function', 'return', 'let', 'interface', 'implements'];
-      keywords.forEach(kw => {
-        const regex = new RegExp(`\\b(${kw})\\b`, 'g');
-        esc = esc.replace(regex, '<span class="t-keyword">$1</span>');
+      const regex = /(#.*)|(^\$\s+)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b(?:curl|git|npm|ng|pip|cd|node)\b)/gm;
+      esc = esc.replace(regex, (match: string, comment: string | undefined, prompt: string | undefined, str: string | undefined, cmd: string | undefined) => {
+        if (comment !== undefined) return `<span class="t-comment">${comment}</span>`;
+        if (prompt !== undefined) return `<span class="t-prompt">${prompt}</span>`;
+        if (str !== undefined) return `<span class="t-string">${str}</span>`;
+        if (cmd !== undefined) return `<span class="t-command">${cmd}</span>`;
+        return match;
       });
-      esc = esc.replace(/\b(\d+)\b/g, '<span class="t-number">$1</span>');
+    } else if (language === 'javascript' || language === 'typescript' || language === 'json') {
+      const regex = /(\/\/.*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b(?:const|require|await|import|from|export|default|new|class|private|public|function|return|let|interface|implements)\b)|(\b\d+\b)/g;
+      esc = esc.replace(regex, (match: string, comment: string | undefined, str: string | undefined, kw: string | undefined, num: string | undefined) => {
+        if (comment !== undefined) return `<span class="t-comment">${comment}</span>`;
+        if (str !== undefined) return `<span class="t-string">${str}</span>`;
+        if (kw !== undefined) return `<span class="t-keyword">${kw}</span>`;
+        if (num !== undefined) return `<span class="t-number">${num}</span>`;
+        return match;
+      });
     } else if (language === 'python') {
-      esc = esc.replace(/(#.*)/g, '<span class="t-comment">$1</span>');
-      esc = esc.replace(/(['"])(.*?)\1/g, '<span class="t-string">$1$2$1</span>');
-      const keywords = ['import', 'from', 'as', 'await', 'def', 'return', 'class', 'self', 'and', 'or', 'not'];
-      keywords.forEach(kw => {
-        const regex = new RegExp(`\\b(${kw})\\b`, 'g');
-        esc = esc.replace(regex, '<span class="t-keyword">$1</span>');
+      const regex = /(#.*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b(?:import|from|as|await|def|return|class|self|and|or|not)\b)/g;
+      esc = esc.replace(regex, (match: string, comment: string | undefined, str: string | undefined, kw: string | undefined) => {
+        if (comment !== undefined) return `<span class="t-comment">${comment}</span>`;
+        if (str !== undefined) return `<span class="t-string">${str}</span>`;
+        if (kw !== undefined) return `<span class="t-keyword">${kw}</span>`;
+        return match;
       });
     } else if (language === 'env') {
-      esc = esc.replace(/(#.*)/g, '<span class="t-comment">$1</span>');
-      esc = esc.replace(/^([A-Z0-9_]+)=/gm, '<span class="t-keyword">$1</span>=');
-      esc = esc.replace(/=(?!<span)([^#\n\r]*)/g, '=<span class="t-string">$1</span>');
+      const regex = /(#.*)|(^([A-Z0-9_]+)=([^#\n\r]*))/gm;
+      esc = esc.replace(regex, (match: string, comment: string | undefined, fullVar: string | undefined, varName: string | undefined, varValue: string | undefined) => {
+        if (comment !== undefined) return `<span class="t-comment">${comment}</span>`;
+        if (fullVar !== undefined) return `<span class="t-keyword">${varName}</span>=<span class="t-string">${varValue}</span>`;
+        return match;
+      });
     }
 
-    return esc;
+    return `<span class="lang-${language}" style="display:block;">${esc}</span>`;
   }
 
   copyCode(key: string) {
@@ -292,6 +311,40 @@ GITLAB_TOKEN=glpat-xxxxx             # For auto-registering webhooks on GitLab`;
     if (this.observer) {
       this.observer.disconnect();
     }
+  }
+
+  onMouseMove(event: MouseEvent) {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    const dist = Math.hypot(x - this.lastX, y - this.lastY);
+    if (dist > 100) {
+      this.lastX = x;
+      this.lastY = y;
+      this.spawnCommandParticle(x, y);
+    }
+  }
+
+  spawnCommandParticle(clientX: number, clientY: number) {
+    const text = this.commandList[Math.floor(Math.random() * this.commandList.length)];
+    const id = this.particleId++;
+    const angle = (Math.random() - 0.5) * 20; // -10 to 10 deg
+    const scale = 0.8 + Math.random() * 0.4;  // 0.8 to 1.2
+    
+    this.floatingCommands.push({
+      text,
+      x: clientX,
+      y: clientY,
+      id,
+      opacity: 1,
+      scale,
+      angle
+    });
+    
+    setTimeout(() => {
+      this.floatingCommands = this.floatingCommands.filter(p => p.id !== id);
+    }, 1500);
   }
 
   setupScrollSpy() {
