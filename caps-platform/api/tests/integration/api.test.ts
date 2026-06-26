@@ -86,6 +86,63 @@ function createTestApp(): express.Express {
     });
   });
 
+  // Mock OAuth Discovery
+  app.get('/api/oauth/.well-known/openid-configuration', (req, res) => {
+    const baseUrl = `http://${req.headers.host}/api/oauth`;
+    res.json({
+      issuer: baseUrl,
+      authorization_endpoint: `${baseUrl}/authorize`,
+      token_endpoint: `${baseUrl}/token`,
+      userinfo_endpoint: `${baseUrl}/userinfo`,
+      jwks_uri: `${baseUrl}/jwks`,
+    });
+  });
+
+  // Mock JWKS
+  app.get('/api/oauth/jwks', (req, res) => {
+    res.json({
+      keys: [
+        {
+          kid: 'caps-key-1',
+          use: 'sig',
+          alg: 'RS256',
+          kty: 'RSA',
+          n: 'mock_n',
+          e: 'mock_e',
+        }
+      ]
+    });
+  });
+
+  // Mock Token Endpoint
+  app.post('/api/oauth/token', (req, res) => {
+    const { code } = req.body;
+    if (code === 'invalid') {
+      return res.status(400).json({ error: 'Invalid or expired authorization code' });
+    }
+    res.json({
+      access_token: 'mock_access_token',
+      token_type: 'Bearer',
+      expires_in: 3600,
+      id_token: 'mock_id_token',
+    });
+  });
+
+  // Mock Userinfo Endpoint
+  app.get('/api/oauth/userinfo', (req, res) => {
+    const auth = req.headers.authorization;
+    if (!auth || auth !== 'Bearer mock_access_token') {
+      return res.status(401).json({ error: 'Authorization header with Bearer token is required' });
+    }
+    res.json({
+      sub: 'user-1',
+      name: 'Test User',
+      email: 'test@test.com',
+      email_verified: true,
+      groups: ['devops'],
+    });
+  });
+
   return app;
 }
 
@@ -216,6 +273,62 @@ describe('API Integration Tests', () => {
     it('should return 400 when projectId is missing', async () => {
       const res = await request(app).get('/api/sdk/config');
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe('OIDC / OAuth2 Endpoints', () => {
+    describe('GET /api/oauth/.well-known/openid-configuration', () => {
+      it('should return OIDC discovery metadata', async () => {
+        const res = await request(app).get('/api/oauth/.well-known/openid-configuration');
+        expect(res.status).toBe(200);
+        expect(res.body.issuer).toContain('/api/oauth');
+        expect(res.body.authorization_endpoint).toContain('/api/oauth/authorize');
+        expect(res.body.token_endpoint).toContain('/api/oauth/token');
+        expect(res.body.jwks_uri).toContain('/api/oauth/jwks');
+      });
+    });
+
+    describe('GET /api/oauth/jwks', () => {
+      it('should return public keys', async () => {
+        const res = await request(app).get('/api/oauth/jwks');
+        expect(res.status).toBe(200);
+        expect(res.body.keys).toBeDefined();
+        expect(res.body.keys[0].kid).toBe('caps-key-1');
+      });
+    });
+
+    describe('POST /api/oauth/token', () => {
+      it('should exchange code for tokens', async () => {
+        const res = await request(app)
+          .post('/api/oauth/token')
+          .send({ code: 'valid_code', client_id: 'argocd' });
+        expect(res.status).toBe(200);
+        expect(res.body.access_token).toBe('mock_access_token');
+        expect(res.body.id_token).toBe('mock_id_token');
+      });
+
+      it('should return error for invalid code', async () => {
+        const res = await request(app)
+          .post('/api/oauth/token')
+          .send({ code: 'invalid' });
+        expect(res.status).toBe(400);
+      });
+    });
+
+    describe('GET /api/oauth/userinfo', () => {
+      it('should return user profile with valid token', async () => {
+        const res = await request(app)
+          .get('/api/oauth/userinfo')
+          .set('Authorization', 'Bearer mock_access_token');
+        expect(res.status).toBe(200);
+        expect(res.body.sub).toBe('user-1');
+        expect(res.body.email).toBe('test@test.com');
+      });
+
+      it('should return 401 without auth header', async () => {
+        const res = await request(app).get('/api/oauth/userinfo');
+        expect(res.status).toBe(401);
+      });
     });
   });
 });

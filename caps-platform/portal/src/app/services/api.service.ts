@@ -73,9 +73,11 @@ export class ApiService {
 
   // Database Provisioning
   provisionDatabase(projectId: string, environment: string): Observable<any> { return this.http.post(`${this.base}/projects/${projectId}/databases/provision`, { environment }); }
-  getDbBackups(projectId: string, dbId: string): Observable<any> { return this.http.get(`${this.base}/projects/${projectId}/databases/${dbId}/backups`); }
-  triggerBackup(projectId: string, dbId: string): Observable<any> { return this.http.post(`${this.base}/projects/${projectId}/databases/${dbId}/backup`, {}); }
-  restoreBackup(projectId: string, dbId: string, backupId: string): Observable<any> { return this.http.post(`${this.base}/projects/${projectId}/databases/${dbId}/backups/${backupId}/restore`, {}); }
+  getDbBackups(projectId: string, dbName?: string): Observable<any> {
+    return this.http.get(`${this.base}/projects/${projectId}/databases/backups`, { params: dbName ? { dbName } : {} });
+  }
+  triggerBackup(projectId: string, dbName: string): Observable<any> { return this.http.post(`${this.base}/projects/${projectId}/databases/backup`, { dbName }); }
+  restoreBackup(projectId: string, _dbId: string, backupId: string): Observable<any> { return this.http.post(`${this.base}/projects/${projectId}/databases/backups/${backupId}/restore`, {}); }
 
   // SMTP Settings
   getSmtpConfigs(): Observable<any> { return this.http.get(`${this.base}/settings/smtp`); }

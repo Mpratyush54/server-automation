@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterModule } from '@angular/router';
+import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
 
@@ -23,7 +23,7 @@ export class LoginComponent implements OnInit {
     { name: 'John Dev', email: 'john@caps.io', role: 'Developer' }
   ];
 
-  constructor(private auth: AuthService, private router: Router) {}
+  constructor(private auth: AuthService, private router: Router, private route: ActivatedRoute) {}
 
   ngOnInit() {
     // If user is already authenticated, send them to dashboard
@@ -42,7 +42,12 @@ export class LoginComponent implements OnInit {
 
     try {
       await firstValueFrom(this.auth.login(loginEmail));
-      this.router.navigate(['/dashboard']);
+      const returnUrl = this.route.snapshot.queryParams['returnUrl'];
+      if (returnUrl) {
+        this.router.navigateByUrl(returnUrl);
+      } else {
+        this.router.navigate(['/dashboard']);
+      }
     } catch (err: any) {
       this.errorMessage = err.error?.error || 'Authentication failed. Make sure to initialize demo users first.';
     }

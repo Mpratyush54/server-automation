@@ -23,6 +23,8 @@ import { AuditLogsComponent } from './pages/audit-logs/audit-logs.component';
 import { PlaygroundComponent } from './pages/playground/playground.component';
 import { SettingsComponent } from './pages/settings/settings.component';
 import { LandingComponent } from './pages/landing/landing.component';
+import { OauthAuthorizeComponent } from './pages/oauth-authorize/oauth-authorize.component';
+import { IframeViewComponent } from './pages/iframe-view/iframe-view.component';
 
 import { authGuard } from './guards/auth.guard';
 
@@ -30,9 +32,14 @@ export const routes: Routes = [
   { path: '', redirectTo: '/landing', pathMatch: 'full' },
   { path: 'landing', component: LandingComponent },
   { path: 'login', component: LoginComponent },
+  { path: 'oauth/authorize', component: OauthAuthorizeComponent },
   
   // Guarded Routes
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
+  { path: 'argocd', component: IframeViewComponent, canActivate: [authGuard], data: { url: '/argocd/' } },
+  { path: 'grafana', component: IframeViewComponent, canActivate: [authGuard], data: { url: '/grafana/' } },
+  { path: 'portainer', component: IframeViewComponent, canActivate: [authGuard], data: { url: '/portainer/' } },
+  { path: 'infisical', component: IframeViewComponent, canActivate: [authGuard], data: { url: '/infisical/' } },
   { path: 'projects', component: ProjectsComponent, canActivate: [authGuard] },
   { path: 'projects/:id', component: ProjectDetailComponent, canActivate: [authGuard] },
   { path: 'deployments', component: DeploymentsComponent, canActivate: [authGuard] },

@@ -1,15 +1,18 @@
 <!-- NAV -->
 <nav class="landing-nav">
-  <a class="logo" routerLink="/landing">CAPS Platform</a>
+  <a class="logo" routerLink="/landing">⚡ CAPS Platform</a>
   <div style="display:flex;gap:20px;align-items:center;">
     <a (click)="setActive('setup')" style="cursor:pointer">Docs</a>
     <a (click)="setActive('api')" style="cursor:pointer">API</a>
-    <a routerLink="/login" class="btn btn-primary" style="padding:8px 16px;font-size:0.8rem;border-radius:8px;">Open Console</a>
+    <a routerLink="/login" class="btn btn-primary btn-sm" style="padding:6px 12px;border-radius:6px;">Open Console</a>
   </div>
 </nav>
 
 <!-- HERO -->
 <div class="hero">
+  <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(91,110,245,0.12); border:1px solid rgba(91,110,245,0.25); color:var(--accent-primary); font-family:var(--font-code); font-size:0.68rem; font-weight:700; padding:3px 10px; border-radius:999px; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:18px;">
+    🚀 Platform Version 2.0.0
+  </div>
   <h1>Self-Hosted PaaS<br>Control Center</h1>
   <p>CAPS is an internal Platform-as-a-Service that manages deployments, databases, monitoring, CI/CD pipelines, and infrastructure — all from a single control plane.</p>
   <div class="hero-actions">
@@ -23,32 +26,32 @@
 <div style="max-width:1000px;margin:0 auto 60px;padding:0 24px;">
   <div class="feature-grid">
     <div class="feature-card">
-      <div class="icon">&#x1F680;</div>
+      <div class="icon">🚀</div>
       <h4>One-Click Deploys</h4>
       <p>Push to Git and get automatic preview environments. Merge to main for staging/production deploys.</p>
     </div>
     <div class="feature-card">
-      <div class="icon">&#x1F5C4;</div>
+      <div class="icon">🗄️</div>
       <h4>Database Provisioning</h4>
       <p>Provision PostgreSQL, MongoDB, and Redis instances with automatic backups and restore.</p>
     </div>
     <div class="feature-card">
-      <div class="icon">&#x1F4CA;</div>
+      <div class="icon">📊</div>
       <h4>Real-Time Monitoring</h4>
       <p>API latency metrics (p50/p95/p99), live log streaming, error tracking, and alerting.</p>
     </div>
     <div class="feature-card">
-      <div class="icon">&#x1F512;</div>
+      <div class="icon">🔑</div>
       <h4>RBAC &amp; Secrets</h4>
       <p>Granular permissions, role management, Infisical-powered secret injection, and audit logs.</p>
     </div>
     <div class="feature-card">
-      <div class="icon">&#x1F4E6;</div>
+      <div class="icon">📦</div>
       <h4>Multi-SDK Support</h4>
       <p>Node.js, Python, React, and Angular SDKs with auto-registration, metrics, and bug reporting.</p>
     </div>
     <div class="feature-card">
-      <div class="icon">&#x2699;&#xFE0F;</div>
+      <div class="icon">⚙️</div>
       <h4>Infrastructure as Code</h4>
       <p>Bootstrap script deploys k3s, ArgoCD, Prometheus, Grafana, Loki, and MinIO to your cluster.</p>
     </div>

@@ -46,6 +46,26 @@ import { v4 as uuidv4 } from 'uuid';
 const JWT_SECRET = process.env.JWT_SECRET || 'caps-platform-super-secret-key';
 const router = Router();
 
+// Generate RS256 Keypair for OIDC/SSO dynamically on startup
+let oauthPrivateKey: string = '';
+let oauthPublicKey: string = '';
+
+try {
+  const { privateKey: pri, publicKey: pub } = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+  });
+  oauthPrivateKey = pri;
+  oauthPublicKey = pub;
+  console.log('[oauth] Successfully generated dynamic RSA-2048 keypair for OIDC/SSO.');
+} catch (err: any) {
+  console.error('[oauth] Failed to generate RSA keypair for OIDC:', err.message);
+}
+
+// Map to store temporary authorization codes: code -> session info
+const authCodes = new Map<string, { userId: string; clientId: string; redirectUri: string; state: string }>();
+
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -968,7 +988,46 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
           }
           await checkDs.getRepository(Deployment).save(finalDep);
 
+          // --- SMTP Deployment Notification ---
+          (async () => {
+            try {
+              const smtpRepo = checkDs.getRepository(SmtpConfig);
+              const smtpCfg = await smtpRepo.findOne({ where: { isDefault: true } });
+              if (smtpCfg) {
+                const { sendMail, buildDeploymentSuccessEmail, buildDeploymentFailedEmail } = await import('../lib/smtp-service');
+                const usersRepo = checkDs.getRepository(User);
+                const devopsUsers = await usersRepo.find({ where: { role: UserRole.DEVOPS } });
+                const to = devopsUsers.map(u => u.email).filter(Boolean);
+                if (to.length > 0) {
+                  if (success) {
+                    const html = buildDeploymentSuccessEmail({
+                      projectName: project.name,
+                      environment: env?.name || finalDep.branch,
+                      version: finalDep.version,
+                      url: finalDep.previewUrl || `https://${env?.domain || project.name}`,
+                      commitSha: finalDep.commitSha,
+                      deployedBy: 'CAPS Platform',
+                    });
+                    await sendMail(smtpCfg as any, to, `[${project.name}] Deployment Successful — ${env?.name || finalDep.branch}`, html);
+                  } else {
+                    const html = buildDeploymentFailedEmail({
+                      projectName: project.name,
+                      environment: env?.name || finalDep.branch,
+                      version: finalDep.version,
+                      error: deployError || 'Unknown failure',
+                      deployedBy: 'CAPS Platform',
+                    });
+                    await sendMail(smtpCfg as any, to, `[${project.name}] Deployment FAILED — ${env?.name || finalDep.branch}`, html);
+                  }
+                }
+              }
+            } catch (smtpErr: any) {
+              console.warn('[smtp] Notification failed (non-blocking):', smtpErr.message);
+            }
+          })();
+
           // Update ClickUp if linked and deployment succeeded
+
           if (success && clickupTaskId) {
             const comment = await formatPreviewComment({
               project: project.name,
@@ -1555,53 +1614,88 @@ router.post('/bootstrap/init', expressAuthenticate, expressRequireRole([UserRole
 });
 
 router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: Response) => {
-  let pgStatus = 'disconnected';
+  // ── PostgreSQL ────────────────────────────────────────────────────────────
+  let pgStatus = 'offline';
   try {
     const ds = await getDb();
-    if (ds.isInitialized) {
-      await ds.query('SELECT 1');
-      pgStatus = 'connected';
-    }
-  } catch (err) {
-    pgStatus = 'disconnected';
-  }
+    if (ds.isInitialized) { await ds.query('SELECT 1'); pgStatus = 'running'; }
+  } catch { pgStatus = 'offline'; }
 
-  let mongoStatus = 'disconnected';
+  // ── MongoDB ───────────────────────────────────────────────────────────────
+  let mongoStatus = 'offline';
   try {
-    const mongoose = require('mongoose');
-    if (mongoose.connection && mongoose.connection.readyState === 1) {
-      mongoStatus = 'connected';
+    const mg = require('mongoose');
+    if (mg.connection && mg.connection.readyState === 1) {
+      mongoStatus = 'running';
     } else {
-      // Try connecting
       await connectMongo();
-      if (mongoose.connection && mongoose.connection.readyState === 1) {
-        mongoStatus = 'connected';
+      mongoStatus = mg.connection?.readyState === 1 ? 'running' : 'offline';
+    }
+  } catch { mongoStatus = 'offline'; }
+
+  // ── Kubernetes / real pod counts ──────────────────────────────────────────
+  let k8sOk = false;
+  const podCounts: Record<string, number> = {};
+  try {
+    k8sOk = await checkK8sConnection();
+    if (k8sOk) {
+      const { CoreV1Api } = await import('@kubernetes/client-node');
+      const kc = new (await import('@kubernetes/client-node')).KubeConfig();
+      kc.loadFromDefault();
+      const coreApi = kc.makeApiClient(CoreV1Api);
+      const namespaces = ['caps-platform', 'databases', 'monitoring', 'storage', 'argocd', 'portainer', 'infisical', 'cert-manager', 'ingress-nginx'];
+      for (const ns of namespaces) {
+        try {
+          const r = await coreApi.listNamespacedPod({ namespace: ns });
+          podCounts[ns] = r.items.filter(p => p.status?.phase === 'Running').length;
+        } catch { podCounts[ns] = 0; }
       }
     }
-  } catch (err) {
-    mongoStatus = 'disconnected';
-  }
+  } catch { k8sOk = false; }
 
-  let k8sStatus = 'disconnected';
-  try {
-    const isConnected = await checkK8sConnection();
-    k8sStatus = isConnected ? 'connected' : 'disconnected';
-  } catch (err) {
-    k8sStatus = 'disconnected';
-  }
+  // Helper: map pod count to status string
+  const podStatus = (ns: string, min = 1) =>
+    !k8sOk ? 'unknown' : (podCounts[ns] || 0) >= min ? 'running' : podCounts[ns] === 0 ? 'offline' : 'degraded';
 
+  // ── Integration presence (env vars) ──────────────────────────────────────
+  const integrations = {
+    github:    !!(process.env.GITHUB_TOKEN),
+    gitlab:    !!(process.env.GITLAB_TOKEN),
+    clickup:   !!(process.env.CLICKUP_API_TOKEN),
+    smtp:      !!(process.env.SMTP_PROVIDER || process.env.SMTP_HOST || process.env.SENDGRID_API_KEY),
+    argocd:    !!(process.env.ARGOCD_URL || process.env.ARGOCD_TOKEN || k8sOk),
+    infisical: !!(process.env.INFISICAL_URL || process.env.INFISICAL_TOKEN),
+    minio:     !!(process.env.MINIO_ENDPOINT || process.env.MINIO_ACCESS_KEY),
+    grafana:   !!(process.env.GRAFANA_URL || podStatus('monitoring') === 'running'),
+  };
+
+  // ── Build services map ────────────────────────────────────────────────────
+  const services: Record<string, string> = {
+    'caps-api':       pgStatus === 'running' ? 'running' : 'degraded',
+    'caps-portal':    'running',  // if this API responded, portal is up
+    'postgresql':     pgStatus,
+    'mongodb':        mongoStatus,
+    'redis':          k8sOk ? podStatus('databases') : 'unknown',
+    'minio':          podStatus('storage'),
+    'argocd':         podStatus('argocd'),
+    'grafana':        podStatus('monitoring'),
+    'prometheus':     podStatus('monitoring'),
+    'loki':           podStatus('monitoring'),
+    'portainer':      podStatus('portainer'),
+    'infisical':      podStatus('infisical'),
+    'cert-manager':   podStatus('cert-manager'),
+    'ingress-nginx':  podStatus('ingress-nginx'),
+  };
+
+  const overallHealthy = pgStatus === 'running' && mongoStatus === 'running';
   return res.json({
-    status: pgStatus === 'connected' && k8sStatus === 'connected' ? 'healthy' : 'degraded',
+    status: overallHealthy ? 'healthy' : 'degraded',
     postgres: pgStatus,
     mongodb: mongoStatus,
-    k8s: k8sStatus,
-    services: {
-      loki: k8sStatus === 'connected' ? 'running' : 'offline',
-      prometheus: k8sStatus === 'connected' ? 'running' : 'offline',
-      grafana: k8sStatus === 'connected' ? 'running' : 'offline',
-      infisical: k8sStatus === 'connected' ? 'running' : 'offline',
-      argocd: k8sStatus === 'connected' ? 'running' : 'offline',
-    },
+    k8s: k8sOk ? 'connected' : 'disconnected',
+    podCounts,
+    services,
+    integrations,
   });
 });
 
@@ -2831,6 +2925,370 @@ router.delete('/settings/storage/:id', expressAuthenticate, expressRequireRole([
     await ds.getRepository(StorageProvider).delete(req.params.id);
     return res.json({ success: true });
   } catch (err: any) { return res.status(400).json({ error: err.message }); }
+});
+
+// ----------------------------------------------------
+// DATABASE BACKUP & RESTORE
+// ----------------------------------------------------
+router.post('/projects/:projectId/databases/backup', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+  try {
+    const { dbName, environment } = req.body;
+    if (!dbName) return res.status(400).json({ error: 'dbName is required' });
+    const ds = await getDb();
+    const project = await ds.getRepository(Project).findOne({ where: { id: req.params.projectId } });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    // Get active storage provider
+    const storageRepo = ds.getRepository(StorageProvider);
+    const activeProvider = await storageRepo.findOne({ where: { isDefault: true } });
+
+    const { DbBackup, BackupStatus } = await import('../entities/DbBackup');
+    const backupRepo = ds.getRepository(DbBackup);
+    const backup = backupRepo.create({
+      projectId: project.id,
+      dbName,
+      environment: environment || 'production',
+      providerType: (activeProvider?.providerType as any) || 'local',
+      status: BackupStatus.IN_PROGRESS,
+    });
+    const savedBackup = await backupRepo.save(backup);
+
+    // Trigger backup async
+    (async () => {
+      const tmpFile = require('path').join(process.cwd(), 'tmp', `${dbName}_${Date.now()}.dump`);
+      require('fs').mkdirSync(require('path').dirname(tmpFile), { recursive: true });
+      try {
+        const { dumpDatabase, computeFileChecksum } = await import('../lib/database-service');
+        const result = await dumpDatabase(dbName, tmpFile);
+        if (!result.success) throw new Error(result.error || 'pg_dump failed');
+
+        const checksum = await computeFileChecksum(tmpFile);
+        let fileId = `backups/${project.name}/${dbName}/${require('path').basename(tmpFile)}`;
+
+        if (activeProvider) {
+          const { createAdapter } = await import('../lib/storage-service');
+          const adapter = createAdapter(activeProvider.providerType, activeProvider.credentials || {}, activeProvider.bucketName || undefined, activeProvider.endpointUrl || undefined);
+          const uploadResult = await adapter.upload(tmpFile, fileId);
+          fileId = uploadResult.fileId;
+        }
+
+        const bkpDs = await getDb();
+        await bkpDs.getRepository(DbBackup).update(savedBackup.id, {
+          status: BackupStatus.COMPLETED,
+          fileId,
+          fileSizeBytes: result.sizeBytes,
+          checksum,
+        });
+
+        // SMTP notification
+        try {
+          const smtpCfg = await bkpDs.getRepository(SmtpConfig).findOne({ where: { isDefault: true } });
+          if (smtpCfg) {
+            const { sendMail, buildBackupEmail } = await import('../lib/smtp-service');
+            const devopsUsers = await bkpDs.getRepository(User).find({ where: { role: UserRole.DEVOPS } });
+            const to = devopsUsers.map((u: any) => u.email).filter(Boolean);
+            if (to.length > 0) {
+              const html = buildBackupEmail({ projectName: project.name, dbName, environment: environment || 'production', fileSize: result.sizeBytes, provider: activeProvider?.providerType || 'local', status: 'completed' });
+              await sendMail(smtpCfg as any, to, `[${project.name}] Database Backup Completed`, html);
+            }
+          }
+        } catch {}
+
+        try { require('fs').unlinkSync(tmpFile); } catch {}
+      } catch (err: any) {
+        const bkpDs = await getDb();
+        await bkpDs.getRepository(DbBackup).update(savedBackup.id, { status: BackupStatus.FAILED, errorMessage: err.message });
+      }
+    })();
+
+    await logAudit({ userId: (req as AuthenticatedRequest).user?.id, action: 'database.backup.triggered', targetType: 'Project', targetId: project.id, metadata: { dbName, environment }, ip: req.ip });
+    return res.status(202).json({ backupId: savedBackup.id, status: 'in_progress', message: 'Backup started. You will be notified when complete.' });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/projects/:projectId/databases/backups', expressAuthenticate, async (req: Request, res: Response) => {
+  try {
+    const { dbName } = req.query as Record<string, string>;
+    const ds = await getDb();
+    const { DbBackup } = await import('../entities/DbBackup');
+    const where: any = { projectId: req.params.projectId };
+    if (dbName) where.dbName = dbName;
+    const backups = await ds.getRepository(DbBackup).find({ where, order: { createdAt: 'DESC' }, take: 50 });
+    return res.json(backups);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/projects/:projectId/databases/backups/:backupId/restore', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+  try {
+    const ds = await getDb();
+    const { DbBackup, BackupStatus } = await import('../entities/DbBackup');
+    const backup = await ds.getRepository(DbBackup).findOne({ where: { id: req.params.backupId, projectId: req.params.projectId } });
+    if (!backup) return res.status(404).json({ error: 'Backup not found' });
+    if (backup.status !== BackupStatus.COMPLETED) return res.status(400).json({ error: 'Backup is not in completed state' });
+
+    await ds.getRepository(DbBackup).update(backup.id, { status: BackupStatus.RESTORING });
+
+    // Async restore
+    (async () => {
+      const tmpFile = require('path').join(process.cwd(), 'tmp', `restore_${backup.dbName}_${Date.now()}.dump`);
+      require('fs').mkdirSync(require('path').dirname(tmpFile), { recursive: true });
+      try {
+        const restoreDs = await getDb();
+        if (backup.fileId) {
+          const storageRepo = restoreDs.getRepository(StorageProvider);
+          const activeProvider = await storageRepo.findOne({ where: { isDefault: true } });
+          if (activeProvider) {
+            const { createAdapter } = await import('../lib/storage-service');
+            const adapter = createAdapter(activeProvider.providerType, activeProvider.credentials || {}, activeProvider.bucketName || undefined, activeProvider.endpointUrl || undefined);
+            await adapter.download(backup.fileId, tmpFile);
+          }
+        }
+        const { restoreDatabase } = await import('../lib/database-service');
+        const result = await restoreDatabase(backup.dbName, tmpFile);
+        if (!result.success) throw new Error(result.error || 'pg_restore failed');
+
+        await restoreDs.getRepository(DbBackup).update(backup.id, { status: BackupStatus.COMPLETED, restoredAt: new Date() });
+        try { require('fs').unlinkSync(tmpFile); } catch {}
+      } catch (err: any) {
+        const errDs = await getDb();
+        await errDs.getRepository(DbBackup).update(backup.id, { status: BackupStatus.FAILED, errorMessage: err.message });
+      }
+    })();
+
+    await logAudit({ userId: (req as AuthenticatedRequest).user?.id, action: 'database.restore.triggered', targetType: 'Project', targetId: req.params.projectId, metadata: { backupId: backup.id, dbName: backup.dbName }, ip: req.ip });
+    return res.status(202).json({ message: 'Restore started', backupId: backup.id });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+// ----------------------------------------------------
+// BUG REPORTS (Portal View)
+// ----------------------------------------------------
+router.get('/bug-reports', expressAuthenticate, async (req: Request, res: Response) => {
+  try {
+    const { projectId, limit, offset } = req.query as Record<string, string>;
+    await connectMongo();
+    const filter: any = {};
+    if (projectId) filter.projectId = projectId;
+    const [reports, total] = await Promise.all([
+      BugReportModel.find(filter).sort({ timestamp: -1 }).skip(parseInt(offset || '0', 10)).limit(parseInt(limit || '20', 10)).lean(),
+      BugReportModel.countDocuments(filter),
+    ]);
+    return res.json({ reports, total });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/bug-reports/:id', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
+  try {
+    await connectMongo();
+    await BugReportModel.findByIdAndDelete(req.params.id);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+// ----------------------------------------------------
+// OIDC / OAUTH2 SSO PROVIDER
+// ----------------------------------------------------
+router.get('/oauth/.well-known/openid-configuration', (req: Request, res: Response) => {
+  const host = req.headers.host || 'localhost:3000';
+  const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  const baseUrl = `${protocol}://${host}/api/oauth`;
+
+  return res.json({
+    issuer: baseUrl,
+    authorization_endpoint: `${baseUrl}/authorize`,
+    token_endpoint: `${baseUrl}/token`,
+    userinfo_endpoint: `${baseUrl}/userinfo`,
+    jwks_uri: `${baseUrl}/jwks`,
+    response_types_supported: ['code', 'token', 'id_token'],
+    subject_types_supported: ['public'],
+    id_token_signing_alg_values_supported: ['RS256'],
+    scopes_supported: ['openid', 'profile', 'email', 'groups']
+  });
+});
+
+router.get('/oauth/jwks', (req: Request, res: Response) => {
+  try {
+    if (!oauthPublicKey) {
+      return res.status(500).json({ error: 'OAuth public key is not initialized' });
+    }
+    const pubKeyObject = crypto.createPublicKey(oauthPublicKey);
+    const jwk = pubKeyObject.export({ format: 'jwk' }) as any;
+    return res.json({
+      keys: [
+        {
+          kid: 'caps-key-1',
+          use: 'sig',
+          alg: 'RS256',
+          kty: 'RSA',
+          ...jwk
+        }
+      ]
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/oauth/authorize', async (req: Request, res: Response) => {
+  try {
+    const { client_id, redirect_uri, response_type, scope, state, token } = req.query as Record<string, string>;
+    
+    if (!client_id || !redirect_uri) {
+      return res.status(400).json({ error: 'client_id and redirect_uri are required' });
+    }
+
+    if (!token) {
+      // User is not authenticated via API redirection yet. Redirect to portal oauth page
+      const host = req.headers.host || 'localhost:3000';
+      const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+      let portalUrl = process.env.PORTAL_URL;
+      if (!portalUrl) {
+        if (host.startsWith('api.')) {
+          portalUrl = `${protocol}://${host.substring(4)}`;
+        } else if (host.includes(':3000')) {
+          portalUrl = `${protocol}://${host.replace(':3000', ':4200')}`;
+        } else {
+          portalUrl = `${protocol}://${host}`;
+        }
+      }
+
+      const params = new URLSearchParams({
+        client_id,
+        redirect_uri,
+        response_type: response_type || 'code',
+        scope: scope || 'openid',
+        state: state || ''
+      }).toString();
+
+      return res.redirect(`${portalUrl}/oauth/authorize?${params}`);
+    }
+
+    // Validate the user's portal JWT token
+    let decoded: any;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch {
+      return res.status(401).json({ error: 'Invalid or expired portal token' });
+    }
+
+    // Generate authorization code
+    const code = uuidv4();
+    authCodes.set(code, {
+      userId: decoded.id,
+      clientId: client_id,
+      redirectUri: redirect_uri,
+      state: state || ''
+    });
+
+    // Clean up code after 5 minutes
+    setTimeout(() => authCodes.delete(code), 5 * 60 * 1000);
+
+    return res.redirect(`${redirect_uri}?code=${code}&state=${state || ''}`);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/oauth/token', async (req: Request, res: Response) => {
+  try {
+    const { code, client_id, redirect_uri, grant_type } = req.body;
+    const session = authCodes.get(code);
+
+    if (!session) {
+      return res.status(400).json({ error: 'Invalid or expired authorization code' });
+    }
+
+    // Optional validation (we consume it once)
+    authCodes.delete(code);
+
+    const ds = await getDb();
+    const user = await ds.getRepository(User).findOne({ where: { id: session.userId } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const host = req.headers.host || 'localhost:3000';
+    const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+    const issuer = `${protocol}://${host}/api/oauth`;
+
+    // Sign Access Token (standard JWT signed with RSA private key)
+    const accessToken = jwt.sign(
+      { id: user.id, email: user.email, name: user.name, role: user.role },
+      oauthPrivateKey,
+      { algorithm: 'RS256', expiresIn: '1h', issuer, audience: client_id, keyid: 'caps-key-1' }
+    );
+
+    // Sign ID Token (standard OIDC claims signed with RSA private key)
+    const idToken = jwt.sign(
+      {
+        iss: issuer,
+        sub: user.id,
+        aud: client_id,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        iat: Math.floor(Date.now() / 1000),
+        name: user.name,
+        email: user.email,
+        email_verified: true,
+        groups: [user.role],
+        roles: [user.role]
+      },
+      oauthPrivateKey,
+      { algorithm: 'RS256', keyid: 'caps-key-1' }
+    );
+
+    return res.json({
+      access_token: accessToken,
+      token_type: 'Bearer',
+      expires_in: 3600,
+      id_token: idToken
+    });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/oauth/userinfo', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Authorization header with Bearer token is required' });
+    }
+    const token = authHeader.split(' ')[1];
+
+    let decoded: any;
+    try {
+      decoded = jwt.verify(token, oauthPublicKey);
+    } catch (err: any) {
+      return res.status(401).json({ error: `Invalid access token: ${err.message}` });
+    }
+
+    const ds = await getDb();
+    const user = await ds.getRepository(User).findOne({ where: { id: decoded.id } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    return res.json({
+      sub: user.id,
+      name: user.name,
+      email: user.email,
+      email_verified: true,
+      groups: [user.role],
+      roles: [user.role]
+    });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
 });
 
 export default router;

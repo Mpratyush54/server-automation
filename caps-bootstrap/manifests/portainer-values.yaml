@@ -1,0 +1,4 @@
+ingress:
+  enabled: false
+extraArgs:
+  - --url-prefix=/portainer

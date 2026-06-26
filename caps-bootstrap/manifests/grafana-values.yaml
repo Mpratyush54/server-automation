@@ -1,0 +1,19 @@
+grafana:
+  enabled: true
+  grafana.ini:
+    server:
+      root_url: https://{{DOMAIN}}/grafana/
+      serve_from_sub_path: true
+    auth.generic_oauth:
+      enabled: true
+      name: CAPS Platform
+      allow_sign_up: true
+      client_id: grafana
+      client_secret: grafana-secret-placeholder
+      scopes: openid profile email groups
+      auth_url: https://{{DOMAIN}}/oauth/authorize
+      token_url: https://{{DOMAIN}}/api/oauth/token
+      api_url: https://{{DOMAIN}}/api/oauth/userinfo
+      role_attribute_path: "contains(groups[*], 'Admin') && 'Admin' || contains(groups[*], 'DevOps') && 'Admin' || contains(groups[*], 'Tech Lead') && 'Editor' || 'Viewer'"
+  ingress:
+    enabled: false

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
+import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-settings',
@@ -11,24 +12,24 @@ import { ApiService } from '../../services/api.service';
   template: `
 <div>
   <!-- Page Header -->
-  <div class="card" style="background:linear-gradient(135deg, rgba(99,102,241,0.06), rgba(139,92,246,0.06)); border-color:rgba(99,102,241,0.2); margin-bottom:24px;">
-    <h1 style="margin:0 0 6px 0; font-size:1.6rem; background:linear-gradient(to right, #fff, #94a3b8); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">⚙️ Platform Settings</h1>
-    <p style="margin:0; color:var(--color-text-secondary); font-size:0.9rem;">Configure SMTP, storage providers, and platform-level integrations.</p>
+  <div class="card" style="background:linear-gradient(135deg, rgba(91,110,245,0.05), rgba(45,212,160,0.02)); border-color:var(--border-subtle); margin-bottom:20px;">
+    <h1 style="margin:0 0 4px 0; font-size:1.3rem; font-family:var(--font-heading);">⚙️ Platform Settings</h1>
+    <p style="margin:0; color:var(--text-secondary); font-size:0.8rem;">Configure SMTP, backup storage engines, and developer API integrations.</p>
   </div>
 
   <!-- Tab Navigation -->
-  <div style="display:flex; gap:8px; margin-bottom:24px; border-bottom:1px solid var(--border-glass); padding-bottom:12px;">
-    <button class="btn btn-sm" [class.btn-primary]="activeTab === 'smtp'" (click)="activeTab = 'smtp'">📧 SMTP / Email</button>
-    <button class="btn btn-sm" [class.btn-primary]="activeTab === 'storage'" (click)="activeTab = 'storage'">🗄️ Storage Providers</button>
+  <div style="display:flex; gap:6px; margin-bottom:20px; border-bottom:1px solid var(--border-subtle); padding-bottom:8px;">
+    <button *ngIf="isDevOps" class="btn btn-sm" [class.btn-primary]="activeTab === 'smtp'" (click)="activeTab = 'smtp'">📧 SMTP / Email</button>
+    <button *ngIf="isDevOps" class="btn btn-sm" [class.btn-primary]="activeTab === 'storage'" (click)="activeTab = 'storage'">🗄️ Storage Providers</button>
     <button class="btn btn-sm" [class.btn-primary]="activeTab === 'integrations'" (click)="activeTab = 'integrations'">🔗 Integrations</button>
   </div>
 
   <!-- ─────────────────── SMTP TAB ─────────────────── -->
-  <div *ngIf="activeTab === 'smtp'">
+  <div *ngIf="activeTab === 'smtp' && isDevOps">
     <div class="grid-2" style="align-items:start;">
       <!-- SMTP Form -->
-      <div class="card" style="padding:24px; background:rgba(15,23,42,0.6);">
-        <h2 style="font-size:1.05rem; border:0; padding:0; margin-bottom:20px;">Add SMTP Configuration</h2>
+      <div class="card" style="padding:20px;">
+        <h2>Add SMTP Configuration</h2>
         <div class="form-group">
           <label>Name / Label</label>
           <input [(ngModel)]="newSmtp.name" placeholder="Production SES" style="width:100%;">
@@ -43,8 +44,8 @@ import { ApiService } from '../../services/api.service';
           </select>
         </div>
         <div *ngIf="newSmtp.provider === 'custom' || newSmtp.provider === 'ses'" class="form-group">
-          <label>SMTP Host</label>
-          <input [(ngModel)]="newSmtp.host" placeholder="smtp.example.com" style="width:100%;">
+          <label>SMTP Host / Region</label>
+          <input [(ngModel)]="newSmtp.host" placeholder="smtp.example.com or us-east-1" style="width:100%;">
         </div>
         <div *ngIf="newSmtp.provider === 'custom'" class="form-group">
           <label>Port</label>
@@ -52,7 +53,7 @@ import { ApiService } from '../../services/api.service';
         </div>
         <div *ngIf="newSmtp.provider !== 'sendgrid'" class="form-group">
           <label>Username / Access Key</label>
-          <input [(ngModel)]="newSmtp.username" placeholder="AKIAIOSFODNN7EXAMPLE" style="width:100%;">
+          <input [(ngModel)]="newSmtp.username" placeholder="Username or access key" style="width:100%;">
         </div>
         <div class="form-group">
           <label>{{ newSmtp.provider === 'sendgrid' ? 'API Key' : newSmtp.provider === 'mailgun' ? 'API Key' : 'Password / Secret' }}</label>
@@ -66,47 +67,47 @@ import { ApiService } from '../../services/api.service';
           <label>From Name (optional)</label>
           <input [(ngModel)]="newSmtp.fromName" placeholder="CAPS Platform" style="width:100%;">
         </div>
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:20px;">
-          <input type="checkbox" id="smtpDefault" [(ngModel)]="newSmtp.isDefault" style="width:16px; height:16px;">
-          <label for="smtpDefault" style="margin:0; cursor:pointer; font-size:0.85rem;">Set as default mail sender</label>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+          <input type="checkbox" id="smtpDefault" [(ngModel)]="newSmtp.isDefault" style="width:14px; height:14px; cursor:pointer;">
+          <label for="smtpDefault" style="margin:0; cursor:pointer; font-size:0.75rem; text-transform:none; letter-spacing:0; color:var(--text-secondary);">Set as default mail sender</label>
         </div>
         <button class="btn btn-primary" (click)="saveSmtp()" style="width:100%;">Save SMTP Config</button>
       </div>
 
       <!-- SMTP List -->
-      <div class="card" style="padding:24px;">
-        <h2 style="font-size:1.05rem; border:0; padding:0; margin-bottom:16px;">Configured SMTP Providers</h2>
-        <div *ngFor="let s of smtpConfigs" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-glass); border-radius:10px; padding:16px; margin-bottom:12px;">
+      <div class="card" style="padding:20px;">
+        <h2>Configured SMTP Providers</h2>
+        <div *ngFor="let s of smtpConfigs" style="background:rgba(0,0,0,0.15); border:1px solid var(--border-subtle); border-radius:6px; padding:12px; margin-bottom:10px;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start;">
             <div>
-              <div style="font-weight:700; color:#f8fafc; margin-bottom:4px;">{{ s.name }}</div>
-              <div style="font-size:0.78rem; color:var(--color-text-secondary);">{{ s.provider | uppercase }} • {{ s.fromEmail }}</div>
-              <div *ngIf="s.isDefault" style="display:inline-block; background:rgba(16,185,129,0.15); color:#10b981; font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:4px; margin-top:6px;">✓ DEFAULT</div>
+              <div style="font-family:var(--font-heading); font-weight:700; color:#fff; font-size:0.85rem; margin-bottom:2px;">{{ s.name }}</div>
+              <div style="font-size:0.72rem; color:var(--text-secondary); font-family:var(--font-code);">{{ s.provider | uppercase }} • {{ s.fromEmail }}</div>
+              <div *ngIf="s.isDefault" class="badge badge-active" style="font-size:0.6rem; padding:1px 6px; margin-top:6px;">✓ DEFAULT</div>
             </div>
-            <div style="display:flex; gap:8px; flex-shrink:0;">
-              <button class="btn btn-sm" (click)="testSmtp(s)" style="font-size:0.75rem;">Test</button>
-              <button class="btn btn-sm" (click)="deleteSmtp(s.id)" style="font-size:0.75rem; color:#ef4444;">Delete</button>
+            <div style="display:flex; gap:6px; flex-shrink:0;">
+              <button class="btn btn-sm" (click)="testSmtp(s)">Test</button>
+              <button class="btn btn-sm" (click)="deleteSmtp(s.id)" style="color:var(--accent-danger)">Delete</button>
             </div>
           </div>
-          <div *ngIf="testResults[s.id]" style="margin-top:10px; padding:8px 12px; border-radius:6px; font-size:0.78rem;"
-            [style.background]="testResults[s.id].success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'"
-            [style.color]="testResults[s.id].success ? '#34d399' : '#f87171'">
-            {{ testResults[s.id].success ? '✅ Test email sent successfully' : '❌ ' + testResults[s.id].error }}
+          <div *ngIf="testResults[s.id]" style="margin-top:8px; padding:6px 10px; border-radius:4px; font-size:0.75rem; font-family:var(--font-code);"
+            [style.background]="testResults[s.id].success ? 'rgba(45,212,160,0.1)' : 'rgba(240,82,82,0.1)'"
+            [style.color]="testResults[s.id].success ? 'var(--accent-success)' : 'var(--accent-danger)'">
+            {{ testResults[s.id].success ? '✓ Test email sent successfully' : '✗ ' + testResults[s.id].error }}
           </div>
         </div>
-        <div *ngIf="smtpConfigs.length === 0" style="color:var(--color-text-muted); text-align:center; padding:40px 20px;">
-          No SMTP configs yet. Add one to enable deployment notifications.
+        <div *ngIf="smtpConfigs.length === 0" style="color:var(--text-muted); text-align:center; padding:32px 16px; font-size:0.8rem;">
+          No SMTP configs yet. Add one to enable email notifications.
         </div>
       </div>
     </div>
   </div>
 
   <!-- ─────────────────── STORAGE TAB ─────────────────── -->
-  <div *ngIf="activeTab === 'storage'">
+  <div *ngIf="activeTab === 'storage' && isDevOps">
     <div class="grid-2" style="align-items:start;">
       <!-- Storage Form -->
-      <div class="card" style="padding:24px; background:rgba(15,23,42,0.6);">
-        <h2 style="font-size:1.05rem; border:0; padding:0; margin-bottom:20px;">Add Storage Provider</h2>
+      <div class="card" style="padding:20px;">
+        <h2>Add Storage Provider</h2>
         <div class="form-group">
           <label>Name / Label</label>
           <input [(ngModel)]="newStorage.name" placeholder="Production MinIO" style="width:100%;">
@@ -121,12 +122,12 @@ import { ApiService } from '../../services/api.service';
           </select>
         </div>
         <div *ngIf="newStorage.providerType === 'minio' || newStorage.providerType === 's3'" class="form-group">
-          <label>Endpoint URL (MinIO / S3-compatible)</label>
+          <label>Endpoint URL</label>
           <input [(ngModel)]="newStorage.endpointUrl" placeholder="http://minio:9000" style="width:100%;">
         </div>
         <div *ngIf="newStorage.providerType !== 'local' && newStorage.providerType !== 'google_drive'">
           <div class="form-group">
-            <label>Access Key / Key ID</label>
+            <label>Access Key ID</label>
             <input [(ngModel)]="newStorage.credentials.accessKeyId" placeholder="minioadmin" style="width:100%;">
           </div>
           <div class="form-group">
@@ -156,40 +157,39 @@ import { ApiService } from '../../services/api.service';
             <input type="password" [(ngModel)]="newStorage.credentials.refreshToken" placeholder="1//0g..." style="width:100%;">
           </div>
         </div>
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:20px;">
-          <input type="checkbox" id="storageDefault" [(ngModel)]="newStorage.isDefault" style="width:16px; height:16px;">
-          <label for="storageDefault" style="margin:0; cursor:pointer; font-size:0.85rem;">Set as default storage</label>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+          <input type="checkbox" id="storageDefault" [(ngModel)]="newStorage.isDefault" style="width:14px; height:14px; cursor:pointer;">
+          <label for="storageDefault" style="margin:0; cursor:pointer; font-size:0.75rem; text-transform:none; letter-spacing:0; color:var(--text-secondary);">Set as default storage</label>
         </div>
         <button class="btn btn-primary" (click)="saveStorage()" style="width:100%;">Save Storage Provider</button>
       </div>
 
       <!-- Storage List -->
-      <div class="card" style="padding:24px;">
-        <h2 style="font-size:1.05rem; border:0; padding:0; margin-bottom:16px;">Configured Storage Providers</h2>
-        <div *ngFor="let s of storageProviders" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-glass); border-radius:10px; padding:16px; margin-bottom:12px;">
+      <div class="card" style="padding:20px;">
+        <h2>Configured Storage Providers</h2>
+        <div *ngFor="let s of storageProviders" style="background:rgba(0,0,0,0.15); border:1px solid var(--border-subtle); border-radius:6px; padding:12px; margin-bottom:10px;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start;">
             <div>
-              <div style="font-weight:700; color:#f8fafc; margin-bottom:4px;">{{ s.name }}</div>
-              <div style="font-size:0.78rem; color:var(--color-text-secondary);">
+              <div style="font-family:var(--font-heading); font-weight:700; color:#fff; font-size:0.85rem; margin-bottom:2px;">{{ s.name }}</div>
+              <div style="font-size:0.72rem; color:var(--text-secondary); font-family:var(--font-code);">
                 {{ s.providerType | uppercase }}
                 <span *ngIf="s.bucketName"> • {{ s.bucketName }}</span>
-                <span *ngIf="s.endpointUrl"> • {{ s.endpointUrl }}</span>
               </div>
-              <div *ngIf="s.isDefault" style="display:inline-block; background:rgba(99,102,241,0.15); color:#818cf8; font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:4px; margin-top:6px;">✓ DEFAULT</div>
+              <div *ngIf="s.isDefault" class="badge badge-syncing" style="font-size:0.6rem; padding:1px 6px; margin-top:6px;">✓ DEFAULT</div>
             </div>
-            <div style="display:flex; gap:8px; flex-shrink:0;">
-              <button class="btn btn-sm" (click)="testStorage(s)" style="font-size:0.75rem;">Test</button>
-              <button *ngIf="!s.isDefault" class="btn btn-sm" (click)="setDefaultStorage(s.id)" style="font-size:0.75rem;">Set Default</button>
-              <button class="btn btn-sm" (click)="deleteStorage(s.id)" style="font-size:0.75rem; color:#ef4444;">Delete</button>
+            <div style="display:flex; gap:6px; flex-shrink:0;">
+              <button class="btn btn-sm" (click)="testStorage(s)">Test</button>
+              <button *ngIf="!s.isDefault" class="btn btn-sm" (click)="setDefaultStorage(s.id)">Make Default</button>
+              <button class="btn btn-sm" (click)="deleteStorage(s.id)" style="color:var(--accent-danger)">Delete</button>
             </div>
           </div>
-          <div *ngIf="storageTestResults[s.id]" style="margin-top:10px; padding:8px 12px; border-radius:6px; font-size:0.78rem;"
-            [style.background]="storageTestResults[s.id].success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'"
-            [style.color]="storageTestResults[s.id].success ? '#34d399' : '#f87171'">
-            {{ storageTestResults[s.id].success ? '✅ Connection successful' : '❌ ' + storageTestResults[s.id].message }}
+          <div *ngIf="storageTestResults[s.id]" style="margin-top:8px; padding:6px 10px; border-radius:4px; font-size:0.75rem; font-family:var(--font-code);"
+            [style.background]="storageTestResults[s.id].success ? 'rgba(45,212,160,0.1)' : 'rgba(240,82,82,0.1)'"
+            [style.color]="storageTestResults[s.id].success ? 'var(--accent-success)' : 'var(--accent-danger)'">
+            {{ storageTestResults[s.id].success ? '✓ Connection successful' : '✗ ' + storageTestResults[s.id].message }}
           </div>
         </div>
-        <div *ngIf="storageProviders.length === 0" style="color:var(--color-text-muted); text-align:center; padding:40px 20px;">
+        <div *ngIf="storageProviders.length === 0" style="color:var(--text-muted); text-align:center; padding:32px 16px; font-size:0.8rem;">
           No storage providers configured. Add one to enable database backups.
         </div>
       </div>
@@ -198,61 +198,62 @@ import { ApiService } from '../../services/api.service';
 
   <!-- ─────────────────── INTEGRATIONS TAB ─────────────────── -->
   <div *ngIf="activeTab === 'integrations'" class="grid-2" style="align-items:start;">
-    <div class="card" style="padding:24px; background:rgba(15,23,42,0.6);">
-      <h2 style="font-size:1.05rem; border:0; padding:0; margin-bottom:16px;">🐙 GitHub Integration</h2>
-      <p style="color:var(--color-text-secondary); font-size:0.83rem; margin-bottom:16px;">Configure GitHub webhooks and auto-deploy on push. CAPS will auto-register webhooks when you link a project to a GitHub repo.</p>
-      <div class="form-group">
+    <div class="card" style="padding:20px;">
+      <h2>🐙 GitHub Integration</h2>
+      <p style="color:var(--text-secondary); font-size:0.78rem; margin-bottom:12px;">Configure GitHub webhooks and auto-deploy on push. CAPS will auto-register webhooks when you link a project to a GitHub repo.</p>
+      <div class="form-group" *ngIf="isDevOps || isTechLeadOrDevOps">
         <label>GitHub Personal Access Token</label>
         <input type="password" [(ngModel)]="integrations.githubToken" placeholder="ghp_xxxx..." style="width:100%;">
       </div>
       <div class="form-group">
-        <label>Webhook Secret (auto-generated)</label>
-        <input [value]="integrations.webhookSecret || 'Not set'" [readonly]="true" style="width:100%; background:rgba(255,255,255,0.03); cursor:not-allowed;">
+        <label>Webhook Secret</label>
+        <input [value]="integrations.webhookSecret || 'Not set'" [readonly]="true" style="width:100%; background:rgba(0,0,0,0.15); cursor:not-allowed; font-family:var(--font-code);">
       </div>
-      <button class="btn btn-primary" (click)="saveGitHubToken()" style="margin-bottom:8px;">Save GitHub Token</button>
-      <div style="font-size:0.78rem; color:var(--color-text-secondary); margin-top:8px;">Webhook URL: <code style="background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px;">{{ apiBase }}/webhooks/github</code></div>
+      <button *ngIf="isDevOps || isTechLeadOrDevOps" class="btn btn-primary btn-sm" (click)="saveGitHubToken()">Save GitHub Token</button>
+      <div style="font-size:0.72rem; color:var(--text-muted); margin-top:8px; font-family:var(--font-code);">Webhook URL: {{ apiBase }}/webhooks/github</div>
     </div>
 
-    <div class="card" style="padding:24px; background:rgba(15,23,42,0.6);">
-      <h2 style="font-size:1.05rem; border:0; padding:0; margin-bottom:16px;">🦊 GitLab Integration</h2>
-      <p style="color:var(--color-text-secondary); font-size:0.83rem; margin-bottom:16px;">Connect to GitLab to trigger CI/CD pipelines and sync merge request events.</p>
-      <div class="form-group">
+    <div class="card" style="padding:20px;">
+      <h2>🦊 GitLab Integration</h2>
+      <p style="color:var(--text-secondary); font-size:0.78rem; margin-bottom:12px;">Connect to GitLab to trigger CI/CD pipelines and sync merge request events.</p>
+      <div class="form-group" *ngIf="isDevOps || isTechLeadOrDevOps">
         <label>GitLab Personal Access Token</label>
         <input type="password" [(ngModel)]="integrations.gitlabToken" placeholder="glpat-xxxx..." style="width:100%;">
       </div>
-      <div class="form-group">
+      <div class="form-group" *ngIf="isDevOps || isTechLeadOrDevOps">
         <label>GitLab Instance URL</label>
         <input [(ngModel)]="integrations.gitlabUrl" placeholder="https://gitlab.com" style="width:100%;">
       </div>
-      <button class="btn btn-primary" (click)="saveGitLabToken()">Save GitLab Config</button>
-      <div style="font-size:0.78rem; color:var(--color-text-secondary); margin-top:8px;">Webhook URL: <code style="background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px;">{{ apiBase }}/webhooks/gitlab</code></div>
+      <button *ngIf="isDevOps || isTechLeadOrDevOps" class="btn btn-primary btn-sm" (click)="saveGitLabToken()">Save GitLab Config</button>
+      <div style="font-size:0.72rem; color:var(--text-muted); margin-top:8px; font-family:var(--font-code);">Webhook URL: {{ apiBase }}/webhooks/gitlab</div>
     </div>
 
-    <div class="card" style="padding:24px; background:rgba(15,23,42,0.6);">
-      <h2 style="font-size:1.05rem; border:0; padding:0; margin-bottom:16px;">📋 ClickUp Integration</h2>
-      <div class="form-group">
+    <div class="card" style="padding:20px;">
+      <h2>📋 ClickUp Integration</h2>
+      <p style="color:var(--text-secondary); font-size:0.78rem; margin-bottom:12px;">Connect ClickUp to link tasks with git branch commits and update tasks on pipeline changes.</p>
+      <div class="form-group" *ngIf="isDevOps || isTechLeadOrDevOps">
         <label>ClickUp API Token</label>
         <input type="password" [(ngModel)]="integrations.clickupToken" placeholder="pk_xxxx..." style="width:100%;">
       </div>
       <div class="form-group">
         <label>Default List ID</label>
-        <input [(ngModel)]="integrations.clickupListId" placeholder="901234567890" style="width:100%;">
+        <input [(ngModel)]="integrations.clickupListId" [readonly]="!isDevOps && !isTechLeadOrDevOps" placeholder="901234567890" style="width:100%;">
       </div>
-      <button class="btn btn-primary" (click)="saveClickupConfig()">Save ClickUp Config</button>
+      <button *ngIf="isDevOps || isTechLeadOrDevOps" class="btn btn-primary btn-sm" (click)="saveClickupConfig()">Save ClickUp Config</button>
     </div>
 
-    <div class="card" style="padding:24px; background:rgba(15,23,42,0.6);">
-      <h2 style="font-size:1.05rem; border:0; padding:0; margin-bottom:16px;">🔐 Infisical Integration</h2>
-      <div class="form-group">
+    <div class="card" style="padding:20px;">
+      <h2>🔐 Infisical Integration</h2>
+      <p style="color:var(--text-secondary); font-size:0.78rem; margin-bottom:12px;">Connect to self-hosted Infisical instance to automatically provision environment secrets.</p>
+      <div class="form-group" *ngIf="isDevOps || isTechLeadOrDevOps">
         <label>Infisical Base URL</label>
         <input [(ngModel)]="integrations.infisicalUrl" placeholder="https://infisical.company.local" style="width:100%;">
       </div>
-      <div class="form-group">
+      <div class="form-group" *ngIf="isDevOps || isTechLeadOrDevOps">
         <label>Service Token</label>
         <input type="password" [(ngModel)]="integrations.infisicalToken" placeholder="st.xxxx..." style="width:100%;">
       </div>
-      <button class="btn btn-primary" (click)="saveInfisicalConfig()">Save Infisical Config</button>
-      <p style="color:var(--color-text-secondary); font-size:0.78rem; margin-top:12px;">All secrets provisioned for projects will be synced to this Infisical instance automatically.</p>
+      <button *ngIf="isDevOps || isTechLeadOrDevOps" class="btn btn-primary btn-sm" (click)="saveInfisicalConfig()">Save Infisical Config</button>
     </div>
   </div>
 </div>
@@ -265,15 +266,26 @@ export class SettingsComponent implements OnInit {
   testResults: Record<string, any> = {};
   storageTestResults: Record<string, any> = {};
   apiBase = '/api';
+  isDevOps = false;
+  isTechLeadOrDevOps = false;
 
   newSmtp: any = { name: '', provider: 'custom', host: '', port: 587, secure: false, username: '', password: '', fromEmail: '', fromName: '', isDefault: false };
   newStorage: any = { name: '', providerType: 'minio', endpointUrl: '', bucketName: '', isDefault: false, credentials: { accessKeyId: '', secretAccessKey: '', region: '', clientId: '', clientSecret: '', refreshToken: '' } };
   integrations: any = { githubToken: '', gitlabToken: '', gitlabUrl: 'https://gitlab.com', clickupToken: '', clickupListId: '', infisicalUrl: '', infisicalToken: '', webhookSecret: '' };
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, private auth: AuthService) {}
 
   async ngOnInit() {
-    await Promise.all([this.loadSmtp(), this.loadStorage()]);
+    this.isDevOps = this.auth.isDevOps();
+    this.isTechLeadOrDevOps = this.auth.isTechLeadOrDevOps();
+
+    if (this.isDevOps) {
+      this.activeTab = 'smtp';
+      await Promise.all([this.loadSmtp(), this.loadStorage()]);
+    } else {
+      this.activeTab = 'integrations';
+    }
+
     // Load env-based defaults
     this.apiBase = window.location.origin.replace('4200', '3000') + '/api';
     this.integrations.webhookSecret = localStorage.getItem('caps_webhook_secret') || 'Use CAPS_WEBHOOK_SECRET env var';

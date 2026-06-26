@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, Input, Output, EventEmitter } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { AuthService } from '../../services/auth.service';
@@ -11,6 +11,8 @@ import { AuthService } from '../../services/auth.service';
   styleUrl: './sidebar.component.css'
 })
 export class SidebarComponent implements OnInit {
+  @Input() isCollapsed = false;
+  @Output() toggleCollapse = new EventEmitter<void>();
   isDevOps = false;
   isTechLeadOrDevOps = false;
 

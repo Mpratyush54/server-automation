@@ -217,7 +217,7 @@
   </div>
   <div class="card" style="padding:24px;background:rgba(15,23,42,0.5);border-color:rgba(99,102,241,0.2);">
     <h2 style="font-size:1rem;margin-bottom:12px;border:0;padding:0;color:#c4b5fd;">🔌 Node.js Integration</h2>
-    <pre style="background:#0b0f19;padding:16px;border-radius:8px;font-size:0.78rem;color:#34d399;overflow-x:auto;margin:0;">const caps = require('&#64;caps/sdk-node');
+    <pre style="background:#0b0f19;padding:16px;border-radius:8px;font-size:0.78rem;color:#34d399;overflow-x:auto;margin:0;">const caps = require('caps-sdk-node');
 
 await caps.init(&#123;
   projectName: '{{ project?.name }}',
@@ -789,6 +789,60 @@ caps.captureConsole(); // forward all console.*</pre>
           </tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <!-- Database Backups Panel -->
+  <div class="card" style="margin-top:20px; padding:24px;" *ngIf="role === 'devops'">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+      <div>
+        <h2 style="margin:0; border:0; padding:0; font-size:1.1rem;">💾 Database Backups</h2>
+        <p style="color:var(--color-text-secondary); font-size:0.82rem; margin:4px 0 0 0;">Backup and restore project databases using the configured storage provider.</p>
+      </div>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <input [(ngModel)]="backupDbName" placeholder="database name" style="padding:8px 12px; background:rgba(255,255,255,0.05); border:1px solid var(--border-glass); border-radius:8px; color:#f8fafc; width:200px;">
+        <button class="btn btn-sm btn-primary" (click)="triggerBackup()" [disabled]="backupInProgress">
+          {{ backupInProgress ? 'Backing up...' : '⚡ Backup Now' }}
+        </button>
+        <button class="btn btn-sm" (click)="loadBackups()">Refresh</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Database</th><th>Environment</th><th>Status</th>
+            <th>Size</th><th>Provider</th><th>Created</th><th>Restored At</th><th *ngIf="role === 'devops'">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let b of dbBackups">
+            <td style="font-family:monospace; font-size:0.82rem;">{{ b.dbName }}</td>
+            <td><span class="badge">{{ b.environment }}</span></td>
+            <td>
+              <span class="badge" 
+                [style.background-color]="b.status === 'completed' ? 'rgba(16,185,129,0.15)' : b.status === 'failed' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'"
+                [style.color]="b.status === 'completed' ? '#10b981' : b.status === 'failed' ? '#ef4444' : '#f59e0b'">
+                {{ b.status | uppercase }}
+              </span>
+            </td>
+            <td style="font-size:0.82rem; color:#94a3b8;">{{ b.fileSizeBytes ? (b.fileSizeBytes / 1024 | number:'1.0-0') + ' KB' : '—' }}</td>
+            <td style="font-size:0.82rem; text-transform:uppercase; color:#94a3b8;">{{ b.providerType }}</td>
+            <td style="font-size:0.75rem; color:var(--color-text-muted);">{{ b.createdAt | date:'short' }}</td>
+            <td style="font-size:0.75rem; color:var(--color-text-muted);">{{ b.restoredAt ? (b.restoredAt | date:'short') : '—' }}</td>
+            <td *ngIf="role === 'devops'">
+              <button class="btn btn-sm" (click)="restoreBackup(b)" [disabled]="b.status !== 'completed'" style="font-size:0.75rem;">
+                Restore
+              </button>
+            </td>
+          </tr>
+          <tr *ngIf="dbBackups.length === 0">
+            <td colspan="8" style="text-align:center; color:var(--color-text-muted); padding:30px;">
+              No backups yet. Enter a database name above and click "Backup Now".
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </div>

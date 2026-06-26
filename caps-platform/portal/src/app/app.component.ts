@@ -16,6 +16,7 @@ export class AppComponent {
   pageTitle = 'Dashboard';
   isLoginPage = false;
   isLandingPage = false;
+  isSidebarCollapsed = false;
 
   private titles: Record<string, string> = {
     'dashboard': 'Dashboard',
@@ -42,7 +43,7 @@ export class AppComponent {
   constructor(router: Router) {
     router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(() => {
       const segment = router.url.split('/')[1]?.split('?')[0] || 'dashboard';
-      this.isLoginPage = segment === 'login';
+      this.isLoginPage = segment === 'login' || segment === 'oauth';
       this.isLandingPage = segment === 'landing';
       this.pageTitle = this.titles[segment] || 'CAPS Platform';
     });

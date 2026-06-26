@@ -1,7 +1,7 @@
 <div class="app-layout" *ngIf="!isLoginPage && !isLandingPage">
-  <app-sidebar></app-sidebar>
-  <main class="main-content">
-    <app-header [title]="pageTitle"></app-header>
+  <app-sidebar [isCollapsed]="isSidebarCollapsed" (toggleCollapse)="isSidebarCollapsed = !isSidebarCollapsed"></app-sidebar>
+  <main class="main-content" [class.collapsed-nav]="isSidebarCollapsed">
+    <app-header [title]="pageTitle" [isSidebarCollapsed]="isSidebarCollapsed" (toggleSidebar)="isSidebarCollapsed = !isSidebarCollapsed"></app-header>
     <div class="content">
       <router-outlet></router-outlet>
     </div>

@@ -1,16 +1,14 @@
 <header class="app-header">
-  <h1 style="font-size:1.5rem;font-weight:700;">{{ title }}</h1>
-  <div style="display:flex;align-items:center;gap:16px;">
+  <div style="display:flex;align-items:center;gap:12px;">
+    <button *ngIf="isSidebarCollapsed" (click)="toggleSidebar.emit()" style="background:transparent;border:none;color:var(--text-primary);cursor:pointer;font-size:1.1rem;padding:4px 8px;display:flex;align-items:center;justify-content:center;">☰</button>
+    <h1 style="font-size:1.15rem;font-weight:700;margin:0;font-family:var(--font-heading);">{{ title }}</h1>
+  </div>
+  <div style="display:flex;align-items:center;gap:20px;">
     <div *ngIf="currentUser" style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">
-      <span style="font-size:0.85rem;font-weight:600;color:var(--color-text-primary);">{{ currentUser.name }}</span>
-      <span style="font-size:0.7rem;color:var(--color-text-secondary);">{{ currentUser.email }}</span>
+      <span style="font-size:0.8rem;font-weight:600;color:var(--text-primary);">{{ currentUser.name }}</span>
+      <span style="font-size:0.68rem;color:var(--text-secondary); font-family:var(--font-code);">{{ currentUser.role | uppercase }} • {{ currentUser.email }}</span>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;">
-      <label style="font-size:0.8rem;color:var(--color-text-secondary);font-weight:600;text-transform:uppercase;margin:0;">Mock Role:</label>
-      <select [(ngModel)]="selectedRole" (change)="onRoleChange()" style="padding:6px 12px;background:rgba(0,0,0,0.3);border-color:var(--border-glass);border-radius:8px;font-size:0.85rem;color:white;">
-        <option *ngFor="let r of roles" [value]="r.id">{{ r.name }}</option>
-      </select>
-    </div>
-    <span class="badge badge-active" style="padding:6px 12px;">● Core Online</span>
+
+    <span class="badge badge-active" style="padding:3px 8px;font-size:0.65rem;">● Core Online</span>
   </div>
 </header>

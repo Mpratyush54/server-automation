@@ -1,0 +1,18 @@
+configs:
+  cm:
+    server.basehref: /argocd
+    oidc.config: |
+      name: CAPS Platform
+      issuer: https://{{DOMAIN}}/api/oauth
+      clientID: argocd
+      clientSecret: argocd-secret-placeholder
+      requestedScopes: ["openid", "profile", "email", "groups"]
+  rbac:
+    policy.csv: |
+      g, Admin, role:admin
+      g, DevOps, role:admin
+      g, Tech Lead, role:readonly
+      g, Developer, role:readonly
+server:
+  ingress:
+    enabled: false

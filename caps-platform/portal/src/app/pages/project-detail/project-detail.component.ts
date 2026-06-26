@@ -45,6 +45,11 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   provisioningDb = false;
   provisionedCreds: any = null;
 
+  // Backups
+  dbBackups: any[] = [];
+  backupDbName = '';
+  backupInProgress = false;
+
   // Form DTOs
   deployDto = { version: '1.0.0', branch: 'feature/CU-123-auth', environmentId: '', commitSha: 'a3f92c1', imageTag: 'v1.0.0' };
   newConfig = { key: '', value: '', environmentId: '', isSecret: false };
@@ -95,6 +100,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     if (this.activeTab === 'logs') await this.loadLogs();
     if (this.activeTab === 'metrics') await this.loadMetrics();
     if (this.activeTab === 'api-metrics') await this.loadApiMetrics();
+    if (this.activeTab === 'databases') await this.loadBackups();
     if (this.activeTab === 'gitops') {
       await this.loadK8sPods();
       await this.loadArgoStatus();
@@ -384,6 +390,45 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
 
   dismissProvisionedCreds() {
     this.provisionedCreds = null;
+  }
+
+  async loadBackups() {
+    if (!this.project) return;
+    try {
+      this.dbBackups = await firstValueFrom(this.api.getDbBackups(this.project.id, ''));
+    } catch {
+      this.dbBackups = [];
+    }
+  }
+
+  async triggerBackup() {
+    if (!this.project || !this.backupDbName.trim()) {
+      alert('Please enter a database name to backup.');
+      return;
+    }
+    if (!confirm(`Backup "${this.backupDbName}"? This may take a while depending on database size.`)) return;
+    this.backupInProgress = true;
+    try {
+      await firstValueFrom(this.api.triggerBackup(this.project.id, this.backupDbName));
+      alert('Backup started! Refresh the list in a minute to check status.');
+      setTimeout(() => this.loadBackups(), 3000);
+    } catch (err: any) {
+      alert('Backup failed: ' + (err.error?.error || err.message));
+    } finally {
+      this.backupInProgress = false;
+    }
+  }
+
+  async restoreBackup(backup: any) {
+    if (!this.project) return;
+    if (!confirm(`Restore "${backup.dbName}" from backup created at ${new Date(backup.createdAt).toLocaleString()}? This will OVERWRITE the current database contents.`)) return;
+    try {
+      await firstValueFrom(this.api.restoreBackup(this.project.id, 'db', backup.id));
+      alert('Restore started! Check the backup status in a moment.');
+      setTimeout(() => this.loadBackups(), 3000);
+    } catch (err: any) {
+      alert('Restore failed: ' + (err.error?.error || err.message));
+    }
   }
 
   async addDbConnection() {
