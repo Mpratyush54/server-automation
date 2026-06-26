@@ -43,10 +43,12 @@
 }
 
 .hero {
-  padding: 100px 24px 60px;
+  position: relative;
+  padding: 120px 24px 80px;
   text-align: center;
   max-width: 800px;
   margin: 0 auto;
+  z-index: 10;
 }
 
 .hero h1 {
@@ -396,4 +398,71 @@ code {
   .docs-layout { flex-direction: column; }
   .docs-sidebar { width: 100%; position: static; }
   .docs-sidebar ul { flex-direction: row; flex-wrap: wrap; gap: 4px; }
+}
+
+/* Hero Background Glow Effect */
+.hero-glow {
+  position: absolute;
+  top: -100px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 650px;
+  height: 350px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, rgba(99, 102, 241, 0) 70%);
+  z-index: -1;
+  pointer-events: none;
+  filter: blur(50px);
+}
+
+/* Copy Button Styling */
+.copy-btn {
+  background-color: transparent;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: all 150ms ease;
+  font-family: inherit;
+}
+
+.copy-btn:hover {
+  background-color: #1e293b;
+  color: #f8fafc;
+  border-color: #475569;
+}
+
+/* Terminal Console Syntax Highlighting */
+.t-comment {
+  color: #64748b; /* Slate 500 */
+  font-style: italic;
+}
+
+.t-keyword {
+  color: #c084fc; /* Purple 400 */
+  font-weight: 500;
+}
+
+.t-string {
+  color: #34d399; /* Emerald 400 */
+}
+
+.t-number {
+  color: #fb923c; /* Amber 400 */
+}
+
+.t-prompt {
+  color: #10b981; /* Emerald 500 */
+  font-weight: bold;
+}
+
+.t-command {
+  color: #38bdf8; /* Sky 400 */
+  font-weight: 500;
 }

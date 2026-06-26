@@ -10,6 +10,7 @@
 
 <!-- HERO -->
 <div class="hero">
+  <div class="hero-glow"></div>
   <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(91,110,245,0.12); border:1px solid rgba(91,110,245,0.25); color:var(--accent-primary); font-family:var(--font-code); font-size:0.68rem; font-weight:700; padding:3px 10px; border-radius:999px; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:18px;">
     🚀 Open Source &amp; Free Forever
   </div>
@@ -83,6 +84,7 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">project-structure</span>
+          <button class="copy-btn" (click)="copyCode('arch')">{{ copiedState['arch'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
           <pre [innerHTML]="codeExamples['arch']"></pre>
@@ -116,6 +118,7 @@
                 <span class="dot dot-maximize"></span>
               </div>
               <span class="terminal-title">bash</span>
+              <button class="copy-btn" (click)="copyCode('clone')">{{ copiedState['clone'] ? '✓ Copied' : 'Copy' }}</button>
             </div>
             <div class="terminal-body">
               <pre [innerHTML]="codeExamples['clone']"></pre>
@@ -136,6 +139,7 @@
                 <span class="dot dot-maximize"></span>
               </div>
               <span class="terminal-title">api-service</span>
+              <button class="copy-btn" (click)="copyCode('api-install')">{{ copiedState['api-install'] ? '✓ Copied' : 'Copy' }}</button>
             </div>
             <div class="terminal-body">
               <pre [innerHTML]="codeExamples['api-install']"></pre>
@@ -157,6 +161,7 @@
                 <span class="dot dot-maximize"></span>
               </div>
               <span class="terminal-title">portal-dashboard</span>
+              <button class="copy-btn" (click)="copyCode('portal-install')">{{ copiedState['portal-install'] ? '✓ Copied' : 'Copy' }}</button>
             </div>
             <div class="terminal-body">
               <pre [innerHTML]="codeExamples['portal-install']"></pre>
@@ -178,6 +183,7 @@
                 <span class="dot dot-maximize"></span>
               </div>
               <span class="terminal-title">bash</span>
+              <button class="copy-btn" (click)="copyCode('seed')">{{ copiedState['seed'] ? '✓ Copied' : 'Copy' }}</button>
             </div>
             <div class="terminal-body">
               <pre [innerHTML]="codeExamples['seed']"></pre>
@@ -205,6 +211,7 @@
                 <span class="dot dot-maximize"></span>
               </div>
               <span class="terminal-title">bash</span>
+              <button class="copy-btn" (click)="copyCode('login-curl')">{{ copiedState['login-curl'] ? '✓ Copied' : 'Copy' }}</button>
             </div>
             <div class="terminal-body">
               <pre [innerHTML]="codeExamples['login-curl']"></pre>
@@ -223,6 +230,7 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">.env</span>
+          <button class="copy-btn" (click)="copyCode('env-vars')">{{ copiedState['env-vars'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
           <pre [innerHTML]="codeExamples['env-vars']"></pre>
@@ -250,6 +258,7 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">Request Body</span>
+          <button class="copy-btn" (click)="copyCode('login-request')">{{ copiedState['login-request'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
           <pre [innerHTML]="codeExamples['login-request']"></pre>
@@ -264,6 +273,7 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">Response</span>
+          <button class="copy-btn" (click)="copyCode('login-response')">{{ copiedState['login-response'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
           <pre [innerHTML]="codeExamples['login-response']"></pre>
@@ -639,9 +649,10 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">bash</span>
+          <button class="copy-btn" (click)="copyCode('node-install')">{{ copiedState['node-install'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
-          <pre>npm install &#64;mpratyush54/sdk-node</pre>
+          <pre [innerHTML]="codeExamples['node-install']"></pre>
         </div>
       </div>
       <p>Initialize the client:</p>
@@ -653,6 +664,7 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">javascript</span>
+          <button class="copy-btn" (click)="copyCode('node-init')">{{ copiedState['node-init'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
           <pre [innerHTML]="codeExamples['node-init']"></pre>
@@ -669,9 +681,10 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">bash</span>
+          <button class="copy-btn" (click)="copyCode('python-install')">{{ copiedState['python-install'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
-          <pre>pip install caps-sdk-python</pre>
+          <pre [innerHTML]="codeExamples['python-install']"></pre>
         </div>
       </div>
       <p>Initialize the client:</p>
@@ -683,6 +696,7 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">python</span>
+          <button class="copy-btn" (click)="copyCode('python-init')">{{ copiedState['python-init'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
           <pre [innerHTML]="codeExamples['python-init']"></pre>
@@ -699,9 +713,10 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">bash</span>
+          <button class="copy-btn" (click)="copyCode('react-install')">{{ copiedState['react-install'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
-          <pre>npm install &#64;caps/sdk-react</pre>
+          <pre [innerHTML]="codeExamples['react-install']"></pre>
         </div>
       </div>
       <p>Wrap your App Component:</p>
@@ -713,6 +728,7 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">jsx</span>
+          <button class="copy-btn" (click)="copyCode('react-init')">{{ copiedState['react-init'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
           <pre [innerHTML]="codeExamples['react-init']"></pre>
@@ -729,9 +745,10 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">bash</span>
+          <button class="copy-btn" (click)="copyCode('angular-install')">{{ copiedState['angular-install'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
-          <pre>npm install &#64;caps/sdk-angular</pre>
+          <pre [innerHTML]="codeExamples['angular-install']"></pre>
         </div>
       </div>
       <p>Import the module:</p>
@@ -743,6 +760,7 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">typescript</span>
+          <button class="copy-btn" (click)="copyCode('angular-init')">{{ copiedState['angular-init'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
           <pre [innerHTML]="codeExamples['angular-init']"></pre>
@@ -778,6 +796,7 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">POST /api/roles</span>
+          <button class="copy-btn" (click)="copyCode('create-role')">{{ copiedState['create-role'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
           <pre [innerHTML]="codeExamples['create-role']"></pre>
@@ -793,6 +812,7 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">PATCH /api/users/:userId/role</span>
+          <button class="copy-btn" (click)="copyCode('assign-role')">{{ copiedState['assign-role'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
           <pre [innerHTML]="codeExamples['assign-role']"></pre>
@@ -829,6 +849,7 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">POST /api/cicd/register-webhook/:projectId</span>
+          <button class="copy-btn" (click)="copyCode('register-webhook')">{{ copiedState['register-webhook'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
           <pre [innerHTML]="codeExamples['register-webhook']"></pre>
@@ -844,6 +865,7 @@
             <span class="dot dot-maximize"></span>
           </div>
           <span class="terminal-title">.env</span>
+          <button class="copy-btn" (click)="copyCode('wh-gh')">{{ copiedState['wh-gh'] ? '✓ Copied' : 'Copy' }}</button>
         </div>
         <div class="terminal-body">
           <pre [innerHTML]="codeExamples['wh-gh']"></pre>
