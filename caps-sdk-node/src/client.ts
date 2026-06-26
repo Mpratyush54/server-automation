@@ -23,6 +23,7 @@ export interface CapsOptions {
   hostname?: string;
   infisicalEnv?: string;
   databases?: string[];
+  sdkToken?: string;
 }
 
 export class CapsClient {
@@ -58,9 +59,14 @@ export class CapsClient {
       branch: 'main',
       hostname: os.hostname(),
       databases: [],
+      sdkToken: process.env.CAPS_SDK_TOKEN,
       ...options,
     };
     this.http.defaults.baseURL = this.options.platformUrl;
+
+    if (this.options.sdkToken) {
+      this.http.defaults.headers.common['Authorization'] = `Bearer ${this.options.sdkToken}`;
+    }
 
     // Configure context inside singletons
     this.logger.configure(

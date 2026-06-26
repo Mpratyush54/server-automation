@@ -1,5 +1,5 @@
-import { Component } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, OnDestroy, Inject, PLATFORM_ID } from '@angular/core';
+import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 
@@ -10,8 +10,9 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
   templateUrl: './landing.component.html',
   styleUrl: './landing.component.css'
 })
-export class LandingComponent {
+export class LandingComponent implements OnInit, OnDestroy {
   activeSection = 'overview';
+  private observer: IntersectionObserver | null = null;
 
   sections = [
     { id: 'overview', label: 'Overview' },
@@ -25,7 +26,10 @@ export class LandingComponent {
 
   codeExamples: Record<string, SafeHtml> = {};
 
-  constructor(private sanitizer: DomSanitizer) {
+  constructor(
+    private sanitizer: DomSanitizer,
+    @Inject(PLATFORM_ID) private platformId: Object
+  ) {
     const esc = (s: string) => s.replace(/{/g, '&#123;').replace(/}/g, '&#125;');
     const raw: Record<string, string> = {};
 
@@ -190,9 +194,57 @@ GITLAB_TOKEN=glpat-xxxxx             # For auto-registering webhooks on GitLab`;
     }
   }
 
+  ngOnInit() {
+    if (isPlatformBrowser(this.platformId)) {
+      // Small timeout to let elements render before setting up scroll spy
+      setTimeout(() => this.setupScrollSpy(), 100);
+    }
+  }
+
+  ngOnDestroy() {
+    if (this.observer) {
+      this.observer.disconnect();
+    }
+  }
+
+  setupScrollSpy() {
+    const options = {
+      root: null, // relative to viewport
+      rootMargin: '-10% 0px -75% 0px', // triggers when section is near the top
+      threshold: 0
+    };
+
+    this.observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          this.activeSection = entry.target.id;
+        }
+      });
+    }, options);
+
+    this.sections.forEach((section) => {
+      const el = document.getElementById(section.id);
+      if (el && this.observer) {
+        this.observer.observe(el);
+      }
+    });
+  }
+
   setActive(id: string) {
     this.activeSection = id;
     const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (el) {
+      // Disconnect observer temporarily to prevent jumping during click scroll
+      if (this.observer) this.observer.disconnect();
+
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      // Reconnect observer after smooth scroll completes
+      setTimeout(() => {
+        if (isPlatformBrowser(this.platformId)) {
+          this.setupScrollSpy();
+        }
+      }, 800);
+    }
   }
 }

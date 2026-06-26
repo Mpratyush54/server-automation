@@ -228,6 +228,67 @@ pre {
   font-family: var(--font-code);
 }
 
+/* Terminal Console Layout */
+.terminal-window {
+  background-color: #0c101b; /* Rich dark console background */
+  border: 1px solid #242936;
+  border-radius: 8px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.terminal-header {
+  background-color: #161b26;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 1px solid #242936;
+  position: relative;
+  user-select: none;
+}
+
+.terminal-buttons {
+  display: flex;
+  gap: 8px;
+  z-index: 10;
+}
+
+.terminal-buttons .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-close { background-color: #ef4444; }
+.dot-minimize { background-color: #f59e0b; }
+.dot-maximize { background-color: #10b981; }
+
+.terminal-title {
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 600;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-code);
+}
+
+.terminal-body {
+  padding: 16px 20px;
+}
+
+.terminal-body pre {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background-color: transparent !important;
+  color: #e2e8f0 !important;
+  box-shadow: none !important;
+}
+
 code {
   font-family: var(--font-code);
 }

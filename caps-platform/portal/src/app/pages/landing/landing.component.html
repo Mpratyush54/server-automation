@@ -1,6 +1,6 @@
 <!-- NAV -->
 <nav class="landing-nav">
-  <a class="logo" routerLink="/landing">⚡ CAPS Platform</a>
+  <a class="logo" routerLink="/landing">⚡ OpenPaaS</a>
   <div style="display:flex;gap:20px;align-items:center;">
     <a (click)="setActive('setup')" style="cursor:pointer">Docs</a>
     <a (click)="setActive('api')" style="cursor:pointer">API</a>
@@ -11,10 +11,10 @@
 <!-- HERO -->
 <div class="hero">
   <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(91,110,245,0.12); border:1px solid rgba(91,110,245,0.25); color:var(--accent-primary); font-family:var(--font-code); font-size:0.68rem; font-weight:700; padding:3px 10px; border-radius:999px; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:18px;">
-    🚀 Platform Version 2.0.0
+    🚀 Open Source &amp; Free Forever
   </div>
   <h1>Self-Hosted PaaS<br>Control Center</h1>
-  <p>CAPS is an internal Platform-as-a-Service that manages deployments, databases, monitoring, CI/CD pipelines, and infrastructure — all from a single control plane.</p>
+  <p>An open-source, self-hosted Platform-as-a-Service that manages deployments, databases, monitoring, CI/CD pipelines, and infrastructure — all from a single control plane. Fully free to self-host.</p>
   <div class="hero-actions">
     <button class="btn btn-primary" (click)="setActive('setup')">Setup Guide</button>
     <button class="btn" (click)="setActive('api')">API Reference</button>
@@ -73,9 +73,21 @@
     <!-- OVERVIEW -->
     <section id="overview">
       <h2>Overview</h2>
-      <p>CAPS (Cloud Application Platform Services) is a self-hosted PaaS that provides a unified control plane for deploying, managing, and monitoring your applications. It runs on Kubernetes (k3s) and integrates with GitLab/GitHub for CI/CD, ClickUp for project tracking, and Infisical for secrets management.</p>
+      <p>An open-source, self-hosted PaaS that provides a unified control plane for deploying, managing, and monitoring your applications. It runs on Kubernetes (k3s) and integrates with GitLab/GitHub for CI/CD, ClickUp for project tracking, and Infisical for secrets management.</p>
       <h3>Architecture</h3>
-      <pre [innerHTML]="codeExamples['arch']"></pre>
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">project-structure</span>
+        </div>
+        <div class="terminal-body">
+          <pre [innerHTML]="codeExamples['arch']"></pre>
+        </div>
+      </div>
       <h3>Core Components</h3>
       <ul>
         <li><strong>API Server</strong> — Express.js REST API on port 3000</li>
@@ -96,7 +108,19 @@
         <div class="step-num">1</div>
         <div class="step-body">
           <h4>Clone the repository</h4>
-          <pre [innerHTML]="codeExamples['clone']"></pre>
+          <div class="terminal-window">
+            <div class="terminal-header">
+              <div class="terminal-buttons">
+                <span class="dot dot-close"></span>
+                <span class="dot dot-minimize"></span>
+                <span class="dot dot-maximize"></span>
+              </div>
+              <span class="terminal-title">bash</span>
+            </div>
+            <div class="terminal-body">
+              <pre [innerHTML]="codeExamples['clone']"></pre>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -104,7 +128,19 @@
         <div class="step-num">2</div>
         <div class="step-body">
           <h4>Install API dependencies &amp; start</h4>
-          <pre [innerHTML]="codeExamples['api-install']"></pre>
+          <div class="terminal-window">
+            <div class="terminal-header">
+              <div class="terminal-buttons">
+                <span class="dot dot-close"></span>
+                <span class="dot dot-minimize"></span>
+                <span class="dot dot-maximize"></span>
+              </div>
+              <span class="terminal-title">api-service</span>
+            </div>
+            <div class="terminal-body">
+              <pre [innerHTML]="codeExamples['api-install']"></pre>
+            </div>
+          </div>
           <p>The API starts on <code class="inline-code">http://localhost:3000</code>. It connects to PostgreSQL (port 5432) and MongoDB (port 27017) on localhost by default.</p>
         </div>
       </div>
@@ -113,7 +149,19 @@
         <div class="step-num">3</div>
         <div class="step-body">
           <h4>Install Portal dependencies &amp; start</h4>
-          <pre [innerHTML]="codeExamples['portal-install']"></pre>
+          <div class="terminal-window">
+            <div class="terminal-header">
+              <div class="terminal-buttons">
+                <span class="dot dot-close"></span>
+                <span class="dot dot-minimize"></span>
+                <span class="dot dot-maximize"></span>
+              </div>
+              <span class="terminal-title">portal-dashboard</span>
+            </div>
+            <div class="terminal-body">
+              <pre [innerHTML]="codeExamples['portal-install']"></pre>
+            </div>
+          </div>
           <p>The portal starts on <code class="inline-code">http://localhost:4200</code>.</p>
         </div>
       </div>
@@ -122,7 +170,19 @@
         <div class="step-num">4</div>
         <div class="step-body">
           <h4>Seed demo users (including admin)</h4>
-          <pre [innerHTML]="codeExamples['seed']"></pre>
+          <div class="terminal-window">
+            <div class="terminal-header">
+              <div class="terminal-buttons">
+                <span class="dot dot-close"></span>
+                <span class="dot dot-minimize"></span>
+                <span class="dot dot-maximize"></span>
+              </div>
+              <span class="terminal-title">bash</span>
+            </div>
+            <div class="terminal-body">
+              <pre [innerHTML]="codeExamples['seed']"></pre>
+            </div>
+          </div>
           <p>This creates:</p>
           <ul>
             <li><strong>admin&#64;caps.io</strong> — Admin (full access)</li>
@@ -137,19 +197,43 @@
         <div class="step-num">5</div>
         <div class="step-body">
           <h4>Login</h4>
-          <pre [innerHTML]="codeExamples['login-curl']"></pre>
+          <div class="terminal-window">
+            <div class="terminal-header">
+              <div class="terminal-buttons">
+                <span class="dot dot-close"></span>
+                <span class="dot dot-minimize"></span>
+                <span class="dot dot-maximize"></span>
+              </div>
+              <span class="terminal-title">bash</span>
+            </div>
+            <div class="terminal-body">
+              <pre [innerHTML]="codeExamples['login-curl']"></pre>
+            </div>
+          </div>
           <p>Use the returned <code class="inline-code">token</code> in all subsequent requests as <code class="inline-code">Authorization: Bearer token</code>.</p>
         </div>
       </div>
 
       <h3>Environment Variables</h3>
-      <pre [innerHTML]="codeExamples['env-vars']"></pre>
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">.env</span>
+        </div>
+        <div class="terminal-body">
+          <pre [innerHTML]="codeExamples['env-vars']"></pre>
+        </div>
+      </div>
     </section>
 
     <!-- AUTH -->
     <section id="auth">
       <h2>Authentication</h2>
-      <p>CAPS uses JWT (JSON Web Tokens) for authentication. All protected endpoints require the <code class="inline-code">Authorization: Bearer token</code> header.</p>
+      <p>The platform uses JWT (JSON Web Tokens) for authentication. All protected endpoints require the <code class="inline-code">Authorization: Bearer token</code> header.</p>
 
       <h3>Login</h3>
       <div class="api-endpoint">
@@ -157,8 +241,34 @@
         <span class="path">/api/auth/login</span>
         <div class="desc">Authenticate with email. Returns JWT token and user object.</div>
       </div>
-      <pre [innerHTML]="codeExamples['login-request']"></pre>
-      <pre [innerHTML]="codeExamples['login-response']"></pre>
+      
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">Request Body</span>
+        </div>
+        <div class="terminal-body">
+          <pre [innerHTML]="codeExamples['login-request']"></pre>
+        </div>
+      </div>
+
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">Response</span>
+        </div>
+        <div class="terminal-body">
+          <pre [innerHTML]="codeExamples['login-response']"></pre>
+        </div>
+      </div>
 
       <h3>SDK Tokens</h3>
       <p>SDK tokens use the format <code class="inline-code">sdk-projectId:secret</code> and bypass user authentication. They are used by the Node.js and Python SDKs to send metrics, logs, and bug reports.</p>
@@ -520,16 +630,124 @@
       <h2>SDK Usage</h2>
 
       <h3>Node.js SDK</h3>
-      <pre [innerHTML]="codeExamples['node-init']"></pre>
+      <p>Install the SDK:</p>
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">bash</span>
+        </div>
+        <div class="terminal-body">
+          <pre>npm install &#64;mpratyush54/sdk-node</pre>
+        </div>
+      </div>
+      <p>Initialize the client:</p>
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">javascript</span>
+        </div>
+        <div class="terminal-body">
+          <pre [innerHTML]="codeExamples['node-init']"></pre>
+        </div>
+      </div>
 
       <h3>Python SDK</h3>
-      <pre [innerHTML]="codeExamples['python-init']"></pre>
+      <p>Install the SDK:</p>
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">bash</span>
+        </div>
+        <div class="terminal-body">
+          <pre>pip install caps-sdk-python</pre>
+        </div>
+      </div>
+      <p>Initialize the client:</p>
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">python</span>
+        </div>
+        <div class="terminal-body">
+          <pre [innerHTML]="codeExamples['python-init']"></pre>
+        </div>
+      </div>
 
       <h3>React / Next.js SDK</h3>
-      <pre [innerHTML]="codeExamples['react-init']"></pre>
+      <p>Install the SDK:</p>
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">bash</span>
+        </div>
+        <div class="terminal-body">
+          <pre>npm install &#64;caps/sdk-react</pre>
+        </div>
+      </div>
+      <p>Wrap your App Component:</p>
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">jsx</span>
+        </div>
+        <div class="terminal-body">
+          <pre [innerHTML]="codeExamples['react-init']"></pre>
+        </div>
+      </div>
 
       <h3>Angular SDK</h3>
-      <pre [innerHTML]="codeExamples['angular-init']"></pre>
+      <p>Install the SDK:</p>
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">bash</span>
+        </div>
+        <div class="terminal-body">
+          <pre>npm install &#64;caps/sdk-angular</pre>
+        </div>
+      </div>
+      <p>Import the module:</p>
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">typescript</span>
+        </div>
+        <div class="terminal-body">
+          <pre [innerHTML]="codeExamples['angular-init']"></pre>
+        </div>
+      </div>
     </section>
 
     <!-- RBAC -->
@@ -552,17 +770,41 @@
       </table>
 
       <h3>Creating Custom Roles</h3>
-      <pre [innerHTML]="codeExamples['create-role']"></pre>
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">POST /api/roles</span>
+        </div>
+        <div class="terminal-body">
+          <pre [innerHTML]="codeExamples['create-role']"></pre>
+        </div>
+      </div>
 
       <h3>Assigning Custom Roles to Users</h3>
-      <pre [innerHTML]="codeExamples['assign-role']"></pre>
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">PATCH /api/users/:userId/role</span>
+        </div>
+        <div class="terminal-body">
+          <pre [innerHTML]="codeExamples['assign-role']"></pre>
+        </div>
+      </div>
       <p>Custom role permissions are <strong>merged</strong> with the user's preset role permissions. A developer with a custom "database-admin" role will have both developer permissions AND database permissions.</p>
     </section>
 
     <!-- WEBHOOKS -->
     <section id="webhooks">
       <h2>Webhooks</h2>
-      <p>CAPS can receive webhooks from GitHub and GitLab to automatically trigger deployments.</p>
+      <p>The platform can receive webhooks from GitHub and GitLab to automatically trigger deployments.</p>
 
       <h3>GitHub</h3>
       <ul>
@@ -579,10 +821,34 @@
       </ul>
 
       <h3>Auto-Register Webhook</h3>
-      <pre [innerHTML]="codeExamples['register-webhook']"></pre>
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">POST /api/cicd/register-webhook/:projectId</span>
+        </div>
+        <div class="terminal-body">
+          <pre [innerHTML]="codeExamples['register-webhook']"></pre>
+        </div>
+      </div>
 
       <h3>Environment Variables</h3>
-      <pre [innerHTML]="codeExamples['wh-gh']"></pre>
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">.env</span>
+        </div>
+        <div class="terminal-body">
+          <pre [innerHTML]="codeExamples['wh-gh']"></pre>
+        </div>
+      </div>
     </section>
 
   </div>
