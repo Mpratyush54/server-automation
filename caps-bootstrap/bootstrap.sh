@@ -49,6 +49,11 @@ is_done()    { grep -q "^$1=done$" "$STATE_FILE" 2>/dev/null; }
 # ─── Utilities ───────────────────────────────────────────────────────────────
 ask() {
   local prompt="$1" var="$2" default="${3:-}"
+  local current_val
+  eval "current_val=\${$var:-}"
+  if [[ -n "$current_val" ]]; then
+    return
+  fi
   if [[ "$NON_INTERACTIVE" == "true" ]]; then
     eval "$var='${default}'"
     return
@@ -62,6 +67,11 @@ ask() {
 
 ask_secret() {
   local prompt="$1" var="$2"
+  local current_val
+  eval "current_val=\${$var:-}"
+  if [[ -n "$current_val" ]]; then
+    return
+  fi
   if [[ "$NON_INTERACTIVE" == "true" ]]; then eval "$var=''"; return; fi
   echo -ne "${BOLD}${CYAN}  ▶ $prompt${NC}: "
   local input; read -rs input; echo
@@ -70,6 +80,11 @@ ask_secret() {
 
 ask_yn() {
   local prompt="$1" var="$2" default="${3:-y}"
+  local current_val
+  eval "current_val=\${$var:-}"
+  if [[ -n "$current_val" ]]; then
+    return
+  fi
   if [[ "$NON_INTERACTIVE" == "true" ]]; then eval "$var='$default'"; return; fi
   echo -ne "${BOLD}${CYAN}  ▶ $prompt${NC} ${YELLOW}[y/n, default: $default]${NC}: "
   local input; read -r input
