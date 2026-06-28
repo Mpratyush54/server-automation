@@ -1048,6 +1048,10 @@ spec:
   - hosts:
     - $DOMAIN
     - api.$DOMAIN
+    - argocd.$DOMAIN
+    - grafana.$DOMAIN
+    - infisical.$DOMAIN
+    - portainer.$DOMAIN
     secretName: caps-platform-tls
   rules:
   - host: $DOMAIN
@@ -1074,7 +1078,6 @@ spec:
             name: grafana-proxy
             port:
               number: 80
-
       - path: /infisical
         pathType: Prefix
         backend:
@@ -1096,8 +1099,57 @@ spec:
             name: caps-portal
             port:
               number: 80
-  # Catch-all rule: handles bare-IP access (Kubernetes does not allow IPs as host values)
-  # nginx ingress uses a rule with no host as the default server for unmatched requests
+  - host: api.$DOMAIN
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: caps-api
+            port:
+              number: 3000
+  - host: argocd.$DOMAIN
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: argocd-proxy
+            port:
+              number: 80
+  - host: grafana.$DOMAIN
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana-proxy
+            port:
+              number: 80
+  - host: infisical.$DOMAIN
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: infisical-proxy
+            port:
+              number: 8080
+  - host: portainer.$DOMAIN
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: portainer-proxy
+            port:
+              number: 9443
+  # Catch-all rule: handles bare-IP access
   - http:
       paths:
       - path: /api
@@ -1121,7 +1173,6 @@ spec:
             name: grafana-proxy
             port:
               number: 80
-
       - path: /infisical
         pathType: Prefix
         backend:
