@@ -115,7 +115,7 @@ install_prerequisites() {
   apt-get install -y -qq \
     curl wget git jq unzip gnupg lsb-release ca-certificates \
     apt-transport-https software-properties-common \
-    openssl bc netcat-openbsd postgresql-client \
+    openssl bc netcat-openbsd postgresql-client apache2-utils \
     2>&1 | tee -a "$LOG_FILE"
 
   mark_done "prerequisites"
