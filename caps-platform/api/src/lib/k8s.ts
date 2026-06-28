@@ -125,7 +125,7 @@ export async function getPodLogs(namespace: string, podName: string): Promise<st
       namespace,
       tailLines: 100,
     });
-    return res.body;
+    return res;
   } catch (err: any) {
     console.warn(`[k8s] getPodLogs failed for ${podName}: ${err.message}`);
     return `Failed to fetch logs: ${err.message}`;
