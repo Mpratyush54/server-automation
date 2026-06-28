@@ -718,7 +718,23 @@ install_portainer() {
     -f /tmp/portainer-values.yaml \
     --set service.type=ClusterIP \
     --wait 2>&1 | tee -a "$LOG_FILE"
-  done_ "Portainer configured"
+
+  log "Patching Portainer deployment with base-url argument..."
+  cat << 'EOF' > /tmp/portainer-patch.json
+[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/containers/0/args",
+    "value": ["--base-url=/portainer"]
+  }
+]
+EOF
+  kubectl patch deployment portainer -n portainer --type=json --patch-file /tmp/portainer-patch.json 2>&1 | tee -a "$LOG_FILE"
+  rm -f /tmp/portainer-patch.json
+
+  log "Waiting for Portainer to restart after patch..."
+  kubectl rollout status deployment/portainer -n portainer --timeout=120s 2>&1 | tee -a "$LOG_FILE"
+  done_ "Portainer configured" 
 
   # Initialize Portainer admin account before the 5-minute timeout window expires
   log "Initializing Portainer admin account..."
