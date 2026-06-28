@@ -730,10 +730,17 @@ install_infisical() {
     write_env "INFISICAL_ENCRYPTION_KEY" "$INFISICAL_ENCRYPTION_KEY"
     write_env "INFISICAL_JWT_SECRET" "$INFISICAL_JWT_SECRET"
 
+    # Create infisical database if it doesn't exist
+    log "Creating Infisical database in PostgreSQL..."
+    kubectl exec -i -n databases postgresql-0 -- env PGPASSWORD="$POSTGRES_PASSWORD" psql -U postgres -c "SELECT 1 FROM pg_database WHERE datname = 'infisical'" | grep -q 1 || \
+      kubectl exec -i -n databases postgresql-0 -- env PGPASSWORD="$POSTGRES_PASSWORD" psql -U postgres -c "CREATE DATABASE infisical;"
+
     kubectl create secret generic infisical-secrets \
       --namespace infisical \
       --from-literal=ENCRYPTION_KEY="$INFISICAL_ENCRYPTION_KEY" \
       --from-literal=JWT_AUTH_SECRET="$INFISICAL_JWT_SECRET" \
+      --from-literal=DB_CONNECTION_URI="postgresql://postgres:$POSTGRES_PASSWORD@postgresql.databases:5432/infisical" \
+      --from-literal=REDIS_URL="redis://:$REDIS_PASSWORD@redis-master.databases:6379" \
       --from-literal=MONGO_URL="mongodb://root:$MONGO_PASSWORD@mongodb.databases:27017/infisical?authSource=admin" \
       --dry-run=client -o yaml | kubectl apply -f - 2>&1 | tee -a "$LOG_FILE"
 
