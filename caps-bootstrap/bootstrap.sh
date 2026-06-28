@@ -786,6 +786,19 @@ deploy_caps_platform() {
   is_done "caps-platform" && { done_ "CAPS Platform already deployed"; return; }
   header "Phase 15 — CAPS Platform"
 
+  # Build and import CAPS API & Portal locally to avoid registry pulling issues
+  log "Building and importing CAPS API image locally..."
+  docker build -t ghcr.io/your-org/caps-platform-api:latest ../caps-platform/api 2>&1 | tee -a "$LOG_FILE"
+  docker save ghcr.io/your-org/caps-platform-api:latest -o /tmp/caps-api.tar 2>&1 | tee -a "$LOG_FILE"
+  k3s ctr images import /tmp/caps-api.tar 2>&1 | tee -a "$LOG_FILE"
+  rm -f /tmp/caps-api.tar
+
+  log "Building and importing CAPS Portal image locally..."
+  docker build -t ghcr.io/your-org/caps-platform-portal:latest ../caps-platform/portal 2>&1 | tee -a "$LOG_FILE"
+  docker save ghcr.io/your-org/caps-platform-portal:latest -o /tmp/caps-portal.tar 2>&1 | tee -a "$LOG_FILE"
+  k3s ctr images import /tmp/caps-portal.tar 2>&1 | tee -a "$LOG_FILE"
+  rm -f /tmp/caps-portal.tar
+
   log "Building CAPS Platform environment config..."
 
   # Combine all env vars into a K8s secret
