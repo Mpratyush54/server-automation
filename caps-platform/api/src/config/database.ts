@@ -25,7 +25,7 @@ export const AppDataSource = new DataSource({
   password: process.env.POSTGRES_PASSWORD || 'caps',
   database: process.env.POSTGRES_DB || 'caps_platform',
   entities: [Project, Environment, Deployment, ServiceRegistration, ProjectConfig, File, Alert, DbConnection, User, Role, AuditLog, ClickupTaskLink, SdkCredential, DbBackup, SmtpConfig, StorageProvider],
-  synchronize: process.env.NODE_ENV !== 'production',
+  synchronize: true,
   logging: false,
 });
 
