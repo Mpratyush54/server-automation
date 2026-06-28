@@ -446,7 +446,7 @@ install_ingress() {
   if helm list -n ingress-nginx 2>/dev/null | grep -q ingress-nginx; then
     done_ "ingress-nginx already installed"
   else
-    helm install ingress-nginx ingress-nginx/ingress-nginx \
+    helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
       --namespace ingress-nginx \
       --set controller.service.type=LoadBalancer \
       --wait 2>&1 | tee -a "$LOG_FILE" || \
@@ -468,7 +468,7 @@ install_certmanager() {
   is_done "certmanager" && { done_ "cert-manager already installed"; return; }
   header "Phase 8 — cert-manager (Let's Encrypt TLS)"
 
-  helm install cert-manager cert-manager/cert-manager \
+  helm upgrade --install cert-manager cert-manager/cert-manager \
     --namespace cert-manager \
     --set installCRDs=true \
     --wait 2>&1 | tee -a "$LOG_FILE"
@@ -520,7 +520,7 @@ install_databases() {
   # PostgreSQL
   if ! helm list -n databases 2>/dev/null | grep -q postgresql; then
     log "Installing PostgreSQL..."
-    helm install postgresql bitnami/postgresql \
+    helm upgrade --install postgresql bitnami/postgresql \
       --namespace databases \
       --set auth.postgresPassword="$POSTGRES_PASSWORD" \
       --set auth.database=caps_platform \
@@ -534,7 +534,7 @@ install_databases() {
   # MongoDB
   if ! helm list -n databases 2>/dev/null | grep -q mongodb; then
     log "Installing MongoDB..."
-    helm install mongodb bitnami/mongodb \
+    helm upgrade --install mongodb bitnami/mongodb \
       --namespace databases \
       --set auth.rootPassword="$MONGO_PASSWORD" \
       --set persistence.size=20Gi \
@@ -547,7 +547,7 @@ install_databases() {
   # Redis
   if ! helm list -n databases 2>/dev/null | grep -q redis; then
     log "Installing Redis..."
-    helm install redis bitnami/redis \
+    helm upgrade --install redis bitnami/redis \
       --namespace databases \
       --set auth.password="$REDIS_PASSWORD" \
       --set replica.replicaCount=1 \
@@ -573,7 +573,7 @@ install_minio() {
     sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/minio-values.yaml > /tmp/minio-values.yaml
 
     log "Installing MinIO..."
-    helm install minio bitnami/minio \
+    helm upgrade --install minio bitnami/minio \
       --namespace storage \
       -f /tmp/minio-values.yaml \
       --set auth.rootUser="$MINIO_ACCESS_KEY" \
@@ -605,7 +605,7 @@ install_argocd() {
     sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/argocd-values.yaml > /tmp/argocd-values.yaml
 
     log "Installing ArgoCD..."
-    helm install argocd argo/argo-cd \
+    helm upgrade --install argocd argo/argo-cd \
       --namespace argocd \
       -f /tmp/argocd-values.yaml \
       --set configs.secret.argocdServerAdminPassword="$(echo -n "$ARGOCD_PASSWORD" | bcrypt-hash 2>/dev/null || htpasswd -bnBC 10 "" "$ARGOCD_PASSWORD" | tr -d ':\n')" \
@@ -642,7 +642,7 @@ install_monitoring() {
     sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/grafana-values.yaml > /tmp/grafana-values.yaml
 
     log "Installing Prometheus + Grafana stack..."
-    helm install kube-prometheus prometheus-community/kube-prometheus-stack \
+    helm upgrade --install kube-prometheus prometheus-community/kube-prometheus-stack \
       --namespace monitoring \
       -f /tmp/grafana-values.yaml \
       --set grafana.adminPassword="$GRAFANA_PASSWORD" \
@@ -659,7 +659,7 @@ install_monitoring() {
   # Loki
   if ! helm list -n monitoring 2>/dev/null | grep -q loki; then
     log "Installing Loki (log aggregation)..."
-    helm install loki grafana/loki-stack \
+    helm upgrade --install loki grafana/loki-stack \
       --namespace monitoring \
       --set grafana.enabled=false \
       --set prometheus.enabled=false \
@@ -707,7 +707,7 @@ install_portainer() {
     sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/portainer-values.yaml > /tmp/portainer-values.yaml
 
     log "Installing Portainer..."
-    helm install portainer portainer/portainer \
+    helm upgrade --install portainer portainer/portainer \
       --namespace portainer \
       -f /tmp/portainer-values.yaml \
       --set service.type=ClusterIP \
