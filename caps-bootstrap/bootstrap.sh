@@ -725,7 +725,7 @@ install_infisical() {
 
   if ! kubectl get deployment -n infisical infisical >/dev/null 2>&1; then
     log "Deploying Infisical..."
-    INFISICAL_ENCRYPTION_KEY="$(gen_secret)"
+    INFISICAL_ENCRYPTION_KEY="$(openssl rand -hex 16)"  # AES-128 requires exactly 16 bytes (32 hex chars)
     INFISICAL_JWT_SECRET="$(gen_secret)"
     write_env "INFISICAL_ENCRYPTION_KEY" "$INFISICAL_ENCRYPTION_KEY"
     write_env "INFISICAL_JWT_SECRET" "$INFISICAL_JWT_SECRET"
