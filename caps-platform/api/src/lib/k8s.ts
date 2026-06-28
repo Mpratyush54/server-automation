@@ -120,18 +120,12 @@ export async function getK8sPods(namespace?: string): Promise<any[]> {
 // ──────────────────────────────────────────────────────────────────────────────
 export async function getPodLogs(namespace: string, podName: string): Promise<string> {
   try {
-    const log = new k8s.Log(kc);
-    const stream = new PassThrough();
-    const chunks: string[] = [];
-    stream.on('data', (chunk) => {
-      chunks.push(chunk.toString());
+    const res = await coreApi.readNamespacedPodLog({
+      name: podName,
+      namespace,
+      tailLines: 100,
     });
-    return await new Promise<string>((resolve, reject) => {
-      log.log(namespace, podName, '', stream, (err) => {
-        if (err) reject(err);
-        else resolve(chunks.join(''));
-      }, { tailLines: 100 });
-    });
+    return res.body;
   } catch (err: any) {
     console.warn(`[k8s] getPodLogs failed for ${podName}: ${err.message}`);
     return `Failed to fetch logs: ${err.message}`;
