@@ -1,4 +1,5 @@
 import * as k8s from '@kubernetes/client-node';
+import { PassThrough } from 'stream';
 
 // ── Kubernetes client (in-cluster when running in a pod, local kubeconfig otherwise) ──
 function makeKubeConfig(): k8s.KubeConfig {
@@ -120,11 +121,13 @@ export async function getK8sPods(namespace?: string): Promise<any[]> {
 export async function getPodLogs(namespace: string, podName: string): Promise<string> {
   try {
     const log = new k8s.Log(kc);
+    const stream = new PassThrough();
+    const chunks: string[] = [];
+    stream.on('data', (chunk) => {
+      chunks.push(chunk.toString());
+    });
     return await new Promise<string>((resolve, reject) => {
-      const chunks: string[] = [];
-      log.log(namespace, podName, '', (chunk: Buffer | string) => {
-        chunks.push(typeof chunk === 'string' ? chunk : chunk.toString());
-      }, (err) => {
+      log.log(namespace, podName, '', stream, (err) => {
         if (err) reject(err);
         else resolve(chunks.join(''));
       }, { tailLines: 100 });
