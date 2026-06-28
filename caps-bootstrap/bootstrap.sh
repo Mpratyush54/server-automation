@@ -862,6 +862,19 @@ spec:
     port: 3000
     targetPort: 3000
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: caps-platform
+spec:
+  selector:
+    app: caps-api
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
