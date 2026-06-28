@@ -709,20 +709,16 @@ install_portainer() {
   is_done "portainer" && { done_ "Portainer already installed"; return; }
   header "Phase 13 — Portainer (Container Management)"
 
-  if ! helm list -n portainer 2>/dev/null | grep -q portainer; then
-    log "Interpolating Portainer configuration templates..."
-    sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/portainer-values.yaml > /tmp/portainer-values.yaml
+  log "Interpolating Portainer configuration templates..."
+  sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/portainer-values.yaml > /tmp/portainer-values.yaml
 
-    log "Installing Portainer..."
-    helm upgrade --install portainer portainer/portainer \
-      --namespace portainer \
-      -f /tmp/portainer-values.yaml \
-      --set service.type=ClusterIP \
-      --wait 2>&1 | tee -a "$LOG_FILE"
-    done_ "Portainer installed"
-  else
-    done_ "Portainer already running"
-  fi
+  log "Upgrading Portainer..."
+  helm upgrade --install portainer portainer/portainer \
+    --namespace portainer \
+    -f /tmp/portainer-values.yaml \
+    --set service.type=ClusterIP \
+    --wait 2>&1 | tee -a "$LOG_FILE"
+  done_ "Portainer configured"
 
   # Initialize Portainer admin account before the 5-minute timeout window expires
   log "Initializing Portainer admin account..."
