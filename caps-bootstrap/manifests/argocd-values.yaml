@@ -14,5 +14,6 @@ configs:
       g, Tech Lead, role:readonly
       g, Developer, role:readonly
 server:
+  insecure: true
   ingress:
     enabled: false

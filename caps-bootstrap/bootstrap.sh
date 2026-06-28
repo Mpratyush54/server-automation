@@ -861,6 +861,10 @@ deploy_caps_platform() {
     --from-literal=DOMAIN="$DOMAIN" \
     --dry-run=client -o yaml | kubectl apply -f - 2>&1 | tee -a "$LOG_FILE"
 
+  # Retrieve Portainer Pod IP dynamically
+  local portainer_pod_ip
+  portainer_pod_ip=$(kubectl get pod -n portainer -l app.kubernetes.io/name=portainer -o jsonpath='{.items[0].status.podIP}' 2>/dev/null || kubectl get pod -n portainer -l app=portainer -o jsonpath='{.items[0].status.podIP}' 2>/dev/null || echo "")
+
   # Deploy CAPS API + Portal
   kubectl apply -n caps-platform -f - <<EOF
 apiVersion: apps/v1
@@ -1005,8 +1009,24 @@ metadata:
   name: portainer-proxy
   namespace: caps-platform
 spec:
-  type: ExternalName
-  externalName: portainer.portainer.svc.cluster.local
+  ports:
+  - name: https
+    port: 9443
+    targetPort: 9443
+    protocol: TCP
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: portainer-proxy
+  namespace: caps-platform
+subsets:
+- addresses:
+  - ip: ${portainer_pod_ip:-127.0.0.1}
+  ports:
+  - name: https
+    port: 9443
+    protocol: TCP
 ---
 apiVersion: v1
 kind: Service
@@ -1066,13 +1086,7 @@ spec:
             name: grafana-proxy
             port:
               number: 80
-      - path: /portainer
-        pathType: Prefix
-        backend:
-          service:
-            name: portainer-proxy
-            port:
-              number: 9000
+
       - path: /infisical
         pathType: Prefix
         backend:
@@ -1119,13 +1133,7 @@ spec:
             name: grafana-proxy
             port:
               number: 80
-      - path: /portainer
-        pathType: Prefix
-        backend:
-          service:
-            name: portainer-proxy
-            port:
-              number: 9000
+
       - path: /infisical
         pathType: Prefix
         backend:
@@ -1146,7 +1154,42 @@ spec:
           service:
             name: caps-portal
             port:
-              number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: portainer-ingress
+  namespace: caps-platform
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "off"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+spec:
+  tls:
+  - hosts:
+    - $DOMAIN
+    secretName: caps-platform-tls
+  rules:
+  - host: $DOMAIN
+    http:
+      paths:
+      - path: /portainer
+        pathType: Prefix
+        backend:
+          service:
+            name: portainer-proxy
+            port:
+              number: 9443
+  - http:
+      paths:
+      - path: /portainer
+        pathType: Prefix
+        backend:
+          service:
+            name: portainer-proxy
+            port:
+              number: 9443
 EOF
 
   log "Waiting for CAPS Platform to become ready..."
