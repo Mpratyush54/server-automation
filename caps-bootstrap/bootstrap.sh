@@ -1154,6 +1154,7 @@ metadata:
     nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
     nginx.ingress.kubernetes.io/proxy-ssl-verify: "off"
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
 spec:
   tls:
   - hosts:
@@ -1163,8 +1164,8 @@ spec:
   - host: $DOMAIN
     http:
       paths:
-      - path: /portainer
-        pathType: Prefix
+      - path: /portainer(/|$)(.*)
+        pathType: ImplementationSpecific
         backend:
           service:
             name: portainer-proxy
@@ -1172,8 +1173,8 @@ spec:
               number: 9443
   - http:
       paths:
-      - path: /portainer
-        pathType: Prefix
+      - path: /portainer(/|$)(.*)
+        pathType: ImplementationSpecific
         backend:
           service:
             name: portainer-proxy
