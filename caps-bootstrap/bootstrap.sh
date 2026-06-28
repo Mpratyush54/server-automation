@@ -643,6 +643,7 @@ install_monitoring() {
       --namespace monitoring \
       -f /tmp/grafana-values.yaml \
       --set grafana.adminPassword="$GRAFANA_PASSWORD" \
+      --set grafana.assertNoLeakedSecrets=false \
       --set prometheus.prometheusSpec.retention=30d \
       --wait --timeout=600s 2>&1 | tee -a "$LOG_FILE"
     done_ "Prometheus + Grafana installed"
