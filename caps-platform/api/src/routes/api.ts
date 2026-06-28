@@ -2849,7 +2849,7 @@ router.post('/settings/smtp', expressAuthenticate, expressRequireRole([UserRole.
   try {
     const ds = await getDb();
     const repo = ds.getRepository(SmtpConfig);
-    if (req.body.isDefault) await repo.update({}, { isDefault: false });
+    if (req.body.isDefault) await repo.update({ isDefault: true }, { isDefault: false });
     const config = repo.create(req.body);
     const saved = (await repo.save(config)) as unknown as SmtpConfig;
     return res.status(201).json({ ...saved, password: saved.password ? '***' : null, apiKey: saved.apiKey ? '***' : null });
@@ -2890,7 +2890,7 @@ router.post('/settings/storage', expressAuthenticate, expressRequireRole([UserRo
   try {
     const ds = await getDb();
     const repo = ds.getRepository(StorageProvider);
-    if (req.body.isDefault) await repo.update({}, { isDefault: false });
+    if (req.body.isDefault) await repo.update({ isDefault: true }, { isDefault: false });
     const provider = repo.create(req.body);
     const saved = await repo.save(provider);
     return res.status(201).json(saved);
