@@ -724,13 +724,23 @@ install_portainer() {
   log "Initializing Portainer admin account..."
   PORTAINER_SVC_IP=$(kubectl get svc -n portainer portainer -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
   if [[ -n "$PORTAINER_SVC_IP" ]]; then
+    PORTAINER_PATH=""
     for i in {1..20}; do
       HTTP_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" "https://$PORTAINER_SVC_IP:9443/api/status" 2>/dev/null || echo "000")
-      if [[ "$HTTP_STATUS" != "000" ]]; then break; fi
+      if [[ "$HTTP_STATUS" == "200" ]]; then
+        PORTAINER_PATH=""
+        break
+      fi
+      HTTP_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" "https://$PORTAINER_SVC_IP:9443/portainer/api/status" 2>/dev/null || echo "000")
+      if [[ "$HTTP_STATUS" == "200" ]]; then
+        PORTAINER_PATH="/portainer"
+        break
+      fi
       sleep 3
     done
+
     ADMIN_PASS="${ADMIN_PASSWORD:-${POSTGRES_PASSWORD:-PortainerAdmin123!}}"
-    INIT_RESULT=$(curl -sk -X POST "https://$PORTAINER_SVC_IP:9443/api/users/admin/init" \
+    INIT_RESULT=$(curl -sk -X POST "https://$PORTAINER_SVC_IP:9443${PORTAINER_PATH}/api/users/admin/init" \
       -H "Content-Type: application/json" \
       -d "{\"Username\":\"admin\",\"Password\":\"$ADMIN_PASS\"}" 2>/dev/null | grep -o '"Id":[0-9]*' || echo "")
     if [[ -n "$INIT_RESULT" ]]; then
