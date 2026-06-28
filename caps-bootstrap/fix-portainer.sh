@@ -48,7 +48,7 @@ print(json.dumps(obj))
 " | kubectl apply -f -
 
 # Create dedicated portainer ingress with HTTPS backend
-kubectl apply -n caps-platform -f - <<EOF
+kubectl apply -n caps-platform -f - <<EOFING
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -60,6 +60,10 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-ssl-verify: "off"
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
 spec:
+  tls:
+  - hosts:
+    - $DOMAIN
+    secretName: caps-platform-tls
   rules:
   - host: $DOMAIN
     http:
@@ -80,6 +84,6 @@ spec:
             name: portainer-proxy
             port:
               number: 9443
-EOF
+EOFING
 
 echo "Portainer patch applied!"
