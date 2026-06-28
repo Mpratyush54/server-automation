@@ -1191,7 +1191,8 @@ seed_caps_platform() {
   header "Phase 17 — Seeding Platform (Admin User + Integrations)"
 
   # Wait for API to be fully ready
-  CAPS_API_URL="http://caps-api.caps-platform.svc.cluster.local:3000"
+  CAPS_API_IP="$(kubectl get svc -n caps-platform caps-api -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo '')"
+  CAPS_API_URL="http://${CAPS_API_IP:-caps-api.caps-platform.svc.cluster.local}:3000"
   log "Waiting for CAPS API to respond at $CAPS_API_URL..."
   for i in {1..30}; do
     if curl -sf "$CAPS_API_URL/api/health" >/dev/null 2>&1; then
