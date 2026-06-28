@@ -46,6 +46,10 @@ import { v4 as uuidv4 } from 'uuid';
 const JWT_SECRET = process.env.JWT_SECRET || 'caps-platform-super-secret-key';
 const router = Router();
 
+router.get('/health', (req: Request, res: Response) => {
+  return res.json({ status: 'ok' });
+});
+
 // Generate RS256 Keypair for OIDC/SSO dynamically on startup
 let oauthPrivateKey: string = '';
 let oauthPublicKey: string = '';
