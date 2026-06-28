@@ -645,6 +645,8 @@ install_monitoring() {
       --set grafana.adminPassword="$GRAFANA_PASSWORD" \
       --set grafana.assertNoLeakedSecrets=false \
       --set prometheus.prometheusSpec.retention=30d \
+      --set grafana.grafana\.ini.server.root_url="http://$DOMAIN/grafana/" \
+      --set grafana.grafana\.ini.server.serve_from_sub_path=true \
       --wait --timeout=600s 2>&1 | tee -a "$LOG_FILE"
     done_ "Prometheus + Grafana installed"
   else
@@ -711,6 +713,27 @@ install_portainer() {
   else
     done_ "Portainer already running"
   fi
+
+  # Initialize Portainer admin account before the 5-minute timeout window expires
+  log "Initializing Portainer admin account..."
+  PORTAINER_SVC_IP=$(kubectl get svc -n portainer portainer -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+  if [[ -n "$PORTAINER_SVC_IP" ]]; then
+    for i in {1..20}; do
+      HTTP_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" "https://$PORTAINER_SVC_IP:9443/api/status" 2>/dev/null || echo "000")
+      if [[ "$HTTP_STATUS" != "000" ]]; then break; fi
+      sleep 3
+    done
+    ADMIN_PASS="${ADMIN_PASSWORD:-${POSTGRES_PASSWORD:-PortainerAdmin123!}}"
+    INIT_RESULT=$(curl -sk -X POST "https://$PORTAINER_SVC_IP:9443/api/users/admin/init" \
+      -H "Content-Type: application/json" \
+      -d "{\"Username\":\"admin\",\"Password\":\"$ADMIN_PASS\"}" 2>/dev/null | grep -o '"Id":[0-9]*' || echo "")
+    if [[ -n "$INIT_RESULT" ]]; then
+      done_ "Portainer admin account created (user: admin)"
+    else
+      warn "Portainer admin init may have already run or timed out — log in manually at /portainer"
+    fi
+  fi
+
   mark_done "portainer"
 }
 
@@ -990,6 +1013,59 @@ spec:
   rules:
   - host: $DOMAIN
     http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: caps-api
+            port:
+              number: 3000
+      - path: /argocd
+        pathType: Prefix
+        backend:
+          service:
+            name: argocd-proxy
+            port:
+              number: 80
+      - path: /grafana
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana-proxy
+            port:
+              number: 80
+      - path: /portainer
+        pathType: Prefix
+        backend:
+          service:
+            name: portainer-proxy
+            port:
+              number: 9000
+      - path: /infisical
+        pathType: Prefix
+        backend:
+          service:
+            name: infisical-proxy
+            port:
+              number: 8080
+      - path: /minio
+        pathType: Prefix
+        backend:
+          service:
+            name: minio-proxy
+            port:
+              number: 9090
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: caps-portal
+            port:
+              number: 80
+  # Catch-all rule: handles bare-IP access (Kubernetes does not allow IPs as host values)
+  # nginx ingress uses a rule with no host as the default server for unmatched requests
+  - http:
       paths:
       - path: /api
         pathType: Prefix
