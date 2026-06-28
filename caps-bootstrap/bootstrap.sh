@@ -534,7 +534,6 @@ install_databases() {
     helm install mongodb bitnami/mongodb \
       --namespace databases \
       --set auth.rootPassword="$MONGO_PASSWORD" \
-      --set auth.databases[0]=caps_platform \
       --set persistence.size=20Gi \
       --wait 2>&1 | tee -a "$LOG_FILE"
     done_ "MongoDB installed"
