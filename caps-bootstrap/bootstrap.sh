@@ -12,6 +12,9 @@
 set -Eeuo pipefail
 trap 'echo "[CAPS] ❌ Bootstrap failed at line $LINENO — check /var/log/caps-bootstrap.log for details." >&2' ERR
 
+# Ensure KUBECONFIG is set for K3s
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+
 # ─── Globals ─────────────────────────────────────────────────────────────────
 CAPS_VERSION="2.0.0"
 LOG_FILE="/var/log/caps-bootstrap.log"
