@@ -970,7 +970,7 @@ metadata:
   namespace: caps-platform
 spec:
   type: ExternalName
-  externalName: minio.storage.svc.cluster.local
+  externalName: minio-console.storage.svc.cluster.local
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -1032,7 +1032,7 @@ spec:
           service:
             name: minio-proxy
             port:
-              number: 9001
+              number: 9090
       - path: /
         pathType: Prefix
         backend:
