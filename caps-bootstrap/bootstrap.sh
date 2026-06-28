@@ -576,8 +576,8 @@ install_minio() {
       --set auth.rootUser="$MINIO_ACCESS_KEY" \
       --set auth.rootPassword="$MINIO_SECRET_KEY" \
       --set persistence.size=50Gi \
-      --set image.tag=latest \
-      --set console.image.tag=latest \
+      --set image.repository=bitnamilegacy/minio \
+      --set api.image.repository=bitnamilegacy/minio-object-browser \
       --set defaultBuckets="caps-backups\,caps-logs" \
       --wait 2>&1 | tee -a "$LOG_FILE"
     done_ "MinIO installed (bucket: caps-backups)"
