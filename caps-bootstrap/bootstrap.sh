@@ -73,7 +73,7 @@ ask_yn() {
   eval "$var='${input:-$default}'"
 }
 
-write_env() { echo "$1=$2" >> "$ENV_FILE"; }
+write_env() { echo "$1='$2'" >> "$ENV_FILE"; }
 
 gen_password() { openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32; }
 gen_secret()   { openssl rand -hex 32; }
