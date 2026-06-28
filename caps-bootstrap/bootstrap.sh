@@ -615,30 +615,26 @@ install_argocd() {
   is_done "argocd" && { done_ "ArgoCD already installed"; return; }
   header "Phase 11 — ArgoCD (GitOps)"
 
-  if ! kubectl get deployment -n argocd argocd-server >/dev/null 2>&1; then
-    log "Interpolating ArgoCD configuration templates..."
-    sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/argocd-values.yaml > /tmp/argocd-values.yaml
+  log "Interpolating ArgoCD configuration templates..."
+  sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/argocd-values.yaml > /tmp/argocd-values.yaml
 
-    log "Installing ArgoCD..."
-    helm upgrade --install argocd argo/argo-cd \
-      --namespace argocd \
-      -f /tmp/argocd-values.yaml \
-      --set configs.secret.argocdServerAdminPassword="$(echo -n "$ARGOCD_PASSWORD" | bcrypt-hash 2>/dev/null || htpasswd -bnBC 10 "" "$ARGOCD_PASSWORD" | tr -d ':\n')" \
-      --wait 2>&1 | tee -a "$LOG_FILE" || {
-      # Fallback: apply official manifests
-      kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-      kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-      log "Waiting for ArgoCD to be ready..."
-      kubectl wait --for=condition=Available deployment --all -n argocd --timeout=300s 2>&1 | tee -a "$LOG_FILE" || true
-      # Set admin password
-      ARGOCD_ADMIN_HASH="$(echo -n "$ARGOCD_PASSWORD" | htpasswd -bnBC 10 "" - 2>/dev/null | tr -d ':\n' || echo "$ARGOCD_PASSWORD")"
-      kubectl -n argocd patch secret argocd-secret \
-        -p "{\"stringData\": {\"admin.password\": \"$ARGOCD_ADMIN_HASH\", \"admin.passwordMtime\": \"$(date +%FT%T%Z)\"}}" 2>&1 | tee -a "$LOG_FILE" || true
-      done_ "ArgoCD installed via manifests"
-    }
-  else
-    done_ "ArgoCD already running"
-  fi
+  log "Installing/Upgrading ArgoCD..."
+  helm upgrade --install argocd argo/argo-cd \
+    --namespace argocd \
+    -f /tmp/argocd-values.yaml \
+    --set configs.secret.argocdServerAdminPassword="$(echo -n "$ARGOCD_PASSWORD" | bcrypt-hash 2>/dev/null || htpasswd -bnBC 10 "" "$ARGOCD_PASSWORD" | tr -d ':\n')" \
+    --wait 2>&1 | tee -a "$LOG_FILE" || {
+    # Fallback: apply official manifests
+    kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+    log "Waiting for ArgoCD to be ready..."
+    kubectl wait --for=condition=Available deployment --all -n argocd --timeout=300s 2>&1 | tee -a "$LOG_FILE" || true
+    # Set admin password
+    ARGOCD_ADMIN_HASH="$(echo -n "$ARGOCD_PASSWORD" | htpasswd -bnBC 10 "" - 2>/dev/null | tr -d ':\n' || echo "$ARGOCD_PASSWORD")"
+    kubectl -n argocd patch secret argocd-secret \
+      -p "{\"stringData\": {\"admin.password\": \"$ARGOCD_ADMIN_HASH\", \"admin.passwordMtime\": \"$(date +%FT%T%Z)\"}}" 2>&1 | tee -a "$LOG_FILE" || true
+    done_ "ArgoCD installed via manifests"
+  }
 
   mark_done "argocd"
 }
@@ -652,24 +648,20 @@ install_monitoring() {
   is_done "monitoring" && { done_ "Monitoring already installed"; return; }
   header "Phase 12 — Monitoring (Grafana + Prometheus + Loki)"
 
-  if ! helm list -n monitoring 2>/dev/null | grep -q kube-prometheus; then
-    log "Interpolating Grafana configuration templates..."
-    sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/grafana-values.yaml > /tmp/grafana-values.yaml
+  log "Interpolating Grafana configuration templates..."
+  sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/grafana-values.yaml > /tmp/grafana-values.yaml
 
-    log "Installing Prometheus + Grafana stack..."
-    helm upgrade --install kube-prometheus prometheus-community/kube-prometheus-stack \
-      --namespace monitoring \
-      -f /tmp/grafana-values.yaml \
-      --set grafana.adminPassword="$GRAFANA_PASSWORD" \
-      --set grafana.assertNoLeakedSecrets=false \
-      --set prometheus.prometheusSpec.retention=30d \
-      --set grafana.grafana\.ini.server.root_url="http://$DOMAIN/grafana/" \
-      --set grafana.grafana\.ini.server.serve_from_sub_path=true \
-      --wait --timeout=600s 2>&1 | tee -a "$LOG_FILE"
-    done_ "Prometheus + Grafana installed"
-  else
-    done_ "Prometheus stack already running"
-  fi
+  log "Upgrading Prometheus + Grafana stack..."
+  helm upgrade --install kube-prometheus prometheus-community/kube-prometheus-stack \
+    --namespace monitoring \
+    -f /tmp/grafana-values.yaml \
+    --set grafana.adminPassword="$GRAFANA_PASSWORD" \
+    --set grafana.assertNoLeakedSecrets=false \
+    --set prometheus.prometheusSpec.retention=30d \
+    --set grafana.grafana\.ini.server.root_url="https://$DOMAIN/grafana/" \
+    --set grafana.grafana\.ini.server.serve_from_sub_path=true \
+    --wait --timeout=600s 2>&1 | tee -a "$LOG_FILE"
+  done_ "Prometheus + Grafana configured"
 
   # Loki
   if ! helm list -n monitoring 2>/dev/null | grep -q loki; then
