@@ -821,6 +821,7 @@ spec:
       containers:
       - name: api
         image: ${CAPS_REPO_URL:-ghcr.io/your-org/caps-platform-api}:${CAPS_IMAGE_TAG}
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
         envFrom:
@@ -879,6 +880,7 @@ spec:
       containers:
       - name: portal
         image: ${CAPS_REPO_URL:-ghcr.io/your-org/caps-platform-portal}:${CAPS_IMAGE_TAG}
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80
         resources:
