@@ -3193,9 +3193,15 @@ router.get('/oauth/authorize', async (req: Request, res: Response) => {
       redirectUri: redirect_uri,
       state: state || ''
     });
+    console.log(`[oauth/authorize] Generated code: ${code} for userId: ${decoded.id}, clientId: ${client_id}. Map size: ${authCodes.size}`);
 
     // Clean up code after 5 minutes
-    setTimeout(() => authCodes.delete(code), 5 * 60 * 1000);
+    setTimeout(() => {
+      if (authCodes.has(code)) {
+        console.log(`[oauth/timeout] Cleaning up expired code: ${code}`);
+        authCodes.delete(code);
+      }
+    }, 5 * 60 * 1000);
 
     return res.redirect(`${redirect_uri}?code=${code}&state=${state || ''}`);
   } catch (err: any) {
@@ -3206,18 +3212,22 @@ router.get('/oauth/authorize', async (req: Request, res: Response) => {
 router.post('/oauth/token', async (req: Request, res: Response) => {
   try {
     const { code, client_id, redirect_uri, grant_type } = req.body;
+    console.log(`[oauth/token] Received exchange request for code: ${code}, client_id: ${client_id}, redirect_uri: ${redirect_uri}`);
     const session = authCodes.get(code);
 
     if (!session) {
+      console.warn(`[oauth/token] Code NOT found in map. Requested code: ${code}. Current map keys:`, Array.from(authCodes.keys()));
       return res.status(400).json({ error: 'Invalid or expired authorization code' });
     }
 
+    console.log(`[oauth/token] Found session for code: ${code}. userId: ${session.userId}, clientId: ${session.clientId}`);
     // Optional validation (we consume it once)
     authCodes.delete(code);
 
     const ds = await getDb();
     const user = await ds.getRepository(User).findOne({ where: { id: session.userId } });
     if (!user) {
+      console.warn(`[oauth/token] User not found for userId: ${session.userId}`);
       return res.status(404).json({ error: 'User not found' });
     }
 
