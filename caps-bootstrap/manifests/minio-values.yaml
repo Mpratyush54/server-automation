@@ -2,9 +2,9 @@ ingress:
   enabled: false
 extraEnvVars:
   - name: MINIO_BROWSER_REDIRECT_URL
-    value: https://{{DOMAIN}}/minio
+    value: https://minio.{{DOMAIN}}
   - name: MINIO_IDENTITY_OPENID_CONFIG_URL
-    value: https://{{DOMAIN}}/api/oauth/.well-known/openid-configuration
+    value: http://caps-api.caps-platform.svc.cluster.local:3000/api/oauth/.well-known/openid-configuration
   - name: MINIO_IDENTITY_OPENID_CLIENT_ID
     value: minio
   - name: MINIO_IDENTITY_OPENID_CLIENT_SECRET
