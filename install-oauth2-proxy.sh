@@ -2,6 +2,8 @@
 set -e
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
+DOMAIN="${1:-148.113.59.57.sslip.io}"
+
 helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests 2>/dev/null || true
 helm repo update 2>&1 | tail -3
 
@@ -18,15 +20,15 @@ config:
   upstreams: ["static://202"]
   configFile: |
     provider = "oidc"
-    oidc_issuer_url = "https://148.113.59.57.sslip.io/api/oauth"
+    oidc_issuer_url = "https://${DOMAIN}/api/oauth"
     email_domains = [ "*" ]
     upstreams = [ "static://202" ]
     set_xauthrequest = true
     reverse_proxy = true
     cookie_secure = true
     cookie_samesite = "lax"
-    cookie_domains = [ ".148.113.59.57.sslip.io" ]
-    whitelist_domains = [ ".148.113.59.57.sslip.io" ]
+    cookie_domains = [ ".${DOMAIN}" ]
+    whitelist_domains = [ ".${DOMAIN}" ]
     pass_access_token = true
     pass_authorization_header = true
     set_authorization_header = true
@@ -35,7 +37,7 @@ config:
     cookie_refresh = "5m"
     cookie_expire = "24h"
     scope = "openid profile email groups"
-    redirect_url = "https://148.113.59.57.sslip.io/oauth2/callback"
+    redirect_url = "https://${DOMAIN}/oauth2/callback"
 
 service:
   type: ClusterIP
@@ -53,4 +55,4 @@ helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
   -f /tmp/oauth2-values.yaml \
   --wait 2>&1
 
-echo "oauth2-proxy installed successfully"
+echo "oauth2-proxy installed successfully (DOMAIN=$DOMAIN)"
