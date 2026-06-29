@@ -1,6 +1,6 @@
 configs:
   cm:
-    server.basehref: /argocd
+    server.basehref: "{{BASEHREF}}"
     oidc.config: |
       name: CAPS Platform
       issuer: https://{{DOMAIN}}/api/oauth

@@ -407,6 +407,16 @@ install_kubernetes() {
     fi
     done_ "k3s installed and running"
   fi
+
+  # Fix CoreDNS to use real upstream DNS (systemd-resolved stub at 127.0.0.53
+  # is unreachable from inside CoreDNS container, causing DNS failures)
+  log "Patching CoreDNS to use 8.8.8.8 as upstream DNS..."
+  kubectl get configmap -n kube-system coredns -o yaml | \
+    sed 's|forward . /etc/resolv.conf|forward . 8.8.8.8 8.8.4.4|' | \
+    kubectl apply -f - 2>&1 | tee -a "$LOG_FILE"
+  kubectl rollout restart -n kube-system deploy/coredns 2>&1 | tee -a "$LOG_FILE"
+  kubectl wait --for=condition=Available deploy/coredns -n kube-system --timeout=60s 2>&1 | tee -a "$LOG_FILE"
+
   mark_done "k3s"
 }
 
@@ -616,19 +626,27 @@ install_argocd() {
   header "Phase 11 — ArgoCD (GitOps)"
 
   log "Interpolating ArgoCD configuration templates..."
-  sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/argocd-values.yaml > /tmp/argocd-values.yaml
+  if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    BASEHREF="/argocd"
+  else
+    BASEHREF=""
+  fi
+  sed -e "s/{{DOMAIN}}/$DOMAIN/g" -e "s|{{BASEHREF}}|$BASEHREF|g" manifests/argocd-values.yaml > /tmp/argocd-values.yaml
 
   log "Installing/Upgrading ArgoCD..."
   helm upgrade --install argocd argo/argo-cd \
     --namespace argocd \
     -f /tmp/argocd-values.yaml \
     --set configs.secret.argocdServerAdminPassword="$(echo -n "$ARGOCD_PASSWORD" | bcrypt-hash 2>/dev/null || htpasswd -bnBC 10 "" "$ARGOCD_PASSWORD" | tr -d ':\n')" \
+    --set configs.params."server\.insecure"=true \
     --wait 2>&1 | tee -a "$LOG_FILE" || {
     # Fallback: apply official manifests
     kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
     kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
     log "Waiting for ArgoCD to be ready..."
     kubectl wait --for=condition=Available deployment --all -n argocd --timeout=300s 2>&1 | tee -a "$LOG_FILE" || true
+    # Patch argocd-server with --insecure to prevent redirect loops behind nginx ingress
+    kubectl patch deployment argocd-server -n argocd --type=json -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--insecure"}]' 2>&1 | tee -a "$LOG_FILE" || true
     # Set admin password
     ARGOCD_ADMIN_HASH="$(echo -n "$ARGOCD_PASSWORD" | htpasswd -bnBC 10 "" - 2>/dev/null | tr -d ':\n' || echo "$ARGOCD_PASSWORD")"
     kubectl -n argocd patch secret argocd-secret \
@@ -719,50 +737,26 @@ install_portainer() {
     --set service.type=ClusterIP \
     --wait 2>&1 | tee -a "$LOG_FILE"
 
-  log "Patching Portainer deployment with base-url argument..."
-  cat << 'EOF' > /tmp/portainer-patch.json
-[
-  {
-    "op": "add",
-    "path": "/spec/template/spec/containers/0/args",
-    "value": ["--base-url=/portainer"]
-  }
-]
-EOF
-  kubectl patch deployment portainer -n portainer --type=json --patch-file /tmp/portainer-patch.json 2>&1 | tee -a "$LOG_FILE"
-  rm -f /tmp/portainer-patch.json
-
-  log "Waiting for Portainer to restart after patch..."
-  kubectl rollout status deployment/portainer -n portainer --timeout=120s 2>&1 | tee -a "$LOG_FILE"
-  done_ "Portainer configured" 
-
   # Initialize Portainer admin account before the 5-minute timeout window expires
   log "Initializing Portainer admin account..."
   PORTAINER_SVC_IP=$(kubectl get svc -n portainer portainer -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
   if [[ -n "$PORTAINER_SVC_IP" ]]; then
-    PORTAINER_PATH=""
     for i in {1..20}; do
-      HTTP_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" "https://$PORTAINER_SVC_IP:9443/api/status" 2>/dev/null || echo "000")
+      HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://$PORTAINER_SVC_IP:9000/api/status" 2>/dev/null || echo "000")
       if [[ "$HTTP_STATUS" == "200" ]]; then
-        PORTAINER_PATH=""
-        break
-      fi
-      HTTP_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" "https://$PORTAINER_SVC_IP:9443/portainer/api/status" 2>/dev/null || echo "000")
-      if [[ "$HTTP_STATUS" == "200" ]]; then
-        PORTAINER_PATH="/portainer"
         break
       fi
       sleep 3
     done
 
     ADMIN_PASS="${ADMIN_PASSWORD:-${POSTGRES_PASSWORD:-PortainerAdmin123!}}"
-    INIT_RESULT=$(curl -sk -X POST "https://$PORTAINER_SVC_IP:9443${PORTAINER_PATH}/api/users/admin/init" \
+    INIT_RESULT=$(curl -s -X POST "http://$PORTAINER_SVC_IP:9000/api/users/admin/init" \
       -H "Content-Type: application/json" \
       -d "{\"Username\":\"admin\",\"Password\":\"$ADMIN_PASS\"}" 2>/dev/null | grep -o '"Id":[0-9]*' || echo "")
     if [[ -n "$INIT_RESULT" ]]; then
       done_ "Portainer admin account created (user: admin)"
     else
-      warn "Portainer admin init may have already run or timed out — log in manually at /portainer"
+      warn "Portainer admin init may have already run or timed out — log in manually at portainer.$DOMAIN"
     fi
   fi
 
@@ -875,11 +869,7 @@ deploy_caps_platform() {
     --from-literal=DOMAIN="$DOMAIN" \
     --dry-run=client -o yaml | kubectl apply -f - 2>&1 | tee -a "$LOG_FILE"
 
-  # Retrieve Portainer Pod IP dynamically
-  local portainer_pod_ip
-  portainer_pod_ip=$(kubectl get pod -n portainer -l app.kubernetes.io/name=portainer -o jsonpath='{.items[0].status.podIP}' 2>/dev/null || kubectl get pod -n portainer -l app=portainer -o jsonpath='{.items[0].status.podIP}' 2>/dev/null || echo "")
-
-  # Deploy CAPS API + Portal
+    # Deploy CAPS API + Portal
   kubectl apply -n caps-platform -f - <<EOF
 apiVersion: apps/v1
 kind: Deployment
@@ -1023,24 +1013,8 @@ metadata:
   name: portainer-proxy
   namespace: caps-platform
 spec:
-  ports:
-  - name: https
-    port: 9443
-    targetPort: 9443
-    protocol: TCP
----
-apiVersion: v1
-kind: Endpoints
-metadata:
-  name: portainer-proxy
-  namespace: caps-platform
-subsets:
-- addresses:
-  - ip: ${portainer_pod_ip:-127.0.0.1}
-  ports:
-  - name: https
-    port: 9443
-    protocol: TCP
+  type: ExternalName
+  externalName: portainer.portainer.svc.cluster.local
 ---
 apiVersion: v1
 kind: Service
@@ -1174,7 +1148,7 @@ spec:
           service:
             name: portainer-proxy
             port:
-              number: 9443
+              number: 9000
   # Catch-all rule: handles bare-IP access
   - http:
       paths:
@@ -1220,43 +1194,6 @@ spec:
             name: caps-portal
             port:
               number: 80
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: portainer-ingress
-  namespace: caps-platform
-  annotations:
-    kubernetes.io/ingress.class: nginx
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
-    nginx.ingress.kubernetes.io/proxy-ssl-verify: "off"
-    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
-    nginx.ingress.kubernetes.io/rewrite-target: /\$2
-spec:
-  tls:
-  - hosts:
-    - $DOMAIN
-    secretName: caps-platform-tls
-  rules:
-  - host: $DOMAIN
-    http:
-      paths:
-      - path: /portainer(/|$)(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: portainer-proxy
-            port:
-              number: 9443
-  - http:
-      paths:
-      - path: /portainer(/|$)(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: portainer-proxy
-            port:
-              number: 9443
 EOF
 
   log "Waiting for CAPS Platform to become ready..."
