@@ -3213,11 +3213,31 @@ router.post('/oauth/token', async (req: Request, res: Response) => {
   try {
     const { code, client_id, redirect_uri, grant_type } = req.body;
     console.log(`[oauth/token] Received exchange request for code: ${code}, client_id: ${client_id}, redirect_uri: ${redirect_uri}`);
+    
+    // Extract client_id from HTTP Basic Auth header if not present in body
+    let clientId = client_id;
+    const authHeader = req.headers.authorization;
+    if (!clientId && authHeader && authHeader.toLowerCase().startsWith('basic ')) {
+      try {
+        const credentials = Buffer.from(authHeader.substring(6), 'base64').toString('utf-8');
+        clientId = credentials.split(':')[0];
+        console.log(`[oauth/token] Extracted clientId from Basic Auth header: ${clientId}`);
+      } catch (e: any) {
+        console.error('[oauth/token] Failed to parse basic auth header:', e.message);
+      }
+    }
+
     const session = authCodes.get(code);
 
     if (!session) {
       console.warn(`[oauth/token] Code NOT found in map. Requested code: ${code}. Current map keys:`, Array.from(authCodes.keys()));
       return res.status(400).json({ error: 'Invalid or expired authorization code' });
+    }
+
+    // Fall back to session clientId if still undefined
+    if (!clientId) {
+      clientId = session.clientId;
+      console.log(`[oauth/token] Using session clientId fallback: ${clientId}`);
     }
 
     console.log(`[oauth/token] Found session for code: ${code}. userId: ${session.userId}, clientId: ${session.clientId}`);
@@ -3239,7 +3259,7 @@ router.post('/oauth/token', async (req: Request, res: Response) => {
     const accessToken = jwt.sign(
       { id: user.id, email: user.email, name: user.name, role: user.role },
       oauthPrivateKey,
-      { algorithm: 'RS256', expiresIn: '1h', issuer, audience: client_id, keyid: 'caps-key-1' }
+      { algorithm: 'RS256', expiresIn: '1h', issuer, audience: clientId, keyid: 'caps-key-1' }
     );
 
     // Sign ID Token (standard OIDC claims signed with RSA private key)
@@ -3247,7 +3267,7 @@ router.post('/oauth/token', async (req: Request, res: Response) => {
       {
         iss: issuer,
         sub: user.id,
-        aud: client_id,
+        aud: clientId,
         exp: Math.floor(Date.now() / 1000) + 3600,
         iat: Math.floor(Date.now() / 1000),
         name: user.name,
