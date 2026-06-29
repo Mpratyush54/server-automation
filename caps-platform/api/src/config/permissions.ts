@@ -37,6 +37,17 @@ export const PERMISSIONS = {
   'config.delete': 'Delete project configuration',
   'config.manage-feature-flags': 'Manage feature flags',
 
+  // Secrets
+  'secrets.list': 'List secrets (values masked)',
+  'secrets.read': 'View secret details',
+  'secrets.reveal': 'Reveal secret plaintext values',
+  'secrets.create': 'Create secrets',
+  'secrets.update': 'Update secrets',
+  'secrets.delete': 'Delete secrets',
+  'secrets.export': 'Export secrets as .env',
+  'secrets.import': 'Bulk import secrets',
+  'secrets.rollback': 'Rollback secret to previous version',
+
   // Alerts
   'alerts.list': 'List alerts',
   'alerts.create': 'Create alerts',
@@ -92,6 +103,7 @@ export const ROLE_PRESETS: Record<string, Permission[]> = {
     'deployments.trigger', 'deployments.terminate', 'deployments.restart', 'deployments.scale', 'deployments.read', 'deployments.rollback',
     'databases.provision', 'databases.backup', 'databases.restore', 'databases.delete', 'databases.create-connection', 'databases.delete-connection', 'databases.read',
     'config.read', 'config.update', 'config.delete', 'config.manage-feature-flags',
+    'secrets.list', 'secrets.read', 'secrets.reveal', 'secrets.create', 'secrets.update', 'secrets.delete', 'secrets.export', 'secrets.import', 'secrets.rollback',
     'alerts.list', 'alerts.create', 'alerts.update', 'alerts.delete',
     'logs.read', 'logs.search', 'metrics.read', 'metrics.read-rpm',
     'settings.smtp.read', 'settings.smtp.manage', 'settings.storage.read', 'settings.storage.manage',
@@ -108,6 +120,7 @@ export const ROLE_PRESETS: Record<string, Permission[]> = {
     'deployments.trigger', 'deployments.terminate', 'deployments.read', 'deployments.rollback',
     'databases.read',
     'config.read', 'config.update', 'config.manage-feature-flags',
+    'secrets.list', 'secrets.read', 'secrets.reveal', 'secrets.create', 'secrets.update', 'secrets.export', 'secrets.import',
     'alerts.list', 'alerts.create', 'alerts.update',
     'logs.read', 'logs.search', 'metrics.read', 'metrics.read-rpm',
     'cicd.read',
