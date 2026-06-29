@@ -1205,17 +1205,33 @@ router.get('/config', expressAuthenticate, async (req: Request, res: Response) =
   try {
     const { projectId, environmentId } = req.query as Record<string, string>;
     const ds = await getDb();
-    const repo = ds.getRepository(ProjectConfig);
     
     const filter: Record<string, any> = {};
     if (projectId) filter.projectId = projectId;
     if (environmentId) filter.environmentId = environmentId;
 
-    const configs = await repo.find({ where: filter });
+    const configRepo = ds.getRepository(ProjectConfig);
+    const configs = await configRepo.find({ where: filter });
     const result: Record<string, string> = {};
     for (const c of configs) {
-      result[c.key] = c.value;
+      result[c.key] = c.isSecret ? '***' : c.value;
     }
+
+    // Include decrypted secrets from the Secret entity
+    const secretRepo = ds.getRepository(Secret);
+    const secretFilter: Record<string, any> = { isActive: true };
+    if (projectId) secretFilter.projectId = projectId;
+    if (environmentId) secretFilter.environmentId = environmentId;
+    const secrets = await secretRepo.find({ where: secretFilter });
+    const masterKey = process.env.SECRETS_ENCRYPTION_KEY;
+    if (masterKey) {
+      for (const s of secrets) {
+        try {
+          result[s.key] = decryptValue(s.encryptedValue, masterKey);
+        } catch {}
+      }
+    }
+
     return res.json(result);
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
