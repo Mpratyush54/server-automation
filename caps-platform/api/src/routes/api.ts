@@ -3103,9 +3103,9 @@ router.delete('/bug-reports/:id', expressAuthenticate, expressRequireRole([UserR
 // OIDC / OAUTH2 SSO PROVIDER
 // ----------------------------------------------------
 router.get('/oauth/.well-known/openid-configuration', (req: Request, res: Response) => {
-  const host = req.headers.host || 'localhost:3000';
-  const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-  const baseUrl = `${protocol}://${host}/api/oauth`;
+  const domain = process.env.DOMAIN || req.headers.host || 'localhost:3000';
+  const protocol = process.env.DOMAIN ? 'https' : (req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http');
+  const baseUrl = `${protocol}://${domain}/api/oauth`;
 
   return res.json({
     issuer: baseUrl,
