@@ -611,25 +611,21 @@ install_minio() {
   is_done "minio" && { done_ "MinIO already installed"; return; }
   header "Phase 10 — MinIO (Object Storage)"
 
-  if ! helm list -n storage 2>/dev/null | grep -q minio; then
-    log "Interpolating MinIO configuration templates..."
-    sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/minio-values.yaml > /tmp/minio-values.yaml
+  log "Interpolating MinIO configuration templates..."
+  sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/minio-values.yaml > /tmp/minio-values.yaml
 
-    log "Installing MinIO..."
-    helm upgrade --install minio bitnami/minio \
-      --namespace storage \
-      -f /tmp/minio-values.yaml \
-      --set auth.rootUser="$MINIO_ACCESS_KEY" \
-      --set auth.rootPassword="$MINIO_SECRET_KEY" \
-      --set persistence.size=50Gi \
-      --set image.repository=bitnamilegacy/minio \
-      --set console.image.repository=bitnamilegacy/minio-object-browser \
-      --set defaultBuckets="caps-backups\,caps-logs" \
-      --wait 2>&1 | tee -a "$LOG_FILE"
-    done_ "MinIO installed (bucket: caps-backups)"
-  else
-    done_ "MinIO already running"
-  fi
+  log "Installing MinIO..."
+  helm upgrade --install minio bitnami/minio \
+    --namespace storage \
+    -f /tmp/minio-values.yaml \
+    --set auth.rootUser="$MINIO_ACCESS_KEY" \
+    --set auth.rootPassword="$MINIO_SECRET_KEY" \
+    --set persistence.size=50Gi \
+    --set image.repository=bitnamilegacy/minio \
+    --set console.image.repository=bitnamilegacy/minio-object-browser \
+    --set defaultBuckets="caps-backups\,caps-logs" \
+    --wait 2>&1 | tee -a "$LOG_FILE"
+  done_ "MinIO installed (bucket: caps-backups)"
 
   mark_done "minio"
 }
