@@ -1102,6 +1102,7 @@ spec:
     - grafana.$DOMAIN
     - infisical.$DOMAIN
     - portainer.$DOMAIN
+    - minio.$DOMAIN
     secretName: caps-platform-tls
   rules:
   - host: $DOMAIN
@@ -1199,6 +1200,16 @@ spec:
             name: portainer-proxy
             port:
               number: 9000
+  - host: minio.$DOMAIN
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: minio-proxy
+            port:
+              number: 9090
   # Catch-all rule: handles bare-IP access
   - http:
       paths:
@@ -1415,7 +1426,8 @@ EOF
   [[ "$INSTALL_ARGOCD"    =~ ^[Yy] ]] && echo -e "  ├─ ArgoCD:        ${CYAN}https://argocd.$DOMAIN${NC}"
   [[ "$INSTALL_MONITORING" =~ ^[Yy] ]] && echo -e "  ├─ Grafana:       ${CYAN}https://grafana.$DOMAIN${NC}"
   [[ "$INSTALL_INFISICAL"  =~ ^[Yy] ]] && echo -e "  ├─ Infisical:     ${CYAN}https://infisical.$DOMAIN${NC}"
-  [[ "$INSTALL_PORTAINER"  =~ ^[Yy] ]] && echo -e "  └─ Portainer:     ${CYAN}https://portainer.$DOMAIN${NC}"
+  [[ "$INSTALL_PORTAINER"  =~ ^[Yy] ]] && echo -e "  ├─ Portainer:     ${CYAN}https://portainer.$DOMAIN${NC}"
+  echo -e "  └─ MinIO Console: ${CYAN}https://minio.$DOMAIN${NC}"
 
   echo
   echo -e "${BOLD}  🔐 Credentials${NC} ${RED}(KEEP THESE SAFE — stored in $ENV_FILE)${NC}"
@@ -1445,6 +1457,7 @@ EOF
   [[ "$INSTALL_MONITORING" =~ ^[Yy] ]] && echo -e "  grafana.$DOMAIN      A  $SERVER_IP"
   [[ "$INSTALL_INFISICAL"  =~ ^[Yy] ]] && echo -e "  infisical.$DOMAIN    A  $SERVER_IP"
   [[ "$INSTALL_PORTAINER"  =~ ^[Yy] ]] && echo -e "  portainer.$DOMAIN    A  $SERVER_IP"
+  echo -e "  minio.$DOMAIN        A  $SERVER_IP"
 
   echo
   echo -e "${BOLD}  📁 Key Files${NC}"
