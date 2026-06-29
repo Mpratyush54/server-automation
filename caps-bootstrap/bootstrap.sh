@@ -882,7 +882,7 @@ metadata:
     app: caps-api
     version: "${CAPS_IMAGE_TAG}"
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: caps-api
