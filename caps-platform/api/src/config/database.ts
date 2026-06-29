@@ -16,6 +16,8 @@ import { SdkCredential } from '../entities/SdkCredential';
 import { DbBackup } from '../entities/DbBackup';
 import { SmtpConfig } from '../entities/SmtpConfig';
 import { StorageProvider } from '../entities/StorageProvider';
+import { Secret } from '../entities/Secret';
+import { SecretVersion } from '../entities/SecretVersion';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -24,7 +26,7 @@ export const AppDataSource = new DataSource({
   username: process.env.POSTGRES_USER || 'caps',
   password: process.env.POSTGRES_PASSWORD || 'caps',
   database: process.env.POSTGRES_DB || 'caps_platform',
-  entities: [Project, Environment, Deployment, ServiceRegistration, ProjectConfig, File, Alert, DbConnection, User, Role, AuditLog, ClickupTaskLink, SdkCredential, DbBackup, SmtpConfig, StorageProvider],
+  entities: [Project, Environment, Deployment, ServiceRegistration, ProjectConfig, File, Alert, DbConnection, User, Role, AuditLog, ClickupTaskLink, SdkCredential, DbBackup, SmtpConfig, StorageProvider, Secret, SecretVersion],
   synchronize: true,
   logging: false,
 });
