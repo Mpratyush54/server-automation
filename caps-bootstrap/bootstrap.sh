@@ -1007,6 +1007,19 @@ spec:
     port: 80
     targetPort: 80
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: caps-api-admin-binding
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: caps-platform
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+---
 # Deploy Cross-Namespace Proxy Services (ExternalName)
 apiVersion: v1
 kind: Service
@@ -1307,55 +1320,40 @@ seed_caps_platform() {
     STORAGE_PAYLOAD="{\"name\":\"MinIO (bundled)\",\"providerType\":\"minio\",\"endpointUrl\":\"http://minio.storage:9000\",\"bucketName\":\"caps-backups\",\"isDefault\":true,\"credentials\":{\"accessKeyId\":\"${MINIO_ACCESS_KEY:-}\",\"secretAccessKey\":\"${MINIO_SECRET_KEY:-}\"}}"
   fi
 
-  # Run seed via one-shot pod
-  kubectl run caps-seed \
-    --namespace caps-platform \
-    --image=curlimages/curl:latest \
-    --restart=Never \
-    --env="ADMIN_EMAIL=$ADMIN_EMAIL" \
-    --env="POSTGRES_PASSWORD=$POSTGRES_PASSWORD" \
-    --env="SMTP_PAYLOAD=$SMTP_PAYLOAD" \
-    --env="STORAGE_PAYLOAD=$STORAGE_PAYLOAD" \
-    --env="CAPS_API_URL=$CAPS_API_URL" \
-    --rm \
-    --attach \
-    --quiet \
-    -- sh -c '
-      echo "Seeding CAPS Platform..."
-      # Register admin user
-      curl -sf -X POST "$CAPS_API_URL/api/auth/register" \
+  log "Seeding CAPS Platform..."
+  # Register admin user
+  curl -sf -X POST "$CAPS_API_URL/api/auth/register" \
+    -H "Content-Type: application/json" \
+    -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$POSTGRES_PASSWORD\",\"name\":\"Platform Admin\",\"role\":\"devops\"}" 2>&1 | tee -a "$LOG_FILE" || true
+
+  # Login to get Token
+  TOKEN=$(curl -sf -X POST "$CAPS_API_URL/api/auth/login" \
+    -H "Content-Type: application/json" \
+    -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$POSTGRES_PASSWORD\"}" | grep -o "\"token\":\"[^\"]*\"" | cut -d"\"" -f4 || echo "")
+
+  if [ -n "$TOKEN" ]; then
+    # Register Storage provider if payload exists
+    if [ -n "$STORAGE_PAYLOAD" ]; then
+      log "Registering storage provider..."
+      curl -sf -X POST "$CAPS_API_URL/api/settings/storage" \
         -H "Content-Type: application/json" \
-        -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$POSTGRES_PASSWORD\",\"name\":\"Platform Admin\",\"role\":\"devops\"}" || true
+        -H "Authorization: Bearer $TOKEN" \
+        -d "$STORAGE_PAYLOAD" 2>&1 | tee -a "$LOG_FILE" || echo "Warning: Storage provider registration failed"
+    fi
 
-      # Login to get Token
-      TOKEN=$(curl -sf -X POST "$CAPS_API_URL/api/auth/login" \
+    # Register SMTP if payload exists
+    if [ -n "$SMTP_PAYLOAD" ]; then
+      log "Registering SMTP configuration..."
+      curl -sf -X POST "$CAPS_API_URL/api/settings/smtp" \
         -H "Content-Type: application/json" \
-        -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$POSTGRES_PASSWORD\"}" | grep -o "\"token\":\"[^\"]*\"" | cut -d"\"" -f4 || echo "")
+        -H "Authorization: Bearer $TOKEN" \
+        -d "$SMTP_PAYLOAD" 2>&1 | tee -a "$LOG_FILE" || echo "Warning: SMTP registration failed"
+    fi
 
-      if [ -n "$TOKEN" ]; then
-        # Register Storage provider if payload exists
-        if [ -n "$STORAGE_PAYLOAD" ]; then
-          echo "Registering storage provider..."
-          curl -sf -X POST "$CAPS_API_URL/api/settings/storage" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $TOKEN" \
-            -d "$STORAGE_PAYLOAD" || echo "Warning: Storage provider registration failed"
-        fi
-
-        # Register SMTP if payload exists
-        if [ -n "$SMTP_PAYLOAD" ]; then
-          echo "Registering SMTP configuration..."
-          curl -sf -X POST "$CAPS_API_URL/api/settings/smtp" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $TOKEN" \
-            -d "$SMTP_PAYLOAD" || echo "Warning: SMTP registration failed"
-        fi
-
-        echo "Seed complete."
-      else
-        echo "Error: Failed to obtain auth token for seeding."
-      fi
-    ' 2>&1 | tee -a "$LOG_FILE" || warn "Seed pod failed (non-fatal, can be done via UI)"
+    log "Seed complete."
+  else
+    log "Error: Failed to obtain auth token for seeding."
+  fi
 
   mark_done "seed"
   done_ "Platform seeded with admin user and default configurations"
