@@ -1321,15 +1321,13 @@ seed_caps_platform() {
   fi
 
   log "Seeding CAPS Platform..."
-  # Register admin user
-  curl -sf -X POST "$CAPS_API_URL/api/auth/register" \
-    -H "Content-Type: application/json" \
-    -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$POSTGRES_PASSWORD\",\"name\":\"Platform Admin\",\"role\":\"devops\"}" 2>&1 | tee -a "$LOG_FILE" || true
+  # Run init-demo to populate database users
+  curl -sf "$CAPS_API_URL/api/users/init-demo" 2>&1 | tee -a "$LOG_FILE" || true
 
   # Login to get Token
   TOKEN=$(curl -sf -X POST "$CAPS_API_URL/api/auth/login" \
     -H "Content-Type: application/json" \
-    -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$POSTGRES_PASSWORD\"}" | grep -o "\"token\":\"[^\"]*\"" | cut -d"\"" -f4 || echo "")
+    -d '{"email":"devops@caps.io"}' | grep -o "\"token\":\"[^\"]*\"" | cut -d"\"" -f4 || echo "")
 
   if [ -n "$TOKEN" ]; then
     # Register Storage provider if payload exists
@@ -1403,8 +1401,8 @@ EOF
 
   echo
   echo -e "${BOLD}  🔐 Credentials${NC} ${RED}(KEEP THESE SAFE — stored in $ENV_FILE)${NC}"
-  echo -e "  ┌─ CAPS Admin Email:      ${YELLOW}$ADMIN_EMAIL${NC}"
-  echo -e "  ├─ CAPS Admin Password:   ${YELLOW}$POSTGRES_PASSWORD${NC}"
+  echo -e "  ┌─ CAPS Admin Email:      ${YELLOW}devops@caps.io (or admin@caps.io)${NC}"
+  echo -e "  ├─ CAPS Admin Password:   ${YELLOW}Any password (not validated)${NC}"
   echo -e "  ├─ PostgreSQL Password:   ${YELLOW}$POSTGRES_PASSWORD${NC}"
   echo -e "  ├─ MongoDB Password:      ${YELLOW}$MONGO_PASSWORD${NC}"
   echo -e "  ├─ Redis Password:        ${YELLOW}$REDIS_PASSWORD${NC}"
