@@ -1,5 +1,6 @@
 configs:
   cm:
+    url: "{{ARGOCD_URL}}"
     server.basehref: "{{BASEHREF}}"
     oidc.config: |
       name: CAPS Platform

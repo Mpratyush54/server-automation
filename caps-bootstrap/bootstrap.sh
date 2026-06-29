@@ -628,10 +628,12 @@ install_argocd() {
   log "Interpolating ArgoCD configuration templates..."
   if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     BASEHREF="/argocd"
+    ARGOCD_URL="http://$DOMAIN/argocd"
   else
     BASEHREF=""
+    ARGOCD_URL="https://argocd.$DOMAIN"
   fi
-  sed -e "s/{{DOMAIN}}/$DOMAIN/g" -e "s|{{BASEHREF}}|$BASEHREF|g" manifests/argocd-values.yaml > /tmp/argocd-values.yaml
+  sed -e "s/{{DOMAIN}}/$DOMAIN/g" -e "s|{{BASEHREF}}|$BASEHREF|g" -e "s|{{ARGOCD_URL}}|$ARGOCD_URL|g" manifests/argocd-values.yaml > /tmp/argocd-values.yaml
 
   log "Installing/Upgrading ArgoCD..."
   helm upgrade --install argocd argo/argo-cd \
