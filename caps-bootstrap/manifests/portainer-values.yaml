@@ -1,4 +1,2 @@
 ingress:
   enabled: false
-extraArgs:
-  - --base-url=/portainer

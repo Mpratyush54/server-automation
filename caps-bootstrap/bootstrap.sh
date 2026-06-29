@@ -735,6 +735,33 @@ EOF
 }
 
 # =============================================================================
+# PHASE 12b — oauth2-proxy (SSO Gateway)
+# =============================================================================
+install_oauth2_proxy() {
+  source "$ENV_FILE"
+  is_done "oauth2-proxy" && { done_ "oauth2-proxy already installed"; return; }
+  header "Phase 12b — oauth2-proxy (SSO Gateway)"
+
+  helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests 2>/dev/null || true
+  helm repo update 2>&1 | tail -3
+
+  kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
+
+  COOKIE_SECRET=$(openssl rand -base64 32 | tr -d '=' | tr '/+' '_-')
+
+  sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/oauth2-proxy-values.yaml > /tmp/oauth2-values.yaml
+  sed -i "s/{{COOKIE_SECRET}}/$COOKIE_SECRET/g" /tmp/oauth2-values.yaml
+
+  helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
+    --namespace oauth2-proxy \
+    -f /tmp/oauth2-values.yaml \
+    --wait 2>&1 | tee -a "$LOG_FILE"
+
+  done_ "oauth2-proxy installed"
+  mark_done "oauth2-proxy"
+}
+
+# =============================================================================
 # PHASE 13 — Portainer
 # =============================================================================
 install_portainer() {
@@ -753,29 +780,24 @@ install_portainer() {
     --set service.type=ClusterIP \
     --wait 2>&1 | tee -a "$LOG_FILE"
 
-  log "Patching Portainer deployment with base-url and no-setup-token arguments..."
-  cat << 'EOF' > /tmp/portainer-patch.json
-[
-  {
-    "op": "add",
-    "path": "/spec/template/spec/containers/0/args",
-    "value": ["--base-url=/portainer", "--no-setup-token"]
-  }
-]
-EOF
-  kubectl patch deployment portainer -n portainer --type=json --patch-file /tmp/portainer-patch.json 2>&1 | tee -a "$LOG_FILE"
-  rm -f /tmp/portainer-patch.json
-
-  log "Waiting for Portainer to restart after patch..."
+  log "Waiting for Portainer to become ready..."
   kubectl rollout status deployment/portainer -n portainer --timeout=120s 2>&1 | tee -a "$LOG_FILE"
+
+  # Remove --base-url if previously set (migration from path-based to subdomain)
+  local CURRENT_ARGS=$(kubectl get deployment portainer -n portainer -o jsonpath='{.spec.template.spec.containers[0].args}' 2>/dev/null || echo "[]")
+  if echo "$CURRENT_ARGS" | grep -q "base-url"; then
+    log "Removing --base-url argument (migrating to subdomain)..."
+    kubectl patch deployment portainer -n portainer --type=json -p='[{"op":"remove","path":"/spec/template/spec/containers/0/args"}]' 2>&1 | tee -a "$LOG_FILE" || true
+    kubectl rollout status deployment/portainer -n portainer --timeout=120s 2>&1 | tee -a "$LOG_FILE"
+  fi
   done_ "Portainer configured"
 
   # Initialize Portainer admin account before the 5-minute timeout window expires
   log "Initializing Portainer admin account..."
-  PORTAINER_SVC_IP=$(kubectl get svc -n portainer portainer -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
-  if [[ -n "$PORTAINER_SVC_IP" ]]; then
+  local PORTAINER_SVC="portainer.portainer.svc.cluster.local"
+  if kubectl get svc -n portainer portainer -o name &>/dev/null; then
     for i in {1..20}; do
-      HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://$PORTAINER_SVC_IP:9000/api/status" 2>/dev/null || echo "000")
+      HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://$PORTAINER_SVC:9000/api/status" 2>/dev/null || echo "000")
       if [[ "$HTTP_STATUS" == "200" ]]; then
         break
       fi
@@ -783,7 +805,7 @@ EOF
     done
 
     ADMIN_PASS="${ADMIN_PASSWORD:-${POSTGRES_PASSWORD:-PortainerAdmin123!}}"
-    INIT_RESULT=$(curl -s -X POST "http://$PORTAINER_SVC_IP:9000/api/users/admin/init" \
+    INIT_RESULT=$(curl -s -X POST "http://$PORTAINER_SVC:9000/api/users/admin/init" \
       -H "Content-Type: application/json" \
       -d "{\"Username\":\"admin\",\"Password\":\"$ADMIN_PASS\"}" 2>/dev/null | grep -o '"Id":[0-9]*' || echo "")
     if [[ -n "$INIT_RESULT" ]]; then
@@ -1080,6 +1102,15 @@ spec:
   type: ExternalName
   externalName: minio-console.storage.svc.cluster.local
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oauth2-proxy-proxy
+  namespace: caps-platform
+spec:
+  type: ExternalName
+  externalName: oauth2-proxy.oauth2-proxy.svc.cluster.local
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -1096,9 +1127,9 @@ spec:
     - api.$DOMAIN
     - argocd.$DOMAIN
     - grafana.$DOMAIN
-    - infisical.$DOMAIN
     - portainer.$DOMAIN
     - minio.$DOMAIN
+    - infisical.$DOMAIN
     secretName: caps-platform-tls
   rules:
   - host: $DOMAIN
@@ -1125,13 +1156,6 @@ spec:
             name: grafana-proxy
             port:
               number: 80
-      - path: /infisical
-        pathType: Prefix
-        backend:
-          service:
-            name: infisical-proxy
-            port:
-              number: 8080
       - path: /minio
         pathType: Prefix
         backend:
@@ -1139,6 +1163,13 @@ spec:
             name: minio-proxy
             port:
               number: 9090
+      - path: /oauth2
+        pathType: Prefix
+        backend:
+          service:
+            name: oauth2-proxy-proxy
+            port:
+              number: 4180
       - path: /
         pathType: Prefix
         backend:
@@ -1176,36 +1207,6 @@ spec:
             name: grafana-proxy
             port:
               number: 80
-  - host: infisical.$DOMAIN
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: infisical-proxy
-            port:
-              number: 8080
-  - host: portainer.$DOMAIN
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: portainer-proxy
-            port:
-              number: 9000
-  - host: minio.$DOMAIN
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: minio-proxy
-            port:
-              number: 9090
   # Catch-all rule: handles bare-IP access
   - http:
       paths:
@@ -1230,20 +1231,13 @@ spec:
             name: grafana-proxy
             port:
               number: 80
-      - path: /infisical
+      - path: /oauth2
         pathType: Prefix
         backend:
           service:
-            name: infisical-proxy
+            name: oauth2-proxy-proxy
             port:
-              number: 8080
-      - path: /minio
-        pathType: Prefix
-        backend:
-          service:
-            name: minio-proxy
-            port:
-              number: 9090
+              number: 4180
       - path: /
         pathType: Prefix
         backend:
@@ -1251,6 +1245,94 @@ spec:
             name: caps-portal
             port:
               number: 80
+EOF
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: portainer-ingress
+  namespace: caps-platform
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy-proxy.caps-platform.svc.cluster.local:4180/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://$DOMAIN/oauth2/start?rd=\$scheme://\$host\$request_uri"
+    nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User, X-Auth-Request-Email"
+spec:
+  tls:
+  - hosts:
+    - portainer.$DOMAIN
+    secretName: caps-platform-tls
+  rules:
+  - host: portainer.$DOMAIN
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: portainer-proxy
+            port:
+              number: 9000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minio-ingress
+  namespace: caps-platform
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy-proxy.caps-platform.svc.cluster.local:4180/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://$DOMAIN/oauth2/start?rd=\$scheme://\$host\$request_uri"
+    nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User, X-Auth-Request-Email"
+spec:
+  tls:
+  - hosts:
+    - minio.$DOMAIN
+    secretName: caps-platform-tls
+  rules:
+  - host: minio.$DOMAIN
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: minio-proxy
+            port:
+              number: 9090
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: infisical-ingress
+  namespace: caps-platform
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy-proxy.caps-platform.svc.cluster.local:4180/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://$DOMAIN/oauth2/start?rd=\$scheme://\$host\$request_uri"
+    nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User, X-Auth-Request-Email"
+spec:
+  tls:
+  - hosts:
+    - infisical.$DOMAIN
+    secretName: caps-platform-tls
+  rules:
+  - host: infisical.$DOMAIN
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: infisical-proxy
+            port:
+              number: 8080
 EOF
 
   log "Waiting for CAPS Platform to become ready..."
@@ -1494,6 +1576,7 @@ main() {
   install_minio
   install_argocd
   install_monitoring
+  install_oauth2_proxy
   install_portainer
   install_infisical
   deploy_caps_platform
