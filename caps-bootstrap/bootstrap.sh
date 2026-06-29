@@ -410,10 +410,28 @@ install_kubernetes() {
 
   # Fix CoreDNS to use real upstream DNS (systemd-resolved stub at 127.0.0.53
   # is unreachable from inside CoreDNS container, causing DNS failures)
-  log "Patching CoreDNS to use 8.8.8.8 as upstream DNS..."
-  kubectl get configmap -n kube-system coredns -o yaml | \
-    sed 's|forward . /etc/resolv.conf|forward . 8.8.8.8 8.8.4.4|' | \
-    kubectl apply -f - 2>&1 | tee -a "$LOG_FILE"
+  log "Patching CoreDNS with internal domain rewrite rules..."
+  kubectl get configmap -n kube-system coredns -o json | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+corefile = data['data']['Corefile']
+domain = '$DOMAIN'
+escaped = domain.replace('.', '\\\\.')
+rules = f'''
+        rewrite name regex (.*)\\\\.{escaped} ingress-nginx-controller.ingress-nginx.svc.cluster.local
+        rewrite name {domain} ingress-nginx-controller.ingress-nginx.svc.cluster.local
+'''
+# Clean existing rewrites if any
+lines = [l for l in corefile.split('\\n') if 'rewrite name' not in l]
+corefile = '\\n'.join(lines)
+if 'ready' in corefile:
+    corefile = corefile.replace('ready', 'ready' + rules)
+# Fix upstream DNS
+corefile = corefile.replace('/etc/resolv.conf', '8.8.8.8 8.8.4.4')
+data['data']['Corefile'] = corefile
+print(json.dumps(data))
+" | kubectl apply -f - 2>&1 | tee -a "$LOG_FILE"
+
   kubectl rollout restart -n kube-system deploy/coredns 2>&1 | tee -a "$LOG_FILE"
   kubectl wait --for=condition=Available deploy/coredns -n kube-system --timeout=60s 2>&1 | tee -a "$LOG_FILE"
 
