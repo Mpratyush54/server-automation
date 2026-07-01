@@ -787,35 +787,34 @@ install_portainer() {
   log "Waiting for Portainer to become ready..."
   kubectl rollout status deployment/portainer -n portainer --timeout=120s 2>&1 | tee -a "$LOG_FILE"
 
-  # Remove --base-url if previously set (migration from path-based to subdomain)
-  local CURRENT_ARGS=$(kubectl get deployment portainer -n portainer -o jsonpath='{.spec.template.spec.containers[0].args}' 2>/dev/null || echo "[]")
-  if echo "$CURRENT_ARGS" | grep -q "base-url"; then
-    log "Removing --base-url argument (migrating to subdomain)..."
-    kubectl patch deployment portainer -n portainer --type=json -p='[{"op":"remove","path":"/spec/template/spec/containers/0/args"}]' 2>&1 | tee -a "$LOG_FILE" || true
-    kubectl rollout status deployment/portainer -n portainer --timeout=120s 2>&1 | tee -a "$LOG_FILE"
-  fi
+  # Configure Portainer with --no-setup-token to allow API admin initialization
+  log "Patching Portainer deployment with --no-setup-token flag..."
+  kubectl patch deployment portainer -n portainer -p '{"spec":{"template":{"spec":{"containers":[{"name":"portainer","args":["--no-setup-token"]}]}}}}' 2>&1 | tee -a "$LOG_FILE"
+  kubectl rollout status deployment/portainer -n portainer --timeout=120s 2>&1 | tee -a "$LOG_FILE"
   done_ "Portainer configured"
 
   # Initialize Portainer admin account before the 5-minute timeout window expires
   log "Initializing Portainer admin account..."
-  local PORTAINER_SVC="portainer.portainer.svc.cluster.local"
   if kubectl get svc -n portainer portainer -o name &>/dev/null; then
-    for i in {1..20}; do
-      HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://$PORTAINER_SVC:9000/api/status" 2>/dev/null || echo "000")
-      if [[ "$HTTP_STATUS" == "200" ]]; then
-        break
-      fi
-      sleep 3
-    done
+    local PORTAINER_IP=$(kubectl get svc -n portainer portainer -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+    if [[ -n "$PORTAINER_IP" ]]; then
+      for i in {1..20}; do
+        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://$PORTAINER_IP:9000/api/status" 2>/dev/null || echo "000")
+        if [[ "$HTTP_STATUS" == "200" ]]; then
+          break
+        fi
+        sleep 3
+      done
 
-    ADMIN_PASS="${ADMIN_PASSWORD:-${POSTGRES_PASSWORD:-PortainerAdmin123!}}"
-    INIT_RESULT=$(curl -s -X POST "http://$PORTAINER_SVC:9000/api/users/admin/init" \
-      -H "Content-Type: application/json" \
-      -d "{\"Username\":\"admin\",\"Password\":\"$ADMIN_PASS\"}" 2>/dev/null | grep -o '"Id":[0-9]*' || echo "")
-    if [[ -n "$INIT_RESULT" ]]; then
-      done_ "Portainer admin account created (user: admin)"
-    else
-      warn "Portainer admin init may have already run or timed out — log in manually at portainer.$DOMAIN"
+      ADMIN_PASS="${ADMIN_PASSWORD:-${POSTGRES_PASSWORD:-PortainerAdmin123!}}"
+      INIT_RESULT=$(curl -s -X POST "http://$PORTAINER_IP:9000/api/users/admin/init" \
+        -H "Content-Type: application/json" \
+        -d "{\"Username\":\"admin\",\"Password\":\"$ADMIN_PASS\"}" 2>/dev/null | grep -o '"Id":[0-9]*' || echo "")
+      if [[ -n "$INIT_RESULT" ]]; then
+        done_ "Portainer admin account created (user: admin)"
+      else
+        warn "Portainer admin init may have already run or timed out — log in manually at portainer.$DOMAIN"
+      fi
     fi
   fi
 
@@ -1342,6 +1341,11 @@ EOF
   kubectl wait --for=condition=Available deployment/caps-api \
     -n caps-platform --timeout=300s 2>&1 | tee -a "$LOG_FILE" || \
     warn "CAPS API not ready within timeout — check: kubectl get pods -n caps-platform"
+
+  log "Waiting for Let's Encrypt SSL certificate to be issued..."
+  kubectl wait --for=condition=Ready certificate/caps-platform-tls \
+    -n caps-platform --timeout=300s 2>&1 | tee -a "$LOG_FILE" || \
+    warn "SSL certificate not ready yet — TLS may fallback to ingress.local temporary certificate"
 
   mark_done "caps-platform"
   done_ "CAPS Platform deployed"
