@@ -4,6 +4,7 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
   testMatch: ['**/*.test.ts'],
+  transformIgnorePatterns: ['node_modules/(?!@kubernetes/client-node)/'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },

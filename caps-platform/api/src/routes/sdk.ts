@@ -7,7 +7,7 @@ import { ServiceRegistration } from '../entities/ServiceRegistration';
 import { DbConnection, DbConnectionStatus, DbType } from '../entities/DbConnection';
 import { ProjectConfig } from '../entities/ProjectConfig';
 import { Secret } from '../entities/Secret';
-import { sdkTokenAuth } from '../middleware/auth';
+import { sdkTokenAuth, expressAuthenticate } from '../middleware/auth';
 import { fetchSecrets } from '../lib/infisical';
 import { decryptValue } from '../lib/secrets-encryption';
 import { forwardToLoki } from '../lib/lokilog';
@@ -18,6 +18,7 @@ import { SdkEventModel } from '../schemas/SdkEvent';
 import { BugReportModel } from '../schemas/BugReport';
 import * as k8s from '@kubernetes/client-node';
 import { ApiMetricModel } from '../schemas/ApiMetric';
+import { postComment } from '../lib/clickup';
 
 const router = Router();
 
