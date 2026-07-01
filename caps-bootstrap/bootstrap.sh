@@ -759,8 +759,7 @@ install_oauth2_proxy() {
 
   helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
     --namespace oauth2-proxy \
-    -f /tmp/oauth2-values.yaml \
-    --wait 2>&1 | tee -a "$LOG_FILE"
+    -f /tmp/oauth2-values.yaml 2>&1 | tee -a "$LOG_FILE"
 
   done_ "oauth2-proxy installed"
   mark_done "oauth2-proxy"
