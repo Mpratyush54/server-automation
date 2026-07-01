@@ -2,7 +2,7 @@
 set -e
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
-DOMAIN="${1:-148.113.59.57.sslip.io}"
+DOMAIN="${1:-148.113.58.205.sslip.io}"
 
 helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests 2>/dev/null || true
 helm repo update 2>&1 | tail -3

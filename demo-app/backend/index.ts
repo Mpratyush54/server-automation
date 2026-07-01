@@ -9,7 +9,7 @@ app.use(cors());
 app.use(express.json());
 
 async function startServer() {
-  console.log("Initializing CAPS SDK...");
+  console.log("Initializing Platform SDK...");
   
   // Disable certificate validation for dev environment if SSL is self-signed/testing
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -18,23 +18,23 @@ async function startServer() {
     await caps.init({
       projectName: 'demoproj',
       platformUrl: 'https://148.113.58.205.sslip.io',
-      sdkToken: 'caps_sdk_live_1ec8b9aa2d594c2b974f4d346734a6f2',
+      sdkToken: 'sdk_live_1ec8b9aa2d594c2b974f4d346734a6f2',
       environmentName: 'development'
     });
-    console.log("CAPS SDK initialized successfully.");
+    console.log("Platform SDK initialized successfully.");
   } catch (err) {
     console.error("Failed to initialize CAPS SDK:", err);
   }
 
-  // Mount CAPS Metrics Middleware to track endpoint durations and status codes
+  // Mount Platform Metrics Middleware to track endpoint durations and status codes
   app.use(caps.expressMiddleware());
 
   // Test endpoints
   app.get('/api/data', (req, res) => {
     caps.logger.info("Handling request on /api/data endpoint");
     
-    // Retrieve configuration from CAPS Config Service if set, otherwise use fallback
-    const welcomeMessage = caps.config('WELCOME_MESSAGE') || "Hello from CAPS Platform Backend!";
+    // Retrieve configuration from Platform Config Service if set, otherwise use fallback
+    const welcomeMessage = caps.config('WELCOME_MESSAGE') || "Hello from Platform Backend!";
     
     res.json({
       message: welcomeMessage,
@@ -51,7 +51,7 @@ async function startServer() {
     } else {
       caps.logger.info(`Test info log: ${message}`);
     }
-    res.json({ success: true, message: "Log submitted to CAPS" });
+    res.json({ success: true, message: "Log submitted to Platform" });
   });
 
   app.listen(port, () => {

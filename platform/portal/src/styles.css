@@ -4,7 +4,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* CAPS Platform — InfraOps UI Design Token System */
+/* Platform — InfraOps UI Design Token System */
 
 :root {
   --bg-canvas: #0D0F14;

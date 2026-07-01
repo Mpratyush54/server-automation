@@ -5,18 +5,18 @@ export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 DOMAIN="148.113.59.57.sslip.io"
 
 # Get the current ingress YAML to preserve other rules
-kubectl get ingress caps-platform -n caps-platform -o yaml > /tmp/current-ingress.yaml
+kubectl get ingress platform -n platform -o yaml > /tmp/current-ingress.yaml
 
 # Remove the portainer-ingress if it still exists
-kubectl delete ingress portainer-ingress -n caps-platform 2>/dev/null || true
+kubectl delete ingress portainer-ingress -n platform 2>/dev/null || true
 
-# Create ExternalName service for oauth2-proxy in caps-platform namespace
-kubectl apply -n caps-platform -f - << EOF
+# Create ExternalName service for oauth2-proxy in platform namespace
+kubectl apply -n platform -f - << EOF
 apiVersion: v1
 kind: Service
 metadata:
   name: oauth2-proxy-proxy
-  namespace: caps-platform
+  namespace: platform
 spec:
   type: ExternalName
   externalName: oauth2-proxy.oauth2-proxy.svc.cluster.local
@@ -24,16 +24,16 @@ EOF
 
 echo "oauth2-proxy ExternalName service created"
 
-# Patch the main caps-platform ingress to add /oauth2 path on root domain
+# Patch the main platform ingress to add /oauth2 path on root domain
 # First, extract all rules except portainer/minio/infisical subdomain rules
 # We'll replace the full ingress
 
-kubectl apply -n caps-platform -f - << EOF
+kubectl apply -n platform -f - << EOF
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: caps-platform
-  namespace: caps-platform
+  name: platform
+  namespace: platform
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
@@ -48,7 +48,7 @@ spec:
     - portainer.${DOMAIN}
     - minio.${DOMAIN}
     - infisical.${DOMAIN}
-    secretName: caps-platform-tls
+    secretName: platform-tls
   rules:
   # Root domain - all path-based routes
   - host: ${DOMAIN}
@@ -58,7 +58,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: caps-api
+            name: platform-api
             port:
               number: 3000
       - path: /argocd
@@ -93,7 +93,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: caps-portal
+            name: platform-portal
             port:
               number: 80
   # API subdomain
@@ -104,7 +104,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: caps-api
+            name: platform-api
             port:
               number: 3000
   # ArgoCD subdomain (direct, no auth)
@@ -136,7 +136,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: caps-api
+            name: platform-api
             port:
               number: 3000
       - path: /argocd
@@ -171,7 +171,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: caps-portal
+            name: platform-portal
             port:
               number: 80
 EOF
@@ -179,26 +179,26 @@ EOF
 echo "Main ingress updated"
 
 # Create auth-protected ingress for Portainer
-kubectl apply -n caps-platform -f - << EOF
+kubectl apply -n platform -f - << EOF
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: portainer-ingress
-  namespace: caps-platform
+  namespace: platform
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     nginx.ingress.kubernetes.io/proxy-buffer-size: "8k"
     nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy-proxy.caps-platform.svc.cluster.local:4180/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy-proxy.platform.svc.cluster.local:4180/oauth2/auth"
     nginx.ingress.kubernetes.io/auth-signin: "https://${DOMAIN}/oauth2/start?rd=\$scheme://\$host\$request_uri"
     nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User, X-Auth-Request-Email"
 spec:
   tls:
   - hosts:
     - portainer.${DOMAIN}
-    secretName: caps-platform-tls
+    secretName: platform-tls
   rules:
   - host: portainer.${DOMAIN}
     http:
@@ -215,26 +215,26 @@ EOF
 echo "Portainer ingress created with auth"
 
 # Create auth-protected ingress for MinIO
-kubectl apply -n caps-platform -f - << EOF
+kubectl apply -n platform -f - << EOF
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: minio-ingress
-  namespace: caps-platform
+  namespace: platform
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     nginx.ingress.kubernetes.io/proxy-buffer-size: "8k"
     nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy-proxy.caps-platform.svc.cluster.local:4180/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy-proxy.platform.svc.cluster.local:4180/oauth2/auth"
     nginx.ingress.kubernetes.io/auth-signin: "https://${DOMAIN}/oauth2/start?rd=\$scheme://\$host\$request_uri"
     nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User, X-Auth-Request-Email"
 spec:
   tls:
   - hosts:
     - minio.${DOMAIN}
-    secretName: caps-platform-tls
+    secretName: platform-tls
   rules:
   - host: minio.${DOMAIN}
     http:
@@ -251,26 +251,26 @@ EOF
 echo "MinIO ingress created with auth"
 
 # Create auth-protected ingress for Infisical
-kubectl apply -n caps-platform -f - << EOF
+kubectl apply -n platform -f - << EOF
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: infisical-ingress
-  namespace: caps-platform
+  namespace: platform
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     nginx.ingress.kubernetes.io/proxy-buffer-size: "8k"
     nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy-proxy.caps-platform.svc.cluster.local:4180/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy-proxy.platform.svc.cluster.local:4180/oauth2/auth"
     nginx.ingress.kubernetes.io/auth-signin: "https://${DOMAIN}/oauth2/start?rd=\$scheme://\$host\$request_uri"
     nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User, X-Auth-Request-Email"
 spec:
   tls:
   - hosts:
     - infisical.${DOMAIN}
-    secretName: caps-platform-tls
+    secretName: platform-tls
   rules:
   - host: infisical.${DOMAIN}
     http:

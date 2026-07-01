@@ -1,12 +1,12 @@
-# CAPS Platform — Server Bootstrap
+# Platform — Server Bootstrap
 
-Single command to go from a fresh Ubuntu 22.04+ server to a fully running CAPS Platform with all integrations configured.
+Single command to go from a fresh Ubuntu 22.04+ server to a fully running Platform with all integrations configured.
 
 ## Quick Start
 
 ```bash
 # On a fresh Ubuntu 22.04+ server (as root):
-curl -fsSL https://raw.githubusercontent.com/your-org/caps/main/caps-bootstrap/bootstrap.sh -o bootstrap.sh
+curl -fsSL https://raw.githubusercontent.com/your-org/platform/main/platform-bootstrap/bootstrap.sh -o bootstrap.sh
 chmod +x bootstrap.sh
 sudo ./bootstrap.sh
 ```
@@ -34,7 +34,7 @@ The script is **interactive** — it will guide you through every decision with 
 | 12 | Grafana + Prometheus + Loki | Observability stack |
 | 13 | Portainer | Container management UI |
 | 14 | Infisical | Self-hosted secret management |
-| 15 | CAPS Platform | API + Portal deployment |
+| 15 | Platform | API + Portal deployment |
 | 16 | ArgoCD App | Auto-sync GitOps application |
 | 17 | First-run Seed | Admin user + default storage config |
 | 18 | Health Check | Verify all pods are running |
@@ -71,8 +71,8 @@ The bootstrap will prompt for each integration. **Press Enter to skip** any you 
 
 ```bash
 # Copy and fill .env.example
-cp .env.example /etc/caps/.env
-# Edit /etc/caps/.env with your values, then:
+cp .env.example /etc/platform/.env
+# Edit /etc/platform/.env with your values, then:
 NON_INTERACTIVE=true sudo ./bootstrap.sh
 ```
 
@@ -80,17 +80,17 @@ NON_INTERACTIVE=true sudo ./bootstrap.sh
 
 ## Re-running Safely
 
-The script is **idempotent** — it tracks completed steps in `/etc/caps/.bootstrap_state`. Re-running skips already-done phases.
+The script is **idempotent** — it tracks completed steps in `/etc/platform/.bootstrap_state`. Re-running skips already-done phases.
 
 ```bash
 # To force re-run a specific phase (e.g. integrations):
-sed -i '/^integrations=/d' /etc/caps/.bootstrap_state
+sed -i '/^integrations=/d' /etc/platform/.bootstrap_state
 sudo ./bootstrap.sh
 ```
 
 To start completely fresh:
 ```bash
-rm -f /etc/caps/.bootstrap_state /etc/caps/.env
+rm -f /etc/platform/.bootstrap_state /etc/platform/.env
 sudo ./bootstrap.sh
 ```
 
@@ -108,7 +108,7 @@ sudo ./bootstrap.sh
 
 ## Generated Credentials
 
-All secrets are written to `/etc/caps/.env` (mode 600, root only). **Back this file up immediately.**
+All secrets are written to `/etc/platform/.env` (mode 600, root only). **Back this file up immediately.**
 
 ---
 

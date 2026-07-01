@@ -42,7 +42,7 @@ class TestCapsClient:
 
         self.client.init(
             project_name="my-app",
-            platform_url="https://caps.example.com/",
+            platform_url="https://platform.example.com/",
             environment_name="production",
             version="2.0.0",
             branch="develop",
@@ -51,7 +51,7 @@ class TestCapsClient:
         assert self.client.options["environment_name"] == "production"
         assert self.client.options["version"] == "2.0.0"
         assert self.client.options["branch"] == "develop"
-        assert self.client.options["platform_url"] == "https://caps.example.com"
+        assert self.client.options["platform_url"] == "https://platform.example.com"
 
     @patch('caps_sdk.CapsClient._request')
     @patch('caps_sdk.CapsClient._start_heartbeat')

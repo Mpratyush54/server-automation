@@ -1,29 +1,29 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  CAPS Platform — Full Server Bootstrap
+#  Platform — Full Server Bootstrap
 #  Run this script once on a fresh Ubuntu 22.04+ server to get a fully
-#  operational CAPS Platform with all integrations configured.
+#  operational Platform with all integrations configured.
 #
 #  Usage:
-#    curl -fsSL https://raw.githubusercontent.com/your-org/caps/main/caps-bootstrap/bootstrap.sh | bash
+#    curl -fsSL https://raw.githubusercontent.com/your-org/platform/main/platform-bootstrap/bootstrap.sh | bash
 #    — or —
-#    git clone <repo> && cd caps-bootstrap && chmod +x bootstrap.sh && sudo ./bootstrap.sh
+#    git clone <repo> && cd platform-bootstrap && chmod +x bootstrap.sh && sudo ./bootstrap.sh
 # =============================================================================
 set -Eeuo pipefail
-trap 'echo "[CAPS] ❌ Bootstrap failed at line $LINENO — check /var/log/caps-bootstrap.log for details." >&2' ERR
+trap 'echo "[Platform] ❌ Bootstrap failed at line $LINENO — check /var/log/platform-bootstrap.log for details." >&2' ERR
 
 # Ensure KUBECONFIG is set for K3s
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 
 # ─── Globals ─────────────────────────────────────────────────────────────────
-CAPS_VERSION="2.0.0"
-LOG_FILE="/var/log/caps-bootstrap.log"
-STATE_FILE="/etc/caps/.bootstrap_state"
-ENV_FILE="/etc/caps/.env"
-CAPS_NAMESPACE="caps-platform"
-CAPS_REPO_URL="${CAPS_REPO_URL:-}"      # Filled interactively if empty
-CAPS_IMAGE_TAG="${CAPS_IMAGE_TAG:-latest}"
-DOMAIN="${CAPS_DOMAIN:-}"
+PLATFORM_VERSION="2.0.0"
+LOG_FILE="/var/log/platform-bootstrap.log"
+STATE_FILE="/etc/platform/.bootstrap_state"
+ENV_FILE="/etc/platform/.env"
+NAMESPACE="platform"
+PLATFORM_REPO_URL="${PLATFORM_REPO_URL:-}"      # Filled interactively if empty
+PLATFORM_IMAGE_TAG="${PLATFORM_IMAGE_TAG:-latest}"
+DOMAIN="${PLATFORM_DOMAIN:-}"
 SKIP_K8S="${SKIP_K8S:-false}"
 NON_INTERACTIVE="${NON_INTERACTIVE:-false}"
 
@@ -32,8 +32,8 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
-mkdir -p /var/log /etc/caps
-log()     { echo -e "${GREEN}[CAPS $(date '+%H:%M:%S')]${NC} $*" | tee -a "$LOG_FILE"; }
+mkdir -p /var/log /etc/platform
+log()     { echo -e "${GREEN}[Platform $(date '+%H:%M:%S')]${NC} $*" | tee -a "$LOG_FILE"; }
 warn()    { echo -e "${YELLOW}[WARN $(date '+%H:%M:%S')]${NC} $*" | tee -a "$LOG_FILE"; }
 info()    { echo -e "${BLUE}[INFO $(date '+%H:%M:%S')]${NC} $*" | tee -a "$LOG_FILE"; }
 error()   { echo -e "${RED}[ERROR]${NC} $*" | tee -a "$LOG_FILE"; exit 1; }
@@ -118,7 +118,7 @@ print_banner() {
   PLATFORM — Full Server Bootstrap v2.0.0
 BANNER
   echo -e "${NC}"
-  echo -e "  ${YELLOW}This script will install and configure everything CAPS Platform needs."
+  echo -e "  ${YELLOW}This script will install and configure everything Platform needs."
   echo -e "  It is safe to re-run — already-completed steps are skipped.${NC}\n"
 }
 
@@ -147,14 +147,14 @@ gather_config() {
   is_done "config" && { info "Config already gathered — loading from $ENV_FILE"; source "$ENV_FILE" 2>/dev/null || true; return; }
   header "Phase 1 — Platform Configuration"
 
-  echo -e "${YELLOW}  Please answer the following questions to configure your CAPS Platform.${NC}"
+  echo -e "${YELLOW}  Please answer the following questions to configure your Platform.${NC}"
   echo -e "${YELLOW}  Press Enter to accept defaults shown in [brackets].${NC}\n"
 
   # ── Server basics ──────────────────────────────────────────────────────────
   info "── Server & Domain ──"
-  ask "Server hostname / domain (e.g. caps.company.com)" DOMAIN "$(hostname -f 2>/dev/null || echo 'caps.local')"
+  ask "Server hostname / domain (e.g. platform.dev)" DOMAIN "$(hostname -f 2>/dev/null || echo 'platform.local')"
   ask "Admin email address" ADMIN_EMAIL "admin@${DOMAIN}"
-  ask "Platform name (shown in UI)" PLATFORM_NAME "CAPS Platform"
+  ask "Platform name (shown in UI)" PLATFORM_NAME "Platform"
 
   # ── Generate passwords ─────────────────────────────────────────────────────
   POSTGRES_PASSWORD="$(gen_password)"
@@ -162,8 +162,8 @@ gather_config() {
   REDIS_PASSWORD="$(gen_password)"
   MINIO_SECRET_KEY="$(gen_password)"
   JWT_SECRET="$(gen_secret)"
-  CAPS_WEBHOOK_SECRET="$(gen_secret)"
-  MINIO_ACCESS_KEY="capsadmin"
+  PLATFORM_WEBHOOK_SECRET="$(gen_secret)"
+  MINIO_ACCESS_KEY="platformadmin"
 
   # ── ArgoCD ────────────────────────────────────────────────────────────────
   info "\n── ArgoCD GitOps ──"
@@ -200,7 +200,7 @@ gather_config() {
   touch "$ENV_FILE"
   chmod 600 "$ENV_FILE"
 
-  write_env "CAPS_VERSION" "$CAPS_VERSION"
+  write_env "PLATFORM_VERSION" "$PLATFORM_VERSION"
   write_env "DOMAIN" "$DOMAIN"
   write_env "ADMIN_EMAIL" "$ADMIN_EMAIL"
   write_env "PLATFORM_NAME" "$PLATFORM_NAME"
@@ -210,7 +210,7 @@ gather_config() {
   write_env "MINIO_ACCESS_KEY" "$MINIO_ACCESS_KEY"
   write_env "MINIO_SECRET_KEY" "$MINIO_SECRET_KEY"
   write_env "JWT_SECRET" "$JWT_SECRET"
-  write_env "CAPS_WEBHOOK_SECRET" "$CAPS_WEBHOOK_SECRET"
+  write_env "PLATFORM_WEBHOOK_SECRET" "$PLATFORM_WEBHOOK_SECRET"
   write_env "ARGOCD_PASSWORD" "${ARGOCD_PASSWORD:-}"
   write_env "GRAFANA_PASSWORD" "${GRAFANA_PASSWORD:-}"
   write_env "INSTALL_ARGOCD" "${INSTALL_ARGOCD:-y}"
@@ -337,7 +337,7 @@ gather_integrations() {
   ask_yn "Use external S3-compatible storage for backups? (or use bundled MinIO)" SETUP_EXTERNAL_S3 "n"
   if [[ "$SETUP_EXTERNAL_S3" =~ ^[Yy] ]]; then
     ask "S3 Endpoint URL (e.g. https://s3.us-east-1.amazonaws.com)" EXT_S3_ENDPOINT "https://s3.amazonaws.com"
-    ask "S3 Bucket Name" EXT_S3_BUCKET "caps-backups"
+    ask "S3 Bucket Name" EXT_S3_BUCKET "platform-backups"
     ask "S3 Access Key ID" EXT_S3_KEY ""
     ask_secret "S3 Secret Access Key" EXT_S3_SECRET
     ask "S3 Region" EXT_S3_REGION "us-east-1"
@@ -476,7 +476,7 @@ setup_namespaces() {
   is_done "namespaces" && { done_ "Namespaces already created"; return; }
   header "Phase 6 — Kubernetes Namespaces"
 
-  for ns in caps-platform databases monitoring storage argocd portainer infisical cert-manager ingress-nginx; do
+  for ns in platform databases monitoring storage argocd portainer infisical cert-manager ingress-nginx; do
     kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f - 2>&1 | tee -a "$LOG_FILE"
     done_ "Namespace: $ns"
   done
@@ -571,7 +571,7 @@ install_databases() {
     helm upgrade --install postgresql bitnami/postgresql \
       --namespace databases \
       --set auth.postgresPassword="$POSTGRES_PASSWORD" \
-      --set auth.database=caps_platform \
+      --set auth.database=platform \
       --set primary.persistence.size=20Gi \
       --wait 2>&1 | tee -a "$LOG_FILE"
     done_ "PostgreSQL installed"
@@ -628,9 +628,9 @@ install_minio() {
     --set persistence.size=50Gi \
     --set image.repository=bitnamilegacy/minio \
     --set console.image.repository=bitnamilegacy/minio-object-browser \
-    --set defaultBuckets="caps-backups\,caps-logs" \
+    --set defaultBuckets="platform-backups\,platform-logs" \
     --wait 2>&1 | tee -a "$LOG_FILE"
-  done_ "MinIO installed (bucket: caps-backups)"
+  done_ "MinIO installed (bucket: platform-backups)"
 
   mark_done "minio"
 }
@@ -863,41 +863,41 @@ install_infisical() {
 }
 
 # =============================================================================
-# PHASE 15 — CAPS Platform
+# PHASE 15 — Platform
 # =============================================================================
-deploy_caps_platform() {
+deploy_platform() {
   source "$ENV_FILE"
-  is_done "caps-platform" && { done_ "CAPS Platform already deployed"; return; }
-  header "Phase 15 — CAPS Platform"
+  is_done "platform" && { done_ "Platform already deployed"; return; }
+  header "Phase 15 — Platform"
 
-  # Build and import CAPS API & Portal locally to avoid registry pulling issues
-  log "Building and importing CAPS API image locally..."
-  docker build -t ghcr.io/your-org/caps-platform-api:latest ../caps-platform/api 2>&1 | tee -a "$LOG_FILE"
-  docker save ghcr.io/your-org/caps-platform-api:latest -o /tmp/caps-api.tar 2>&1 | tee -a "$LOG_FILE"
-  k3s ctr images import /tmp/caps-api.tar 2>&1 | tee -a "$LOG_FILE"
-  rm -f /tmp/caps-api.tar
+  # Build and import Platform API & Portal locally to avoid registry pulling issues
+  log "Building and importing Platform API image locally..."
+  docker build -t ghcr.io/your-org/platform-api:latest ../platform/api 2>&1 | tee -a "$LOG_FILE"
+  docker save ghcr.io/your-org/platform-api:latest -o /tmp/platform-api.tar 2>&1 | tee -a "$LOG_FILE"
+  k3s ctr images import /tmp/platform-api.tar 2>&1 | tee -a "$LOG_FILE"
+  rm -f /tmp/platform-api.tar
 
-  log "Building and importing CAPS Portal image locally..."
-  docker build -t ghcr.io/your-org/caps-platform-portal:latest ../caps-platform/portal 2>&1 | tee -a "$LOG_FILE"
-  docker save ghcr.io/your-org/caps-platform-portal:latest -o /tmp/caps-portal.tar 2>&1 | tee -a "$LOG_FILE"
-  k3s ctr images import /tmp/caps-portal.tar 2>&1 | tee -a "$LOG_FILE"
-  rm -f /tmp/caps-portal.tar
+  log "Building and importing Platform Portal image locally..."
+  docker build -t ghcr.io/your-org/platform-portal:latest ../platform/portal 2>&1 | tee -a "$LOG_FILE"
+  docker save ghcr.io/your-org/platform-portal:latest -o /tmp/platform-portal.tar 2>&1 | tee -a "$LOG_FILE"
+  k3s ctr images import /tmp/platform-portal.tar 2>&1 | tee -a "$LOG_FILE"
+  rm -f /tmp/platform-portal.tar
 
-  log "Building CAPS Platform environment config..."
+  log "Building Platform environment config..."
 
   # Combine all env vars into a K8s secret
-  kubectl create secret generic caps-platform-env \
-    --namespace caps-platform \
+  kubectl create secret generic platform-env \
+    --namespace platform \
     --from-literal=NODE_ENV=production \
     --from-literal=PORT=3000 \
     --from-literal=JWT_SECRET="$JWT_SECRET" \
-    --from-literal=CAPS_WEBHOOK_SECRET="$CAPS_WEBHOOK_SECRET" \
+    --from-literal=PLATFORM_WEBHOOK_SECRET="$PLATFORM_WEBHOOK_SECRET" \
     --from-literal=POSTGRES_HOST="postgresql.databases" \
     --from-literal=POSTGRES_PORT=5432 \
-    --from-literal=POSTGRES_DB=caps_platform \
+    --from-literal=POSTGRES_DB=platform \
     --from-literal=POSTGRES_USER=postgres \
     --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
-    --from-literal=MONGODB_URI="mongodb://root:$MONGO_PASSWORD@mongodb.databases:27017/caps_platform?authSource=admin" \
+    --from-literal=MONGODB_URI="mongodb://root:$MONGO_PASSWORD@mongodb.databases:27017/platform?authSource=admin" \
     --from-literal=REDIS_HOST="redis-master.databases" \
     --from-literal=REDIS_PORT=6379 \
     --from-literal=REDIS_PASSWORD="$REDIS_PASSWORD" \
@@ -906,10 +906,10 @@ deploy_caps_platform() {
     --from-literal=MINIO_SECRET_KEY="$MINIO_SECRET_KEY" \
     --from-literal=GITHUB_TOKEN="${GITHUB_TOKEN:-}" \
     --from-literal=GITHUB_ORG="${GITHUB_ORG:-}" \
-    --from-literal=GITHUB_WEBHOOK_SECRET="$CAPS_WEBHOOK_SECRET" \
+    --from-literal=GITHUB_WEBHOOK_SECRET="$PLATFORM_WEBHOOK_SECRET" \
     --from-literal=GITLAB_URL="${GITLAB_URL:-https://gitlab.com}" \
     --from-literal=GITLAB_TOKEN="${GITLAB_TOKEN:-}" \
-    --from-literal=GITLAB_WEBHOOK_SECRET="$CAPS_WEBHOOK_SECRET" \
+    --from-literal=GITLAB_WEBHOOK_SECRET="$PLATFORM_WEBHOOK_SECRET" \
     --from-literal=CLICKUP_API_TOKEN="${CLICKUP_API_TOKEN:-}" \
     --from-literal=CLICKUP_TEAM_ID="${CLICKUP_TEAM_ID:-}" \
     --from-literal=CLICKUP_DEFAULT_LIST_ID="${CLICKUP_DEFAULT_LIST_ID:-}" \
@@ -922,40 +922,40 @@ deploy_caps_platform() {
     --from-literal=MAILGUN_API_KEY="${MAILGUN_API_KEY:-}" \
     --from-literal=MAILGUN_DOMAIN="${MAILGUN_DOMAIN:-}" \
     --from-literal=SMTP_FROM_EMAIL="${SMTP_FROM_EMAIL:-noreply@$DOMAIN}" \
-    --from-literal=SMTP_FROM_NAME="${SMTP_FROM_NAME:-CAPS Platform}" \
+    --from-literal=SMTP_FROM_NAME="${SMTP_FROM_NAME:-Platform}" \
     --from-literal=PLATFORM_NAME="$PLATFORM_NAME" \
     --from-literal=DOMAIN="$DOMAIN" \
     --dry-run=client -o yaml | kubectl apply -f - 2>&1 | tee -a "$LOG_FILE"
 
-    # Deploy CAPS API + Portal
-  kubectl apply -n caps-platform -f - <<EOF
+    # Deploy Platform API + Portal
+  kubectl apply -n platform -f - <<EOF
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: caps-api
-  namespace: caps-platform
+  name: platform-api
+  namespace: platform
   labels:
-    app: caps-api
-    version: "${CAPS_IMAGE_TAG}"
+    app: platform-api
+    version: "${PLATFORM_IMAGE_TAG}"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: caps-api
+      app: platform-api
   template:
     metadata:
       labels:
-        app: caps-api
+        app: platform-api
     spec:
       containers:
       - name: api
-        image: ghcr.io/your-org/caps-platform-api:${CAPS_IMAGE_TAG}
+        image: ghcr.io/your-org/platform-api:${PLATFORM_IMAGE_TAG}
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
         envFrom:
         - secretRef:
-            name: caps-platform-env
+            name: platform-env
         readinessProbe:
           httpGet:
             path: /api/health
@@ -979,11 +979,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: caps-api
-  namespace: caps-platform
+  name: platform-api
+  namespace: platform
 spec:
   selector:
-    app: caps-api
+    app: platform-api
   ports:
   - name: http
     port: 3000
@@ -993,10 +993,10 @@ apiVersion: v1
 kind: Service
 metadata:
   name: api
-  namespace: caps-platform
+  namespace: platform
 spec:
   selector:
-    app: caps-api
+    app: platform-api
   ports:
   - name: http
     port: 3000
@@ -1005,23 +1005,23 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: caps-portal
-  namespace: caps-platform
+  name: platform-portal
+  namespace: platform
   labels:
-    app: caps-portal
+    app: platform-portal
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: caps-portal
+      app: platform-portal
   template:
     metadata:
       labels:
-        app: caps-portal
+        app: platform-portal
     spec:
       containers:
       - name: portal
-        image: ghcr.io/your-org/caps-platform-portal:${CAPS_IMAGE_TAG}
+        image: ghcr.io/your-org/platform-portal:${PLATFORM_IMAGE_TAG}
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80
@@ -1036,11 +1036,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: caps-portal
-  namespace: caps-platform
+  name: platform-portal
+  namespace: platform
 spec:
   selector:
-    app: caps-portal
+    app: platform-portal
   ports:
   - name: http
     port: 80
@@ -1049,11 +1049,11 @@ spec:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: caps-api-admin-binding
+  name: platform-api-admin-binding
 subjects:
 - kind: ServiceAccount
   name: default
-  namespace: caps-platform
+  namespace: platform
 roleRef:
   kind: ClusterRole
   name: cluster-admin
@@ -1064,7 +1064,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: argocd-proxy
-  namespace: caps-platform
+  namespace: platform
 spec:
   type: ExternalName
   externalName: argocd-server.argocd.svc.cluster.local
@@ -1073,7 +1073,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: grafana-proxy
-  namespace: caps-platform
+  namespace: platform
 spec:
   type: ExternalName
   externalName: kube-prometheus-grafana.monitoring.svc.cluster.local
@@ -1082,7 +1082,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: portainer-proxy
-  namespace: caps-platform
+  namespace: platform
 spec:
   type: ExternalName
   externalName: portainer.portainer.svc.cluster.local
@@ -1091,7 +1091,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: infisical-proxy
-  namespace: caps-platform
+  namespace: platform
 spec:
   type: ExternalName
   externalName: infisical.infisical.svc.cluster.local
@@ -1100,7 +1100,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: minio-proxy
-  namespace: caps-platform
+  namespace: platform
 spec:
   type: ExternalName
   externalName: minio-console.storage.svc.cluster.local
@@ -1109,7 +1109,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: oauth2-proxy-proxy
-  namespace: caps-platform
+  namespace: platform
 spec:
   type: ExternalName
   externalName: oauth2-proxy.oauth2-proxy.svc.cluster.local
@@ -1117,8 +1117,8 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: caps-platform
-  namespace: caps-platform
+  name: platform
+  namespace: platform
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
@@ -1133,7 +1133,7 @@ spec:
     - portainer.$DOMAIN
     - minio.$DOMAIN
     - infisical.$DOMAIN
-    secretName: caps-platform-tls
+    secretName: platform-tls
   rules:
   - host: $DOMAIN
     http:
@@ -1142,7 +1142,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: caps-api
+            name: platform-api
             port:
               number: 3000
       - path: /argocd
@@ -1177,7 +1177,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: caps-portal
+            name: platform-portal
             port:
               number: 80
   - host: api.$DOMAIN
@@ -1187,7 +1187,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: caps-api
+            name: platform-api
             port:
               number: 3000
   - host: argocd.$DOMAIN
@@ -1217,7 +1217,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: caps-api
+            name: platform-api
             port:
               number: 3000
       - path: /argocd
@@ -1245,7 +1245,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: caps-portal
+            name: platform-portal
             port:
               number: 80
 ---
@@ -1253,19 +1253,19 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: portainer-ingress
-  namespace: caps-platform
+  namespace: platform
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy-proxy.caps-platform.svc.cluster.local:4180/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy-proxy.platform.svc.cluster.local:4180/oauth2/auth"
     nginx.ingress.kubernetes.io/auth-signin: "https://$DOMAIN/oauth2/start?rd=\$scheme://\$host\$request_uri"
     nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User, X-Auth-Request-Email"
 spec:
   tls:
   - hosts:
     - portainer.$DOMAIN
-    secretName: caps-platform-tls
+    secretName: platform-tls
   rules:
   - host: portainer.$DOMAIN
     http:
@@ -1282,19 +1282,19 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: minio-ingress
-  namespace: caps-platform
+  namespace: platform
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy-proxy.caps-platform.svc.cluster.local:4180/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy-proxy.platform.svc.cluster.local:4180/oauth2/auth"
     nginx.ingress.kubernetes.io/auth-signin: "https://$DOMAIN/oauth2/start?rd=\$scheme://\$host\$request_uri"
     nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User, X-Auth-Request-Email"
 spec:
   tls:
   - hosts:
     - minio.$DOMAIN
-    secretName: caps-platform-tls
+    secretName: platform-tls
   rules:
   - host: minio.$DOMAIN
     http:
@@ -1311,19 +1311,19 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: infisical-ingress
-  namespace: caps-platform
+  namespace: platform
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy-proxy.caps-platform.svc.cluster.local:4180/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy-proxy.platform.svc.cluster.local:4180/oauth2/auth"
     nginx.ingress.kubernetes.io/auth-signin: "https://$DOMAIN/oauth2/start?rd=\$scheme://\$host\$request_uri"
     nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User, X-Auth-Request-Email"
 spec:
   tls:
   - hosts:
     - infisical.$DOMAIN
-    secretName: caps-platform-tls
+    secretName: platform-tls
   rules:
   - host: infisical.$DOMAIN
     http:
@@ -1337,22 +1337,22 @@ spec:
               number: 8080
 EOF
 
-  log "Waiting for CAPS Platform to become ready..."
-  kubectl wait --for=condition=Available deployment/caps-api \
-    -n caps-platform --timeout=300s 2>&1 | tee -a "$LOG_FILE" || \
-    warn "CAPS API not ready within timeout — check: kubectl get pods -n caps-platform"
+  log "Waiting for Platform to become ready..."
+  kubectl wait --for=condition=Available deployment/platform-api \
+    -n platform --timeout=300s 2>&1 | tee -a "$LOG_FILE" || \
+    warn "Platform API not ready within timeout — check: kubectl get pods -n platform"
 
   log "Waiting for Let's Encrypt SSL certificate to be issued..."
-  kubectl wait --for=condition=Ready certificate/caps-platform-tls \
-    -n caps-platform --timeout=300s 2>&1 | tee -a "$LOG_FILE" || \
+  kubectl wait --for=condition=Ready certificate/platform-tls \
+    -n platform --timeout=300s 2>&1 | tee -a "$LOG_FILE" || \
     warn "SSL certificate not ready yet — TLS may fallback to ingress.local temporary certificate"
 
-  mark_done "caps-platform"
-  done_ "CAPS Platform deployed"
+  mark_done "platform"
+  done_ "Platform deployed"
 }
 
 # =============================================================================
-# PHASE 16 — ArgoCD Application for CAPS (GitOps)
+# PHASE 16 — ArgoCD Application for Platform (GitOps)
 # =============================================================================
 setup_argocd_app() {
   source "$ENV_FILE"
@@ -1362,14 +1362,14 @@ setup_argocd_app() {
 
   header "Phase 16 — ArgoCD Application Setup"
 
-  REPO_URL="${CAPS_REPO_URL:-}"
-  [[ -z "$REPO_URL" ]] && { info "CAPS_REPO_URL not set — skipping ArgoCD app"; return; }
+  REPO_URL="${PLATFORM_REPO_URL:-}"
+  [[ -z "$REPO_URL" ]] && { info "PLATFORM_REPO_URL not set — skipping ArgoCD app"; return; }
 
   kubectl apply -n argocd -f - <<EOF
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: caps-platform
+  name: platform
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -1381,7 +1381,7 @@ spec:
     path: k8s/overlays/production
   destination:
     server: https://kubernetes.default.svc
-    namespace: caps-platform
+    namespace: platform
   syncPolicy:
     automated:
       prune: true
@@ -1394,19 +1394,19 @@ EOF
 }
 
 # =============================================================================
-# PHASE 17 — First-Run Seed (Admin user + SMTP + Integrations → CAPS API)
+# PHASE 17 — First-Run Seed (Admin user + SMTP + Integrations → Platform API)
 # =============================================================================
-seed_caps_platform() {
+seed_platform() {
   source "$ENV_FILE"
   is_done "seed" && { done_ "Platform already seeded"; return; }
   header "Phase 17 — Seeding Platform (Admin User + Integrations)"
 
   # Wait for API to be fully ready
-  CAPS_API_IP="$(kubectl get svc -n caps-platform caps-api -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo '')"
-  CAPS_API_URL="http://${CAPS_API_IP:-caps-api.caps-platform.svc.cluster.local}:3000"
-  log "Waiting for CAPS API to respond at $CAPS_API_URL..."
+  PLATFORM_API_IP="$(kubectl get svc -n platform platform-api -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo '')"
+  PLATFORM_API_URL="http://${PLATFORM_API_IP:-platform-api.platform.svc.cluster.local}:3000"
+  log "Waiting for Platform API to respond at $PLATFORM_API_URL..."
   for i in {1..30}; do
-    if curl -sf "$CAPS_API_URL/api/health" >/dev/null 2>&1; then
+    if curl -sf "$PLATFORM_API_URL/api/health" >/dev/null 2>&1; then
       break
     fi
     sleep 5
@@ -1431,23 +1431,23 @@ seed_caps_platform() {
   if [[ -n "${EXT_S3_KEY:-}" ]]; then
     STORAGE_PAYLOAD="{\"name\":\"External S3 (Bootstrap)\",\"providerType\":\"s3\",\"endpointUrl\":\"${EXT_S3_ENDPOINT:-}\",\"bucketName\":\"${EXT_S3_BUCKET:-}\",\"isDefault\":true,\"credentials\":{\"accessKeyId\":\"${EXT_S3_KEY:-}\",\"secretAccessKey\":\"${EXT_S3_SECRET:-}\",\"region\":\"${EXT_S3_REGION:-us-east-1}\"}}"
   else
-    STORAGE_PAYLOAD="{\"name\":\"MinIO (bundled)\",\"providerType\":\"minio\",\"endpointUrl\":\"http://minio.storage:9000\",\"bucketName\":\"caps-backups\",\"isDefault\":true,\"credentials\":{\"accessKeyId\":\"${MINIO_ACCESS_KEY:-}\",\"secretAccessKey\":\"${MINIO_SECRET_KEY:-}\"}}"
+    STORAGE_PAYLOAD="{\"name\":\"MinIO (bundled)\",\"providerType\":\"minio\",\"endpointUrl\":\"http://minio.storage:9000\",\"bucketName\":\"platform-backups\",\"isDefault\":true,\"credentials\":{\"accessKeyId\":\"${MINIO_ACCESS_KEY:-}\",\"secretAccessKey\":\"${MINIO_SECRET_KEY:-}\"}}"
   fi
 
-  log "Seeding CAPS Platform..."
+  log "Seeding Platform..."
   # Run init-demo to populate database users
-  curl -sf "$CAPS_API_URL/api/users/init-demo" 2>&1 | tee -a "$LOG_FILE" || true
+  curl -sf "$PLATFORM_API_URL/api/users/init-demo" 2>&1 | tee -a "$LOG_FILE" || true
 
   # Login to get Token
-  TOKEN=$(curl -sf -X POST "$CAPS_API_URL/api/auth/login" \
+  TOKEN=$(curl -sf -X POST "$PLATFORM_API_URL/api/auth/login" \
     -H "Content-Type: application/json" \
-    -d '{"email":"devops@caps.io"}' | grep -o "\"token\":\"[^\"]*\"" | cut -d"\"" -f4 || echo "")
+    -d '{"email":"devops@platform.io"}' | grep -o "\"token\":\"[^\"]*\"" | cut -d"\"" -f4 || echo "")
 
   if [ -n "$TOKEN" ]; then
     # Register Storage provider if payload exists
     if [ -n "$STORAGE_PAYLOAD" ]; then
       log "Registering storage provider..."
-      curl -sf -X POST "$CAPS_API_URL/api/settings/storage" \
+      curl -sf -X POST "$PLATFORM_API_URL/api/settings/storage" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $TOKEN" \
         -d "$STORAGE_PAYLOAD" 2>&1 | tee -a "$LOG_FILE" || echo "Warning: Storage provider registration failed"
@@ -1456,7 +1456,7 @@ seed_caps_platform() {
     # Register SMTP if payload exists
     if [ -n "$SMTP_PAYLOAD" ]; then
       log "Registering SMTP configuration..."
-      curl -sf -X POST "$CAPS_API_URL/api/settings/smtp" \
+      curl -sf -X POST "$PLATFORM_API_URL/api/settings/smtp" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $TOKEN" \
         -d "$SMTP_PAYLOAD" 2>&1 | tee -a "$LOG_FILE" || echo "Warning: SMTP registration failed"
@@ -1482,7 +1482,7 @@ health_check() {
   kubectl get nodes 2>/dev/null | head -5 | tee -a "$LOG_FILE"
   echo
   echo -e "${BOLD}Namespace Status:${NC}"
-  for ns in caps-platform databases monitoring storage argocd portainer infisical; do
+  for ns in platform databases monitoring storage argocd portainer infisical; do
     POD_COUNT=$(kubectl get pods -n "$ns" --field-selector=status.phase=Running 2>/dev/null | grep -c Running || echo 0)
     TOTAL=$(kubectl get pods -n "$ns" 2>/dev/null | tail -n +2 | wc -l || echo 0)
     if [[ $POD_COUNT -gt 0 ]]; then
@@ -1500,7 +1500,7 @@ print_summary() {
   echo -e "${BOLD}${GREEN}"
   cat << EOF
   ╔══════════════════════════════════════════════════════════════╗
-  ║           CAPS Platform — Setup Complete                     ║
+  ║           Platform — Setup Complete                           ║
   ╚══════════════════════════════════════════════════════════════╝
 EOF
   echo -e "${NC}"
@@ -1516,8 +1516,8 @@ EOF
 
   echo
   echo -e "${BOLD}  🔐 Credentials${NC} ${RED}(KEEP THESE SAFE — stored in $ENV_FILE)${NC}"
-  echo -e "  ┌─ CAPS Admin Email:      ${YELLOW}devops@caps.io (or admin@caps.io)${NC}"
-  echo -e "  ├─ CAPS Admin Password:   ${YELLOW}Any password (not validated)${NC}"
+  echo -e "  ┌─ Platform Admin Email:   ${YELLOW}devops@platform.io (or admin@platform.io)${NC}"
+  echo -e "  ├─ Platform Admin Password:${YELLOW}Any password (not validated)${NC}"
   echo -e "  ├─ PostgreSQL Password:   ${YELLOW}$POSTGRES_PASSWORD${NC}"
   echo -e "  ├─ MongoDB Password:      ${YELLOW}$MONGO_PASSWORD${NC}"
   echo -e "  ├─ Redis Password:        ${YELLOW}$REDIS_PASSWORD${NC}"
@@ -1532,7 +1532,7 @@ EOF
   [[ -n "${GITLAB_TOKEN:-}"   ]] && echo -e "  ✔  GitLab  (webhook: https://$DOMAIN/api/webhooks/gitlab)"
   [[ -n "${CLICKUP_API_TOKEN:-}" ]] && echo -e "  ✔  ClickUp (team: ${CLICKUP_TEAM_ID:-not set})"
   [[ -n "${SMTP_PROVIDER:-}"  ]] && echo -e "  ✔  SMTP / Email ($SMTP_PROVIDER)"
-  echo -e "  ✔  MinIO storage (backup target: caps-backups)"
+  echo -e "  ✔  MinIO storage (backup target: platform-backups)"
 
   echo
   echo -e "${BOLD}  📋 DNS — Add these records to your DNS provider${NC}"
@@ -1586,9 +1586,9 @@ main() {
   install_oauth2_proxy
   install_portainer
   install_infisical
-  deploy_caps_platform
+  deploy_platform
   setup_argocd_app
-  seed_caps_platform
+  seed_platform
   health_check
   print_summary
 }

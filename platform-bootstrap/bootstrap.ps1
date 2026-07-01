@@ -1,12 +1,12 @@
 @echo off
-:: CAPS Platform Bootstrap Script for Windows
+:: Platform Bootstrap Script for Windows
 :: Single-command server and cluster provisioning
 setlocal enabledelayedexpansion
 
-set CAPS_VERSION=1.0.0
-set LOG_FILE=caps-bootstrap.log
+set PLATFORM_VERSION=1.0.0
+set LOG_FILE=platform-bootstrap.log
 
-echo [%date% %time%] CAPS Platform Bootstrap v%CAPS_VERSION% >> %LOG_FILE%
+echo [%date% %time%] Platform Bootstrap v%PLATFORM_VERSION% >> %LOG_FILE%
 echo Starting provisioning...
 
 :: --- Docker ---
@@ -43,10 +43,10 @@ if %errorlevel% equ 0 (
 )
 
 :: --- Create namespaces ---
-kubectl create namespace caps-platform --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace platform --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace databases --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace storage --dry-run=client -o yaml | kubectl apply -f -
 
-echo CAPS Platform Bootstrap completed!
-echo Run 'kubectl get all -A' to verify components.
+echo Platform Bootstrap completed!
+echo Run kubectl get all -A to verify components.

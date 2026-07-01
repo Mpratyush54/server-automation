@@ -3,7 +3,7 @@ import { CapsProvider, useCaps, BugReporterWidget } from '@mpratyush54/sdk-react
 
 const capsConfig = {
   apiBase: 'https://148.113.58.205.sslip.io',
-  token: 'caps_sdk_live_1ec8b9aa2d594c2b974f4d346734a6f2',
+  token: 'sdk_live_1ec8b9aa2d594c2b974f4d346734a6f2',
   projectId: 'bc145854-46fe-4480-a751-395a0b593004',
   environment: 'development'
 };
@@ -63,7 +63,7 @@ function Dashboard() {
             background: 'linear-gradient(to right, #a855f7, #3b82f6)',
             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'
           }}>
-            CAPS SDK Demo
+            Platform SDK Demo
           </h1>
           <p style={{ color: '#94a3b8', fontSize: '1.1rem' }}>
             Testing Node.js and React SDK integrations on the live platform
@@ -200,7 +200,7 @@ function Dashboard() {
         </div>
 
         <footer style={{ textAlign: 'center', color: '#64748b', fontSize: '0.85rem', marginTop: '40px' }}>
-          CAPS Platform Developer Suite — Live SDK Test
+          Platform Developer Suite — Live SDK Test
         </footer>
       </div>
 

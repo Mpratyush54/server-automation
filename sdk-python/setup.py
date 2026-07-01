@@ -2,7 +2,7 @@ import os
 from setuptools import setup, find_packages
 
 setup(
-    name="caps-sdk-python",
+    name="platform-sdk-python",
     version="1.0.0",
     description="CAPS Platform Python SDK",
     packages=find_packages(),

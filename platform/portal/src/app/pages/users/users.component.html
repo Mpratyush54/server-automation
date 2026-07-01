@@ -1,7 +1,7 @@
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
   <div>
     <h2 style="margin:0;font-size:1.5rem;font-weight:700;">User Management</h2>
-    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:4px 0 0 0;">Provision and configure CAPS Platform developer roles</p>
+    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:4px 0 0 0;">Provision and configure Platform developer roles</p>
   </div>
   <button *ngIf="isDevOps" class="btn btn-primary" (click)="openCreateModal()">
     + Create User
@@ -63,7 +63,7 @@
 
     <div class="form-group">
       <label>Email Address</label>
-      <input [(ngModel)]="currentUser.email" placeholder="john@caps.io" [disabled]="isEditMode">
+      <input [(ngModel)]="currentUser.email" placeholder="john@platform.dev" [disabled]="isEditMode">
     </div>
 
     <div class="form-group">

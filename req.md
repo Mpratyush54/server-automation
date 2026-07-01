@@ -1,5 +1,5 @@
-# CAPS Platform — Detailed Product & Execution Plan
-**Version:** 2.0 | **Owner:** CAPS Engineering | **Classification:** Internal
+# Platform — Detailed Product & Execution Plan
+**Version:** 2.0 | **Owner:** Platform Engineering | **Classification:** Internal
 
 ---
 
@@ -11,7 +11,7 @@
 4. [Portal — Role-Based Views](#4-portal--role-based-views)
 5. [Preview Environment Pipeline](#5-preview-environment-pipeline)
 6. [ClickUp Integration](#6-clickup-integration)
-7. [SDK — @caps/sdk-node & caps-sdk-python](#7-sdk--capssdk-node--caps-sdk-python)
+7. [SDK — @mpratyush54/sdk-node & platform-sdk-python](#7-sdk--mpratyush54sdk-node--platform-sdk-python)
 8. [Module Specifications](#8-module-specifications)
 9. [Database Schema](#9-database-schema)
 10. [API Reference](#10-api-reference)
@@ -25,7 +25,7 @@
 
 ## 1. Overview & Vision
 
-CAPS Platform is a self-hosted internal Platform-as-a-Service (PaaS) purpose-built for CAPS Engineering. It manages the full lifecycle of every CAPS service — from the moment a developer pushes code to the moment a feature is live in production — without requiring any developer to touch kubectl, Helm, ArgoCD, Infisical, or any infrastructure tool directly.
+Platform is a self-hosted internal Platform-as-a-Service (PaaS) purpose-built for Platform Engineering. It manages the full lifecycle of every Platform service — from the moment a developer pushes code to the moment a feature is live in production — without requiring any developer to touch kubectl, Helm, ArgoCD, Infisical, or any infrastructure tool directly.
 
 ### The desired developer workflow
 
@@ -37,7 +37,7 @@ That single command triggers:
 
 - Docker image build (GitLab CI)
 - Kubernetes deployment to a preview environment
-- Unique preview URL generation (`cu-842-auth-fix.preview.capskengeri.com`)
+- Unique preview URL generation (`cu-842-auth-fix.preview.platform.dev`)
 - ClickUp task updated with the preview URL as a comment
 - SDK auto-registration on first boot
 - Metrics, logs, and health status visible in the portal immediately
@@ -59,12 +59,12 @@ No manual steps. No kubectl. No Slack messages asking "what's the URL".
 
 ### Portal Access Roles
 
-There are three distinct roles in CAPS Platform. Every UI element, API endpoint, and SDK capability is scoped to one of these roles.
+There are three distinct roles in Platform. Every UI element, API endpoint, and SDK capability is scoped to one of these roles.
 
 | Role | Who | What they can do |
 |---|---|---|
 | **Developer** | All Tech Tank members | View their own projects, see staging deployments, read metrics and logs for staging, access preview URLs, manage their own feature configs |
-| **Tech Lead** | CAPS Tech Leads | All developer access + read production metrics and logs, approve promotions from staging → production, view all projects across teams |
+| **Tech Lead** | Platform Tech Leads | All developer access + read production metrics and logs, approve promotions from staging → production, view all projects across teams |
 | **DevOps** | Platform/Infra engineers | Full access — deploy, rollback, manage secrets metadata, bootstrap nodes, manage storage routing, delete projects, view all audit logs |
 
 ### Portal View Differences
@@ -109,8 +109,8 @@ There are three distinct roles in CAPS Platform. Every UI element, API endpoint,
 
 ┌─────────────────────────────────────────────────────────────┐
 │                       SDK LAYER                             │
-│  @caps/sdk-node (npm)  │  caps-sdk-python (pip)             │
-│  Installed in every CAPS service                            │
+│  @mpratyush54/sdk-node (npm)  │  platform-sdk-python (pip)             │
+│  Installed in every Platform service                            │
 │  Auto-registration │ Metrics │ Logs │ Config │ DB │ Storage │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -146,7 +146,7 @@ Every few seconds (async, non-blocking)
 ### Global Navigation
 
 ```
-CAPS Platform
+Platform
 ├── Overview          (all roles — scoped by role)
 ├── Projects          (all roles — scoped by role)
 │   ├── [Project]
@@ -223,12 +223,12 @@ Every project detail page has tabs:
 Branch name is sanitized to lowercase alphanumeric + hyphens. Task ID is preserved.
 
 ```
-feature/CU-842-auth-fix  →  cu-842-auth-fix.preview.capskengeri.com
-feature/CU-123-upload    →  cu-123-upload.preview.capskengeri.com
-fix/CU-99-crash          →  cu-99-crash.preview.capskengeri.com
+feature/CU-842-auth-fix  →  cu-842-auth-fix.preview.platform.dev
+feature/CU-123-upload    →  cu-123-upload.preview.platform.dev
+fix/CU-99-crash          →  cu-99-crash.preview.platform.dev
 ```
 
-All preview URLs live under `*.preview.capskengeri.com`. A single wildcard TLS certificate covers all of them. This is provisioned once as part of cluster setup, never per-branch.
+All preview URLs live under `*.preview.platform.dev`. A single wildcard TLS certificate covers all of them. This is provisioned once as part of cluster setup, never per-branch.
 
 ### Branch Naming Convention (Enforced by CI)
 
@@ -242,7 +242,7 @@ All preview deployments share a single `preview` namespace. Each branch gets:
 
 - One Deployment named `preview-{sanitized-branch}`
 - One Service named `preview-{sanitized-branch}`
-- One Ingress rule routing `{sanitized-branch}.preview.capskengeri.com` to that Service
+- One Ingress rule routing `{sanitized-branch}.preview.platform.dev` to that Service
 
 This keeps the cluster clean — no namespace sprawl. The `preview` namespace has resource quotas to prevent any single preview from consuming excessive cluster resources.
 
@@ -271,7 +271,7 @@ TTL fallback (72 hours since last push)
 
 ### GitLab CI Template (Conceptual — no code, for planning)
 
-The CI/CD Engine generates a reusable `.gitlab-ci.yml` template for preview environments. Every CAPS project includes this template — they do not write their own preview pipeline. The template handles:
+The CI/CD Engine generates a reusable `.gitlab-ci.yml` template for preview environments. Every project includes this template — they do not write their own preview pipeline. The template handles:
 
 - Image build and push to GitLab registry
 - Sanitization of branch name
@@ -285,7 +285,7 @@ Projects extend the template with their own build steps only.
 
 ## 6. ClickUp Integration
 
-### What CAPS Platform Does in ClickUp
+### What Platform Does in ClickUp
 
 | Trigger | Platform Action | ClickUp Result |
 |---|---|---|
@@ -312,7 +312,7 @@ On receiving a status change to "In Review":
 ```
 ClickUp Task ID: CU-842
   → Platform queries: SELECT * FROM deployments WHERE branch LIKE '%CU-842%'
-  → Found: feature/CU-842-auth-fix on project: caps-automation
+  → Found: feature/CU-842-auth-fix on project: automation
   → GitLab pipeline triggered on that branch
   → Association stored: clickup_task_id = CU-842, deployment_id = xyz
 ```
@@ -326,9 +326,9 @@ When a preview URL is ready, the comment posted to the task looks like this:
 ```
 ✅ Preview environment ready
 
-Project:     caps-automation
+Project:     automation
 Branch:      feature/CU-842-auth-fix
-URL:         https://cu-842-auth-fix.preview.capskengeri.com
+URL:         https://cu-842-auth-fix.preview.platform.dev
 Deployed at: 14:32 IST, 24 June 2026
 Expires:     72 hours after last push
 Commit:      a3f92c1
@@ -340,14 +340,14 @@ Triggered by: git push
 
 A DevOps engineer configures the following in ClickUp once:
 
-- Outgoing webhook pointing to `https://platform.capskengeri.com/integrations/clickup/webhook`
+- Outgoing webhook pointing to `https://platform.platform.dev/integrations/clickup/webhook`
 - Webhook triggers on: status changed to "In Review"
 - A ClickUp API token stored in Infisical under the platform's own secret path
 - The Platform reads this token from Infisical at startup — it is never hardcoded
 
 ---
 
-## 7. SDK — @caps/sdk-node & caps-sdk-python
+## 7. SDK — @mpratyush54/sdk-node & platform-sdk-python
 
 ### Installation
 
@@ -356,20 +356,20 @@ A DevOps engineer configures the following in ClickUp once:
 npm install @caps/sdk-node
 
 # Python
-pip install caps-sdk-python
+pip install platform-sdk-python
 ```
 
-Both packages are published to CAPS GitLab's private package registry. They are not on npm or PyPI public registries.
+Both packages are published to GitLab's private package registry. They are not on npm or PyPI public registries.
 
 ### Initialization
 
 **Node.js:**
 ```javascript
-import caps from '@caps/sdk-node';
+import caps from '@mpratyush54/sdk-node';
 
 caps.init({
-  projectName: 'caps-automation-backend',
-  platformUrl: 'https://platform.capskengeri.com',
+  projectName: 'automation-backend',
+  platformUrl: 'https://platform.platform.dev',
   databases: ['postgres', 'redis', 'mongo'],
 });
 ```
@@ -379,8 +379,8 @@ caps.init({
 from caps_sdk import caps
 
 caps.init(
-    project_name='caps-automation-backend',
-    platform_url='https://platform.capskengeri.com',
+    project_name='automation-backend',
+    platform_url='https://platform.platform.dev',
     databases=['postgres', 'redis'],
 )
 ```
@@ -391,7 +391,7 @@ caps.init(
 
 ```
 1. Read environment variables:
-   - CAPS_PROJECT_NAME (fallback to projectName param)
+   - PLATFORM_PROJECT_NAME (fallback to projectName param)
    - GIT_BRANCH (injected by GitLab CI)
    - GIT_COMMIT (injected by GitLab CI)
    - INFISICAL_PROJECT_ID
@@ -417,7 +417,7 @@ caps.init(
 
 ### Database Access
 
-The SDK is the only database client in any CAPS service. Services must not instantiate pg, mongoose, ioredis, or any database driver directly.
+The SDK is the only database client in any Platform service. Services must not instantiate pg, mongoose, ioredis, or any database driver directly.
 
 **Node.js:**
 ```javascript
@@ -459,7 +459,7 @@ const featureEnabled = caps.config('feature.new_dashboard');
 const timeout = caps.config('api.timeout_ms', 5000);
 ```
 
-Config values are set per-project per-environment in the CAPS Portal. Changing a value in the portal takes effect within 30 seconds in all running instances — no redeployment required.
+Config values are set per-project per-environment in the Platform Portal. Changing a value in the portal takes effect within 30 seconds in all running instances — no redeployment required.
 
 Config hierarchy (lower overrides higher):
 
@@ -511,9 +511,9 @@ import winston from 'winston';
 const logger = winston.createLogger(...);
 
 // With this:
-import { logger } from '@caps/sdk-node';
+import { logger } from '@mpratyush54/sdk-node';
 
-// Same API, logs now also forwarded to CAPS Platform
+// Same API, logs now also forwarded to Platform
 logger.info('User logged in', { userId: 123 });
 logger.error('DB query failed', { error: err.message });
 ```
@@ -536,7 +536,7 @@ Every log entry forwarded to the platform is tagged with: project, environment, 
 | Fail silent | try/catch wraps every platform call; errors logged internally only |
 | Cached | Config and credentials cached in memory; stale cache used if platform unreachable |
 | Async | All operations are async/await; no synchronous blocking calls |
-| Platform-downtime safe | Running services continue normally if CAPS Platform is down |
+| Platform-downtime safe | Running services continue normally if Platform is down |
 | Graceful shutdown | SIGTERM handler drains connection pools before exit |
 
 ---
@@ -729,13 +729,13 @@ Client request for file
 
 ### Module 8 — Bootstrap Engine
 
-**Purpose:** Automates adding fresh machines to the CAPS Kubernetes cluster.
+**Purpose:** Automates adding fresh machines to the Kubernetes cluster.
 
 **Target:** Fresh VPS/bare-metal nodes joining the existing KVM8-hosted cluster. KVM8 is the permanent master. New nodes are workers.
 
 **Bootstrap script entry point:**
 ```bash
-curl https://platform.capskengeri.com/bootstrap/get | bash -s -- --token <join-token> --master <master-ip>
+curl https://platform.platform.dev/bootstrap/get | bash -s -- --token <join-token> --master <master-ip>
 ```
 
 **What bootstrap installs on a fresh node:**
@@ -755,7 +755,7 @@ curl https://platform.capskengeri.com/bootstrap/get | bash -s -- --token <join-t
 
 ### Module 9 — CI/CD Engine
 
-**Purpose:** Generates and manages GitLab CI/CD pipeline configs and Kubernetes manifests for all CAPS projects.
+**Purpose:** Generates and manages GitLab CI/CD pipeline configs and Kubernetes manifests for all projects.
 
 **Generated artifacts per project:**
 - `.gitlab-ci.yml` — full pipeline with stages: lint, test, build, deploy-preview, deploy-staging, deploy-production
@@ -1098,7 +1098,7 @@ KVM8 (Hostinger) — Kubernetes Master (permanent, never re-bootstrapped)
   └── Worker Node N (bootstrapped via engine)
 ```
 
-KVM8 runs the control plane components plus the CAPS Platform itself. Worker nodes run project workloads.
+KVM8 runs the control plane components plus the Platform itself. Worker nodes run project workloads.
 
 ### Node Addition Flow
 
@@ -1114,10 +1114,10 @@ KVM8 runs the control plane components plus the CAPS Platform itself. Worker nod
 ### Node Labels Applied
 
 ```
-caps.io/role: worker
-caps.io/environment: production | staging | preview | any
-caps.io/region: in-south | in-west | etc.
-caps.io/added-at: <timestamp>
+platform.dev/role: worker
+platform.dev/environment: production | staging | preview | any
+platform.dev/region: in-south | in-west | etc.
+platform.dev/added-at: <timestamp>
 ```
 
 Workloads can be scheduled to specific nodes using these labels via `nodeSelector` in Helm charts.
@@ -1127,7 +1127,7 @@ Workloads can be scheduled to specific nodes using these labels via `nodeSelecto
 ## 12. Repository Structure
 
 ```
-caps-platform/
+platform/
 ├── portal/                  Angular app
 │   ├── src/app/
 │   │   ├── views/
@@ -1183,7 +1183,7 @@ caps-platform/
 │
 └── docs/
 
-caps-sdk-node/               @caps/sdk-node npm package
+sdk-node/               @mpratyush54/sdk-node npm package
 ├── src/
 │   ├── index.ts             caps.init()
 │   ├── database/            DB connection engine
@@ -1194,8 +1194,8 @@ caps-sdk-node/               @caps/sdk-node npm package
 │   └── registration/        Auto-registration
 └── package.json
 
-caps-sdk-python/             caps-sdk-python pip package
-├── caps_sdk/
+sdk-python/             platform-sdk-python pip package
+├── platform_sdk/
 │   ├── __init__.py
 │   ├── database.py
 │   ├── metrics.py
@@ -1205,7 +1205,7 @@ caps-sdk-python/             caps-sdk-python pip package
 │   └── registration.py
 └── setup.py
 
-caps-bootstrap/              Bootstrap scripts
+platform-bootstrap/              Bootstrap scripts
 ├── bootstrap.sh             Node join script
 ├── install/
 │   ├── docker.sh
@@ -1223,13 +1223,13 @@ caps-bootstrap/              Bootstrap scripts
 
 **Goal:** Everyone can develop against the platform locally. Nothing is "done" but everything is scaffolded.
 
-- Monorepo setup with caps-platform, caps-sdk-node, caps-sdk-python, caps-bootstrap
+- Monorepo setup with platform, sdk-node, platform-sdk-python, platform-bootstrap
 - PostgreSQL schema migrations written and applied
 - MongoDB collections and TTL indexes created
 - Next.JS API skeleton with all modules stubbed (routes exist, return 201/200 with empty data)
 - Angular portal skeleton with all routes and role guards wired
 - GitLab private npm and pip registry configured for SDK packages
-- Wildcard DNS for `*.preview.capskengeri.com` pointing to cluster ingress
+- Wildcard DNS for `*.preview.platform.dev` pointing to cluster ingress
 - Wildcard TLS certificate provisioned (cert-manager or manual)
 
 **Who does what:** Divide by module. Two engineers on API scaffold, two on portal scaffold, one on DB schema + migrations, one on DNS/TLS/K8s infra. Tech Lead reviews PRs daily.
@@ -1253,16 +1253,16 @@ caps-bootstrap/              Bootstrap scripts
 
 ### Phase 2 — SDK Core (Weeks 4–5)
 
-**Goal:** One real CAPS project has the SDK installed and reporting to the platform.
+**Goal:** One real project has the SDK installed and reporting to the platform.
 
-- `@caps/sdk-node` published to GitLab package registry
+- `@mpratyush54/sdk-node` published to GitLab package registry
 - `caps.init()` auto-registration working end-to-end
 - Heartbeat endpoint live, data writing to MongoDB metrics_raw
 - Portal shows "Online / Offline" per service
 - DB credentials fetch from Infisical via Platform API working
-- One real project (caps-automation-backend) migrated to use SDK for DB connections
+- One real project (automation-backend) migrated to use SDK for DB connections
 
-**Acceptance criteria:** caps-automation-backend boots, registers automatically, appears in portal as Online. Heartbeat data visible in MongoDB. DB connections working through SDK.
+**Acceptance criteria:** automation-backend boots, registers automatically, appears in portal as Online. Heartbeat data visible in MongoDB. DB connections working through SDK.
 
 ---
 
@@ -1279,7 +1279,7 @@ caps-bootstrap/              Bootstrap scripts
 - Preview TTL cleanup CronJob deployed
 - Branch naming convention enforced in CI (reject non-conforming branches)
 
-**Acceptance criteria:** Developer pushes feature/CU-999-test, preview URL appears at cu-999-test.preview.capskengeri.com within 5 minutes, ClickUp task CU-999 gets a comment with the URL.
+**Acceptance criteria:** Developer pushes feature/CU-999-test, preview URL appears at cu-999-test.preview.platform.dev within 5 minutes, ClickUp task CU-999 gets a comment with the URL.
 
 ---
 
@@ -1337,12 +1337,12 @@ caps-bootstrap/              Bootstrap scripts
 
 ### Phase 8 — DB Connection Engine (Week 14)
 
-**Goal:** All CAPS projects using SDK-managed DB connections.
+**Goal:** All projects using SDK-managed DB connections.
 
 - SDK DB connection pools fully hardened
 - Credential rotation handling tested
 - Exponential backoff tested
-- All active CAPS projects migrated off raw drivers
+- All active projects migrated off raw drivers
 - Pool size config via caps.config()
 
 ---
@@ -1407,4 +1407,4 @@ caps-bootstrap/              Bootstrap scripts
 | 7 | Infisical self-hosted or Infisical Cloud? | Open | Affects credential fetch latency and reliability SLA |
 | 8 | Preview environment resource quota values | Open | CPU limit, memory limit, max replicas per preview pod |
 | 9 | Log retention policy — 30 days hot enough? | Open | Confirm with Tech Leads before Phase 5 |
-| 10 | Portal SSO — GitLab OAuth only or also Google? | Open | GitLab assumed; CAPS members have GitLab accounts |
+| 10 | Portal SSO — GitLab OAuth only or also Google? | Open | GitLab assumed; members have GitLab accounts |

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Load dynamic environment variables
-source /etc/caps/.env
+source /etc/platform/.env
 
 PORTAINER_POD_IP=$(kubectl get pod -n portainer -l app.kubernetes.io/name=portainer -o jsonpath='{.items[0].status.podIP}' 2>/dev/null || kubectl get pod -n portainer -l app=portainer -o jsonpath='{.items[0].status.podIP}' 2>/dev/null || echo "")
 echo "Portainer pod IP: $PORTAINER_POD_IP"
@@ -10,12 +10,12 @@ if [[ -z "$PORTAINER_POD_IP" ]]; then
   exit 1
 fi
 
-kubectl apply -n caps-platform -f - <<EOF
+kubectl apply -n platform -f - <<EOF
 apiVersion: v1
 kind: Service
 metadata:
   name: portainer-proxy
-  namespace: caps-platform
+  namespace: platform
 spec:
   ports:
   - name: https
@@ -27,7 +27,7 @@ apiVersion: v1
 kind: Endpoints
 metadata:
   name: portainer-proxy
-  namespace: caps-platform
+  namespace: platform
 subsets:
 - addresses:
   - ip: $PORTAINER_POD_IP
@@ -38,7 +38,7 @@ subsets:
 EOF
 
 # Remove /portainer path from the main ingress rules
-kubectl get ingress caps-platform -n caps-platform -o json | python3 -c "
+kubectl get ingress platform -n platform -o json | python3 -c "
 import json, sys
 obj = json.load(sys.stdin)
 for rule in obj['spec']['rules']:
@@ -48,12 +48,12 @@ print(json.dumps(obj))
 " | kubectl apply -f -
 
 # Create dedicated portainer ingress with HTTPS backend
-kubectl apply -n caps-platform -f - <<EOFING
+kubectl apply -n platform -f - <<EOFING
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: portainer-ingress
-  namespace: caps-platform
+  namespace: platform
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
@@ -63,7 +63,7 @@ spec:
   tls:
   - hosts:
     - $DOMAIN
-    secretName: caps-platform-tls
+    secretName: platform-tls
   rules:
   - host: $DOMAIN
     http:

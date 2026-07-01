@@ -1,7 +1,7 @@
 <nav class="sidebar" [class.collapsed]="isCollapsed">
   <div class="logo" (click)="isCollapsed ? toggleCollapse.emit() : null" [style.cursor]="isCollapsed ? 'pointer' : 'default'">
     <span>⚡</span>
-    <span *ngIf="!isCollapsed">CAPS Platform</span>
+    <span *ngIf="!isCollapsed">Platform</span>
     <button *ngIf="!isCollapsed" (click)="toggleCollapse.emit(); $event.stopPropagation()" style="background: transparent; border: none; color: var(--text-secondary); cursor: pointer; margin-left: auto; font-size: 0.9rem; padding: 2px 6px;">◀</button>
   </div>
   <ul class="nav-links">

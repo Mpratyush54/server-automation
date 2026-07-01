@@ -6,7 +6,7 @@
     "start": "ts-node index.ts"
   },
   "dependencies": {
-    "@mpratyush54/sdk-node": "file:../../caps-sdk-node",
+    "@mpratyush54/sdk-node": "file:../../sdk-node",
     "cors": "^2.8.5",
     "express": "^4.18.2"
   },

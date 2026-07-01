@@ -6,7 +6,7 @@ set -e
 
 KUBECONFIG_DIR="$HOME/.kube"
 KUBECONFIG_FILE="$KUBECONFIG_DIR/config"
-CAPS_API_DIR="$(dirname "$0")/.."
+PLATFORM_API_DIR="$(dirname "$0")/.."
 
 echo "=== Platform Kubeconfig Setup ==="
 
@@ -60,8 +60,8 @@ echo "=== Cluster Info ==="
 kubectl get nodes -o wide
 echo ""
 
-# Create CAPS namespace if it doesn't exist
-echo "Creating CAPS namespace..."
+# Create Platform namespace if it doesn't exist
+echo "Creating Platform namespace..."
 kubectl create namespace platform --dry-run=client -o yaml | kubectl apply -f -
 echo "✓ Namespace platform ready"
 

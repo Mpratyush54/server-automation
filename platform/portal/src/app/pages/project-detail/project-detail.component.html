@@ -222,7 +222,7 @@
 
 await caps.init(&#123;
   projectName: '{{ project?.name }}',
-  platformUrl: 'http://your-caps-server',
+          platformUrl: 'http://your-platform-server',
   environmentName: 'production',
 &#125;);
 
@@ -752,8 +752,8 @@ caps.captureConsole(); // forward all console.*</pre>
           <div class="card text-center" style="margin:0; padding:14px; width:100%; border-color:rgba(255,255,255,0.05); background:rgba(0,0,0,0.3);">
             <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:600;">Ingress Route Domain</div>
             <div style="font-family:monospace; font-size:0.85rem; font-weight:700; margin-top:4px;">
-              <a href="http://{{ project?.domain || project?.name + '.capskengeri.com' }}" target="_blank" style="color:var(--primary); text-decoration:none;">
-                {{ project?.domain || project?.name + '.capskengeri.com' }}
+              <a href="http://{{ project?.domain || project?.name + '.platform.dev' }}" target="_blank" style="color:var(--primary); text-decoration:none;">
+                {{ project?.domain || project?.name + '.platform.dev' }}
               </a>
             </div>
           </div>

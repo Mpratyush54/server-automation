@@ -4,15 +4,15 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: caps
-      POSTGRES_PASSWORD: caps
-      POSTGRES_DB: caps_platform
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+      POSTGRES_DB: platform
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U caps"]
+      test: ["CMD-SHELL", "pg_isready -U platform"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -36,8 +36,8 @@ services:
       - "9000:9000"
       - "9001:9001"
     environment:
-      MINIO_ROOT_USER: caps
-      MINIO_ROOT_PASSWORD: capsminio
+      MINIO_ROOT_USER: platform
+      MINIO_ROOT_PASSWORD: platformminio
     volumes:
       - miniodata:/data
 
@@ -59,11 +59,11 @@ services:
     ports:
       - "3001:3000"
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: caps
+      GF_SECURITY_ADMIN_PASSWORD: platform
 
   api:
     build:
-      context: ./caps-platform/api
+      context: ./platform/api
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
@@ -71,10 +71,10 @@ services:
       NODE_ENV: development
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
-      POSTGRES_USER: caps
-      POSTGRES_PASSWORD: caps
-      POSTGRES_DB: caps_platform
-      MONGODB_URI: mongodb://mongodb:27017/caps_platform
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+      POSTGRES_DB: platform
+      MONGODB_URI: mongodb://mongodb:27017/platform
       REDIS_HOST: redis
       REDIS_PORT: 6379
       LOKI_URL: http://loki:3100
@@ -88,7 +88,7 @@ services:
 
   portal:
     build:
-      context: ./caps-platform/portal
+      context: ./platform/portal
       dockerfile: Dockerfile
     ports:
       - "4200:80"
