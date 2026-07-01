@@ -2792,12 +2792,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
         const { provisionPostgresDb } = await import('../lib/database-service');
         const envs = ['development', 'staging', 'production'];
         for (const envName of envs) {
-          const existing = await ds.getRepository(DbConnection).findOne({
-            where: { projectId: project.id, dbType: 'postgres' as DbType },
-          });
-          if (!existing) {
-            await provisionPostgresDb(project.name, envName).catch(() => {});
-          }
+          await provisionPostgresDb(project.name, envName).catch(() => {});
         }
       } catch (e) {
         console.warn('[sdk/register] Failed to auto-provision databases:', (e as Error).message);
