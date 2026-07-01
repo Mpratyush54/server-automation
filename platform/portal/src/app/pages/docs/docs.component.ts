@@ -410,7 +410,7 @@ export class DocsComponent implements OnInit, AfterViewChecked {
       const m = part.match(/<h2[^>]*>\s*<code>(GET|POST|PUT|PATCH|DELETE)<\/code>\s+(.+?)<\/h2>/i);
       if (m) {
         if (cardOpen) { out.push('</div></div>'); }
-        out.push(`<div class="api-card"><div class="api-card-header"><span class="api-method method-${m[1].toLowerCase()}">${m[1]}</span><code class="api-path">${m[2].trim()}</code></div><div class="api-card-body">`);
+        out.push(`<div class="api-card"><div class="api-card-header"><span class="api-method method-${m[1].toLowerCase()}">${m[1]}</span><code class="api-path">${m[2].trim()} <span class="api-http-version">HTTP/1.1</span></code></div><div class="api-card-body">`);
         cardOpen = true;
       } else {
         out.push(part);
@@ -422,7 +422,7 @@ export class DocsComponent implements OnInit, AfterViewChecked {
 
     result = result.replace(
       /<h3[^>]*>\s*<code>(GET|POST|PUT|PATCH|DELETE)<\/code>\s+(.+?)<\/h3>/gi,
-      '<div class="api-sub-card"><div class="api-card-header method-sub"><span class="api-method method-$1">$1</span><code class="api-path">$2</code></div></div>'
+      '<div class="api-sub-card"><div class="api-card-header method-sub"><span class="api-method method-$1">$1</span><code class="api-path">$2 <span class="api-http-version">HTTP/1.1</span></code></div></div>'
     );
 
     return result;

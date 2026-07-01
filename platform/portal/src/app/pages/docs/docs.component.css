@@ -5,25 +5,28 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  --docs-color-bg: #0a0a0a;
-  --docs-color-elevated: #111;
-  --docs-color-border: #333;
+  --docs-color-bg: #000000;
+  --docs-color-elevated: #0a0a0a;
+  --docs-color-border: #333333;
   --docs-color-border-hover: rgba(255,255,255,0.12);
-  --docs-text-primary: #e4e4e7;
-  --docs-text-secondary: #a1a1aa;
+  --docs-text-primary: #ededed;
+  --docs-text-secondary: #888888;
   --docs-text-muted: #52525b;
 
-  --docs-accent: #3794ff;
-  --docs-accent-bg: rgba(55,148,255,0.08);
+  --docs-accent: #3b82f6;
+  --docs-accent-bg: rgba(59,130,246,0.08);
 
-  --docs-color-code: #50fa7b;
-  --docs-color-code-bg: rgba(80,250,123,0.08);
-  --docs-color-action: #ffb86c;
-  --docs-color-action-bg: rgba(255,184,108,0.08);
+  --docs-color-code: #10b981;
+  --docs-color-code-bg: rgba(16,185,129,0.08);
+  
+  --docs-color-action: #f59e0b;
+  --docs-color-action-bg: rgba(245,158,11,0.08);
+  
   --docs-color-error: #ff5555;
   --docs-color-error-bg: rgba(255,85,85,0.08);
-  --docs-color-external: #bd93f9;
-  --docs-color-external-bg: rgba(189,147,249,0.08);
+  
+  --docs-color-external: #f59e0b; /* Aliased to action color for external services */
+  --docs-color-external-bg: rgba(245,158,11,0.08);
 
   --docs-sidebar-width: 280px;
 }
@@ -433,6 +436,65 @@
   font-size: 0.9rem;
 }
 
+/* ── File Tree Styling ───────────────────────────────────────────────────── */
+.docs-file-tree {
+  font-family: var(--font-code, 'Geist Mono', 'JetBrains Mono', monospace);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  background: #0a0a0a;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  padding: 24px;
+  margin: 20px 0 28px;
+  overflow-x: auto;
+}
+
+.docs-file-tree ul {
+  list-style: none;
+  padding-left: 20px;
+  margin: 0;
+  border-left: 1px solid rgba(255,255,255,0.05);
+}
+
+.docs-file-tree > ul {
+  padding-left: 0;
+  border-left: none;
+}
+
+.docs-file-tree li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.docs-file-tree .icon {
+  width: 16px;
+  height: 16px;
+  opacity: 0.8;
+}
+
+.docs-file-tree .icon.folder {
+  color: #3b82f6; /* Blue for folders */
+  fill: rgba(59, 130, 246, 0.1);
+}
+
+.docs-file-tree .icon.file {
+  color: #888888;
+}
+
+.docs-file-tree .name {
+  color: var(--docs-text-primary);
+  font-weight: 500;
+}
+
+.docs-file-tree .desc {
+  color: var(--docs-text-secondary);
+  font-size: 0.75rem;
+  margin-left: 16px;
+  font-family: var(--font-body, 'Geist', 'Inter', sans-serif);
+}
+
 /* ── Code Blocks (Terminal Frame) ───────────────────────────────────────────
    Signature element: every code block is framed like a terminal window.
    Three-dot motif + language label + copy button in the title bar.
@@ -461,10 +523,12 @@
 }
 
 .docs-code-header::before {
-  content: "● ● ●";
-  font-size: 0.55rem;
-  letter-spacing: 3px;
-  color: #52525b;
+  content: "~ $";
+  font-family: var(--font-code, 'Geist Mono', 'JetBrains Mono', monospace);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #569cd6;
   line-height: 1;
 }
 
@@ -515,7 +579,7 @@
   display: block;
   padding: 20px 24px;
   background: transparent;
-  color: #ededed;
+  color: #d4d4d4;
   font-size: 0.82rem;
   line-height: 1.6;
   overflow-x: auto;
@@ -546,39 +610,55 @@
 .hljs-selector-tag,
 .hljs-section,
 .hljs-link {
-  color: #ff0080;
+  color: #569cd6; /* Blue keywords */
 }
 
 .hljs-string,
+.hljs-addition {
+  color: #ce9178; /* Orange-brown strings */
+}
+
 .hljs-title,
 .hljs-name,
 .hljs-type,
+.hljs-class .hljs-title {
+  color: #4ec9b0; /* Teal types/classes */
+}
+
+.hljs-title.class_,
+.hljs-title.function_ {
+  color: #dcdcaa; /* Yellow functions */
+}
+
+.hljs-variable,
+.hljs-template-tag,
+.hljs-template-variable,
 .hljs-attribute,
 .hljs-symbol,
 .hljs-bullet,
-.hljs-addition,
-.hljs-variable,
-.hljs-template-tag,
-.hljs-template-variable {
-  color: #0070f3;
+.hljs-property,
+.hljs-attr,
+.hljs-meta {
+  color: #9cdcfe; /* Light blue variables/properties/meta */
 }
 
 .hljs-comment,
 .hljs-quote,
-.hljs-deletion,
-.hljs-meta {
-  color: #888888;
+.hljs-deletion {
+  color: #6a9955; /* Green comments */
 }
 
 .hljs-number,
-.hljs-literal,
-.hljs-built_in {
-  color: #f5a623;
+.hljs-literal {
+  color: #b5cea8; /* Light green numbers */
 }
 
-.hljs-params { color: #ededed; }
-.hljs-attr, .hljs-property, .hljs-selector-class { color: #3b82f6; }
-.hljs-regexp { color: #ff0080; }
+.hljs-built_in {
+  color: #dcdcaa; /* Yellow for built-ins (bash commands like cd, npm) */
+}
+
+.hljs-params { color: #9cdcfe; }
+.hljs-regexp { color: #d16969; } /* Red regex */
 
 /* ── Inline code ─────────────────────────────────────────────────────────── */
 .docs-markdown code:not(pre code):not(.hljs) {
@@ -703,6 +783,13 @@
   background: transparent;
   padding: 0;
   letter-spacing: -0.01em;
+}
+
+.api-http-version {
+  font-weight: 400;
+  font-size: 0.7rem;
+  color: var(--docs-text-muted);
+  letter-spacing: 0;
 }
 
 .api-card-body {
