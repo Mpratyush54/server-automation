@@ -1249,7 +1249,6 @@ spec:
             name: caps-portal
             port:
               number: 80
-EOF
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
