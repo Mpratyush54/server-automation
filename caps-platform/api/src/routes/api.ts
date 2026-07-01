@@ -2786,6 +2786,134 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       timestamp: new Date(),
     });
 
+    // Auto-provision PostgreSQL databases if requested
+    if (body.dbTypes && body.dbTypes.includes('postgres')) {
+      try {
+        const { provisionPostgresDb } = await import('../lib/database-service');
+        const envs = ['development', 'staging', 'production'];
+        for (const envName of envs) {
+          const existing = await ds.getRepository(DbConnection).findOne({
+            where: { projectId: project.id, dbType: 'postgres' as DbType },
+          });
+          if (!existing) {
+            await provisionPostgresDb(project.name, envName).catch(() => {});
+          }
+        }
+      } catch (e) {
+        console.warn('[sdk/register] Failed to auto-provision databases:', (e as Error).message);
+      }
+    }
+
+    // Auto-create ArgoCD Application for GitOps (staging)
+    if (project.repositoryUrl) {
+      try {
+        const customApi = new k8s.KubeConfig();
+        try { customApi.loadFromCluster(); } catch { try { customApi.loadFromDefault(); } catch {} }
+        const apiClient = customApi.makeApiClient(k8s.CustomObjectsApi);
+        const appName = `${project.name}-staging`.toLowerCase();
+        try {
+          await apiClient.getNamespacedCustomObject({
+            group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd',
+            plural: 'applications', name: appName,
+          });
+        } catch {
+          // Application doesn't exist — create it
+          const domain = project.domain || process.env.DOMAIN || 'sslip.io';
+          await apiClient.createNamespacedCustomObject({
+            group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd',
+            plural: 'applications',
+            body: {
+              apiVersion: 'argoproj.io/v1alpha1',
+              kind: 'Application',
+              metadata: { name: appName, namespace: 'argocd' },
+              spec: {
+                project: 'default',
+                source: { repoURL: project.repositoryUrl, targetRevision: 'main', path: 'k8s' },
+                destination: { server: 'https://kubernetes.default.svc', namespace: 'caps-platform' },
+                syncPolicy: { automated: { prune: true, selfHeal: true } },
+              },
+            },
+          });
+        }
+      } catch (e) {
+        console.warn('[sdk/register] Failed to create ArgoCD Application:', (e as Error).message);
+      }
+    }
+
+    // Auto-create K8s Deployment, Service, and Ingress for the service
+    const serviceName = body.serviceName || project.name;
+    try {
+      const kc = new k8s.KubeConfig();
+      try { kc.loadFromCluster(); } catch { try { kc.loadFromDefault(); } catch {} }
+      const appsV1 = kc.makeApiClient(k8s.AppsV1Api);
+      const coreV1 = kc.makeApiClient(k8s.CoreV1Api);
+      const networkV1 = kc.makeApiClient(k8s.NetworkingV1Api);
+      const ns = 'caps-platform';
+      const deployName = `${project.name}-${body.serviceName || 'app'}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+
+      // Deployment
+      const deployment = {
+        metadata: { name: deployName, namespace: ns, labels: { app: deployName, project: project.name } },
+        spec: {
+          replicas: 1,
+          selector: { matchLabels: { app: deployName } },
+          template: {
+            metadata: { labels: { app: deployName, project: project.name } },
+            spec: {
+              containers: [{
+                name: 'app',
+                image: `${project.name}:latest`,
+                ports: [{ containerPort: 3001 }],
+              }],
+            },
+          },
+        },
+      };
+      try { await appsV1.createNamespacedDeployment({ namespace: ns, body: deployment as any }); }
+      catch { try { await appsV1.replaceNamespacedDeployment({ name: deployName, namespace: ns, body: deployment as any }); } catch {} }
+
+      // Service
+      const service = {
+        metadata: { name: deployName, namespace: ns },
+        spec: {
+          selector: { app: deployName },
+          ports: [{ port: 80, targetPort: 3001 }],
+        },
+      };
+      try { await coreV1.createNamespacedService({ namespace: ns, body: service as any }); }
+      catch { try { await coreV1.replaceNamespacedService({ name: deployName, namespace: ns, body: service as any }); } catch {} }
+
+      // Ingress
+      const domain = project.domain || process.env.DOMAIN || 'sslip.io';
+      const ingress = {
+        metadata: {
+          name: deployName,
+          namespace: ns,
+          annotations: {
+            'cert-manager.io/cluster-issuer': 'letsencrypt-prod',
+            'kubernetes.io/ingress.class': 'nginx',
+          },
+        },
+        spec: {
+          rules: [{
+            host: `${deployName}.${domain}`,
+            http: {
+              paths: [{
+                path: '/',
+                pathType: 'Prefix',
+                backend: { service: { name: deployName, port: { number: 80 } } },
+              }],
+            },
+          }],
+          tls: [{ hosts: [`${deployName}.${domain}`], secretName: `${deployName}-tls` }],
+        },
+      };
+      try { await networkV1.createNamespacedIngress({ namespace: ns, body: ingress as any }); }
+      catch { try { await networkV1.replaceNamespacedIngress({ name: deployName, namespace: ns, body: ingress as any }); } catch {} }
+    } catch (e) {
+      console.warn('[sdk/register] Failed to create K8s resources:', (e as Error).message);
+    }
+
     return res.status(201).json(saved);
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
