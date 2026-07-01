@@ -411,6 +411,11 @@ install_kubernetes() {
   # Fix CoreDNS to use real upstream DNS (systemd-resolved stub at 127.0.0.53
   # is unreachable from inside CoreDNS container, causing DNS failures)
   log "Patching CoreDNS with internal domain rewrite rules..."
+  for i in {1..30}; do
+    kubectl get configmap -n kube-system coredns >/dev/null 2>&1 && break
+    log "Waiting for coredns ConfigMap to be created..."
+    sleep 2
+  done
   kubectl get configmap -n kube-system coredns -o json | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
