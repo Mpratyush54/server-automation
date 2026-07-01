@@ -39,7 +39,7 @@ export const routes: Routes = [
   { path: 'argocd', component: IframeViewComponent, canActivate: [authGuard], data: { url: '/argocd/' } },
   { path: 'grafana', component: IframeViewComponent, canActivate: [authGuard], data: { url: '/grafana/' } },
   { path: 'portainer', component: IframeViewComponent, canActivate: [authGuard], data: { url: '/portainer/' } },
-  { path: 'infisical', component: IframeViewComponent, canActivate: [authGuard], data: { url: '/infisical/' } },
+
   { path: 'projects', component: ProjectsComponent, canActivate: [authGuard] },
   { path: 'projects/:id', component: ProjectDetailComponent, canActivate: [authGuard] },
   { path: 'deployments', component: DeploymentsComponent, canActivate: [authGuard] },

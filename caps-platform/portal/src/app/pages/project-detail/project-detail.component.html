@@ -18,6 +18,7 @@
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'api-metrics'" (click)="switchTab('api-metrics')">⚡ API Latency</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'logs'" (click)="switchTab('logs')">📝 Logs</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'config'" (click)="switchTab('config')">⚙️ Config</button>
+  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'secrets'" (click)="switchTab('secrets')" *ngIf="role === 'devops' || role === 'tech_lead' || role === 'admin'">🔐 Secrets</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'storage'" (click)="switchTab('storage')">📁 Storage</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'environments'" (click)="switchTab('environments')">🌐 Environments</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'sdk-tokens'" (click)="switchTab('sdk-tokens')">🔑 SDK Tokens</button>
@@ -315,6 +316,88 @@ caps.captureConsole(); // forward all console.*</pre>
           </tr>
           <tr *ngIf="(configs | keyvalue).length === 0">
             <td colspan="4" style="text-align:center;color:var(--color-text-muted);">No runtime configurations defined</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- SECRETS TAB -->
+<div *ngIf="activeTab === 'secrets'" class="grid-2">
+  <!-- Create/Edit Secret Card -->
+  <div class="card" *ngIf="role === 'devops' || role === 'tech_lead' || role === 'admin'">
+    <h2>Set Encrypted Secret</h2>
+    <p style="color:var(--color-text-secondary);font-size:0.8rem;margin-bottom:16px;">
+      Secrets are encrypted at rest using AES-256-GCM.
+    </p>
+    <div class="form-group">
+      <label>Secret Key</label>
+      <input [(ngModel)]="newSecret.key" placeholder="API_SECRET_KEY" style="width:100%;">
+    </div>
+    <div class="form-group">
+      <label>Secret Value</label>
+      <textarea [(ngModel)]="newSecret.value" placeholder="super-secret-value-here" style="width:100%;height:100px;"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Environment Scope</label>
+      <select [(ngModel)]="newSecret.environmentId" style="width:100%;">
+        <option value="">Global (All Environments)</option>
+        <option *ngFor="let env of project?.environments" [value]="env.id">{{ env.name | uppercase }}</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" (click)="addSecret()" [disabled]="!newSecret.key || !newSecret.value" style="width:100%;">Save Secret</button>
+
+    <div style="margin-top:24px;border-top:1px solid var(--border-glass);padding-top:16px;display:flex;gap:8px;">
+      <button class="btn btn-sm btn-secondary" style="flex:1;" (click)="bulkImportEnvId=''; bulkImportText=''; showBulkImportModal=true">📤 Bulk Import</button>
+      <button class="btn btn-sm btn-secondary" style="flex:1;" (click)="doExportSecrets('')">📥 Export All</button>
+    </div>
+  </div>
+
+  <!-- Secrets List Card -->
+  <div class="card" style="flex:2;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+      <h2>Environment Secrets</h2>
+      <div style="display:flex;gap:8px;" *ngIf="project?.environments?.length">
+        <button class="btn btn-sm btn-secondary" *ngFor="let env of project.environments" (click)="doExportSecrets(env.id)">📥 Export {{ env.name | uppercase }}</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Value</th>
+            <th>Environment Scope</th>
+            <th>Version</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let s of secrets">
+            <td style="font-family:monospace;font-weight:700;">{{ s.key }}</td>
+            <td style="font-family:monospace;">
+              <span *ngIf="!s.isRevealed">••••••••</span>
+              <span *ngIf="s.isRevealed" style="color:#10b981;font-weight:600;">{{ s.revealedValue }}</span>
+            </td>
+            <td>
+              <span class="badge" [class.badge-active]="!s.environmentId">
+                {{ getEnvName(s.environmentId) }}
+              </span>
+            </td>
+            <td>
+              <a href="javascript:void(0)" (click)="showSecretVersions(s)" style="color:var(--primary);text-decoration:underline;font-weight:600;">v{{ s.version }}</a>
+            </td>
+            <td>
+              <div style="display:flex;gap:6px;">
+                <button class="btn btn-sm btn-secondary" *ngIf="!s.isRevealed" (click)="revealSecret(s)">👁️ Reveal</button>
+                <button class="btn btn-sm btn-secondary" *ngIf="s.isRevealed" (click)="hideSecret(s)">🙈 Hide</button>
+                <button class="btn btn-sm btn-danger" *ngIf="role === 'devops' || role === 'admin'" (click)="deleteSecret(s.id)">Delete</button>
+              </div>
+            </td>
+          </tr>
+          <tr *ngIf="secrets.length === 0">
+            <td colspan="5" style="text-align:center;color:var(--color-text-muted);">No encrypted secrets defined</td>
           </tr>
         </tbody>
       </table>
@@ -878,6 +961,72 @@ caps.captureConsole(); // forward all console.*</pre>
     <div style="padding:12px 24px; border-top:1px solid var(--border-glass); display:flex; justify-content:flex-end; gap:8px; background:rgba(15,23,42,0.4);">
       <button class="btn btn-sm" (click)="fetchPodLogs()">Refresh Logs</button>
       <button class="btn btn-sm btn-primary" (click)="closeLogsModal()">Close Terminal</button>
+    </div>
+  </div>
+</div>
+
+<!-- VERSION HISTORY MODAL -->
+<div class="modal-backdrop" *ngIf="showVersionsModal" (click)="showVersionsModal = false" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999;display:flex;justify-content:center;align-items:center;">
+  <div class="card" (click)="$event.stopPropagation()" style="width:550px;max-width:90%;background:#0f172a;border:1px solid var(--border-glass);box-shadow:0 20px 25px -5px rgba(0,0,0,0.5);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid var(--border-glass);padding-bottom:12px;">
+      <h2 style="margin:0;border:none;padding:0;">Version History: {{ activeSecretKey }}</h2>
+      <button class="btn btn-sm btn-secondary" (click)="showVersionsModal = false">✕</button>
+    </div>
+    <div style="max-height:300px;overflow-y:auto;margin-bottom:16px;">
+      <table style="width:100%;">
+        <thead>
+          <tr>
+            <th>Version</th>
+            <th>Changed At</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let ver of activeSecretVersions">
+            <td>v{{ ver.version }}</td>
+            <td style="font-size:0.8rem;color:var(--color-text-secondary);">{{ ver.changedAt | date:'short' }}</td>
+            <td>
+              <button class="btn btn-sm btn-primary" *ngIf="role === 'devops' || role === 'admin'" (click)="rollbackToVersion(ver.version)">Rollback</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- BULK IMPORT MODAL -->
+<div class="modal-backdrop" *ngIf="showBulkImportModal" (click)="showBulkImportModal = false" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999;display:flex;justify-content:center;align-items:center;">
+  <div class="card" (click)="$event.stopPropagation()" style="width:600px;max-width:95%;background:#0f172a;border:1px solid var(--border-glass);box-shadow:0 20px 25px -5px rgba(0,0,0,0.5);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid var(--border-glass);padding-bottom:12px;">
+      <h2 style="margin:0;border:none;padding:0;">Bulk Import Secrets (.env format)</h2>
+      <button class="btn btn-sm btn-secondary" (click)="showBulkImportModal = false">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Environment Scope Scope</label>
+      <select [(ngModel)]="bulkImportEnvId" style="width:100%;">
+        <option value="">Global (All Environments)</option>
+        <option *ngFor="let env of project?.environments" [value]="env.id">{{ env.name | uppercase }}</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Paste .env Content</label>
+      <textarea [(ngModel)]="bulkImportText" placeholder="KEY1=VALUE1&#10;KEY2=VALUE2" style="width:100%;height:200px;font-family:monospace;font-size:0.85rem;background:rgba(0,0,0,0.25);border-color:var(--border-glass);color:#fff;padding:8px;"></textarea>
+    </div>
+    <button class="btn btn-primary" (click)="doBulkImport()" [disabled]="!bulkImportText" style="width:100%;margin-top:12px;">Import Secrets</button>
+  </div>
+</div>
+
+<!-- EXPORT SECRETS MODAL -->
+<div class="modal-backdrop" *ngIf="showExportModal" (click)="showExportModal = false" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999;display:flex;justify-content:center;align-items:center;">
+  <div class="card" (click)="$event.stopPropagation()" style="width:600px;max-width:95%;background:#0f172a;border:1px solid var(--border-glass);box-shadow:0 20px 25px -5px rgba(0,0,0,0.5);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid var(--border-glass);padding-bottom:12px;">
+      <h2 style="margin:0;border:none;padding:0;">Exported Secrets ({{ exportedEnvId ? getEnvName(exportedEnvId) : 'GLOBAL' }})</h2>
+      <button class="btn btn-sm btn-secondary" (click)="showExportModal = false">✕</button>
+    </div>
+    <p style="color:var(--color-text-secondary);font-size:0.8rem;margin-bottom:12px;">Copy these into your local <code>.env</code> file.</p>
+    <div class="form-group">
+      <textarea readonly [value]="exportedSecretsText" style="width:100%;height:250px;font-family:monospace;font-size:0.85rem;background:rgba(0,0,0,0.25);border-color:var(--border-glass);color:#fff;padding:8px;"></textarea>
     </div>
   </div>
 </div>

@@ -55,6 +55,20 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   newConfig = { key: '', value: '', environmentId: '', isSecret: false };
   newFileCategoryRoute = { category: '', provider: 'local' };
   searchLogQuery = { level: '', search: '' };
+
+  // Secrets
+  secrets: any[] = [];
+  newSecret = { key: '', value: '', environmentId: '' };
+  activeSecretVersions: any[] = [];
+  activeSecretKey: string = '';
+  activeSecretId: string = '';
+  showVersionsModal: boolean = false;
+  bulkImportText: string = '';
+  showBulkImportModal: boolean = false;
+  bulkImportEnvId: string = '';
+  exportedEnvId: string = '';
+  exportedSecretsText: string = '';
+  showExportModal: boolean = false;
   
   // Timer for logs & heartbeats refresh
   private refreshTimer?: any;
@@ -94,6 +108,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     await this.loadTokens();
     await this.loadK8sPods();
     await this.loadArgoStatus();
+    await this.loadSecrets();
   }
 
   async pollData() {
@@ -101,6 +116,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     if (this.activeTab === 'metrics') await this.loadMetrics();
     if (this.activeTab === 'api-metrics') await this.loadApiMetrics();
     if (this.activeTab === 'databases') await this.loadBackups();
+    if (this.activeTab === 'secrets') await this.loadSecrets();
     if (this.activeTab === 'gitops') {
       await this.loadK8sPods();
       await this.loadArgoStatus();
@@ -480,5 +496,128 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  getEnvName(envId: string | null): string {
+    if (!envId) return 'GLOBAL';
+    const env = this.project?.environments?.find((e: any) => e.id === envId);
+    return env ? env.name.toUpperCase() : envId.toUpperCase();
+  }
+
+  async loadSecrets() {
+    if (!this.project) return;
+    try {
+      this.secrets = await firstValueFrom(this.api.getSecrets(this.project.id));
+    } catch { this.secrets = []; }
+  }
+
+  async addSecret() {
+    if (!this.project) return;
+    try {
+      await firstValueFrom(this.api.createOrUpdateSecret(this.project.id, {
+        key: this.newSecret.key,
+        value: this.newSecret.value,
+        environmentId: this.newSecret.environmentId || null
+      }));
+      await this.loadSecrets();
+      this.newSecret = { key: '', value: '', environmentId: '' };
+    } catch (err: any) {
+      alert('Failed to save secret: ' + (err.error?.error || err.message));
+    }
+  }
+
+  async deleteSecret(secretId: string) {
+    if (!confirm('Are you sure you want to delete this secret?')) return;
+    try {
+      await firstValueFrom(this.api.deleteSecret(this.project.id, secretId));
+      await this.loadSecrets();
+    } catch (err: any) {
+      alert('Failed to delete secret: ' + (err.error?.error || err.message));
+    }
+  }
+
+  async revealSecret(secret: any) {
+    try {
+      const res = await firstValueFrom(this.api.revealSecret(this.project.id, {
+        environmentId: secret.environmentId,
+        key: secret.key
+      }));
+      secret.revealedValue = res.value;
+      secret.isRevealed = true;
+    } catch (err: any) {
+      alert('Failed to reveal secret: ' + (err.error?.error || err.message));
+    }
+  }
+
+  hideSecret(secret: any) {
+    secret.isRevealed = false;
+    secret.revealedValue = null;
+  }
+
+  async showSecretVersions(secret: any) {
+    this.activeSecretKey = secret.key;
+    this.activeSecretId = secret.id;
+    try {
+      const res = await firstValueFrom(this.api.getSecretVersions(this.project.id, secret.id));
+      this.activeSecretVersions = res.history;
+      this.showVersionsModal = true;
+    } catch (err: any) {
+      alert('Failed to load version history: ' + (err.error?.error || err.message));
+    }
+  }
+
+  async rollbackToVersion(version: number) {
+    if (!confirm(`Rollback secret "${this.activeSecretKey}" to version ${version}?`)) return;
+    try {
+      await firstValueFrom(this.api.rollbackSecret(this.project.id, this.activeSecretId, version));
+      this.showVersionsModal = false;
+      await this.loadSecrets();
+      alert('Secret successfully rolled back!');
+    } catch (err: any) {
+      alert('Failed to rollback secret: ' + (err.error?.error || err.message));
+    }
+  }
+
+  async doBulkImport() {
+    if (!this.bulkImportText) return;
+    try {
+      const lines = this.bulkImportText.split('\n');
+      const list: { key: string; value: string }[] = [];
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const parts = trimmed.split('=');
+        if (parts.length >= 2) {
+          const key = parts[0].trim();
+          const value = parts.slice(1).join('=').trim().replace(/^['"]|['"]$/g, '');
+          list.push({ key, value });
+        }
+      }
+      if (list.length === 0) {
+        alert('No valid key-value pairs found. Format should be KEY=VALUE.');
+        return;
+      }
+      await firstValueFrom(this.api.bulkImportSecrets(this.project.id, {
+        environmentId: this.bulkImportEnvId || null,
+        secrets: list
+      }));
+      this.showBulkImportModal = false;
+      this.bulkImportText = '';
+      await this.loadSecrets();
+      alert(`Imported ${list.length} secrets!`);
+    } catch (err: any) {
+      alert('Failed to import secrets: ' + (err.error?.error || err.message));
+    }
+  }
+
+  async doExportSecrets(envId: string) {
+    try {
+      const res = await firstValueFrom(this.api.exportSecrets(this.project.id, envId));
+      this.exportedSecretsText = res.secrets;
+      this.exportedEnvId = envId;
+      this.showExportModal = true;
+    } catch (err: any) {
+      alert('Failed to export secrets: ' + (err.error?.error || err.message));
+    }
   }
 }

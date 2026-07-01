@@ -42,6 +42,16 @@ export class ApiService {
   deleteConfig(projectId: string, key: string): Observable<any> { return this.http.delete(`${this.base}/config`, { params: { projectId, key } }); }
   setFeatureFlag(data: any): Observable<any> { return this.http.post(`${this.base}/config/feature-flags`, data); }
 
+  // Secrets
+  getSecrets(projectId: string): Observable<any> { return this.http.get(`${this.base}/projects/${projectId}/secrets`); }
+  revealSecret(projectId: string, data: { environmentId: string | null; key: string }): Observable<any> { return this.http.post(`${this.base}/projects/${projectId}/secrets/reveal`, data); }
+  createOrUpdateSecret(projectId: string, data: { key: string; value: string; environmentId: string | null }): Observable<any> { return this.http.post(`${this.base}/projects/${projectId}/secrets`, data); }
+  deleteSecret(projectId: string, secretId: string): Observable<any> { return this.http.delete(`${this.base}/projects/${projectId}/secrets/${secretId}`); }
+  exportSecrets(projectId: string, environmentId: string): Observable<any> { return this.http.get(`${this.base}/projects/${projectId}/secrets/export/${environmentId}`); }
+  bulkImportSecrets(projectId: string, data: { environmentId: string | null; secrets: { key: string; value: any }[] }): Observable<any> { return this.http.post(`${this.base}/projects/${projectId}/secrets/bulk`, data); }
+  getSecretVersions(projectId: string, secretId: string): Observable<any> { return this.http.get(`${this.base}/projects/${projectId}/secrets/${secretId}/versions`); }
+  rollbackSecret(projectId: string, secretId: string, version: number): Observable<any> { return this.http.post(`${this.base}/projects/${projectId}/secrets/${secretId}/rollback/${version}`, {}); }
+
   // Storage
   getUploadUrl(data: any): Observable<any> { return this.http.post(`${this.base}/storage/upload-url`, data); }
   deleteFile(fileId: string): Observable<any> { return this.http.post(`${this.base}/storage/delete`, { fileId }); }
