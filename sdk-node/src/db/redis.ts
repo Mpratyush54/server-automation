@@ -9,9 +9,9 @@ export class RedisManager {
 
   constructor(config: any = {}) {
     this.config = {
-      host: config.host || process.env.CAPS_REDIS_HOST || 'localhost',
-      port: config.port || parseInt(process.env.CAPS_REDIS_PORT || '6379', 10),
-      password: config.password || process.env.CAPS_REDIS_PASSWORD || undefined,
+      host: config.host || process.env.PLATFORM_REDIS_HOST || 'localhost',
+      port: config.port || parseInt(process.env.PLATFORM_REDIS_PORT || '6379', 10),
+      password: config.password || process.env.PLATFORM_REDIS_PASSWORD || undefined,
     };
   }
 
@@ -21,9 +21,9 @@ export class RedisManager {
       await this.client.connect();
       this.connected = true;
       this.retryCount = 0;
-      console.log('[caps] Redis connected');
+      console.log('[platform] Redis connected');
     } catch (err: any) {
-      console.error('[caps] Redis connection failed:', err.message);
+      console.error('[platform] Redis connection failed:', err.message);
       this.connected = false;
       this.scheduleReconnect();
     }
@@ -56,7 +56,7 @@ export class RedisManager {
     if (this.client) {
       await this.client.quit();
       this.connected = false;
-      console.log('[caps] Redis disconnected');
+      console.log('[platform] Redis disconnected');
     }
   }
 

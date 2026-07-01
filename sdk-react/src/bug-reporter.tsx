@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
-import { CapsConfig } from './context';
+import { PlatformConfig } from './context';
 
 interface ConsoleEntry {
   level: string;
@@ -17,7 +17,7 @@ interface NetworkEntry {
 }
 
 export interface BugReporterWidgetProps {
-  config: CapsConfig;
+  config: PlatformConfig;
 }
 
 export function BugReporterWidget({ config }: BugReporterWidgetProps) {

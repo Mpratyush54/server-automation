@@ -4,8 +4,8 @@ from setuptools import setup, find_packages
 setup(
     name="platform-sdk-python",
     version="1.0.0",
-    description="CAPS Platform Python SDK",
-    packages=find_packages(),
+    description="Platform Python SDK",
+    packages=find_packages(include=['platform_sdk', 'platform_sdk.*']),
     install_requires=[
         "psycopg2-binary>=2.9.0",
         "pymongo>=4.5.0",

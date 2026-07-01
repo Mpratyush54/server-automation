@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { CapsProvider, useCaps, BugReporterWidget } from '@mpratyush54/sdk-react';
+import { PlatformProvider, usePlatform, BugReporterWidget } from '@mpratyush54/sdk-react';
 
-const capsConfig = {
+const platformConfig = {
   apiBase: 'https://148.113.58.205.sslip.io',
   token: 'sdk_live_1ec8b9aa2d594c2b974f4d346734a6f2',
   projectId: 'bc145854-46fe-4480-a751-395a0b593004',
@@ -9,7 +9,7 @@ const capsConfig = {
 };
 
 function Dashboard() {
-  const { api } = useCaps();
+  const { api } = usePlatform();
   const [backendData, setBackendData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [logMessage, setLogMessage] = useState('');
@@ -19,7 +19,7 @@ function Dashboard() {
     setLoading(true);
     setStatusMsg('');
     try {
-      // This goes through the CapsProvider axios instance, so it triggers API metrics tracking automatically!
+      // This goes through the PlatformProvider axios instance, so it triggers API metrics tracking automatically!
       const res = await api.get('/api/data');
       setBackendData(res.data);
       setStatusMsg('Metrics tracked successfully!');
@@ -119,7 +119,7 @@ function Dashboard() {
           }}>
             <h2 style={{ fontSize: '1.3rem', margin: '0 0 12px', color: '#3b82f6' }}>📝 Server Logs Ingest</h2>
             <p style={{ color: '#94a3b8', fontSize: '0.9rem', lineHeight: 1.5, marginBottom: '20px' }}>
-              Triggers the Node SDK `caps.logger` to record standard server-side logs and syncs them to Loki.
+              Triggers the Node SDK `platform.logger` to record standard server-side logs and syncs them to Loki.
             </p>
             <input
               type="text"
@@ -204,15 +204,15 @@ function Dashboard() {
         </footer>
       </div>
 
-      <BugReporterWidget config={capsConfig} />
+      <BugReporterWidget config={platformConfig} />
     </div>
   );
 }
 
 export default function App() {
   return (
-    <CapsProvider config={capsConfig}>
+    <PlatformProvider config={platformConfig}>
       <Dashboard />
-    </CapsProvider>
+    </PlatformProvider>
   );
 }

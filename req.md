@@ -199,7 +199,7 @@ Every project detail page has tabs:
 - Each log line tagged with: timestamp, level, service, environment, commit SHA
 
 **Config tab**
-- Table of all `caps.config()` keys for this project
+- Table of all `platform.config()` keys for this project
 - Per-environment value editor (DevOps and Tech Lead)
 - Change history: who changed what, when
 - Hierarchy display: Global → Project → Environment → Instance
@@ -353,7 +353,7 @@ A DevOps engineer configures the following in ClickUp once:
 
 ```bash
 # Node.js
-npm install @caps/sdk-node
+npm install @mpratyush54/sdk-node
 
 # Python
 pip install platform-sdk-python
@@ -365,9 +365,9 @@ Both packages are published to GitLab's private package registry. They are not o
 
 **Node.js:**
 ```javascript
-import caps from '@mpratyush54/sdk-node';
+import platform from '@mpratyush54/sdk-node';
 
-caps.init({
+platform.init({
   projectName: 'automation-backend',
   platformUrl: 'https://platform.platform.dev',
   databases: ['postgres', 'redis', 'mongo'],
@@ -376,16 +376,16 @@ caps.init({
 
 **Python:**
 ```python
-from caps_sdk import caps
+from platform_sdk import platform
 
-caps.init(
+platform.init(
     project_name='automation-backend',
     platform_url='https://platform.platform.dev',
     databases=['postgres', 'redis'],
 )
 ```
 
-`caps.init()` is the only required call. Everything else is automatic.
+`platform.init()` is the only required call. Everything else is automatic.
 
 ### What Happens on init()
 
@@ -412,7 +412,7 @@ caps.init(
 
 7. Fetch initial config values from /sdk/config and cache them
 
-8. SDK ready — caps.db.*, caps.config(), caps.storage.* all available
+8. SDK ready — platform.db.*, platform.config(), platform.storage.* all available
 ```
 
 ### Database Access
@@ -422,14 +422,14 @@ The SDK is the only database client in any Platform service. Services must not i
 **Node.js:**
 ```javascript
 // PostgreSQL
-const users = await caps.db.postgres.query('SELECT * FROM users WHERE id = $1', [userId]);
+const users = await platform.db.postgres.query('SELECT * FROM users WHERE id = $1', [userId]);
 
 // Redis
-await caps.db.redis.set('session:123', JSON.stringify(sessionData), 'EX', 3600);
-const session = await caps.db.redis.get('session:123');
+await platform.db.redis.set('session:123', JSON.stringify(sessionData), 'EX', 3600);
+const session = await platform.db.redis.get('session:123');
 
 // MongoDB
-const db = caps.db.mongo.db('caps_automation');
+const db = platform.db.mongo.db('automation');
 const certs = db.collection('certificates');
 await certs.insertOne({ userId, issuedAt: new Date() });
 ```
@@ -437,13 +437,13 @@ await certs.insertOne({ userId, issuedAt: new Date() });
 **Python:**
 ```python
 # PostgreSQL
-rows = caps.db.postgres.execute('SELECT * FROM users WHERE id = %s', [user_id])
+rows = platform.db.postgres.execute('SELECT * FROM users WHERE id = %s', [user_id])
 
 # Redis
-caps.db.redis.set('session:123', json.dumps(session_data), ex=3600)
+platform.db.redis.set('session:123', json.dumps(session_data), ex=3600)
 
 # MongoDB
-col = caps.db.mongo['caps_automation']['certificates']
+col = platform.db.mongo['automation']['certificates']
 col.insert_one({'user_id': user_id, 'issued_at': datetime.now()})
 ```
 
@@ -451,12 +451,12 @@ col.insert_one({'user_id': user_id, 'issued_at': datetime.now()})
 
 ```javascript
 // Fetch a runtime config value
-const bucket = caps.config('storage.bucket');
-const maxFileSize = caps.config('uploads.max_size_mb');
-const featureEnabled = caps.config('feature.new_dashboard');
+const bucket = platform.config('storage.bucket');
+const maxFileSize = platform.config('uploads.max_size_mb');
+const featureEnabled = platform.config('feature.new_dashboard');
 
 // With default fallback
-const timeout = caps.config('api.timeout_ms', 5000);
+const timeout = platform.config('api.timeout_ms', 5000);
 ```
 
 Config values are set per-project per-environment in the Platform Portal. Changing a value in the portal takes effect within 30 seconds in all running instances — no redeployment required.
@@ -474,17 +474,17 @@ Global default
 
 ```javascript
 // Upload a file
-const result = await caps.storage.upload(fileBuffer, {
+const result = await platform.storage.upload(fileBuffer, {
   filename: 'certificate-123.pdf',
   contentType: 'application/pdf',
   category: 'certificates',   // Platform routes this to Google Drive per routing config
 });
 
 // Get a signed URL for direct client download
-const url = await caps.storage.signedUrl(result.fileId, { expiresIn: 3600 });
+const url = await platform.storage.signedUrl(result.fileId, { expiresIn: 3600 });
 
 // Delete a file
-await caps.storage.delete(result.fileId);
+await platform.storage.delete(result.fileId);
 ```
 
 The `category` field determines which storage provider is used, based on routing config set in the portal:
@@ -520,7 +520,7 @@ logger.error('DB query failed', { error: err.message });
 
 **Python:**
 ```python
-from caps_sdk import logger
+from platform_sdk import logger
 
 logger.info('User logged in', extra={'user_id': 123})
 logger.error('DB query failed', extra={'error': str(e)})
@@ -679,7 +679,7 @@ Global  →  Project  →  Environment  →  Instance
 
 **Feature flags** are a subset of config — boolean values that the SDK interprets:
 ```javascript
-if (caps.config('feature.new_certificate_ui')) {
+if (platform.config('feature.new_certificate_ui')) {
   // show new UI
 }
 ```
@@ -698,7 +698,7 @@ if (caps.config('feature.new_certificate_ui')) {
 
 **Upload flow (Signed URL strategy):**
 ```
-1. Service calls caps.storage.upload(file, { category: 'certificates' })
+1. Service calls platform.storage.upload(file, { category: 'certificates' })
 2. SDK calls POST /storage/upload-url on Platform API
 3. Platform determines provider from routing config (Google Drive for 'certificates')
 4. Platform generates a signed upload URL from the provider
@@ -791,7 +791,7 @@ Production deployments require a manual approval step in GitLab. The "deploy-pro
 | Reconnect | Automatic on connection drop |
 | Shutdown | SIGTERM → drain pools → close connections → exit |
 
-**Pool size configuration:** Default pool sizes are SDK defaults. Override via `caps.config('db.postgres.pool_size')` in the portal — no redeploy required.
+**Pool size configuration:** Default pool sizes are SDK defaults. Override via `platform.config('db.postgres.pool_size')` in the portal — no redeploy required.
 
 **Credential rotation:** If Infisical rotates a credential, the SDK detects connection failure, re-fetches credentials from Platform API, and reconnects. Services experience zero downtime.
 
@@ -952,7 +952,7 @@ performed_at TIMESTAMP DEFAULT NOW()
   "environment": "staging",
   "branch": "feature/CU-842",
   "commit_sha": "a3f92c1",
-  "hostname": "caps-auto-backend-pod-xyz",
+  "hostname": "platform-auto-backend-pod-xyz",
   "level": "ERROR",
   "message": "DB query failed",
   "fields": { "error": "connection timeout", "query": "SELECT..." },
@@ -1185,7 +1185,7 @@ platform/
 
 sdk-node/               @mpratyush54/sdk-node npm package
 ├── src/
-│   ├── index.ts             caps.init()
+│   ├── index.ts             platform.init()
 │   ├── database/            DB connection engine
 │   ├── metrics/             Heartbeat + metrics collection
 │   ├── logging/             Log wrapper + forwarder
@@ -1256,7 +1256,7 @@ platform-bootstrap/              Bootstrap scripts
 **Goal:** One real project has the SDK installed and reporting to the platform.
 
 - `@mpratyush54/sdk-node` published to GitLab package registry
-- `caps.init()` auto-registration working end-to-end
+- `platform.init()` auto-registration working end-to-end
 - Heartbeat endpoint live, data writing to MongoDB metrics_raw
 - Portal shows "Online / Offline" per service
 - DB credentials fetch from Infisical via Platform API working
@@ -1310,10 +1310,10 @@ platform-bootstrap/              Bootstrap scripts
 
 ### Phase 6 — Config Engine (Weeks 9–10)
 
-**Goal:** `caps.config()` works and values are editable from the portal without redeployment.
+**Goal:** `platform.config()` works and values are editable from the portal without redeployment.
 
 - Config Engine endpoints live
-- `caps.config()` in SDK fetching from platform and caching
+- `platform.config()` in SDK fetching from platform and caching
 - Portal config tab: view, create, edit, delete keys
 - Per-environment overrides
 - Config change history
@@ -1323,7 +1323,7 @@ platform-bootstrap/              Bootstrap scripts
 
 ### Phase 7 — Storage Engine (Weeks 11–13)
 
-**Goal:** `caps.storage.upload()` works across all providers.
+**Goal:** `platform.storage.upload()` works across all providers.
 
 - Storage Gateway in Platform API
 - Signed URL generation for S3, MinIO, Google Drive
@@ -1343,7 +1343,7 @@ platform-bootstrap/              Bootstrap scripts
 - Credential rotation handling tested
 - Exponential backoff tested
 - All active projects migrated off raw drivers
-- Pool size config via caps.config()
+- Pool size config via platform.config()
 
 ---
 
@@ -1376,7 +1376,7 @@ platform-bootstrap/              Bootstrap scripts
 
 2. **SDK must fail silently.** If the platform is unreachable, the service runs normally. Errors are logged internally by the SDK, never surfaced to the service.
 
-3. **Config must be cached.** `caps.config()` never makes a network call synchronously. Values are refreshed in the background. A platform outage does not break config reads.
+3. **Config must be cached.** `platform.config()` never makes a network call synchronously. Values are refreshed in the background. A platform outage does not break config reads.
 
 4. **Database connections are SDK-owned.** Services must not import pg, mongoose, ioredis, or any database driver. If a PR adds a direct DB import, it fails CI lint.
 
@@ -1388,7 +1388,7 @@ platform-bootstrap/              Bootstrap scripts
 
 8. **New server setup is a portal action.** SSHing into a node to configure it manually is not acceptable after Phase 9. Bootstrap scripts handle everything.
 
-9. **Storage is provider-independent.** Services never call S3 SDK, Google Drive API, or MinIO client directly. All storage goes through `caps.storage.*`.
+9. **Storage is provider-independent.** Services never call S3 SDK, Google Drive API, or MinIO client directly. All storage goes through `platform.storage.*`.
 
 10. **Every destructive action is audit-logged.** Deploy, rollback, delete project, config change, node bootstrap — all recorded with user, timestamp, and full metadata.
 

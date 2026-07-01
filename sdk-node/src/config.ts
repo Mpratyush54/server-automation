@@ -28,7 +28,7 @@ export class ConfigClient {
         this.cache.set(key, value);
       }
     } catch (err: any) {
-      console.error('[caps] Failed to fetch config values (silent):', err.message);
+      console.error('[platform] Failed to fetch config values (silent):', err.message);
     }
   }
 

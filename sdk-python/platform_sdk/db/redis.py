@@ -1,16 +1,16 @@
 import redis
 import logging
 
-logger = logging.getLogger('caps')
+logger = logging.getLogger('platform')
 
 
 class RedisManager:
     def __init__(self, config: dict = None):
         import os as _os
         self.config = config or {
-            "host": _os.environ.get("CAPS_REDIS_HOST", "localhost"),
-            "port": int(_os.environ.get("CAPS_REDIS_PORT", "6379")),
-            "password": _os.environ.get("CAPS_REDIS_PASSWORD", None),
+            "host": _os.environ.get("PLATFORM_REDIS_HOST", "localhost"),
+            "port": int(_os.environ.get("PLATFORM_REDIS_PORT", "6379")),
+            "password": _os.environ.get("PLATFORM_REDIS_PASSWORD", None),
         }
         self.client = None
         self.connected = False
@@ -19,7 +19,7 @@ class RedisManager:
         self.client = redis.Redis(**self.config, decode_responses=True)
         self.client.ping()
         self.connected = True
-        logger.info("[caps] Redis connected")
+        logger.info("[platform] Redis connected")
 
     def get(self, key: str) -> str:
         if self.client:
@@ -37,4 +37,4 @@ class RedisManager:
         if self.client:
             self.client.close()
             self.connected = False
-            logger.info("[caps] Redis disconnected")
+            logger.info("[platform] Redis disconnected")

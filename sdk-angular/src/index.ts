@@ -1,5 +1,5 @@
-export { CapsModule } from './caps.module';
-export { CapsHttpInterceptor } from './http-interceptor';
-export { CapsErrorHandler } from './error-handler';
+export { PlatformModule } from './platform.module';
+export { PlatformHttpInterceptor } from './http-interceptor';
+export { PlatformErrorHandler } from './error-handler';
 export { BugReporterComponent } from './bug-reporter.component';
-export { CAPS_CONFIG, CapsConfig } from './caps-config';
+export { PLATFORM_CONFIG, PlatformConfig } from './platform-config';

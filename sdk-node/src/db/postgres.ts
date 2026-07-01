@@ -9,11 +9,11 @@ export class PostgresManager {
 
   constructor(config: any = {}) {
     this.config = {
-      host: config.host || process.env.CAPS_PG_HOST || 'localhost',
-      port: config.port || parseInt(process.env.CAPS_PG_PORT || '5432', 10),
-      user: config.user || process.env.CAPS_PG_USER || 'caps',
-      password: config.password || process.env.CAPS_PG_PASSWORD || 'caps',
-      database: config.database || process.env.CAPS_PG_DB || 'caps_platform',
+      host: config.host || process.env.PLATFORM_PG_HOST || 'localhost',
+      port: config.port || parseInt(process.env.PLATFORM_PG_PORT || '5432', 10),
+      user: config.user || process.env.PLATFORM_PG_USER || 'platform',
+      password: config.password || process.env.PLATFORM_PG_PASSWORD || 'platform',
+      database: config.database || process.env.PLATFORM_PG_DB || 'platform',
       max: config.poolSize || 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
@@ -26,9 +26,9 @@ export class PostgresManager {
       await this.pool.query('SELECT 1');
       this.connected = true;
       this.retryCount = 0;
-      console.log('[caps] PostgreSQL connected');
+      console.log('[platform] PostgreSQL connected');
     } catch (err: any) {
-      console.error('[caps] PostgreSQL connection failed:', err.message);
+      console.error('[platform] PostgreSQL connection failed:', err.message);
       this.connected = false;
       this.scheduleReconnect();
     }
@@ -55,7 +55,7 @@ export class PostgresManager {
     if (this.pool) {
       await this.pool.end();
       this.connected = false;
-      console.log('[caps] PostgreSQL disconnected');
+      console.log('[platform] PostgreSQL disconnected');
     }
   }
 

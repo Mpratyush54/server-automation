@@ -1,5 +1,5 @@
 """
-CAPS Platform Python SDK
+Platform Python SDK
 Auto-registration, metrics, logging, config, storage, DB connections
 """
 import os
@@ -11,10 +11,10 @@ from typing import Optional, List, Dict, Any
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
-logger = logging.getLogger('caps')
+logger = logging.getLogger('platform')
 
 
-class CapsClient:
+class PlatformClient:
     def __init__(self):
         self.http = None
         self.options = {}
@@ -90,10 +90,10 @@ class CapsClient:
             with urlopen(req, timeout=5) as resp:
                 return json.loads(resp.read().decode())
         except URLError as e:
-            logger.warning(f"[caps] Request failed (silent): {e}")
+            logger.warning(f"[platform] Request failed (silent): {e}")
             return None
         except Exception as e:
-            logger.warning(f"[caps] Request error (silent): {e}")
+            logger.warning(f"[platform] Request error (silent): {e}")
             return None
 
     def _register(self):
@@ -167,4 +167,4 @@ class CapsClient:
                 pass
 
 
-caps = CapsClient()
+platform = PlatformClient()

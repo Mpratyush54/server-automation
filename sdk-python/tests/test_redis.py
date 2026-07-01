@@ -5,7 +5,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from caps_sdk.db.redis import RedisManager
+from platform_sdk.db.redis import RedisManager
 
 
 class TestRedisManager:
@@ -19,7 +19,7 @@ class TestRedisManager:
         manager = RedisManager()
         assert manager.connected is False
 
-    @patch('caps_sdk.db.redis.redis.Redis')
+    @patch('platform_sdk.db.redis.redis.Redis')
     def test_connect_success(self, mock_redis_class):
         mock_client = MagicMock()
         mock_redis_class.return_value = mock_client
@@ -30,7 +30,7 @@ class TestRedisManager:
         assert manager.connected is True
         mock_client.ping.assert_called_once()
 
-    @patch('caps_sdk.db.redis.redis.Redis')
+    @patch('platform_sdk.db.redis.redis.Redis')
     def test_connect_failure(self, mock_redis_class):
         mock_client = MagicMock()
         mock_client.ping.side_effect = Exception("Connection refused")
@@ -46,7 +46,7 @@ class TestRedisManager:
         manager = RedisManager()
         assert manager.get("key") is None
 
-    @patch('caps_sdk.db.redis.redis.Redis')
+    @patch('platform_sdk.db.redis.redis.Redis')
     def test_get_when_connected(self, mock_redis_class):
         mock_client = MagicMock()
         mock_client.get.return_value = "test-value"
@@ -63,7 +63,7 @@ class TestRedisManager:
         manager = RedisManager()
         manager.set("key", "value")  # Should not raise
 
-    @patch('caps_sdk.db.redis.redis.Redis')
+    @patch('platform_sdk.db.redis.redis.Redis')
     def test_set_when_connected(self, mock_redis_class):
         mock_client = MagicMock()
         mock_redis_class.return_value = mock_client
@@ -74,7 +74,7 @@ class TestRedisManager:
 
         mock_client.set.assert_called_once_with("key", "value")
 
-    @patch('caps_sdk.db.redis.redis.Redis')
+    @patch('platform_sdk.db.redis.redis.Redis')
     def test_set_with_ttl(self, mock_redis_class):
         mock_client = MagicMock()
         mock_redis_class.return_value = mock_client
@@ -85,7 +85,7 @@ class TestRedisManager:
 
         mock_client.setex.assert_called_once_with("key", 3600, "value")
 
-    @patch('caps_sdk.db.redis.redis.Redis')
+    @patch('platform_sdk.db.redis.redis.Redis')
     def test_disconnect(self, mock_redis_class):
         mock_client = MagicMock()
         mock_redis_class.return_value = mock_client

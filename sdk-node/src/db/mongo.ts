@@ -8,7 +8,7 @@ export class MongoManager {
   private uri: string;
 
   constructor(config: any = {}) {
-    this.uri = config.uri || process.env.CAPS_MONGO_URI || 'mongodb://localhost:27017/caps_platform';
+    this.uri = config.uri || process.env.PLATFORM_MONGO_URI || 'mongodb://localhost:27017/platform';
   }
 
   async connect(): Promise<void> {
@@ -16,9 +16,9 @@ export class MongoManager {
       this.conn = await mongoose.createConnection(this.uri).asPromise();
       this.connected = true;
       this.retryCount = 0;
-      console.log('[caps] MongoDB connected');
+      console.log('[platform] MongoDB connected');
     } catch (err: any) {
-      console.error('[caps] MongoDB connection failed:', err.message);
+      console.error('[platform] MongoDB connection failed:', err.message);
       this.connected = false;
       this.scheduleReconnect();
     }
@@ -39,7 +39,7 @@ export class MongoManager {
     if (this.conn) {
       await this.conn.close();
       this.connected = false;
-      console.log('[caps] MongoDB disconnected');
+      console.log('[platform] MongoDB disconnected');
     }
   }
 

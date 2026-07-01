@@ -2,17 +2,17 @@ import psycopg2
 from psycopg2 import pool
 import logging
 
-logger = logging.getLogger('caps')
+logger = logging.getLogger('platform')
 
 
 class PostgresManager:
     def __init__(self, config: dict = None):
         self.config = config or {
-            "host": os.environ.get("CAPS_PG_HOST", "localhost"),
-            "port": int(os.environ.get("CAPS_PG_PORT", "5432")),
-            "user": os.environ.get("CAPS_PG_USER", "caps"),
-            "password": os.environ.get("CAPS_PG_PASSWORD", "caps"),
-            "database": os.environ.get("CAPS_PG_DB", "caps_platform"),
+            "host": os.environ.get("PLATFORM_PG_HOST", "localhost"),
+            "port": int(os.environ.get("PLATFORM_PG_PORT", "5432")),
+            "user": os.environ.get("PLATFORM_PG_USER", "platform"),
+            "password": os.environ.get("PLATFORM_PG_PASSWORD", "platform"),
+            "database": os.environ.get("PLATFORM_PG_DB", "platform"),
         }
         import os as _os
         self._pool = None
@@ -26,7 +26,7 @@ class PostgresManager:
         conn.close()
         self._pool.putconn(conn)
         self.connected = True
-        logger.info("[caps] PostgreSQL connected")
+        logger.info("[platform] PostgreSQL connected")
 
     def execute(self, query: str, params: tuple = None) -> list:
         if not self._pool:
@@ -46,4 +46,4 @@ class PostgresManager:
         if self._pool:
             self._pool.closeall()
             self.connected = False
-            logger.info("[caps] PostgreSQL disconnected")
+            logger.info("[platform] PostgreSQL disconnected")

@@ -5,18 +5,18 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from caps_sdk import CapsClient
+from platform_sdk import PlatformClient
 
 
-class TestCapsClientIntegration:
+class TestPlatformClientIntegration:
     """Integration-style tests that test multiple components together."""
 
-    @patch('caps_sdk.CapsClient._start_heartbeat')
-    @patch('caps_sdk.CapsClient._request')
+    @patch('platform_sdk.PlatformClient._start_heartbeat')
+    @patch('platform_sdk.PlatformClient._request')
     def test_full_init_and_shutdown_flow(self, mock_request, mock_heartbeat):
         mock_request.return_value = {"id": "reg-1", "projectName": "test"}
 
-        client = CapsClient()
+        client = PlatformClient()
         client.init(
             project_name="integration-test",
             platform_url="http://localhost:3000",
@@ -43,12 +43,12 @@ class TestCapsClientIntegration:
 
         client.shutdown()
 
-    @patch('caps_sdk.CapsClient._start_heartbeat')
-    @patch('caps_sdk.CapsClient._request')
+    @patch('platform_sdk.PlatformClient._start_heartbeat')
+    @patch('platform_sdk.PlatformClient._request')
     def test_config_after_init(self, mock_request, mock_heartbeat):
         mock_request.return_value = {}
 
-        client = CapsClient()
+        client = PlatformClient()
         client.init(
             project_name="test",
             platform_url="http://localhost:3000",
@@ -60,12 +60,12 @@ class TestCapsClientIntegration:
             result = client.config("DB_HOST")
             assert result == "localhost"
 
-    @patch('caps_sdk.CapsClient._start_heartbeat')
-    @patch('caps_sdk.CapsClient._request')
+    @patch('platform_sdk.PlatformClient._start_heartbeat')
+    @patch('platform_sdk.PlatformClient._request')
     def test_logging_after_init(self, mock_request, mock_heartbeat):
         mock_request.return_value = {}
 
-        client = CapsClient()
+        client = PlatformClient()
         client.init(
             project_name="test",
             platform_url="http://localhost:3000",

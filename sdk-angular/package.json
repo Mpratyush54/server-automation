@@ -1,7 +1,7 @@
 {
   "name": "@mpratyush54/sdk-angular",
   "version": "1.0.0",
-  "description": "CAPS Platform Angular SDK - HTTP interceptor, error handler, bug reporter component",
+  "description": "Platform Angular SDK - HTTP interceptor, error handler, bug reporter component",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

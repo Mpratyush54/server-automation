@@ -53,7 +53,7 @@ export interface ApiMetricEntry {
   timestamp: string;
 }
 
-export class MetricsTracker {
+export class MetricsClient {
   private buffer: ApiMetricEntry[] = [];
   private flushInterval: ReturnType<typeof setInterval>;
   private http?: AxiosInstance;
@@ -124,4 +124,4 @@ export class MetricsTracker {
   }
 }
 
-export const metricsTracker = new MetricsTracker();
+export const metricsClient = new MetricsClient();

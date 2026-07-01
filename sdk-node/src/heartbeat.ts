@@ -1,12 +1,12 @@
 import { AxiosInstance } from 'axios';
-import { CapsOptions } from './client';
+import { PlatformOptions } from './client';
 
 export class HeartbeatClient {
   private dbHealth: Array<{ dbType: string; status: string; metrics?: any }> = [];
 
   constructor(
     private http: AxiosInstance,
-    private options: CapsOptions,
+    private options: PlatformOptions,
   ) {}
 
   setDbHealth(health: Array<{ dbType: string; status: string; metrics?: any }>): void {
@@ -22,7 +22,7 @@ export class HeartbeatClient {
         timestamp: new Date().toISOString(),
       });
     } catch (err: any) {
-      console.error('[caps] Heartbeat error (silent):', err.message);
+      console.error('[platform] Heartbeat error (silent):', err.message);
     }
   }
 }

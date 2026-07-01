@@ -8,11 +8,11 @@ import { StorageClient } from './storage';
 import { PostgresManager } from './db/postgres';
 import { MongoManager } from './db/mongo';
 import { RedisManager } from './db/redis';
-import { MetricsTracker, metricsTracker } from './metrics';
+import { MetricsClient, metricsClient } from './metrics';
 import { captureConsole as _captureConsole } from './console-capture';
 import { createWinstonTransport, createPinoTransport } from './transports';
 
-export interface CapsOptions {
+export interface PlatformOptions {
   projectName: string;
   environmentName?: string;
   platformUrl: string;
@@ -26,9 +26,9 @@ export interface CapsOptions {
   sdkToken?: string;
 }
 
-export class CapsClient {
+export class PlatformClient {
   private http: AxiosInstance;
-  private options!: CapsOptions;
+  private options!: PlatformOptions;
   private initialized = false;
   private heartbeatInterval?: ReturnType<typeof setInterval>;
   private cpuSampleInterval?: ReturnType<typeof setInterval>;
@@ -36,7 +36,7 @@ export class CapsClient {
 
   registration: RegistrationClient;
   logger: LoggerClient = logger;
-  metrics: MetricsTracker = metricsTracker;
+  metrics: MetricsClient = metricsClient;
   configClient: ConfigClient;
   storage: StorageClient;
   db: {
@@ -52,14 +52,14 @@ export class CapsClient {
     this.storage = new StorageClient(this.http);
   }
 
-  async init(options: CapsOptions): Promise<void> {
+  async init(options: PlatformOptions): Promise<void> {
     this.options = {
       environmentName: 'development',
       version: '1.0.0',
       branch: 'main',
       hostname: os.hostname(),
       databases: [],
-      sdkToken: process.env.CAPS_SDK_TOKEN,
+      sdkToken: process.env.PLATFORM_SDK_TOKEN,
       ...options,
     };
     this.http.defaults.baseURL = this.options.platformUrl;
@@ -102,7 +102,7 @@ export class CapsClient {
         infisicalEnv: this.options.infisicalEnv,
       });
     } catch (err: any) {
-      console.error('[caps] Registration failed (non-blocking):', err.message);
+      console.error('[platform] Registration failed (non-blocking):', err.message);
     }
 
     // Load configs from API
@@ -229,7 +229,7 @@ export class CapsClient {
     return this.metrics.middleware();
   }
 
-  // Capture all console.* calls and forward to CAPS logger
+  // Capture all console.* calls and forward to Platform logger
   captureConsole() {
     _captureConsole(this.logger);
     return this;
@@ -245,4 +245,4 @@ export class CapsClient {
     return createPinoTransport(this.logger);
   }
 }
-export default CapsClient;
+export default PlatformClient;

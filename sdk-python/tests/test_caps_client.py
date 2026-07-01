@@ -6,20 +6,20 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from caps_sdk import CapsClient
+from platform_sdk import PlatformClient
 
 
-class TestCapsClient:
+class TestPlatformClient:
     def setup_method(self):
-        self.client = CapsClient()
+        self.client = PlatformClient()
 
     def test_init_defaults(self):
         assert self.client.initialized is False
         assert self.client.options == {}
         assert self.client._db_connections == {}
 
-    @patch('caps_sdk.CapsClient._request')
-    @patch('caps_sdk.CapsClient._start_heartbeat')
+    @patch('platform_sdk.PlatformClient._request')
+    @patch('platform_sdk.PlatformClient._start_heartbeat')
     def test_init_sets_options(self, mock_heartbeat, mock_request):
         mock_request.return_value = {"id": "reg-1"}
 
@@ -35,8 +35,8 @@ class TestCapsClient:
         assert self.client.options["version"] == "1.0.0"
         assert self.client.options["branch"] == "main"
 
-    @patch('caps_sdk.CapsClient._request')
-    @patch('caps_sdk.CapsClient._start_heartbeat')
+    @patch('platform_sdk.PlatformClient._request')
+    @patch('platform_sdk.PlatformClient._start_heartbeat')
     def test_init_custom_options(self, mock_heartbeat, mock_request):
         mock_request.return_value = {}
 
@@ -53,8 +53,8 @@ class TestCapsClient:
         assert self.client.options["branch"] == "develop"
         assert self.client.options["platform_url"] == "https://platform.example.com"
 
-    @patch('caps_sdk.CapsClient._request')
-    @patch('caps_sdk.CapsClient._start_heartbeat')
+    @patch('platform_sdk.PlatformClient._request')
+    @patch('platform_sdk.PlatformClient._start_heartbeat')
     def test_init_calls_register(self, mock_heartbeat, mock_request):
         mock_request.return_value = {"id": "reg-1"}
 
@@ -76,7 +76,7 @@ class TestCapsClient:
         })
 
     def test_request_returns_response(self):
-        with patch('caps_sdk.urlopen') as mock_urlopen:
+        with patch('platform_sdk.urlopen') as mock_urlopen:
             mock_response = MagicMock()
             mock_response.read.return_value = json.dumps({"key": "value"}).encode()
             mock_urlopen.return_value.__enter__ = lambda s: mock_response
@@ -88,7 +88,7 @@ class TestCapsClient:
 
     def test_request_returns_none_on_error(self):
         from urllib.error import URLError
-        with patch('caps_sdk.urlopen') as mock_urlopen:
+        with patch('platform_sdk.urlopen') as mock_urlopen:
             mock_urlopen.side_effect = URLError("Connection refused")
 
             self.client.options = {"platform_url": "http://localhost:3000"}
@@ -164,7 +164,7 @@ class TestCapsClient:
         self.client.shutdown()  # Should not raise
 
 
-class TestCapsClientSingleton:
+class TestPlatformClientSingleton:
     def test_singleton_exists(self):
-        from caps_sdk import caps
-        assert isinstance(caps, CapsClient)
+        from platform_sdk import platform
+        assert isinstance(platform, PlatformClient)

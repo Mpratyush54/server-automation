@@ -6,7 +6,7 @@ grafana:
       serve_from_sub_path: true
     auth.generic_oauth:
       enabled: true
-      name: CAPS Platform
+      name: Platform
       allow_sign_up: true
       client_id: grafana
       client_secret: grafana-secret-placeholder

@@ -1,9 +1,9 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import axios from 'axios';
-import { CapsConfig } from './context';
+import { PlatformConfig } from './context';
 
 export interface ErrorBoundaryProps {
-  config: CapsConfig;
+  config: PlatformConfig;
   children: ReactNode;
   fallback?: ReactNode;
 }

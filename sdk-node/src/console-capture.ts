@@ -1,4 +1,4 @@
-// Patches console.log/warn/error to also route through CAPS logger
+// Patches console.log/warn/error to also route through Platform logger
 export function captureConsole(logger: { info: Function; warn: Function; error: Function; debug: Function }) {
   const originalLog = console.log.bind(console);
   const originalWarn = console.warn.bind(console);

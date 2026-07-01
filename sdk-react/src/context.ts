@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, ReactNode } from 'react';
 import axios, { AxiosInstance } from 'axios';
 
-export interface CapsConfig {
+export interface PlatformConfig {
   apiBase: string;
   token: string;
   projectId: string;
@@ -9,25 +9,25 @@ export interface CapsConfig {
   appName?: string;
 }
 
-export interface CapsContextValue {
-  config: CapsConfig;
+export interface PlatformContextValue {
+  config: PlatformConfig;
   api: AxiosInstance;
 }
 
-const CapsContext = createContext<CapsContextValue | null>(null);
+const PlatformContext = createContext<PlatformContextValue | null>(null);
 
-export function useCaps(): CapsContextValue {
-  const ctx = useContext(CapsContext);
-  if (!ctx) throw new Error('useCaps must be used within <CapsProvider>');
+export function usePlatform(): PlatformContextValue {
+  const ctx = useContext(PlatformContext);
+  if (!ctx) throw new Error('usePlatform must be used within <PlatformProvider>');
   return ctx;
 }
 
-export interface CapsProviderProps {
-  config: CapsConfig;
+export interface PlatformProviderProps {
+  config: PlatformConfig;
   children: ReactNode;
 }
 
-export function CapsProvider({ config, children }: CapsProviderProps) {
+export function PlatformProvider({ config, children }: PlatformProviderProps) {
   const api = useRef(
     axios.create({
       baseURL: config.apiBase,
@@ -67,7 +67,7 @@ export function CapsProvider({ config, children }: CapsProviderProps) {
     );
   }, [api, config]);
 
-  return React.createElement(CapsContext.Provider, { value: { config, api } }, children);
+  return React.createElement(PlatformContext.Provider, { value: { config, api } }, children);
 }
 
 interface MetricPayload {
@@ -77,7 +77,7 @@ interface MetricPayload {
   durationMs: number;
 }
 
-function sendMetric(api: AxiosInstance, config: CapsConfig, payload: MetricPayload) {
+function sendMetric(api: AxiosInstance, config: PlatformConfig, payload: MetricPayload) {
   api.post('/api/sdk/api-metrics', {
     projectId: config.projectId,
     environment: config.environment || 'production',

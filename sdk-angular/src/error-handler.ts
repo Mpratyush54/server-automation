@@ -1,11 +1,11 @@
 import { Injectable, Inject, ErrorHandler, Injector } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { CAPS_CONFIG, CapsConfig } from './caps-config';
+import { PLATFORM_CONFIG, PlatformConfig } from './platform-config';
 
 @Injectable()
-export class CapsErrorHandler implements ErrorHandler {
+export class PlatformErrorHandler implements ErrorHandler {
   constructor(
-    @Inject(CAPS_CONFIG) private config: CapsConfig,
+    @Inject(PLATFORM_CONFIG) private config: PlatformConfig,
     private injector: Injector,
   ) {}
 
@@ -31,6 +31,6 @@ export class CapsErrorHandler implements ErrorHandler {
       }).subscribe({ error: () => {} });
     } catch {}
 
-    console.error('[CAPS] Unhandled error:', error);
+    console.error('[Platform] Unhandled error:', error);
   }
 }

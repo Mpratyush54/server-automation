@@ -1,7 +1,7 @@
 {
   "name": "@mpratyush54/sdk-node",
   "version": "1.0.0",
-  "description": "CAPS Platform Node.js SDK - Auto-registration, metrics, logging, config, storage, DB connections",
+  "description": "Platform Node.js SDK - Auto-registration, metrics, logging, config, storage, DB connections",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

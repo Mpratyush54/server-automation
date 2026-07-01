@@ -54,7 +54,7 @@ export class StorageClient {
 
       return confirmInfo;
     } catch (err: any) {
-      console.error('[caps] Storage upload error (silent):', err.message);
+      console.error('[platform] Storage upload error (silent):', err.message);
       return null;
     }
   }

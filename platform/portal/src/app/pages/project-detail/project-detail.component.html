@@ -209,7 +209,7 @@
           </tr>
           <tr *ngIf="apiMetrics.length === 0">
             <td colspan="10" style="text-align:center;color:var(--color-text-muted);padding:40px;">
-              No API metrics yet. Install SDK and call <code style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:4px;">caps.expressMiddleware()</code>
+              No API metrics yet. Install SDK and call <code style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:4px;">platform.expressMiddleware()</code>
             </td>
           </tr>
         </tbody>
@@ -218,17 +218,17 @@
   </div>
   <div class="card" style="padding:24px;background:rgba(15,23,42,0.5);border-color:rgba(99,102,241,0.2);">
     <h2 style="font-size:1rem;margin-bottom:12px;border:0;padding:0;color:#c4b5fd;">🔌 Node.js Integration</h2>
-    <pre style="background:#0b0f19;padding:16px;border-radius:8px;font-size:0.78rem;color:#34d399;overflow-x:auto;margin:0;">const caps = require('caps-sdk-node');
+    <pre style="background:#0b0f19;padding:16px;border-radius:8px;font-size:0.78rem;color:#34d399;overflow-x:auto;margin:0;">const platform = require('@mpratyush54/sdk-node');
 
-await caps.init(&#123;
+await platform.init(&#123;
   projectName: '{{ project?.name }}',
           platformUrl: 'http://your-platform-server',
   environmentName: 'production',
 &#125;);
 
 // Attaches to Express — zero-overhead tracking
-app.use(caps.expressMiddleware());
-caps.captureConsole(); // forward all console.*</pre>
+app.use(platform.expressMiddleware());
+platform.captureConsole(); // forward all console.*</pre>
   </div>
 </div>
 
@@ -453,7 +453,7 @@ caps.captureConsole(); // forward all console.*</pre>
             </td>
           </tr>
           <tr *ngIf="files.length === 0">
-            <td colspan="6" style="text-align:center;color:var(--color-text-muted);">No file uploads registered for this project. Utilize `caps.storage.upload` to upload logs, certificates or media.</td>
+            <td colspan="6" style="text-align:center;color:var(--color-text-muted);">No file uploads registered for this project. Utilize `platform.storage.upload` to upload logs, certificates or media.</td>
           </tr>
         </tbody>
       </table>
@@ -493,7 +493,7 @@ caps.captureConsole(); // forward all console.*</pre>
     <div class="card" *ngIf="role === 'devops' || role === 'tech_lead'">
       <h2>Generate SDK Token</h2>
       <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;margin-bottom:20px;">
-        Generate an API key that your service can use with `&#64;caps/sdk-node` or `caps-sdk-python` to authenticate and register.
+        Generate an API key that your service can use with `&#64;mpratyush54/sdk-node` or `platform-sdk-python` to authenticate and register.
       </p>
 
       <div class="form-group">

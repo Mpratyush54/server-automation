@@ -1,10 +1,10 @@
 import { HeartbeatClient } from '../../src/heartbeat';
-import { CapsOptions } from '../../src/client';
+import { PlatformOptions } from '../../src/client';
 
 describe('HeartbeatClient', () => {
   let heartbeatClient: HeartbeatClient;
   let mockHttp: any;
-  const options: CapsOptions = {
+  const options: PlatformOptions = {
     projectName: 'test-project',
     environmentName: 'production',
     platformUrl: 'http://localhost:3000',

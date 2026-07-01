@@ -3,12 +3,12 @@ import { HttpInterceptor, HttpRequest, HttpHandler, HttpEvent, HttpErrorResponse
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { HttpClient } from '@angular/common/http';
-import { CAPS_CONFIG, CapsConfig } from './caps-config';
+import { PLATFORM_CONFIG, PlatformConfig } from './platform-config';
 
 @Injectable()
-export class CapsHttpInterceptor implements HttpInterceptor {
+export class PlatformHttpInterceptor implements HttpInterceptor {
   constructor(
-    @Inject(CAPS_CONFIG) private config: CapsConfig,
+    @Inject(PLATFORM_CONFIG) private config: PlatformConfig,
     private http: HttpClient,
   ) {}
 

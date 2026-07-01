@@ -5,7 +5,7 @@ import { LoggerClient } from './logger';
 export function createWinstonTransport(logger: LoggerClient) {
   // Winston transports extend EventEmitter and require log() method
   return {
-    name: 'caps-platform',
+    name: 'platform',
     level: 'debug',
     log(info: any, callback: Function) {
       const level = (info.level || 'info').toUpperCase();

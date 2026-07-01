@@ -5,7 +5,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from caps_sdk.db.postgres import PostgresManager
+from platform_sdk.db.postgres import PostgresManager
 
 
 class TestPostgresManager:
@@ -25,7 +25,7 @@ class TestPostgresManager:
         manager = PostgresManager({})
         assert manager.connected is False
 
-    @patch('caps_sdk.db.postgres.pool.ThreadedConnectionPool')
+    @patch('platform_sdk.db.postgres.pool.ThreadedConnectionPool')
     def test_connect_success(self, mock_pool_class):
         mock_pool = MagicMock()
         mock_conn = MagicMock()
@@ -40,7 +40,7 @@ class TestPostgresManager:
         mock_conn.close.assert_called_once()
         mock_pool.putconn.assert_called_once_with(mock_conn)
 
-    @patch('caps_sdk.db.postgres.pool.ThreadedConnectionPool')
+    @patch('platform_sdk.db.postgres.pool.ThreadedConnectionPool')
     def test_connect_failure(self, mock_pool_class):
         mock_pool_class.side_effect = Exception("Connection refused")
 
@@ -55,7 +55,7 @@ class TestPostgresManager:
         with pytest.raises(RuntimeError, match="PostgreSQL not connected"):
             manager.execute("SELECT 1")
 
-    @patch('caps_sdk.db.postgres.pool.ThreadedConnectionPool')
+    @patch('platform_sdk.db.postgres.pool.ThreadedConnectionPool')
     def test_execute_query(self, mock_pool_class):
         mock_pool = MagicMock()
         mock_conn = MagicMock()
@@ -75,7 +75,7 @@ class TestPostgresManager:
         result = manager.execute("SELECT id FROM users")
         assert result == [(1,), (2,)]
 
-    @patch('caps_sdk.db.postgres.pool.ThreadedConnectionPool')
+    @patch('platform_sdk.db.postgres.pool.ThreadedConnectionPool')
     def test_execute_mutation(self, mock_pool_class):
         mock_pool = MagicMock()
         mock_conn = MagicMock()
@@ -95,7 +95,7 @@ class TestPostgresManager:
         assert result == []
         mock_conn.commit.assert_called_once()
 
-    @patch('caps_sdk.db.postgres.pool.ThreadedConnectionPool')
+    @patch('platform_sdk.db.postgres.pool.ThreadedConnectionPool')
     def test_disconnect(self, mock_pool_class):
         mock_pool = MagicMock()
         mock_pool_class.return_value = mock_pool

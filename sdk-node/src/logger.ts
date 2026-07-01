@@ -76,7 +76,7 @@ export class LoggerClient {
     try {
       await this.http.post('/api/sdk/logs', { logs: batch });
     } catch (err: any) {
-      console.error('[caps] Log forward error (silent):', err.message);
+      console.error('[platform] Log forward error (silent):', err.message);
       this.buffer.unshift(...batch);
     }
   }

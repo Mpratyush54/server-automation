@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { CapsClient, CapsOptions } from '../../src/client';
+import { PlatformClient, PlatformOptions } from '../../src/client';
 
 jest.mock('axios');
 jest.mock('../../src/db/postgres', () => ({
@@ -27,8 +27,8 @@ jest.mock('../../src/db/redis', () => ({
   })),
 }));
 
-describe('CapsClient Integration', () => {
-  let client: CapsClient;
+describe('PlatformClient Integration', () => {
+  let client: PlatformClient;
   let mockAxiosInstance: any;
 
   beforeEach(() => {
@@ -42,7 +42,7 @@ describe('CapsClient Integration', () => {
     };
 
     (axios.create as jest.Mock).mockReturnValue(mockAxiosInstance);
-    client = new CapsClient();
+    client = new PlatformClient();
     jest.clearAllMocks();
   });
 

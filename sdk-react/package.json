@@ -1,7 +1,7 @@
 {
   "name": "@mpratyush54/sdk-react",
   "version": "1.0.0",
-  "description": "CAPS Platform React/Next.js SDK - Context provider, HTTP interceptor, error boundary, bug reporter",
+  "description": "Platform React/Next.js SDK - Context provider, HTTP interceptor, error boundary, bug reporter",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

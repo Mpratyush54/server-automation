@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import caps from '@mpratyush54/sdk-node';
+import platform from '@mpratyush54/sdk-node';
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -15,7 +15,7 @@ async function startServer() {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
   try {
-    await caps.init({
+    await platform.init({
       projectName: 'demoproj',
       platformUrl: 'https://148.113.58.205.sslip.io',
       sdkToken: 'sdk_live_1ec8b9aa2d594c2b974f4d346734a6f2',
@@ -23,18 +23,18 @@ async function startServer() {
     });
     console.log("Platform SDK initialized successfully.");
   } catch (err) {
-    console.error("Failed to initialize CAPS SDK:", err);
+    console.error("Failed to initialize Platform SDK:", err);
   }
 
   // Mount Platform Metrics Middleware to track endpoint durations and status codes
-  app.use(caps.expressMiddleware());
+  app.use(platform.expressMiddleware());
 
   // Test endpoints
   app.get('/api/data', (req, res) => {
-    caps.logger.info("Handling request on /api/data endpoint");
+    platform.logger.info("Handling request on /api/data endpoint");
     
     // Retrieve configuration from Platform Config Service if set, otherwise use fallback
-    const welcomeMessage = caps.config('WELCOME_MESSAGE') || "Hello from Platform Backend!";
+    const welcomeMessage = platform.config('WELCOME_MESSAGE') || "Hello from Platform Backend!";
     
     res.json({
       message: welcomeMessage,
@@ -47,16 +47,16 @@ async function startServer() {
   app.post('/api/log-test', (req, res) => {
     const { level, message } = req.body;
     if (level === 'error') {
-      caps.logger.error(`Test error log: ${message}`, { errorType: 'DemoTestError', stackHash: 'demohash123' });
+      platform.logger.error(`Test error log: ${message}`, { errorType: 'DemoTestError', stackHash: 'demohash123' });
     } else {
-      caps.logger.info(`Test info log: ${message}`);
+      platform.logger.info(`Test info log: ${message}`);
     }
     res.json({ success: true, message: "Log submitted to Platform" });
   });
 
   app.listen(port, () => {
     console.log(`Backend server listening at http://localhost:${port}`);
-    caps.logger.info(`Backend server started on port ${port}`);
+    platform.logger.info(`Backend server started on port ${port}`);
   });
 }
 

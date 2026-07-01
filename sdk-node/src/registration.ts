@@ -20,7 +20,7 @@ export class RegistrationClient {
       const { data } = await this.http.post('/api/sdk/register', payload);
       return data;
     } catch (err: any) {
-      console.error('[caps] Register error (silent):', err.message);
+      console.error('[platform] Register error (silent):', err.message);
       return null;
     }
   }
