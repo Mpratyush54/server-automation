@@ -161,7 +161,9 @@ export async function deployK8sPreview(
     .replace(/^-|-$/g, '');
 
   const deploymentName = `preview-${sanitized}`;
-  const domain = `${sanitized}.preview.capskengeri.com`;
+  const projectSlug = projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
+  const baseDomain = process.env.DOMAIN || 'sslip.io';
+  const domain = `${sanitized}.preview.${projectSlug}.${baseDomain}`;
 
   try {
     // Ensure preview namespace exists

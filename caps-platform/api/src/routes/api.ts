@@ -589,6 +589,7 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.DEVOP
       createdById: (req as AuthenticatedRequest).user?.id,
     });
     const saved = await ds.getRepository(Project).save(project);
+    const projectSlug = saved.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
 
     // Create Environments: development, staging, production
     const envRepo = ds.getRepository(Environment);
@@ -597,8 +598,8 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.DEVOP
     // Also include development environment dynamically
     const devEnv = envRepo.create({
       name: 'development' as any,
-      namespace: `${saved.name}-development`,
-      domain: body.domain ? `development.${body.domain}` : `${saved.name}-development.example.com`,
+      namespace: `${projectSlug}-development`,
+      domain: body.domain ? `development.${projectSlug}.${body.domain}` : `${projectSlug}-development.example.com`,
       projectId: saved.id,
     });
     await envRepo.save(devEnv);
@@ -606,8 +607,8 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.DEVOP
     for (const name of envNames) {
       const env = envRepo.create({
         name,
-        namespace: `${saved.name}-${name}`,
-        domain: body.domain ? `${name}.${body.domain}` : `${saved.name}-${name}.example.com`,
+        namespace: `${projectSlug}-${name}`,
+        domain: body.domain ? `${name}.${projectSlug}.${body.domain}` : `${projectSlug}-${name}.example.com`,
         projectId: saved.id,
       });
       await envRepo.save(env);
@@ -868,7 +869,8 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
       // If it's a preview env, create on the fly
       if (body.environmentName === 'preview') {
         const previewRepo = ds.getRepository(Environment);
-        const previewUrl = generatePreviewUrl(body.branch || 'preview', project.domain || process.env.DOMAIN || 'sslip.io');
+        const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
+        const previewUrl = generatePreviewUrl(body.branch || 'preview', projectSlug, project.domain || process.env.DOMAIN || 'sslip.io');
         env = previewRepo.create({
           name: EnvironmentName.PREVIEW,
           namespace: 'preview',
@@ -2240,7 +2242,8 @@ router.post('/webhooks/github', expressAuthenticate, async (req: Request, res: R
       if (!project) return res.json({ success: false, message: 'No matching project' });
 
       if (action === 'closed' && !pr.merged) {
-        const previewUrl = generatePreviewUrl(branch);
+        const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
+        const previewUrl = generatePreviewUrl(branch, projectSlug);
         await terminateK8sPreview(branch);
         const deployment = await ds.getRepository(Deployment).findOne({
           where: { projectId: project.id, branch, previewUrl },
@@ -2256,12 +2259,13 @@ router.post('/webhooks/github', expressAuthenticate, async (req: Request, res: R
 
       if (action === 'opened' || action === 'synchronize') {
         const commitSha = pr.head?.sha || 'unknown';
-        const previewUrl = generatePreviewUrl(branch);
+        const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
+        const previewUrl = generatePreviewUrl(branch, projectSlug);
         const deployment = ds.getRepository(Deployment).create({
           projectId: project.id,
           branch,
           commitSha,
-          version: `pr-${pr.number}-${Date.now()}`,
+          version: `preview-${Date.now()}`,
           imageTag: `${project.name}:${branch}`,
           status: DeploymentStatus.BUILDING,
           previewUrl,
@@ -2336,7 +2340,8 @@ router.post('/webhooks/gitlab', expressAuthenticate, async (req: Request, res: R
         return res.json({ success: true, message: 'Staging deploy triggered' });
       }
 
-      const previewUrl = generatePreviewUrl(branch);
+      const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
+      const previewUrl = generatePreviewUrl(branch, projectSlug);
       const deployment = ds.getRepository(Deployment).create({
         projectId: project.id,
         branch,
@@ -2384,7 +2389,8 @@ router.post('/webhooks/gitlab', expressAuthenticate, async (req: Request, res: R
       if (!project) return res.json({ success: false, message: 'No matching project' });
 
       if (action === 'close' || action === 'merge') {
-        const previewUrl = generatePreviewUrl(branch);
+        const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
+        const previewUrl = generatePreviewUrl(branch, projectSlug);
         await terminateK8sPreview(branch);
         const deployment = await ds.getRepository(Deployment).findOne({
           where: { projectId: project.id, branch, previewUrl },
@@ -2400,7 +2406,8 @@ router.post('/webhooks/gitlab', expressAuthenticate, async (req: Request, res: R
 
       if (action === 'open' || action === 'update') {
         const commitSha = mr.last_commit?.id || 'unknown';
-        const previewUrl = generatePreviewUrl(branch);
+        const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
+        const previewUrl = generatePreviewUrl(branch, projectSlug);
         const deployment = ds.getRepository(Deployment).create({
           projectId: project.id,
           branch,

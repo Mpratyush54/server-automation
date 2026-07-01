@@ -1,4 +1,4 @@
-export function generatePreviewUrl(branch: string, suffix?: string): string {
+export function generatePreviewUrl(branch: string, projectSlug?: string, suffix?: string): string {
   const sanitized = branch
     .replace(/^(feature|fix|chore)\//i, '')
     .replace(/[^a-zA-Z0-9-]/g, '-')
@@ -6,7 +6,8 @@ export function generatePreviewUrl(branch: string, suffix?: string): string {
     .replace(/--+/g, '-')
     .replace(/^-|-$/g, '');
   const previewSuffix = suffix || process.env.DOMAIN || 'sslip.io';
-  return `${sanitized}.preview.${previewSuffix}`;
+  const projectPart = projectSlug ? `${projectSlug}.` : '';
+  return `${sanitized}.preview.${projectPart}${previewSuffix}`;
 }
 
 
