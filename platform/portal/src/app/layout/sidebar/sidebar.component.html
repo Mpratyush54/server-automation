@@ -1,97 +1,96 @@
 <nav class="sidebar" [class.collapsed]="isCollapsed">
   <div class="logo" (click)="isCollapsed ? toggleCollapse.emit() : null" [style.cursor]="isCollapsed ? 'pointer' : 'default'">
-    <span>⚡</span>
-    <span *ngIf="!isCollapsed">Platform</span>
-    <button *ngIf="!isCollapsed" (click)="toggleCollapse.emit(); $event.stopPropagation()" style="background: transparent; border: none; color: var(--text-secondary); cursor: pointer; margin-left: auto; font-size: 0.9rem; padding: 2px 6px;">◀</button>
+    <span class="font-playfair text-xl tracking-[0.2em] text-charcoal">Platform</span>
+    <button *ngIf="!isCollapsed" (click)="toggleCollapse.emit(); $event.stopPropagation()" class="ml-auto bg-transparent border-0 text-warmgrey cursor-pointer text-xs p-1 hover:text-charcoal transition-colors">◀</button>
   </div>
   <ul class="nav-links">
     <li>
       <a routerLink="/dashboard" routerLinkActive="active" title="Dashboard">
-        <span>🏠</span>
+        <span class="text-[10px] w-4 text-center">01</span>
         <span *ngIf="!isCollapsed">Dashboard</span>
       </a>
     </li>
     <li>
       <a routerLink="/projects" routerLinkActive="active" title="Projects">
-        <span>📦</span>
+        <span class="text-[10px] w-4 text-center">02</span>
         <span *ngIf="!isCollapsed">Projects</span>
       </a>
     </li>
     <li>
       <a routerLink="/preview-urls" routerLinkActive="active" title="Preview URLs">
-        <span>🔗</span>
-        <span *ngIf="!isCollapsed">Preview URLs</span>
+        <span class="text-[10px] w-4 text-center">03</span>
+        <span *ngIf="!isCollapsed">Preview</span>
       </a>
     </li>
     <li>
       <a routerLink="/clickup" routerLinkActive="active" title="ClickUp">
-        <span>📋</span>
+        <span class="text-[10px] w-4 text-center">04</span>
         <span *ngIf="!isCollapsed">ClickUp</span>
       </a>
     </li>
     <li *ngIf="isTechLeadOrDevOps">
       <a routerLink="/audit-logs" routerLinkActive="active" title="Audit Logs">
-        <span>📜</span>
-        <span *ngIf="!isCollapsed">Audit Logs</span>
+        <span class="text-[10px] w-4 text-center">05</span>
+        <span *ngIf="!isCollapsed">Audit</span>
       </a>
     </li>
     <li *ngIf="isDevOps">
       <a routerLink="/users" routerLinkActive="active" title="Users">
-        <span>👥</span>
+        <span class="text-[10px] w-4 text-center">06</span>
         <span *ngIf="!isCollapsed">Users</span>
       </a>
     </li>
     <li>
       <a routerLink="/playground" routerLinkActive="active" title="API Docs">
-        <span>🧪</span>
+        <span class="text-[10px] w-4 text-center">07</span>
         <span *ngIf="!isCollapsed">API Docs</span>
       </a>
     </li>
     <li *ngIf="isDevOps">
       <a routerLink="/bootstrap" routerLinkActive="active" title="Bootstrap">
-        <span>🚀</span>
+        <span class="text-[10px] w-4 text-center">08</span>
         <span *ngIf="!isCollapsed">Bootstrap</span>
       </a>
     </li>
     <li>
-      <a routerLink="/settings" routerLinkActive="active" title="Platform Settings">
-        <span>⚙️</span>
-        <span *ngIf="!isCollapsed">Platform Settings</span>
+      <a routerLink="/settings" routerLinkActive="active" title="Settings">
+        <span class="text-[10px] w-4 text-center">09</span>
+        <span *ngIf="!isCollapsed">Settings</span>
       </a>
     </li>
 
-    <li *ngIf="!isCollapsed && isTechLeadOrDevOps" style="margin-top: 16px; margin-bottom: 4px; padding-left: 16px; font-size: 0.65rem; text-transform: uppercase; color: var(--text-secondary); font-weight: 700; letter-spacing: 0.05em;">Infrastructure</li>
-    <li *ngIf="isCollapsed && isTechLeadOrDevOps" style="margin-top: 16px; margin-bottom: 4px; border-top: 1px solid var(--border-subtle);"></li>
+    <li *ngIf="!isCollapsed && isTechLeadOrDevOps" class="mt-8 mb-2 pl-4 text-[10px] uppercase text-warmgrey font-normal tracking-[0.3em]">Infrastructure</li>
+    <li *ngIf="isCollapsed && isTechLeadOrDevOps" class="mt-8 mb-2 border-t border-charcoal/10"></li>
 
     <li *ngIf="isDevOps">
       <a routerLink="/infrastructure" routerLinkActive="active" title="Cluster Overview">
-        <span>🖥️</span>
-        <span *ngIf="!isCollapsed">Cluster Overview</span>
+        <span class="text-[10px] w-4 text-center">10</span>
+        <span *ngIf="!isCollapsed">Cluster</span>
       </a>
     </li>
     <li *ngIf="isTechLeadOrDevOps">
-      <a routerLink="/argocd" routerLinkActive="active" title="ArgoCD" style="font-size: 0.85rem;">
-        <span>🐙</span>
+      <a routerLink="/argocd" routerLinkActive="active" title="ArgoCD">
+        <span class="text-[10px] w-4 text-center">11</span>
         <span *ngIf="!isCollapsed">ArgoCD</span>
       </a>
     </li>
     <li *ngIf="isTechLeadOrDevOps">
-      <a routerLink="/grafana" routerLinkActive="active" title="Grafana" style="font-size: 0.85rem;">
-        <span>📊</span>
+      <a routerLink="/grafana" routerLinkActive="active" title="Grafana">
+        <span class="text-[10px] w-4 text-center">12</span>
         <span *ngIf="!isCollapsed">Grafana</span>
       </a>
     </li>
 
     <li *ngIf="isDevOps">
-      <a routerLink="/portainer" routerLinkActive="active" title="Portainer" style="font-size: 0.85rem;">
-        <span>🐳</span>
+      <a routerLink="/portainer" routerLinkActive="active" title="Portainer">
+        <span class="text-[10px] w-4 text-center">13</span>
         <span *ngIf="!isCollapsed">Portainer</span>
       </a>
     </li>
 
-    <li style="margin-top:auto;border-top:1px solid var(--border-subtle);padding-top:12px;">
-      <a href="javascript:void(0)" (click)="logout()" title="Logout" style="color:var(--accent-danger)">
-        <span>🚪</span>
+    <li class="mt-auto border-t border-charcoal/10 pt-4 pb-8">
+      <a href="javascript:void(0)" (click)="logout()" title="Logout" class="hover:text-charcoal! text-warmgrey">
+        <span class="text-[10px] w-4 text-center">←</span>
         <span *ngIf="!isCollapsed">Logout</span>
       </a>
     </li>

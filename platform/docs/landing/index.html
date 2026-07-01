@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Platform — Cloud-Native DevOps Intelligence</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@700&family=Patrick+Hand&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            paper: '#fdfbf7',
+            pencil: '#2d2d2d',
+            muted: '#e5e0d8',
+            marker: '#ff4d4d',
+            bluepen: '#2d5da1',
+            postit: '#fff9c4'
+          },
+          fontFamily: {
+            kalam: ['Kalam', 'cursive'],
+            patrick: ['Patrick Hand', 'cursive']
+          },
+          boxShadow: {
+            'hard': '4px 4px 0px 0px #2d2d2d',
+            'hard-lg': '8px 8px 0px 0px #2d2d2d',
+            'hard-sm': '2px 2px 0px 0px #2d2d2d',
+          },
+          backgroundImage: {
+            'paper-grain': 'radial-gradient(#e5e0d8 1px, transparent 1px)'
+          },
+          backgroundSize: {
+            'paper': '24px 24px'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #fdfbf7;
+      color: #2d2d2d;
+      font-family: 'Patrick Hand', cursive;
+    }
+    
+    h1, h2, h3, h4, h5, h6 {
+      font-family: 'Kalam', cursive;
+      font-weight: 700;
+    }
+
+    .wobbly { border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px; }
+    .wobbly-md { border-radius: 15px 255px 15px 225px / 255px 15px 225px 15px; }
+    .wobbly-sm { border-radius: 225px 15px 255px 15px / 15px 255px 15px 225px; }
+    
+    .tape {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%) rotate(-3deg);
+      width: 100px;
+      height: 30px;
+      background-color: rgba(0,0,0,0.1);
+      border-radius: 0;
+      z-index: 10;
+    }
+
+    .tack {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 16px;
+      height: 16px;
+      background-color: #ff4d4d;
+      border-radius: 50%;
+      box-shadow: 2px 2px 0px 0px #2d2d2d, inset -4px -4px 4px rgba(0,0,0,0.3);
+      z-index: 10;
+    }
+
+    #heroCanvas {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.3;
+    }
+  </style>
+</head>
+<body class="bg-paper bg-paper-grain bg-paper overflow-x-hidden text-pencil selection:bg-marker selection:text-white">
+
+<nav class="fixed top-0 w-full z-50 bg-paper/90 backdrop-blur border-b-[3px] border-pencil">
+  <div class="max-w-5xl mx-auto px-6 h-20 flex items-center justify-between">
+    <a href="#hero" class="text-3xl font-kalam flex items-center gap-2 hover:-rotate-2 transition-transform duration-100">
+      <div class="w-10 h-10 bg-pencil text-paper wobbly-sm flex items-center justify-center text-xl">P</div>
+      Platform
+    </a>
+    
+    <div class="hidden md:flex gap-8 text-xl font-bold">
+      <a href="#features" class="hover:text-marker hover:underline decoration-wavy decoration-2 transition-colors duration-100">Features</a>
+      <a href="#architecture" class="hover:text-marker hover:underline decoration-wavy decoration-2 transition-colors duration-100">Architecture</a>
+      <a href="#docs" class="hover:text-marker hover:underline decoration-wavy decoration-2 transition-colors duration-100">Docs</a>
+      <a href="#pricing" class="hover:text-marker hover:underline decoration-wavy decoration-2 transition-colors duration-100">Pricing</a>
+    </div>
+
+    <div class="hidden md:flex gap-4">
+      <a href="https://148.113.58.205.sslip.io" class="bg-white border-[3px] border-pencil shadow-hard wobbly px-6 py-2 text-xl font-bold hover:bg-marker hover:text-white hover:shadow-hard-sm hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all duration-100">Launch Console</a>
+    </div>
+  </div>
+</nav>
+
+<section id="hero" class="relative pt-40 pb-20 px-6 min-h-[90vh] flex items-center justify-center border-b-[3px] border-pencil border-dashed">
+  <canvas id="heroCanvas"></canvas>
+  
+  <div class="max-w-4xl mx-auto text-center relative z-10">
+    <div class="inline-block bg-postit border-[3px] border-pencil shadow-hard wobbly-sm px-4 py-1 mb-8 rotate-2 text-xl font-bold">
+      Now in Production — v1.0 Live 📌
+    </div>
+    
+    <h1 class="text-6xl md:text-8xl leading-tight mb-8">
+      The Platform Built<br/>
+      <span class="relative inline-block">
+        for <span id="typedText" class="text-marker"></span><span class="animate-pulse">|</span>
+        <svg class="absolute -bottom-4 -right-12 hidden md:block w-16 h-16 text-pencil animate-bounce" style="animation-duration: 3s;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+      </span>
+    </h1>
+    
+    <p class="text-2xl md:text-3xl max-w-3xl mx-auto mb-12">
+      Platform is a Kubernetes-native DevOps layer that gives you 
+      <span class="bg-marker/20 px-1 border-b-[3px] border-marker border-dashed">observability</span>, 
+      <span class="bg-bluepen/20 px-1 border-b-[3px] border-bluepen border-dashed">databases</span>, and 
+      <span class="bg-pencil/20 px-1 border-b-[3px] border-pencil border-dashed">secrets</span> — all in one.
+    </p>
+    
+    <div class="flex flex-col md:flex-row items-center justify-center gap-6">
+      <a href="#docs" class="bg-marker text-white border-[3px] border-pencil shadow-hard wobbly px-8 py-4 text-2xl font-bold hover:shadow-hard-sm hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all duration-100">
+        Read the Docs
+      </a>
+      <a href="#features" class="bg-white border-[3px] border-pencil shadow-hard wobbly-md px-8 py-4 text-2xl font-bold hover:bg-muted hover:shadow-hard-sm hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all duration-100 flex items-center gap-2">
+        See Features
+      </a>
+    </div>
+  </div>
+</section>
+
+<section id="features" class="py-24 px-6 border-b-[3px] border-pencil">
+  <div class="max-w-5xl mx-auto">
+    <div class="text-center mb-16 relative">
+      <h2 class="text-5xl md:text-6xl mb-4">Everything your platform needs.</h2>
+      <p class="text-2xl max-w-2xl mx-auto">Nothing it doesn't. Modular by design, battle-tested in prod.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
+      <div class="bg-white border-[3px] border-pencil shadow-hard-lg wobbly-md p-8 relative hover:rotate-1 transition-transform duration-100">
+        <div class="tape"></div>
+        <h3 class="text-4xl mb-4 flex items-center gap-3">📡 SDK Telemetry</h3>
+        <p class="text-xl mb-6">Instrument Node.js, React, or Python apps in 3 lines. Auto-captures API latency and errors.</p>
+        <div class="bg-muted p-4 border-[3px] border-pencil border-dashed wobbly-sm font-patrick text-lg">
+          const p = createClient({ token: '...' });<br>
+          app.use(p.metrics());
+        </div>
+      </div>
+
+      <div class="bg-postit border-[3px] border-pencil shadow-hard-lg wobbly p-8 relative hover:-rotate-1 transition-transform duration-100">
+        <div class="tack"></div>
+        <h3 class="text-4xl mb-4 flex items-center gap-3">🗄️ One-Click DBs</h3>
+        <p class="text-xl">Provision isolated PostgreSQL databases per project with unique credentials and automated S3 backups.</p>
+      </div>
+
+      <div class="bg-white border-[3px] border-pencil shadow-hard-lg wobbly p-8 relative hover:rotate-1 transition-transform duration-100">
+        <div class="tape"></div>
+        <h3 class="text-4xl mb-4 flex items-center gap-3">🔐 AES-256 Secrets</h3>
+        <p class="text-xl">Store and audit project secrets with AES-256-GCM encryption. Environment-scoped with rollback.</p>
+      </div>
+
+      <div class="bg-white border-[3px] border-pencil shadow-hard-lg wobbly-md p-8 relative hover:-rotate-1 transition-transform duration-100">
+        <div class="tack"></div>
+        <h3 class="text-4xl mb-4 flex items-center gap-3">🐛 Bug Reporter</h3>
+        <p class="text-xl">Drop-in React component that auto-attaches console logs, screenshots, and network timelines to user reports.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing" class="py-24 px-6 border-b-[3px] border-pencil bg-muted">
+  <div class="max-w-5xl mx-auto">
+    <div class="text-center mb-16">
+      <h2 class="text-5xl md:text-6xl mb-4">Simple Pricing</h2>
+      <p class="text-2xl">Open source at heart.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-12 max-w-4xl mx-auto">
+      <div class="bg-white border-[3px] border-pencil shadow-hard wobbly p-8 -rotate-1 relative">
+        <h3 class="text-4xl mb-2">Community</h3>
+        <div class="text-5xl font-bold mb-6">$0</div>
+        <ul class="text-xl space-y-4 mb-8">
+          <li class="flex items-center gap-2">✓ Self-hosted</li>
+          <li class="flex items-center gap-2">✓ All SDKs</li>
+          <li class="flex items-center gap-2">✓ Unlimited projects</li>
+        </ul>
+        <a href="#" class="block text-center bg-pencil text-paper border-[3px] border-pencil shadow-hard wobbly-sm py-3 text-2xl font-bold hover:shadow-hard-sm hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all duration-100">
+          View GitHub
+        </a>
+      </div>
+
+      <div class="bg-white border-[3px] border-marker shadow-hard-lg wobbly-md p-8 rotate-1 relative md:scale-105">
+        <div class="absolute -top-6 -right-6 bg-marker text-white border-[3px] border-pencil shadow-hard wobbly-sm px-4 py-2 text-xl font-bold -rotate-6">
+          Most Popular!
+        </div>
+        <h3 class="text-4xl mb-2">Pro</h3>
+        <div class="text-5xl font-bold mb-6">$49<span class="text-2xl">/mo</span></div>
+        <ul class="text-xl space-y-4 mb-8">
+          <li class="flex items-center gap-2">✓ Managed Hosting</li>
+          <li class="flex items-center gap-2">✓ Auto TLS & Upgrades</li>
+          <li class="flex items-center gap-2">✓ Priority Slack Support</li>
+        </ul>
+        <a href="#" class="block text-center bg-marker text-white border-[3px] border-pencil shadow-hard wobbly-sm py-3 text-2xl font-bold hover:shadow-hard-sm hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all duration-100">
+          Start Trial
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="py-12 px-6 border-t-[3px] border-pencil bg-paper text-center">
+  <div class="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
+    <div class="text-3xl font-kalam">Platform</div>
+    <div class="text-xl">© 2026 Built with ♥ for engineers.</div>
+  </div>
+</footer>
+
+<script>
+  // Simple typed effect for hero
+  const texts = ["React Developers", "DevOps Engineers", "Node.js Backends", "You"];
+  let index = 0;
+  let charIndex = 0;
+  let isDeleting = false;
+  const typedSpan = document.getElementById("typedText");
+  
+  function type() {
+    const current = texts[index];
+    if (isDeleting) {
+      typedSpan.textContent = current.substring(0, charIndex - 1);
+      charIndex--;
+    } else {
+      typedSpan.textContent = current.substring(0, charIndex + 1);
+      charIndex++;
+    }
+    
+    if (!isDeleting && charIndex === current.length) {
+      setTimeout(() => isDeleting = true, 1500);
+    } else if (isDeleting && charIndex === 0) {
+      isDeleting = false;
+      index = (index + 1) % texts.length;
+    }
+    
+    setTimeout(type, isDeleting ? 50 : 150);
+  }
+  
+  setTimeout(type, 1000);
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

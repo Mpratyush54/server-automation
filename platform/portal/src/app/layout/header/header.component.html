@@ -1,14 +1,17 @@
 <header class="app-header">
-  <div style="display:flex;align-items:center;gap:12px;">
-    <button *ngIf="isSidebarCollapsed" (click)="toggleSidebar.emit()" style="background:transparent;border:none;color:var(--text-primary);cursor:pointer;font-size:1.1rem;padding:4px 8px;display:flex;align-items:center;justify-content:center;">☰</button>
-    <h1 style="font-size:1.15rem;font-weight:700;margin:0;font-family:var(--font-heading);">{{ title }}</h1>
+  <div class="flex items-center gap-6">
+    <button *ngIf="isSidebarCollapsed" (click)="toggleSidebar.emit()" class="bg-transparent border-0 text-charcoal cursor-pointer text-xl p-2 flex items-center justify-center hover:text-gold transition-colors duration-500">☰</button>
+    <h1 class="text-3xl md:text-5xl m-0">{{ title }}</h1>
   </div>
-  <div style="display:flex;align-items:center;gap:20px;">
-    <div *ngIf="currentUser" style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">
-      <span style="font-size:0.8rem;font-weight:600;color:var(--text-primary);">{{ currentUser.name }}</span>
-      <span style="font-size:0.68rem;color:var(--text-secondary); font-family:var(--font-code);">{{ currentUser.role | uppercase }} • {{ currentUser.email }}</span>
+  <div class="flex items-center gap-12">
+    <div *ngIf="currentUser" class="flex flex-col items-end leading-tight">
+      <span class="text-sm font-playfair italic text-charcoal">{{ currentUser.name }}</span>
+      <span class="text-[10px] text-warmgrey uppercase tracking-[0.2em] mt-1">{{ currentUser.role }} • {{ currentUser.email }}</span>
     </div>
 
-    <span class="badge badge-active" style="padding:3px 8px;font-size:0.65rem;">● Core Online</span>
+    <div class="flex items-center gap-4">
+      <div class="h-px w-8 bg-charcoal/20 hidden md:block"></div>
+      <span class="text-[10px] uppercase tracking-[0.2em] text-charcoal">Core Online</span>
+    </div>
   </div>
 </header>

@@ -1,8 +1,14 @@
 <div class="app-layout" *ngIf="!isLoginPage && !isLandingPage">
+  <!-- Visual Grid Lines (Luxury/Editorial) -->
+  <div class="gridline left-[10%]"></div>
+  <div class="gridline left-[33%]"></div>
+  <div class="gridline left-[66%]"></div>
+  <div class="gridline left-[90%]"></div>
+  
   <app-sidebar [isCollapsed]="isSidebarCollapsed" (toggleCollapse)="isSidebarCollapsed = !isSidebarCollapsed"></app-sidebar>
   <main class="main-content" [class.collapsed-nav]="isSidebarCollapsed">
     <app-header [title]="pageTitle" [isSidebarCollapsed]="isSidebarCollapsed" (toggleSidebar)="isSidebarCollapsed = !isSidebarCollapsed"></app-header>
-    <div class="content">
+    <div class="content relative">
       <router-outlet></router-outlet>
     </div>
   </main>

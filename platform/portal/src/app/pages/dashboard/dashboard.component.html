@@ -1,104 +1,74 @@
-<!-- Topbar / Dashboard Sub-header -->
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--border-subtle); padding-bottom:12px;">
-  <div style="display:flex; align-items:center; gap:12px;">
-    <span style="color:var(--text-secondary); font-size:0.8rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;">Cluster:</span>
-    <select style="padding:4px 10px; background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; font-size:0.8rem; color:var(--text-primary); font-weight:600; cursor:pointer;">
-      <option>prod-kengeri-kvm8</option>
-      <option>staging-kengeri-kvm8</option>
-      <option>dev-local-minikube</option>
+<div class="mb-16 pb-8 border-b border-charcoal/20 flex justify-between items-center relative">
+  <div class="flex items-center gap-6">
+    <span class="text-[10px] text-warmgrey uppercase tracking-[0.3em]">Cluster Configuration</span>
+    <select class="bg-transparent border-b border-charcoal/20 pb-2 text-charcoal font-inter text-sm w-48 uppercase tracking-wider focus:outline-none focus:border-gold rounded-none appearance-none cursor-pointer">
+      <option>Prod-Kengeri-Kvm8</option>
+      <option>Staging-Kengeri-Kvm8</option>
+      <option>Dev-Local-Minikube</option>
     </select>
   </div>
-  <div style="color:var(--text-secondary); font-size:0.75rem; font-family:var(--font-heading);">
-    Last sync: <span style="color:var(--accent-success);">Just now</span>
+  <div class="text-xs font-playfair italic text-warmgrey flex items-center gap-4">
+    Last sync: <span class="text-charcoal font-inter not-italic uppercase tracking-[0.2em] text-[10px]">Just now</span>
   </div>
 </div>
 
-<!-- Grid-4: Metric summary counters -->
-<div class="grid-4">
-  <div class="card" style="padding:16px;">
-    <div style="color:var(--text-secondary); font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:4px;">Cluster Pods</div>
-    <div style="display:flex; justify-content:space-between; align-items:baseline;">
-      <div class="stat">{{ stats.podsText }}</div>
-      <div style="font-size:0.75rem; color:var(--accent-success); font-weight:600;">● Running</div>
-    </div>
-    <!-- Mini progress text bar -->
-    <div style="font-family:var(--font-code); font-size:0.8rem; letter-spacing:1px; margin-top:8px; color:var(--accent-primary);">
-      {{ stats.podsProgress >= 90 ? '██████░' : stats.podsProgress >= 70 ? '█████░░' : stats.podsProgress >= 50 ? '████░░░' : '██░░░░░' }}
-    </div>
-  </div>
-
-  <div class="card" style="padding:16px;">
-    <div style="color:var(--text-secondary); font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:4px;">Total Projects</div>
-    <div style="display:flex; justify-content:space-between; align-items:baseline;">
-      <div class="stat">{{ stats.projects }}</div>
-      <div style="font-size:0.75rem; color:var(--text-secondary);">Active</div>
-    </div>
-    <div style="font-size:0.75rem; color:var(--text-muted); margin-top:8px;">Isolated namespaces configured</div>
-  </div>
-
-  <div class="card" style="padding:16px;">
-    <div style="color:var(--text-secondary); font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:4px;">Deployments</div>
-    <div style="display:flex; justify-content:space-between; align-items:baseline;">
-      <div class="stat">{{ stats.deployments }}</div>
-      <div style="font-size:0.75rem; color:var(--accent-success); font-weight:600;">● Synced</div>
-    </div>
-    <div style="font-size:0.75rem; color:var(--text-muted); margin-top:8px;">ArgoCD GitOps automated</div>
-  </div>
-
-  <div class="card" style="padding:16px;">
-    <div style="color:var(--text-secondary); font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:4px;">Namespaces</div>
-    <div style="display:flex; justify-content:space-between; align-items:baseline;">
-      <div class="stat">{{ stats.namespaces }}</div>
-      <div style="font-size:0.75rem; color:var(--text-secondary);">Active</div>
-    </div>
-    <div style="font-size:0.75rem; color:var(--text-muted); margin-top:8px;">Kubernetes resource zones</div>
-  </div>
-</div>
-
-<!-- Section: Application Health Map -->
-<div style="margin-top:24px; margin-bottom:16px;">
-  <h3 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-secondary); margin-bottom:12px; font-weight:700;">Application Health Map</h3>
-  <div class="grid-3">
-    <!-- Loop through actual projects -->
-    <div class="card pulse-success" *ngFor="let p of projectsList" style="padding:16px; min-height:120px; border-left:3px solid var(--accent-success);">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-        <div>
-          <h4 style="font-family:var(--font-heading); font-size:0.95rem; margin:0 0 4px 0; color:#fff; word-break:break-all;">
-            <a [routerLink]="['/projects', p.id]">{{ p.name }}</a>
-          </h4>
-          <span style="font-family:var(--font-code); font-size:0.7rem; color:var(--text-muted); background:rgba(0,0,0,0.2); padding:1px 4px; border-radius:3px;">
-            namespace: {{ p.name }}
-          </span>
-        </div>
-        <span class="badge badge-active" style="font-size:0.6rem; padding:1px 6px;">● Healthy</span>
-      </div>
-      <div style="margin-top:16px; display:flex; justify-content:space-between; align-items:flex-end;">
-        <div style="font-size:0.75rem; color:var(--text-secondary);">
-          <span>Pods: </span><strong style="color:var(--text-primary); font-family:var(--font-code);">1/1</strong>
-        </div>
-        <div style="font-size:0.72rem; color:var(--text-secondary); text-align:right;">
-          <span style="font-family:var(--font-code);">{{ p.stack }}</span><br>
-          <span style="color:var(--text-muted);">Created {{ p.createdAt | date:'shortDate' }}</span>
-        </div>
+<div class="grid-asymmetric">
+  <!-- Left Column: Metrics -->
+  <div class="col-span-1 md:col-span-4 flex flex-col gap-12 border-r border-charcoal/10 pr-12">
+    <div>
+      <div class="text-[10px] uppercase tracking-[0.3em] text-warmgrey mb-2">Cluster Pods</div>
+      <div class="font-playfair text-6xl text-charcoal mb-4">{{ stats.podsText }}</div>
+      <div class="h-px w-full bg-charcoal/10 relative">
+        <div class="absolute top-0 left-0 h-full bg-charcoal" [style.width.%]="stats.podsProgress"></div>
       </div>
     </div>
     
-    <!-- Empty State if projectsList is empty -->
-    <div class="card" *ngIf="projectsList.length === 0" style="grid-column: span 3; padding: 32px; text-align: center; border-left: 3px solid var(--border-subtle);">
-      <span style="font-size: 2rem; display: block; margin-bottom: 12px;">📦</span>
-      <h4 style="font-family: var(--font-heading); font-size: 1rem; color: #fff; margin: 0 0 6px 0;">No Active Projects</h4>
-      <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0 0 16px 0; max-width: 400px; margin-inline: auto;">Create your first project to configure namespaces, automate GitOps deployments, and monitor container pod statistics.</p>
-      <a routerLink="/projects" class="btn btn-primary" style="font-size: 0.8rem; padding: 6px 14px; text-decoration: none; display: inline-block;">Create Project</a>
+    <div>
+      <div class="text-[10px] uppercase tracking-[0.3em] text-warmgrey mb-2">Active Projects</div>
+      <div class="font-playfair text-6xl text-charcoal mb-4">{{ stats.projects }}</div>
+    </div>
+
+    <div>
+      <div class="text-[10px] uppercase tracking-[0.3em] text-warmgrey mb-2">Deployments</div>
+      <div class="font-playfair text-6xl text-charcoal mb-4">{{ stats.deployments }}</div>
     </div>
   </div>
-</div>
 
-<!-- Two Column Layout: Recent Deployments + System Health -->
-<div class="grid-2" style="margin-top:24px;">
-  <!-- Recent Deployments -->
-  <div class="card" style="padding:16px;">
-    <h2>Recent Deployments</h2>
-    <div style="overflow-x:auto;">
+  <!-- Right Column: Projects & Health -->
+  <div class="col-span-1 md:col-span-8">
+    <div class="mb-16">
+      <h3 class="text-3xl font-playfair text-charcoal mb-8 border-b border-charcoal/10 pb-4">Application Health</h3>
+      
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div *ngFor="let p of projectsList" class="group border-t border-charcoal/20 pt-6 hover:bg-alabaster/50 transition-colors duration-700 cursor-pointer">
+          <div class="flex justify-between items-start mb-12">
+            <div>
+              <h4 class="text-2xl font-playfair mb-2 group-hover:text-gold transition-colors duration-500">
+                <a [routerLink]="['/projects', p.id]" class="no-underline">{{ p.name }}</a>
+              </h4>
+              <span class="text-[10px] text-warmgrey uppercase tracking-[0.2em]">namespace: {{ p.name }}</span>
+            </div>
+            <span class="badge badge-active">Active</span>
+          </div>
+          <div class="flex justify-between items-end">
+            <div class="text-xs text-charcoal uppercase tracking-[0.1em]">Pods: <span class="font-medium">1/1</span></div>
+            <div class="text-right text-[10px] text-warmgrey uppercase tracking-[0.2em] flex flex-col gap-1">
+              <span>{{ p.stack }}</span>
+              <span>{{ p.createdAt | date:'shortDate' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div *ngIf="projectsList.length === 0" class="col-span-2 border-t border-charcoal/20 pt-16 pb-16 text-center">
+          <h4 class="text-3xl font-playfair mb-4">No Active Projects</h4>
+          <p class="text-warmgrey text-sm tracking-wide max-w-md mx-auto mb-8">Create your first project to configure namespaces, automate GitOps deployments, and monitor container pod statistics.</p>
+          <a routerLink="/projects" class="btn btn-primary">Create Project</a>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h3 class="text-3xl font-playfair text-charcoal mb-8 border-b border-charcoal/10 pb-4">Recent Activity</h3>
       <table>
         <thead>
           <tr>
@@ -109,9 +79,9 @@
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let d of recentDeployments">
-            <td style="font-family:var(--font-code); font-weight:600; color:#fff;">{{ d.projectName }}</td>
-            <td style="font-family:var(--font-code); color:var(--text-code);">{{ d.version }}</td>
+          <tr *ngFor="let d of recentDeployments" class="group">
+            <td class="font-medium tracking-wide uppercase text-xs">{{ d.projectName }}</td>
+            <td class="text-warmgrey italic font-playfair">{{ d.version }}</td>
             <td>
               <span class="badge" 
                     [class.badge-active]="d.status === 'active' || d.status === 'success'" 
@@ -120,85 +90,50 @@
                 {{ d.status }}
               </span>
             </td>
-            <td style="color:var(--text-secondary); font-size:0.75rem;">{{ d.createdAt | date:'short' }}</td>
+            <td class="text-warmgrey text-[10px] uppercase tracking-[0.2em]">{{ d.createdAt | date:'short' }}</td>
           </tr>
           <tr *ngIf="recentDeployments.length === 0">
-            <td colspan="4" style="color:var(--text-secondary); text-align:center; padding:24px;">No recent deployments found.</td>
+            <td colspan="4" class="text-center py-12 text-warmgrey italic font-playfair text-lg border-b-0">No recent deployments.</td>
           </tr>
         </tbody>
       </table>
     </div>
   </div>
-
-  <!-- System Health services list -->
-  <div class="card" style="padding:16px;">
-    <h2>System Health</h2>
-    <div style="display:flex; flex-direction:column; gap:4px; margin-top:8px;">
-      <div *ngFor="let s of systemHealth" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:rgba(0,0,0,0.15); border:1px solid var(--border-subtle); border-radius:6px;">
-        <span style="font-family:var(--font-heading); font-size:0.8rem; font-weight:600;">{{ s.name | uppercase }}</span>
-        <span class="badge" [class.badge-active]="s.status === 'running'" [class.badge-failed]="s.status !== 'running'">
-          {{ s.status === 'running' ? '● running' : '● offline' }}
-        </span>
-      </div>
-      <div *ngIf="systemHealth.length === 0" style="display:flex; flex-direction:column; gap:4px;">
-        <!-- Mock health rows in case bootstrap.status fails/not loaded -->
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:rgba(0,0,0,0.15); border:1px solid var(--border-subtle); border-radius:6px;">
-          <span style="font-family:var(--font-heading); font-size:0.8rem; font-weight:600;">POSTGRESQL</span>
-          <span class="badge badge-active">● running</span>
-        </div>
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:rgba(0,0,0,0.15); border:1px solid var(--border-subtle); border-radius:6px;">
-          <span style="font-family:var(--font-heading); font-size:0.8rem; font-weight:600;">MONGODB</span>
-          <span class="badge badge-active">● running</span>
-        </div>
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:rgba(0,0,0,0.15); border:1px solid var(--border-subtle); border-radius:6px;">
-          <span style="font-family:var(--font-heading); font-size:0.8rem; font-weight:600;">REDIS</span>
-          <span class="badge badge-active">● running</span>
-        </div>
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:rgba(0,0,0,0.15); border:1px solid var(--border-subtle); border-radius:6px;">
-          <span style="font-family:var(--font-heading); font-size:0.8rem; font-weight:600;">KUBERNETES</span>
-          <span class="badge badge-active">● running</span>
-        </div>
-      </div>
-    </div>
-  </div>
 </div>
 
-<!-- Embedded Grafana Dashboard Panel -->
-<div class="card" style="padding:16px; margin-top:16px; border-color:var(--accent-grafana);">
-  <h2 style="display:flex; align-items:center; gap:8px;">
-    <span style="color:var(--accent-grafana);">📊</span> Grafana Metrics — Cluster Resource Utilization
-  </h2>
-  <div style="position:relative; width:100%; height:320px; margin-top:12px; background:#0b0c10; border-radius:6px; border:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:center;">
-    <!-- iFrame embed -->
+<div class="mt-24 border-t border-charcoal/20 pt-16 relative">
+  <div class="vertical-label -left-12 top-16">Metrics</div>
+  <h2 class="text-4xl font-playfair mb-12">System Telemetry</h2>
+  
+  <div class="relative w-full h-[400px] border border-charcoal/10 bg-alabaster/30 overflow-hidden flex items-center justify-center grayscale hover:grayscale-0 transition-all duration-[2000ms]">
+    <!-- Frame border accents -->
+    <div class="absolute top-4 left-4 w-4 h-4 border-t border-l border-charcoal/30"></div>
+    <div class="absolute top-4 right-4 w-4 h-4 border-t border-r border-charcoal/30"></div>
+    <div class="absolute bottom-4 left-4 w-4 h-4 border-b border-l border-charcoal/30"></div>
+    <div class="absolute bottom-4 right-4 w-4 h-4 border-b border-r border-charcoal/30"></div>
+
     <iframe [src]="grafanaEmbedUrl" 
             width="100%" 
-            height="320" 
+            height="100%" 
             frameborder="0" 
-            style="border-radius:5px; z-index:2;"
+            class="z-10 mix-blend-multiply"
             (load)="onIframeLoad()"
             *ngIf="showIframe"></iframe>
             
-    <!-- Fallback beautiful simulated dev chart if iframe doesn't load/offline -->
-    <div *ngIf="!iframeLoaded" style="position:absolute; inset:0; padding:20px; display:flex; flex-direction:column; justify-content:space-between; font-family:var(--font-code); font-size:0.75rem; color:var(--text-secondary); z-index:1;">
-      <div style="display:flex; justify-content:space-between;">
-        <span>CPU / Memory Utilization (Live Stream)</span>
-        <span style="color:var(--accent-success);">● Live telemetry</span>
+    <div *ngIf="!iframeLoaded" class="absolute inset-0 p-8 flex flex-col justify-between z-0">
+      <div class="flex justify-between items-center text-[10px] uppercase tracking-[0.3em] text-warmgrey">
+        <span>Resource Utilization</span>
+        <span>Live Stream</span>
       </div>
-      <!-- Custom SVG bar graph mock -->
-      <svg width="100%" height="180" style="overflow:visible;">
-        <defs>
-          <linearGradient id="cpuGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="var(--accent-primary)" stop-opacity="0.35"/>
-            <stop offset="100%" stop-color="var(--accent-primary)" stop-opacity="0.0"/>
-          </linearGradient>
-        </defs>
-        <path d="M 0 120 Q 80 40, 160 100 T 320 80 T 480 60 T 640 110 T 800 70 T 960 90 T 1120 50 L 1120 180 L 0 180 Z" fill="url(#cpuGrad)" stroke="var(--accent-primary)" stroke-width="2"/>
-        <line x1="0" y1="180" x2="1120" y2="180" stroke="var(--border-subtle)" stroke-width="1"/>
+      
+      <!-- Minimalist elegant mock chart -->
+      <svg width="100%" height="200" class="overflow-visible opacity-30">
+        <path d="M 0 150 Q 100 50, 200 120 T 400 90 T 600 70 T 800 130 T 1000 80 T 1200 100 L 1200 200 L 0 200 Z" fill="none" stroke="currentColor" stroke-width="1" class="text-charcoal"/>
       </svg>
-      <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--text-muted);">
-        <span>1h ago</span>
-        <span>30m ago</span>
-        <span>Now</span>
+      
+      <div class="flex justify-between items-center text-[10px] uppercase tracking-[0.3em] text-warmgrey">
+        <span>1H AGO</span>
+        <span>NOW</span>
       </div>
     </div>
   </div>
