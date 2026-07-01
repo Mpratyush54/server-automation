@@ -27,7 +27,9 @@
     "pg": "^8.11.0",
     "reflect-metadata": "^0.1.13",
     "typeorm": "^0.3.19",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "@aws-sdk/client-s3": "^3.500.0",
+    "googleapis": "^130.0.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
