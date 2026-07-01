@@ -4,24 +4,31 @@ Platform is a monorepo containing the backend API, admin dashboard, four SDKs, a
 
 ```mermaid
 graph TB
-    Root["platform/"]
-    API["api/<br/>Express + TypeORM + Mongoose"]
-    Portal["portal/<br/>Angular 19 Dashboard"]
-    SDKNode["sdk-node/<br/>@mpratyush54/sdk-node"]
-    SDKPython["sdk-python/<br/>platform-sdk-python"]
-    SDKReact["sdk-react/<br/>@mpratyush54/sdk-react"]
-    SDKAngular["sdk-angular/<br/>@mpratyush54/sdk-angular"]
-    Bootstrap["platform-bootstrap/<br/>k3s Cluster Setup"]
-    Docs["docs/<br/>Documentation"]
+
+    classDef platform fill:#1a2a3a,stroke:#3794ff,stroke-width:1.5px,color:#e4e4e7;
+    classDef code fill:#1a2a1a,stroke:#50fa7b,stroke-width:1.5px,color:#e4e4e7;
+    classDef action fill:#3a2a1a,stroke:#ffb86c,stroke-width:1.5px,color:#e4e4e7;
+    classDef external fill:#2a1a3a,stroke:#bd93f9,stroke-width:1.5px,color:#e4e4e7;
+    classDef neutral fill:#111,stroke:#333,stroke-width:1.5px,color:#e4e4e7;
+
+    Root["platform/"]:::neutral
+    API["api/<br/>Express + TypeORM + Mongoose"]:::platform
+    Portal["portal/<br/>Angular 19 Dashboard"]:::platform
+    SDKNode["sdk-node/<br/>@mpratyush54/sdk-node"]:::code
+    SDKPython["sdk-python/<br/>platform-sdk-python"]:::code
+    SDKReact["sdk-react/<br/>@mpratyush54/sdk-react"]:::code
+    SDKAngular["sdk-angular/<br/>@mpratyush54/sdk-angular"]:::code
+    Bootstrap["platform-bootstrap/<br/>k3s Cluster Setup"]:::action
+    Docs["docs/<br/>Documentation"]:::neutral
 
     subgraph APIInternals["api/ internals"]
-        Config["config/<br/>DB, permissions, routes"]
-        Entities["entities/<br/>18 TypeORM entities"]
-        Lib["lib/<br/>k8s, Loki, preview-decay"]
-        Middleware["middleware/<br/>JWT, RBAC, audit"]
-        Routes["routes/<br/>18 route handlers"]
-        Schemas["schemas/<br/>Mongoose models"]
-        Server["server.ts<br/>Entry point"]
+        Config["config/<br/>DB, permissions, routes"]:::platform
+        Entities["entities/<br/>18 TypeORM entities"]:::platform
+        Lib["lib/<br/>k8s, Loki, preview-decay"]:::platform
+        Middleware["middleware/<br/>JWT, RBAC, audit"]:::platform
+        Routes["routes/<br/>18 route handlers"]:::platform
+        Schemas["schemas/<br/>Mongoose models"]:::external
+        Server["server.ts<br/>Entry point"]:::platform
     end
 
     Root --> API

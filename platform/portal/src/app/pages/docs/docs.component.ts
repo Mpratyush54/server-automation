@@ -261,6 +261,18 @@ export class DocsComponent implements OnInit, AfterViewChecked {
         hljs.highlightElement(el);
       }
     });
+    this.addTerminalPrompts(container);
+  }
+
+  private addTerminalPrompts(container: HTMLElement) {
+    container.querySelectorAll('pre code.language-bash, pre code.language-sh, pre code.language-shell').forEach((block: unknown) => {
+      const el = block as HTMLElement;
+      const html = el.innerHTML;
+      el.innerHTML = html.replace(
+        /^(\s*)(\$)\s/gm,
+        '$1<span class="terminal-prompt">$2</span> '
+      );
+    });
   }
 
   private addCopyButtons() {

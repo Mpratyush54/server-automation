@@ -2,56 +2,51 @@
 
 Platform is a monorepo containing the backend API, admin dashboard, four SDKs, a cluster bootstrap tool, and documentation.
 
-```
-platform/
-├── api/                        # Express + TypeORM (PostgreSQL) + Mongoose (MongoDB)
-│   ├── src/
-│   │   ├── config/             # DB connection, Mongoose setup, permission matrix, route registration
-│   │   ├── entities/           # TypeORM entities: User, Project, Deployment, Environment, Secret, etc.
-│   │   ├── lib/                # k8s client (kubectl wrapper), Loki logger, preview-decay scheduler
-│   │   ├── middleware/         # JWT authentication, RBAC enforcement, audit-log capture
-│   │   ├── routes/             # Express route handlers for auth, projects, deployments, secrets, etc.
-│   │   ├── schemas/            # Mongoose schemas: Log, Metric, BugReport, DeploymentEvent, AuditEntry
-│   │   └── server.ts           # Application entry point — Express bootstrap + middleware registration
-│   ├── tests/
-│   │   ├── unit/               # Unit tests for services, helpers, and utilities
-│   │   └── integration/        # Integration tests: auth, projects, deployments, secrets, webhooks
-│   ├── sync-db.ts              # Database sync script — runs migrations and seeds demo data
-│   └── package.json
-├── portal/                     # Angular 19 admin dashboard
-│   ├── src/app/
-│   │   ├── pages/              # All page components: Login, Dashboard, Projects, Deployments, Secrets, etc.
-│   │   ├── services/           # API service (HTTP client wrappers), Auth service (JWT management)
-│   │   ├── layout/             # Sidebar navigation, header bar, page shell
-│   │   └── guards/             # Route guards that enforce authentication and RBAC
-│   └── package.json
-├── sdk-node/                   # Node.js SDK — published as @mpratyush54/sdk-node
-│                               #   - PlatformClient: metrics tracking, structured logging, bug reporting
-│                               #   - Express middleware for auto-instrumentation
-│                               #   - DB helpers: MongoClient, PostgresPool, RedisClient wrappers
-│                               #   - captureConsole() for automatic console.log interception
-├── sdk-python/                 # Python SDK — published as platform-sdk-python
-│                               #   - PlatformClient: metrics, logging, bug reporting
-│                               #   - DB helper mixins: MongoClient, PostgresPool, RedisClient
-├── sdk-react/                  # React SDK — published as @mpratyush54/sdk-react
-│                               #   - PlatformProvider context provider
-│                               #   - usePlatform, useBugReporter hooks
-│                               #   - ErrorBoundary, BugReporterWidget components
-├── sdk-angular/                # Angular SDK — published as @mpratyush54/sdk-angular
-│                               #   - PlatformModule.forRoot() configuration
-│                               #   - PlatformHttpInterceptor for automatic metrics
-│                               #   - PlatformErrorHandler, BugReporterComponent
-├── platform-bootstrap/         # Cluster bootstrap for production k3s deployments
-│   ├── bootstrap.sh            # Full k3s cluster setup: installs k3s, Helm, ArgoCD, cert-manager, etc.
-│   ├── patches/                # Helm value overrides for Platform API, Portal, MongoDB, PostgreSQL
-│   └── tests/                  # Post-deployment verification scripts (curl-based smoke tests)
-└── docs/                       # This documentation
-    ├── getting-started/        # Setup guides, first project, SDK quickstarts
-    ├── architecture/           # System design, data flow, auth flow, network topology
-    ├── deployment/             # Bootstrap, rebuild, scaling, SSL, secrets, backup
-    ├── api-reference/          # Platform API endpoints, SDKs, configuration docs
-    ├── guides/                 # Authentication, secrets, monitoring, preview envs, testing
-    └── troubleshooting/        # Solutions to known deployment and build issues
+```mermaid
+graph TB
+
+    classDef platform fill:#1a2a3a,stroke:#3794ff,stroke-width:1.5px,color:#e4e4e7;
+    classDef code fill:#1a2a1a,stroke:#50fa7b,stroke-width:1.5px,color:#e4e4e7;
+    classDef action fill:#3a2a1a,stroke:#ffb86c,stroke-width:1.5px,color:#e4e4e7;
+    classDef external fill:#2a1a3a,stroke:#bd93f9,stroke-width:1.5px,color:#e4e4e7;
+    classDef neutral fill:#111,stroke:#333,stroke-width:1.5px,color:#e4e4e7;
+
+    Root["platform/"]:::neutral
+    API["api/<br/>Express + TypeORM + Mongoose"]:::platform
+    Portal["portal/<br/>Angular 19 Dashboard"]:::platform
+    SDKNode["sdk-node/<br/>@mpratyush54/sdk-node"]:::code
+    SDKPython["sdk-python/<br/>platform-sdk-python"]:::code
+    SDKReact["sdk-react/<br/>@mpratyush54/sdk-react"]:::code
+    SDKAngular["sdk-angular/<br/>@mpratyush54/sdk-angular"]:::code
+    Bootstrap["platform-bootstrap/<br/>k3s Cluster Setup"]:::action
+    Docs["docs/<br/>Documentation"]:::neutral
+
+    subgraph APIInternals["api/ internals"]
+        Config["config/<br/>DB, permissions, routes"]:::platform
+        Entities["entities/<br/>18 TypeORM entities"]:::platform
+        Lib["lib/<br/>k8s, Loki, preview-decay"]:::platform
+        Middleware["middleware/<br/>JWT, RBAC, audit"]:::platform
+        Routes["routes/<br/>18 route handlers"]:::platform
+        Schemas["schemas/<br/>Mongoose models"]:::external
+        Server["server.ts<br/>Entry point"]:::platform
+    end
+
+    Root --> API
+    Root --> Portal
+    Root --> SDKNode
+    Root --> SDKPython
+    Root --> SDKReact
+    Root --> SDKAngular
+    Root --> Bootstrap
+    Root --> Docs
+
+    API --> Config
+    API --> Entities
+    API --> Lib
+    API --> Middleware
+    API --> Routes
+    API --> Schemas
+    API --> Server
 ```
 
 ## Directory Relationships

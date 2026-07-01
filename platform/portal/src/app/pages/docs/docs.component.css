@@ -1,5 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    Platform — Documentation Page Styles
+   Semantic design system for developer infrastructure docs.
+   Color encodes meaning, not decoration.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
@@ -7,11 +9,22 @@
   --docs-color-elevated: #111;
   --docs-color-border: #333;
   --docs-color-border-hover: rgba(255,255,255,0.12);
-  --docs-text-primary: #fff;
+  --docs-text-primary: #e4e4e7;
   --docs-text-secondary: #a1a1aa;
   --docs-text-muted: #52525b;
+
   --docs-accent: #3794ff;
   --docs-accent-bg: rgba(55,148,255,0.08);
+
+  --docs-color-code: #50fa7b;
+  --docs-color-code-bg: rgba(80,250,123,0.08);
+  --docs-color-action: #ffb86c;
+  --docs-color-action-bg: rgba(255,184,108,0.08);
+  --docs-color-error: #ff5555;
+  --docs-color-error-bg: rgba(255,85,85,0.08);
+  --docs-color-external: #bd93f9;
+  --docs-color-external-bg: rgba(189,147,249,0.08);
+
   --docs-sidebar-width: 280px;
 }
 
@@ -341,8 +354,8 @@
 }
 
 .docs-markdown h1 {
-  font-size: 2.2rem;
-  font-weight: 700;
+  font-size: 2rem;
+  font-weight: 800;
   color: var(--docs-text-primary);
   margin-bottom: 12px;
   letter-spacing: -0.03em;
@@ -350,8 +363,8 @@
 }
 
 .docs-markdown h2 {
-  font-size: 1.4rem;
-  font-weight: 600;
+  font-size: 1.35rem;
+  font-weight: 700;
   color: var(--docs-text-primary);
   margin: 40px 0 16px;
   border: none;
@@ -359,7 +372,7 @@
 }
 
 .docs-markdown h3 {
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   font-weight: 600;
   color: var(--docs-text-primary);
   margin: 28px 0 12px;
@@ -420,7 +433,10 @@
   font-size: 0.9rem;
 }
 
-/* ── Code Blocks (Code Editor Style) ─────────────────────────────────────── */
+/* ── Code Blocks (Terminal Frame) ───────────────────────────────────────────
+   Signature element: every code block is framed like a terminal window.
+   Three-dot motif + language label + copy button in the title bar.
+   ──────────────────────────────────────────────────────────────────────────── */
 .docs-markdown pre {
   background: #0a0a0a;
   border: 1px solid rgba(255,255,255,0.08);
@@ -437,14 +453,23 @@
 .docs-code-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   padding: 8px 16px;
   background: #000;
   border-bottom: 1px solid rgba(255,255,255,0.06);
   user-select: none;
 }
 
+.docs-code-header::before {
+  content: "● ● ●";
+  font-size: 0.55rem;
+  letter-spacing: 3px;
+  color: #52525b;
+  line-height: 1;
+}
+
 .docs-code-lang {
+  margin-right: auto;
   font-size: 0.72rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -467,6 +492,11 @@
   font-weight: 500;
   transition: all 0.15s ease;
   font-family: var(--font-body, 'Geist', 'Inter', sans-serif);
+  opacity: 0;
+}
+
+.docs-markdown pre:hover .docs-copy-btn {
+  opacity: 1;
 }
 
 .docs-copy-btn:hover {
@@ -478,6 +508,7 @@
 .docs-copy-btn.copied {
   color: #a6e3a1;
   border-color: rgba(166,227,161,0.3);
+  opacity: 1;
 }
 
 .docs-markdown pre code {
@@ -485,10 +516,15 @@
   padding: 20px 24px;
   background: transparent;
   color: #ededed;
-  font-size: 0.88rem;
-  line-height: 1.7;
+  font-size: 0.82rem;
+  line-height: 1.6;
   overflow-x: auto;
   tab-size: 2;
+}
+
+.docs-markdown pre code .terminal-prompt {
+  color: var(--docs-color-action);
+  user-select: none;
 }
 
 .docs-markdown code {
@@ -643,9 +679,9 @@
 }
 
 .api-method {
-  font-family: 'Kalam', cursive;
-  font-size: 0.85rem;
-  font-weight: 800;
+  font-family: var(--font-code, 'Geist Mono', 'JetBrains Mono', monospace);
+  font-size: 0.78rem;
+  font-weight: 700;
   padding: 4px 12px;
   border-radius: 6px;
   letter-spacing: 0.03em;
@@ -694,7 +730,7 @@
   border-radius: 20px;
   font-size: 0.78rem;
   font-weight: 700;
-  font-family: 'Kalam', cursive;
+  font-family: var(--font-body, 'Geist', 'Inter', sans-serif);
   border: 1px solid;
 }
 
@@ -985,9 +1021,9 @@
 .docs-markdown .mermaid {
   background: var(--docs-color-elevated);
   border: 1px solid var(--docs-color-border);
-  border-radius: 10px;
-  padding: 24px;
-  margin: 24px 0;
+  border-radius: 12px;
+  padding: 28px;
+  margin: 28px 0;
   overflow-x: auto;
   text-align: center;
 }
@@ -995,6 +1031,43 @@
 .docs-markdown .mermaid svg {
   max-width: 100%;
   height: auto;
+}
+
+.docs-markdown .mermaid .label {
+  font-family: var(--font-body, 'Geist', 'Inter', sans-serif);
+  color: var(--docs-text-primary);
+}
+
+.docs-markdown .mermaid .node rect,
+.docs-markdown .mermaid .node circle,
+.docs-markdown .mermaid .node polygon {
+  stroke-width: 1.5px;
+}
+
+.docs-markdown .mermaid .cluster rect {
+  stroke: var(--docs-color-border) !important;
+  stroke-width: 2px !important;
+  fill: var(--docs-color-bg) !important;
+  rx: 8px;
+  ry: 8px;
+}
+
+.docs-markdown .mermaid .cluster-label text {
+  fill: var(--docs-text-muted) !important;
+  font-size: 11px !important;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.docs-markdown .mermaid .edgePath .path {
+  stroke: var(--docs-text-muted) !important;
+  stroke-width: 1.5px;
+}
+
+.docs-markdown .mermaid .edgeLabel {
+  color: var(--docs-text-muted);
+  font-size: 10px;
 }
 
 @media (max-width: 768px) {
@@ -1028,6 +1101,20 @@
 
   .docs-content {
     padding: 24px 20px 40px;
+  }
+
+  .docs-markdown h1 { font-size: 1.6rem; }
+  .docs-markdown h2 { font-size: 1.15rem; }
+
+  .docs-markdown .mermaid {
+    padding: 16px;
+    margin: 16px -12px;
+    border-radius: 8px;
+  }
+
+  .docs-markdown pre code {
+    padding: 14px 16px;
+    font-size: 0.78rem;
   }
 
   .docs-page-nav-row {

@@ -4,14 +4,30 @@ Platform automates the deployment pipeline from Git push to production — with 
 
 ## The Pipeline
 
-```
-Git Push ──► Webhook ──► Build ──► Deploy ──► Health Check ──► Ready
-                                                   │
-                                           ┌───────┴───────┐
-                                           ▼               ▼
-                                        Preview        Staging/Prod
-                                    pr-{n}-{project}.  {env}-{project}.
-                                      sslip.io          sslip.io
+```mermaid
+graph LR
+
+    classDef action fill:#3a2a1a,stroke:#ffb86c,stroke-width:1.5px,color:#e4e4e7;
+    classDef external fill:#2a1a3a,stroke:#bd93f9,stroke-width:1.5px,color:#e4e4e7;
+    classDef platform fill:#1a2a3a,stroke:#3794ff,stroke-width:1.5px,color:#e4e4e7;
+    classDef code fill:#1a2a1a,stroke:#50fa7b,stroke-width:1.5px,color:#e4e4e7;
+
+    Git["Git Push"]:::action
+    Webhook["Webhook"]:::external
+    Build["Build"]:::action
+    Deploy["Deploy"]:::platform
+    Health["Health Check"]:::platform
+    Ready["Ready"]:::code
+    Preview["Preview<br/>pr-{n}-{project}.sslip.io"]:::code
+    Staging["Staging / Prod<br/>{env}-{project}.sslip.io"]:::code
+
+    Git --> Webhook
+    Webhook --> Build
+    Build --> Deploy
+    Deploy --> Health
+    Health --> Ready
+    Health --> Preview
+    Health --> Staging
 ```
 
 ## 1. Push Code
@@ -53,10 +69,18 @@ For non-`main` branches, Platform creates a **preview environment**:
 
 When a PR is merged to `main`:
 
-```
-Merge to main ──► webhook ──► staging deployment ──► health check ──► promote to production
-                                                                           │
-                                                                    (manual or auto)
+```mermaid
+graph LR
+    Merge["Merge to main"]
+    WH["Webhook"]
+    Staging["Staging Deployment"]
+    Health["Health Check"]
+    Prod["Promote to Production<br/>(manual or auto)"]
+
+    Merge --> WH
+    WH --> Staging
+    Staging --> Health
+    Health --> Prod
 ```
 
 - **Staging** is deployed automatically on every `main` push

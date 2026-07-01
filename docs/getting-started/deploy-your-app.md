@@ -6,14 +6,20 @@ Platform automates the deployment pipeline from Git push to production — with 
 
 ```mermaid
 graph LR
-    Git["Git Push"]
-    Webhook["Webhook"]
-    Build["Build"]
-    Deploy["Deploy"]
-    Health["Health Check"]
-    Ready["Ready"]
-    Preview["Preview<br/>pr-{n}-{project}.sslip.io"]
-    Staging["Staging / Prod<br/>{env}-{project}.sslip.io"]
+
+    classDef action fill:#3a2a1a,stroke:#ffb86c,stroke-width:1.5px,color:#e4e4e7;
+    classDef external fill:#2a1a3a,stroke:#bd93f9,stroke-width:1.5px,color:#e4e4e7;
+    classDef platform fill:#1a2a3a,stroke:#3794ff,stroke-width:1.5px,color:#e4e4e7;
+    classDef code fill:#1a2a1a,stroke:#50fa7b,stroke-width:1.5px,color:#e4e4e7;
+
+    Git["Git Push"]:::action
+    Webhook["Webhook"]:::external
+    Build["Build"]:::action
+    Deploy["Deploy"]:::platform
+    Health["Health Check"]:::platform
+    Ready["Ready"]:::code
+    Preview["Preview<br/>pr-{n}-{project}.sslip.io"]:::code
+    Staging["Staging / Prod<br/>{env}-{project}.sslip.io"]:::code
 
     Git --> Webhook
     Webhook --> Build
