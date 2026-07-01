@@ -1,140 +1,155 @@
-<div class="mb-16 pb-8 border-b border-charcoal/20 flex justify-between items-center relative">
-  <div class="flex items-center gap-6">
-    <span class="text-[10px] text-warmgrey uppercase tracking-[0.3em]">Cluster Configuration</span>
-    <select class="bg-transparent border-b border-charcoal/20 pb-2 text-charcoal font-inter text-sm w-48 uppercase tracking-wider focus:outline-none focus:border-gold rounded-none appearance-none cursor-pointer">
-      <option>Prod-Kengeri-Kvm8</option>
-      <option>Staging-Kengeri-Kvm8</option>
-      <option>Dev-Local-Minikube</option>
-    </select>
+<div class="mb-8 flex justify-between items-end">
+  <div>
+    <h2 class="text-2xl font-semibold tracking-tight text-white mb-2">Cluster Overview</h2>
+    <p class="text-sm text-[#a1a1aa]">Real-time telemetry and deployments for <code class="bg-[#111] border border-[#333] rounded px-1.5 py-0.5 text-[#ededed]">Prod-Kengeri-Kvm8</code></p>
   </div>
-  <div class="text-xs font-playfair italic text-warmgrey flex items-center gap-4">
-    Last sync: <span class="text-charcoal font-inter not-italic uppercase tracking-[0.2em] text-[10px]">Just now</span>
+  <div class="flex items-center gap-3 text-xs text-[#a1a1aa]">
+    <span class="flex items-center gap-1.5"><div class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div> Live Sync</span>
   </div>
 </div>
 
-<div class="grid-asymmetric">
-  <!-- Left Column: Metrics -->
-  <div class="col-span-1 md:col-span-4 flex flex-col gap-12 border-r border-charcoal/10 pr-12">
-    <div>
-      <div class="text-[10px] uppercase tracking-[0.3em] text-warmgrey mb-2">Cluster Pods</div>
-      <div class="font-playfair text-6xl text-charcoal mb-4">{{ stats.podsText }}</div>
-      <div class="h-px w-full bg-charcoal/10 relative">
-        <div class="absolute top-0 left-0 h-full bg-charcoal" [style.width.%]="stats.podsProgress"></div>
-      </div>
-    </div>
-    
-    <div>
-      <div class="text-[10px] uppercase tracking-[0.3em] text-warmgrey mb-2">Active Projects</div>
-      <div class="font-playfair text-6xl text-charcoal mb-4">{{ stats.projects }}</div>
-    </div>
-
-    <div>
-      <div class="text-[10px] uppercase tracking-[0.3em] text-warmgrey mb-2">Deployments</div>
-      <div class="font-playfair text-6xl text-charcoal mb-4">{{ stats.deployments }}</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+  <div class="card p-5 relative overflow-hidden group">
+    <div class="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all duration-500"></div>
+    <div class="text-sm font-medium text-[#a1a1aa] mb-1">Cluster Pods</div>
+    <div class="text-3xl font-semibold text-white font-mono tracking-tight">{{ stats.podsText }}</div>
+    <div class="mt-4 h-1 w-full bg-[#111] rounded-full overflow-hidden">
+      <div class="h-full bg-blue-500 rounded-full" [style.width.%]="stats.podsProgress"></div>
     </div>
   </div>
-
-  <!-- Right Column: Projects & Health -->
-  <div class="col-span-1 md:col-span-8">
-    <div class="mb-16">
-      <h3 class="text-3xl font-playfair text-charcoal mb-8 border-b border-charcoal/10 pb-4">Application Health</h3>
-      
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div *ngFor="let p of projectsList" class="group border-t border-charcoal/20 pt-6 hover:bg-alabaster/50 transition-colors duration-700 cursor-pointer">
-          <div class="flex justify-between items-start mb-12">
-            <div>
-              <h4 class="text-2xl font-playfair mb-2 group-hover:text-gold transition-colors duration-500">
-                <a [routerLink]="['/projects', p.id]" class="no-underline">{{ p.name }}</a>
-              </h4>
-              <span class="text-[10px] text-warmgrey uppercase tracking-[0.2em]">namespace: {{ p.name }}</span>
-            </div>
-            <span class="badge badge-active">Active</span>
-          </div>
-          <div class="flex justify-between items-end">
-            <div class="text-xs text-charcoal uppercase tracking-[0.1em]">Pods: <span class="font-medium">1/1</span></div>
-            <div class="text-right text-[10px] text-warmgrey uppercase tracking-[0.2em] flex flex-col gap-1">
-              <span>{{ p.stack }}</span>
-              <span>{{ p.createdAt | date:'shortDate' }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div *ngIf="projectsList.length === 0" class="col-span-2 border-t border-charcoal/20 pt-16 pb-16 text-center">
-          <h4 class="text-3xl font-playfair mb-4">No Active Projects</h4>
-          <p class="text-warmgrey text-sm tracking-wide max-w-md mx-auto mb-8">Create your first project to configure namespaces, automate GitOps deployments, and monitor container pod statistics.</p>
-          <a routerLink="/projects" class="btn btn-primary">Create Project</a>
-        </div>
-      </div>
-    </div>
-
-    <div>
-      <h3 class="text-3xl font-playfair text-charcoal mb-8 border-b border-charcoal/10 pb-4">Recent Activity</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Project</th>
-            <th>Version</th>
-            <th>Status</th>
-            <th>Date</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let d of recentDeployments" class="group">
-            <td class="font-medium tracking-wide uppercase text-xs">{{ d.projectName }}</td>
-            <td class="text-warmgrey italic font-playfair">{{ d.version }}</td>
-            <td>
-              <span class="badge" 
-                    [class.badge-active]="d.status === 'active' || d.status === 'success'" 
-                    [class.badge-pending]="d.status === 'pending' || d.status === 'building'" 
-                    [class.badge-failed]="d.status === 'failed'">
-                {{ d.status }}
-              </span>
-            </td>
-            <td class="text-warmgrey text-[10px] uppercase tracking-[0.2em]">{{ d.createdAt | date:'short' }}</td>
-          </tr>
-          <tr *ngIf="recentDeployments.length === 0">
-            <td colspan="4" class="text-center py-12 text-warmgrey italic font-playfair text-lg border-b-0">No recent deployments.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<div class="mt-24 border-t border-charcoal/20 pt-16 relative">
-  <div class="vertical-label -left-12 top-16">Metrics</div>
-  <h2 class="text-4xl font-playfair mb-12">System Telemetry</h2>
   
-  <div class="relative w-full h-[400px] border border-charcoal/10 bg-alabaster/30 overflow-hidden flex items-center justify-center grayscale hover:grayscale-0 transition-all duration-[2000ms]">
-    <!-- Frame border accents -->
-    <div class="absolute top-4 left-4 w-4 h-4 border-t border-l border-charcoal/30"></div>
-    <div class="absolute top-4 right-4 w-4 h-4 border-t border-r border-charcoal/30"></div>
-    <div class="absolute bottom-4 left-4 w-4 h-4 border-b border-l border-charcoal/30"></div>
-    <div class="absolute bottom-4 right-4 w-4 h-4 border-b border-r border-charcoal/30"></div>
+  <div class="card p-5 relative overflow-hidden group">
+    <div class="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl group-hover:bg-purple-500/20 transition-all duration-500"></div>
+    <div class="text-sm font-medium text-[#a1a1aa] mb-1">Active Projects</div>
+    <div class="text-3xl font-semibold text-white font-mono tracking-tight">{{ stats.projects }}</div>
+    <div class="mt-4 flex items-center gap-2 text-xs text-[#a1a1aa]">
+      <span class="text-green-500 flex items-center">↑ 12%</span> vs last week
+    </div>
+  </div>
+
+  <div class="card p-5 relative overflow-hidden group">
+    <div class="absolute top-0 right-0 w-32 h-32 bg-zinc-500/10 rounded-full blur-3xl group-hover:bg-zinc-500/20 transition-all duration-500"></div>
+    <div class="text-sm font-medium text-[#a1a1aa] mb-1">Deployments</div>
+    <div class="text-3xl font-semibold text-white font-mono tracking-tight">{{ stats.deployments }}</div>
+    <div class="mt-4 flex items-center gap-2 text-xs text-[#a1a1aa]">
+      <span class="text-blue-500 flex items-center">~2m</span> avg deploy time
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+  <!-- Projects List -->
+  <div class="card">
+    <div class="p-5 border-b border-[#333] flex justify-between items-center">
+      <h3 class="font-medium text-white">Applications</h3>
+      <a routerLink="/projects" class="text-sm text-blue-500 hover:text-blue-400 transition-colors">View All &rarr;</a>
+    </div>
+    <div class="divide-y divide-[#222]">
+      <div *ngFor="let p of projectsList" class="p-5 hover:bg-[#111] transition-colors cursor-pointer group flex justify-between items-center" [routerLink]="['/projects', p.id]">
+        <div class="flex items-center gap-4">
+          <div class="w-10 h-10 rounded-md bg-[#222] border border-[#333] flex items-center justify-center text-lg shadow-sm group-hover:border-blue-500/50 transition-colors">
+            {{ p.name.charAt(0).toUpperCase() }}
+          </div>
+          <div>
+            <h4 class="font-medium text-white mb-0.5 group-hover:text-blue-400 transition-colors">{{ p.name }}</h4>
+            <div class="text-xs text-[#a1a1aa] flex items-center gap-2">
+              <span class="font-mono bg-[#222] px-1 rounded text-[#ededed]">{{ p.stack }}</span>
+              <span>•</span>
+              <span>Updated {{ p.createdAt | date:'shortDate' }}</span>
+            </div>
+          </div>
+        </div>
+        <span class="badge badge-active">Active</span>
+      </div>
+      
+      <div *ngIf="projectsList.length === 0" class="p-12 text-center">
+        <div class="w-12 h-12 rounded-full bg-[#111] border border-[#333] flex items-center justify-center mx-auto mb-4 text-[#666]">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+        </div>
+        <h4 class="font-medium text-white mb-2">No Projects</h4>
+        <p class="text-sm text-[#a1a1aa] mb-4">Get started by creating a new project.</p>
+        <button class="btn btn-primary btn-sm">Create Project</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Deployments -->
+  <div class="card">
+    <div class="p-5 border-b border-[#333] flex justify-between items-center">
+      <h3 class="font-medium text-white">Recent Deployments</h3>
+    </div>
+    <table class="w-full">
+      <thead class="bg-[#111]/50">
+        <tr>
+          <th class="py-2.5 px-4 text-xs font-medium text-[#a1a1aa]">Project</th>
+          <th class="py-2.5 px-4 text-xs font-medium text-[#a1a1aa]">Commit</th>
+          <th class="py-2.5 px-4 text-xs font-medium text-[#a1a1aa]">Status</th>
+          <th class="py-2.5 px-4 text-xs font-medium text-[#a1a1aa] text-right">Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let d of recentDeployments" class="hover:bg-[#111] transition-colors border-b border-[#222] last:border-0">
+          <td class="py-3 px-4">
+            <div class="font-medium text-sm text-white">{{ d.projectName }}</div>
+          </td>
+          <td class="py-3 px-4">
+            <code class="text-xs bg-[#222] border border-[#333] px-1.5 py-0.5 rounded text-[#ededed] font-mono">{{ d.version }}</code>
+          </td>
+          <td class="py-3 px-4">
+            <span class="badge" 
+                  [class.badge-active]="d.status === 'active' || d.status === 'success'" 
+                  [class.badge-pending]="d.status === 'pending' || d.status === 'building'" 
+                  [class.badge-failed]="d.status === 'failed'">
+              {{ d.status }}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-right text-xs text-[#a1a1aa]">
+            {{ d.createdAt | date:'shortTime' }}
+          </td>
+        </tr>
+        <tr *ngIf="recentDeployments.length === 0">
+          <td colspan="4" class="py-12 text-center text-sm text-[#a1a1aa]">No recent deployments.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card overflow-hidden">
+  <div class="p-5 border-b border-[#333] flex justify-between items-center bg-[#0a0a0a]">
+    <h3 class="font-medium text-white flex items-center gap-2">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-[#a1a1aa]"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+      Telemetry
+    </h3>
+    <div class="flex gap-2">
+      <button class="px-2 py-1 text-xs bg-[#222] border border-[#333] rounded text-[#ededed] hover:bg-[#333]">1h</button>
+      <button class="px-2 py-1 text-xs bg-transparent text-[#a1a1aa] hover:text-white">24h</button>
+    </div>
+  </div>
+  
+  <div class="relative w-full h-[350px] bg-[#000] flex items-center justify-center group">
+    <!-- Subtle grid background -->
+    <div class="absolute inset-0 bg-[linear-gradient(to_right,#333_1px,transparent_1px),linear-gradient(to_bottom,#333_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_50%,#000_70%,transparent_100%)] opacity-20"></div>
 
     <iframe [src]="grafanaEmbedUrl" 
             width="100%" 
             height="100%" 
             frameborder="0" 
-            class="z-10 mix-blend-multiply"
+            class="z-10 relative opacity-80 group-hover:opacity-100 transition-opacity duration-300 mix-blend-screen filter contrast-125"
             (load)="onIframeLoad()"
             *ngIf="showIframe"></iframe>
             
     <div *ngIf="!iframeLoaded" class="absolute inset-0 p-8 flex flex-col justify-between z-0">
-      <div class="flex justify-between items-center text-[10px] uppercase tracking-[0.3em] text-warmgrey">
-        <span>Resource Utilization</span>
-        <span>Live Stream</span>
-      </div>
-      
-      <!-- Minimalist elegant mock chart -->
-      <svg width="100%" height="200" class="overflow-visible opacity-30">
-        <path d="M 0 150 Q 100 50, 200 120 T 400 90 T 600 70 T 800 130 T 1000 80 T 1200 100 L 1200 200 L 0 200 Z" fill="none" stroke="currentColor" stroke-width="1" class="text-charcoal"/>
+      <!-- Minimalist Vercel style mock chart -->
+      <svg width="100%" height="200" class="overflow-visible opacity-50 absolute top-1/2 left-0 transform -translate-y-1/2">
+        <path d="M 0 150 Q 100 50, 200 120 T 400 90 T 600 70 T 800 130 T 1000 80 T 1200 100 L 1200 200 L 0 200 Z" fill="none" stroke="#333" stroke-width="1"/>
+        <path d="M 0 150 Q 100 50, 200 120 T 400 90 T 600 70 T 800 130 T 1000 80 T 1200 100" fill="none" stroke="#0070F3" stroke-width="2"/>
+        <!-- Data points -->
+        <circle cx="200" cy="120" r="3" fill="#000" stroke="#0070F3" stroke-width="2"/>
+        <circle cx="400" cy="90" r="3" fill="#000" stroke="#0070F3" stroke-width="2"/>
+        <circle cx="600" cy="70" r="3" fill="#000" stroke="#0070F3" stroke-width="2"/>
+        <circle cx="800" cy="130" r="3" fill="#000" stroke="#0070F3" stroke-width="2"/>
       </svg>
-      
-      <div class="flex justify-between items-center text-[10px] uppercase tracking-[0.3em] text-warmgrey">
-        <span>1H AGO</span>
-        <span>NOW</span>
-      </div>
     </div>
   </div>
 </div>

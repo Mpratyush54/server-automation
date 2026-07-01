@@ -25,6 +25,7 @@ import { SettingsComponent } from './pages/settings/settings.component';
 import { LandingComponent } from './pages/landing/landing.component';
 import { OauthAuthorizeComponent } from './pages/oauth-authorize/oauth-authorize.component';
 import { IframeViewComponent } from './pages/iframe-view/iframe-view.component';
+import { DocsComponent } from './pages/docs/docs.component';
 
 import { authGuard } from './guards/auth.guard';
 
@@ -61,6 +62,9 @@ export const routes: Routes = [
   { path: 'users', component: UsersComponent, canActivate: [authGuard] },
   { path: 'playground', component: PlaygroundComponent, canActivate: [authGuard] },
   { path: 'settings', component: SettingsComponent, canActivate: [authGuard] },
+  { path: 'docs', component: DocsComponent },
+  { path: 'docs/:section', component: DocsComponent },
+  { path: 'docs/:section/:page', component: DocsComponent },
   
   // Wildcard redirect
   { path: '**', redirectTo: '/dashboard' }

@@ -1,4 +1,4 @@
-<div class="card" *ngIf="project" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(59, 130, 246, 0.05)); border-color: rgba(139, 92, 246, 0.2);">
+<div class="card mb-8" *ngIf="project" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(59, 130, 246, 0.05)); border-color: rgba(139, 92, 246, 0.2);">
   <div style="display:flex;justify-content:space-between;align-items:center;">
     <div>
       <h2 style="font-size:1.75rem;margin:0;border:none;padding:0;background:linear-gradient(to right, #fff, #94a3b8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">{{ project.name }}</h2>
@@ -652,10 +652,10 @@ platform.captureConsole(); // forward all console.*</pre>
       <div style="font-size: 1.25rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
 
       <!-- Level 2: K8s Infrastructure Services Split -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 40px; width: 100%;">
+      <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 40px; width: 100%;">
         
         <!-- Left Wing: Deployments -> Pods -->
-        <div style="display: flex; flex-direction: column; gap: 24px; align-items: center; border-right: 1px dashed rgba(255,255,255,0.05); padding-right: 20px;">
+        <div style="display: flex; flex-direction: column; gap: 24px; align-items: center; border: 1px dashed rgba(255,255,255,0.05); border-radius: 12px; padding: 20px; flex: 1; min-width: 320px;">
           <h4 style="margin: 0; font-size: 0.8rem; text-transform: uppercase; color: var(--color-text-secondary); letter-spacing: 0.05em;">Compute Resources</h4>
           
           <!-- Deployment Node -->
@@ -685,7 +685,7 @@ platform.captureConsole(); // forward all console.*</pre>
           <div style="font-size: 1rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
 
           <!-- Pods Leaf Nodes Grid -->
-          <div style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; width: 100%;">
             <div class="card" *ngFor="let pod of pods" style="margin:0; padding:12px; border:1px solid rgba(255,255,255,0.05); background:rgba(0,0,0,0.35); position:relative;"
               [style.border-color]="pod.status === 'Running' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'">
               
@@ -719,7 +719,7 @@ platform.captureConsole(); // forward all console.*</pre>
         </div>
 
         <!-- Right Wing: Ingress / Routing Services -->
-        <div style="display: flex; flex-direction: column; gap: 24px; align-items: center; padding-left: 20px;">
+        <div style="display: flex; flex-direction: column; gap: 24px; align-items: center; border: 1px dashed rgba(255,255,255,0.05); border-radius: 12px; padding: 20px; flex: 1; min-width: 320px;">
           <h4 style="margin: 0; font-size: 0.8rem; text-transform: uppercase; color: var(--color-text-secondary); letter-spacing: 0.05em;">Network Routing</h4>
 
           <!-- Service Node -->

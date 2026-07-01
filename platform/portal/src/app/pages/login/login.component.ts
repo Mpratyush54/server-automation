@@ -17,10 +17,10 @@ export class LoginComponent implements OnInit {
   errorMessage = '';
 
   demoAccounts = [
-    { name: 'Admin', email: 'admin@@dev.io', role: 'Admin' },
-    { name: 'DevOps Boss', email: 'devops@@dev.io', role: 'DevOps' },
-    { name: 'Sarah Lead', email: 'sarah@@dev.io', role: 'Tech Lead' },
-    { name: 'John Dev', email: 'john@@dev.io', role: 'Developer' }
+    { name: 'Admin', email: 'admin@dev.io', role: 'Admin' },
+    { name: 'DevOps Boss', email: 'devops@dev.io', role: 'DevOps' },
+    { name: 'Sarah Lead', email: 'sarah@dev.io', role: 'Tech Lead' },
+    { name: 'John Dev', email: 'john@dev.io', role: 'Developer' }
   ];
 
   constructor(private auth: AuthService, private router: Router, private route: ActivatedRoute) {}

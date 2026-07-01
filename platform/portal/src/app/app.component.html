@@ -1,19 +1,17 @@
-<div class="app-layout" *ngIf="!isLoginPage && !isLandingPage">
-  <!-- Visual Grid Lines (Luxury/Editorial) -->
-  <div class="gridline left-[10%]"></div>
-  <div class="gridline left-[33%]"></div>
-  <div class="gridline left-[66%]"></div>
-  <div class="gridline left-[90%]"></div>
+<div class="app-layout" *ngIf="!isLoginPage && !isLandingPage && !isDocsPage">
+  <!-- Sleek Next.js background glow -->
+  <div class="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-900/20 blur-[120px] pointer-events-none"></div>
+  <div class="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-purple-900/10 blur-[120px] pointer-events-none"></div>
   
   <app-sidebar [isCollapsed]="isSidebarCollapsed" (toggleCollapse)="isSidebarCollapsed = !isSidebarCollapsed"></app-sidebar>
   <main class="main-content" [class.collapsed-nav]="isSidebarCollapsed">
     <app-header [title]="pageTitle" [isSidebarCollapsed]="isSidebarCollapsed" (toggleSidebar)="isSidebarCollapsed = !isSidebarCollapsed"></app-header>
-    <div class="content relative">
+    <div class="content">
       <router-outlet></router-outlet>
     </div>
   </main>
 </div>
 
-<div *ngIf="isLoginPage || isLandingPage">
+<div *ngIf="isLoginPage || isLandingPage || isDocsPage">
   <router-outlet></router-outlet>
 </div>

@@ -1,0 +1,41 @@
+<aside class="fixed left-0 top-0 h-screen bg-black border-r border-[#333] transition-all duration-300 z-40 flex flex-col"
+       [class.w-64]="!isCollapsed" 
+       [class.w-16]="isCollapsed">
+  
+  <div class="h-16 flex items-center justify-between px-4 border-b border-[#333]">
+    <div class="flex items-center gap-2 overflow-hidden whitespace-nowrap" *ngIf="!isCollapsed">
+      <div class="w-8 h-8 bg-white rounded flex items-center justify-center text-black font-bold">
+        <!-- Vercel-like triangle logo -->
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 22h20L12 2z"></path></svg>
+      </div>
+      <span class="font-semibold text-white tracking-tight">Platform</span>
+    </div>
+    <div class="w-8 h-8 bg-white rounded flex items-center justify-center text-black font-bold" *ngIf="isCollapsed">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 22h20L12 2z"></path></svg>
+    </div>
+  </div>
+
+  <div class="flex-1 overflow-y-auto py-4 flex flex-col gap-1 px-3">
+    <a *ngFor="let item of navItems" 
+       [routerLink]="item.path" 
+       routerLinkActive="bg-[#111] text-white border-[#333]" 
+       [routerLinkActiveOptions]="{exact: item.path === '/'}"
+       class="flex items-center gap-3 px-3 py-2 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent"
+       [title]="isCollapsed ? item.label : ''">
+      
+      <span class="flex-shrink-0" [innerHTML]="item.icon"></span>
+      <span class="font-medium text-sm whitespace-nowrap transition-opacity duration-200"
+            [class.opacity-0]="isCollapsed"
+            [class.w-0]="isCollapsed">
+        {{ item.label }}
+      </span>
+    </a>
+  </div>
+
+  <div class="p-3 border-t border-[#333]">
+    <button (click)="toggle()" class="w-full flex items-center justify-center p-2 text-[#a1a1aa] hover:text-white hover:bg-[#111] rounded-md transition-colors">
+      <svg *ngIf="!isCollapsed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+      <svg *ngIf="isCollapsed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+  </div>
+</aside>

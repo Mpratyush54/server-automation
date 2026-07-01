@@ -18,19 +18,19 @@ async function main() {
         userRepo.create({
           id: '11111111-1111-1111-1111-111111111111',
           name: 'John Dev',
-          email: 'john@@dev.io',
+          email: 'john@dev.io',
           role: UserRole.DEVELOPER,
         }),
         userRepo.create({
           id: '22222222-2222-2222-2222-222222222222',
           name: 'Sarah Lead',
-          email: 'sarah@@dev.io',
+          email: 'sarah@dev.io',
           role: UserRole.TECH_LEAD,
         }),
         userRepo.create({
           id: '33333333-3333-3333-3333-333333333333',
           name: 'DevOps Boss',
-          email: 'devops@@dev.io',
+          email: 'devops@dev.io',
           role: UserRole.DEVOPS,
         }),
       ];

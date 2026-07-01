@@ -1,0 +1,80 @@
+# Platform Documentation — LLM-Friendly Index
+
+This file provides a machine-readable index of all documentation pages for LLM context ingestion.
+
+## File Index
+
+- `docs/index.md` — Main overview, architecture diagram, quick start, demo accounts
+- `docs/getting-started/installation.md` — Full local development setup
+- `docs/getting-started/project-structure.md` — Monorepo directory map
+- `docs/getting-started/first-project.md` — Create a project, get an SDK token
+- `docs/getting-started/node-sdk-quickstart.md` — Node.js SDK quickstart
+- `docs/getting-started/react-sdk-quickstart.md` — React SDK quickstart
+- `docs/getting-started/angular-sdk-quickstart.md` — Angular SDK quickstart
+- `docs/getting-started/python-sdk-quickstart.md` — Python SDK quickstart
+- `docs/getting-started/deploy-your-app.md` — Git push to preview URL pipeline
+- `docs/getting-started/upgrade-guide.md` — caps→platform migration guide
+- `docs/guides/authentication.md` — JWT flow, RBAC roles, OIDC/SSO
+- `docs/guides/secrets-management.md` — Secrets encryption, versioning, env scoping
+- `docs/guides/preview-environments.md` — Preview environment pipeline
+- `docs/guides/clickup-integration.md` — ClickUp webhook setup
+- `docs/guides/monitoring.md` — Grafana, Loki, Prometheus
+- `docs/guides/database-backups.md` — Automated pg_dump, restore workflow
+- `docs/guides/local-development.md` — Running everything locally
+- `docs/guides/testing.md` — Unit, integration, deployment tests
+- `docs/guides/production-checklist.md` — Pre-launch verification
+- `docs/api-reference/platform-api/auth.md` — Auth endpoints
+- `docs/api-reference/platform-api/users.md` — Users CRUD
+- `docs/api-reference/platform-api/projects.md` — Projects, environments, deployments
+- `docs/api-reference/platform-api/databases.md` — Database provisioning
+- `docs/api-reference/platform-api/secrets.md` — Secrets CRUD, versioning
+- `docs/api-reference/platform-api/files.md` — File upload/download
+- `docs/api-reference/platform-api/metrics.md` — Metrics API
+- `docs/api-reference/platform-api/audit-logs.md` — Audit log retrieval
+- `docs/api-reference/platform-api/webhooks.md` — Webhook receivers
+- `docs/api-reference/platform-api/oauth.md` — OAuth2/OIDC endpoints
+- `docs/api-reference/sdk-node/PlatformClient.md` — Node.js SDK client
+- `docs/api-reference/sdk-node/expressMiddleware.md` — Express metrics middleware
+- `docs/api-reference/sdk-node/storage.md` — SDK file storage
+- `docs/api-reference/sdk-node/db-postgres.md` — PostgreSQL via SDK
+- `docs/api-reference/sdk-node/db-mongo.md` — MongoDB via SDK
+- `docs/api-reference/sdk-node/db-redis.md` — Redis via SDK
+- `docs/api-reference/sdk-react/PlatformProvider.md` — React context provider
+- `docs/api-reference/sdk-react/usePlatform.md` — React hook
+- `docs/api-reference/sdk-angular/PlatformModule.md` — Angular module
+- `docs/api-reference/sdk-python/PlatformClient.md` — Python SDK client
+- `docs/api-reference/configuration/environment-variables.md` — All env vars
+- `docs/api-reference/configuration/secrets-encryption.md` — Encryption details
+- `docs/api-reference/configuration/permissions.md` — RBAC permission matrix
+- `docs/architecture/overview.md` — Control plane ↔ execution plane
+- `docs/architecture/data-flow.md` — Request lifecycle
+- `docs/architecture/auth-flow.md` — OIDC → oauth2-proxy → JWT → RBAC
+- `docs/architecture/sdk-lifecycle.md` — SDK init → register → heartbeat
+- `docs/architecture/secrets-architecture.md` — Encryption at rest
+- `docs/architecture/k8s-infrastructure.md` — Namespace layout, Helm charts
+- `docs/architecture/database-schema.md` — Entity relationships
+- `docs/architecture/network-topology.md` — Ingress, DNS, subpath routing
+- `docs/deployment/bootstrap.md` — Full bootstrap walkthrough
+- `docs/deployment/rebuild-and-deploy.md` — Build → import → restart
+- `docs/deployment/update-secrets.md` — Update K8s secrets
+- `docs/deployment/ssl-certificates.md` — Let's Encrypt + cert-manager
+- `docs/deployment/backup-and-restore.md` — Database dumps, MinIO backup
+- `docs/deployment/scaling.md` — Resource limits, HPA
+- `docs/troubleshooting/dns-ipv6-timeout.md` — IPv6 DNS timeout fix
+- `docs/troubleshooting/portainer-setup-token.md` — Portainer init timeout
+- `docs/troubleshooting/portainer-oidc-ssl.md` — Portainer cert verify
+- `docs/troubleshooting/argocd-subpath-404.md` — ArgoCD 404 fix
+- `docs/troubleshooting/grafana-subpath-redirect.md` — Grafana redirect fix
+- `docs/troubleshooting/minio-pvc-not-found.md` — MinIO PVC fix
+- `docs/troubleshooting/angular-template-at-symbol.md` — `@` in Angular template
+- `docs/troubleshooting/helm-name-reuse.md` — Helm name reuse error
+- `docs/troubleshooting/ingress-ownership.md` — Ingress ownership error
+- `docs/troubleshooting/typescript-build-errors.md` — TS build errors
+- `docs/troubleshooting/mongodb-validation.md` — MongoDB validation fix
+- `docs/troubleshooting/minio-template-error.md` — MinIO template syntax
+- `docs/troubleshooting/api-seed-failure.md` — API seeding auth error
+- `docs/troubleshooting/cert-manager-timeout.md` — Cert DNS timeout
+- `docs/troubleshooting/general-dns-resolution.md` — systemd-resolved fix
+- `docs/contribution-guide.md` — How to contribute
+- `docs/changelog.md` — Version history
+- `docs/faq.md` — Frequently asked questions

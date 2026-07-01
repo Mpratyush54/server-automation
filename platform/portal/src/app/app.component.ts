@@ -16,6 +16,7 @@ export class AppComponent {
   pageTitle = 'Dashboard';
   isLoginPage = false;
   isLandingPage = false;
+  isDocsPage = false;
   isSidebarCollapsed = false;
 
   private titles: Record<string, string> = {
@@ -45,6 +46,7 @@ export class AppComponent {
       const segment = router.url.split('/')[1]?.split('?')[0] || 'dashboard';
       this.isLoginPage = segment === 'login' || segment === 'oauth';
       this.isLandingPage = segment === 'landing';
+      this.isDocsPage = segment === 'docs';
       this.pageTitle = this.titles[segment] || 'Platform';
     });
   }

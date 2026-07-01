@@ -25,11 +25,11 @@ jest.mock('../../src/config/mongoose', () => ({ connectMongo: jest.fn().mockReso
 
 // ── Seeded demo users (matching real init-demo seed) ────────────────
 const USERS = {
-  admin:     { id: '00000000-0000-0000-0000-000000000001', email: 'admin@@dev.io',   name: 'Admin',      role: 'admin',     roleId: null, isActive: true },
-  devops:    { id: '33333333-3333-3333-3333-333333333333', email: 'devops@@caps.io', name: 'DevOps Boss', role: 'devops',    roleId: null, isActive: true },
-  tech_lead: { id: '22222222-2222-2222-2222-222222222222', email: 'sarah@@dev.io',   name: 'Sarah',      role: 'tech_lead', roleId: null, isActive: true },
-  developer: { id: '11111111-1111-1111-1111-111111111111', email: 'john@@dev.io',    name: 'John Dev',   role: 'developer', roleId: null, isActive: true },
-  inactive:  { id: '55555555-5555-5555-5555-555555555555', email: 'gone@@dev.io',    name: 'Gone',       role: 'viewer',    roleId: null, isActive: false },
+  admin:     { id: '00000000-0000-0000-0000-000000000001', email: 'admin@dev.io',   name: 'Admin',      role: 'admin',     roleId: null, isActive: true },
+  devops:    { id: '33333333-3333-3333-3333-333333333333', email: 'devops@caps.io', name: 'DevOps Boss', role: 'devops',    roleId: null, isActive: true },
+  tech_lead: { id: '22222222-2222-2222-2222-222222222222', email: 'sarah@dev.io',   name: 'Sarah',      role: 'tech_lead', roleId: null, isActive: true },
+  developer: { id: '11111111-1111-1111-1111-111111111111', email: 'john@dev.io',    name: 'John Dev',   role: 'developer', roleId: null, isActive: true },
+  inactive:  { id: '55555555-5555-5555-5555-555555555555', email: 'gone@dev.io',    name: 'Gone',       role: 'viewer',    roleId: null, isActive: false },
 };
 
 const mockUserRepo = {

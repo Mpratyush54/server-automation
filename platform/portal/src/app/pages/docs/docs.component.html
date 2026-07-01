@@ -1,0 +1,127 @@
+<div class="docs-page">
+  <!-- Mobile toggle -->
+  <button class="docs-mobile-toggle" (click)="mobileNavOpen = !mobileNavOpen">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <path d="M2.5 5h15M2.5 10h15M2.5 15h15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <span>Documentation</span>
+  </button>
+
+  <div class="docs-layout">
+    <!-- Sidebar -->
+    <aside class="docs-sidebar" [class.open]="mobileNavOpen">
+      <div class="docs-sidebar-header">
+        <a routerLink="/docs" class="docs-logo" (click)="mobileNavOpen = false">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <rect x="2" y="2" width="16" height="16" rx="4" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M6 10h8M10 6v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          Platform Docs
+        </a>
+        <button class="docs-close-sidebar" (click)="mobileNavOpen = false">&times;</button>
+      </div>
+
+      <!-- Search -->
+      <div class="docs-search">
+        <svg class="docs-search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M9.5 9.5L13 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <input
+          type="text"
+          placeholder="Search docs..."
+          [(ngModel)]="searchQuery"
+          class="docs-search-input"
+        />
+      </div>
+
+      <!-- Navigation -->
+      <nav class="docs-nav">
+        <div *ngFor="let section of filteredSections" class="docs-nav-group">
+          <div class="docs-nav-group-label">
+            {{ section.label }}
+            <span class="docs-page-count">({{ section.pages.length }})</span>
+          </div>
+          <a
+            *ngFor="let page of section.pages"
+            class="docs-nav-link"
+            [class.active]="isActive(page)"
+            (click)="navigateTo(page)"
+          >{{ page.label }}</a>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Content + TOC -->
+    <main class="docs-content">
+      <div class="docs-content-inner">
+        <!-- Breadcrumb -->
+        <div class="docs-breadcrumb" *ngIf="currentSection || !isLoading">
+          <a routerLink="/docs">Docs</a>
+          <span class="docs-breadcrumb-sep">/</span>
+          <span class="docs-breadcrumb-current">
+            {{ getBreadcrumbTitle() }}
+          </span>
+        </div>
+
+        <!-- Loading -->
+        <div *ngIf="isLoading" class="docs-loading">
+          <div class="docs-loading-spinner"></div>
+          <span>Loading documentation...</span>
+        </div>
+
+        <!-- Markdown content -->
+        <div *ngIf="!isLoading && content" class="docs-markdown" [innerHTML]="content"></div>
+
+        <!-- 404 -->
+        <div *ngIf="!isLoading && !content" class="docs-not-found">
+          <div class="docs-not-found-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3>Page Not Found</h3>
+          <p>The documentation page you're looking for doesn't exist or hasn't been written yet.</p>
+          <a routerLink="/docs" class="docs-back-link">&larr; Back to Docs Home</a>
+        </div>
+
+        <!-- Footer nav -->
+        <div *ngIf="!isLoading && content" class="docs-page-nav">
+          <div class="docs-page-nav-row">
+            <a *ngIf="prevPage" class="docs-nav-item docs-nav-prev" (click)="navigateTo(prevPage)">
+              <span class="docs-nav-arrow">&larr;</span>
+              <span class="docs-nav-text">
+                <span class="docs-nav-label">Previous</span>
+                <span class="docs-nav-title">{{ prevPage.label }}</span>
+              </span>
+            </a>
+            <a *ngIf="nextPage" class="docs-nav-item docs-nav-next" (click)="navigateTo(nextPage)">
+              <span class="docs-nav-text">
+                <span class="docs-nav-label">Next</span>
+                <span class="docs-nav-title">{{ nextPage.label }}</span>
+              </span>
+              <span class="docs-nav-arrow">&rarr;</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right-hand TOC -->
+      <aside class="docs-toc" *ngIf="!isLoading && tocItems.length > 0">
+        <div class="docs-toc-header">On this page</div>
+        <nav class="docs-toc-nav">
+          <a
+            *ngFor="let item of tocItems"
+            class="docs-toc-link"
+            [class.toc-h2]="item.level === 'h2'"
+            [class.toc-h3]="item.level === 'h3'"
+            [class.toc-active]="item.id === activeTocId"
+            [attr.href]="'#' + item.id"
+            (click)="scrollToHeading($event, item.id)"
+          >{{ item.text }}</a>
+        </nav>
+      </aside>
+    </main>
+  </div>
+</div>

@@ -3,31 +3,42 @@ module.exports = {
   content: [
     "./src/**/*.{html,ts}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        charcoal: '#1A1A1A',
-        alabaster: '#F9F8F6',
-        taupe: '#EBE5DE',
-        warmgrey: '#6C6863',
-        gold: '#D4AF37'
+        vercel: {
+          100: '#FAFAFA',
+          200: '#EAEAEA',
+          300: '#999999',
+          400: '#888888',
+          500: '#666666',
+          600: '#444444',
+          700: '#333333',
+          800: '#111111',
+          900: '#000000',
+        },
+        primary: '#0070F3',
+        success: '#0070F3',
+        warning: '#F5A623',
+        danger: '#E00',
       },
       fontFamily: {
-        playfair: ['"Playfair Display"', 'serif'],
-        inter: ['Inter', 'sans-serif']
+        sans: ['Geist', 'Inter', 'sans-serif'],
+        mono: ['"Geist Mono"', 'monospace'],
       },
-      lineHeight: {
-        'tight': '0.9',
-        'relaxed': '1.625'
+      backgroundImage: {
+        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
+        'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
       },
-      transitionDuration: {
-        '500': '500ms',
-        '700': '700ms',
-        '1500': '1500ms',
-        '2000': '2000ms'
+      animation: {
+        'glow': 'glow 2s ease-in-out infinite alternate',
       },
-      transitionTimingFunction: {
-        'luxury': 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+      keyframes: {
+        glow: {
+          '0%': { opacity: 0.5 },
+          '100%': { opacity: 1 },
+        }
       }
     },
   },
