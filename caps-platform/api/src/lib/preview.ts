@@ -6,8 +6,10 @@ export function generatePreviewUrl(branch: string, projectSlug?: string, suffix?
     .replace(/--+/g, '-')
     .replace(/^-|-$/g, '');
   const previewSuffix = suffix || process.env.DOMAIN || 'sslip.io';
-  const projectPart = projectSlug ? `${projectSlug}.` : '';
-  return `${sanitized}.preview.${projectPart}${previewSuffix}`;
+  if (projectSlug) {
+    return `${projectSlug}-${sanitized}.preview.${previewSuffix}`;
+  }
+  return `${sanitized}.preview.${previewSuffix}`;
 }
 
 

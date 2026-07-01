@@ -599,7 +599,7 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.DEVOP
     const devEnv = envRepo.create({
       name: 'development' as any,
       namespace: `${projectSlug}-development`,
-      domain: body.domain ? `development.${projectSlug}.${body.domain}` : `${projectSlug}-development.example.com`,
+      domain: body.domain ? `${projectSlug}-development.${body.domain}` : `${projectSlug}-development.example.com`,
       projectId: saved.id,
     });
     await envRepo.save(devEnv);
@@ -608,7 +608,7 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.DEVOP
       const env = envRepo.create({
         name,
         namespace: `${projectSlug}-${name}`,
-        domain: body.domain ? `${name}.${projectSlug}.${body.domain}` : `${projectSlug}-${name}.example.com`,
+        domain: body.domain ? `${projectSlug}-${name}.${body.domain}` : `${projectSlug}-${name}.example.com`,
         projectId: saved.id,
       });
       await envRepo.save(env);
@@ -2885,14 +2885,14 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       try { await coreV1.createNamespacedService({ namespace: ns, body: service as any }); }
       catch { try { await coreV1.replaceNamespacedService({ name: deployName, namespace: ns, body: service as any }); } catch {} }
 
-      // Ingress
+      // Ingress — only request Let's Encrypt cert for real domains, not sslip.io
       const domain = project.domain || process.env.DOMAIN || 'sslip.io';
-      const ingress = {
+      const isRealDomain = !domain.includes('sslip.io') && !domain.match(/^\d+\.\d+\.\d+\.\d+/);
+      const ingress: any = {
         metadata: {
           name: deployName,
           namespace: ns,
           annotations: {
-            'cert-manager.io/cluster-issuer': 'letsencrypt-prod',
             'kubernetes.io/ingress.class': 'nginx',
           },
         },
@@ -2907,9 +2907,12 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
               }],
             },
           }],
-          tls: [{ hosts: [`${deployName}.${domain}`], secretName: `${deployName}-tls` }],
         },
       };
+      if (isRealDomain) {
+        ingress.metadata.annotations['cert-manager.io/cluster-issuer'] = 'letsencrypt-prod';
+        ingress.spec.tls = [{ hosts: [`${deployName}.${domain}`], secretName: `${deployName}-tls` }];
+      }
       try { await networkV1.createNamespacedIngress({ namespace: ns, body: ingress as any }); }
       catch { try { await networkV1.replaceNamespacedIngress({ name: deployName, namespace: ns, body: ingress as any }); } catch {} }
     } catch (e) {
