@@ -261,17 +261,56 @@ export class DocsComponent implements OnInit, AfterViewChecked {
         hljs.highlightElement(el);
       }
     });
-    this.addTerminalPrompts(container);
+    this.enhanceHighlighting(container);
   }
 
-  private addTerminalPrompts(container: HTMLElement) {
+  private enhanceHighlighting(container: HTMLElement) {
+    // 1. Bash / Shell Enhancements
     container.querySelectorAll('pre code.language-bash, pre code.language-sh, pre code.language-shell').forEach((block: unknown) => {
       const el = block as HTMLElement;
-      const html = el.innerHTML;
-      el.innerHTML = html.replace(
+      let html = el.innerHTML;
+      
+      // Prompts
+      html = html.replace(
         /^(\s*)(\$)\s/gm,
         '$1<span class="terminal-prompt">$2</span> '
       );
+
+      // Common CLI commands highlight.js misses
+      const cliCommands = ['docker', 'docker-compose', 'npm', 'git', 'kubectl', 'helm', 'ng', 'python', 'node', 'npx', 'sudo', 'apt', 'apt-get'];
+      const cliRegex = new RegExp(`(^|>|\\s)(${cliCommands.join('|')})(?=\\s|$)`, 'gm');
+      html = html.replace(cliRegex, '$1<span class="hljs-built_in">$2</span>');
+      
+      el.innerHTML = html;
+    });
+
+    // 2. Python Enhancements
+    container.querySelectorAll('pre code.language-python').forEach((block: unknown) => {
+      const el = block as HTMLElement;
+      let html = el.innerHTML;
+      
+      // SDK Classes highlight.js misses when instantiated
+      const pyClasses = ['MongoClient', 'PostgresPool', 'RedisClient', 'PlatformClient', 'MongoManager', 'PostgresManager', 'RedisManager'];
+      const pyRegex = new RegExp(`(^|>|\\s|\\.)(${pyClasses.join('|')})(?=\\s|\\(|$)`, 'g');
+      html = html.replace(pyRegex, '$1<span class="hljs-title class_">$2</span>');
+      
+      el.innerHTML = html;
+    });
+
+    // 3. Env file Enhancements
+    container.querySelectorAll('pre code.language-env, pre code.language-dotenv, pre code.language-properties').forEach((block: unknown) => {
+      const el = block as HTMLElement;
+      let html = el.innerHTML;
+      
+      // Match KEY=value pattern if it's not already inside a span (basic fallback)
+      html = html.replace(/^([A-Z0-9_]+)=(.+)$/gm, (match, key, value) => {
+        // If hljs already wrapped the whole thing, just replace the inner text
+        const cleanKey = key.replace(/<[^>]*>/g, '');
+        const cleanVal = value.replace(/<[^>]*>/g, '');
+        return `<span class="hljs-attr">${cleanKey}</span>=<span class="hljs-string">${cleanVal}</span>`;
+      });
+      
+      el.innerHTML = html;
     });
   }
 

@@ -11,7 +11,7 @@ The Platform secrets system provides AES-256-GCM encrypted storage for sensitive
 ### Via API
 
 ```http
-POST /api/projects/:projectId/secrets
+POST /api/projects/:projectId/secrets HTTP/1.1
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -49,14 +49,14 @@ The plaintext value is encrypted on the server with AES-256-GCM before storage. 
 Secrets can be scoped to a specific environment (development, staging, production, preview). This allows different values for the same key across environments.
 
 ```http
-POST /api/projects/:projectId/secrets
+POST /api/projects/:projectId/secrets HTTP/1.1
 {
   "key": "API_KEY",
   "value": "sk-dev-xxx",
   "environmentId": "development"
 }
 
-POST /api/projects/:projectId/secrets
+POST /api/projects/:projectId/secrets HTTP/1.1
 {
   "key": "API_KEY",
   "value": "sk-prod-xxx",

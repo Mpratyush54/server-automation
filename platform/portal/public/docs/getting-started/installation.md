@@ -1,59 +1,29 @@
 # Installation
 
-Set up Platform for local development in a few minutes.
+Set up Platform for development or production in a few minutes.
 
-## Prerequisites
+## Local Development (Docker Compose)
 
-| Tool | Version | Purpose |
-|---|---|---|
-| Node.js | >= 18 | API and SDK development |
-| npm | >= 9 | Package management |
-| Angular CLI | >= 19 | Portal development |
-| Docker | >= 24 | Containerized databases and services |
+If you only need the databases to work on the Node.js API or Angular Portal locally, you can use the lightweight Docker Compose setup.
 
----
-
-## 1. Clone the Repository
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/your-org/platform.git
 cd platform
 ```
 
----
-
-## 2. Start Databases with Docker Compose (Recommended)
-
-The repo ships a fully configured `docker-compose.yml` at the root that starts all required services:
+### 2. Start Databases
 
 ```bash
 docker compose up -d postgres mongodb redis
 ```
 
-This starts:
-| Service | Port | Credentials |
-|---|---|---|
-| PostgreSQL 16 | 5432 | `platform` / `platform` / `platform` |
-| MongoDB 7 | 27017 | No auth (local dev) |
-| Redis 7 | 6379 | No password |
-
-Optional services (start if needed):
-```bash
-docker compose up -d minio loki prometheus grafana
-```
-
-Verify they're running:
-```bash
-docker compose ps
-```
-
----
-
-## 3. Configure Environment
+### 3. Configure Environment
 
 Create `platform/api/.env`:
 
-```bash
+```env
 # Server
 NODE_ENV=development
 PORT=3000
@@ -74,110 +44,82 @@ MONGODB_URI=mongodb://localhost:27017/platform
 REDIS_HOST=localhost
 REDIS_PORT=6379
 
-# JWT (generate a real secret for production: openssl rand -hex 32)
+# JWT
 JWT_SECRET=dev-secret-change-in-production
-
-# Logging
-LOKI_URL=http://localhost:3100
 ```
 
----
-
-## 4. Start the API
+### 4. Start the API and Portal
 
 ```bash
 cd platform/api
 npm install
 npm run dev
-```
 
-The API starts on `http://localhost:3000`. On first startup, database tables auto-sync and demo users are seeded.
-
----
-
-## 5. Start the Portal
-
-```bash
+# In a new terminal:
 cd platform/portal
 npm install
-ng serve
-```
-
-The portal starts on `http://localhost:4200`.
-
----
-
-## 6. Seed Admin User (if needed)
-
-```bash
-curl http://localhost:3000/api/users/init-demo
+npm start
 ```
 
 ---
 
-## 7. Verify
+## Server Installation (k3s / Portainer)
 
-Open `http://localhost:4200` and log in with any demo account:
+To deploy the full platform architecture (k3s, Portainer, Ingress, MinIO, and the API), use the included bootstrap scripts.
 
-| Email | Password (none — just click sign in) |
-|---|---|
-| admin@dev.io | No password required |
-| devops@dev.io | No password required |
-| sarah@dev.io | No password required |
-| john@dev.io | No password required |
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/your-org/platform.git
+cd platform
+```
+
+### 2. Run the Bootstrap Script
+
+The `platform-bootstrap/bootstrap.sh` script is a fully automated, idempotent installer that provisions the entire Platform stack.
+
+```bash
+sudo ./platform-bootstrap/bootstrap.sh
+```
+
+**What this does in ~30 minutes:**
+- Installs **Docker**, **k3s** (Kubernetes), and **Helm**.
+- Deploys **nginx-ingress**, **Cert-Manager**, and **Portainer**.
+- Provisions databases (PostgreSQL, MongoDB, Redis).
+- Sets up **MinIO** for object storage and **Loki/Promtail** for logs.
+- Builds and deploys the Platform API and Angular Portal into the cluster.
+
+You can also run it non-interactively if you have an environment file ready:
+```bash
+NON_INTERACTIVE=true sudo ./platform-bootstrap/bootstrap.sh
+```
+
+### 3. Verify the Cluster
+
+Check that the core services are running:
+
+```bash
+kubectl get nodes
+kubectl get pods -n platform
+```
+
+For advanced configuration, environment variables, and scaling, see the [Bootstrap Deployment](../deployment/bootstrap.md) guide.
+
+## 4. Log In
+
+Open the deployed platform URL (or `http://localhost:4200` if local) and log in with the default admin credentials:
+- **Email:** `admin@platform.local`
+- **Password:** `admin123`
+
+*(Change this immediately in production!)*
 
 ---
 
-## Manual Setup (Without Docker)
+## Architecture Context
 
-If you prefer to run databases natively:
+When running locally:
+- SDK requests go to `http://localhost:3000`
+- Portal talks to `http://localhost:3000`
+- API writes to local Docker databases
 
-### PostgreSQL
-
-```bash
-# macOS (Homebrew)
-brew install postgresql@16
-brew services start postgresql@16
-psql postgres -c "CREATE USER platform WITH PASSWORD 'platform' SUPERUSER;"
-psql postgres -c "CREATE DATABASE platform OWNER platform;"
-
-# Ubuntu/Debian
-sudo apt install postgresql
-sudo systemctl start postgresql
-sudo -u postgres psql -c "CREATE USER platform WITH PASSWORD 'platform' SUPERUSER;"
-sudo -u postgres psql -c "CREATE DATABASE platform OWNER platform;"
-
-# Windows (assumes PostgreSQL installed via installer)
-& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE USER platform WITH PASSWORD 'platform' SUPERUSER;"
-& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE DATABASE platform OWNER platform;"
-```
-
-### MongoDB
-
-```bash
-# macOS
-brew install mongodb-community@7
-brew services start mongodb-community@7
-
-# Ubuntu
-sudo apt install -y mongodb-org
-sudo systemctl start mongod
-
-# Windows
-net start MongoDB
-```
-
-### Redis
-
-```bash
-# macOS
-brew install redis
-brew services start redis
-
-# Ubuntu
-sudo apt install redis-server
-sudo systemctl start redis-server
-
-# Windows
-net start Redis
-```
+When deploying to production, follow the [Bootstrap Deployment](../deployment/bootstrap.md) guide to provision the full Kubernetes cluster.

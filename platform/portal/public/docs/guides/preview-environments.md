@@ -118,7 +118,9 @@ Each preview environment inherits the project's environment variables from the `
 Variables can be set per-preview by creating secrets with the preview environment's UUID:
 
 ```http
-POST /api/projects/:projectId/secrets
+POST /api/projects/:projectId/secrets HTTP/1.1
+Content-Type: application/json
+
 {
   "key": "FEATURE_FLAG_NEW_UI",
   "value": "true",

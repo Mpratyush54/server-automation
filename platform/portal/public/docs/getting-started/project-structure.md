@@ -2,52 +2,68 @@
 
 Platform is a monorepo containing the backend API, admin dashboard, four SDKs, a cluster bootstrap tool, and documentation.
 
-```mermaid
-graph TB
-
-    classDef platform fill:#1a2a3a,stroke:#3794ff,stroke-width:1.5px,color:#e4e4e7;
-    classDef code fill:#1a2a1a,stroke:#50fa7b,stroke-width:1.5px,color:#e4e4e7;
-    classDef action fill:#3a2a1a,stroke:#ffb86c,stroke-width:1.5px,color:#e4e4e7;
-    classDef external fill:#2a1a3a,stroke:#bd93f9,stroke-width:1.5px,color:#e4e4e7;
-    classDef neutral fill:#111,stroke:#333,stroke-width:1.5px,color:#e4e4e7;
-
-    Root["platform/"]:::neutral
-    API["api/<br/>Express + TypeORM + Mongoose"]:::platform
-    Portal["portal/<br/>Angular 19 Dashboard"]:::platform
-    SDKNode["sdk-node/<br/>@mpratyush54/sdk-node"]:::code
-    SDKPython["sdk-python/<br/>platform-sdk-python"]:::code
-    SDKReact["sdk-react/<br/>@mpratyush54/sdk-react"]:::code
-    SDKAngular["sdk-angular/<br/>@mpratyush54/sdk-angular"]:::code
-    Bootstrap["platform-bootstrap/<br/>k3s Cluster Setup"]:::action
-    Docs["docs/<br/>Documentation"]:::neutral
-
-    subgraph APIInternals["api/ internals"]
-        Config["config/<br/>DB, permissions, routes"]:::platform
-        Entities["entities/<br/>18 TypeORM entities"]:::platform
-        Lib["lib/<br/>k8s, Loki, preview-decay"]:::platform
-        Middleware["middleware/<br/>JWT, RBAC, audit"]:::platform
-        Routes["routes/<br/>18 route handlers"]:::platform
-        Schemas["schemas/<br/>Mongoose models"]:::external
-        Server["server.ts<br/>Entry point"]:::platform
-    end
-
-    Root --> API
-    Root --> Portal
-    Root --> SDKNode
-    Root --> SDKPython
-    Root --> SDKReact
-    Root --> SDKAngular
-    Root --> Bootstrap
-    Root --> Docs
-
-    API --> Config
-    API --> Entities
-    API --> Lib
-    API --> Middleware
-    API --> Routes
-    API --> Schemas
-    API --> Server
-```
+<div class="docs-file-tree">
+  <ul>
+    <li>
+      <svg class="icon folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+      <span class="name">platform/</span>
+    </li>
+    <ul>
+      <li>
+        <svg class="icon folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+        <span class="name">api/</span>
+        <span class="desc">Express + TypeORM backend</span>
+      </li>
+      <ul>
+        <li>
+          <svg class="icon folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+          <span class="name">config/</span>
+          <span class="desc">Database, permissions, settings</span>
+        </li>
+        <li>
+          <svg class="icon folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+          <span class="name">entities/</span>
+          <span class="desc">TypeORM postgres entities</span>
+        </li>
+        <li>
+          <svg class="icon folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+          <span class="name">schemas/</span>
+          <span class="desc">Mongoose metric models</span>
+        </li>
+        <li>
+          <svg class="icon file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span class="name">server.ts</span>
+          <span class="desc">API Entry point</span>
+        </li>
+      </ul>
+      <li>
+        <svg class="icon folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+        <span class="name">portal/</span>
+        <span class="desc">Angular 19 Admin Dashboard</span>
+      </li>
+      <li>
+        <svg class="icon folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+        <span class="name">sdk-node/</span>
+        <span class="desc">@mpratyush54/sdk-node</span>
+      </li>
+      <li>
+        <svg class="icon folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+        <span class="name">sdk-python/</span>
+        <span class="desc">platform-sdk-python</span>
+      </li>
+      <li>
+        <svg class="icon folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+        <span class="name">sdk-react/</span>
+        <span class="desc">@mpratyush54/sdk-react</span>
+      </li>
+      <li>
+        <svg class="icon folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+        <span class="name">platform-bootstrap/</span>
+        <span class="desc">k3s cluster setup tools</span>
+      </li>
+    </ul>
+  </ul>
+</div>
 
 ## Directory Relationships
 

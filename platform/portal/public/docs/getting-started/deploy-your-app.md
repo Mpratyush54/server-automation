@@ -5,12 +5,13 @@ Platform automates the deployment pipeline from Git push to production — with 
 ## The Pipeline
 
 ```mermaid
+%%{init: {"flowchart": {"curve": "stepBefore", "padding": 32, "nodeSpacing": 64, "rankSpacing": 64}}}%%
 graph LR
 
-    classDef action fill:#3a2a1a,stroke:#ffb86c,stroke-width:1.5px,color:#e4e4e7;
-    classDef external fill:#2a1a3a,stroke:#bd93f9,stroke-width:1.5px,color:#e4e4e7;
-    classDef platform fill:#1a2a3a,stroke:#3794ff,stroke-width:1.5px,color:#e4e4e7;
-    classDef code fill:#1a2a1a,stroke:#50fa7b,stroke-width:1.5px,color:#e4e4e7;
+    classDef action fill:#0a0a0a,stroke:#10b981,stroke-width:1px,color:#ededed,rx:4px;
+    classDef external fill:#0a0a0a,stroke:#f59e0b,stroke-width:1px,color:#ededed,rx:4px;
+    classDef platform fill:#0a0a0a,stroke:#3b82f6,stroke-width:1px,color:#ededed,rx:4px;
+    classDef code fill:#0a0a0a,stroke:#10b981,stroke-width:1px,color:#ededed,rx:4px;
 
     Git["Git Push"]:::action
     Webhook["Webhook"]:::external
@@ -70,12 +71,17 @@ For non-`main` branches, Platform creates a **preview environment**:
 When a PR is merged to `main`:
 
 ```mermaid
+%%{init: {"flowchart": {"curve": "stepBefore", "padding": 32, "nodeSpacing": 64, "rankSpacing": 64}}}%%
 graph LR
-    Merge["Merge to main"]
-    WH["Webhook"]
-    Staging["Staging Deployment"]
-    Health["Health Check"]
-    Prod["Promote to Production<br/>(manual or auto)"]
+    classDef action fill:#0a0a0a,stroke:#10b981,stroke-width:1px,color:#ededed,rx:4px;
+    classDef external fill:#0a0a0a,stroke:#f59e0b,stroke-width:1px,color:#ededed,rx:4px;
+    classDef platform fill:#0a0a0a,stroke:#3b82f6,stroke-width:1px,color:#ededed,rx:4px;
+
+    Merge["Merge to main"]:::action
+    WH["Webhook"]:::external
+    Staging["Staging Deployment"]:::platform
+    Health["Health Check"]:::platform
+    Prod["Promote to Production<br/>(manual or auto)"]:::platform
 
     Merge --> WH
     WH --> Staging

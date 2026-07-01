@@ -55,7 +55,7 @@ The login endpoint accepts **only an email address** — no password is required
 ### API
 
 ```http
-POST /api/auth/login
+POST /api/auth/login HTTP/1.1
 Content-Type: application/json
 
 {"email": "john@dev.io"}
@@ -199,7 +199,7 @@ Content-Type: application/json
 ### Assigning to a User
 
 ```http
-PATCH /api/users/:id/role
+PATCH /api/users/:id/role HTTP/1.1
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -331,7 +331,7 @@ sequenceDiagram
 ### JWKS Endpoint
 
 ```http
-GET /api/oauth/jwks
+GET /api/oauth/jwks HTTP/1.1
 ```
 
 Returns the RSA public key in JWK format for token verification by relying parties.
@@ -339,7 +339,7 @@ Returns the RSA public key in JWK format for token verification by relying parti
 ### OpenID Configuration
 
 ```http
-GET /api/oauth/.well-known/openid-configuration
+GET /api/oauth/.well-known/openid-configuration HTTP/1.1
 ```
 
 Returns standard OIDC discovery document.

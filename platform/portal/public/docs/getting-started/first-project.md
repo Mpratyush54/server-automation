@@ -53,7 +53,7 @@ Each environment maps to a deployment target. The API creates a dedicated Kubern
 
 The deployment pipeline:
 
-```
+```text
 Commit → API receives request → builds container → pushes to registry → applies k8s manifest → health check → ready
 ```
 

@@ -621,11 +621,11 @@
 .hljs-title,
 .hljs-name,
 .hljs-type,
+.hljs-title.class_,
 .hljs-class .hljs-title {
   color: #4ec9b0; /* Teal types/classes */
 }
 
-.hljs-title.class_,
 .hljs-title.function_ {
   color: #dcdcaa; /* Yellow functions */
 }
