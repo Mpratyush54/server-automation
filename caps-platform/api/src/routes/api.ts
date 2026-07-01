@@ -868,7 +868,7 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
       // If it's a preview env, create on the fly
       if (body.environmentName === 'preview') {
         const previewRepo = ds.getRepository(Environment);
-        const previewUrl = generatePreviewUrl(body.branch || 'preview');
+        const previewUrl = generatePreviewUrl(body.branch || 'preview', project.domain || process.env.DOMAIN || 'sslip.io');
         env = previewRepo.create({
           name: EnvironmentName.PREVIEW,
           namespace: 'preview',
@@ -1203,26 +1203,33 @@ router.post('/deployments/:id/terminate', expressAuthenticate, expressRequireRol
 // ----------------------------------------------------
 router.get('/config', expressAuthenticate, async (req: Request, res: Response) => {
   try {
-    const { projectId, environmentId } = req.query as Record<string, string>;
+    let { projectId, environmentId } = req.query as Record<string, string>;
     const ds = await getDb();
     
-    const filter: Record<string, any> = {};
-    if (projectId) filter.projectId = projectId;
-    if (environmentId) filter.environmentId = environmentId;
+    // Resolve environment name to UUID if needed
+    if (environmentId && !environmentId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      const envRepo = ds.getRepository(Environment);
+      const env = await envRepo.findOne({ where: { name: environmentId as any, projectId } });
+      if (env) environmentId = env.id;
+    }
+    // Resolve project name to UUID if needed
+    if (projectId && !projectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      const projRepo = ds.getRepository(Project);
+      const proj = await projRepo.findOne({ where: { name: projectId } });
+      if (proj) projectId = proj.id;
+    }
 
     const configRepo = ds.getRepository(ProjectConfig);
-    const configs = await configRepo.find({ where: filter });
+    const configs = await configRepo.find({ where: { projectId } });
     const result: Record<string, string> = {};
     for (const c of configs) {
+      if (c.environmentId && environmentId && c.environmentId !== environmentId) continue;
       result[c.key] = c.isSecret ? '***' : c.value;
     }
 
     // Include decrypted secrets from the Secret entity
     const secretRepo = ds.getRepository(Secret);
-    const secretFilter: Record<string, any> = { isActive: true };
-    if (projectId) secretFilter.projectId = projectId;
-    if (environmentId) secretFilter.environmentId = environmentId;
-    const secrets = await secretRepo.find({ where: secretFilter });
+    const secrets = await secretRepo.find({ where: { isActive: true, projectId } });
     const masterKey = process.env.SECRETS_ENCRYPTION_KEY;
     if (masterKey) {
       for (const s of secrets) {
@@ -2949,36 +2956,44 @@ router.post('/logs/ingest', sdkTokenAuth, handleSdkLogs);
 
 router.get('/sdk/config', sdkTokenAuth, async (req: Request, res: Response) => {
   try {
-    const { projectId, environmentId } = req.query as Record<string, string>;
+    let { projectId, environmentId } = req.query as Record<string, string>;
     if (!projectId) {
       return res.status(400).json({ error: 'projectId is required' });
     }
 
     const ds = await getDb();
     
+    // Resolve environment name to UUID if needed
+    if (environmentId && !environmentId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      const envRepo = ds.getRepository(Environment);
+      const env = await envRepo.findOne({ where: { name: environmentId as any, projectId } });
+      if (env) environmentId = env.id;
+    }
     // Resolve project ID by name if needed
     let resolvedProjectId = projectId;
     const project = await ds.getRepository(Project).findOne({ where: { name: projectId } });
     if (project) resolvedProjectId = project.id;
 
     const repo = ds.getRepository(ProjectConfig);
-    const configs = await repo.find({
-      where: { projectId: resolvedProjectId, environmentId: environmentId || null },
+    const allConfigs = await repo.find({
+      where: { projectId: resolvedProjectId },
     });
 
     const result: Record<string, string> = {};
-    for (const cfg of configs) {
+    for (const cfg of allConfigs) {
+      if (cfg.environmentId && environmentId && cfg.environmentId !== environmentId) continue;
       result[cfg.key] = cfg.isSecret ? '***' : cfg.value;
     }
 
     // Also include decrypted secrets from the new Secret entity
     const secretRepo = ds.getRepository(Secret);
-    const secrets = await secretRepo.find({
-      where: { projectId: resolvedProjectId, environmentId: environmentId || null, isActive: true },
+    const allSecrets = await secretRepo.find({
+      where: { projectId: resolvedProjectId, isActive: true },
     });
     const masterKey = process.env.SECRETS_ENCRYPTION_KEY;
     if (masterKey) {
-      for (const s of secrets) {
+      for (const s of allSecrets) {
+        if (s.environmentId && environmentId && s.environmentId !== environmentId) continue;
         try {
           result[s.key] = decryptValue(s.encryptedValue, masterKey);
         } catch {}

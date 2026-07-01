@@ -1,12 +1,15 @@
-export function generatePreviewUrl(branch: string): string {
+export function generatePreviewUrl(branch: string, suffix?: string): string {
   const sanitized = branch
     .replace(/^(feature|fix|chore)\//i, '')
     .replace(/[^a-zA-Z0-9-]/g, '-')
     .toLowerCase()
     .replace(/--+/g, '-')
     .replace(/^-|-$/g, '');
-  return `${sanitized}.preview.capskengeri.com`;
+  const previewSuffix = suffix || process.env.DOMAIN || 'sslip.io';
+  return `${sanitized}.preview.${previewSuffix}`;
 }
+
+
 
 export function validateBranchName(branch: string): { valid: boolean; error?: string } {
   if (!branch.match(/^(feature|fix)\/CU-\d+-[a-zA-Z0-9_-]+$/)) {
