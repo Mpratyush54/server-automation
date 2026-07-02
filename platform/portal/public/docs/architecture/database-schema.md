@@ -76,7 +76,7 @@ Platform uses PostgreSQL as its primary database with TypeORM for entity managem
 | gitProvider | VARCHAR(50) | github / gitlab |
 | sdkToken | VARCHAR(255) | Auto-generated SDK token |
 | ownerId | UUID (FK→users) | Project owner |
-| arguCDAppName | VARCHAR(255) | ArgoCD application name |
+| argoCDAppName | VARCHAR(255) | ArgoCD application name |
 | createdAt | TIMESTAMP | Creation timestamp |
 | updatedAt | TIMESTAMP | Last update timestamp |
 

@@ -1,0 +1,109 @@
+name: Semantic Versioning and Publish
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      new_tag: ${{ steps.tag_version.outputs.new_tag }}
+      new_version: ${{ steps.tag_version.outputs.new_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump version and push tag
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: patch
+
+  publish-npm:
+    needs: version
+    if: ${{ needs.version.outputs.new_tag != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Update Versions
+        run: |
+          VERSION="${{ needs.version.outputs.new_version }}"
+          echo "Updating NPM packages to version $VERSION"
+          cd sdk-node && npm version $VERSION --no-git-tag-version && cd ..
+          cd sdk-react && npm version $VERSION --no-git-tag-version && cd ..
+          cd sdk-angular && npm version $VERSION --no-git-tag-version && cd ..
+
+      - name: Publish Node SDK
+        run: |
+          cd sdk-node
+          npm ci
+          npm run build
+          npm publish --access public --provenance
+
+      - name: Publish React SDK
+        run: |
+          cd sdk-react
+          npm ci
+          npm run build
+          npm publish --access public --provenance
+
+      - name: Publish Angular SDK
+        run: |
+          cd sdk-angular
+          npm ci
+          npm run build
+          npm publish --access public --provenance
+
+  publish-pypi:
+    needs: version
+    if: ${{ needs.version.outputs.new_tag != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip setuptools wheel
+
+      - name: Update Version in setup.py
+        run: |
+          VERSION="${{ needs.version.outputs.new_version }}"
+          echo "Updating Python package to version $VERSION"
+          sed -i "s/version=\".*\"/version=\"$VERSION\"/" sdk-python/setup.py
+
+      - name: Build Python SDK
+        run: |
+          cd sdk-python
+          python setup.py sdist bdist_wheel
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdk-python/dist/

@@ -145,7 +145,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: platform-ingress
-  namespace: caps
+  namespace: platform
   annotations:
     kubernetes.io/ingress.class: nginx
     cert-manager.io/cluster-issuer: letsencrypt-prod
@@ -359,7 +359,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: api-allow-ingress-only
-  namespace: caps
+  namespace: platform
 spec:
   podSelector:
     matchLabels:

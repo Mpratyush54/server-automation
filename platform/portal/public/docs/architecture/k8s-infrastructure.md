@@ -51,9 +51,7 @@
 | **minio** | Object storage | `minio` | None (internal) |
 | **argocd** | GitOps continuous delivery | `argocd-server`, `argocd-repo-server`, `argocd-redis`, `argocd-application-controller` | `/argocd` |
 | **portainer** | Container management UI | `portainer` | `/portainer` |
-| **mongo** | MongoDB (logs/metrics) | `mongodb` | None (internal) |
-| **redis** | Cache (available, not actively used) | `redis` | None (internal) |
-| **postgres** | PostgreSQL (primary data store) | `postgres` | None (internal) |
+| **databases** | PostgreSQL, MongoDB, Redis (logs/metrics, cache, primary data store) | `postgres`, `mongodb`, `redis` | None (internal) |
 
 ## Helm Chart Versions
 
@@ -106,7 +104,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: caps-ingress
-  namespace: caps
+  namespace: platform
   annotations:
     kubernetes.io/ingress.class: nginx
     cert-manager.io/cluster-issuer: letsencrypt-prod
@@ -154,7 +152,7 @@ apiVersion: v1
 kind: ResourceQuota
 metadata:
   name: caps-quota
-  namespace: caps
+  namespace: platform
 spec:
   hard:
     requests.cpu: "1"
@@ -211,7 +209,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: data-postgres-0
-  namespace: postgres
+  namespace: databases
 spec:
   accessModes:
     - ReadWriteOnce

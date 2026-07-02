@@ -29,7 +29,7 @@ sleep 10
 
 ```bash
 # 1. Wait for the API deployment to be available
-kubectl wait --for=condition=Available deployment/api-deployment -n <namespace> --timeout=300s
+kubectl wait --for=condition=Available deployment/api -n <namespace> --timeout=300s
 
 # 2. Optional: wait for the pod's ready condition
 kubectl wait --for=condition=Ready pod -l app=api -n <namespace> --timeout=300s

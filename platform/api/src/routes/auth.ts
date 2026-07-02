@@ -8,6 +8,8 @@ import jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
+import bcrypt from 'bcryptjs';
+
 const JWT_SECRET = process.env.JWT_SECRET || 'plat-super-secret-key';
 const router = Router();
 
@@ -35,17 +37,59 @@ router.get('/health', (req: Request, res: Response) => {
   return res.json({ status: 'ok' });
 });
 
+/**
+ * POST /api/auth/login
+ *
+ * Supports two modes:
+ *  1. Passwordless email login  — send { email }
+ *  2. Username + password login — send { username, password } or { email, password }
+ *
+ * If `password` is present in the request body the endpoint validates it against
+ * the bcrypt hash stored on the user record. Users without a password set can only
+ * use passwordless mode.
+ */
 router.post('/auth/login', async (req: Request, res: Response) => {
   try {
-    const { email } = req.body;
+    const { email, username, password } = req.body;
     const ds = await getDb();
-    const user = await ds.getRepository(User).findOne({ where: { email } });
+    const repo = ds.getRepository(User);
+
+    let user: User | null = null;
+
+    // ── Resolve user by email or username ──────────────────────────────────
+    if (username) {
+      user = await repo.findOne({ where: { username } });
+    } else if (email) {
+      user = await repo.findOne({ where: { email } });
+    }
+
     if (!user) {
-      return res.status(401).json({ error: 'User email not found. Run init-demo first.' });
+      return res.status(401).json({ error: 'Invalid credentials. User not found.' });
+    }
+
+    // ── Password validation (if supplied) ──────────────────────────────────
+    if (password !== undefined && password !== '') {
+      // User provided a password — validate it
+      if (!user.passwordHash) {
+        return res.status(401).json({
+          error: 'This account uses passwordless login. Sign in with just your email address.'
+        });
+      }
+      const valid = await bcrypt.compare(password, user.passwordHash);
+      if (!valid) {
+        return res.status(401).json({ error: 'Invalid password.' });
+      }
+    } else {
+      // Passwordless mode — only allowed if the user has no password set
+      if (user.passwordHash) {
+        return res.status(401).json({
+          error: 'This account requires a password. Please enter your password to sign in.'
+        });
+      }
     }
 
     user.lastLogin = new Date();
-    await ds.getRepository(User).save(user);
+    await repo.save(user);
 
     const token = jwt.sign(
       { id: user.id, email: user.email, name: user.name, role: user.role },
@@ -112,11 +156,14 @@ router.get('/users/init-demo', async (req: Request, res: Response) => {
     const ds = await getDb();
     const repo = ds.getRepository(User);
 
+    // Hash a default password for the admin account only
+    const adminPasswordHash = await bcrypt.hash('Admin@123', 10);
+
     const demoUsers = [
-      { id: '00000000-0000-0000-0000-000000000001', name: 'Admin', email: 'admin@dev.io', role: UserRole.ADMIN },
-      { id: '11111111-1111-1111-1111-111111111111', name: 'John Dev', email: 'john@dev.io', role: UserRole.DEVELOPER },
-      { id: '22222222-2222-2222-2222-222222222222', name: 'Sarah Lead', email: 'sarah@dev.io', role: UserRole.TECH_LEAD },
-      { id: '33333333-3333-3333-3333-333333333333', name: 'DevOps Boss', email: 'devops@dev.io', role: UserRole.DEVOPS },
+      { id: '00000000-0000-0000-0000-000000000001', name: 'Admin', email: 'admin@dev.io', username: 'admin', passwordHash: adminPasswordHash, role: UserRole.ADMIN },
+      { id: '11111111-1111-1111-1111-111111111111', name: 'John Dev', email: 'john@dev.io', username: null, passwordHash: null, role: UserRole.DEVELOPER },
+      { id: '22222222-2222-2222-2222-222222222222', name: 'Sarah Lead', email: 'sarah@dev.io', username: null, passwordHash: null, role: UserRole.TECH_LEAD },
+      { id: '33333333-3333-3333-3333-333333333333', name: 'DevOps Boss', email: 'devops@dev.io', username: null, passwordHash: null, role: UserRole.DEVOPS },
     ];
 
     const created: User[] = [];
@@ -126,16 +173,59 @@ router.get('/users/init-demo', async (req: Request, res: Response) => {
         const user = repo.create(demo);
         const saved = await repo.save(user);
         created.push(saved);
+      } else {
+        // Patch username/passwordHash if missing (idempotent re-runs)
+        let updated = false;
+        if (demo.username && !existing.username) { existing.username = demo.username; updated = true; }
+        if (demo.passwordHash && !existing.passwordHash) { existing.passwordHash = demo.passwordHash; updated = true; }
+        if (updated) await repo.save(existing);
       }
     }
 
     const all = await repo.find();
+    // Strip password hashes from response
+    const safe = all.map(u => ({ ...u, passwordHash: undefined }));
     return res.json({
       message: created.length > 0 ? `Created ${created.length} new demo users` : 'All demo users already exist',
-      users: all,
+      users: safe,
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/auth/set-password
+ * Allows an authenticated user to set or change their password.
+ * Body: { currentPassword?: string, newPassword: string }
+ */
+router.post('/auth/set-password', expressAuthenticate, async (req: Request, res: Response) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+    }
+
+    const ds = await getDb();
+    const repo = ds.getRepository(User);
+    const user = await repo.findOne({ where: { id: (req as AuthenticatedRequest).user!.id } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // If user already has a password, require the current one
+    if (user.passwordHash) {
+      if (!currentPassword) {
+        return res.status(400).json({ error: 'Current password is required to set a new one.' });
+      }
+      const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!valid) return res.status(401).json({ error: 'Current password is incorrect.' });
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    await repo.save(user);
+
+    return res.json({ success: true, message: 'Password updated successfully.' });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
   }
 });
 

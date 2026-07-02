@@ -99,7 +99,7 @@ await redis.connect()
 | `api_url` | `str` | — | Platform API base URL |
 | `sdk_token` | `str` | — | SDK token from Project Settings |
 | `project_id` | `str` | — | Project ID (`proj-xxxxx`) |
-| `environment` | `str` | `os.environ.get('NODE_ENV')` | Deployment environment name |
+| `environment` | `str` | `os.environ.get('ENVIRONMENT', 'production')` | Deployment environment name |
 | `flush_interval_ms` | `int` | `5000` | How often to batch-send metrics/logs |
 | `max_queue_size` | `int` | `1000` | Max queued events before flush |
 

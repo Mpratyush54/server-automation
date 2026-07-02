@@ -9,8 +9,17 @@ export class AuthService {
 
   constructor(private http: HttpClient, private router: Router) {}
 
-  login(email: string): Observable<any> {
-    return this.http.post<any>(`${this.base}/auth/login`, { email }).pipe(
+  login(email: string, password?: string, username?: string): Observable<any> {
+    const body: any = {};
+    if (username) {
+      body.username = username;
+    } else {
+      body.email = email;
+    }
+    if (password !== undefined && password !== '') {
+      body.password = password;
+    }
+    return this.http.post<any>(`${this.base}/auth/login`, body).pipe(
       tap(res => {
         if (res.token) {
           localStorage.setItem('plat_auth_token', res.token);

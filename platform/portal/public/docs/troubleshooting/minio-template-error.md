@@ -1,16 +1,16 @@
-# MinIO Helm — "key caps-logs has no value" template error
+# MinIO Helm — "key platform-logs has no value" template error
 
 ## Symptom
 
 > Running `helm template` or `helm install` for MinIO fails with:
-> `key caps-logs has no value` or similar "has no value" errors for other keys.
+> `key platform-logs has no value` or similar "has no value" errors for other keys.
 
 ## Root Cause
 
 The Helm values file contains template-variable syntax that Helm's Go templating engine attempts to evaluate. Helm interprets strings like `{{ .Values.something }}` as template directives. If the referenced key does not exist in the values context, Helm emits a "has no value" error.
 
 This commonly happens when:
-- A string like `{{ logs }}` or `{{ caps }}` is used literally (e.g., in a bucket name or annotation) and is misinterpreted as a template expression.
+- A string like `{{ logs }}` or `{{ platform }}` is used literally (e.g., in a bucket name or annotation) and is misinterpreted as a template expression.
 - The values file uses `{{ }}` delimiters intended for a different system (e.g., shell env substitution) but Helm tries to render them.
 
 ## Fix

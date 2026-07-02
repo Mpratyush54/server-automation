@@ -1,9 +1,19 @@
 {
   "name": "@mpratyush54/sdk-node",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Platform Node.js SDK - Auto-registration, metrics, logging, config, storage, DB connections",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "author": "Platform Team",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mpratyush54/server-automation.git",
+    "directory": "sdk-node"
+  },
+  "bugs": {
+    "url": "https://github.com/Mpratyush54/server-automation/issues"
+  },
+  "homepage": "https://github.com/Mpratyush54/server-automation/tree/main/sdk-node#readme",
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run build",
