@@ -2,7 +2,7 @@ const { Client } = require('pg');
 
 async function main() {
   const client = new Client({
-    connectionString: 'REMOVED_STRING',
+    connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/devops',
     ssl: false
   });
 
