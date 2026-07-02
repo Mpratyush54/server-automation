@@ -55,21 +55,21 @@ jobs:
       - name: Publish Node SDK
         run: |
           cd sdk-node
-          npm ci
+          npm install
           npm run build
           npm publish --access public --provenance
 
       - name: Publish React SDK
         run: |
           cd sdk-react
-          npm ci
+          npm install
           npm run build
           npm publish --access public --provenance
 
       - name: Publish Angular SDK
         run: |
           cd sdk-angular
-          npm ci
+          npm install
           npm run build
           npm publish --access public --provenance
 
