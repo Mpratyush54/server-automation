@@ -4,8 +4,8 @@
 
 ```mermaid
 graph TB
+    Browser["Browser/Client"]
     subgraph ControlPlane["Control Plane"]
-        Browser["Browser/Client"]
         Ingress["Nginx Ingress<br/>SSL Termination"]
         Portal["Portal<br/>Angular 19 :80"]
         API["Platform API<br/>Express/TS :3000"]

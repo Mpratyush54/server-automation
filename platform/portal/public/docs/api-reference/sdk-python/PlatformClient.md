@@ -81,7 +81,7 @@ client.init(
 client.config(key: str) -> Optional[Any]
 ```
 
-Fetches all config from `GET /api/config` and returns the value for `key`. Returns `None` if the key is absent.
+Fetches all config from `GET /api/sdk/config` and returns the value for `key`. Returns `None` if the key is absent.
 
 ---
 

@@ -61,7 +61,7 @@ Content-Type: application/json
 
 For non-`main` branches, Platform creates a **preview environment**:
 
-- URL: `https://pr-{number}-{project}.sslip.io/`
+- URL: `https://{project-slug}-{sanitized-branch}.preview.{DOMAIN}`
 - Isolated Kubernetes namespace
 - Auto-cleanup when PR is closed or branch is deleted
 - Accessible via `sslip.io` wildcard DNS — no DNS configuration needed

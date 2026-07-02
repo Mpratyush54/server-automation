@@ -1,6 +1,6 @@
 # Updating Kubernetes Secrets
 
-Platform stores all environment configuration in a Kubernetes secret named `caps-platform-env` in the `caps` namespace (or `platform-env` in the `platform` namespace, depending on the deployment version). This document covers how to update those secrets and propagate changes.
+Platform stores all environment configuration in a Kubernetes secret named `platform-env` in the `caps` namespace (or `platform-env` in the `platform` namespace, depending on the deployment version). This document covers how to update those secrets and propagate changes.
 
 ---
 
@@ -64,7 +64,7 @@ del b64.tmp
 
 ```bash
 # Using data (base64 encoded)
-kubectl patch secret caps-platform-env -n caps \
+kubectl patch secret platform-env -n caps \
   --type merge \
   -p "$(cat patch.json)"
 ```
@@ -74,7 +74,7 @@ kubectl patch secret caps-platform-env -n caps \
 `stringData` allows you to pass plaintext values and Kubernetes handles the encoding:
 
 ```bash
-kubectl patch secret caps-platform-env -n caps --type merge -p '{
+kubectl patch secret platform-env -n caps --type merge -p '{
   "stringData": {
     "POSTGRES_PASSWORD": "new-password-1234",
     "JWT_SECRET": "new-jwt-secret-value"
@@ -117,7 +117,7 @@ helm upgrade --install postgresql bitnami/postgresql \
 
 ---
 
-## Update `/etc/caps/.env` on Server
+## Update `/etc/platform/.env` on Server
 
 The bootstrap script generates a `.env` file on the server at `/etc/platform/.env`. You must also update this file for future re-runs of the bootstrap script:
 

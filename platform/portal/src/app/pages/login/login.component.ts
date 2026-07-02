@@ -13,35 +13,36 @@ import { AuthService } from '../../services/auth.service';
   styleUrl: './login.component.css'
 })
 export class LoginComponent implements OnInit {
-  email = '';
-  errorMessage = '';
+  // Password mode fields
+  username = '';
+  password = '';
+  showPassword = false;
 
-  demoAccounts = [
-    { name: 'Admin', email: 'admin@dev.io', role: 'Admin' },
-    { name: 'DevOps Boss', email: 'devops@dev.io', role: 'DevOps' },
-    { name: 'Sarah Lead', email: 'sarah@dev.io', role: 'Tech Lead' },
-    { name: 'John Dev', email: 'john@dev.io', role: 'Developer' }
-  ];
+
+
+  errorMessage = '';
+  loading = false;
 
   constructor(private auth: AuthService, private router: Router, private route: ActivatedRoute) {}
 
   ngOnInit() {
-    // If user is already authenticated, send them to dashboard
     if (this.auth.getToken()) {
       this.router.navigate(['/dashboard']);
     }
   }
 
-  async login(emailOverride?: string) {
+  async login() {
     this.errorMessage = '';
-    const loginEmail = emailOverride || this.email;
-    if (!loginEmail) {
-      this.errorMessage = 'Please enter an email address.';
-      return;
-    }
+    this.loading = true;
 
     try {
-      await firstValueFrom(this.auth.login(loginEmail));
+      if (!this.username) {
+        this.errorMessage = 'Please enter your username.';
+        this.loading = false;
+        return;
+      }
+      await firstValueFrom(this.auth.login('', this.password, this.username));
+
       const returnUrl = this.route.snapshot.queryParams['returnUrl'];
       if (returnUrl) {
         this.router.navigateByUrl(returnUrl);
@@ -49,12 +50,15 @@ export class LoginComponent implements OnInit {
         this.router.navigate(['/dashboard']);
       }
     } catch (err: any) {
-      this.errorMessage = err.error?.error || 'Authentication failed. Make sure to initialize demo users first.';
+      this.errorMessage = err.error?.error || 'Authentication failed. Please check your credentials.';
+    } finally {
+      this.loading = false;
     }
   }
 
   loginWithGitLab() {
-    // Simulate GitLab OAuth Flow by calling the backend Gitlab endpoint which redirects
     window.location.href = '/api/auth/gitlab';
   }
+
+
 }

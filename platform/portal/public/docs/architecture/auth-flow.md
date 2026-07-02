@@ -244,7 +244,7 @@ Cache invalidation triggers:
        │                    │                     │                    │
        │                    │  GET /oauth/        │                    │
        │                    │  authorize?token=JWT│                    │
-       │                    │─────────────────────────────────────────>│
+       │                    │────────────────────>│                    │
        │                    │                     │                    │
        │                    │                     │  Validate JWT      │
        │                    │                     │  Generate code=uuid│
@@ -253,7 +253,7 @@ Cache invalidation triggers:
        │                    │                     │                    │
        │                    │  302 → redirect_uri │                    │
        │                    │  ?code=...&state=   │                    │
-       │                    │<─────────────────────────────────────────│
+       │                    │<────────────────────│                    │
        │                    │                     │                    │
        │  302 → redirect_uri?code=...&state=...   │                    │
        │<───────────────────│                     │                    │
@@ -261,7 +261,7 @@ Cache invalidation triggers:
        │ POST /oauth/token  │                     │                    │
        │ { code, client_id, │                     │                    │
        │   grant_type }     │                     │                    │
-       │──────────────────────────────────────────>│                    │
+       │─────────────────────────────────────────>│                    │
        │                    │                     │                    │
        │                    │              Lookup code in authCodes    │
        │                    │              Delete code (single-use)    │

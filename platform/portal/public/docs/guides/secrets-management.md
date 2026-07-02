@@ -210,7 +210,7 @@ const client = new PlatformClient({
   environmentName: 'production',
 });
 
-await client.start();
+await client.init();
 // process.env now has DATABASE_URL, API_KEY, etc.
 ```
 

@@ -5,9 +5,9 @@
 #  operational Platform with all integrations configured.
 #
 #  Usage:
-#    curl -fsSL https://raw.githubusercontent.com/Mpratyush54/SERVER-automation/main/platform-bootstrap/bootstrap.sh | bash
+#    curl -fsSL https://raw.githubusercontent.com/your-org/platform/main/platform-bootstrap/bootstrap.sh | bash
 #    — or —
-#    git clone https://github.com/Mpratyush54/SERVER-automation.git && cd SERVER-automation/platform-bootstrap && chmod +x bootstrap.sh && sudo ./bootstrap.sh
+#    git clone <repo> && cd platform-bootstrap && chmod +x bootstrap.sh && sudo ./bootstrap.sh
 # =============================================================================
 set -Eeuo pipefail
 trap 'echo "[Platform] ❌ Bootstrap failed at line $LINENO — check /var/log/platform-bootstrap.log for details." >&2' ERR
@@ -105,34 +105,16 @@ require_ubuntu() {
   [[ "${DISTRIB_ID:-}" == "Ubuntu" ]] || warn "This script is optimized for Ubuntu. Proceeding anyway..."
 }
 
-retry() {
-  local retries=$1
-  shift
-  local count=0
-  until "$@"; do
-    exit=$?
-    count=$(($count + 1))
-    if [ $count -lt $retries ]; then
-      warn "Retry $count/$retries for: $*"
-      sleep 5
-    else
-      error "Command failed after $retries retries: $*"
-      return $exit
-    fi
-  done
-  return 0
-}
-
 # ─── Print banner ─────────────────────────────────────────────────────────────
 print_banner() {
   echo -e "${BOLD}${CYAN}"
   cat << 'BANNER'
-  ██████╗ ██╗      █████╗ ████████╗███████╗ ██████╗ ██████╗ ███╗   ███╗
-  ██╔══██╗██║     ██╔══██╗╚══██╔══╝██╔════╝██╔═══██╗██╔══██╗████╗ ████║
-  ██████╔╝██║     ███████║   ██║   █████╗  ██║   ██║██████╔╝██╔████╔██║
-  ██╔═══╝ ██║     ██╔══██║   ██║   ██╔══╝  ██║   ██║██╔══██╗██║╚██╔╝██║
-  ██║     ███████╗██║  ██║   ██║   ██║     ╚██████╔╝██║  ██║██║ ╚═╝ ██║
-  ╚═╝     ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝      ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝
+  ██████╗ █████╗ ██████╗ ███████╗
+ ██╔════╝██╔══██╗██╔══██╗██╔════╝
+ ██║     ███████║██████╔╝███████╗
+ ██║     ██╔══██║██╔═══╝ ╚════██║
+ ╚██████╗██║  ██║██║     ███████║
+  ╚═════╝╚═╝  ╚═╝╚═╝     ╚══════╝
   PLATFORM — Full Server Bootstrap v2.0.0
 BANNER
   echo -e "${NC}"
@@ -147,8 +129,8 @@ install_prerequisites() {
   is_done "prerequisites" && { done_ "Prerequisites already installed"; return; }
   header "Phase 0 — Installing Prerequisites"
 
-  retry 3 apt-get update -qq
-  retry 3 apt-get install -y -qq \
+  apt-get update -qq
+  apt-get install -y -qq \
     curl wget git jq unzip gnupg lsb-release ca-certificates \
     apt-transport-https software-properties-common \
     openssl bc netcat-openbsd postgresql-client apache2-utils \
@@ -182,10 +164,6 @@ gather_config() {
   JWT_SECRET="$(gen_secret)"
   PLATFORM_WEBHOOK_SECRET="$(gen_secret)"
   MINIO_ACCESS_KEY="platformadmin"
-
-  # ── Admin account ──────────────────────────────────────────────────────────
-  info "\n── Admin Account ──"
-  ask "Platform admin password (for username: admin)" ADMIN_PASSWORD "Admin@123"
 
   # ── ArgoCD ────────────────────────────────────────────────────────────────
   info "\n── ArgoCD GitOps ──"
@@ -233,7 +211,6 @@ gather_config() {
   write_env "MINIO_SECRET_KEY" "$MINIO_SECRET_KEY"
   write_env "JWT_SECRET" "$JWT_SECRET"
   write_env "PLATFORM_WEBHOOK_SECRET" "$PLATFORM_WEBHOOK_SECRET"
-  write_env "ADMIN_PASSWORD" "${ADMIN_PASSWORD:-Admin@123}"
   write_env "ARGOCD_PASSWORD" "${ARGOCD_PASSWORD:-}"
   write_env "GRAFANA_PASSWORD" "${GRAFANA_PASSWORD:-}"
   write_env "INSTALL_ARGOCD" "${INSTALL_ARGOCD:-y}"
@@ -488,7 +465,7 @@ install_helm() {
   helm repo add argo       https://argoproj.github.io/argo-helm 2>/dev/null || true
   helm repo add portainer  https://portainer.github.io/k8s/ 2>/dev/null || true
   helm repo add cert-manager https://charts.jetstack.io 2>/dev/null || true
-  retry 3 helm repo update 2>&1 | tee -a "$LOG_FILE"
+  helm repo update 2>&1 | tee -a "$LOG_FILE"
   mark_done "helm"
 }
 
@@ -517,14 +494,14 @@ install_ingress() {
   if helm list -n ingress-nginx 2>/dev/null | grep -q ingress-nginx; then
     done_ "ingress-nginx already installed"
   else
-    retry 3 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+    helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
       --namespace ingress-nginx \
       --set controller.service.type=LoadBalancer \
       --wait 2>&1 | tee -a "$LOG_FILE" || \
     kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/cloud/deploy.yaml 2>&1 | tee -a "$LOG_FILE"
     # Add nginx ingress repo if not present
     helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx 2>/dev/null || true
-    retry 3 helm repo update 2>/dev/null || true
+    helm repo update 2>/dev/null || true
     done_ "ingress-nginx installed"
   fi
   mark_done "ingress"
@@ -539,7 +516,7 @@ install_certmanager() {
   is_done "certmanager" && { done_ "cert-manager already installed"; return; }
   header "Phase 8 — cert-manager (Let's Encrypt TLS)"
 
-  retry 3 helm upgrade --install cert-manager cert-manager/cert-manager \
+  helm upgrade --install cert-manager cert-manager/cert-manager \
     --namespace cert-manager \
     --set installCRDs=true \
     --wait 2>&1 | tee -a "$LOG_FILE"
@@ -591,7 +568,7 @@ install_databases() {
   # PostgreSQL
   if ! helm list -n databases 2>/dev/null | grep -q postgresql; then
     log "Installing PostgreSQL..."
-    retry 3 helm upgrade --install postgresql bitnami/postgresql \
+    helm upgrade --install postgresql bitnami/postgresql \
       --namespace databases \
       --set auth.postgresPassword="$POSTGRES_PASSWORD" \
       --set auth.database=platform \
@@ -605,7 +582,7 @@ install_databases() {
   # MongoDB
   if ! helm list -n databases 2>/dev/null | grep -q mongodb; then
     log "Installing MongoDB..."
-    retry 3 helm upgrade --install mongodb bitnami/mongodb \
+    helm upgrade --install mongodb bitnami/mongodb \
       --namespace databases \
       --set auth.rootPassword="$MONGO_PASSWORD" \
       --set persistence.size=20Gi \
@@ -618,7 +595,7 @@ install_databases() {
   # Redis
   if ! helm list -n databases 2>/dev/null | grep -q redis; then
     log "Installing Redis..."
-    retry 3 helm upgrade --install redis bitnami/redis \
+    helm upgrade --install redis bitnami/redis \
       --namespace databases \
       --set auth.password="$REDIS_PASSWORD" \
       --set replica.replicaCount=1 \
@@ -643,7 +620,7 @@ install_minio() {
   sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/minio-values.yaml > /tmp/minio-values.yaml
 
   log "Installing MinIO..."
-  retry 3 helm upgrade --install minio bitnami/minio \
+  helm upgrade --install minio bitnami/minio \
     --namespace storage \
     -f /tmp/minio-values.yaml \
     --set auth.rootUser="$MINIO_ACCESS_KEY" \
@@ -678,7 +655,7 @@ install_argocd() {
   sed -e "s/{{DOMAIN}}/$DOMAIN/g" -e "s|{{BASEHREF}}|$BASEHREF|g" -e "s|{{ARGOCD_URL}}|$ARGOCD_URL|g" manifests/argocd-values.yaml > /tmp/argocd-values.yaml
 
   log "Installing/Upgrading ArgoCD..."
-  retry 3 helm upgrade --install argocd argo/argo-cd \
+  helm upgrade --install argocd argo/argo-cd \
     --namespace argocd \
     -f /tmp/argocd-values.yaml \
     --set configs.secret.argocdServerAdminPassword="$(echo -n "$ARGOCD_PASSWORD" | bcrypt-hash 2>/dev/null || htpasswd -bnBC 10 "" "$ARGOCD_PASSWORD" | tr -d ':\n')" \
@@ -714,7 +691,7 @@ install_monitoring() {
   sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/grafana-values.yaml > /tmp/grafana-values.yaml
 
   log "Upgrading Prometheus + Grafana stack..."
-  retry 3 helm upgrade --install kube-prometheus prometheus-community/kube-prometheus-stack \
+  helm upgrade --install kube-prometheus prometheus-community/kube-prometheus-stack \
     --namespace monitoring \
     -f /tmp/grafana-values.yaml \
     --set grafana.adminPassword="$GRAFANA_PASSWORD" \
@@ -728,7 +705,7 @@ install_monitoring() {
   # Loki
   if ! helm list -n monitoring 2>/dev/null | grep -q loki; then
     log "Installing Loki (log aggregation)..."
-    retry 3 helm upgrade --install loki grafana/loki-stack \
+    helm upgrade --install loki grafana/loki-stack \
       --namespace monitoring \
       --set grafana.enabled=false \
       --set prometheus.enabled=false \
@@ -771,7 +748,7 @@ install_oauth2_proxy() {
   header "Phase 12b — oauth2-proxy (SSO Gateway)"
 
   helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests 2>/dev/null || true
-  retry 3 helm repo update 2>&1 | tail -3
+  helm repo update 2>&1 | tail -3
 
   kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
 
@@ -780,7 +757,7 @@ install_oauth2_proxy() {
   sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/oauth2-proxy-values.yaml > /tmp/oauth2-values.yaml
   sed -i "s/{{COOKIE_SECRET}}/$COOKIE_SECRET/g" /tmp/oauth2-values.yaml
 
-  retry 3 helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
+  helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
     --namespace oauth2-proxy \
     -f /tmp/oauth2-values.yaml 2>&1 | tee -a "$LOG_FILE"
 
@@ -801,7 +778,7 @@ install_portainer() {
   sed "s/{{DOMAIN}}/$DOMAIN/g" manifests/portainer-values.yaml > /tmp/portainer-values.yaml
 
   log "Upgrading Portainer..."
-  retry 3 helm upgrade --install portainer portainer/portainer \
+  helm upgrade --install portainer portainer/portainer \
     --namespace portainer \
     -f /tmp/portainer-values.yaml \
     --set service.type=ClusterIP \
@@ -893,12 +870,18 @@ deploy_platform() {
   is_done "platform" && { done_ "Platform already deployed"; return; }
   header "Phase 15 — Platform"
 
-  # Pull pre-built images from GHCR
-  log "Pulling pre-built Platform API image..."
-  retry 3 k3s crictl pull ghcr.io/mpratyush54/platform-api:${PLATFORM_IMAGE_TAG} 2>&1 | tee -a "$LOG_FILE"
+  # Build and import Platform API & Portal locally to avoid registry pulling issues
+  log "Building and importing Platform API image locally..."
+  docker build -t ghcr.io/your-org/platform-api:latest ../platform/api 2>&1 | tee -a "$LOG_FILE"
+  docker save ghcr.io/your-org/platform-api:latest -o /tmp/platform-api.tar 2>&1 | tee -a "$LOG_FILE"
+  k3s ctr images import /tmp/platform-api.tar 2>&1 | tee -a "$LOG_FILE"
+  rm -f /tmp/platform-api.tar
 
-  log "Pulling pre-built Platform Portal image..."
-  retry 3 k3s crictl pull ghcr.io/mpratyush54/platform-portal:${PLATFORM_IMAGE_TAG} 2>&1 | tee -a "$LOG_FILE"
+  log "Building and importing Platform Portal image locally..."
+  docker build -t ghcr.io/your-org/platform-portal:latest ../platform/portal 2>&1 | tee -a "$LOG_FILE"
+  docker save ghcr.io/your-org/platform-portal:latest -o /tmp/platform-portal.tar 2>&1 | tee -a "$LOG_FILE"
+  k3s ctr images import /tmp/platform-portal.tar 2>&1 | tee -a "$LOG_FILE"
+  rm -f /tmp/platform-portal.tar
 
   log "Building Platform environment config..."
 
@@ -1452,24 +1435,13 @@ seed_platform() {
   fi
 
   log "Seeding Platform..."
-  # Run init-demo to create all users (admin with password, others passwordless)
-  curl -sf "$PLATFORM_API_URL/api/users/init-demo" 2>&1 | tee -a "$LOG_FILE" || warn "init-demo failed — may already be seeded"
+  # Run init-demo to populate database users
+  curl -sf "$PLATFORM_API_URL/api/users/init-demo" 2>&1 | tee -a "$LOG_FILE" || true
 
-  # Login with admin username + password to get a token for further seeding
-  ADMIN_PASS="${ADMIN_PASSWORD:-Admin@123}"
+  # Login to get Token
   TOKEN=$(curl -sf -X POST "$PLATFORM_API_URL/api/auth/login" \
     -H "Content-Type: application/json" \
-    -d "{\"username\":\"admin\",\"password\":\"$ADMIN_PASS\"}" 2>/dev/null \
-    | grep -o '"token":"[^"]*"' | cut -d'"' -f4 || echo "")
-
-  if [ -z "$TOKEN" ]; then
-    # Fallback: try email-only login if password is not yet set
-    warn "Password login failed — retrying with email-only login"
-    TOKEN=$(curl -sf -X POST "$PLATFORM_API_URL/api/auth/login" \
-      -H "Content-Type: application/json" \
-      -d '{"email":"admin@dev.io"}' 2>/dev/null \
-      | grep -o '"token":"[^"]*"' | cut -d'"' -f4 || echo "")
-  fi
+    -d '{"email":"devops@platform.io"}' | grep -o "\"token\":\"[^\"]*\"" | cut -d"\"" -f4 || echo "")
 
   if [ -n "$TOKEN" ]; then
     # Register Storage provider if payload exists
@@ -1544,8 +1516,8 @@ EOF
 
   echo
   echo -e "${BOLD}  🔐 Credentials${NC} ${RED}(KEEP THESE SAFE — stored in $ENV_FILE)${NC}"
-  echo -e "  ┌─ Platform Admin:          ${YELLOW}username: admin  /  password: ${ADMIN_PASSWORD:-Admin@123}${NC}"
-  echo -e "  ├─ Admin Email (alt):       ${YELLOW}admin@dev.io${NC}"
+  echo -e "  ┌─ Platform Admin Email:   ${YELLOW}devops@platform.io (or admin@platform.io)${NC}"
+  echo -e "  ├─ Platform Admin Password:${YELLOW}Any password (not validated)${NC}"
   echo -e "  ├─ PostgreSQL Password:   ${YELLOW}$POSTGRES_PASSWORD${NC}"
   echo -e "  ├─ MongoDB Password:      ${YELLOW}$MONGO_PASSWORD${NC}"
   echo -e "  ├─ Redis Password:        ${YELLOW}$REDIS_PASSWORD${NC}"
@@ -1582,8 +1554,7 @@ EOF
   echo -e "${BOLD}  🛠  Next Steps${NC}"
   echo -e "  1. Point your DNS records above to: ${YELLOW}$SERVER_IP${NC}"
   echo -e "  2. Visit ${CYAN}https://$DOMAIN${NC} (may take 5–10 min for TLS)"
-  echo -e "  3. Log in with username ${YELLOW}admin${NC} and password ${YELLOW}${ADMIN_PASSWORD:-Admin@123}${NC}"
-  echo -e "  4. ${RED}Change the admin password immediately${NC} in Settings → Profile"
+  echo -e "  3. Log in with admin email + password above"
   echo -e "  4. Go to ⚙️ Settings → Integrations to verify webhook connections"
   echo -e "  5. Create your first project and link it to a GitHub/GitLab repo"
   echo

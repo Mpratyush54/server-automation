@@ -1,9 +1,19 @@
 {
   "name": "@mpratyush54/sdk-react",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Platform React/Next.js SDK - Context provider, HTTP interceptor, error boundary, bug reporter",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "author": "Platform Team",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mpratyush54/server-automation.git",
+    "directory": "sdk-react"
+  },
+  "bugs": {
+    "url": "https://github.com/Mpratyush54/server-automation/issues"
+  },
+  "homepage": "https://github.com/Mpratyush54/server-automation/tree/main/sdk-react#readme",
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run build"
