@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//d/SERVER-automation/**)",
+      "Bash(python *)",
+      "Bash(bash -n platform-bootstrap/bootstrap.sh)",
+      "Bash(python3 *)",
+      "Bash(bash -n install-oauth2-proxy.sh)",
+      "Bash(bash -n update-ingress-oauth.sh)",
+      "Bash(bash -n platform-bootstrap/tests/test-deployment.sh)",
+      "Bash(xargs grep -l \"provideRouter\\\\|RouterModule.forRoot\\\\|withInMemoryScrolling\\\\|scrollPositionRestoration\")",
+      "Bash(xargs grep -l \"markdown\\\\|marked\\\\|mermaid\")"
+    ]
+  }
+}

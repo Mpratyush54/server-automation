@@ -95,10 +95,6 @@ curl http://localhost:3000/api/users/init-demo
 | Sarah Lead | sarah@dev.io | Tech Lead |
 | John Dev | john@dev.io | Developer |
 
-## Production Server
-
-The Platform is deployed at [https://148.113.58.205.sslip.io/](https://148.113.58.205.sslip.io/).
-
 ## License
 
 MIT

@@ -14,7 +14,7 @@ import { AuthService } from '../../services/auth.service';
 })
 export class LoginComponent implements OnInit {
   // Password mode fields
-  username = '';
+  email = '';
   password = '';
   showPassword = false;
 
@@ -36,12 +36,12 @@ export class LoginComponent implements OnInit {
     this.loading = true;
 
     try {
-      if (!this.username) {
-        this.errorMessage = 'Please enter your username.';
+      if (!this.email) {
+        this.errorMessage = 'Please enter your email.';
         this.loading = false;
         return;
       }
-      await firstValueFrom(this.auth.login('', this.password, this.username));
+      await firstValueFrom(this.auth.login(this.email, this.password));
 
       const returnUrl = this.route.snapshot.queryParams['returnUrl'];
       if (returnUrl) {

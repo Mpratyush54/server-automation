@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import 'reflect-metadata';
+import bcrypt from 'bcryptjs';
 import { getDb } from './src/config/database';
 import { User, UserRole } from './src/entities/User';
 
@@ -14,24 +15,28 @@ async function main() {
     const count = await userRepo.count();
     if (count === 0) {
       console.log('Seeding demo users...');
+      const passwordHash = bcrypt.hashSync('password123', 10);
       const demoUsers = [
         userRepo.create({
           id: '11111111-1111-1111-1111-111111111111',
           name: 'John Dev',
           email: 'john@dev.io',
           role: UserRole.DEVELOPER,
+          passwordHash,
         }),
         userRepo.create({
           id: '22222222-2222-2222-2222-222222222222',
           name: 'Sarah Lead',
           email: 'sarah@dev.io',
           role: UserRole.TECH_LEAD,
+          passwordHash,
         }),
         userRepo.create({
           id: '33333333-3333-3333-3333-333333333333',
           name: 'DevOps Boss',
           email: 'devops@dev.io',
           role: UserRole.DEVOPS,
+          passwordHash,
         }),
       ];
       await userRepo.save(demoUsers);

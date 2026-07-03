@@ -1,183 +1,256 @@
 # Installation
 
-Set up Platform for local development in a few minutes.
+Two install paths, pick the one you need:
 
-## Prerequisites
+- **[Local development](#local-development)** — you're a contributor or app developer using the SDKs. Docker on your laptop is enough.
+- **[Deploy to a server](#deploy-to-a-server-single-command)** — you want a real, TLS-terminated Platform on a Linux server. One bootstrap script does the whole thing.
+
+---
+
+## Local Development
+
+### Prerequisites
 
 | Tool | Version | Purpose |
 |---|---|---|
-| Node.js | >= 18 | API and SDK development |
-| npm | >= 9 | Package management |
-| Angular CLI | >= 19 | Portal development |
-| Docker | >= 24 | Containerized databases and services |
+| Node.js | ≥ 18 | API and SDK development |
+| npm | ≥ 9 | Package management |
+| Angular CLI | ≥ 19 | Portal development (installed automatically via `npm install`) |
+| Docker | ≥ 24 | Containerized databases |
 
----
-
-## 1. Clone the Repository
+### 1. Clone
 
 ```bash
-git clone https://github.com/your-org/platform.git
-cd platform
+git clone https://github.com/Mpratyush54/SERVER-automation.git
+cd SERVER-automation
 ```
 
----
+### 2. Start the databases with Docker Compose
 
-## 2. Start Databases with Docker Compose (Recommended)
-
-The repo ships a fully configured `docker-compose.yml` at the root that starts all required services:
+The repo ships a fully-configured `docker-compose.yml` at the root:
 
 ```bash
 docker compose up -d postgres mongodb redis
 ```
 
-This starts:
 | Service | Port | Credentials |
 |---|---|---|
-| PostgreSQL 16 | 5432 | `platform` / `platform` / `platform` |
-| MongoDB 7 | 27017 | No auth (local dev) |
-| Redis 7 | 6379 | No password |
+| PostgreSQL 16 | 5432 | `platform` / `platform` / db `platform` |
+| MongoDB 7 | 27017 | no auth (local dev only) |
+| Redis 7 | 6379 | no password (local dev only) |
 
-Optional services (start if needed):
+Optional extras — start these if you want to test the observability paths:
+
 ```bash
 docker compose up -d minio loki prometheus grafana
 ```
 
-Verify they're running:
+Verify:
+
 ```bash
 docker compose ps
 ```
 
----
+### 3. Environment file (optional)
 
-## 3. Configure Environment
-
-Create `platform/api/.env`:
+The API reads defaults that match `docker-compose.yml` — you can skip this step for
+the golden path. If you're customising ports or pointing at real services, copy the
+template:
 
 ```bash
-# Server
-NODE_ENV=development
-PORT=3000
-DOMAIN=localhost:3000
-PORTAL_URL=http://localhost:4200
-
-# PostgreSQL (matches docker-compose.yml defaults)
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_USER=platform
-POSTGRES_PASSWORD=platform
-POSTGRES_DB=platform
-
-# MongoDB
-MONGODB_URI=mongodb://localhost:27017/platform
-
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-
-# JWT (generate a real secret for production: openssl rand -hex 32)
-JWT_SECRET=dev-secret-change-in-production
-
-# Logging
-LOKI_URL=http://localhost:3100
+cp platform/api/.env.example platform/api/.env
+$EDITOR platform/api/.env
 ```
 
----
-
-## 4. Start the API
+Generate a real JWT secret for anything but local dev:
 
 ```bash
-cd platform/api
+openssl rand -hex 32
+```
+
+### 4. Run the API + Portal
+
+The root `package.json` has a `start` script that boots both together:
+
+```bash
 npm install
-npm run dev
+npm run start
 ```
 
-The API starts on `http://localhost:3000`. On first startup, database tables auto-sync and demo users are seeded.
-
----
-
-## 5. Start the Portal
+Or run them separately:
 
 ```bash
-cd platform/portal
-npm install
-ng serve
+# terminal 1
+cd platform/api && npm install && npm run dev
+
+# terminal 2
+cd platform/portal && npm install && npx ng serve
 ```
 
-The portal starts on `http://localhost:4200`.
+- API: <http://localhost:3000>
+- Portal: <http://localhost:4200>
 
----
+On first API startup the tables auto-sync and the demo users are seeded.
 
-## 6. Seed Admin User (if needed)
+### 5. Sign in
 
-```bash
-curl http://localhost:3000/api/users/init-demo
-```
+Open <http://localhost:4200> and sign in with **`admin@dev.io`** — **no password**.
+Platform uses passwordless email-based JWT auth. All demo accounts work the same way:
 
----
-
-## 7. Verify
-
-Open `http://localhost:4200` and log in with any demo account:
-
-| Email | Password (none — just click sign in) |
+| Email | Role |
 |---|---|
-| admin@dev.io | No password required |
-| devops@dev.io | No password required |
-| sarah@dev.io | No password required |
-| john@dev.io | No password required |
+| `admin@dev.io` | Admin |
+| `devops@dev.io` | DevOps Engineer |
+| `sarah@dev.io` | Tech Lead |
+| `john@dev.io` | Developer |
+
+### 6. Re-seed (only if the auto-seed didn't run)
+
+If the portal shows **"User email not found. Run init-demo first."** the API's
+first-boot seeder didn't run (usually because it started before Postgres was ready).
+Run it manually:
+
+```bash
+npm --prefix platform/api run seed:db
+```
+
+That script is idempotent — safe to run any number of times.
 
 ---
 
-## Manual Setup (Without Docker)
+## Deploy to a Server (single command)
 
-If you prefer to run databases natively:
+Requirements:
+
+- **Ubuntu 22.04+** with sudo access
+- **≥ 8 GB RAM, ≥ 80 GB free disk on `/var`, ports 80/443 open**
+- Your domain pointing at the server (or run with a bare IP + sslip.io for testing)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Mpratyush54/SERVER-automation/master/platform-bootstrap/bootstrap.sh -o bootstrap.sh
+chmod +x bootstrap.sh
+sudo ./bootstrap.sh
+```
+
+The script is interactive, idempotent, and resumable. Full details, including
+non-interactive (CI) mode and every environment variable it accepts, live in
+[`platform-bootstrap/README.md`](../../platform-bootstrap/README.md).
+
+### Windows / macOS
+
+- **Windows**: the Platform runs on Linux (k3s). Run `bootstrap.ps1` from an
+  elevated PowerShell — it installs WSL2 + Ubuntu-22.04 and runs `bootstrap.sh`
+  inside it.
+- **macOS**: no supported native install path. Use a cloud Ubuntu VM (Hetzner,
+  Oracle Cloud free tier, DigitalOcean, etc.).
+
+---
+
+## Manual database setup (no Docker)
+
+If you can't use Docker locally, install the databases natively.
 
 ### PostgreSQL
 
 ```bash
 # macOS (Homebrew)
-brew install postgresql@16
-brew services start postgresql@16
+brew install postgresql@16 && brew services start postgresql@16
 psql postgres -c "CREATE USER platform WITH PASSWORD 'platform' SUPERUSER;"
 psql postgres -c "CREATE DATABASE platform OWNER platform;"
 
 # Ubuntu/Debian
-sudo apt install postgresql
-sudo systemctl start postgresql
+sudo apt install postgresql && sudo systemctl start postgresql
 sudo -u postgres psql -c "CREATE USER platform WITH PASSWORD 'platform' SUPERUSER;"
 sudo -u postgres psql -c "CREATE DATABASE platform OWNER platform;"
-
-# Windows (assumes PostgreSQL installed via installer)
-& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE USER platform WITH PASSWORD 'platform' SUPERUSER;"
-& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE DATABASE platform OWNER platform;"
 ```
 
 ### MongoDB
 
 ```bash
 # macOS
-brew install mongodb-community@7
+brew tap mongodb/brew && brew install mongodb-community@7
 brew services start mongodb-community@7
 
 # Ubuntu
-sudo apt install -y mongodb-org
-sudo systemctl start mongod
-
-# Windows
-net start MongoDB
+sudo apt install -y mongodb-org && sudo systemctl start mongod
 ```
 
 ### Redis
 
 ```bash
 # macOS
-brew install redis
-brew services start redis
+brew install redis && brew services start redis
 
 # Ubuntu
-sudo apt install redis-server
-sudo systemctl start redis-server
-
-# Windows
-net start Redis
+sudo apt install redis-server && sudo systemctl start redis-server
 ```
+
+---
+
+## Common Issues
+
+### `Cannot connect to Postgres`
+
+The API can't reach `localhost:5432`. Usually `docker compose` isn't running or the
+port is bound by a system Postgres.
+
+```bash
+docker compose ps            # is the container up and healthy?
+sudo ss -tlnp | grep 5432    # find who else owns the port
+```
+
+### `User email not found. Run init-demo first.`
+
+The demo users weren't seeded. Run:
+
+```bash
+npm --prefix platform/api run seed:db
+```
+
+If that also fails, check the API logs — the seeder blocks until Postgres is ready
+but crashes if `PLATFORM_PG_DB` doesn't exist. Create it (`CREATE DATABASE platform;`)
+and try again.
+
+### `WRONGPASS` in the API startup logs
+
+A database password was rotated but `platform/api/.env` (or the k8s `platform-env`
+Secret) still has the old one. See
+[troubleshooting/db-wrongpass-after-rotate.md](../troubleshooting/db-wrongpass-after-rotate.md).
+
+### Portal shows a blank page in dev
+
+Angular 19 needs Node ≥ 18.19. Check with `node -v` and upgrade if needed
+(`nvm install 20 && nvm use 20`).
+
+### `ng serve` fails with `Cannot find module '@angular-devkit/build-angular'`
+
+Corrupted `node_modules`. Nuke and reinstall:
+
+```bash
+rm -rf platform/portal/node_modules platform/portal/package-lock.json
+cd platform/portal && npm install
+```
+
+### Server install: pods stuck in `ImagePullBackOff`
+
+You're running a fork whose images aren't published to `ghcr.io/mpratyush54`.
+See [troubleshooting/image-pull-backoff.md](../troubleshooting/image-pull-backoff.md).
+
+### Server install: `dial tcp: lookup <name>.sslip.io … server misbehaving`
+
+CoreDNS inside the cluster can't resolve `sslip.io`. The bootstrap patches this
+automatically; if you skipped that step, see
+[troubleshooting/sslip-io-dns.md](../troubleshooting/sslip-io-dns.md).
+
+### Server install: bootstrap fails on `apt install`
+
+`unattended-upgrades` is holding the dpkg lock. Wait for it or:
+
+```bash
+sudo systemctl stop unattended-upgrades
+sudo ./bootstrap.sh
+```
+
+Full doc: [troubleshooting/apt-lock.md](../troubleshooting/apt-lock.md).
+
+For the full catalogue, browse [`docs/troubleshooting/`](../troubleshooting/).

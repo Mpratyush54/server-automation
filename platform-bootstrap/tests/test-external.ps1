@@ -1,6 +1,10 @@
 # External deployment test suite (run from Windows)
+# Usage: .\test-external.ps1 -Domain platform.example.com
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$Domain
+)
 $global:Pass = 0; $global:Fail = 0
-$Domain = "148.113.58.205.sslip.io"
 
 function Test-Pass($msg) { Write-Host "[PASS] $msg" -ForegroundColor Green; $global:Pass++ }
 function Test-Fail($msg) { Write-Host "[FAIL] $msg" -ForegroundColor Red; $global:Fail++ }

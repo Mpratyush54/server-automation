@@ -208,7 +208,35 @@ export class DocsComponent implements OnInit, AfterViewChecked {
       startOnLoad: false,
       theme: 'dark',
       darkMode: true,
-      fontFamily: 'Inter, sans-serif'
+      fontFamily: 'Inter, sans-serif',
+      themeVariables: {
+        background: '#050505',
+        primaryColor: '#111827',
+        primaryTextColor: '#f8fafc',
+        primaryBorderColor: '#3b82f6',
+        lineColor: '#60a5fa',
+        secondaryColor: '#0f766e',
+        tertiaryColor: '#312e81',
+        clusterBkg: '#080808',
+        clusterBorder: '#334155',
+        edgeLabelBackground: '#050505',
+        nodeBorder: '#3b82f6',
+        mainBkg: '#111827',
+        textColor: '#e5e7eb',
+        fontFamily: 'Inter, sans-serif'
+      },
+      flowchart: {
+        curve: 'basis',
+        padding: 16,
+        nodeSpacing: 54,
+        rankSpacing: 72
+      },
+      sequence: {
+        mirrorActors: false,
+        actorMargin: 72,
+        boxMargin: 12,
+        messageMargin: 44
+      }
     });
   }
 
@@ -310,6 +338,21 @@ export class DocsComponent implements OnInit, AfterViewChecked {
         return `<span class="hljs-attr">${cleanKey}</span>=<span class="hljs-string">${cleanVal}</span>`;
       });
       
+      el.innerHTML = html;
+    });
+
+    // 4. HTTP request/response blocks
+    container.querySelectorAll('pre code.language-http').forEach((block: unknown) => {
+      const el = block as HTMLElement;
+      let html = el.innerHTML;
+      html = html.replace(
+        /^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)(\s+)([^ \n]+)(\s+HTTP\/[0-9.]+)/gm,
+        '<span class="http-method http-$1">$1</span>$2<span class="http-path">$3</span><span class="http-version">$4</span>'
+      );
+      html = html.replace(
+        /^([A-Za-z0-9-]+):(\s*)(.+)$/gm,
+        '<span class="http-header">$1</span>:$2<span class="http-header-value">$3</span>'
+      );
       el.innerHTML = html;
     });
   }
@@ -573,12 +616,137 @@ export class DocsComponent implements OnInit, AfterViewChecked {
     const container = this.el.nativeElement.querySelector('.docs-markdown');
     if (!container) return;
     const mermaidNodes = container.querySelectorAll('.mermaid:not([data-processed])') as NodeListOf<HTMLElement>;
-    if (mermaidNodes.length === 0) return;
+    if (mermaidNodes.length === 0) {
+      this.enhanceDiagramViewers();
+      return;
+    }
     try {
       await mermaid.run({ nodes: Array.from(mermaidNodes) });
     } catch (e) {
       console.error('Mermaid render error:', e);
+    } finally {
+      this.enhanceDiagramViewers();
     }
+  }
+
+  private enhanceDiagramViewers() {
+    const container = this.el.nativeElement.querySelector('.docs-markdown') as HTMLElement | null;
+    if (!container) return;
+
+    const diagramNodes = Array.from(container.querySelectorAll<HTMLElement>('.mermaid, pre')).filter((node) => {
+      if (node.closest('.docs-diagram-viewer')) return false;
+      if (node.classList.contains('mermaid')) return true;
+      const text = node.textContent || '';
+      return /[┌┐└┘├┤┬┴│─→←↔▼▲►]/.test(text);
+    });
+
+    diagramNodes.forEach((node) => {
+      const isMermaid = node.classList.contains('mermaid');
+      const viewer = document.createElement('div');
+      viewer.className = `docs-diagram-viewer ${isMermaid ? 'docs-mermaid-viewer' : 'docs-ascii-viewer'}`;
+
+      const toolbar = document.createElement('div');
+      toolbar.className = 'docs-diagram-toolbar';
+
+      const title = document.createElement('span');
+      title.className = 'docs-diagram-title';
+      title.textContent = isMermaid ? 'Interactive diagram' : 'Interactive legacy diagram';
+
+      const controls = document.createElement('div');
+      controls.className = 'docs-diagram-controls';
+
+      const canvas = document.createElement('div');
+      canvas.className = 'docs-diagram-canvas';
+
+      const viewport = document.createElement('div');
+      viewport.className = 'docs-diagram-viewport';
+
+      node.parentNode?.insertBefore(viewer, node);
+      viewport.appendChild(node);
+      canvas.appendChild(viewport);
+
+      let scale = 1;
+      let translateX = 0;
+      let translateY = 0;
+      let isDragging = false;
+      let dragStartX = 0;
+      let dragStartY = 0;
+
+      const applyTransform = () => {
+        viewport.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+      };
+
+      const fitToCanvas = () => {
+        const content = (node.querySelector('svg') || node.querySelector('code') || node) as HTMLElement;
+        const contentWidth = content.getBoundingClientRect().width || content.scrollWidth || 1;
+        const availableWidth = Math.max(canvas.clientWidth - 12, 320);
+        scale = Math.min(1, Math.max(0.54, Number((availableWidth / contentWidth).toFixed(2))));
+        translateX = 0;
+        translateY = 0;
+        applyTransform();
+      };
+
+      const makeButton = (label: string, action: () => void) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'docs-diagram-btn';
+        btn.textContent = label;
+        btn.addEventListener('click', action);
+        return btn;
+      };
+
+      controls.appendChild(makeButton('-', () => {
+        scale = Math.max(0.5, Number((scale - 0.1).toFixed(2)));
+        applyTransform();
+      }));
+      controls.appendChild(makeButton('+', () => {
+        scale = Math.min(1.8, Number((scale + 0.1).toFixed(2)));
+        applyTransform();
+      }));
+      controls.appendChild(makeButton('Reset', () => {
+        fitToCanvas();
+      }));
+
+      canvas.addEventListener('pointerdown', (event) => {
+        isDragging = true;
+        dragStartX = event.clientX - translateX;
+        dragStartY = event.clientY - translateY;
+        canvas.setPointerCapture(event.pointerId);
+        canvas.classList.add('is-panning');
+      });
+
+      canvas.addEventListener('pointermove', (event) => {
+        if (!isDragging) return;
+        translateX = event.clientX - dragStartX;
+        translateY = event.clientY - dragStartY;
+        applyTransform();
+      });
+
+      const stopDragging = (event: PointerEvent) => {
+        isDragging = false;
+        canvas.releasePointerCapture(event.pointerId);
+        canvas.classList.remove('is-panning');
+      };
+
+      canvas.addEventListener('pointerup', stopDragging);
+      canvas.addEventListener('pointercancel', stopDragging);
+      canvas.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        if (event.ctrlKey) {
+          scale = Math.min(1.8, Math.max(0.5, Number((scale + (event.deltaY > 0 ? -0.08 : 0.08)).toFixed(2))));
+        } else {
+          translateX -= event.deltaX;
+          translateY -= event.deltaY;
+        }
+        applyTransform();
+      }, { passive: false });
+
+      toolbar.appendChild(title);
+      toolbar.appendChild(controls);
+      viewer.appendChild(toolbar);
+      viewer.appendChild(canvas);
+      requestAnimationFrame(fitToCanvas);
+    });
   }
 
   private enhanceSectionHeadings(html: string): string {

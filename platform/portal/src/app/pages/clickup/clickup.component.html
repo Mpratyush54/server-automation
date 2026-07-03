@@ -10,7 +10,7 @@
     <div style="margin-bottom:20px;">
       <div style="font-size:0.8rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;margin-bottom:6px;">Webhook Receiver Endpoint</div>
       <div style="font-family:monospace;background:rgba(0,0,0,0.3);padding:12px;border-radius:10px;border:1px solid var(--border-glass);color:var(--primary);font-size:0.9rem;">
-        https://platform.148.113.58.205.sslip.io/integrations/clickup/webhook
+        {{ webhookUrl || fallbackWebhookUrl }}
       </div>
     </div>
 
@@ -26,7 +26,7 @@
 
     <h3 style="font-family:var(--font-heading);font-size:1rem;color:#fff;margin-top:0;margin-bottom:12px;">Trigger Actions</h3>
     <ul style="padding-left:20px;margin:0;color:var(--color-text-secondary);font-size:0.85rem;line-height:1.6;">
-      <li>Branch push matching <code style="color:var(--primary);">feature/CU-{{ '{' }}id{{ '}' }}</code> posts URL comments to ClickUp task automatically.</li>
+      <li>Branch push matching <code style="color:var(--primary);">feature/CU-&#123;id&#125;</code> posts URL comments to ClickUp task automatically.</li>
       <li>Moving a task to <strong>"In Review"</strong> triggers a GitLab build pipeline for the matching branch.</li>
       <li>Terminating a preview deployment posts a follow-up comment noting environment teardown.</li>
     </ul>

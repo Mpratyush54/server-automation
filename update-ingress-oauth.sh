@@ -2,7 +2,8 @@
 set -e
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
-DOMAIN="148.113.59.57.sslip.io"
+DOMAIN="${1:-${PLATFORM_DOMAIN:-}}"
+[[ -z "$DOMAIN" ]] && { echo "usage: $0 <domain>   (or set PLATFORM_DOMAIN)"; exit 1; }
 
 # Get the current ingress YAML to preserve other rules
 kubectl get ingress platform -n platform -o yaml > /tmp/current-ingress.yaml

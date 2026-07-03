@@ -8,7 +8,7 @@ Open [http://localhost:4200](http://localhost:4200) and log in with the admin ac
 
 | Email | Password |
 |---|---|
-| admin@dev.io | (none required — click Sign In) |
+| admin@dev.io | None required. Click Sign In. |
 
 ## 2. Create a Project
 
@@ -23,9 +23,9 @@ Open [http://localhost:4200](http://localhost:4200) and log in with the admin ac
 
 4. Click **Create**.
 
-A **SDK Token** is generated automatically for the project. Copy it — you will need it when configuring an SDK.
+A **SDK Token** is generated automatically for the project. Copy it because you will need it when configuring an SDK.
 
-> If you lose the token, go to **Project Settings → SDK Token** to regenerate it.
+> If you lose the token, go to **Project Settings -> SDK Token** to regenerate it.
 
 ## 3. Create Environments
 
@@ -48,25 +48,31 @@ Each environment maps to a deployment target. The API creates a dedicated Kubern
 1. Go to the **Deployments** tab.
 2. Click **New Deployment**.
 3. Select the `dev` environment.
-4. Enter a Git commit SHA (or leave blank to use the latest).
+4. Enter a Git commit SHA, or leave it blank to use the latest.
 5. Click **Deploy**.
 
 The deployment pipeline:
 
-```text
-Commit → API receives request → builds container → pushes to registry → applies k8s manifest → health check → ready
+```mermaid
+flowchart LR
+    Commit["Git commit"] --> API["API receives deploy request"]
+    API --> Build["Build container"]
+    Build --> Registry["Push image to registry"]
+    Registry --> K8s["Apply Kubernetes manifest"]
+    K8s --> Health["Health check"]
+    Health --> Ready["Ready"]
 ```
 
-6. Watch the status update in real time: `Queued → Building → Deploying → Healthy`
+6. Watch the status update in real time: `Queued -> Building -> Deploying -> Healthy`
 
 ## 5. View Your Deployed App
 
 Once the deployment is healthy, the portal shows:
 
-- **URL** — the ingress address for the environment
-- **Logs** — real-time container logs via Loki
-- **Metrics** — CPU, memory, request latency (p50/p95/p99)
-- **Secrets** — environment-specific encrypted configuration
+- **URL** - the ingress address for the environment
+- **Logs** - real-time container logs via Loki
+- **Metrics** - CPU, memory, request latency (p50/p95/p99)
+- **Secrets** - environment-specific encrypted configuration
 
 ## Next Steps
 

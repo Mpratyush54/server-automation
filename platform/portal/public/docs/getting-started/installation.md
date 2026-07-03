@@ -111,7 +111,7 @@ sudo ./bootstrap.sh
 You can also run it non-interactively:
 
 ```bash
-PLATFORM_DOMAIN=148.113.58.205.sslip.io NON_INTERACTIVE=true sudo ./bootstrap.sh
+PLATFORM_DOMAIN=YOUR_SERVER_IP.sslip.io NON_INTERACTIVE=true sudo ./bootstrap.sh
 ```
 
 ### 3. Verify the Cluster
@@ -165,4 +165,3 @@ When running locally:
 
 When deploying to production, follow the [Bootstrap Deployment](../deployment/bootstrap.md) guide to provision the full Kubernetes cluster.
 
-**Production URL:** [https://148.113.58.205.sslip.io/](https://148.113.58.205.sslip.io/)

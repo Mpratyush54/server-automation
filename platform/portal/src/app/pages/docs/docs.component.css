@@ -669,6 +669,8 @@
   border-radius: 4px;
   color: #ededed;
   border: 1px solid var(--docs-color-border);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .docs-markdown h2 code, .docs-markdown h3 code {
@@ -689,14 +691,17 @@
 
 /* ── Tables ──────────────────────────────────────────────────────────────── */
 .docs-markdown table {
+  display: block;
   width: 100%;
+  max-width: 100%;
   border-collapse: collapse;
   margin: 20px 0;
   font-size: 0.88rem;
   background: var(--docs-color-elevated);
   border: 1px solid var(--docs-color-border);
   border-radius: 10px;
-  overflow: hidden;
+  overflow-x: auto;
+  white-space: normal;
 }
 
 .docs-markdown thead {
@@ -1105,20 +1110,135 @@
   border: 1px solid rgba(59,130,246,0.2);
 }
 
-.docs-markdown .mermaid {
-  background: var(--docs-color-elevated);
-  border: 1px solid var(--docs-color-border);
-  border-radius: 12px;
-  padding: 28px;
+.docs-markdown .docs-diagram-viewer {
   margin: 28px 0;
-  overflow-x: auto;
+  background: #050505;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.docs-markdown .docs-diagram-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 10px 8px 14px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.02));
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.docs-markdown .docs-diagram-title {
+  color: var(--docs-text-secondary);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.docs-markdown .docs-diagram-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.docs-markdown .docs-diagram-btn {
+  min-width: 32px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+  color: var(--docs-text-primary);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.docs-markdown .docs-diagram-btn:hover {
+  border-color: rgba(59,130,246,0.55);
+  background: rgba(59,130,246,0.16);
+}
+
+.docs-markdown .docs-diagram-canvas {
+  min-height: 320px;
+  max-height: 620px;
+  padding: 22px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  background:
+    linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px),
+    #050505;
+  background-size: 32px 32px, 32px 32px, auto;
+}
+
+.docs-markdown .docs-diagram-canvas.is-panning {
+  cursor: grabbing;
+}
+
+.docs-markdown .docs-diagram-viewport {
+  width: max-content;
+  max-width: none;
+  min-width: 100%;
+  transform-origin: 0 0;
+  transition: transform 0.12s ease;
+}
+
+.docs-markdown .mermaid {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  overflow: visible;
   text-align: center;
 }
 
 .docs-markdown .mermaid svg {
-  max-width: 100%;
+  display: block;
+  max-width: none;
   height: auto;
+  min-width: 720px;
 }
+
+.docs-markdown .docs-ascii-viewer pre {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: rgba(0,0,0,0.24);
+  box-shadow: none;
+}
+
+.docs-markdown .docs-ascii-viewer .docs-code-header {
+  display: none;
+}
+
+.docs-markdown .docs-ascii-viewer pre code {
+  color: #dbeafe;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  padding: 18px;
+}
+
+.docs-markdown .http-method {
+  display: inline-block;
+  min-width: 48px;
+  margin-right: 4px;
+  font-weight: 800;
+}
+
+.docs-markdown .http-GET { color: #50fa7b; }
+.docs-markdown .http-POST { color: #8be9fd; }
+.docs-markdown .http-PUT,
+.docs-markdown .http-PATCH { color: #ffb86c; }
+.docs-markdown .http-DELETE { color: #ff5555; }
+.docs-markdown .http-path { color: #f8fafc; font-weight: 700; }
+.docs-markdown .http-version { color: #94a3b8; }
+.docs-markdown .http-header { color: #9cdcfe; font-weight: 700; }
+.docs-markdown .http-header-value { color: #ce9178; }
 
 .docs-markdown .mermaid .label {
   font-family: var(--font-body, 'Geist', 'Inter', sans-serif);
@@ -1128,7 +1248,8 @@
 .docs-markdown .mermaid .node rect,
 .docs-markdown .mermaid .node circle,
 .docs-markdown .mermaid .node polygon {
-  stroke-width: 1.5px;
+  stroke-width: 2px !important;
+  filter: drop-shadow(0 8px 18px rgba(0,0,0,0.3));
 }
 
 .docs-markdown .mermaid .cluster rect {
@@ -1148,8 +1269,8 @@
 }
 
 .docs-markdown .mermaid .edgePath .path {
-  stroke: var(--docs-text-muted) !important;
-  stroke-width: 1.5px;
+  stroke: #60a5fa !important;
+  stroke-width: 2px;
 }
 
 .docs-markdown .mermaid .edgeLabel {

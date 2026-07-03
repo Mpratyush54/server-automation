@@ -2,24 +2,24 @@
 
 ## Repository Setup
 
-1. Fork the repository on GitLab/GitHub.
+1. Fork the repository on GitHub: <https://github.com/Mpratyush54/SERVER-automation>
 2. Clone your fork:
    ```bash
-   git clone https://github.com/your-username/SERVER-automation.git
+   git clone https://github.com/<your-username>/SERVER-automation.git
    cd SERVER-automation
    ```
-3. Install dependencies:
+3. Start the databases:
+   ```bash
+   docker compose up -d postgres mongodb redis
+   ```
+4. Install dependencies and start API + Portal:
    ```bash
    npm install
+   npm run start
    ```
-4. Copy the environment template:
-   ```bash
-   cp .env.example .env
-   ```
-5. Run the development setup:
-   ```bash
-   npm run setup
-   ```
+5. Open <http://localhost:4200> and sign in as `admin@dev.io` (no password).
+
+Full walkthrough: [getting-started/installation.md](getting-started/installation.md).
 
 ## Branch Naming Convention
 
