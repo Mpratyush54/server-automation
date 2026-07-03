@@ -600,7 +600,7 @@ platform.captureConsole(); // forward all console.*</pre>
             {{ argoStatus?.healthStatus || 'UNKNOWN' }}
           </span>
         </div>
-        <a href="http://argocd.pratyushes.dev/applications/{{ argoStatus?.appName || (project?.name + '-staging' | lowercase) }}" target="_blank" class="btn btn-sm btn-primary" style="display:inline-flex; align-items:center; gap:6px; font-weight:600; padding:6px 12px; font-size:0.75rem; text-decoration:none;">
+        <a *ngIf="argoStatus?.consoleUrl" [href]="argoStatus.consoleUrl + '/applications/' + (argoStatus?.appName || (project?.name + '-staging' | lowercase))" target="_blank" class="btn btn-sm btn-primary" style="display:inline-flex; align-items:center; gap:6px; font-weight:600; padding:6px 12px; font-size:0.75rem; text-decoration:none;">
           External ArgoCD Console ↗
         </a>
       </div>
@@ -609,7 +609,7 @@ platform.captureConsole(); // forward all console.*</pre>
 
   <!-- Connection Status Warning -->
   <div *ngIf="!argoStatus?.connected" class="card mb-6" style="background:rgba(245,158,11,0.1); border-color:rgba(245,158,11,0.25); color:#fde047; padding:12px 18px; font-size:0.85rem;">
-    ⚠️ <strong>ArgoCD Controller Disconnected:</strong> Could not retrieve real-time ArgoCD status: {{ argoStatus?.error || 'unreachable' }}. Showing local GitOps state. You can still access the <a href="http://argocd.pratyushes.dev" target="_blank" style="color:var(--primary); font-weight:600; text-decoration:underline;">ArgoCD external console</a>.
+    ⚠️ <strong>ArgoCD Controller Disconnected:</strong> Could not retrieve real-time ArgoCD status: {{ argoStatus?.error || 'unreachable' }}. Showing local GitOps state.<a *ngIf="argoStatus?.consoleUrl" [href]="argoStatus.consoleUrl" target="_blank" style="color:var(--primary); font-weight:600; text-decoration:underline; margin-left:6px;">Open ArgoCD console ↗</a>
   </div>
 
   <!-- ArgoCD Visual Resource Tree Layout -->

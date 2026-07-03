@@ -2,47 +2,32 @@
 
 ## Complete Request Sequence
 
-```
-┌──────────┐     ┌──────────────┐     ┌────────────┐     ┌────────────┐
-│  Browser  │     │    Nginx     │     │  Portal    │     │  Platform  │
-│  / Client │     │   Ingress    │     │  (Angular) │     │  API       │
-└─────┬─────┘     └──────┬───────┘     └─────┬──────┘     └─────┬──────┘
-      │                  │                   │                  │
-      │ 1. HTTPS request │                   │                  │
-      │  (SSL via cert-  │                   │                  │
-      │   manager LE)    │                   │                  │
-      │─────────────────>│                   │                  │
-      │                  │                   │                  │
-      │         2a. / or /index.html         │                  │
-      │          ───────────────────────────>│                  │
-      │          <───────────────────────────│                  │
-      │                  │                   │                  │
-      │         2b. /api/*                   │                  │
-      │          ──────────────────────────────────────────────>│
-      │                  │                   │                  │
-      │                  │           3. Query entities (TypeORM)│
-      │                  │                   │     ┌─────────┐ │
-      │                  │                   │     │PostgreSQL│ │
-      │                  │                   │     └────┬─────┘ │
-      │                  │                   │<───────────       │
-      │                  │                   │                  │
-      │                  │           4. Write logs/metrics      │
-      │                  │                   │     ┌─────────┐ │
-      │                  │                   │     │ MongoDB  │ │
-      │                  │                   │     └────┬─────┘ │
-      │                  │                   │<───────────       │
-      │                  │                   │                  │
-      │                  │           5. Cache check / publish   │
-      │                  │                   │     ┌─────────┐ │
-      │                  │                   │     │  Redis   │ │
-      │                  │                   │     └────┬─────┘ │
-      │                  │                   │<───────────       │
-      │                  │                   │                  │
-      │         6. JSON response             │                  │
-      │          <──────────────────────────────────────────────│
-      │                  │                   │                  │
-      │         7. Render Angular SPA        │                  │
-      │          <───────────────────────────│                  │
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Browser as Browser / Client
+    participant Ingress as Nginx Ingress<br/>TLS termination
+    participant Portal as Portal<br/>Angular SPA
+    participant API as Platform API<br/>Express
+    participant PG as PostgreSQL<br/>TypeORM entities
+    participant Mongo as MongoDB<br/>logs + metrics
+    participant Redis as Redis<br/>cache + pubsub
+
+    Browser->>Ingress: HTTPS request
+    alt Static app route
+        Ingress->>Portal: GET / or /index.html
+        Portal-->>Browser: Angular shell + assets
+    else API route
+        Ingress->>API: /api/*
+        API->>PG: Query relational entities
+        PG-->>API: Users, projects, secrets, deployments
+        API->>Mongo: Write telemetry and events
+        Mongo-->>API: Insert acknowledged
+        API->>Redis: Cache lookup or publish event
+        Redis-->>API: Cache result
+        API-->>Browser: JSON response
+        Browser->>Portal: Render updated SPA state
+    end
 ```
 
 ## Detailed Flow: Browser → Portal → API

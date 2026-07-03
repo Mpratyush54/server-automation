@@ -17,9 +17,11 @@ async function startServer() {
   try {
     await platform.init({
       projectName: 'demoproj',
-      platformUrl: 'https://148.113.58.205.sslip.io',
-      sdkToken: 'sdk_live_1ec8b9aa2d594c2b974f4d346734a6f2',
-      environmentName: 'development'
+      // Point at your Platform install and paste the SDK token from
+      // Portal → Project → Settings → SDK Tokens
+      platformUrl: process.env.PLATFORM_URL || 'http://localhost:3000',
+      sdkToken:   process.env.PLATFORM_SDK_TOKEN || '',
+      environmentName: process.env.PLATFORM_ENV || 'development'
     });
     console.log("Platform SDK initialized successfully.");
   } catch (err) {

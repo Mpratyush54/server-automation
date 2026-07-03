@@ -10,7 +10,20 @@
 #    git clone https://github.com/Mpratyush54/SERVER-automation.git && cd SERVER-automation/platform-bootstrap && chmod +x bootstrap.sh && sudo ./bootstrap.sh
 # =============================================================================
 set -Eeuo pipefail
-trap 'echo "[Platform] ❌ Bootstrap failed at line $LINENO — check /var/log/platform-bootstrap.log for details." >&2' ERR
+# On error, print the last 30 log lines so the user can see the real cause
+# without hunting through /var/log/platform-bootstrap.log
+trap '{
+  ec=$?
+  echo "" >&2
+  echo "[Platform] ❌ Bootstrap failed at line $LINENO (exit $ec)" >&2
+  echo "[Platform] Last 30 log lines:" >&2
+  tail -n 30 /var/log/platform-bootstrap.log 2>/dev/null >&2 || true
+  echo "" >&2
+  echo "[Platform] Full log: /var/log/platform-bootstrap.log" >&2
+  echo "[Platform] To resume from where it failed, just re-run the same command." >&2
+  echo "[Platform] To force a step to re-run, edit /etc/platform/.bootstrap_state." >&2
+  exit $ec
+}' ERR
 
 # Ensure KUBECONFIG is set for K3s
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
@@ -21,11 +34,15 @@ LOG_FILE="/var/log/platform-bootstrap.log"
 STATE_FILE="/etc/platform/.bootstrap_state"
 ENV_FILE="/etc/platform/.env"
 NAMESPACE="platform"
-PLATFORM_REPO_URL="${PLATFORM_REPO_URL:-}"      # Filled interactively if empty
+# Registry + org that publish the platform images. Override to run your own fork.
+PLATFORM_IMAGE_REGISTRY="${PLATFORM_IMAGE_REGISTRY:-ghcr.io/mpratyush54}"
+PLATFORM_REPO_URL="${PLATFORM_REPO_URL:-https://github.com/Mpratyush54/SERVER-automation}"
 PLATFORM_IMAGE_TAG="${PLATFORM_IMAGE_TAG:-latest}"
 DOMAIN="${PLATFORM_DOMAIN:-}"
 SKIP_K8S="${SKIP_K8S:-false}"
 NON_INTERACTIVE="${NON_INTERACTIVE:-false}"
+# Skip the free-RAM / free-disk / open-port pre-flight check
+SKIP_PREFLIGHT="${SKIP_PREFLIGHT:-false}"
 
 # Colours
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -105,6 +122,74 @@ require_ubuntu() {
   [[ "${DISTRIB_ID:-}" == "Ubuntu" ]] || warn "This script is optimized for Ubuntu. Proceeding anyway..."
 }
 
+# ─── Pre-flight — fail fast on the things people always hit ──────────────────
+#  * dpkg lock (unattended-upgrades running) — apt install will silently hang
+#  * disk pressure — k3s / images / helm will fail deep in the run
+#  * RAM — bitnami postgres + mongo + monitoring stack OOM under 4 GB
+#  * ports 80/443 already bound — ingress-nginx will crash-loop
+#  * DNS working — every helm-repo add depends on this
+preflight() {
+  [[ "$SKIP_PREFLIGHT" == "true" ]] && { info "Skipping pre-flight (SKIP_PREFLIGHT=true)"; return; }
+  header "Pre-flight — Verifying the server can run Platform"
+
+  local fatal=0
+
+  # 1) apt / dpkg lock
+  if pgrep -f "apt|dpkg|unattended-upgrade" >/dev/null 2>&1; then
+    warn "apt/dpkg is currently running (probably unattended-upgrades)."
+    warn "Waiting up to 5 min for it to finish — otherwise 'apt install' will hang."
+    local waited=0
+    while pgrep -f "apt|dpkg|unattended-upgrade" >/dev/null 2>&1; do
+      [[ $waited -ge 300 ]] && { error "apt lock did not release. Run 'sudo systemctl stop unattended-upgrades' or reboot, then re-run."; }
+      sleep 5; waited=$((waited+5))
+    done
+  fi
+
+  # 2) Disk — need at least 40 GB free on /var (for k3s + images + PVCs)
+  local free_gb
+  free_gb=$(df --output=avail -BG /var | tail -1 | tr -dc '0-9')
+  if [[ ${free_gb:-0} -lt 40 ]]; then
+    warn "Only ${free_gb} GB free on /var — Platform needs ≥ 40 GB (80 GB recommended)."
+    warn "See docs/troubleshooting/disk-pressure.md for how to free space."
+    fatal=1
+  else
+    done_ "Disk: ${free_gb} GB free on /var"
+  fi
+
+  # 3) RAM — need ≥ 6 GB with monitoring stack, 4 GB minimum without
+  local ram_gb
+  ram_gb=$(free -g | awk '/^Mem:/ {print $2}')
+  if [[ ${ram_gb:-0} -lt 4 ]]; then
+    warn "Only ${ram_gb} GB RAM — Platform needs ≥ 8 GB (Grafana + Prometheus alone use ~2 GB)."
+    fatal=1
+  else
+    done_ "RAM: ${ram_gb} GB"
+  fi
+
+  # 4) Ports 80 / 443 must be free — ingress-nginx binds them
+  if command -v ss >/dev/null 2>&1; then
+    for port in 80 443 6443; do
+      if ss -tlnp "( sport = :$port )" 2>/dev/null | tail -n +2 | grep -q .; then
+        warn "Port $port is already bound. ingress-nginx / k3s will fail to start."
+        warn "Find the culprit with: sudo ss -tlnp '( sport = :$port )'"
+        fatal=1
+      fi
+    done
+    [[ $fatal -eq 0 ]] && done_ "Ports 80 / 443 / 6443 are free"
+  fi
+
+  # 5) DNS — every helm-repo add breaks without it
+  if ! getent hosts github.com >/dev/null 2>&1; then
+    warn "DNS lookup for github.com failed."
+    warn "Fix systemd-resolved (see docs/troubleshooting/dns-ipv6-timeout.md) and re-run."
+    fatal=1
+  else
+    done_ "DNS resolution works"
+  fi
+
+  [[ $fatal -eq 1 ]] && error "Pre-flight failed — fix the issues above, or set SKIP_PREFLIGHT=true to bypass."
+}
+
 retry() {
   local retries=$1
   shift
@@ -148,10 +233,14 @@ install_prerequisites() {
   header "Phase 0 — Installing Prerequisites"
 
   retry 3 apt-get update -qq
+  # python3 is required for the CoreDNS patch (Phase 4) and the Portainer
+  # ingress fixup — without it later phases fail with "python3: command not found"
+  # apache2-utils gives us htpasswd for the ArgoCD bcrypt password hash
+  # bc is used by helm's get-helm-3 script
   retry 3 apt-get install -y -qq \
     curl wget git jq unzip gnupg lsb-release ca-certificates \
     apt-transport-https software-properties-common \
-    openssl bc netcat-openbsd postgresql-client apache2-utils \
+    openssl bc netcat-openbsd postgresql-client apache2-utils python3 \
     2>&1 | tee -a "$LOG_FILE"
 
   mark_done "prerequisites"
@@ -184,8 +273,11 @@ gather_config() {
   MINIO_ACCESS_KEY="platformadmin"
 
   # ── Admin account ──────────────────────────────────────────────────────────
+  #  Platform uses email-only JWT auth — no admin password is needed.
+  #  The seeded admin account is admin@dev.io. To disable passwordless in
+  #  production, wire an OIDC provider from Settings → Authentication.
   info "\n── Admin Account ──"
-  ask "Platform admin password (for username: admin)" ADMIN_PASSWORD "Admin@123"
+  info "Admin logs in with email admin@dev.io (passwordless). OIDC can be added later."
 
   # ── ArgoCD ────────────────────────────────────────────────────────────────
   info "\n── ArgoCD GitOps ──"
@@ -233,7 +325,6 @@ gather_config() {
   write_env "MINIO_SECRET_KEY" "$MINIO_SECRET_KEY"
   write_env "JWT_SECRET" "$JWT_SECRET"
   write_env "PLATFORM_WEBHOOK_SECRET" "$PLATFORM_WEBHOOK_SECRET"
-  write_env "ADMIN_PASSWORD" "${ADMIN_PASSWORD:-Admin@123}"
   write_env "ARGOCD_PASSWORD" "${ARGOCD_PASSWORD:-}"
   write_env "GRAFANA_PASSWORD" "${GRAFANA_PASSWORD:-}"
   write_env "INSTALL_ARGOCD" "${INSTALL_ARGOCD:-y}"
@@ -261,7 +352,8 @@ gather_integrations() {
   info "── GitHub Integration ──"
   ask_yn "Configure GitHub integration?" SETUP_GITHUB "y"
   if [[ "$SETUP_GITHUB" =~ ^[Yy] ]]; then
-    ask "GitHub Personal Access Token (scopes: repo, admin:org_hook, write:packages)" GITHUB_TOKEN ""
+    # ask_secret — PATs should never echo to the terminal or the log
+    ask_secret "GitHub Personal Access Token (scopes: repo, admin:org_hook, write:packages)" GITHUB_TOKEN
     ask "GitHub Organization or username (e.g. my-org)" GITHUB_ORG ""
     ask "GitHub Container Registry (ghcr.io or docker.io)" GITHUB_REGISTRY "ghcr.io"
     if [[ -n "$GITHUB_TOKEN" ]]; then
@@ -279,7 +371,7 @@ gather_integrations() {
   ask_yn "Configure GitLab integration?" SETUP_GITLAB "n"
   if [[ "$SETUP_GITLAB" =~ ^[Yy] ]]; then
     ask "GitLab instance URL" GITLAB_URL "https://gitlab.com"
-    ask "GitLab Personal Access Token (scopes: api, read_repository)" GITLAB_TOKEN ""
+    ask_secret "GitLab Personal Access Token (scopes: api, read_repository)" GITLAB_TOKEN
     ask "GitLab Group ID or username" GITLAB_GROUP ""
     if [[ -n "$GITLAB_TOKEN" ]]; then
       write_env "GITLAB_URL" "$GITLAB_URL"
@@ -295,7 +387,7 @@ gather_integrations() {
   info "\n── ClickUp Integration ──"
   ask_yn "Configure ClickUp integration (for task linking + bug reports)?" SETUP_CLICKUP "y"
   if [[ "$SETUP_CLICKUP" =~ ^[Yy] ]]; then
-    ask "ClickUp API Token (User Settings → Apps → Generate)" CLICKUP_API_TOKEN ""
+    ask_secret "ClickUp API Token (User Settings → Apps → Generate)" CLICKUP_API_TOKEN
     ask "ClickUp Team ID (from workspace URL: app.clickup.com/XXXXX/...)" CLICKUP_TEAM_ID ""
     ask "Default ClickUp List ID for bug reports" CLICKUP_DEFAULT_LIST_ID ""
     if [[ -n "$CLICKUP_API_TOKEN" ]]; then
@@ -481,13 +573,17 @@ install_helm() {
     done_ "Helm installed: $(helm version --short)"
   fi
 
-  # Add commonly needed repos
-  helm repo add bitnami    https://charts.bitnami.com/bitnami 2>/dev/null || true
-  helm repo add grafana    https://grafana.github.io/helm-charts 2>/dev/null || true
+  # Add commonly needed repos. IMPORTANT: ingress-nginx must be added HERE
+  # (before Phase 7). It used to be added after the first helm install attempt
+  # which meant every fresh install failed the first time with "repo not found".
+  helm repo add bitnami       https://charts.bitnami.com/bitnami 2>/dev/null || true
+  helm repo add grafana       https://grafana.github.io/helm-charts 2>/dev/null || true
   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
-  helm repo add argo       https://argoproj.github.io/argo-helm 2>/dev/null || true
-  helm repo add portainer  https://portainer.github.io/k8s/ 2>/dev/null || true
-  helm repo add cert-manager https://charts.jetstack.io 2>/dev/null || true
+  helm repo add argo          https://argoproj.github.io/argo-helm 2>/dev/null || true
+  helm repo add portainer     https://portainer.github.io/k8s/ 2>/dev/null || true
+  helm repo add cert-manager  https://charts.jetstack.io 2>/dev/null || true
+  helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx 2>/dev/null || true
+  helm repo add oauth2-proxy  https://oauth2-proxy.github.io/manifests 2>/dev/null || true
   retry 3 helm repo update 2>&1 | tee -a "$LOG_FILE"
   mark_done "helm"
 }
@@ -522,9 +618,6 @@ install_ingress() {
       --set controller.service.type=LoadBalancer \
       --wait 2>&1 | tee -a "$LOG_FILE" || \
     kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/cloud/deploy.yaml 2>&1 | tee -a "$LOG_FILE"
-    # Add nginx ingress repo if not present
-    helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx 2>/dev/null || true
-    retry 3 helm repo update 2>/dev/null || true
     done_ "ingress-nginx installed"
   fi
   mark_done "ingress"
@@ -770,9 +863,7 @@ install_oauth2_proxy() {
   is_done "oauth2-proxy" && { done_ "oauth2-proxy already installed"; return; }
   header "Phase 12b — oauth2-proxy (SSO Gateway)"
 
-  helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests 2>/dev/null || true
-  retry 3 helm repo update 2>&1 | tail -3
-
+  # oauth2-proxy repo is already added in install_helm(); no need to re-add.
   kubectl create namespace oauth2-proxy --dry-run=client -o yaml | kubectl apply -f -
 
   COOKIE_SECRET=$(openssl rand -base64 32 | tr -d '=' | tr '/+' '_-')
@@ -829,12 +920,16 @@ install_portainer() {
         sleep 3
       done
 
-      ADMIN_PASS="${ADMIN_PASSWORD:-${POSTGRES_PASSWORD:-PortainerAdmin123!}}"
+      # Portainer *needs* a local admin password even when the platform uses
+      # OIDC — this is just the break-glass account. Reuse the PostgreSQL
+      # password so it's still random per-install and stored in $ENV_FILE.
+      PORTAINER_ADMIN_PASS="$POSTGRES_PASSWORD"
+      write_env "PORTAINER_ADMIN_PASSWORD" "$PORTAINER_ADMIN_PASS"
       INIT_RESULT=$(curl -s -X POST "http://$PORTAINER_IP:9000/api/users/admin/init" \
         -H "Content-Type: application/json" \
-        -d "{\"Username\":\"admin\",\"Password\":\"$ADMIN_PASS\"}" 2>/dev/null | grep -o '"Id":[0-9]*' || echo "")
+        -d "{\"Username\":\"admin\",\"Password\":\"$PORTAINER_ADMIN_PASS\"}" 2>/dev/null | grep -o '"Id":[0-9]*' || echo "")
       if [[ -n "$INIT_RESULT" ]]; then
-        done_ "Portainer admin account created (user: admin)"
+        done_ "Portainer admin account created (user: admin — password in $ENV_FILE)"
       else
         warn "Portainer admin init may have already run or timed out — log in manually at portainer.$DOMAIN"
       fi
@@ -893,12 +988,17 @@ deploy_platform() {
   is_done "platform" && { done_ "Platform already deployed"; return; }
   header "Phase 15 — Platform"
 
-  # Pull pre-built images from GHCR
-  log "Pulling pre-built Platform API image..."
-  retry 3 k3s crictl pull ghcr.io/mpratyush54/platform-api:${PLATFORM_IMAGE_TAG} 2>&1 | tee -a "$LOG_FILE"
+  # Pull pre-built images from the configured registry.
+  # PLATFORM_IMAGE_REGISTRY defaults to ghcr.io/mpratyush54 (see top of file).
+  # Override with PLATFORM_IMAGE_REGISTRY=ghcr.io/your-fork when running your own build.
+  PLATFORM_API_IMAGE="${PLATFORM_IMAGE_REGISTRY}/platform-api:${PLATFORM_IMAGE_TAG}"
+  PLATFORM_PORTAL_IMAGE="${PLATFORM_IMAGE_REGISTRY}/platform-portal:${PLATFORM_IMAGE_TAG}"
 
-  log "Pulling pre-built Platform Portal image..."
-  retry 3 k3s crictl pull ghcr.io/mpratyush54/platform-portal:${PLATFORM_IMAGE_TAG} 2>&1 | tee -a "$LOG_FILE"
+  log "Pulling pre-built Platform API image ($PLATFORM_API_IMAGE)..."
+  retry 3 k3s crictl pull "$PLATFORM_API_IMAGE" 2>&1 | tee -a "$LOG_FILE"
+
+  log "Pulling pre-built Platform Portal image ($PLATFORM_PORTAL_IMAGE)..."
+  retry 3 k3s crictl pull "$PLATFORM_PORTAL_IMAGE" 2>&1 | tee -a "$LOG_FILE"
 
   log "Building Platform environment config..."
 
@@ -966,7 +1066,7 @@ spec:
     spec:
       containers:
       - name: api
-        image: ghcr.io/your-org/platform-api:${PLATFORM_IMAGE_TAG}
+        image: ${PLATFORM_API_IMAGE}
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
@@ -1038,7 +1138,7 @@ spec:
     spec:
       containers:
       - name: portal
-        image: ghcr.io/your-org/platform-portal:${PLATFORM_IMAGE_TAG}
+        image: ${PLATFORM_PORTAL_IMAGE}
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80
@@ -1452,23 +1552,22 @@ seed_platform() {
   fi
 
   log "Seeding Platform..."
-  # Run init-demo to create all users (admin with password, others passwordless)
+  # Run init-demo to seed the demo users. All demo accounts (admin@dev.io,
+  # devops@dev.io, sarah@dev.io, john@dev.io) are passwordless — Platform
+  # uses email-only JWT login. Do NOT set a password on the admin account
+  # here: the user explicitly asked for this to stay passwordless.
   curl -sf "$PLATFORM_API_URL/api/users/init-demo" 2>&1 | tee -a "$LOG_FILE" || warn "init-demo failed — may already be seeded"
 
-  # Login with admin username + password to get a token for further seeding
-  ADMIN_PASS="${ADMIN_PASSWORD:-Admin@123}"
+  # Email-only login is the primary path.
   TOKEN=$(curl -sf -X POST "$PLATFORM_API_URL/api/auth/login" \
     -H "Content-Type: application/json" \
-    -d "{\"username\":\"admin\",\"password\":\"$ADMIN_PASS\"}" 2>/dev/null \
+    -d '{"email":"admin@dev.io"}' 2>/dev/null \
     | grep -o '"token":"[^"]*"' | cut -d'"' -f4 || echo "")
 
   if [ -z "$TOKEN" ]; then
-    # Fallback: try email-only login if password is not yet set
-    warn "Password login failed — retrying with email-only login"
-    TOKEN=$(curl -sf -X POST "$PLATFORM_API_URL/api/auth/login" \
-      -H "Content-Type: application/json" \
-      -d '{"email":"admin@dev.io"}' 2>/dev/null \
-      | grep -o '"token":"[^"]*"' | cut -d'"' -f4 || echo "")
+    warn "Email-only login for admin@dev.io failed."
+    warn "The API may not be fully ready yet. Check: kubectl logs -n platform deploy/platform-api"
+    warn "Skipping storage + SMTP seed — you can configure these later from the portal."
   fi
 
   if [ -n "$TOKEN" ]; then
@@ -1544,15 +1643,15 @@ EOF
 
   echo
   echo -e "${BOLD}  🔐 Credentials${NC} ${RED}(KEEP THESE SAFE — stored in $ENV_FILE)${NC}"
-  echo -e "  ┌─ Platform Admin:          ${YELLOW}username: admin  /  password: ${ADMIN_PASSWORD:-Admin@123}${NC}"
-  echo -e "  ├─ Admin Email (alt):       ${YELLOW}admin@dev.io${NC}"
+  echo -e "  ┌─ Platform Admin:          ${YELLOW}email: admin@dev.io  (passwordless — sign in with email only)${NC}"
   echo -e "  ├─ PostgreSQL Password:   ${YELLOW}$POSTGRES_PASSWORD${NC}"
   echo -e "  ├─ MongoDB Password:      ${YELLOW}$MONGO_PASSWORD${NC}"
   echo -e "  ├─ Redis Password:        ${YELLOW}$REDIS_PASSWORD${NC}"
   echo -e "  ├─ MinIO User:            ${YELLOW}$MINIO_ACCESS_KEY${NC}"
   echo -e "  ├─ MinIO Password:        ${YELLOW}$MINIO_SECRET_KEY${NC}"
   [[ "$INSTALL_ARGOCD"    =~ ^[Yy] ]] && echo -e "  ├─ ArgoCD Admin:          ${YELLOW}$ARGOCD_PASSWORD${NC}"
-  [[ "$INSTALL_MONITORING" =~ ^[Yy] ]] && echo -e "  └─ Grafana Admin:         ${YELLOW}$GRAFANA_PASSWORD${NC}"
+  [[ "$INSTALL_MONITORING" =~ ^[Yy] ]] && echo -e "  ├─ Grafana Admin:         ${YELLOW}$GRAFANA_PASSWORD${NC}"
+  [[ "$INSTALL_PORTAINER"  =~ ^[Yy] ]] && echo -e "  └─ Portainer Admin:       ${YELLOW}${PORTAINER_ADMIN_PASSWORD:-$POSTGRES_PASSWORD}${NC}"
 
   echo
   echo -e "${BOLD}  🔗 Integrations Configured${NC}"
@@ -1582,10 +1681,10 @@ EOF
   echo -e "${BOLD}  🛠  Next Steps${NC}"
   echo -e "  1. Point your DNS records above to: ${YELLOW}$SERVER_IP${NC}"
   echo -e "  2. Visit ${CYAN}https://$DOMAIN${NC} (may take 5–10 min for TLS)"
-  echo -e "  3. Log in with username ${YELLOW}admin${NC} and password ${YELLOW}${ADMIN_PASSWORD:-Admin@123}${NC}"
-  echo -e "  4. ${RED}Change the admin password immediately${NC} in Settings → Profile"
+  echo -e "  3. Log in with email ${YELLOW}admin@dev.io${NC} — no password needed"
   echo -e "  4. Go to ⚙️ Settings → Integrations to verify webhook connections"
   echo -e "  5. Create your first project and link it to a GitHub/GitLab repo"
+  echo -e "  6. If something went wrong, see: ${CYAN}docs/troubleshooting/${NC}"
   echo
   echo -e "${GREEN}${BOLD}  Full log: $LOG_FILE${NC}"
   echo
@@ -1599,6 +1698,7 @@ main() {
   require_ubuntu
   print_banner
 
+  preflight
   install_prerequisites
   gather_config
   gather_integrations

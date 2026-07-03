@@ -6,8 +6,13 @@ set +e
 K="sudo sudo kubectl"
 PASS=0
 FAIL=0
-DOMAIN="${1:-148.113.58.205.sslip.io}"
-NAMESPACES="caps-platform databases storage monitoring argocd portainer oauth2-proxy infisical cert-manager ingress-nginx"
+DOMAIN="${1:-${PLATFORM_DOMAIN:-}}"
+if [[ -z "$DOMAIN" ]]; then
+  echo "usage: $0 <domain>   (e.g. platform.example.com or 203.0.113.10.sslip.io)"
+  echo "       or export PLATFORM_DOMAIN"
+  exit 1
+fi
+NAMESPACES="platform databases storage monitoring argocd portainer oauth2-proxy infisical cert-manager ingress-nginx"
 
 green() { echo -e "\033[32m[PASS]\033[0m $1"; ((PASS++)); }
 red()   { echo -e "\033[31m[FAIL]\033[0m $1"; ((FAIL++)); }

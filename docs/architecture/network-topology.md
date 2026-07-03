@@ -6,7 +6,7 @@
                           INTERNET
                              │
                    ┌─────────▼─────────┐
-                   │   148.113.58.205  │
+                   │   YOUR_SERVER_IP  │
                    │   (Public IP)     │
                    └─────────┬─────────┘
                              │
@@ -108,7 +108,7 @@ const isRealDomain = !domain.includes('sslip.io') && !domain.match(/^\d+\.\d+\.\
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         REQUEST ROUTING                            │
 │                                                                     │
-│  https://148.113.58.205.sslip.io/                                   │
+│  https://YOUR_SERVER_IP.sslip.io/                                   │
 │                                    ┌──────────────────────┐        │
 │  /          ──────────────────────►│ portal-service:80     │        │
 │                                    │ / (Angular SPA)      │        │
@@ -154,10 +154,10 @@ metadata:
 spec:
   tls:
   - hosts:
-    - 148.113.58.205.sslip.io
+    - YOUR_SERVER_IP.sslip.io
     secretName: caps-tls
   rules:
-  - host: 148.113.58.205.sslip.io
+  - host: YOUR_SERVER_IP.sslip.io
     http:
       paths:
       # Portal (root)
@@ -189,7 +189,7 @@ metadata:
     nginx.ingress.kubernetes.io/rewrite-target: /argocd
 spec:
   rules:
-  - host: 148.113.58.205.sslip.io
+  - host: YOUR_SERVER_IP.sslip.io
     http:
       paths:
       - path: /argocd
@@ -209,7 +209,7 @@ metadata:
     kubernetes.io/ingress.class: nginx
 spec:
   rules:
-  - host: 148.113.58.205.sslip.io
+  - host: YOUR_SERVER_IP.sslip.io
     http:
       paths:
       - path: /portainer
@@ -229,7 +229,7 @@ metadata:
     kubernetes.io/ingress.class: nginx
 spec:
   rules:
-  - host: 148.113.58.205.sslip.io
+  - host: YOUR_SERVER_IP.sslip.io
     http:
       paths:
       - path: /grafana
@@ -254,9 +254,9 @@ spec:
          │             │    │               │    │             │
          │ postgres    │    │ postgres-0    │    │ sslip.io    │
          │ .postgres   │    │ .postgres     │    │             │
-         │ .svc.cluster│    │ .svc.cluster  │    │ 148.113.    │
-         │ .local      │    │ .local        │    │ 58.205.sslip│
-         │             │    │               │    │ .io         │
+         │ .svc.cluster│    │ .svc.cluster  │    │ <IP>.sslip  │
+         │ .local      │    │ .local        │    │ .io         │
+         │             │    │               │    │             │
          └─────────────┘    └───────────────┘    └─────────────┘
 ```
 
@@ -281,25 +281,25 @@ LOKI_URL=http://loki.loki.svc.cluster.local:3100
 
 ## External DNS: sslip.io Wildcard
 
-The server's public IP `148.113.58.205` is used with the `sslip.io` wildcard DNS service:
+The server's public IP `YOUR_SERVER_IP` is used with the `sslip.io` wildcard DNS service:
 
 ```
-*.148.113.58.205.sslip.io  →  A record →  148.113.58.205
+*.YOUR_SERVER_IP.sslip.io  →  A record →  YOUR_SERVER_IP
 ```
 
 This allows multiple subdomain-based services without managing real DNS records:
 
 | Domain | Resolves To | Service |
 |--------|------------|---------|
-| `148.113.58.205.sslip.io` | `148.113.58.205` | Root — Portal |
-| `api.148.113.58.205.sslip.io` | `148.113.58.205` | API (if separated) |
-| `*.148.113.58.205.sslip.io` | `148.113.58.205` | Wildcard — SDK auto-created services |
+| `YOUR_SERVER_IP.sslip.io` | `YOUR_SERVER_IP` | Root — Portal |
+| `api.YOUR_SERVER_IP.sslip.io` | `YOUR_SERVER_IP` | API (if separated) |
+| `*.YOUR_SERVER_IP.sslip.io` | `YOUR_SERVER_IP` | Wildcard — SDK auto-created services |
 
 **SDK auto-created Ingress domains** (`src/routes/sdk.ts:232`):
 ```typescript
 const domain = project.domain || process.env.DOMAIN || 'sslip.io';
 // Resulting host: {serviceName}.{domain}
-// e.g. "my-app.148.113.58.205.sslip.io"
+// e.g. "my-app.YOUR_SERVER_IP.sslip.io"
 ```
 
 ## systemd-resolved Configuration
@@ -333,7 +333,7 @@ resolvectl status
 resolvectl flush-caches
 
 # Test resolution
-resolvectl query 148.113.58.205.sslip.io
+resolvectl query YOUR_SERVER_IP.sslip.io
 
 # Check k3s CoreDNS
 kubectl -n kube-system logs -l k8s-app=kube-dns --tail=50

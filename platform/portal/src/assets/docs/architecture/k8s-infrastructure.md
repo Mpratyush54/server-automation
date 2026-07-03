@@ -11,8 +11,8 @@
 │  │  Host        │  │                   kube-system                    │  │
 │  │  Network     │  │  ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │  │
 │  │              │  │  │ coredns  │ │ metrics- │ │ local-path-      │ │  │
-│  │  148.113.    │  │  │          │ │ server   │ │ provisioner      │ │  │
-│  │  58.205      │  │  └──────────┘ └──────────┘ └──────────────────┘ │  │
+│  │  <SERVER>    │  │  │          │ │ server   │ │ provisioner      │ │  │
+│  │              │  │  └──────────┘ └──────────┘ └──────────────────┘ │  │
 │  └──────┬───────┘  └──────────────────────────────────────────────────┘  │
 │         │                                                                │
 │         │          ┌──────────────────────────────────────────────────┐  │
@@ -77,7 +77,7 @@
                          ┌─────────────────────────────┐
                          │   nginx-ingress-controller   │
                          │   LoadBalancer / HostNetwork │
-                         │   148.113.58.205:443         │
+                         │   YOUR_SERVER_IP:443         │
                          └──────────────┬──────────────┘
                                         │
               ┌─────────────────────────┼──────────────────────────┐
@@ -113,10 +113,10 @@ metadata:
 spec:
   tls:
   - hosts:
-    - 148.113.58.205.sslip.io
+    - YOUR_SERVER_IP.sslip.io
     secretName: caps-tls
   rules:
-  - host: 148.113.58.205.sslip.io
+  - host: YOUR_SERVER_IP.sslip.io
     http:
       paths:
       - path: /api
@@ -307,7 +307,7 @@ spec:
 
 ```ini
 # Configured via Helm values or env vars:
-GF_SERVER_ROOT_URL=https://148.113.58.205.sslip.io/grafana
+GF_SERVER_ROOT_URL=https://YOUR_SERVER_IP.sslip.io/grafana
 GF_SERVER_SERVE_FROM_SUB_PATH=true
 ```
 

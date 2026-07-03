@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { PlatformProvider, usePlatform, BugReporterWidget } from '@mpratyush54/sdk-react';
 
+// Paste your project's SDK token and project ID from the Platform portal
+// (Project → Settings → SDK Tokens). Point apiBase at your Platform install.
 const platformConfig = {
-  apiBase: 'https://148.113.58.205.sslip.io',
-  token: 'sdk_live_1ec8b9aa2d594c2b974f4d346734a6f2',
-  projectId: 'bc145854-46fe-4480-a751-395a0b593004',
-  environment: 'development'
+  apiBase:     import.meta.env.VITE_PLATFORM_URL       || 'http://localhost:3000',
+  token:       import.meta.env.VITE_PLATFORM_SDK_TOKEN || '',
+  projectId:   import.meta.env.VITE_PLATFORM_PROJECT_ID || '',
+  environment: import.meta.env.VITE_PLATFORM_ENV       || 'development'
 };
 
 function Dashboard() {

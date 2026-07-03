@@ -1,6 +1,8 @@
 # Platform Documentation
 
-**Platform** is an open-source, self-hosted internal Platform-as-a-Service that provides a unified control plane for deploying, managing, and monitoring your applications on Kubernetes (k3s).
+**Platform** is an open-source, self-hosted internal Platform-as-a-Service that
+provides a unified control plane for deploying, managing, and monitoring your
+applications on Kubernetes (k3s).
 
 ## Quick Links
 
@@ -19,39 +21,39 @@
 
 Platform is a self-hosted PaaS control center that brings together:
 
-- **Deployment Automation** — Preview environments on every Git push, staging/production on main branch
-- **Secrets Management** — AES-256-GCM encrypted secrets with versioning, rollback, and audit trails
-- **Database Provisioning** — One-click PostgreSQL, MongoDB, and Redis instances with automated backups
-- **Observability** — Real-time metrics (p50/p95/p99), distributed tracing, Loki log aggregation, Grafana dashboards
-- **Multi-SDK Support** — Node.js, Python, React, Angular SDKs with auto-registration, metrics, and bug reporting
-- **RBAC & Permissions** — Granular role-based access control with custom role definitions
-- **SSO / OIDC** — OAuth2 + OpenID Connect support for single sign-on
+- **Deployment automation** — Preview environments on every Git push, staging/production on `main`
+- **Secrets management** — AES-256-GCM encrypted secrets with versioning, rollback and audit trails; usable without Infisical
+- **Database provisioning** — One-click PostgreSQL, MongoDB and Redis instances with automated backups
+- **Observability** — Real-time metrics (p50/p95/p99), Loki log aggregation, Grafana dashboards
+- **Multi-SDK support** — Node.js, Python, React and Angular SDKs with auto-registration, metrics and bug reporting
+- **RBAC & permissions** — Granular role-based access control with custom role definitions
+- **SSO / OIDC** — OAuth2 + OpenID Connect via oauth2-proxy for any service that doesn't ship SSO in its OSS build
 
-## Architecture Overview
+## Architecture at a glance
 
 ```
                     ┌─────────────────────┐
-                    │     Browser/Client   │
+                    │    Browser / SDK    │
                     └──────────┬──────────┘
                                │
                     ┌──────────▼──────────┐
                     │   Nginx Ingress     │
-                    │  (SSL termination)  │
+                    │  (TLS termination)  │
                     └──────────┬──────────┘
                                │
               ┌────────────────┼────────────────┐
               │                │                │
      ┌────────▼──────┐  ┌─────▼──────┐  ┌──────▼─────┐
-     │   Platform    │  │   Portal   │  │   ArgoCD   │
-     │   API (3000)  │  │  Angular   │  │  (CD tool) │
+     │ Platform API  │  │  Portal    │  │  ArgoCD    │
+     │ (Node/TS)     │  │ (Angular)  │  │ (GitOps)   │
      └────────┬──────┘  └────────────┘  └────────────┘
               │
     ┌─────────┼──────────┐
     │         │          │
     ▼         ▼          ▼
-┌───────┐ ┌──────┐ ┌────────┐
-│PostgreSQL│MongoDB│  Redis │
-└───────┘ └──────┘ └────────┘
+┌────────┐ ┌───────┐ ┌───────┐
+│Postgres│ │Mongo  │ │Redis  │      (all in the `databases` namespace)
+└────────┘ └───────┘ └───────┘
 ```
 
 ## SDK Ecosystem
@@ -59,34 +61,35 @@ Platform is a self-hosted PaaS control center that brings together:
 | SDK | Package | Docs |
 |---|---|---|
 | Node.js | `@mpratyush54/sdk-node` | [Node.js SDK](api-reference/sdk-node/PlatformClient.md) |
-| Python | `platform-sdk-python` | [Python SDK](api-reference/sdk-python/PlatformClient.md) |
-| React | `@mpratyush54/sdk-react` | [React SDK](api-reference/sdk-react/PlatformProvider.md) |
-| Angular | `@mpratyush54/sdk-angular` | [Angular SDK](api-reference/sdk-angular/PlatformModule.md) |
+| Python  | `platform-sdk-python`     | [Python SDK](api-reference/sdk-python/PlatformClient.md) |
+| React   | `@mpratyush54/sdk-react`  | [React SDK](api-reference/sdk-react/PlatformProvider.md) |
+| Angular | `@mpratyush54/sdk-angular`| [Angular SDK](api-reference/sdk-angular/PlatformModule.md) |
 
-## Quick Start
+## Quick Start (local dev)
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/platform.git
-cd platform
+git clone https://github.com/Mpratyush54/SERVER-automation.git
+cd SERVER-automation
 
-# Start the API
-cd api
+# Start Postgres + Mongo + Redis via docker-compose
+docker compose up -d postgres mongodb redis
+
+# Install deps and run both API (:3000) and Portal (:4200)
 npm install
-npm run dev
-
-# In another terminal, start the Portal
-cd portal
-npm install
-ng serve
-
-# Seed demo users
-curl http://localhost:3000/api/users/init-demo
-
-# Login at http://localhost:4200 with admin@dev.io
+npm run start
 ```
 
-## Demo Accounts
+Then sign in at `http://localhost:4200` with **`admin@dev.io`** — no password
+required (Platform uses passwordless email-based JWT). Demo users are auto-seeded
+on first API startup; if you ever need to re-seed manually:
+
+```bash
+npm --prefix platform/api run seed:db
+```
+
+Server / production install is a single command — see [Getting Started](getting-started/installation.md#deploy-to-a-server-single-command).
+
+## Demo Accounts (local dev)
 
 | Name | Email | Role |
 |---|---|---|
@@ -94,10 +97,6 @@ curl http://localhost:3000/api/users/init-demo
 | DevOps Boss | devops@dev.io | DevOps Engineer |
 | Sarah Lead | sarah@dev.io | Tech Lead |
 | John Dev | john@dev.io | Developer |
-
-## Production Server
-
-The Platform is deployed at [https://148.113.58.205.sslip.io/](https://148.113.58.205.sslip.io/).
 
 ## License
 
