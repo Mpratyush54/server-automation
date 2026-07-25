@@ -16,7 +16,7 @@ Set up Platform for local development in a few minutes.
 ## 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-org/platform.git
+git clone https://github.com/Mpratyush54/SERVER-automation.git
 cd platform
 ```
 

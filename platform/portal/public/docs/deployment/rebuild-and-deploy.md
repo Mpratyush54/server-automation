@@ -24,7 +24,7 @@ Docker automatically finds the `Dockerfile` inside the context directory — no 
 ### With ghcr.io tag (matching the k8s deployment)
 
 ```bash
-docker build -t ghcr.io/your-org/platform-api:latest platform/api
+docker build -t ghcr.io/mpratyush54/platform-api:latest platform/api
 ```
 
 ---
@@ -67,7 +67,7 @@ docker.io/library/platform-api:latest
 docker.io/library/platform-portal:latest
 ```
 
-> The image gets prefixed with `docker.io/library/` because Docker tags without a registry prefix. If you used a `ghcr.io/your-org/` prefix, it preserves that.
+> The image gets prefixed with `docker.io/library/` because Docker tags without a registry prefix. If you used a `ghcr.io/mpratyush54/` prefix, it preserves that.
 
 ---
 

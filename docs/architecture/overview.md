@@ -122,56 +122,58 @@ graph LR
 
 ## Multi-SDK Architecture
 
-Four SDKs automatically register with the API, send heartbeats, capture metrics/logs, and submit bug reports:
+Four SDKs sit inside customer applications. Each auto-registers with the
+Platform API on startup, then talks to a fixed set of SDK endpoints for
+heartbeat, log shipping, metrics, bug reports, and config pull.
 
 ```mermaid
-graph TB
-    API["Platform API"]
-    subgraph Endpoints["SDK Endpoints"]
-        Register["POST /api/sdk/register"]
-        Heartbeat["POST /api/sdk/heartbeat"]
-        Logs["POST /api/sdk/logs"]
-        Metrics["POST /api/sdk/api-metrics"]
-        BugReport["POST /api/sdk/bug-report"]
-        Config["GET /api/sdk/config"]
-        DBCreds["GET /api/sdk/db-credentials"]
+graph LR
+    subgraph Apps["Customer applications"]
+        direction TB
+        NodeApp["Node.js<br/>@mpratyush54/sdk-node"]
+        PyApp["Python<br/>platform-sdk-python"]
+        ReactApp["React<br/>@mpratyush54/sdk-react"]
+        AngularApp["Angular<br/>@mpratyush54/sdk-angular"]
     end
-    subgraph SDKs["SDKs"]
-        Node["Node.js SDK<br/><code>&#64;mpratyush54/sdk-node</code>"]
-        Python["Python SDK<br/><code>platform-sdk-python</code>"]
-        React["React SDK<br/><code>&#64;mpratyush54/sdk-react</code>"]
-        Angular["Angular SDK<br/><code>&#64;mpratyush54/sdk-angular</code>"]
+    subgraph API["Platform API — /api/sdk/*"]
+        direction TB
+        Register["POST /register"]
+        Heartbeat["POST /heartbeat"]
+        Logs["POST /logs"]
+        Metrics["POST /api-metrics"]
+        Bug["POST /bug-report"]
+        Cfg["GET  /config"]
+        DBC["GET  /db-credentials"]
     end
-    API --> Register
-    API --> Heartbeat
-    API --> Logs
-    API --> Metrics
-    API --> BugReport
-    API --> Config
-    API --> DBCreds
-    Register -.-> Node
-    Register -.-> Python
-    Register -.-> React
-    Register -.-> Angular
-    Heartbeat -.-> Node
-    Heartbeat -.-> Python
-    Heartbeat -.-> React
-    Heartbeat -.-> Angular
-    Logs -.-> Node
-    Logs -.-> Python
-    Metrics -.-> Node
-    Metrics -.-> React
-    Metrics -.-> Angular
-    BugReport -.-> Node
-    BugReport -.-> React
-    BugReport -.-> Angular
-    Config -.-> Node
-    Config -.-> Python
-    Config -.-> React
-    Config -.-> Angular
-    DBCreds -.-> Node
-    DBCreds -.-> Python
+    subgraph Data["Data plane"]
+        direction TB
+        PG[("PostgreSQL<br/>registrations, config")]
+        Mongo[("MongoDB<br/>logs, metrics, bugs")]
+        Redis[("Redis<br/>cache, heartbeats")]
+    end
+
+    Apps ==>|"SDK token"| API
+
+    Register --> PG
+    Cfg      --> PG
+    DBC      --> PG
+    Heartbeat--> Redis
+    Logs     --> Mongo
+    Metrics  --> Mongo
+    Bug      --> Mongo
 ```
+
+Which SDK uses which endpoint:
+
+| Endpoint | Node | Python | React | Angular |
+|---|:-:|:-:|:-:|:-:|
+| `POST /api/sdk/register` | ✅ | ✅ | ✅ | ✅ |
+| `POST /api/sdk/heartbeat` | ✅ | ✅ | ✅ | ✅ |
+| `POST /api/sdk/logs` | ✅ | ✅ | — | — |
+| `POST /api/sdk/api-metrics` | ✅ | — | ✅ | ✅ |
+| `POST /api/sdk/bug-report` | ✅ | — | ✅ | ✅ |
+| `GET  /api/sdk/config` | ✅ | ✅ | ✅ | ✅ |
+| `GET  /api/sdk/db-credentials` | ✅ | ✅ | — | — |
 
 <div class="dashboard-card">
   <div class="dashboard-card-header">

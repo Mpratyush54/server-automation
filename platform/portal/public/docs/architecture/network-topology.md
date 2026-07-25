@@ -2,45 +2,30 @@
 
 ## Overall Network Architecture
 
-```
-                          INTERNET
-                             │
-                   ┌─────────▼─────────┐
-                   │   YOUR_SERVER_IP  │
-                   │   (Public IP)     │
-                   └─────────┬─────────┘
-                             │
-                   ┌─────────▼─────────┐
-                   │   Host Firewall   │
-                   │   Open: 80, 443   │
-                   │   Closed: all     │
-                   │   others          │
-                   └─────────┬─────────┘
-                             │
-                   ┌─────────▼─────────┐
-                   │  ingress-nginx    │
-                   │  Controller       │
-                   │  (hostNetwork:   │
-                   │   true)           │
-                   │  Ports:           │
-                   │   80 → redirect   │
-                   │   443 → TLS       │
-                   └─────────┬─────────┘
-                             │
-          ┌──────────────────┼──────────────────┐
-          │                  │                  │
-          ▼                  ▼                  ▼
-   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-   │  caps        │  │  monitoring  │  │  argocd/     │
-   │  (portal +   │  │  (grafana,   │  │  portainer   │
-   │   api)       │  │   prometheus)│  │  etc.        │
-   └──────────────┘  └──────────────┘  └──────────────┘
-          │
-          ├──────────► postgres-service:5432
-          ├──────────► mongo-service:27017
-          ├──────────► redis-service:6379
-          ├──────────► minio-service:9000
-          └──────────► loki-service:3100
+```mermaid
+graph TB
+    INTERNET([INTERNET])
+    IP["YOUR_SERVER_IP<br/>(Public IP)"]
+    FW["Host Firewall<br/>Open: 80, 443<br/>Closed: all others"]
+    INGRESS["ingress-nginx Controller<br/>(hostNetwork: true)<br/>80 to redirect / 443 to TLS"]
+    CAPS["caps<br/>(portal + api)"]
+    MON["monitoring<br/>(grafana, prometheus)"]
+    OPS["argocd / portainer / etc."]
+    PG[("postgres-service:5432")]
+    MG[("mongo-service:27017")]
+    RD[("redis-service:6379")]
+    MN[("minio-service:9000")]
+    LK[("loki-service:3100")]
+
+    INTERNET --> IP --> FW --> INGRESS
+    INGRESS --> CAPS
+    INGRESS --> MON
+    INGRESS --> OPS
+    CAPS --> PG
+    CAPS --> MG
+    CAPS --> RD
+    CAPS --> MN
+    CAPS --> LK
 ```
 
 ## Ingress Controller: nginx-ingress on Host Network
@@ -68,23 +53,21 @@ controller:
 
 ## SSL Termination via cert-manager + Let's Encrypt
 
-```
-Client ───► HTTPS :443 ──► nginx-ingress ──► TLS handshake ──► HTTP (in-cluster)
-                                    │
-                                    │ cert-manager watches
-                                    │ Ingress annotations
-                                    ▼
-                           cert-manager
-                                │
-                    ┌───────────┴───────────┐
-                    │                       │
-                    ▼                       ▼
-            letsencrypt-prod         letsencrypt-staging
-            ClusterIssuer            ClusterIssuer
-                    │                       │
-                    ▼                       ▼
-            Let's Encrypt            Let's Encrypt
-            Production API           Staging API
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Ingress as nginx-ingress
+    participant CM as cert-manager
+    participant LE as Let's Encrypt
+
+    Client->>Ingress: HTTPS :443
+    Ingress->>Ingress: TLS handshake
+    Ingress->>Client: HTTP (in-cluster)
+    Note over CM: Watches Ingress annotations
+    CM->>LE: Request cert (prod ClusterIssuer)
+    CM->>LE: Request cert (staging ClusterIssuer)
+    LE-->>CM: Issue certificate
+    CM-->>Ingress: Store in Kubernetes Secret
 ```
 
 **Certificate provisioning flow:**
@@ -104,38 +87,20 @@ const isRealDomain = !domain.includes('sslip.io') && !domain.match(/^\d+\.\d+\.\
 
 ## Subpath Routing
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         REQUEST ROUTING                            │
-│                                                                     │
-│  https://YOUR_SERVER_IP.sslip.io/                                   │
-│                                    ┌──────────────────────┐        │
-│  /          ──────────────────────►│ portal-service:80     │        │
-│                                    │ / (Angular SPA)      │        │
-│                                    │ try_files $uri        │        │
-│                                    │ /index.html           │        │
-│                                    └──────────────────────┘        │
-│                                                                     │
-│                                    ┌──────────────────────┐        │
-│  /api/*    ───────────────────────►│ api-service:3000      │        │
-│                                    │ /api/*                │        │
-│                                    └──────────────────────┘        │
-│                                                                     │
-│                                    ┌──────────────────────┐        │
-│  /argocd/* ───────────────────────►│ argocd-server:443    │        │
-│                                    │ (ssl-passthrough)     │        │
-│                                    └──────────────────────┘        │
-│                                                                     │
-│                                    ┌──────────────────────┐        │
-│  /portainer/* ────────────────────►│ portainer-service    │        │
-│                                    │ :9000                │        │
-│                                    └──────────────────────┘        │
-│                                                                     │
-│                                    ┌──────────────────────┐        │
-│  /grafana/* ──────────────────────►│ grafana-service      │        │
-│                                    │ :3000 (subpath)      │        │
-│                                    └──────────────────────┘        │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph LR
+    HOST["https://YOUR_SERVER_IP.sslip.io"]
+    PORTAL["portal-service:80<br/>Angular SPA<br/>try_files to /index.html"]
+    API["api-service:3000<br/>/api/*"]
+    ARGO["argocd-server:443<br/>(ssl-passthrough)"]
+    PORT["portainer-service:9000"]
+    GRAF["grafana-service:3000<br/>(subpath)"]
+
+    HOST -- "/" --> PORTAL
+    HOST -- "/api/*" --> API
+    HOST -- "/argocd/*" --> ARGO
+    HOST -- "/portainer/*" --> PORT
+    HOST -- "/grafana/*" --> GRAF
 ```
 
 ### Ingress Rules (Complete)
@@ -145,7 +110,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: platform-ingress
-  namespace: platform
+  namespace: caps
   annotations:
     kubernetes.io/ingress.class: nginx
     cert-manager.io/cluster-issuer: letsencrypt-prod
@@ -243,21 +208,16 @@ spec:
 
 ## Internal DNS Resolution
 
-```
-                            CoreDNS (kube-system)
-                                    │
-                ┌───────────────────┼───────────────────┐
-                │                   │                   │
-         ┌──────▼──────┐    ┌───────▼───────┐    ┌──────▼──────┐
-         │  Service    │    │  Pod DNS      │    │  External   │
-         │  DNS        │    │  (statefulset)│    │  DNS        │
-         │             │    │               │    │             │
-         │ postgres    │    │ postgres-0    │    │ sslip.io    │
-         │ .postgres   │    │ .postgres     │    │             │
-         │ .svc.cluster│    │ .svc.cluster  │    │ <IP>.sslip  │
-         │ .local      │    │ .local        │    │ .io         │
-         │             │    │               │    │ .io         │
-         └─────────────┘    └───────────────┘    └─────────────┘
+```mermaid
+graph TB
+    CD["CoreDNS<br/>kube-system"]
+    SVC["Service DNS<br/>postgres.postgres<br/>.svc.cluster.local"]
+    POD["Pod DNS (statefulset)<br/>postgres-0.postgres<br/>.svc.cluster.local"]
+    EXT["External DNS<br/>sslip.io<br/>YOUR_IP.sslip.io"]
+
+    CD --> SVC
+    CD --> POD
+    CD --> EXT
 ```
 
 **Internal DNS naming conventions:**
@@ -283,8 +243,9 @@ LOKI_URL=http://loki.loki.svc.cluster.local:3100
 
 The server's public IP `YOUR_SERVER_IP` is used with the `sslip.io` wildcard DNS service:
 
-```
-*.YOUR_SERVER_IP.sslip.io  →  A record →  YOUR_SERVER_IP
+```mermaid
+graph LR
+    W["*.YOUR_SERVER_IP.sslip.io"] -- "A record" --> IP["YOUR_SERVER_IP"]
 ```
 
 This allows multiple subdomain-based services without managing real DNS records:
@@ -359,7 +320,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: api-allow-ingress-only
-  namespace: platform
+  namespace: caps
 spec:
   podSelector:
     matchLabels:

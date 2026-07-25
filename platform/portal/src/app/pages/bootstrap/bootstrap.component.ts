@@ -46,7 +46,7 @@ interface IntegrationItem {
         <span style="font-size:0.72rem;color:var(--color-text-muted);background:rgba(16,185,129,0.1);color:#34d399;padding:3px 10px;border-radius:12px;font-weight:600;">Ubuntu 22.04+</span>
       </div>
       <div style="position:relative;">
-        <pre style="background:#0b0f19;padding:18px 20px;border-radius:10px;font-size:0.84rem;color:#34d399;margin:0;overflow-x:auto;border:1px solid rgba(52,211,153,0.15);">curl -fsSL https://raw.githubusercontent.com/your-org/platform/main/platform-bootstrap/bootstrap.sh -o bootstrap.sh
+        <pre style="background:#0b0f19;padding:18px 20px;border-radius:10px;font-size:0.84rem;color:#34d399;margin:0;overflow-x:auto;border:1px solid rgba(52,211,153,0.15);">curl -fsSL https://raw.githubusercontent.com/Mpratyush54/SERVER-automation/master/platform-bootstrap/bootstrap.sh -o bootstrap.sh
 chmod +x bootstrap.sh
 sudo ./bootstrap.sh</pre>
         <button class="btn btn-sm" (click)="copyInstallCmd()" style="position:absolute;top:10px;right:10px;font-size:0.72rem;">
@@ -236,7 +236,7 @@ export class BootstrapComponent implements OnInit {
   scriptContent = `#!/usr/bin/env bash
 # Platform — Full Server Bootstrap v2.0.0
 # Run: sudo ./bootstrap.sh
-# Docs: https://github.com/your-org/platform/blob/main/platform-bootstrap/README.md
+# Docs: https://github.com/Mpratyush54/SERVER-automation/blob/main/platform-bootstrap/README.md
 #
 # This script installs: Docker, k3s, Helm, ingress-nginx, cert-manager,
 # PostgreSQL, MongoDB, Redis, MinIO, ArgoCD, Grafana+Prometheus+Loki,
@@ -245,9 +245,9 @@ export class BootstrapComponent implements OnInit {
 #
 # Re-run safely — completed steps are tracked in /etc/platform/.bootstrap_state
 
-curl -fsSL https://raw.githubusercontent.com/your-org/platform/main/platform-bootstrap/bootstrap.sh | sudo bash`;
+curl -fsSL https://raw.githubusercontent.com/Mpratyush54/SERVER-automation/master/platform-bootstrap/bootstrap.sh | sudo bash`;
 
-  installCmd = `curl -fsSL https://raw.githubusercontent.com/your-org/platform/main/platform-bootstrap/bootstrap.sh -o bootstrap.sh
+  installCmd = `curl -fsSL https://raw.githubusercontent.com/Mpratyush54/SERVER-automation/master/platform-bootstrap/bootstrap.sh -o bootstrap.sh
 chmod +x bootstrap.sh
 sudo ./bootstrap.sh`;
 

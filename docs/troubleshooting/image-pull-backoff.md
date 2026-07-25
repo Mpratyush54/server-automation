@@ -12,7 +12,7 @@ platform-portal-59f8bd4-def       0/1     ErrImagePull       0          3m
 Describe shows:
 
 ```
-Failed to pull image "ghcr.io/your-org/platform-api:latest":
+Failed to pull image "ghcr.io/mpratyush54/platform-api:latest":
   rpc error: not found
 ```
 
@@ -22,7 +22,7 @@ The Kubernetes Deployment references a container image that doesn't exist in the
 registry. The two ways this happens:
 
 1. **Placeholder registry** — an older `bootstrap.sh` hardcoded
-   `ghcr.io/your-org/platform-api` in the Deployment manifest. Fixed on master, but
+   `ghcr.io/mpratyush54/platform-api` in the Deployment manifest. Fixed on master, but
    an installed cluster may still have the stale Deployment.
 2. **Fork without a published image** — you cloned the repo, changed
    `PLATFORM_IMAGE_REGISTRY` to your own user, but haven't published images to
@@ -37,7 +37,7 @@ kubectl get deploy -n platform platform-api  -o jsonpath='{.spec.template.spec.c
 kubectl get deploy -n platform platform-portal -o jsonpath='{.spec.template.spec.containers[0].image}'; echo
 ```
 
-If either says `ghcr.io/your-org/...`, you have the stale Deployment.
+If either says `ghcr.io/mpratyush54/...`, you have the stale Deployment.
 
 ### 2. Point at the published images
 

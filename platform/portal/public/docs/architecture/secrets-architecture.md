@@ -2,44 +2,20 @@
 
 ## Encryption at Rest — AES-256-GCM
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    SECRETS_ENCRYPTION_KEY                          │
-│                     (32 bytes hex = 64 chars)                      │
-│                          │                                          │
-│                          ▼                                          │
-│     crypto.createHash('sha256').update(masterKey).digest()         │
-│                          │                                          │
-│                    ┌─────┴─────┐                                    │
-│                    │ 256-bit   │                                    │
-│                    │ AES key   │                                    │
-│                    └─────┬─────┘                                    │
-│                          │                                          │
-│              ┌───────────┴───────────┐                              │
-│              │                       │                              │
-│              ▼                       ▼                              │
-│     ┌────────────────┐     ┌────────────────┐                      │
-│     │  encryptValue  │     │  decryptValue  │                      │
-│     │                │     │                │                      │
-│     │  randomBytes(  │     │  split(":") →  │                      │
-│     │    16) = iv    │     │  iv + authTag  │                      │
-│     │                │     │  + ciphertext  │                      │
-│     │  cipher =      │     │                │                      │
-│     │  createCipheriv│     │  decipher =    │                      │
-│     │  (aes-256-gcm, │     │  createDecipher│                      │
-│     │   key, iv)     │     │  iv(aes-256-   │                      │
-│     │                │     │  gcm, key, iv) │                      │
-│     │  output =      │     │                │                      │
-│     │  iv:authTag:   │     │  setAuthTag(   │                      │
-│     │  ciphertext    │     │    authTag)     │                      │
-│     │  (hex)         │     │                │                      │
-│     └────────────────┘     └───────┬────────┘                      │
-│                                    │                                │
-│                                    ▼                                │
-│                     ┌──────────────────────────┐                   │
-│                     │  Plaintext string        │                   │
-│                     └──────────────────────────┘                   │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    MK["SECRETS_ENCRYPTION_KEY<br/>32 bytes hex, 64 chars"]
+    SHA["sha256.update masterKey .digest"]
+    KEY["Derived 256-bit AES key"]
+    ENC["encryptValue<br/>iv = randomBytes 16<br/>createCipheriv aes-256-gcm<br/>output = iv : authTag : ciphertext"]
+    DEC["decryptValue<br/>split by :<br/>createDecipheriv aes-256-gcm<br/>setAuthTag authTag"]
+    PT["Plaintext string"]
+    CT["Ciphertext blob<br/>stored in PostgreSQL"]
+
+    MK --> SHA --> KEY
+    KEY --> ENC --> CT
+    CT --> DEC --> PT
+    KEY --> DEC
 ```
 
 **Code** (`src/lib/secrets-encryption.ts`):
@@ -80,21 +56,18 @@ export function decryptValue(encryptedPayload: string, masterKey: string): strin
 ## Storage Format
 
 The encrypted blob stored in PostgreSQL `secrets.encrypted_value`:
-```
-{iv_hex}:{auth_tag_hex}:{ciphertext_hex}
-  │           │              │
-  │           │              └── AES-256-GCM encrypted payload (hex)
-  │           └── GCM authentication tag (32 hex chars = 16 bytes)
-  └── Random initialization vector (32 hex chars = 16 bytes)
+
+```mermaid
+graph LR
+    IV["iv_hex<br/>Random IV<br/>32 hex chars = 16 bytes"]
+    TAG["auth_tag_hex<br/>GCM auth tag<br/>32 hex chars = 16 bytes"]
+    CT["ciphertext_hex<br/>AES-256-GCM<br/>encrypted payload"]
+
+    IV -- ":" --> TAG
+    TAG -- ":" --> CT
 ```
 
-Example encrypted payload:
-
-```text
-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
-:7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d
-:4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f
-```
+Example: `a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6:7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d:4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f`
 
 ## Database Schema
 
@@ -132,20 +105,26 @@ export class SecretVersion {
 
 ## API Endpoints
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     SECRETS API ROUTES                             │
-│                      /api/projects/:projectId/secrets              │
-│                                                                     │
-│  GET    /                           → List secrets (masked values) │
-│  POST   /                           → Create/update secret         │
-│  POST   /reveal                     → Reveal plaintext value       │
-│  DELETE /:secretId                  → Soft-delete secret           │
-│  GET    /export/:environmentId      → Export as .env format        │
-│  POST   /bulk                       → Bulk import from JSON       │
-│  GET    /:secretId/versions         → Version history              │
-│  POST   /:secretId/rollback/:version→ Rollback to previous version │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    ROOT["SECRETS API ROUTES<br/>/api/projects/:projectId/secrets"]
+    LIST["GET /<br/>List secrets (masked values)"]
+    CREATE["POST /<br/>Create/update secret"]
+    REVEAL["POST /reveal<br/>Reveal plaintext value"]
+    DEL["DELETE /:secretId<br/>Soft-delete secret"]
+    EXPORT["GET /export/:environmentId<br/>Export as .env format"]
+    BULK["POST /bulk<br/>Bulk import from JSON"]
+    VERSIONS["GET /:secretId/versions<br/>Version history"]
+    ROLLBACK["POST /:secretId/rollback/:version<br/>Rollback to previous version"]
+
+    ROOT --> LIST
+    ROOT --> CREATE
+    ROOT --> REVEAL
+    ROOT --> DEL
+    ROOT --> EXPORT
+    ROOT --> BULK
+    ROOT --> VERSIONS
+    ROOT --> ROLLBACK
 ```
 
 ### Required Permissions per Endpoint
@@ -163,54 +142,29 @@ export class SecretVersion {
 
 ## Versioning Flow
 
-```
-                      ┌──────────────┐
-                      │  Secret v1   │
-                      │  value="abc" │
-                      └──────┬───────┘
-                             │ PATCH /secrets { value: "xyz" }
-                             ▼
-         ┌──────────────────────────────────┐
-         │  Step 1: Archive current version │
-         │  SecretVersion.create({          │
-         │    secretId,                     │
-         │    encryptedValue: v1 encrypted, │
-         │    version: 1,                   │
-         │    changedById: userId           │
-         │  })                              │
-         └──────────────────────────────────┘
-         │
-         ▼
-         ┌──────────────────────────────────┐
-         │  Step 2: Update secret           │
-         │  Secret.update({                 │
-         │    encryptedValue: "xyz" enc,    │
-         │    version: 2,                   │
-         │    createdById: userId           │
-         │  })                              │
-         └──────────────────────────────────┘
-         │
-         ▼
-                      ┌──────────────┐
-                      │  Secret v2   │
-                      │  value="xyz" │
-                      └──────┬───────┘
-                             │ POST /rollback/:version1
-                             ▼
-         ┌──────────────────────────────────┐
-         │  Step 1: Archive current v2      │
-         │  SecretVersion.create({ v2 enc })│
-         ├──────────────────────────────────┤
-         │  Step 2: Restore v1 encrypted    │
-         │  Secret.encryptedValue = v1.enc  │
-         │  Secret.version = 3              │
-         └──────────────────────────────────┘
-         │
-         ▼
-                      ┌──────────────┐
-                      │  Secret v3   │
-                      │  value="abc" │  (rolled back to v1 content)
-                      └──────────────┘
+```mermaid
+stateDiagram-v2
+    [*] --> v1
+    v1 --> v2 : PATCH /secrets<br/>value = xyz
+    v2 --> v3 : POST /rollback/version1
+    v3 --> [*]
+
+    note right of v1
+      Secret v1
+      value = "abc"
+    end note
+
+    note right of v2
+      Secret v2, value = "xyz"
+      SecretVersion row archives v1
+    end note
+
+    note right of v3
+      Secret v3, value = "abc"
+      Rollback: archives v2 to SecretVersion,
+      restores v1 ciphertext,
+      version counter still increments
+    end note
 ```
 
 **Key observations:**
@@ -286,11 +240,15 @@ await logAudit({
 
 Secrets are namespaced hierarchically:
 
-```
-Projects
-└── Environments
-    └── Secrets
-        └── Versions
+```mermaid
+graph TB
+    P["Project<br/>(projectId, required)"]
+    E["Environment<br/>(environmentId, nullable = fallback)"]
+    K["Secret key<br/>unique per (project, env, key)"]
+    S["Secret row<br/>encryptedValue, version"]
+    V["SecretVersion rows<br/>full history, CASCADE on delete"]
+
+    P --> E --> K --> S --> V
 ```
 
 - **Per-project**: All secrets within a project scope (`projectId` is required)

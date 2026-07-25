@@ -194,12 +194,12 @@ If you prefer a container registry instead of local import:
 
 ```bash
 # Tag and push
-docker tag platform-api:latest ghcr.io/your-org/platform-api:$(git rev-parse --short HEAD)
-docker push ghcr.io/your-org/platform-api:$(git rev-parse --short HEAD)
+docker tag platform-api:latest ghcr.io/mpratyush54/platform-api:$(git rev-parse --short HEAD)
+docker push ghcr.io/mpratyush54/platform-api:$(git rev-parse --short HEAD)
 
 # Update deployment with new tag
 kubectl set image deployment/platform-api -n platform \
-  api=ghcr.io/your-org/platform-api:$(git rev-parse --short HEAD)
+  api=ghcr.io/mpratyush54/platform-api:$(git rev-parse --short HEAD)
 
 # Set imagePullPolicy: Always if needed
 kubectl patch deployment platform-api -n platform -p \
