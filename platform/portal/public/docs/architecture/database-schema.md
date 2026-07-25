@@ -4,38 +4,165 @@ Platform uses PostgreSQL as its primary database with TypeORM for entity managem
 
 ## Entity Relationship Diagram
 
-```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│    User     │────→│    Role      │     │   Project    │
-├─────────────┤     ├──────────────┤     ├──────────────┤
-│ id (PK)     │     │ id (PK)      │     │ id (PK)      │
-│ name        │     │ name (unique)│     │ name         │
-│ email       │     │ description  │     │ description  │
-│ role        │     │ permissions[]│     │ gitRepo      │
-│ roleId (FK) │     │ isSystem     │     │ sdkToken     │
-│ gitlabId    │     │ isActive     │     │ createdAt    │
-│ avatarUrl   │     │ createdAt    │     │ updatedAt    │
-│ lastLogin   │     │ updatedAt    │     │ ownerId (FK) │
-│ isActive    │     └──────────────┘     └──────┬───────┘
-└─────────────┘                                 │
-                                                │
-                    ┌───────────────────────────┼───────────────┐
-                    │                           │               │
-           ┌────────▼──────┐          ┌─────────▼──────┐  ┌─────▼──────────┐
-           │  Environment  │          │   Deployment   │  │ ProjectConfig  │
-           ├───────────────┤          ├────────────────┤  ├────────────────┤
-           │ id (PK)       │          │ id (PK)        │  │ id (PK)        │
-           │ name          │          │ projectId (FK) │  │ projectId (FK) │
-           │ projectId (FK)│          │ environmentId  │  │ config (JSONB) │
-           │ isProduction  │          │ branch         │  │ createdAt      │
-           │ domain        │          │ commitSha      │  │ updatedAt      │
-           └───────────────┘          │ status         │  └────────────────┘
-                                      │ previewUrl     │
-                                      │ containerImage │
-                                      │ replicas       │
-                                      │ createdAt      │
-                                      │ expiresAt      │
-                                      └────────────────┘
+```mermaid
+erDiagram
+    User ||--o{ Project        : "owns"
+    User }o--|| Role           : "roleId"
+    User ||--o{ Secret         : "createdBy"
+    User ||--o{ SecretVersion  : "createdBy"
+    User ||--o{ AuditLog       : "actor"
+
+    Project ||--o{ Environment      : "has"
+    Project ||--o{ Deployment       : "has"
+    Project ||--|| ProjectConfig    : "has"
+    Project ||--o{ Secret           : "scopes"
+    Project ||--o{ DbConnection     : "provisions"
+    Project ||--o{ ServiceRegistration : "registers"
+    Project ||--o{ SdkCredential    : "issues"
+    Project ||--o{ File             : "stores"
+
+    Environment ||--o{ Deployment : "target"
+    Environment ||--o{ Secret     : "scopes"
+
+    Deployment ||--o{ ClickupTaskLink : "linked to"
+
+    Secret ||--o{ SecretVersion : "revision"
+    DbConnection ||--o{ DbBackup : "backup"
+
+    User {
+        uuid id PK
+        string name
+        string email UK
+        enum role "admin devops tech_lead developer viewer"
+        uuid roleId FK
+        string gitlabId
+        text avatarUrl
+        timestamp lastLogin
+        boolean isActive
+    }
+    Role {
+        uuid id PK
+        string name UK
+        text description
+        text_array permissions
+        boolean isSystem
+        boolean isActive
+    }
+    Project {
+        uuid id PK
+        string name
+        text description
+        string gitRepo
+        string gitProvider "github | gitlab"
+        string sdkToken
+        uuid ownerId FK
+        string argoCDAppName
+        timestamp createdAt
+        timestamp updatedAt
+    }
+    Environment {
+        uuid id PK
+        string name "dev | staging | production"
+        uuid projectId FK
+        boolean isProduction
+        string domain
+    }
+    Deployment {
+        uuid id PK
+        uuid projectId FK
+        uuid environmentId FK
+        string branch
+        string commitSha
+        enum status "pending building deploying active failed terminated"
+        string previewUrl
+        string containerImage
+        int replicas
+        timestamp createdAt
+        timestamp expiresAt
+    }
+    ProjectConfig {
+        uuid id PK
+        uuid projectId FK
+        jsonb config
+        timestamp createdAt
+        timestamp updatedAt
+    }
+    Secret {
+        uuid id PK
+        string key
+        text encryptedValue "iv:authTag:ciphertext"
+        uuid environmentId FK
+        uuid projectId FK
+        uuid createdBy FK
+        int version
+        timestamp createdAt
+        timestamp updatedAt
+    }
+    SecretVersion {
+        uuid id PK
+        uuid secretId FK "CASCADE"
+        int version
+        text encryptedValue
+        uuid createdBy FK
+        timestamp createdAt
+    }
+    DbConnection {
+        uuid id PK
+        uuid projectId FK
+        enum type "postgres | mongodb | redis"
+        string host
+        int port
+        string database
+        string username
+        text encryptedPassword
+        enum status "active failed provisioning"
+    }
+    DbBackup {
+        uuid id PK
+        uuid connectionId FK
+        string fileName
+        string s3Key
+        enum status
+        int size
+    }
+    ServiceRegistration {
+        uuid id PK
+        uuid projectId FK
+        string serviceName
+        int port
+        string status
+    }
+    SdkCredential {
+        uuid id PK
+        uuid projectId FK
+        string token "hashed"
+        string status
+    }
+    File {
+        uuid id PK
+        uuid projectId FK
+        string fileName
+        string s3Key
+        int size
+        string mimeType
+    }
+    AuditLog {
+        uuid id PK
+        uuid userId FK
+        string action
+        string targetType
+        uuid targetId
+        jsonb metadata
+        string ip
+        timestamp createdAt
+    }
+    ClickupTaskLink {
+        uuid id PK
+        uuid deploymentId FK
+        string taskId
+        string listId
+        string spaceId
+    }
 ```
 
 ## Entity Definitions

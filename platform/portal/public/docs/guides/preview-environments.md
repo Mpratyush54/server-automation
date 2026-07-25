@@ -6,18 +6,40 @@ Preview environments are ephemeral deployments created automatically on every Gi
 
 ## Deployment Pipeline
 
-```mermaid
-graph TB
-    Git["Git Push (non-main branch)"]
-    Webhook["GitHub / GitLab Webhook<br/>POST /api/webhooks/github<br/>POST /api/webhooks/gitlab"]
-    API["Platform API receives event<br/>Extracts branch, commit SHA, repo URL<br/>Matches repo to Project<br/>Generates preview URL<br/>Creates Deployment record (BUILDING)<br/>Calls triggerPipeline()"]
-    K8s["Kubernetes Preview Deployment<br/>deployK8sPreview(project, branch, tag)<br/>Creates namespace + deployment + service + ingress"]
-    Deployed["Deployment status → DEPLOYED<br/>previewUrl populated<br/>ClickUp comment posted<br/>SMTP notification sent"]
+### Push → preview URL (sequence)
 
-    Git --> Webhook
-    Webhook --> API
-    API --> K8s
-    K8s --> Deployed
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Developer
+    participant Git as Git host
+    participant API as Platform API
+    participant K8s as k3s cluster
+    participant CU as ClickUp / SMTP
+
+    Dev->>Git: push branch<br/>(non-main)
+    Git->>API: POST /api/webhooks/{github|gitlab}<br/>signed payload
+    API->>API: match repo → Project<br/>generate preview URL<br/>insert Deployment (BUILDING)
+    API->>K8s: deployK8sPreview(project, branch, tag)
+    K8s-->>API: namespace + deployment + service + ingress created
+    API->>API: Deployment → DEPLOYED,<br/>previewUrl populated
+    API->>CU: post preview comment / email
+    API-->>Dev: preview URL ready
+```
+
+### Deployment lifecycle (state)
+
+```mermaid
+stateDiagram-v2
+    [*] --> BUILDING: webhook received
+    BUILDING --> DEPLOYING: image pushed
+    DEPLOYING --> DEPLOYED: pods Ready
+    DEPLOYING --> FAILED: rollout failed
+    DEPLOYED --> EXPIRED: 72 h TTL reached
+    DEPLOYED --> TERMINATED: PR closed / manual terminate
+    FAILED --> [*]
+    EXPIRED --> [*]
+    TERMINATED --> [*]
 ```
 
 ### Webhook Events
@@ -118,9 +140,7 @@ Each preview environment inherits the project's environment variables from the `
 Variables can be set per-preview by creating secrets with the preview environment's UUID:
 
 ```http
-POST /api/projects/:projectId/secrets HTTP/1.1
-Content-Type: application/json
-
+POST /api/projects/:projectId/secrets
 {
   "key": "FEATURE_FLAG_NEW_UI",
   "value": "true",

@@ -2,36 +2,19 @@
 
 ## Login Flow (Email-only)
 
-```
-┌──────────┐          ┌──────────┐          ┌──────────┐          ┌──────────┐
-│  Browser │          │  Portal  │          │  API     │          │PostgreSQL│
-└────┬─────┘          └────┬─────┘          └────┬─────┘          └────┬─────┘
-     │                     │                     │                     │
-     │  POST /api/auth/    │                     │                     │
-     │  login              │                     │                     │
-     │  { email: "..." }   │                     │                     │
-     │─────────────────────────────────────────>│                     │
-     │                     │                     │                     │
-     │                     │              SELECT * FROM users          │
-     │                     │           WHERE email = '...'             │
-     │                     │                     │────────────────────>│
-     │                     │                     │                     │
-     │                     │                     │<────────────────────│
-     │                     │                     │     User row        │
-     │                     │                     │                     │
-     │                     │              jwt.sign(                    │
-     │                     │                { id, email,               │
-     │                     │                  name, role },            │
-     │                     │                JWT_SECRET,                │
-     │                     │                { expiresIn: '24h' }       │
-     │                     │              )                            │
-     │                     │                     │                     │
-     │  { token, user }    │                     │                     │
-     │<─────────────────────────────────────────│                     │
-     │                     │                     │                     │
-     │  Store token in     │                     │                     │
-     │  localStorage/      │                     │                     │
-     │  httpOnly cookie    │                     │                     │
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant Portal
+    participant API
+    participant PostgreSQL
+
+    Browser->>API: POST /api/auth/login<br/>{ email: "..." }
+    API->>PostgreSQL: SELECT * FROM users<br/>WHERE email = '...'
+    PostgreSQL-->>API: User row
+    Note over API: jwt.sign(<br/>{ id, email, name, role },<br/>JWT_SECRET,<br/>{ expiresIn: '24h' })
+    API-->>Browser: { token, user }
+    Note over Browser: Store token in<br/>localStorage/<br/>httpOnly cookie
 ```
 
 **Code** (`src/routes/auth.ts:38-59`):
@@ -60,46 +43,18 @@ router.post('/auth/login', async (req, res) => {
 
 ## JWT Middleware
 
-```
-                 ┌─────────────────────────┐
-                 │     Incoming Request     │
-                 │ Authorization: Bearer .. │
-                 └────────────┬────────────┘
-                              │
-                              ▼
-                 ┌─────────────────────────┐
-                 │   expressAuthenticate   │
-                 │   (middleware/auth.ts)   │
-                 └────────────┬────────────┘
-                              │
-                    ┌─────────┴─────────┐
-                    │                   │
-                    ▼                   ▼
-           ┌────────────────┐  ┌──────────────────┐
-           │ Token starts   │  │ Normal JWT       │
-           │ with "sdk-"    │  │                  │
-           └────────────────┘  └────────┬─────────┘
-                    │                   │
-                    ▼                   ▼
-           ┌────────────────┐  ┌──────────────────┐
-           │ Set            │  │ jwt.verify()     │
-           │ req.sdkToken   │  │ JWT_SECRET       │
-           │ = true         │  │                  │
-           │ req.projectId  │  │ Find user in     │
-           │ = extracted    │  │ PostgreSQL       │
-           └────────────────┘  │                  │
-                               │ Set req.user =   │
-                               │ { id, role,      │
-                               │   roleId, name,  │
-                               │   email }        │
-                               └────────┬─────────┘
-                                        │
-                                        ▼
-                              ┌──────────────────┐
-                              │    next()        │
-                              │  or 401 if       │
-                              │  invalid/expired │
-                              └──────────────────┘
+```mermaid
+graph TB
+    Req["Incoming Request<br/>Authorization: Bearer ..."]
+    Mw["expressAuthenticate<br/>middleware/auth.ts"]
+    Dec{"Token starts<br/>with sdk-?"}
+    Sdk["SDK token path<br/>req.sdkToken = true<br/>req.projectId = extracted"]
+    Verify["jwt.verify with JWT_SECRET<br/>lookup user in PostgreSQL<br/>req.user = id, role, roleId, name, email"]
+    Next["next<br/>or 401 if invalid / expired"]
+
+    Req --> Mw --> Dec
+    Dec -- yes --> Sdk --> Next
+    Dec -- no  --> Verify --> Next
 ```
 
 **Code** (`src/middleware/auth.ts:64-97`):
@@ -133,46 +88,23 @@ export async function expressAuthenticate(req, res, next) {
 
 ## RBAC — Role-Based Access Control
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      PERMISSION RESOLUTION                         │
-│                                                                     │
-│  requirePermission('secrets.reveal', 'secrets.list')               │
-│                              │                                      │
-│                              ▼                                      │
-│                     getUserPermissions(user)                        │
-│                              │                                      │
-│                    ┌─────────┴────────────┐                         │
-│                    │                      │                         │
-│                    ▼                      ▼                         │
-│           ┌────────────────┐    ┌──────────────────┐                │
-│           │ Check in-memory│    │ Build from       │                │
-│           │ cache          │    │ ROLE_PRESETS[role]│               │
-│           │ Map<userId,    │    │ + custom Role    │                │
-│           │   Set<string>> │    │   permissions    │                │
-│           │                │    │                  │                │
-│           │ CACHE HIT      │    │ Store in cache   │                │
-│           │ Valid TTL?     │    │ (60s expiry)     │                │
-│           └────────────────┘    └──────────────────┘                │
-│                    │                      │                         │
-│                    └──────────┬───────────┘                         │
-│                               │                                     │
-│                               ▼                                     │
-│                    ┌────────────────────┐                           │
-│                    │ Check all required │                           │
-│                    │ permissions exist  │                           │
-│                    │ in user's Set      │                           │
-│                    └─────────┬──────────┘                           │
-│                              │                                      │
-│               ┌──────────────┴──────────────┐                      │
-│               │                             │                      │
-│               ▼                             ▼                      │
-│        ┌──────────────┐           ┌──────────────────┐             │
-│        │    next()    │           │ 403 Forbidden    │             │
-│        │              │           │ { error,         │             │
-│        │              │           │   required }     │             │
-│        └──────────────┘           └──────────────────┘             │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph PERM["Permission resolution"]
+        Req["requirePermission<br/>secrets.reveal, secrets.list"]
+        GetPerms["getUserPermissions(user)"]
+        Cache{"In-memory cache hit?<br/>Map: userId → Set of perms<br/>TTL 60s"}
+        Build["Build from<br/>ROLE_PRESETS[role]<br/>+ custom Role.permissions<br/>store in cache"]
+        Check{"All required perms<br/>present in user's set?"}
+        Ok["next()"]
+        Deny["403 Forbidden<br/>error + required list"]
+
+        Req --> GetPerms --> Cache
+        Cache -- hit  --> Check
+        Cache -- miss --> Build --> Check
+        Check -- yes --> Ok
+        Check -- no  --> Deny
+    end
 ```
 
 ### Predefined Roles (`src/config/permissions.ts`)
@@ -220,60 +152,24 @@ Cache invalidation triggers:
 
 ## OIDC Flow (`/oauth/*`)
 
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│   Client     │     │   Portal     │     │  API         │     │  User (Admin)│
-│ (Grafana/    │     │  (Angular)   │     │  Express     │     │              │
-│  Portainer)  │     │              │     │              │     │              │
-└──────┬───────┘     └──────┬───────┘     └──────┬───────┘     └──────┬───────┘
-       │                    │                     │                    │
-       │ GET /oauth/        │                     │                    │
-       │ authorize?client_id│                     │                    │
-       │ &redirect_uri=     │                     │                    │
-       │ &response_type=code│                     │                    │
-       │──────────────────────────────────────────>│                    │
-       │                    │                     │                    │
-       │                    │  (no ?token param)  │                    │
-       │                    │  Redirect to Portal │                    │
-       │                    │  /oauth/authorize   │                    │
-       │                    │<────────────────────│                    │
-       │                    │                     │                    │
-       │                    │  User authenticates │                    │
-       │                    │  (already has JWT)  │                    │
-       │                    │  Clicks "Authorize" │                    │
-       │                    │                     │                    │
-       │                    │  GET /oauth/        │                    │
-       │                    │  authorize?token=JWT│                    │
-       │                    │────────────────────>│                    │
-       │                    │                     │                    │
-       │                    │                     │  Validate JWT      │
-       │                    │                     │  Generate code=uuid│
-       │                    │                     │  Store in authCodes│
-       │                    │                     │  Map (5min TTL)    │
-       │                    │                     │                    │
-       │                    │  302 → redirect_uri │                    │
-       │                    │  ?code=...&state=   │                    │
-       │                    │<────────────────────│                    │
-       │                    │                     │                    │
-       │  302 → redirect_uri?code=...&state=...   │                    │
-       │<───────────────────│                     │                    │
-       │                    │                     │                    │
-       │ POST /oauth/token  │                     │                    │
-       │ { code, client_id, │                     │                    │
-       │   grant_type }     │                     │                    │
-       │─────────────────────────────────────────>│                    │
-       │                    │                     │                    │
-       │                    │              Lookup code in authCodes    │
-       │                    │              Delete code (single-use)    │
-       │                    │              Fetch user from PostgreSQL  │
-       │                    │              Sign access_token (RS256)   │
-       │                    │              Sign id_token (RS256)       │
-       │                    │                     │                    │
-       │ { access_token,    │                     │                    │
-       │   id_token,        │                     │                    │
-       │   token_type,      │                     │                    │
-       │   expires_in }     │                     │                    │
-       │<─────────────────────────────────────────│                    │
+```mermaid
+sequenceDiagram
+    participant Client as Client<br/>(Grafana/Portainer)
+    participant Portal as Portal<br/>(Angular)
+    participant API as API<br/>(Express)
+    participant User as User (Admin)
+
+    Client->>API: GET /oauth/authorize<br/>?client_id&redirect_uri=<br/>&response_type=code
+    Note over API: (no ?token param)<br/>Redirect to Portal<br/>/oauth/authorize
+    API-->>Portal: Redirect
+    Note over Portal,User: User authenticates<br/>(already has JWT)<br/>Clicks "Authorize"
+    Portal->>API: GET /oauth/authorize?token=JWT
+    Note over API: Validate JWT<br/>Generate code=uuid<br/>Store in authCodes<br/>Map (5min TTL)
+    API-->>Portal: 302 -> redirect_uri<br/>?code=...&state=
+    Portal-->>Client: 302 -> redirect_uri?code=...&state=...
+    Client->>API: POST /oauth/token<br/>{ code, client_id, grant_type }
+    Note over API: Lookup code in authCodes<br/>Delete code (single-use)<br/>Fetch user from PostgreSQL<br/>Sign access_token (RS256)<br/>Sign id_token (RS256)
+    API-->>Client: { access_token, id_token,<br/>token_type, expires_in }
 ```
 
 ### OIDC Endpoints
@@ -325,17 +221,16 @@ const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
 
 ### OAuth2 Proxy for Grafana/Portainer SSO
 
-```
-                     ┌─────────────────────────────────┐
-                     │   OAuth2 Proxy                  │
-                     │  (oauth2-proxy instance)        │
-                     │                                 │
-                     │  --provider=oidc                │
-                     │  --provider-url=https://{host}/ │
-                     │    api/oauth                    │
-                     │  --client-id=grafana            │
-                     │  --email-domain=*               │
-                     └─────────────────────────────────┘
+```mermaid
+graph LR
+    P["oauth2-proxy pod"]
+    subgraph Flags["Key flags"]
+        F1["--provider = oidc"]
+        F2["--provider-url = https://HOST/api/oauth"]
+        F3["--client-id = grafana"]
+        F4["--email-domain = *"]
+    end
+    P --- Flags
 ```
 
 Setup in `install-oauth2-proxy.sh`:

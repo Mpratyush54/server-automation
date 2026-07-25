@@ -384,8 +384,8 @@ kubectl describe clusterissuer letsencrypt-prod
 ### Build & Import API Image
 
 ```bash
-docker build -t ghcr.io/your-org/platform-api:latest ../platform/api
-docker save ghcr.io/your-org/platform-api:latest -o /tmp/platform-api.tar
+docker build -t ghcr.io/mpratyush54/platform-api:latest ../platform/api
+docker save ghcr.io/mpratyush54/platform-api:latest -o /tmp/platform-api.tar
 k3s ctr images import /tmp/platform-api.tar
 rm -f /tmp/platform-api.tar
 ```
@@ -393,8 +393,8 @@ rm -f /tmp/platform-api.tar
 ### Build & Import Portal Image
 
 ```bash
-docker build -t ghcr.io/your-org/platform-portal:latest ../platform/portal
-docker save ghcr.io/your-org/platform-portal:latest -o /tmp/platform-portal.tar
+docker build -t ghcr.io/mpratyush54/platform-portal:latest ../platform/portal
+docker save ghcr.io/mpratyush54/platform-portal:latest -o /tmp/platform-portal.tar
 k3s ctr images import /tmp/platform-portal.tar
 rm -f /tmp/platform-portal.tar
 ```
@@ -451,10 +451,10 @@ kubectl create secret generic platform-env \
 ### Deploy API + Portal
 
 The script applies a single YAML manifest containing:
-- `Deployment platform-api` — Node.js API (port 3000, `ghcr.io/your-org/platform-api:latest`)
+- `Deployment platform-api` — Node.js API (port 3000, `ghcr.io/mpratyush54/platform-api:latest`)
 - `Service platform-api` — ClusterIP on port 3000
 - `Service api` — Alias service for convenience
-- `Deployment platform-portal` — Angular portal served via nginx (port 80, `ghcr.io/your-org/platform-portal:latest`)
+- `Deployment platform-portal` — Angular portal served via nginx (port 80, `ghcr.io/mpratyush54/platform-portal:latest`)
 - `Service platform-portal` — ClusterIP on port 80
 - `ClusterRoleBinding platform-api-admin-binding` — RBAC for cross-namespace operations
 - ExternalName proxy services for: argoCD, Grafana, Portainer, Infisical, MinIO, oauth2-proxy

@@ -4,17 +4,29 @@
 
 The four SDKs (Node.js, Python, React, Angular) follow a common lifecycle pattern:
 
-```
-INIT ──► REGISTER ──► HEARTBEAT ──► TELEMETRY ──► SHUTDOWN
- │          │             │              │             │
- │     POST /api/    POST /api/    POST /api/    POST /api/
- │     sdk/register  sdk/heartbeat sdk/logs      sdk/deregister
- │                                  │
- │                             POST /api/
- │                             sdk/api-metrics
- │                                  │
- │                             POST /api/
- │                             sdk/bug-report
+```mermaid
+graph TB
+    subgraph App["Application (SDK-embedded)"]
+        SDK["Platform SDK Client<br/>@mpratyush54/sdk-node<br/>platform-sdk-python<br/>React / Angular"]
+    end
+
+    subgraph API["Platform API — SDK Endpoints"]
+        REG["POST /api/sdk/register"]
+        HB["POST /api/sdk/heartbeat"]
+        MET["POST /api/sdk/api-metrics"]
+        LOG["POST /api/sdk/logs"]
+        BUG["POST /api/sdk/bug-report"]
+        CFG["GET /api/sdk/config"]
+        DEREG["POST /api/sdk/deregister"]
+    end
+
+    SDK -- "1. INIT" --> REG
+    SDK -- "2. HEARTBEAT (15s)" --> HB
+    SDK -- "3. METRICS (5s batch)" --> MET
+    SDK -- "4. LOGS (5s / 50 batch)" --> LOG
+    SDK -- "5. BUG REPORTS" --> BUG
+    SDK -- "6. CONFIG (60s poll)" --> CFG
+    SDK -- "7. SHUTDOWN" --> DEREG
 ```
 
 ## Node.js SDK — Complete Lifecycle
@@ -296,16 +308,14 @@ export function captureConsole(logger: LoggerClient) {
 
 **Server-side log processing** (`POST /api/sdk/logs`, `src/routes/sdk.ts:349-416`):
 
-```
-SDK Logs ──► LogModel.insertMany(resolvedLogs) ──► MongoDB
-       │
-       └──► forwardToLoki(resolvedLogs) ──► Loki (Grafana)
-       │
-       └──► ErrorDocModel.findOneAndUpdate(upsert) ──► MongoDB
-            (only for ERROR level logs)
-            - tracks occurrenceCount
-            - firstSeen / lastSeen timestamps
-            - dedup by projectId + errorType + stackHash
+```mermaid
+graph LR
+    IN["SDK Logs"] --> INS["LogModel.insertMany<br/>(resolvedLogs)"]
+    INS --> MONGO[("MongoDB")]
+    IN --> LOKI["forwardToLoki<br/>(resolvedLogs)"]
+    LOKI --> GRAF[("Loki / Grafana")]
+    IN --> ERR["ErrorDocModel<br/>findOneAndUpdate (upsert)<br/>ERROR level only"]
+    ERR --> MONGO2[("MongoDB<br/>occurrenceCount<br/>firstSeen / lastSeen<br/>dedup: projectId + errorType + stackHash")]
 ```
 
 ### 6. Bug Reports
@@ -368,80 +378,63 @@ async shutdown(): Promise<void> {
 
 ## SDK State Machine
 
-```
-                  ┌──────────────┐
-                  │  CREATED     │
-                  │  initialized │
-                  │  = false     │
-                  └──────┬───────┘
-                         │ init(options)
-                         ▼
-                  ┌──────────────┐
-                  │ INITIALIZING │
-                  │  configure   │────► POST /api/sdk/register
-                  │  singletons  │────► loadAll configs
-                  └──────┬───────┘────► start background refresh
-                         │
-                         ▼
-                  ┌──────────────┐
-                  │  READY       │
-                  │  initialized │
-                  │  = true      │
-                  │  heartbeat   │────► POST /api/sdk/heartbeat (every 15s)
-                  │  active      │────► POST /api/sdk/api-metrics (every 5s)
-                  └──────┬───────┘────► POST /api/sdk/logs (every 5s / 50 entries)
-                         │
-                         │ shutdown()
-                         ▼
-                  ┌──────────────┐
-                  │ SHUTDOWN     │
-                  │  stop metrics│────► POST /api/sdk/deregister
-                  │  stop logger │────► disconnect DB pools
-                  │  clear       │
-                  │  intervals   │
-                  └──────────────┘
+```mermaid
+stateDiagram-v2
+    [*] --> CREATED
+
+    CREATED --> INITIALIZING : init(options)
+    INITIALIZING --> READY    : /sdk/register OK
+    READY --> SHUTDOWN        : shutdown()
+    SHUTDOWN --> [*]
+
+    note right of CREATED
+      initialized = false
+    end note
+
+    note right of INITIALIZING
+      Configure singletons
+      POST /api/sdk/register
+      Load config, start refresh loop
+    end note
+
+    note right of READY
+      initialized = true
+      heartbeat (15s)
+      api-metrics (5s or 100 buf)
+      logs (5s or 50 buf)
+    end note
+
+    note right of SHUTDOWN
+      Stop metrics + logger
+      Clear intervals
+      POST /api/sdk/deregister
+      Disconnect DB pools
+    end note
 ```
 
 ## Event Flow Diagram (Per-Request)
 
-```
-HTTP Request
-     │
-     ▼
-┌──────────────────────────────────────────────────┐
-│              Express Middleware Chain             │
-│                                                   │
-│  metrics.middleware()                             │
-│    ├─ record startTime, memBefore                 │
-│    ├─ next()                                      │
-│    └─ res.on('finish') ───► record endTime        │
-│                              ┌──────────────────┐ │
-│                              │ buffer[]          │ │
-│                              │ (max 100 entries) │ │
-│                              └────────┬─────────┘ │
-│                                       │            │
-│                          every 5s or buffer ≥ 100  │
-│                                       │            │
-│                                       ▼            │
-│                              POST /api/sdk/        │
-│                              api-metrics           │
-└──────────────────────────────────────────────────┘
+**Metrics path**
 
-Console.log / logger.info
-     │
-     ▼
-┌──────────────────────────────────────────────────┐
-│  LoggerClient.enqueue()                          │
-│    └─ push to buffer[]                            │
-│       │ max 50 entries                            │
-│       ▼                                           │
-│  every 5s or buffer ≥ 50                          │
-│       ▼                                           │
-│  POST /api/sdk/logs                               │
-│    └─ LogModel.insertMany (MongoDB)               │
-│    └─ forwardToLoki (Loki)                        │
-│    └─ ErrorDocModel.upsert (ERRORs only)          │
-└──────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    REQ["HTTP Request"] --> MW["Express middleware chain<br/>metrics.middleware"]
+    MW --> START["record startTime + memBefore"]
+    START --> NEXT["next"]
+    NEXT --> FIN["res.on finish<br/>record endTime"]
+    FIN --> BUF["buffer array<br/>max 100 entries"]
+    BUF -- "every 5s or 100 buffered" --> POSTM["POST /api/sdk/api-metrics"]
+```
+
+**Logging path**
+
+```mermaid
+graph TB
+    LOG["console.log / logger.info"] --> ENQ["LoggerClient.enqueue<br/>push to buffer, max 50"]
+    ENQ -- "every 5s or 50 buffered" --> POSTL["POST /api/sdk/logs"]
+    POSTL --> INS["LogModel.insertMany → MongoDB"]
+    POSTL --> FWD["forwardToLoki → Loki"]
+    POSTL --> UPS["ErrorDocModel.upsert<br/>ERROR-level only"]
 ```
 
 ## SDK Token Authentication

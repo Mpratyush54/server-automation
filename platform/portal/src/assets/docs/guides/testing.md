@@ -30,24 +30,28 @@ module.exports = {
 
 ### Test Structure
 
-```
+```text
 platform/api/tests/
-├── unit/
-│   ├── config/
-│   ├── entities/
-│   ├── lib/
-│   ├── middleware/
-│   └── routes/
-└── integration/
-    ├── api.test.ts
-    ├── auth-users.test.ts
-    ├── frontend-backend.test.ts
-    ├── oauth.test.ts
-    ├── projects-deployments.test.ts
-    ├── sdk-api.test.ts
-    ├── sdk-bootstrap-edge.test.ts
-    └── secrets-settings.test.ts
+├── unit/                         # Mirrors src/ layout
+│   ├── config/                   # Database, mongoose, kubernetes configs
+│   ├── entities/                 # TypeORM entity validations
+│   ├── lib/                      # Service modules — encryption, gitlab, k8s
+│   ├── middleware/               # JWT + RBAC middleware
+│   └── routes/                   # Per-route handler unit tests
+└── integration/                  # End-to-end against a live API
+    ├── api.test.ts               # Health + general endpoints
+    ├── auth-users.test.ts        # Passwordless login + user CRUD
+    ├── frontend-backend.test.ts  # Portal → API connectivity
+    ├── oauth.test.ts             # OAuth2 authz code flow
+    ├── projects-deployments.test.ts  # Project + deployment lifecycle
+    ├── sdk-api.test.ts           # SDK register / heartbeat / config
+    ├── sdk-bootstrap-edge.test.ts    # Edge cases (bad tokens, races)
+    └── secrets-settings.test.ts  # Secret CRUD + encryption + SMTP
 ```
+
+Unit tests mirror `platform/api/src/`. Integration tests are one file per
+domain and boot a real API against ephemeral Postgres/Mongo/Redis
+(`beforeAll` starts them; `afterAll` tears them down).
 
 ### Coverage
 

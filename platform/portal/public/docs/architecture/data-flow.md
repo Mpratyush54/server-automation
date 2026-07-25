@@ -4,30 +4,27 @@
 
 ```mermaid
 sequenceDiagram
-    autonumber
     participant Browser as Browser / Client
-    participant Ingress as Nginx Ingress<br/>TLS termination
-    participant Portal as Portal<br/>Angular SPA
-    participant API as Platform API<br/>Express
-    participant PG as PostgreSQL<br/>TypeORM entities
-    participant Mongo as MongoDB<br/>logs + metrics
-    participant Redis as Redis<br/>cache + pubsub
+    participant Nginx as Nginx Ingress
+    participant Portal as Portal (Angular)
+    participant API as Platform API
+    participant PG as PostgreSQL
+    participant Mongo as MongoDB
+    participant Redis as Redis
 
-    Browser->>Ingress: HTTPS request
-    alt Static app route
-        Ingress->>Portal: GET / or /index.html
-        Portal-->>Browser: Angular shell + assets
-    else API route
-        Ingress->>API: /api/*
-        API->>PG: Query relational entities
-        PG-->>API: Users, projects, secrets, deployments
-        API->>Mongo: Write telemetry and events
-        Mongo-->>API: Insert acknowledged
-        API->>Redis: Cache lookup or publish event
-        Redis-->>API: Cache result
-        API-->>Browser: JSON response
-        Browser->>Portal: Render updated SPA state
-    end
+    Browser->>Nginx: 1. HTTPS request<br/>(SSL via cert-manager LE)
+    Nginx->>Portal: 2a. / or /index.html
+    Portal-->>Nginx: (static assets)
+    Nginx->>API: 2b. /api/*
+    API->>PG: 3. Query entities (TypeORM)
+    PG-->>API: rows
+    API->>Mongo: 4. Write logs/metrics
+    Mongo-->>API: ack
+    API->>Redis: 5. Cache check / publish
+    Redis-->>API: value
+    API-->>Nginx: 6. JSON response
+    Nginx-->>Browser: JSON
+    Portal-->>Browser: 7. Render Angular SPA
 ```
 
 ## Detailed Flow: Browser → Portal → API
@@ -59,28 +56,25 @@ Annotations applied to Ingress resources:
 
 ### Step 3: API → PostgreSQL (TypeORM Entities)
 
-```
-┌──────────────┐         ┌────────────────┐
-│  API Route   │         │  TypeORM Repo  │
-│  Handler     │────────>│  (getDb())     │
-└──────────────┘         └───────┬────────┘
-                                 │
-                                 ▼
-                        ┌────────────────┐
-                        │  PostgreSQL 16 │
-                        │                │
-                        │  entities/     │
-                        │  ├─ users      │
-                        │  ├─ projects   │
-                        │  ├─ secrets    │
-                        │  ├─ secret_versions
-                        │  ├─ roles      │
-                        │  ├─ audit_logs │
-                        │  ├─ deployments│
-                        │  ├─ service_registrations
-                        │  ├─ db_connections
-                        │  └─ ...        │
-                        └────────────────┘
+```mermaid
+graph LR
+    A["API Route<br/>Handler"] --> B["TypeORM Repo<br/>getDb"]
+    subgraph C[PostgreSQL 16]
+        E1[users]
+        E2[projects]
+        E3[secrets]
+        E4[secret_versions]
+        E5[roles]
+        E6[audit_logs]
+        E7[deployments]
+        E8[service_registrations]
+        E9[db_connections]
+        E10[...more]
+    end
+    B --> E1
+    B --> E2
+    B --> E3
+    B --> E7
 ```
 
 - Singleton `DataSource` initialized in `config/database.ts` with `synchronize: true`
@@ -96,25 +90,35 @@ const user = await userRepo.findOne({ where: { email } });
 
 ### Step 4: API → MongoDB (Logs/Metrics/Events)
 
-```
-┌──────────────┐         ┌────────────────┐
-│  SDK Routes  │         │    Mongoose    │
-│  /sdk/logs   │────────>│  connectMongo()│
-│  /sdk/api-   │         └───────┬────────┘
-│    metrics   │                 │
-│  /sdk/bug-   │                 ▼
-│    report    │         ┌────────────────┐
-│  /sdk/       │         │    MongoDB 7   │
-│    heartbeat │         │                │
-└──────────────┘         │  collections:  │
-                         │  ├─ logs       │
-                         │  ├─ apimetrics │
-                         │  ├─ metricsraw │
-                         │  ├─ bugreports │
-                         │  ├─ errordocs  │
-                         │  ├─ sdkevents  │
-                         │  └─ featureflags
-                         └────────────────┘
+```mermaid
+graph LR
+    subgraph SDK[SDK Routes]
+        R1["POST /sdk/logs"]
+        R2["POST /sdk/api-metrics"]
+        R3["POST /sdk/bug-report"]
+        R4["POST /sdk/heartbeat"]
+    end
+    M["Mongoose<br/>connectMongo"]
+    subgraph DB[MongoDB 7 collections]
+        C1[logs]
+        C2[apimetrics]
+        C3[metricsraw]
+        C4[bugreports]
+        C5[errordocs]
+        C6[sdkevents]
+        C7[featureflags]
+    end
+    R1 --> M
+    R2 --> M
+    R3 --> M
+    R4 --> M
+    M --> C1
+    M --> C2
+    M --> C3
+    M --> C4
+    M --> C5
+    M --> C6
+    M --> C7
 ```
 
 - Non-blocking: MongoDB connect failure does not crash API (warning logged)
@@ -132,45 +136,41 @@ await ErrorDocModel.findOneAndUpdate(query, { $inc: { occurrenceCount: 1 } }, { 
 
 ### Step 5: API → Redis (Caching/Pub-Sub)
 
-```
-┌──────────────────┐       ┌────────────────┐
-│  Permission Cache │       │    Redis 7     │
-│  (in-memory Map) │       │                │
-│  userId → Set    │       │  Not currently │
-│  (60s TTL)       │       │  used for      │
-└──────────────────┘       │  caching (see  │
-                           │  design notes) │
-                           │                │
-                           │  Available for │
-                           │  future:       │
-                           │  - Session     │
-                           │    store       │
-                           │  - Pub/sub     │
-                           │  - Rate limit  │
-                           └────────────────┘
+```mermaid
+graph LR
+    subgraph Active[Currently Active]
+        PC[Permission Cache<br/>in-memory Map<br/>userId to Set<br/>60s TTL]
+    end
+    subgraph RedisBox[Redis 7]
+        NC[Not currently used<br/>for caching<br/>see design notes]
+        FU[Available for future:<br/>- Session store<br/>- Pub/sub<br/>- Rate limit]
+    end
 ```
 
 The `config/connections.ts` provides `RedisConnection` class with `get/set/healthCheck` methods, but the API primarily uses an **in-memory permission cache** (`Map<userId, { permissions: Set<string>, expiresAt: number }>`) rather than Redis, to avoid network latency on every request.
 
 ### Step 6: SDK → API Telemetry Flow
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        SDK-ENABLED SERVICE                         │
-│                                                                     │
-│  PlatformClient.init(options)                                       │
-│    ├─ POST /api/sdk/register     → ServiceRegistration (PG)       │
-│    ├─ POST /api/sdk/heartbeat    → MetricsRaw (Mongo)              │
-│    │  (every 15s)                → ServiceRegistration.lastSeen    │
-│    ├─ POST /api/sdk/logs         → LogModel (Mongo) + Loki         │
-│    │  (every 5s / 50 entries)    → ErrorDoc (Mongo, upsert)        │
-│    ├─ POST /api/sdk/api-metrics  → ApiMetricModel (Mongo)          │
-│    │  (every 5s / 100 entries)                                      │
-│    ├─ POST /api/sdk/bug-report   → BugReportModel (Mongo)          │
-│    │                              → ClickUp task (if configured)   │
-│    └─ GET  /api/sdk/config       → ProjectConfig + Secret (PG)     │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph SDK[SDK-ENABLED SERVICE]
+        Init[PlatformClient.init options]
+        Init --> Reg[POST /api/sdk/register]
+        Init --> HB[POST /api/sdk/heartbeat<br/>every 15s]
+        Init --> Logs[POST /api/sdk/logs<br/>every 5s / 50 entries]
+        Init --> APIM[POST /api/sdk/api-metrics<br/>every 5s / 100 entries]
+        Init --> Bug[POST /api/sdk/bug-report]
+        Init --> Cfg[GET /api/sdk/config]
+    end
+    Reg --> RegT[ServiceRegistration PG]
+    HB --> HBT1[MetricsRaw Mongo]
+    HB --> HBT2[ServiceRegistration.lastSeen]
+    Logs --> LT1[LogModel Mongo + Loki]
+    Logs --> LT2[ErrorDoc Mongo upsert]
+    APIM --> APIMT[ApiMetricModel Mongo]
+    Bug --> BT1[BugReportModel Mongo]
+    Bug --> BT2[ClickUp task<br/>if configured]
+    Cfg --> CT[ProjectConfig + Secret PG]
 ```
 
 SDK token authentication (`src/middleware/auth.ts`):
@@ -182,47 +182,22 @@ SDK token authentication (`src/middleware/auth.ts`):
 
 ### Step 7: API → ArgoCD (GitOps Sync)
 
-```
-┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
-│  SDK Register    │───>│  SDK Route       │───>│  ArgoCD          │
-│  (service starts)│    │  src/routes/     │    │  CustomObjectsApi│
-│                  │    │  sdk.ts:140-175  │    │                  │
-└──────────────────┘    └──────────────────┘    └──────────────────┘
-                               │
-                               │ Creates ArgoCD Application
-                               │ if project.repositoryUrl is set:
-                               │
-                               │ apiVersion: argoproj.io/v1alpha1
-                               │ kind: Application
-                               │ metadata:
-                               │   name: {project}-staging
-                               │ spec:
-                               │   source:
-                               │     repoURL: {repositoryUrl}
-                               │     targetRevision: main
-                               │     path: k8s
-                               │   syncPolicy:
-                               │     automated:
-                               │       prune: true
-                               │       selfHeal: true
+```mermaid
+graph LR
+    A[SDK Register<br/>service starts] --> B[SDK Route<br/>src/routes/<br/>sdk.ts:140-175]
+    B --> C[ArgoCD<br/>CustomObjectsApi]
+    B --> D[Creates ArgoCD Application<br/>if project.repositoryUrl is set]
+    D --> E[apiVersion: argoproj.io/v1alpha1<br/>kind: Application<br/>name: project-staging<br/>repoURL: repositoryUrl<br/>targetRevision: main<br/>path: k8s<br/>syncPolicy: automated<br/>prune + selfHeal]
 ```
 
 ### Step 8: API → MinIO/S3 (File Storage)
 
-```
-┌──────────────┐         ┌────────────────┐
-│  Storage     │────────>│   Adapter      │
-│  Routes      │         │                │
-│  /api/files  │         │  createAdapter │
-│  /api/storage│         │  (providerType)│
-└──────────────┘         └───┬────────────┘
-                             │
-            ┌────────────────┼────────────────┐
-            │                │                │
-     ┌──────▼─────┐  ┌──────▼──────┐  ┌─────▼───────┐
-     │  Local FS  │  │  MinIO/S3  │  │ Google Drive│
-     │            │  │  (S3Compat)│  │             │
-     └────────────┘  └────────────┘  └─────────────┘
+```mermaid
+graph TB
+    A[Storage Routes<br/>/api/files<br/>/api/storage] --> B[Adapter<br/>createAdapter<br/>providerType]
+    B --> L[Local FS]
+    B --> M[MinIO/S3<br/>S3Compat]
+    B --> G[Google Drive]
 ```
 
 Adapter selection (`src/lib/storage-service.ts`):

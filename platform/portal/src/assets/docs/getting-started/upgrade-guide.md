@@ -140,4 +140,4 @@ node dist/index.js
 ## Need Help?
 
 - Check the [SDK API References](../api-reference/sdk-node/PlatformClient.md) for updated configuration options
-- Open an issue at [github.com/your-org/platform/issues](https://github.com/your-org/platform/issues)
+- Open an issue at [github.com/Mpratyush54/SERVER-automation/issues](https://github.com/Mpratyush54/SERVER-automation/issues)

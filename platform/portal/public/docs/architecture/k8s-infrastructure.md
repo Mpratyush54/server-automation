@@ -2,41 +2,33 @@
 
 ## Cluster Architecture
 
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                       k3s Kubernetes Cluster                              │
-│                    (single-node, embedded etcd)                            │
-│                                                                            │
-│  ┌──────────────┐  ┌──────────────────────────────────────────────────┐  │
-│  │  Host        │  │                   kube-system                    │  │
-│  │  Network     │  │  ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │  │
-│  │              │  │  │ coredns  │ │ metrics- │ │ local-path-      │ │  │
-│  │  <SERVER>    │  │  │          │ │ server   │ │ provisioner      │ │  │
-│  │              │  │  └──────────┘ └──────────┘ └──────────────────┘ │  │
-│  └──────┬───────┘  └──────────────────────────────────────────────────┘  │
-│         │                                                                │
-│         │          ┌──────────────────────────────────────────────────┐  │
-│         │          │              Platform Namespaces                 │  │
-│         │          │                                                  │  │
-│         │          │  ┌─────────┐ ┌──────────┐ ┌─────────────┐      │  │
-│         │          │  │ caps    │ │cert-     │ │ingress-nginx│      │  │
-│         │          │  │         │ │manager   │ │             │      │  │
-│         │          │  └─────────┘ └──────────┘ └─────────────┘      │  │
-│         │          │  ┌─────────┐ ┌──────────┐ ┌─────────────┐      │  │
-│         │          │  │monitoring│ │  loki    │ │   minio     │      │  │
-│         │          │  │(grafana, │ │          │ │             │      │  │
-│         │          │  │prometheus│ │          │ │             │      │  │
-│         │          │  └─────────┘ └──────────┘ └─────────────┘      │  │
-│         │          │  ┌─────────┐ ┌──────────┐ ┌─────────────┐      │  │
-│         │          │  │ argocd  │ │portainer │ │   mongo     │      │  │
-│         │          │  │         │ │          │ │             │      │  │
-│         │          │  └─────────┘ └──────────┘ └─────────────┘      │  │
-│         │          │  ┌─────────┐ ┌──────────┐                     │  │
-│         │          │  │  redis  │ │ postgres │                     │  │
-│         │          │  │         │ │          │                     │  │
-│         │          │  └─────────┘ └──────────┘                     │  │
-│         │          └──────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    HOST["Host network<br/>YOUR_SERVER_IP"]
+
+    subgraph CLUSTER["k3s cluster (single-node, embedded etcd)"]
+        subgraph KS[kube-system]
+            COREDNS[coredns]
+            METRICS[metrics-server]
+            LPP[local-path-provisioner]
+        end
+
+        subgraph PLATFORM_NS[Platform namespaces]
+            CAPS[caps]
+            CM[cert-manager]
+            ING[ingress-nginx]
+            MON["monitoring<br/>grafana + prometheus"]
+            LOKI[loki]
+            MINIO[minio]
+            ARGO[argocd]
+            PORT[portainer]
+            MONGO[mongo]
+            REDIS[redis]
+            PG[postgres]
+        end
+    end
+
+    HOST --> ING
 ```
 
 ## Namespace Layout
@@ -51,7 +43,9 @@
 | **minio** | Object storage | `minio` | None (internal) |
 | **argocd** | GitOps continuous delivery | `argocd-server`, `argocd-repo-server`, `argocd-redis`, `argocd-application-controller` | `/argocd` |
 | **portainer** | Container management UI | `portainer` | `/portainer` |
-| **databases** | PostgreSQL, MongoDB, Redis (logs/metrics, cache, primary data store) | `postgres`, `mongodb`, `redis` | None (internal) |
+| **mongo** | MongoDB (logs/metrics) | `mongodb` | None (internal) |
+| **redis** | Cache (available, not actively used) | `redis` | None (internal) |
+| **postgres** | PostgreSQL (primary data store) | `postgres` | None (internal) |
 
 ## Helm Chart Versions
 
@@ -71,29 +65,27 @@
 
 ## Ingress Routing Table
 
-```
-                         ┌─────────────────────────────┐
-                         │   nginx-ingress-controller   │
-                         │   LoadBalancer / HostNetwork │
-                         │   YOUR_SERVER_IP:443         │
-                         └──────────────┬──────────────┘
-                                        │
-              ┌─────────────────────────┼──────────────────────────┐
-              │                         │                          │
-              ▼                         ▼                          ▼
-     ┌────────────────┐      ┌──────────────────┐      ┌──────────────────┐
-     │ ingress-caps   │      │ ingress-argocd   │      │ ingress-portainer│
-     │ host: *.sslip  │      │ host: *.sslip    │      │ host: *.sslip    │
-     └───────┬────────┘      └────────┬─────────┘      └────────┬─────────┘
-             │                        │                         │
-      ┌──────┴──────┐                 │                         │
-      │              │                │                         │
-      ▼              ▼                ▼                         ▼
- ┌──────────┐ ┌──────────┐  ┌────────────────┐  ┌──────────────────────┐
- │ portal-  │ │ api-     │  │ argocd-server  │  │  portainer-service   │
- │ service  │ │ service  │  │ :443           │  │  :9000               │
- │ :80      │ │ :3000    │  │ /argocd        │  │  /portainer          │
- └──────────┘ └──────────┘  └────────────────┘  └──────────────────────┘
+```mermaid
+graph TB
+    NGINX["nginx-ingress-controller<br/>LoadBalancer / HostNetwork<br/>YOUR_SERVER_IP :443"]
+
+    ING_CAPS["ingress-caps<br/>host: *.sslip.io"]
+    ING_ARGO["ingress-argocd<br/>host: *.sslip.io"]
+    ING_PORT["ingress-portainer<br/>host: *.sslip.io"]
+
+    PORTAL["portal-service :80"]
+    API["api-service :3000"]
+    ARGO_SRV["argocd-server :443<br/>path /argocd"]
+    PORT_SRV["portainer-service :9000<br/>path /portainer"]
+
+    NGINX --> ING_CAPS
+    NGINX --> ING_ARGO
+    NGINX --> ING_PORT
+
+    ING_CAPS --> PORTAL
+    ING_CAPS --> API
+    ING_ARGO --> ARGO_SRV
+    ING_PORT --> PORT_SRV
 ```
 
 ### Ingress Configuration (Platform)
@@ -104,7 +96,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: caps-ingress
-  namespace: platform
+  namespace: caps
   annotations:
     kubernetes.io/ingress.class: nginx
     cert-manager.io/cluster-issuer: letsencrypt-prod
@@ -152,7 +144,7 @@ apiVersion: v1
 kind: ResourceQuota
 metadata:
   name: caps-quota
-  namespace: platform
+  namespace: caps
 spec:
   hard:
     requests.cpu: "1"
@@ -209,7 +201,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: data-postgres-0
-  namespace: databases
+  namespace: postgres
 spec:
   accessModes:
     - ReadWriteOnce

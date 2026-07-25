@@ -67,7 +67,7 @@ Platform is a self-hosted PaaS control center that brings together:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/platform.git
+git clone https://github.com/Mpratyush54/SERVER-automation.git
 cd platform
 
 # Start the API

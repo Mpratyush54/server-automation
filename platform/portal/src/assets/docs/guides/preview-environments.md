@@ -6,32 +6,40 @@ Preview environments are ephemeral deployments created automatically on every Gi
 
 ## Deployment Pipeline
 
+### Push → preview URL (sequence)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Developer
+    participant Git as Git host
+    participant API as Platform API
+    participant K8s as k3s cluster
+    participant CU as ClickUp / SMTP
+
+    Dev->>Git: push branch<br/>(non-main)
+    Git->>API: POST /api/webhooks/{github|gitlab}<br/>signed payload
+    API->>API: match repo → Project<br/>generate preview URL<br/>insert Deployment (BUILDING)
+    API->>K8s: deployK8sPreview(project, branch, tag)
+    K8s-->>API: namespace + deployment + service + ingress created
+    API->>API: Deployment → DEPLOYED,<br/>previewUrl populated
+    API->>CU: post preview comment / email
+    API-->>Dev: preview URL ready
 ```
-Git Push (non-main branch)
-        │
-        ▼
-GitHub / GitLab Webhook
-  POST /api/webhooks/github
-  POST /api/webhooks/gitlab
-        │
-        ▼
-Platform API receives event
-  ─ Extracts branch name, commit SHA, repo URL
-  ─ Matches repo URL to a Project
-  ─ Generates preview URL
-  ─ Creates Deployment record (status: BUILDING)
-  ─ Calls triggerPipeline() for CI
-        │
-        ▼
-Kubernetes Preview Deployment
-  ─ deployK8sPreview(projectName, branch, imageTag)
-  ─ Creates isolated namespace + deployment + service + ingress
-        │
-        ▼
-Deployment status → DEPLOYED
-  ─ previewUrl populated
-  ─ ClickUp comment posted (if branch has task ID)
-  ─ SMTP notification sent to DevOps
+
+### Deployment lifecycle (state)
+
+```mermaid
+stateDiagram-v2
+    [*] --> BUILDING: webhook received
+    BUILDING --> DEPLOYING: image pushed
+    DEPLOYING --> DEPLOYED: pods Ready
+    DEPLOYING --> FAILED: rollout failed
+    DEPLOYED --> EXPIRED: 72 h TTL reached
+    DEPLOYED --> TERMINATED: PR closed / manual terminate
+    FAILED --> [*]
+    EXPIRED --> [*]
+    TERMINATED --> [*]
 ```
 
 ### Webhook Events

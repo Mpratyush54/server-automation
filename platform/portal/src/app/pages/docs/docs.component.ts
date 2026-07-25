@@ -158,21 +158,34 @@ export class DocsComponent implements OnInit, AfterViewChecked {
     {
       label: 'Troubleshooting', id: 'troubleshooting',
       pages: [
+        // Install & bootstrap
+        { label: 'apt lock', section: 'troubleshooting', page: 'apt-lock' },
         { label: 'DNS / IPv6 Timeout', section: 'troubleshooting', page: 'dns-ipv6-timeout' },
-        { label: 'Portainer Setup Token', section: 'troubleshooting', page: 'portainer-setup-token' },
-        { label: 'Portainer OIDC SSL', section: 'troubleshooting', page: 'portainer-oidc-ssl' },
-        { label: 'ArgoCD Subpath 404', section: 'troubleshooting', page: 'argocd-subpath-404' },
-        { label: 'Grafana Subpath Redirect', section: 'troubleshooting', page: 'grafana-subpath-redirect' },
-        { label: 'MinIO PVC Not Found', section: 'troubleshooting', page: 'minio-pvc-not-found' },
-        { label: 'Angular @ Symbol', section: 'troubleshooting', page: 'angular-template-at-symbol' },
-        { label: 'Helm Name Reuse', section: 'troubleshooting', page: 'helm-name-reuse' },
-        { label: 'Ingress Ownership', section: 'troubleshooting', page: 'ingress-ownership' },
-        { label: 'TypeScript Build Errors', section: 'troubleshooting', page: 'typescript-build-errors' },
-        { label: 'MongoDB Validation', section: 'troubleshooting', page: 'mongodb-validation' },
-        { label: 'MinIO Template Error', section: 'troubleshooting', page: 'minio-template-error' },
-        { label: 'API Seed Failure', section: 'troubleshooting', page: 'api-seed-failure' },
-        { label: 'Cert Manager Timeout', section: 'troubleshooting', page: 'cert-manager-timeout' },
         { label: 'General DNS Resolution', section: 'troubleshooting', page: 'general-dns-resolution' },
+        { label: 'sslip.io in-cluster DNS', section: 'troubleshooting', page: 'sslip-io-dns' },
+        { label: 'k3s port conflict', section: 'troubleshooting', page: 'k3s-port-conflict' },
+        { label: 'Docker Hub rate limit', section: 'troubleshooting', page: 'dockerhub-rate-limit' },
+        { label: 'Disk pressure', section: 'troubleshooting', page: 'disk-pressure' },
+        { label: 'ImagePullBackOff', section: 'troubleshooting', page: 'image-pull-backoff' },
+        { label: 'Helm name reuse', section: 'troubleshooting', page: 'helm-name-reuse' },
+        { label: 'TypeScript build errors', section: 'troubleshooting', page: 'typescript-build-errors' },
+        // Ingress / TLS / auth
+        { label: 'cert-manager timeout', section: 'troubleshooting', page: 'cert-manager-timeout' },
+        { label: 'Ingress ownership', section: 'troubleshooting', page: 'ingress-ownership' },
+        { label: 'Portainer setup token', section: 'troubleshooting', page: 'portainer-setup-token' },
+        { label: 'Portainer OIDC SSL', section: 'troubleshooting', page: 'portainer-oidc-ssl' },
+        { label: 'ArgoCD subpath 404', section: 'troubleshooting', page: 'argocd-subpath-404' },
+        { label: 'ArgoCD OIDC redirect', section: 'troubleshooting', page: 'argocd-oidc-redirect' },
+        { label: 'Grafana subpath redirect', section: 'troubleshooting', page: 'grafana-subpath-redirect' },
+        // Databases & storage
+        { label: 'MinIO template error', section: 'troubleshooting', page: 'minio-template-error' },
+        { label: 'MinIO PVC not found', section: 'troubleshooting', page: 'minio-pvc-not-found' },
+        { label: 'MongoDB validation', section: 'troubleshooting', page: 'mongodb-validation' },
+        { label: 'DB WRONGPASS after rotate', section: 'troubleshooting', page: 'db-wrongpass-after-rotate' },
+        { label: 'Infisical DB missing', section: 'troubleshooting', page: 'infisical-db-missing' },
+        // API & seed
+        { label: 'API seed failure', section: 'troubleshooting', page: 'api-seed-failure' },
+        { label: 'Angular @ symbol', section: 'troubleshooting', page: 'angular-template-at-symbol' },
       ],
     },
   ];
@@ -245,6 +258,13 @@ export class DocsComponent implements OnInit, AfterViewChecked {
       const section = params.get('section');
       const page = params.get('page');
 
+      // Reset scroll on every docs navigation. The router-level
+      // scrollPositionRestoration in app.config.ts only fires when the routed
+      // component changes; because /docs/:section/:page is a single component,
+      // switching between docs pages is a same-component nav and Angular
+      // leaves the scroll where it was. Do it by hand.
+      this.scrollToTop();
+
       if (section && page) {
         this.currentSection = section;
         this.currentPage = page;
@@ -265,6 +285,16 @@ export class DocsComponent implements OnInit, AfterViewChecked {
         this.loadMarkdown('/docs/index.md');
       }
     });
+  }
+
+  private scrollToTop() {
+    // Scroll the window; also reset the docs main scroll container if the
+    // layout uses one (many docs themes overflow inside a wrapper).
+    try { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); } catch { window.scrollTo(0, 0); }
+    const scrollables = this.el.nativeElement.querySelectorAll(
+      '.docs-main, .docs-content, .docs-scroll, main'
+    );
+    scrollables.forEach((n: HTMLElement) => { n.scrollTop = 0; });
   }
 
   ngAfterViewChecked() {
@@ -459,11 +489,36 @@ export class DocsComponent implements OnInit, AfterViewChecked {
       .subscribe(async (text) => {
         if (text) {
           try {
+            // Rewrite relative `.md` links so they resolve against the CURRENT
+            // section, not against the docs root. Before this fix, a link like
+            // `[Deployments API](deployments.md)` inside
+            // /docs/api-reference/platform-api/projects would render as
+            // `/docs/deployments` (404). Now it correctly resolves to
+            // `/docs/api-reference/platform-api/deployments`.
+            const currentDir = this.currentSection || '';
             const processed = text.replace(
-              /\]\(((?:\.\.\/)?[a-zA-Z0-9_\/-]+\.md)\)/g,
-              (_match, link: string) => {
-                const clean = link.replace(/\.md$/, '').replace(/^\.\.\//g, '');
-                return `](/docs/${clean})`;
+              /\]\((\.{0,2}\/)?([a-zA-Z0-9_\/-]+)\.md(#[a-zA-Z0-9_-]+)?\)/g,
+              (_match, prefix: string, path: string, hash: string | undefined) => {
+                const hashPart = hash || '';
+                // Absolute paths starting with `/` — leave the rewriter alone
+                if (prefix === '/') {
+                  return `](/${path}${hashPart})`;
+                }
+                const segs = currentDir.split('/').filter(Boolean);
+                if (prefix === '../') {
+                  segs.pop();
+                  const target = segs.length ? `${segs.join('/')}/${path}` : path;
+                  return `](/docs/${target}${hashPart})`;
+                }
+                if (prefix === '../../') {
+                  segs.pop();
+                  segs.pop();
+                  const target = segs.length ? `${segs.join('/')}/${path}` : path;
+                  return `](/docs/${target}${hashPart})`;
+                }
+                // No prefix (or `./`) — same directory as current doc
+                const base = currentDir ? `${currentDir}/` : '';
+                return `](/docs/${base}${path}${hashPart})`;
               }
             );
             let html = await marked.parse(processed);
@@ -475,6 +530,11 @@ export class DocsComponent implements OnInit, AfterViewChecked {
             this.content = this.sanitizer.bypassSecurityTrustHtml(html as string);
             this.rendering = true;
             this.cdr.detectChanges();
+            // Re-scroll after content mounts: the initial scrollToTop in
+            // ngOnInit ran when the DOM still had the previous page's
+            // content, so a user who scrolled during the async fetch would
+            // land mid-page on the new doc otherwise.
+            queueMicrotask(() => this.scrollToTop());
           } catch (e) {
             console.error('Error parsing markdown', e);
           }
@@ -620,13 +680,27 @@ export class DocsComponent implements OnInit, AfterViewChecked {
       this.enhanceDiagramViewers();
       return;
     }
-    try {
-      await mermaid.run({ nodes: Array.from(mermaidNodes) });
-    } catch (e) {
-      console.error('Mermaid render error:', e);
-    } finally {
-      this.enhanceDiagramViewers();
+    // Render each block one at a time so a single broken diagram doesn't
+    // silently kill every diagram after it. On failure, replace the block
+    // with a visible error message + the original source so the user (and
+    // future us) can see what went wrong instead of staring at a blank spot.
+    for (const node of Array.from(mermaidNodes)) {
+      const original = node.textContent || '';
+      try {
+        await mermaid.run({ nodes: [node] });
+      } catch (e: any) {
+        console.error('Mermaid render error:', e);
+        node.setAttribute('data-processed', 'true');
+        node.classList.add('mermaid-error');
+        node.innerHTML = `
+          <div style="padding:14px 16px;border:1px solid #b91c1c;background:#1f0a0a;border-radius:8px;color:#fecaca;font-size:0.85rem;">
+            <div style="font-weight:600;color:#fca5a5;margin-bottom:6px;">Diagram failed to render</div>
+            <div style="font-size:0.78rem;opacity:0.9;margin-bottom:8px;">${(e?.message || e || 'Mermaid parse error').toString().replace(/</g,'&lt;')}</div>
+            <pre style="margin:0;padding:10px 12px;background:#0b0f19;border-radius:6px;color:#f1f5f9;font-size:0.78rem;overflow-x:auto;">${original.replace(/</g,'&lt;')}</pre>
+          </div>`;
+      }
     }
+    this.enhanceDiagramViewers();
   }
 
   private enhanceDiagramViewers() {
