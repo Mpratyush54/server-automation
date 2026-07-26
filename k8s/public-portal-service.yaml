@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: public-portal
+  namespace: platform
+spec:
+  selector:
+    app: public-portal
+  ports:
+  - port: 80
+    targetPort: 80
+  type: ClusterIP

@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .env
+*.exe
+*.test
 .env.local
 .env.*
 !.env.example

@@ -1,0 +1,74 @@
+stages:
+  - build
+  - docker
+  - deploy
+
+variables:
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: /certs
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: mpratyush54
+  IMAGE_NAME: platform-portal-public
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_TAG =~ /^v.*/
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+build:
+  stage: build
+  image: node:20-alpine
+  script:
+    - cd platform/portal
+    - npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - platform/portal/dist/
+    expire_in: 1 hour
+
+docker:
+  stage: docker
+  image: docker:27
+  services:
+    - docker:27-dind
+  before_script:
+    - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITLAB_USER" --password-stdin
+  script:
+    - docker build
+      -f platform/portal/Dockerfile.public
+      -t $REGISTRY/$IMAGE_OWNER/$IMAGE_NAME:$IMAGE_TAG
+      -t $REGISTRY/$IMAGE_OWNER/$IMAGE_NAME:latest
+      .
+    - docker push $REGISTRY/$IMAGE_OWNER/$IMAGE_NAME --all-tags
+  needs:
+    - build
+
+deploy:
+  stage: deploy
+  image: curlimages/curl:latest
+  script:
+    - >
+      curl -X POST "https://platform.internal/api/deploy"
+      -H "Content-Type: application/json"
+      -H "Authorization: Bearer $PLATFORM_DEPLOY_TOKEN"
+      -d "{
+        \"projectId\": \"public-portal\",
+        \"image\": \"$REGISTRY/$IMAGE_OWNER/$IMAGE_NAME:$IMAGE_TAG\",
+        \"namespace\": \"platform\",
+        \"host\": \"platform.pratyushes.dev\",
+        \"version\": \"$CI_COMMIT_TAG\",
+        \"branch\": \"$CI_COMMIT_BRANCH\",
+        \"commitSha\": \"$CI_COMMIT_SHA\"
+      }"
+  environment:
+    name: production
+    url: https://platform.pratyushes.dev
+  needs:
+    - docker
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: always
+    - when: manual
