@@ -4,7 +4,7 @@ metadata:
   name: public-portal
   namespace: platform
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   ingressClassName: nginx
   rules:
@@ -18,7 +18,4 @@ spec:
             name: public-portal
             port:
               number: 80
-  tls:
-  - hosts:
-    - platform.pratyushes.dev
-    secretName: platform-pratyushes-dev-tls
+
