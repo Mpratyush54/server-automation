@@ -1,7 +1,7 @@
 FROM node:20-alpine AS builder
 WORKDIR /app/platform/portal
 COPY platform/portal/package*.json ./
-RUN npm ci
+RUN npm install
 COPY platform/portal/ .
 RUN npm run build
 

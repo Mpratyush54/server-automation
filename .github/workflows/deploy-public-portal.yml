@@ -42,6 +42,7 @@ jobs:
             type=ref,event=branch
             type=ref,event=pr
             type=semver,pattern={{version}}
+            type=sha,format=long
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -52,32 +53,3 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  deploy:
-    needs: build-and-push
-    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: "latest"
-
-      - name: Configure Kubeconfig
-        run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
-
-      - name: Update image tag in deployment
-        run: |
-          sed -i "s|image:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ github.sha }}|" k8s/public-portal-deployment.yaml
-
-      - name: Deploy to Kubernetes
-        run: |
-          kubectl apply -f k8s/public-portal-deployment.yaml
-          kubectl apply -f k8s/public-portal-service.yaml
-          kubectl apply -f k8s/public-portal-ingress.yaml
-          kubectl rollout status deployment/public-portal -n platform --timeout=5m
