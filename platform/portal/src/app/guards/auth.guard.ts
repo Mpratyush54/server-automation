@@ -26,11 +26,18 @@ export const authGuard: CanActivateFn = () => {
     return true;
   }
 
+  const hostname = window.location.hostname;
+  const isPublicDomain = hostname === 'platform.pratyushes.dev' || hostname.endsWith('.pratyushes.dev');
+
   const token = localStorage.getItem('plat_auth_token');
   if (token) {
+    if (isPublicDomain) {
+      router.navigate(['/landing']);
+      return false;
+    }
     return true;
   }
-  router.navigate(['/login']);
+  router.navigate([isPublicDomain ? '/landing' : '/login']);
   return false;
 };
 export default authGuard;
