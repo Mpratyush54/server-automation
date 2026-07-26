@@ -15,3 +15,5 @@ build/
 package-lock.json
 .next/
 *.tsbuildinfo
+
+chats.json
