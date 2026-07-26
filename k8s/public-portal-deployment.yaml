@@ -15,6 +15,9 @@ spec:
       labels:
         app: public-portal
     spec:
+      securityContext:
+        seccompProfile:
+          type: Unconfined
       containers:
       - name: public-portal
         image: ghcr.io/mpratyush54/platform-portal-public:latest
