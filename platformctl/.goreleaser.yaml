@@ -1,0 +1,57 @@
+project_name: platformctl
+before:
+  hooks:
+    - go mod tidy
+builds:
+  - main: .
+    binary: platformctl
+    id: platformctl
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    goarm:
+      - "6"
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X github.com/Mpratyush54/SERVER-automation/platformctl/cmd.Version={{.Version}}
+archives:
+  - formats: ["tar.gz"]
+    format_overrides:
+      - goos: windows
+        formats: ["zip"]
+    files:
+      - none*
+checksum:
+  name_template: "checksums.txt"
+snapshot:
+  name_template: "{{ .Tag }}-next"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+release:
+  github:
+    owner: Mpratyush54
+    name: SERVER-automation
+  header: |
+    ## platformctl {{ .Version }}
+
+    Platform server bootstrap and management tool.
+
+    ### Installation
+
+    ```bash
+    # Linux amd64
+    curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/download/{{ .Tag }}/platformctl_{{ .Version }}_linux_amd64.tar.gz | tar xz
+    sudo mv platformctl /usr/local/bin/
+
+    # One-command provision
+    sudo platformctl provision
+    ```
