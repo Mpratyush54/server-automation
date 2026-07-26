@@ -3,6 +3,11 @@ kind: Application
 metadata:
   name: public-portal
   namespace: argocd
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: platform-portal-public=ghcr.io/mpratyush54/platform-portal-public
+    argocd-image-updater.argoproj.io/platform-portal-public.update-strategy: latest
+    argocd-image-updater.argoproj.io/platform-portal-public.force-update: "true"
+    argocd-image-updater.argoproj.io/write-back-method: application
 spec:
   project: default
   source:
