@@ -5,10 +5,6 @@ metadata:
   namespace: platform
   labels:
     app: public-portal
-  annotations:
-    argocd-image-updater.argoproj.io/image-list: platform-portal-public=ghcr.io/mpratyush54/platform-portal-public
-    argocd-image-updater.argoproj.io/platform-portal-public.update-strategy: latest
-    argocd-image-updater.argoproj.io/platform-portal-public.force-update: "true"
 spec:
   replicas: 2
   selector:
