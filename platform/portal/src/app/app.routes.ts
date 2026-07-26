@@ -28,12 +28,13 @@ import { IframeViewComponent } from './pages/iframe-view/iframe-view.component';
 import { DocsComponent } from './pages/docs/docs.component';
 
 import { authGuard } from './guards/auth.guard';
+import { publicDomainGuard } from './guards/public-domain.guard';
 
 export const routes: Routes = [
   { path: '', redirectTo: '/landing', pathMatch: 'full' },
   { path: 'landing', component: LandingComponent },
-  { path: 'login', component: LoginComponent },
-  { path: 'oauth/authorize', component: OauthAuthorizeComponent },
+  { path: 'login', component: LoginComponent, canActivate: [publicDomainGuard] },
+  { path: 'oauth/authorize', component: OauthAuthorizeComponent, canActivate: [publicDomainGuard] },
   
   // Guarded Routes
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
@@ -67,5 +68,5 @@ export const routes: Routes = [
   { path: 'docs/:section/:page', component: DocsComponent },
   
   // Wildcard redirect
-  { path: '**', redirectTo: '/dashboard' }
+  { path: '**', redirectTo: '/landing' }
 ];
