@@ -25,11 +25,11 @@ spec:
         - containerPort: 80
         livenessProbe:
           httpGet:
-            path: /
+            path: /health
             port: 80
         readinessProbe:
           httpGet:
-            path: /
+            path: /health
             port: 80
         resources:
           limits:
