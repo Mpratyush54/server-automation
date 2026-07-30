@@ -124,6 +124,9 @@ export class ApiService {
   testDbConnection(id: string): Observable<any> { return this.http.post(`${this.base}/db-connections/${id}/test`, {}); }
   deleteDbConnection(id: string): Observable<any> { return this.http.delete(`${this.base}/db-connections/${id}`); }
 
+  // Platform / Version
+  getPlatformVersion(): Observable<any> { return this.http.get(`${this.base}/platform/version`); }
+
   // Authentication & Users
   login(email: string): Observable<any> { return this.http.post(`${this.base}/auth/login`, { email }); }
   initDemoUsers(): Observable<any> { return this.http.get(`${this.base}/users/init-demo`); }

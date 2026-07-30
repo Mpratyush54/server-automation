@@ -18,8 +18,10 @@ import settingRoutes from './settings';
 import auditLogRoutes from './audit-logs';
 import bugReportRoutes from './bug-reports';
 import dbProvisionRoutes from './db-provision';
+import versionRoutes from './version';
 
 router.use('/', authRoutes);
+router.use('/', versionRoutes);
 router.use('/', projectRoutes);
 router.use('/', deploymentRoutes);
 router.use('/', configRoutes);

@@ -22,7 +22,7 @@ router.get('/projects', expressAuthenticate, async (req: Request, res: Response)
   }
 });
 
-router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
+router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN, UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
   try {
     const body = req.body;
     const ds = await getDb();
