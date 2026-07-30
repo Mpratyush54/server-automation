@@ -85,14 +85,14 @@ describe('LoginComponent', () => {
     authService.login.and.returnValue(of({ token: 'demo-token' }));
 
     const fixture = TestBed.createComponent(LoginComponent);
-    await fixture.componentInstance.login('john@@dev.io');
+    await fixture.componentInstance.login('john@@pratyushes.dev');
 
-    expect(authService.login).toHaveBeenCalledWith('john@@dev.io');
+    expect(authService.login).toHaveBeenCalledWith('john@@pratyushes.dev');
   });
 
   it('should have demo accounts', () => {
     const fixture = TestBed.createComponent(LoginComponent);
     expect(fixture.componentInstance.demoAccounts.length).toBe(3);
-    expect(fixture.componentInstance.demoAccounts[0].email).toBe('john@@dev.io');
+    expect(fixture.componentInstance.demoAccounts[0].email).toBe('john@@pratyushes.dev');
   });
 });

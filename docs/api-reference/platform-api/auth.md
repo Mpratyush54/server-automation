@@ -28,7 +28,7 @@ Authenticates a user via email. No password is required — the platform uses em
 **Request Body:**
 ```json
 {
-  "email": "admin@dev.io"
+  "email": "admin@pratyushes.dev"
 }
 ```
 
@@ -38,7 +38,7 @@ Authenticates a user via email. No password is required — the platform uses em
   "token": "eyJhbGciOiJIUzI1NiIs...",
   "user": {
     "id": "00000000-0000-0000-0000-000000000001",
-    "email": "admin@dev.io",
+    "email": "admin@pratyushes.dev",
     "name": "Admin",
     "role": "admin",
     "lastLogin": "2026-07-01T12:00:00.000Z"
@@ -86,10 +86,10 @@ Seeds the database with four demo users if they do not already exist:
 
 | Name         | Email             | Role       |
 |--------------|-------------------|------------|
-| Admin        | admin@dev.io      | admin      |
-| John Dev     | john@dev.io       | developer  |
-| Sarah Lead   | sarah@dev.io      | tech_lead  |
-| DevOps Boss  | devops@dev.io     | devops     |
+| Admin        | admin@pratyushes.dev      | admin      |
+| John Dev     | john@pratyushes.dev       | developer  |
+| Sarah Lead   | sarah@pratyushes.dev      | tech_lead  |
+| DevOps Boss  | devops@pratyushes.dev     | devops     |
 
 **Auth:** None
 
@@ -98,7 +98,7 @@ Seeds the database with four demo users if they do not already exist:
 {
   "message": "Created 4 new demo users",
   "users": [
-    { "id": "00000000-0000-0000-0000-000000000001", "name": "Admin", "email": "admin@dev.io", "role": "admin" }
+    { "id": "00000000-0000-0000-0000-000000000001", "name": "Admin", "email": "admin@pratyushes.dev", "role": "admin" }
   ]
 }
 ```
@@ -115,7 +115,7 @@ Returns the currently authenticated user's profile, including the linked custom 
 ```json
 {
   "id": "00000000-0000-0000-0000-000000000001",
-  "email": "admin@dev.io",
+  "email": "admin@pratyushes.dev",
   "name": "Admin",
   "role": "admin",
   "roleId": null,
@@ -150,7 +150,7 @@ Updates the current user's profile. Only `name` and `avatarUrl` can be modified.
 {
   "id": "...",
   "name": "New Name",
-  "email": "admin@dev.io",
+  "email": "admin@pratyushes.dev",
   "role": "admin",
   "avatarUrl": "https://example.com/avatar.png"
 }
@@ -169,7 +169,7 @@ Lists all users. Requires DEVOPS or TECH_LEAD role.
 [
   {
     "id": "00000000-0000-0000-0000-000000000001",
-    "email": "admin@dev.io",
+    "email": "admin@pratyushes.dev",
     "name": "Admin",
     "role": "admin"
   }
@@ -188,7 +188,7 @@ Creates a new user. Requires DEVOPS role. Audit-logged.
 ```json
 {
   "name": "New User",
-  "email": "newuser@dev.io",
+  "email": "newuser@pratyushes.dev",
   "role": "developer",
   "gitlabId": null,
   "avatarUrl": null
@@ -200,7 +200,7 @@ Creates a new user. Requires DEVOPS role. Audit-logged.
 {
   "id": "88888888-8888-8888-8888-888888888888",
   "name": "New User",
-  "email": "newuser@dev.io",
+  "email": "newuser@pratyushes.dev",
   "role": "developer",
   "gitlabId": null,
   "avatarUrl": null
@@ -219,7 +219,7 @@ Updates an existing user's details. Requires DEVOPS role. Audit-logged.
 ```json
 {
   "name": "Updated Name",
-  "email": "updated@dev.io",
+  "email": "updated@pratyushes.dev",
   "role": "tech_lead",
   "gitlabId": "gitlab-123",
   "avatarUrl": "https://example.com/avatar.png"
@@ -231,7 +231,7 @@ Updates an existing user's details. Requires DEVOPS role. Audit-logged.
 {
   "id": "...",
   "name": "Updated Name",
-  "email": "updated@dev.io",
+  "email": "updated@pratyushes.dev",
   "role": "tech_lead"
 }
 ```
@@ -290,7 +290,7 @@ Invites a new user by email. Requires `users.create` permission. Returns `409` i
 **Request Body:**
 ```json
 {
-  "email": "invited@dev.io",
+  "email": "invited@pratyushes.dev",
   "name": "Invited User",
   "role": "developer",
   "roleId": null
@@ -302,7 +302,7 @@ Invites a new user by email. Requires `users.create` permission. Returns `409` i
 {
   "id": "...",
   "name": "Invited User",
-  "email": "invited@dev.io",
+  "email": "invited@pratyushes.dev",
   "role": "developer"
 }
 ```

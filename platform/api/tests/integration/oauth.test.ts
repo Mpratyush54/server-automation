@@ -31,7 +31,7 @@ import { User } from '../../src/entities/User';
 const mockUser = {
   id: '00000000-0000-0000-0000-000000000001',
   name: 'DevOps Boss',
-  email: 'devops@@dev.io',
+  email: 'devops@@pratyushes.dev',
   role: 'DevOps'
 };
 

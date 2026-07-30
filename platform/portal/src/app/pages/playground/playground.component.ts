@@ -44,7 +44,7 @@ export class PlaygroundComponent implements OnInit {
           path: '/api/auth/login',
           description: 'Authenticate user email and retrieve active JWT token.',
           parameters: [
-            { name: 'email', type: 'body', required: true, value: 'john@@dev.io', description: 'User login email address' }
+            { name: 'email', type: 'body', required: true, value: 'john@@pratyushes.dev', description: 'User login email address' }
           ]
         },
         {
@@ -65,7 +65,7 @@ export class PlaygroundComponent implements OnInit {
           description: 'Create a new user profile (restricted to DevOps).',
           parameters: [
             { name: 'name', type: 'body', required: true, value: 'New Developer' },
-            { name: 'email', type: 'body', required: true, value: 'newdev@@dev.io' },
+            { name: 'email', type: 'body', required: true, value: 'newdev@@pratyushes.dev' },
             { name: 'role', type: 'body', required: true, value: 'developer', description: 'developer, tech_lead, or devops' },
             { name: 'gitlabId', type: 'body', required: false, value: '' }
           ]
@@ -88,7 +88,7 @@ export class PlaygroundComponent implements OnInit {
           parameters: [
             { name: 'name', type: 'body', required: true, value: 'payment-gateway' },
             { name: 'stack', type: 'body', required: true, value: 'nodejs', description: 'nodejs, angular, python, static' },
-            { name: 'repositoryUrl', type: 'body', required: true, value: 'https://gitlab.@dev.io/payments/gateway.git' }
+            { name: 'repositoryUrl', type: 'body', required: true, value: 'https://gitlab.@pratyushes.dev/payments/gateway.git' }
           ]
         },
         {

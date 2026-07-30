@@ -67,7 +67,7 @@ npm install
 npm run start        # runs platform/api (:3000) and platform/portal (:4200) together
 ```
 
-Open `http://localhost:4200` and sign in with **`admin@dev.io`** (no password —
+Open `http://localhost:4200` and sign in with **`admin@pratyushes.dev`** (no password —
 Platform uses passwordless JWT). Users are auto-seeded on first API boot; if you ever
 need to re-seed, run:
 

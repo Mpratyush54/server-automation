@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-portal
+  namespace: platform
+  labels:
+    app: platform-portal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-portal
+  template:
+    metadata:
+      labels:
+        app: platform-portal
+    spec:
+      containers:
+        - name: portal
+          image: ghcr.io/mpratyush54/platform-portal:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80

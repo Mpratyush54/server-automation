@@ -90,11 +90,21 @@ func Execute() {
 	}
 }
 
+var updateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Pull newest Platform images from GHCR and roll deployments",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
+		return components.UpdateImages(cfg)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(provisionCmd)
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(seedCmd)
+	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(versionCmd)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default /etc/platform/.env)")
@@ -178,6 +188,7 @@ func runProvision() error {
 		{"portainer", components.InstallPortainer, !cfg.InstallPortainer},
 		{"infisical", components.InstallInfisical, !cfg.InstallInfisical},
 		{"platform", components.InstallPlatform, false},
+		{"auto-update", components.InstallAutoUpdate, !cfg.AutoUpdate},
 	}
 
 	for _, item := range steps {

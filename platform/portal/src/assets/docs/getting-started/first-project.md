@@ -8,7 +8,7 @@ Open [http://localhost:4200](http://localhost:4200) and log in with the admin ac
 
 | Email | Password |
 |---|---|
-| admin@dev.io | (none required — click Sign In) |
+| admin@pratyushes.dev | (none required — click Sign In) |
 
 ## 2. Create a Project
 

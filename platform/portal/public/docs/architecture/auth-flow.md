@@ -38,7 +38,7 @@ router.post('/auth/login', async (req, res) => {
 
 **Key characteristics:**
 - No password — email lookup only
-- Demo users seeded on empty DB: admin@dev.io, john@dev.io, sarah@dev.io, devops@dev.io
+- Demo users seeded on empty DB: admin@pratyushes.dev, john@pratyushes.dev, sarah@pratyushes.dev, devops@pratyushes.dev
 - JWT payload: `{ id, email, name, role }` — no secrets
 
 ## JWT Middleware
@@ -197,7 +197,7 @@ const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
 ```json
 {
   "id": "user-uuid",
-  "email": "admin@dev.io",
+  "email": "admin@pratyushes.dev",
   "name": "Admin",
   "role": "admin",
   "iss": "https://{host}/api/oauth",
@@ -212,7 +212,7 @@ const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
   "sub": "user-uuid",
   "aud": "{client_id}",
   "name": "Admin",
-  "email": "admin@dev.io",
+  "email": "admin@pratyushes.dev",
   "email_verified": true,
   "groups": ["admin"],
   "roles": ["admin"]

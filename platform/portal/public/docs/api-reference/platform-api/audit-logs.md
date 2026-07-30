@@ -32,7 +32,7 @@ Audit logs track actions such as user creation, project updates, deployments, se
     "targetType": "User",
     "targetId": "uuid",
     "metadata": {
-      "email": "newuser@dev.io",
+      "email": "newuser@pratyushes.dev",
       "role": "developer"
     },
     "ipAddress": "192.168.1.100",
