@@ -51,9 +51,29 @@ export const routes: Routes = [
   { path: 'oauth/authorize', component: OauthAuthorizeComponent, canActivate: [appHostGuard] },
 
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
-  { path: 'argocd', component: IframeViewComponent, canActivate: [authGuard], data: { url: '/argocd/' } },
+  // ArgoCD is full-page at /argocd/ (ingress) — leave the SPA rather than iframe.
+  {
+    path: 'argocd',
+    canActivate: [authGuard, () => {
+      window.location.replace('/argocd/');
+      return false;
+    }],
+    children: [],
+  },
   { path: 'grafana', component: IframeViewComponent, canActivate: [authGuard], data: { url: '/grafana/' } },
-  { path: 'portainer', component: IframeViewComponent, canActivate: [authGuard], data: { url: '/portainer/' } },
+  // Portainer cannot share the portal host (/api + JS assets collide) — open subdomain full-page.
+  {
+    path: 'portainer',
+    canActivate: [authGuard, () => {
+      const host = window.location.hostname;
+      const url = (host === 'localhost' || host === '127.0.0.1')
+        ? 'http://localhost:9000/'
+        : `${window.location.protocol}//portainer.${host}/`;
+      window.location.replace(url);
+      return false;
+    }],
+    children: [],
+  },
 
   { path: 'projects', component: ProjectsComponent, canActivate: [authGuard] },
   { path: 'projects/:id', component: ProjectDetailComponent, canActivate: [authGuard] },

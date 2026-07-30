@@ -188,6 +188,7 @@ func runProvision() error {
 		{"portainer", components.InstallPortainer, !cfg.InstallPortainer},
 		{"infisical", components.InstallInfisical, !cfg.InstallInfisical},
 		{"platform", components.InstallPlatform, false},
+		{"routing", components.InstallRouting, false},
 		{"auto-update", components.InstallAutoUpdate, !cfg.AutoUpdate},
 	}
 
@@ -217,7 +218,7 @@ func runInstall(name string) error {
 	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
 	comp := components.Find(name)
 	if comp == nil {
-		return fmt.Errorf("unknown component: %s\nAvailable: ingress-nginx, cert-manager, postgresql, mongodb, redis, minio, argocd, monitoring, oauth2-proxy, portainer, infisical, platform", name)
+		return fmt.Errorf("unknown component: %s\nAvailable: ingress-nginx, cert-manager, postgresql, mongodb, redis, minio, argocd, monitoring, oauth2-proxy, portainer, infisical, platform, routing, auto-update", name)
 	}
 	return comp.Install(cfg)
 }

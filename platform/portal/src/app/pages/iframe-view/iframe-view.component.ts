@@ -24,7 +24,6 @@ export class IframeViewComponent implements OnInit {
       
       if (window.location.hostname === 'localhost') {
         const portMap: Record<string, string> = {
-          '/argocd/': 'http://localhost:8080',
           '/grafana/': 'http://localhost:3000/grafana/',
           '/portainer/': 'http://localhost:9000',
           '/infisical/': 'http://localhost:8081'
