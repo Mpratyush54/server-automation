@@ -30,9 +30,10 @@ func All() []Component {
 		{"argocd", "ArgoCD GitOps", InstallArgoCD},
 		{"monitoring", "Grafana + Prometheus + Loki", InstallMonitoring},
 		{"oauth2-proxy", "OAuth2 authentication proxy", InstallOAuthProxy},
-		{"portainer", "Container management UI", InstallPortainer},
+		{"portainer", "Container management UI (subdomain + Platform SSO)", InstallPortainer},
 		{"infisical", "Secret management", InstallInfisical},
 		{"platform", "Platform API + Portal", InstallPlatform},
+		{"routing", "Ingress: ArgoCD /argocd, Grafana /grafana, Portainer subdomain+SSO", InstallRouting},
 		{"auto-update", "GHCR auto-update policy (Image Updater + CronJob)", InstallAutoUpdate},
 	}
 }
@@ -82,6 +83,8 @@ func writeTemplatedManifest(name, domain, dest string) error {
 		return fmt.Errorf("%s manifest not found", name)
 	}
 	vals = strings.ReplaceAll(vals, "{{DOMAIN}}", domain)
+	vals = strings.ReplaceAll(vals, "{{BASEHREF}}", "/argocd")
+	vals = strings.ReplaceAll(vals, "{{ARGOCD_URL}}", "https://"+domain+"/argocd")
 	return os.WriteFile(dest, []byte(vals), 0644)
 }
 
@@ -98,11 +101,15 @@ func InstallIngressNginx(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing ingress-nginx...")
+	// allowSnippetAnnotations is required so portal iframes can hide
+	// X-Frame-Options / CSP from ArgoCD/Grafana/Portainer backends.
 	err := shell.RunBash(`
 		helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
 			--namespace ingress-nginx --create-namespace \
 			--set controller.service.type=LoadBalancer \
 			--set controller.publishService.enabled=true \
+			--set controller.allowSnippetAnnotations=true \
+			--set controller.config.annotations-risk-level=Critical \
 			--wait --timeout 10m
 	`)
 	if err != nil {
@@ -240,10 +247,8 @@ func InstallMinIO(cfg *config.Config) error {
 }
 
 func InstallArgoCD(cfg *config.Config) error {
-	if doneOrSkip("argocd", "ArgoCD") {
-		return nil
-	}
-	color.Cyan("\n  ■ Installing ArgoCD...")
+	// Always re-apply values so subpath config stays correct for portal iframes.
+	color.Cyan("\n  ■ Installing ArgoCD (path /argocd for portal iframes)...")
 	tmpFile := "/tmp/argocd-values.yaml"
 	if err := writeTemplatedManifest("argocd-values.yaml", cfg.Domain, tmpFile); err != nil {
 		return err
@@ -254,20 +259,32 @@ func InstallArgoCD(cfg *config.Config) error {
 		helm upgrade --install argocd argo/argo-cd \
 			--namespace argocd --create-namespace \
 			-f %s \
-			--set configs.params."server\.insecure"=true \
 			--wait --timeout 10m || {
 			kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 			kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 			kubectl wait --for=condition=Available deployment --all -n argocd --timeout=300s || true
-			kubectl patch deployment argocd-server -n argocd --type=json \
-			  -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--insecure"}]' || true
 		}
-	`, tmpFile))
+		# Hard-guarantee subpath settings (portal embeds /argocd/)
+		kubectl -n argocd create configmap argocd-cmd-params-cm \
+		  --from-literal=server.rootpath=/argocd \
+		  --from-literal=server.basehref=/argocd \
+		  --from-literal=server.insecure=true \
+		  --dry-run=client -o yaml | kubectl apply -f -
+		kubectl -n argocd patch configmap argocd-cm --type merge -p '{"data":{"url":"https://%s/argocd","server.basehref":"/argocd","server.rootpath":"/argocd"}}' || true
+		kubectl -n argocd patch deployment argocd-server --type=json -p '[
+		  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--insecure"},
+		  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--rootpath=/argocd"},
+		  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--basehref=/argocd"}
+		]' 2>/dev/null || true
+		kubectl rollout restart deployment argocd-server -n argocd || true
+		kubectl rollout status deployment argocd-server -n argocd --timeout=180s || true
+	`, tmpFile, cfg.Domain))
 	if err != nil {
 		return err
 	}
-	color.Green("  ✓ ArgoCD installed")
-	return state.MarkDone("argocd")
+	color.Green("  ✓ ArgoCD installed (/argocd subpath)")
+	_ = state.MarkDone("argocd")
+	return nil
 }
 
 func InstallMonitoring(cfg *config.Config) error {
@@ -339,26 +356,159 @@ func InstallOAuthProxy(cfg *config.Config) error {
 }
 
 func InstallPortainer(cfg *config.Config) error {
-	if doneOrSkip("portainer", "Portainer") {
-		return nil
-	}
+	// Guarantees on every install/reinstall:
+	//  1. Admin is pre-seeded (no "create administrator" wizard)
+	//  2. Platform OAuth/SSO is enabled (SSO button on login page)
+	//  3. Portainer is only reachable on portainer.<domain> (path /portainer redirects)
 	color.Cyan("\n  ■ Installing Portainer...")
+	pass := cfg.PortainerPassword
+	if pass == "" {
+		pass = cfg.AdminPassword
+	}
+	if len(pass) < 12 {
+		return fmt.Errorf("Portainer admin password must be at least 12 characters (set PORTAINER_ADMIN_PASSWORD or ADMIN_PASSWORD)")
+	}
+	if cfg.Domain == "" {
+		return fmt.Errorf("DOMAIN is empty — required for Portainer SSO redirect URI")
+	}
 	tmpFile := "/tmp/portainer-values.yaml"
 	_ = writeTemplatedManifest("portainer-values.yaml", cfg.Domain, tmpFile)
 	defer os.Remove(tmpFile)
 
-	err := shell.RunBash(fmt.Sprintf(`
+	if err := shell.RunBash(fmt.Sprintf(`
+		set -euo pipefail
+		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+		kubectl create namespace portainer --dry-run=client -o yaml | kubectl apply -f -
+		kubectl -n portainer create secret generic portainer-admin-password \
+		  --from-literal=password=%s \
+		  --dry-run=client -o yaml | kubectl apply -f -
 		helm upgrade --install portainer portainer/portainer \
 			--namespace portainer --create-namespace \
 			-f %s \
 			--set service.type=ClusterIP \
+			--set ingress.enabled=false \
+			--set adminPassword.existingSecret=portainer-admin-password \
+			--set 'feature.flags[0]=--no-setup-token' \
 			--wait --timeout 5m
-	`, tmpFile))
-	if err != nil {
+		kubectl rollout status deploy/portainer -n portainer --timeout=180s
+	`, shellQuote(pass), tmpFile)); err != nil {
 		return err
 	}
-	color.Green("  ✓ Portainer installed")
-	return state.MarkDone("portainer")
+
+	if err := ensurePortainerAdminAndSSO(cfg, pass); err != nil {
+		return err
+	}
+	color.Green("  ✓ Portainer installed (https://portainer.%s — Platform SSO)", cfg.Domain)
+	_ = state.MarkDone("portainer")
+	return nil
+}
+
+// ensurePortainerAdminAndSSO logs in (resetting the PVC once if admin seed failed)
+// and configures Platform OAuth so the SSO button always appears.
+func ensurePortainerAdminAndSSO(cfg *config.Config, pass string) error {
+	oauthSecret := cfg.WebhookSecret
+	if oauthSecret == "" {
+		oauthSecret = cfg.JWTSecret
+	}
+	if len(oauthSecret) < 8 {
+		oauthSecret = "portainer-oauth-secret"
+	}
+	domain := cfg.Domain
+	authBody := shellQuote(fmt.Sprintf(`{"username":"admin","password":%q}`, pass))
+	settingsBody := shellQuote(fmt.Sprintf(`{
+  "AuthenticationMethod": 3,
+  "OAuthSettings": {
+    "ClientID": "portainer",
+    "ClientSecret": %q,
+    "AccessTokenURI": "https://%s/api/oauth/token",
+    "AuthorizationURI": "https://%s/api/oauth/authorize",
+    "ResourceURI": "https://%s/api/oauth/userinfo",
+    "RedirectURI": "https://portainer.%s/",
+    "UserIdentifier": "email",
+    "Scopes": "openid profile email groups",
+    "OAuthAutoCreateUsers": true,
+    "DefaultTeamID": 0,
+    "SSO": true,
+    "LogoutURI": "",
+    "AuthStyle": 1
+  }
+}`, oauthSecret, domain, domain, domain, domain))
+
+	return shell.RunBash(fmt.Sprintf(`
+set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+
+portainer_base() {
+  local ip
+  ip="$(kubectl -n portainer get svc portainer -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)"
+  if [[ -n "$ip" ]]; then
+    echo "http://${ip}:9000"
+    return
+  fi
+  echo "https://portainer.%s"
+}
+
+wait_ready() {
+  local base="$1"
+  local i
+  for i in $(seq 1 36); do
+    curl -skf "$base/api/system/status" >/dev/null 2>&1 && return 0
+    sleep 5
+  done
+  return 1
+}
+
+login() {
+  local base="$1"
+  curl -sk -X POST "$base/api/auth" \
+    -H 'Content-Type: application/json' \
+    -d %s | grep -o '"jwt":"[^"]*"' | cut -d'"' -f4 || true
+}
+
+configure_sso() {
+  local base="$1" token="$2"
+  curl -sk -X PUT "$base/api/settings" \
+    -H "Authorization: Bearer $token" \
+    -H 'Content-Type: application/json' \
+    -d %s >/dev/null
+  # Verify SSO is actually on
+  local method
+  method="$(curl -sk "$base/api/settings/public" | grep -o '"AuthenticationMethod":[0-9]*' | head -1 | cut -d: -f2 || true)"
+  if [[ "$method" != "3" ]]; then
+    echo "Portainer AuthenticationMethod=$method (want 3=OAuth)" >&2
+    return 1
+  fi
+  echo "Portainer SSO OK (AuthenticationMethod=3) via $base"
+}
+
+BASE="$(portainer_base)"
+wait_ready "$BASE" || { echo "Portainer API not ready at $BASE" >&2; exit 1; }
+
+TOKEN="$(login "$BASE")"
+if [[ -z "$TOKEN" ]]; then
+  echo "Admin login failed — resetting Portainer volume so --admin-password-file can seed admin"
+  kubectl -n portainer delete deploy portainer --ignore-not-found
+  kubectl -n portainer delete pvc portainer --ignore-not-found
+  sleep 3
+  helm upgrade --install portainer portainer/portainer \
+    --namespace portainer --create-namespace \
+    --set service.type=ClusterIP \
+    --set ingress.enabled=false \
+    --set adminPassword.existingSecret=portainer-admin-password \
+    --set 'feature.flags[0]=--no-setup-token' \
+    --wait --timeout 5m
+  kubectl rollout status deploy/portainer -n portainer --timeout=180s
+  BASE="$(portainer_base)"
+  wait_ready "$BASE" || { echo "Portainer API not ready after reset" >&2; exit 1; }
+  TOKEN="$(login "$BASE")"
+  if [[ -z "$TOKEN" ]]; then
+    echo "Portainer admin login still failing after PVC reset" >&2
+    exit 1
+  fi
+fi
+
+configure_sso "$BASE" "$TOKEN"
+`, domain, authBody, settingsBody))
 }
 
 func InstallInfisical(cfg *config.Config) error {
@@ -600,7 +750,104 @@ roleRef:
   kind: ClusterRole
   name: cluster-admin
   apiGroup: rbac.authorization.k8s.io
----
+EOF
+
+kubectl wait --for=condition=Available deployment/platform-api -n platform --timeout=300s || true
+kubectl wait --for=condition=Available deployment/platform-portal -n platform --timeout=180s || true
+`,
+		shellQuote(cfg.JWTSecret),
+		shellQuote(cfg.WebhookSecret),
+		shellQuote(cfg.PostgresPassword),
+		cfg.MongoPassword,
+		shellQuote(cfg.RedisPassword),
+		shellQuote(cfg.MinioAccessKey),
+		shellQuote(cfg.MinioSecretKey),
+		shellQuote(cfg.PlatformName),
+		shellQuote(cfg.Domain),
+		shellQuote(cfg.AdminEmail),
+		shellQuote(cfg.AdminPassword),
+		apiImg, portalImg,
+	))
+	if err != nil {
+		return err
+	}
+	if err := ApplyServiceRouting(cfg); err != nil {
+		return err
+	}
+	color.Green("  ✓ Platform deployed")
+	return state.MarkDone("platform")
+}
+
+// InstallRouting re-applies ingress so ArgoCD (full-page /argocd), Grafana
+// (iframe /grafana), and Portainer (subdomain + /portainer redirect) stay correct.
+// Also re-applies Portainer SSO in case Portainer was installed before ingress existed.
+func InstallRouting(cfg *config.Config) error {
+	color.Cyan("\n  ■ Fixing service routing (ArgoCD / Grafana / Portainer)...")
+	if err := ApplyServiceRouting(cfg); err != nil {
+		return err
+	}
+	// Re-assert ArgoCD subpath (idempotent)
+	if err := InstallArgoCD(cfg); err != nil {
+		color.Yellow("  ⚠ ArgoCD re-apply: %v", err)
+	}
+	// Grafana embedding + subpath
+	_ = shell.RunBash(fmt.Sprintf(`
+		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+		helm upgrade kube-prometheus prometheus-community/kube-prometheus-stack \
+		  --namespace monitoring \
+		  --reuse-values \
+		  --set grafana.grafana\.ini.server.root_url="https://%s/grafana/" \
+		  --set grafana.grafana\.ini.server.serve_from_sub_path=true \
+		  --set grafana.grafana\.ini.security.allow_embedding=true \
+		  --set grafana.grafana\.ini.security.cookie_samesite=none \
+		  --set grafana.grafana\.ini.security.cookie_secure=true \
+		  --timeout 10m || true
+		kubectl rollout restart deploy -n monitoring -l app.kubernetes.io/name=grafana || true
+	`, cfg.Domain))
+	// Portainer SSO must run after ingress/DNS exist; idempotent re-apply
+	if cfg.InstallPortainer {
+		pass := cfg.PortainerPassword
+		if pass == "" {
+			pass = cfg.AdminPassword
+		}
+		if len(pass) >= 12 {
+			if err := ensurePortainerAdminAndSSO(cfg, pass); err != nil {
+				return fmt.Errorf("portainer SSO: %w", err)
+			}
+		}
+	}
+	color.Green("  ✓ Service routing fixed")
+	_ = state.Clear("routing")
+	return state.MarkDone("routing")
+}
+
+// ApplyServiceRouting installs ExternalName proxies + platform Ingress.
+// ArgoCD: full-page at /argocd (with base-href sub_filter).
+// Grafana: iframe at /grafana.
+// Portainer: subdomain only — /portainer permanently redirects (no shared-host /api clash).
+func ApplyServiceRouting(cfg *config.Config) error {
+	d := cfg.Domain
+	if d == "" {
+		return fmt.Errorf("DOMAIN is empty — set DOMAIN or ensure /etc/platform/.env exists")
+	}
+	// Use __DOMAIN__ + ReplaceAll (not fmt.Sprintf) so nginx /$2 rewrite tokens
+	// and quoted heredocs are not mangled by bash set -u or fmt verbs.
+	script := strings.ReplaceAll(`
+set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+
+# Grafana/Portainer iframes need X-Frame-Options stripped; ArgoCD needs base-href fix.
+# ingress-nginx 1.12+ blocks snippet annotations unless explicitly allowed.
+helm upgrade ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx \
+  --reuse-values \
+  --set controller.allowSnippetAnnotations=true \
+  --set controller.config.annotations-risk-level=Critical \
+  --timeout 5m >/dev/null || \
+kubectl -n ingress-nginx patch configmap ingress-nginx-controller --type merge \
+  -p '{"data":{"allow-snippet-annotations":"true","annotations-risk-level":"Critical"}}' || true
+
+kubectl apply -n platform -f - <<'EOF'
 apiVersion: v1
 kind: Service
 metadata:
@@ -644,7 +891,7 @@ metadata:
   namespace: platform
 spec:
   type: ExternalName
-  externalName: minio.storage.svc.cluster.local
+  externalName: minio-console.storage.svc.cluster.local
 ---
 apiVersion: v1
 kind: Service
@@ -664,14 +911,21 @@ metadata:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_hide_header X-Frame-Options;
+      proxy_hide_header Content-Security-Policy;
 spec:
+  ingressClassName: nginx
   tls:
   - hosts:
-    - %s
-    - api.%s
+    - __DOMAIN__
+    - api.__DOMAIN__
+    - argocd.__DOMAIN__
+    - grafana.__DOMAIN__
+    - portainer.__DOMAIN__
     secretName: platform-tls
   rules:
-  - host: %s
+  - host: __DOMAIN__
     http:
       paths:
       - path: /api
@@ -681,6 +935,27 @@ spec:
             name: platform-api
             port:
               number: 3000
+      - path: /grafana
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana-proxy
+            port:
+              number: 80
+      - path: /minio
+        pathType: Prefix
+        backend:
+          service:
+            name: minio-proxy
+            port:
+              number: 9090
+      - path: /oauth2
+        pathType: Prefix
+        backend:
+          service:
+            name: oauth2-proxy-proxy
+            port:
+              number: 4180
       - path: /
         pathType: Prefix
         backend:
@@ -688,7 +963,7 @@ spec:
             name: platform-portal
             port:
               number: 80
-  - host: api.%s
+  - host: api.__DOMAIN__
     http:
       paths:
       - path: /
@@ -698,16 +973,98 @@ spec:
             name: platform-api
             port:
               number: 3000
-  - http:
+  - host: argocd.__DOMAIN__
+    http:
       paths:
-      - path: /api
+      - path: /
         pathType: Prefix
         backend:
           service:
-            name: platform-api
+            name: argocd-proxy
             port:
-              number: 3000
+              number: 80
+  - host: grafana.__DOMAIN__
+    http:
+      paths:
       - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana-proxy
+            port:
+              number: 80
+  - host: portainer.__DOMAIN__
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: portainer-proxy
+            port:
+              number: 9000
+EOF
+
+# Argo CD is full-page at /argocd/. 3.x keeps <base href="/"> even with --basehref;
+# fix assets via sub_filter so the UI loads under the subpath.
+kubectl apply -n platform -f - <<'EOF'
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: platform-argocd
+  namespace: platform
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Accept-Encoding "";
+      sub_filter '<base href="/">' '<base href="/argocd/">';
+      sub_filter_once on;
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - __DOMAIN__
+    secretName: platform-tls
+  rules:
+  - host: __DOMAIN__
+    http:
+      paths:
+      - path: /argocd
+        pathType: Prefix
+        backend:
+          service:
+            name: argocd-proxy
+            port:
+              number: 80
+EOF
+
+# Portainer has no subpath support and its /api + static assets collide with the
+# portal on the same host. Serve it only on portainer.__DOMAIN__ and redirect
+# legacy /portainer links there.
+kubectl apply -n platform -f - <<'EOF'
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: platform-portainer
+  namespace: platform
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/permanent-redirect: https://portainer.__DOMAIN__/
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - __DOMAIN__
+    secretName: platform-tls
+  rules:
+  - host: __DOMAIN__
+    http:
+      paths:
+      - path: /portainer
         pathType: Prefix
         backend:
           service:
@@ -716,28 +1073,9 @@ spec:
               number: 80
 EOF
 
-kubectl wait --for=condition=Available deployment/platform-api -n platform --timeout=300s || true
-kubectl wait --for=condition=Available deployment/platform-portal -n platform --timeout=180s || true
-`,
-		shellQuote(cfg.JWTSecret),
-		shellQuote(cfg.WebhookSecret),
-		shellQuote(cfg.PostgresPassword),
-		cfg.MongoPassword,
-		shellQuote(cfg.RedisPassword),
-		shellQuote(cfg.MinioAccessKey),
-		shellQuote(cfg.MinioSecretKey),
-		shellQuote(cfg.PlatformName),
-		shellQuote(cfg.Domain),
-		shellQuote(cfg.AdminEmail),
-		shellQuote(cfg.AdminPassword),
-		apiImg, portalImg,
-		cfg.Domain, cfg.Domain, cfg.Domain, cfg.Domain,
-	))
-	if err != nil {
-		return err
-	}
-	color.Green("  ✓ Platform deployed")
-	return state.MarkDone("platform")
+kubectl delete ingress argocd-ingress portainer-ingress -n platform --ignore-not-found
+`, "__DOMAIN__", d)
+	return shell.RunBash(script)
 }
 
 func SeedAdmin(cfg *config.Config) error {
@@ -783,8 +1121,9 @@ func ProvisionComplete(cfg *config.Config) {
 	color.Cyan("\n  Access URLs:")
 	fmt.Printf("    Portal:    https://%s\n", cfg.Domain)
 	fmt.Printf("    API:       https://api.%s\n", cfg.Domain)
-	fmt.Printf("    ArgoCD:    https://argocd.%s\n", cfg.Domain)
-	fmt.Printf("    Grafana:   https://grafana.%s (admin / see /etc/platform/.env)\n", cfg.Domain)
+	fmt.Printf("    ArgoCD:    https://%s/argocd/\n", cfg.Domain)
+	fmt.Printf("    Grafana:   https://%s/grafana/ (admin / see /etc/platform/.env)\n", cfg.Domain)
+	fmt.Printf("    Portainer: https://portainer.%s/  (Platform SSO; admin fallback in PORTAINER_ADMIN_PASSWORD)\n", cfg.Domain)
 	color.Cyan("\n  Login (password required):")
 	fmt.Printf("    Email:    %s\n", cfg.AdminEmail)
 	fmt.Printf("    Password: %s\n", cfg.AdminPassword)

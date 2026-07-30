@@ -36,7 +36,8 @@
       <span *ngIf="!isCollapsed" class="font-medium text-sm whitespace-nowrap">Infrastructure</span>
     </a>
     
-    <a routerLink="/argocd" routerLinkActive="bg-[#111] text-white border-[#333]"
+    <!-- Full-page navigation (not iframe) — nginx serves Argo CD at /argocd/ -->
+    <a href="/argocd/"
        class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
        [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
       <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
@@ -50,7 +51,8 @@
       <span *ngIf="!isCollapsed" class="font-medium text-sm whitespace-nowrap">Grafana</span>
     </a>
 
-    <a routerLink="/portainer" routerLinkActive="bg-[#111] text-white border-[#333]"
+    <!-- Portainer must be on its own host — /api and static assets collide with the portal. -->
+    <a [href]="portainerUrl"
        class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
        [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
       <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>

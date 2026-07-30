@@ -1,13 +1,19 @@
 configs:
   cm:
-    url: "{{ARGOCD_URL}}"
-    server.basehref: "{{BASEHREF}}"
+    url: "https://{{DOMAIN}}/argocd"
+    # Portal iframes always use /argocd/ — keep path-based on every install.
+    server.basehref: "/argocd"
+    server.rootpath: "/argocd"
     oidc.config: |
       name: Platform
       issuer: https://{{DOMAIN}}/api/oauth
       clientID: argocd
       clientSecret: argocd-secret-placeholder
       requestedScopes: ["openid", "profile", "email", "groups"]
+  params:
+    server.insecure: "true"
+    server.rootpath: "/argocd"
+    server.basehref: "/argocd"
   rbac:
     policy.csv: |
       g, Admin, role:admin
@@ -16,5 +22,9 @@ configs:
       g, Developer, role:readonly
 server:
   insecure: true
+  extraArgs:
+    - --rootpath=/argocd
+    - --basehref=/argocd
+    - --insecure
   ingress:
     enabled: false

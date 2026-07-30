@@ -57,13 +57,16 @@ func Load() *Config {
 	if tagDefault == "" {
 		tagDefault = "latest"
 	}
+	// Prefer values already written by a prior provision.
+	_ = loadDotEnv("/etc/platform/.env")
+
 	c := &Config{
-		PlatformName:       "Platform",
+		PlatformName:       getEnv("PLATFORM_NAME", "Platform"),
 		ImageRegistry:      getEnv("PLATFORM_IMAGE_REGISTRY", "ghcr.io/mpratyush54"),
 		ImageTag:           getEnv("PLATFORM_IMAGE_TAG", tagDefault),
 		RepoURL:            getEnv("PLATFORM_REPO_URL", "https://github.com/Mpratyush54/SERVER-automation"),
 		GitHubToken:        getEnv("GITHUB_TOKEN", ""),
-		Domain:             getEnv("DOMAIN", os.Getenv("PLATFORM_DOMAIN")),
+		Domain:             firstNonEmpty(os.Getenv("DOMAIN"), os.Getenv("PLATFORM_DOMAIN")),
 		AdminEmail:         getEnv("ADMIN_EMAIL", "admin@pratyushes.dev"),
 		AdminPassword:      getEnv("ADMIN_PASSWORD", ""),
 		NonInteractive:     os.Getenv("NON_INTERACTIVE") == "true" || os.Getenv("PLATFORMCTL_AUTO") == "true",
@@ -76,8 +79,51 @@ func Load() *Config {
 		InstallCertManager: getEnvBool("INSTALL_CERTMANAGER", true),
 		AutoUpdate:         getEnvBool("AUTO_UPDATE", true),
 		MinioAccessKey:     getEnv("MINIO_ACCESS_KEY", "platformadmin"),
+		PostgresPassword:   os.Getenv("POSTGRES_PASSWORD"),
+		MongoPassword:      os.Getenv("MONGO_PASSWORD"),
+		RedisPassword:      os.Getenv("REDIS_PASSWORD"),
+		MinioSecretKey:     os.Getenv("MINIO_SECRET_KEY"),
+		JWTSecret:          os.Getenv("JWT_SECRET"),
+		WebhookSecret:      os.Getenv("PLATFORM_WEBHOOK_SECRET"),
+		ArgoCDPassword:     os.Getenv("ARGOCD_PASSWORD"),
+		GrafanaPassword:    os.Getenv("GRAFANA_PASSWORD"),
+		PortainerPassword:  firstNonEmpty(os.Getenv("PORTAINER_ADMIN_PASSWORD"), os.Getenv("PORTAINER_PASSWORD")),
 	}
 	return c
+}
+
+// loadDotEnv loads KEY=VALUE pairs into the process environment without
+// overwriting variables that are already set.
+func loadDotEnv(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		idx := strings.IndexByte(line, '=')
+		if idx <= 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:idx])
+		val := strings.TrimSpace(line[idx+1:])
+		if os.Getenv(key) == "" {
+			_ = os.Setenv(key, val)
+		}
+	}
+	return nil
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func (c *Config) PromptInteractive() error {
@@ -151,11 +197,16 @@ func (c *Config) GenerateSecrets() {
 	if c.InfisicalJWT == "" {
 		c.InfisicalJWT = generatePassword(48)
 	}
-	if c.PortainerPassword == "" {
-		c.PortainerPassword = generatePassword(20)
-	}
 	if c.AdminPassword == "" {
 		c.AdminPassword = generatePassword(24)
+	}
+	if c.PortainerPassword == "" {
+		// Portainer requires ≥12 chars; reuse platform admin password when possible.
+		if len(c.AdminPassword) >= 12 {
+			c.PortainerPassword = c.AdminPassword
+		} else {
+			c.PortainerPassword = generatePassword(20)
+		}
 	}
 	if c.LEEmail == "" {
 		c.LEEmail = c.AdminEmail

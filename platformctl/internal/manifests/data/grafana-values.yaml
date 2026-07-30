@@ -4,6 +4,11 @@ grafana:
     server:
       root_url: https://{{DOMAIN}}/grafana/
       serve_from_sub_path: true
+      domain: "{{DOMAIN}}"
+    security:
+      allow_embedding: true
+      cookie_samesite: none
+      cookie_secure: true
     auth.generic_oauth:
       enabled: true
       name: Platform

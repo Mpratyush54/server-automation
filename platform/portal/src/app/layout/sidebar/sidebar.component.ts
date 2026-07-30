@@ -15,12 +15,18 @@ export class SidebarComponent implements OnInit {
   @Output() toggleCollapse = new EventEmitter<void>();
   isDevOps = false;
   isTechLeadOrDevOps = false;
+  /** Portainer must use its own host — path /portainer collides with portal /api + assets. */
+  portainerUrl = 'http://localhost:9000';
 
   constructor(private auth: AuthService) {}
 
   ngOnInit() {
     this.isDevOps = this.auth.isDevOps();
     this.isTechLeadOrDevOps = this.auth.isTechLeadOrDevOps();
+    const host = window.location.hostname;
+    if (host !== 'localhost' && host !== '127.0.0.1') {
+      this.portainerUrl = `${window.location.protocol}//portainer.${host}/`;
+    }
   }
 
   logout() {

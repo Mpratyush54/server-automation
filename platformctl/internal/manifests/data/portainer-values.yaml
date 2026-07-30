@@ -1,2 +1,6 @@
 ingress:
   enabled: false
+service:
+  type: ClusterIP
+# Admin is created via adminPassword.existingSecret (set by platformctl),
+# so the first-run "create administrator" wizard is skipped.

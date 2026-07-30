@@ -125,6 +125,12 @@ func TestGenerateSecretsPreservesExisting(t *testing.T) {
 	if c.MongoPassword == "" {
 		t.Error("MongoPassword should have been generated")
 	}
+	if c.PortainerPassword != c.AdminPassword {
+		t.Errorf("PortainerPassword should reuse AdminPassword when unset, got %q vs %q", c.PortainerPassword, c.AdminPassword)
+	}
+	if len(c.AdminPassword) < 12 {
+		t.Errorf("AdminPassword too short for Portainer: %d", len(c.AdminPassword))
+	}
 }
 
 func TestPasswordLength(t *testing.T) {

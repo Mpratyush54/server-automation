@@ -8,7 +8,7 @@ describe('IframeViewComponent', () => {
 
   beforeEach(async () => {
     route = {
-      data: of({ url: '/argocd/' })
+      data: of({ url: '/grafana/' })
     };
 
     await TestBed.configureTestingModule({

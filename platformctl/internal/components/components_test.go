@@ -9,8 +9,8 @@ func TestAllComponents(t *testing.T) {
 	if len(all) == 0 {
 		t.Fatal("All() returned no components")
 	}
-	if len(all) != 13 {
-		t.Errorf("expected 13 components, got %d", len(all))
+	if len(all) != 14 {
+		t.Errorf("expected 14 components, got %d", len(all))
 	}
 }
 

@@ -1,4 +1,7 @@
-FROM node:20-alpine AS builder
+# Build JS on the native builder arch. Angular/esbuild crashes under QEMU
+# (linux/arm64 on amd64 runners → "Illegal instruction" / deadlock).
+# The dist output is arch-independent; only the runtime image is multi-arch.
+FROM --platform=$BUILDPLATFORM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
