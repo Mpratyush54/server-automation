@@ -3,7 +3,7 @@
 Two install paths, pick the one you need:
 
 - **[Local development](#local-development)** — you're a contributor or app developer using the SDKs. Docker on your laptop is enough.
-- **[Deploy to a server](#deploy-to-a-server-single-command)** — you want a real, TLS-terminated Platform on a Linux server. One bootstrap script does the whole thing.
+- **[Deploy to a server](#deploy-to-a-server-single-command)** — you want a real, TLS-terminated Platform on a Linux server. Download `platformctl` and provision (images are pre-built on GitHub Actions).
 
 ---
 
@@ -94,15 +94,22 @@ On first API startup the tables auto-sync and the demo users are seeded.
 
 ### 5. Sign in
 
-Open <http://localhost:4200> and sign in with **`admin@dev.io`** — **no password**.
-Platform uses passwordless email-based JWT auth. All demo accounts work the same way:
+Open <http://localhost:4200> and sign in with email **and password**.
 
-| Email | Role |
-|---|---|
-| `admin@dev.io` | Admin |
-| `devops@dev.io` | DevOps Engineer |
-| `sarah@dev.io` | Tech Lead |
-| `john@dev.io` | Developer |
+Local/demo seed (`init-demo`) creates accounts with password from `ADMIN_PASSWORD`
+(default for docker-compose: **`Admin@123`**):
+
+| Email | Role | Password |
+|---|---|---|
+| `admin@dev.io` | Admin | `ADMIN_PASSWORD` / `Admin@123` |
+| `devops@dev.io` | DevOps Engineer | same |
+| `sarah@dev.io` | Tech Lead | same |
+| `john@dev.io` | Developer | same |
+
+Server installs generate a random `ADMIN_PASSWORD` into `/etc/platform/.env` — there is **no passwordless login**.
+
+Landing page and documentation live on the public site only:
+**https://platform.pratyushes.dev** — not on self-hosted portals.
 
 ### 6. Re-seed (only if the auto-seed didn't run)
 
@@ -126,15 +133,29 @@ Requirements:
 - **≥ 8 GB RAM, ≥ 80 GB free disk on `/var`, ports 80/443 open**
 - Your domain pointing at the server (or run with a bare IP + sslip.io for testing)
 
+**No repo clone. No on-server `npm` / `docker build`.** GitHub Actions builds multi-arch images to GHCR and releases the `platformctl` binary.
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Mpratyush54/SERVER-automation/master/platform-bootstrap/bootstrap.sh -o bootstrap.sh
-chmod +x bootstrap.sh
-sudo ./bootstrap.sh
+curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | sh
+sudo platformctl provision
 ```
 
-The script is interactive, idempotent, and resumable. Full details, including
-non-interactive (CI) mode and every environment variable it accepts, live in
-[`platform-bootstrap/README.md`](../../platform-bootstrap/README.md).
+Non-interactive (CI / automation):
+
+```bash
+sudo DOMAIN=platform.example.com ADMIN_EMAIL=you@example.com platformctl provision --auto
+```
+
+Useful overrides:
+
+| Env var | Default | What it does |
+|---|---|---|
+| `PLATFORM_IMAGE_REGISTRY` | `ghcr.io/mpratyush54` | Point at your fork's images |
+| `PLATFORM_IMAGE_TAG` | release version / `latest` | Pin API + portal images |
+| `SKIP_K8S` | `false` | Use an existing cluster |
+| `SKIP_PREFLIGHT` | `false` | Skip RAM/disk/port checks |
+
+The installer is interactive, idempotent, and resumable via `/etc/platform/.bootstrap_state`. Details: [`platform-bootstrap/README.md`](../../platform-bootstrap/README.md).
 
 ### Windows / macOS
 

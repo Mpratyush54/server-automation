@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -37,9 +36,11 @@ func TestVersionFormat(t *testing.T) {
 	output := captureOutput(func() {
 		versionCmd.Run(nil, nil)
 	})
-	expected := fmt.Sprintf("platformctl %s\n", Version)
-	if output != expected {
-		t.Errorf("expected %q, got %q", expected, output)
+	if !strings.Contains(output, "platformctl 1.2.3") {
+		t.Errorf("expected version line, got %q", output)
+	}
+	if !strings.Contains(output, "default image tag:") {
+		t.Errorf("expected default image tag line, got %q", output)
 	}
 }
 
