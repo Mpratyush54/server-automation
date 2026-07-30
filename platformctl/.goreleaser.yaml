@@ -18,7 +18,7 @@ builds:
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -s -w -X main.version={{.Version}} -X github.com/Mpratyush54/SERVER-automation/platformctl/cmd.Version={{.Version}}
+      - -s -w -X main.version={{.Version}} -X github.com/Mpratyush54/SERVER-automation/platformctl/cmd.Version={{.Version}} -X github.com/Mpratyush54/SERVER-automation/platformctl/internal/config.DefaultImageTag={{.Version}}
 archives:
   - formats: ["tar.gz"]
     format_overrides:
@@ -40,18 +40,18 @@ release:
   github:
     owner: Mpratyush54
     name: SERVER-automation
+  extra_files:
+    - glob: ./install.sh
   header: |
     ## platformctl {{ .Version }}
 
     Platform server bootstrap and management tool.
 
+    Images for this release: `ghcr.io/mpratyush54/platform-api:v{{ .Version }}` and `ghcr.io/mpratyush54/platform-portal:v{{ .Version }}`.
+
     ### Installation
 
     ```bash
-    # Linux amd64
-    curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/download/{{ .Tag }}/platformctl_{{ .Version }}_linux_amd64.tar.gz | tar xz
-    sudo mv platformctl /usr/local/bin/
-
-    # One-command provision
+    curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/download/{{ .Tag }}/install.sh | sh
     sudo platformctl provision
     ```

@@ -17,3 +17,6 @@ package-lock.json
 *.tsbuildinfo
 
 chats.json
+platformctl/platformctl-linux-*
+token.json
+

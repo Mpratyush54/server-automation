@@ -1,167 +1,270 @@
 # Installation
 
-Set up Platform for development or production in a few minutes.
+Two install paths, pick the one you need:
 
-## Local Development (Docker Compose)
+- **[Local development](#local-development)** — you're a contributor or app developer using the SDKs. Docker on your laptop is enough.
+- **[Deploy to a server](#deploy-to-a-server-single-command)** — you want a real, TLS-terminated Platform on a Linux server. Download `platformctl` and provision (images are pre-built on GitHub Actions).
 
-If you only need the databases to work on the Node.js API or Angular Portal locally, you can use the lightweight Docker Compose setup.
+---
 
-### 1. Clone the Repository
+## Local Development
+
+### Prerequisites
+
+| Tool | Version | Purpose |
+|---|---|---|
+| Node.js | ≥ 18 | API and SDK development |
+| npm | ≥ 9 | Package management |
+| Angular CLI | ≥ 19 | Portal development (installed automatically via `npm install`) |
+| Docker | ≥ 24 | Containerized databases |
+
+### 1. Clone
 
 ```bash
 git clone https://github.com/Mpratyush54/SERVER-automation.git
-cd SERVER-automation/platform
+cd SERVER-automation
 ```
 
-### 2. Start Databases
+### 2. Start the databases with Docker Compose
+
+The repo ships a fully-configured `docker-compose.yml` at the root:
 
 ```bash
 docker compose up -d postgres mongodb redis
 ```
 
-### 3. Configure Environment
+| Service | Port | Credentials |
+|---|---|---|
+| PostgreSQL 16 | 5432 | `platform` / `platform` / db `platform` |
+| MongoDB 7 | 27017 | no auth (local dev only) |
+| Redis 7 | 6379 | no password (local dev only) |
 
-Create `platform/api/.env`:
-
-```env
-# Server
-NODE_ENV=development
-PORT=3000
-DOMAIN=localhost:3000
-PORTAL_URL=http://localhost:4200
-
-# PostgreSQL (matches docker-compose.yml defaults)
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_USER=platform
-POSTGRES_PASSWORD=platform
-POSTGRES_DB=platform
-
-# MongoDB
-MONGODB_URI=mongodb://localhost:27017/platform
-
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-
-# JWT
-JWT_SECRET=dev-secret-change-in-production
-```
-
-### 4. Start the API and Portal
+Optional extras — start these if you want to test the observability paths:
 
 ```bash
-cd platform/api
+docker compose up -d minio loki prometheus grafana
+```
+
+Verify:
+
+```bash
+docker compose ps
+```
+
+### 3. Environment file (optional)
+
+The API reads defaults that match `docker-compose.yml` — you can skip this step for
+the golden path. If you're customising ports or pointing at real services, copy the
+template:
+
+```bash
+cp platform/api/.env.example platform/api/.env
+$EDITOR platform/api/.env
+```
+
+Generate a real JWT secret for anything but local dev:
+
+```bash
+openssl rand -hex 32
+```
+
+### 4. Run the API + Portal
+
+The root `package.json` has a `start` script that boots both together:
+
+```bash
 npm install
-npm run dev
-
-# In a new terminal:
-cd platform/portal
-npm install
-ng serve
+npm run start
 ```
 
-### 5. Seed Demo Users
-
-In a new terminal, seed the demo users and roles:
+Or run them separately:
 
 ```bash
-curl http://localhost:3000/api/users/init-demo
+# terminal 1
+cd platform/api && npm install && npm run dev
+
+# terminal 2
+cd platform/portal && npm install && npx ng serve
 ```
 
-Or run the npm seed script:
+- API: <http://localhost:3000>
+- Portal: <http://localhost:4200>
+
+On first API startup the tables auto-sync and the demo users are seeded.
+
+### 5. Sign in
+
+Open <http://localhost:4200> and sign in with **`admin@dev.io`** — **no password**.
+Platform uses passwordless email-based JWT auth. All demo accounts work the same way:
+
+| Email | Role |
+|---|---|
+| `admin@dev.io` | Admin |
+| `devops@dev.io` | DevOps Engineer |
+| `sarah@dev.io` | Tech Lead |
+| `john@dev.io` | Developer |
+
+### 6. Re-seed (only if the auto-seed didn't run)
+
+If the portal shows **"User email not found. Run init-demo first."** the API's
+first-boot seeder didn't run (usually because it started before Postgres was ready).
+Run it manually:
 
 ```bash
-cd platform/api && npm run seed:db
+npm --prefix platform/api run seed:db
+```
+
+That script is idempotent — safe to run any number of times.
+
+---
+
+## Deploy to a Server (single command)
+
+Requirements:
+
+- **Ubuntu 22.04+** with sudo access
+- **≥ 8 GB RAM, ≥ 80 GB free disk on `/var`, ports 80/443 open**
+- Your domain pointing at the server (or run with a bare IP + sslip.io for testing)
+
+**No repo clone. No on-server `npm` / `docker build`.** GitHub Actions builds multi-arch images to GHCR and releases the `platformctl` binary.
+
+```bash
+curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | sh
+sudo platformctl provision
+```
+
+Non-interactive (CI / automation):
+
+```bash
+sudo DOMAIN=platform.example.com ADMIN_EMAIL=you@example.com platformctl provision --auto
+```
+
+Useful overrides:
+
+| Env var | Default | What it does |
+|---|---|---|
+| `PLATFORM_IMAGE_REGISTRY` | `ghcr.io/mpratyush54` | Point at your fork's images |
+| `PLATFORM_IMAGE_TAG` | release version / `latest` | Pin API + portal images |
+| `SKIP_K8S` | `false` | Use an existing cluster |
+| `SKIP_PREFLIGHT` | `false` | Skip RAM/disk/port checks |
+
+The installer is interactive, idempotent, and resumable via `/etc/platform/.bootstrap_state`. Details: [`platform-bootstrap/README.md`](../../platform-bootstrap/README.md).
+
+### Windows / macOS
+
+- **Windows**: the Platform runs on Linux (k3s). Run `bootstrap.ps1` from an
+  elevated PowerShell — it installs WSL2 + Ubuntu-22.04 and runs `bootstrap.sh`
+  inside it.
+- **macOS**: no supported native install path. Use a cloud Ubuntu VM (Hetzner,
+  Oracle Cloud free tier, DigitalOcean, etc.).
+
+---
+
+## Manual database setup (no Docker)
+
+If you can't use Docker locally, install the databases natively.
+
+### PostgreSQL
+
+```bash
+# macOS (Homebrew)
+brew install postgresql@16 && brew services start postgresql@16
+psql postgres -c "CREATE USER platform WITH PASSWORD 'platform' SUPERUSER;"
+psql postgres -c "CREATE DATABASE platform OWNER platform;"
+
+# Ubuntu/Debian
+sudo apt install postgresql && sudo systemctl start postgresql
+sudo -u postgres psql -c "CREATE USER platform WITH PASSWORD 'platform' SUPERUSER;"
+sudo -u postgres psql -c "CREATE DATABASE platform OWNER platform;"
+```
+
+### MongoDB
+
+```bash
+# macOS
+brew tap mongodb/brew && brew install mongodb-community@7
+brew services start mongodb-community@7
+
+# Ubuntu
+sudo apt install -y mongodb-org && sudo systemctl start mongod
+```
+
+### Redis
+
+```bash
+# macOS
+brew install redis && brew services start redis
+
+# Ubuntu
+sudo apt install redis-server && sudo systemctl start redis-server
 ```
 
 ---
 
-## Server Installation (k3s / Production)
+## Common Issues
 
-To deploy the full platform architecture (k3s, Ingress, MinIO, ArgoCD, Grafana, and the API), use the included bootstrap script.
+### `Cannot connect to Postgres`
 
-### 1. Clone the Repository on Your Server
+The API can't reach `localhost:5432`. Usually `docker compose` isn't running or the
+port is bound by a system Postgres.
 
 ```bash
-git clone https://github.com/Mpratyush54/SERVER-automation.git
-cd SERVER-automation/platform-bootstrap
+docker compose ps            # is the container up and healthy?
+sudo ss -tlnp | grep 5432    # find who else owns the port
 ```
 
-### 2. Run the Bootstrap Script
+### `User email not found. Run init-demo first.`
 
-The `bootstrap.sh` script is a fully automated, idempotent installer that provisions the entire Platform stack on a fresh Ubuntu 22.04+ server.
+The demo users weren't seeded. Run:
 
 ```bash
-chmod +x bootstrap.sh
+npm --prefix platform/api run seed:db
+```
+
+If that also fails, check the API logs — the seeder blocks until Postgres is ready
+but crashes if `PLATFORM_PG_DB` doesn't exist. Create it (`CREATE DATABASE platform;`)
+and try again.
+
+### `WRONGPASS` in the API startup logs
+
+A database password was rotated but `platform/api/.env` (or the k8s `platform-env`
+Secret) still has the old one. See
+[troubleshooting/db-wrongpass-after-rotate.md](../troubleshooting/db-wrongpass-after-rotate.md).
+
+### Portal shows a blank page in dev
+
+Angular 19 needs Node ≥ 18.19. Check with `node -v` and upgrade if needed
+(`nvm install 20 && nvm use 20`).
+
+### `ng serve` fails with `Cannot find module '@angular-devkit/build-angular'`
+
+Corrupted `node_modules`. Nuke and reinstall:
+
+```bash
+rm -rf platform/portal/node_modules platform/portal/package-lock.json
+cd platform/portal && npm install
+```
+
+### Server install: pods stuck in `ImagePullBackOff`
+
+You're running a fork whose images aren't published to `ghcr.io/mpratyush54`.
+See [troubleshooting/image-pull-backoff.md](../troubleshooting/image-pull-backoff.md).
+
+### Server install: `dial tcp: lookup <name>.sslip.io … server misbehaving`
+
+CoreDNS inside the cluster can't resolve `sslip.io`. The bootstrap patches this
+automatically; if you skipped that step, see
+[troubleshooting/sslip-io-dns.md](../troubleshooting/sslip-io-dns.md).
+
+### Server install: bootstrap fails on `apt install`
+
+`unattended-upgrades` is holding the dpkg lock. Wait for it or:
+
+```bash
+sudo systemctl stop unattended-upgrades
 sudo ./bootstrap.sh
 ```
 
-**What this does in ~30 minutes:**
-- Installs **Docker**, **k3s** (Kubernetes), and **Helm 3**
-- Deploys **nginx-ingress** and **cert-manager** for SSL termination
-- Provisions databases: **PostgreSQL**, **MongoDB**, **Redis** (all in `databases` namespace)
-- Sets up **MinIO** for backup object storage
-- Deploys **Grafana + Prometheus + Loki** for observability
-- Installs **ArgoCD** for GitOps continuous delivery
-- Installs **Portainer** for container management
-- Builds and deploys the **Platform API** and **Angular Portal** into the cluster
-- Seeds the admin user and default configurations
+Full doc: [troubleshooting/apt-lock.md](../troubleshooting/apt-lock.md).
 
-You can also run it non-interactively:
-
-```bash
-PLATFORM_DOMAIN=YOUR_SERVER_IP.sslip.io NON_INTERACTIVE=true sudo ./bootstrap.sh
-```
-
-### 3. Verify the Cluster
-
-Check that the core services are running:
-
-```bash
-kubectl get nodes
-kubectl get pods -n platform
-kubectl get pods -n databases
-```
-
-For advanced configuration, environment variables, and scaling, see the [Bootstrap Deployment](../deployment/bootstrap.md) guide.
-
----
-
-## Logging In
-
-The Platform supports two login modes, accessible from the login page toggle:
-
-### Mode 1 — Username + Password (Default)
-
-Use this for the admin account and any user who has set a password.
-
-| Name | Username | Email | Password | Role |
-|---|---|---|---|---|
-| Admin | `admin` | `admin@dev.io` | `Admin@123` | Admin |
-
-> **⚠️ Change the admin password immediately in production** via Settings → Profile → Change Password.
-
-### Mode 2 — Passwordless Email Login
-
-Use this for developer/team accounts that don't have a password set. Simply enter the email address — no password required.
-
-| Name | Email | Role |
-|---|---|---|
-| DevOps Boss | `devops@dev.io` | DevOps |
-| Sarah Lead | `sarah@dev.io` | Tech Lead |
-| John Dev | `john@dev.io` | Developer |
-
-> These accounts are for **local development only**. In production, invite real team members via the Admin → Users panel.
-
----
-
-## Architecture Context
-
-When running locally:
-- SDK requests go to `http://localhost:3000`
-- Portal talks to `http://localhost:3000`
-- API writes to local Docker databases
-
-When deploying to production, follow the [Bootstrap Deployment](../deployment/bootstrap.md) guide to provision the full Kubernetes cluster.
-
+For the full catalogue, browse [`docs/troubleshooting/`](../troubleshooting/).

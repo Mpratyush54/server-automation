@@ -3,7 +3,7 @@
 Two install paths, pick the one you need:
 
 - **[Local development](#local-development)** — you're a contributor or app developer using the SDKs. Docker on your laptop is enough.
-- **[Deploy to a server](#deploy-to-a-server-single-command)** — you want a real, TLS-terminated Platform on a Linux server. One bootstrap script does the whole thing.
+- **[Deploy to a server](#deploy-to-a-server-single-command)** — you want a real, TLS-terminated Platform on a Linux server. Download `platformctl` and provision (images are pre-built on GitHub Actions).
 
 ---
 
@@ -126,15 +126,29 @@ Requirements:
 - **≥ 8 GB RAM, ≥ 80 GB free disk on `/var`, ports 80/443 open**
 - Your domain pointing at the server (or run with a bare IP + sslip.io for testing)
 
+**No repo clone. No on-server `npm` / `docker build`.** GitHub Actions builds multi-arch images to GHCR and releases the `platformctl` binary.
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Mpratyush54/SERVER-automation/master/platform-bootstrap/bootstrap.sh -o bootstrap.sh
-chmod +x bootstrap.sh
-sudo ./bootstrap.sh
+curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | sh
+sudo platformctl provision
 ```
 
-The script is interactive, idempotent, and resumable. Full details, including
-non-interactive (CI) mode and every environment variable it accepts, live in
-[`platform-bootstrap/README.md`](../../platform-bootstrap/README.md).
+Non-interactive (CI / automation):
+
+```bash
+sudo DOMAIN=platform.example.com ADMIN_EMAIL=you@example.com platformctl provision --auto
+```
+
+Useful overrides:
+
+| Env var | Default | What it does |
+|---|---|---|
+| `PLATFORM_IMAGE_REGISTRY` | `ghcr.io/mpratyush54` | Point at your fork's images |
+| `PLATFORM_IMAGE_TAG` | release version / `latest` | Pin API + portal images |
+| `SKIP_K8S` | `false` | Use an existing cluster |
+| `SKIP_PREFLIGHT` | `false` | Skip RAM/disk/port checks |
+
+The installer is interactive, idempotent, and resumable via `/etc/platform/.bootstrap_state`. Details: [`platform-bootstrap/README.md`](../../platform-bootstrap/README.md).
 
 ### Windows / macOS
 

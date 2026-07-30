@@ -3,7 +3,8 @@ name: release platformctl
 on:
   push:
     tags:
-      - "platformctl-v*"
+      - "v*.*.*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -24,6 +25,9 @@ jobs:
         with:
           go-version: "1.22"
           cache-dependency-path: platformctl/go.sum
+
+      - name: Stage install script for release
+        run: cp scripts/install.sh platformctl/install.sh
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7

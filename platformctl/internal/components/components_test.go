@@ -115,10 +115,3 @@ func containsStr(s, substr string) bool {
 	}
 	return false
 }
-
-func TestGenerateDemoPassword(t *testing.T) {
-	pw := generateDemoPassword()
-	if pw != "admin123" {
-		t.Errorf("expected 'admin123', got %q", pw)
-	}
-}

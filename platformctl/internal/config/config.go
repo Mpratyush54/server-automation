@@ -11,6 +11,10 @@ import (
 	"golang.org/x/term"
 )
 
+// DefaultImageTag is set at link time by GoReleaser (e.g. "1.2.3").
+// Falls back to "latest" for local/dev builds.
+var DefaultImageTag = "latest"
+
 type Config struct {
 	Domain       string
 	AdminEmail   string
@@ -23,46 +27,53 @@ type Config struct {
 	ImageRegistry string
 	ImageTag      string
 	RepoURL       string
+	GitHubToken   string
 
-	InstallArgoCD     bool
-	InstallMonitoring bool
-	InstallPortainer  bool
-	InstallInfisical  bool
+	InstallArgoCD      bool
+	InstallMonitoring  bool
+	InstallPortainer   bool
+	InstallInfisical   bool
 	InstallCertManager bool
 
-	PostgresPassword string
-	MongoPassword    string
-	RedisPassword    string
-	MinioAccessKey   string
-	MinioSecretKey   string
-	JWTSecret        string
-	WebhookSecret    string
-	ArgoCDPassword   string
-	GrafanaPassword  string
-	InfisicalEncKey  string
-	InfisicalJWT     string
+	PostgresPassword  string
+	MongoPassword     string
+	RedisPassword     string
+	MinioAccessKey    string
+	MinioSecretKey    string
+	JWTSecret         string
+	WebhookSecret     string
+	ArgoCDPassword    string
+	GrafanaPassword   string
+	InfisicalEncKey   string
+	InfisicalJWT      string
 	PortainerPassword string
-	LEEmail          string
+	LEEmail           string
 }
 
 func Load() *Config {
-	return &Config{
-		PlatformName:    "Platform",
-		ImageRegistry:   getEnv("PLATFORM_IMAGE_REGISTRY", "ghcr.io/mpratyush54"),
-		ImageTag:        getEnv("PLATFORM_IMAGE_TAG", "latest"),
-		RepoURL:         getEnv("PLATFORM_REPO_URL", "https://github.com/Mpratyush54/SERVER-automation"),
-		Domain:          os.Getenv("DOMAIN"),
-		AdminEmail:      os.Getenv("ADMIN_EMAIL"),
-		NonInteractive:  os.Getenv("NON_INTERACTIVE") == "true",
-		SkipK8s:         os.Getenv("SKIP_K8S") == "true",
-		SkipPreflight:   os.Getenv("SKIP_PREFLIGHT") == "true",
-		InstallArgoCD:   getEnvBool("INSTALL_ARGOCD", true),
-		InstallMonitoring: getEnvBool("INSTALL_MONITORING", true),
-		InstallPortainer:  getEnvBool("INSTALL_PORTAINER", true),
-		InstallInfisical:  getEnvBool("INSTALL_INFISICAL", true),
-		InstallCertManager: getEnvBool("INSTALL_CERTMANAGER", true),
-		MinioAccessKey:  getEnv("MINIO_ACCESS_KEY", "platformadmin"),
+	tagDefault := DefaultImageTag
+	if tagDefault == "" {
+		tagDefault = "latest"
 	}
+	c := &Config{
+		PlatformName:       "Platform",
+		ImageRegistry:      getEnv("PLATFORM_IMAGE_REGISTRY", "ghcr.io/mpratyush54"),
+		ImageTag:           getEnv("PLATFORM_IMAGE_TAG", tagDefault),
+		RepoURL:            getEnv("PLATFORM_REPO_URL", "https://github.com/Mpratyush54/SERVER-automation"),
+		GitHubToken:        getEnv("GITHUB_TOKEN", ""),
+		Domain:             os.Getenv("DOMAIN"),
+		AdminEmail:         os.Getenv("ADMIN_EMAIL"),
+		NonInteractive:     os.Getenv("NON_INTERACTIVE") == "true" || os.Getenv("PLATFORMCTL_AUTO") == "true",
+		SkipK8s:            os.Getenv("SKIP_K8S") == "true",
+		SkipPreflight:      os.Getenv("SKIP_PREFLIGHT") == "true",
+		InstallArgoCD:      getEnvBool("INSTALL_ARGOCD", true),
+		InstallMonitoring:  getEnvBool("INSTALL_MONITORING", true),
+		InstallPortainer:   getEnvBool("INSTALL_PORTAINER", true),
+		InstallInfisical:   getEnvBool("INSTALL_INFISICAL", true),
+		InstallCertManager: getEnvBool("INSTALL_CERTMANAGER", true),
+		MinioAccessKey:     getEnv("MINIO_ACCESS_KEY", "platformadmin"),
+	}
+	return c
 }
 
 func (c *Config) PromptInteractive() error {
@@ -70,9 +81,10 @@ func (c *Config) PromptInteractive() error {
 		return nil
 	}
 
-	ask("Enter your domain (e.g., platform.example.com)", &c.Domain, "")
-	ask("Enter admin email for Let's Encrypt", &c.AdminEmail, "")
+	ask("Enter your domain (e.g., platform.example.com or 148.113.59.97.sslip.io)", &c.Domain, "")
+	ask("Enter admin email for Let's Encrypt", &c.AdminEmail, "admin@dev.io")
 	ask("Enter platform name", &c.PlatformName, "Platform")
+	c.LEEmail = c.AdminEmail
 
 	return nil
 }
@@ -137,6 +149,18 @@ func (c *Config) GenerateSecrets() {
 	}
 	if c.PortainerPassword == "" {
 		c.PortainerPassword = generatePassword(20)
+	}
+	if c.LEEmail == "" {
+		c.LEEmail = c.AdminEmail
+	}
+	if c.LEEmail == "" {
+		c.LEEmail = "admin@dev.io"
+	}
+	if c.AdminEmail == "" {
+		c.AdminEmail = "admin@dev.io"
+	}
+	if c.Domain == "" {
+		c.Domain = "localhost"
 	}
 }
 
