@@ -41,13 +41,14 @@ release:
     owner: Mpratyush54
     name: SERVER-automation
   extra_files:
-    - glob: ./install.sh
+    - glob: ../scripts/install.sh
+      name_template: install.sh
   header: |
     ## platformctl {{ .Version }}
 
     Platform server bootstrap and management tool.
 
-    Images for this release: `ghcr.io/mpratyush54/platform-api:v{{ .Version }}` and `ghcr.io/mpratyush54/platform-portal:v{{ .Version }}`.
+    Images for this release: `ghcr.io/mpratyush54/platform-api:{{ .Version }}` and `ghcr.io/mpratyush54/platform-portal:{{ .Version }}`.
 
     ### Installation
 
