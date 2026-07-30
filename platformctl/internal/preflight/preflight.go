@@ -35,8 +35,8 @@ func Check() *Result {
 	checkRAM(r)
 	checkDisk(r)
 	checkPorts(r)
-	checkDNS(r)
 	checkCmds(r)
+	// Hostname FQDN is advisory only — bare-IP / sslip.io installs are valid.
 
 	return r
 }
@@ -92,16 +92,8 @@ func checkPorts(r *Result) {
 	}
 }
 
-func checkDNS(r *Result) {
-	hostname, _ := os.Hostname()
-	out, _ := shell.Output("hostname", "-f")
-	if out == "" || out == hostname {
-		r.Errors = append(r.Errors, "FQDN is not set correctly (hostname -f should return a full domain)")
-	}
-}
-
 func checkCmds(r *Result) {
-	required := []string{"curl", "git", "openssl"}
+	required := []string{"curl", "openssl"}
 	for _, cmd := range required {
 		if !shell.Exists(cmd) {
 			r.Errors = append(r.Errors, fmt.Sprintf("missing required command: %s", cmd))

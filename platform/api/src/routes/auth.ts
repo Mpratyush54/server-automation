@@ -39,53 +39,35 @@ router.get('/health', (req: Request, res: Response) => {
 
 /**
  * POST /api/auth/login
- *
- * Supports two modes:
- *  1. Passwordless email login  — send { email }
- *  2. Username + password login — send { username, password } or { email, password }
- *
- * If `password` is present in the request body the endpoint validates it against
- * the bcrypt hash stored on the user record. Users without a password set can only
- * use passwordless mode.
+ * Requires email (or username) + password. Passwordless login is not supported.
  */
 router.post('/auth/login', async (req: Request, res: Response) => {
   try {
     const { email, username, password } = req.body;
+    if (!password || typeof password !== 'string') {
+      return res.status(401).json({ error: 'Password is required.' });
+    }
+    if (!email && !username) {
+      return res.status(401).json({ error: 'Email or username is required.' });
+    }
+
     const ds = await getDb();
     const repo = ds.getRepository(User);
 
     let user: User | null = null;
-
-    // ── Resolve user by email or username ──────────────────────────────────
     if (username) {
       user = await repo.findOne({ where: { username } });
     } else if (email) {
       user = await repo.findOne({ where: { email } });
     }
 
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials. User not found.' });
+    if (!user || !user.passwordHash) {
+      return res.status(401).json({ error: 'Invalid credentials.' });
     }
 
-    // ── Password validation (if supplied) ──────────────────────────────────
-    if (password !== undefined && password !== '') {
-      // User provided a password — validate it
-      if (!user.passwordHash) {
-        return res.status(401).json({
-          error: 'This account uses passwordless login. Sign in with just your email address.'
-        });
-      }
-      const valid = await bcrypt.compare(password, user.passwordHash);
-      if (!valid) {
-        return res.status(401).json({ error: 'Invalid password.' });
-      }
-    } else {
-      // Passwordless mode — only allowed if the user has no password set
-      if (user.passwordHash) {
-        return res.status(401).json({
-          error: 'This account requires a password. Please enter your password to sign in.'
-        });
-      }
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid credentials.' });
     }
 
     user.lastLogin = new Date();
@@ -156,14 +138,18 @@ router.get('/users/init-demo', async (req: Request, res: Response) => {
     const ds = await getDb();
     const repo = ds.getRepository(User);
 
-    // Hash a default password for the admin account only
-    const adminPasswordHash = await bcrypt.hash('Admin@123', 10);
+    // ADMIN_PASSWORD from env (set by platformctl / bootstrap). Local default for docker-compose only.
+    const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
+    if (adminPassword.length < 8) {
+      return res.status(500).json({ error: 'ADMIN_PASSWORD must be at least 8 characters.' });
+    }
+    const passwordHash = await bcrypt.hash(adminPassword, 10);
 
     const demoUsers = [
-      { id: '00000000-0000-0000-0000-000000000001', name: 'Admin', email: 'admin@dev.io', username: 'admin', passwordHash: adminPasswordHash, role: UserRole.ADMIN },
-      { id: '11111111-1111-1111-1111-111111111111', name: 'John Dev', email: 'john@dev.io', username: null, passwordHash: null, role: UserRole.DEVELOPER },
-      { id: '22222222-2222-2222-2222-222222222222', name: 'Sarah Lead', email: 'sarah@dev.io', username: null, passwordHash: null, role: UserRole.TECH_LEAD },
-      { id: '33333333-3333-3333-3333-333333333333', name: 'DevOps Boss', email: 'devops@dev.io', username: null, passwordHash: null, role: UserRole.DEVOPS },
+      { id: '00000000-0000-0000-0000-000000000001', name: 'Admin', email: 'admin@dev.io', username: 'admin', passwordHash, role: UserRole.ADMIN },
+      { id: '11111111-1111-1111-1111-111111111111', name: 'John Dev', email: 'john@dev.io', username: 'john', passwordHash, role: UserRole.DEVELOPER },
+      { id: '22222222-2222-2222-2222-222222222222', name: 'Sarah Lead', email: 'sarah@dev.io', username: 'sarah', passwordHash, role: UserRole.TECH_LEAD },
+      { id: '33333333-3333-3333-3333-333333333333', name: 'DevOps Boss', email: 'devops@dev.io', username: 'devops', passwordHash, role: UserRole.DEVOPS },
     ];
 
     const created: User[] = [];
@@ -174,16 +160,15 @@ router.get('/users/init-demo', async (req: Request, res: Response) => {
         const saved = await repo.save(user);
         created.push(saved);
       } else {
-        // Patch username/passwordHash if missing (idempotent re-runs)
         let updated = false;
         if (demo.username && !existing.username) { existing.username = demo.username; updated = true; }
-        if (demo.passwordHash && !existing.passwordHash) { existing.passwordHash = demo.passwordHash; updated = true; }
+        // Always ensure a password exists (migrates old passwordless accounts)
+        if (!existing.passwordHash) { existing.passwordHash = demo.passwordHash; updated = true; }
         if (updated) await repo.save(existing);
       }
     }
 
     const all = await repo.find();
-    // Strip password hashes from response
     const safe = all.map(u => ({ ...u, passwordHash: undefined }));
     return res.json({
       message: created.length > 0 ? `Created ${created.length} new demo users` : 'All demo users already exist',

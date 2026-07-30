@@ -1,4 +1,5 @@
-import { Routes } from '@angular/router';
+import { inject } from '@angular/core';
+import { Router, Routes, CanActivateFn } from '@angular/router';
 import { DashboardComponent } from './pages/dashboard/dashboard.component';
 import { ProjectsComponent } from './pages/projects/projects.component';
 import { ProjectDetailComponent } from './pages/project-detail/project-detail.component';
@@ -13,7 +14,6 @@ import { CicdComponent } from './pages/cicd/cicd.component';
 import { AlertsComponent } from './pages/alerts/alerts.component';
 import { DbConnectionsComponent } from './pages/db-connections/db-connections.component';
 
-// New Components
 import { LoginComponent } from './pages/login/login.component';
 import { UsersComponent } from './pages/users/users.component';
 import { PreviewUrlsComponent } from './pages/preview-urls/preview-urls.component';
@@ -28,15 +28,28 @@ import { IframeViewComponent } from './pages/iframe-view/iframe-view.component';
 import { DocsComponent } from './pages/docs/docs.component';
 
 import { authGuard } from './guards/auth.guard';
-import { publicDomainGuard } from './guards/public-domain.guard';
+import { appHostGuard, marketingOnlyGuard, isPublicMarketingHost } from './guards/public-domain.guard';
+
+/** Send users to landing on the marketing site, otherwise to login. */
+const homeGuard: CanActivateFn = () => {
+  const router = inject(Router);
+  router.navigateByUrl(isPublicMarketingHost() ? '/landing' : '/login');
+  return false;
+};
 
 export const routes: Routes = [
-  { path: '', redirectTo: '/landing', pathMatch: 'full' },
-  { path: 'landing', component: LandingComponent },
-  { path: 'login', component: LoginComponent, canActivate: [publicDomainGuard] },
-  { path: 'oauth/authorize', component: OauthAuthorizeComponent, canActivate: [publicDomainGuard] },
-  
-  // Guarded Routes
+  { path: '', pathMatch: 'full', canActivate: [homeGuard], children: [] },
+
+  // Marketing site only (platform.pratyushes.dev)
+  { path: 'landing', component: LandingComponent, canActivate: [marketingOnlyGuard] },
+  { path: 'docs', component: DocsComponent, canActivate: [marketingOnlyGuard] },
+  { path: 'docs/:section', component: DocsComponent, canActivate: [marketingOnlyGuard] },
+  { path: 'docs/:section/:page', component: DocsComponent, canActivate: [marketingOnlyGuard] },
+
+  // App / server hosts only
+  { path: 'login', component: LoginComponent, canActivate: [appHostGuard] },
+  { path: 'oauth/authorize', component: OauthAuthorizeComponent, canActivate: [appHostGuard] },
+
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
   { path: 'argocd', component: IframeViewComponent, canActivate: [authGuard], data: { url: '/argocd/' } },
   { path: 'grafana', component: IframeViewComponent, canActivate: [authGuard], data: { url: '/grafana/' } },
@@ -54,8 +67,7 @@ export const routes: Routes = [
   { path: 'db-connections', component: DbConnectionsComponent, canActivate: [authGuard] },
   { path: 'bootstrap', component: BootstrapComponent, canActivate: [authGuard] },
   { path: 'cicd', component: CicdComponent, canActivate: [authGuard] },
-  
-  // Newly Implemented Routes
+
   { path: 'preview-urls', component: PreviewUrlsComponent, canActivate: [authGuard] },
   { path: 'clickup', component: ClickupComponent, canActivate: [authGuard] },
   { path: 'infrastructure', component: InfrastructureComponent, canActivate: [authGuard] },
@@ -63,10 +75,6 @@ export const routes: Routes = [
   { path: 'users', component: UsersComponent, canActivate: [authGuard] },
   { path: 'playground', component: PlaygroundComponent, canActivate: [authGuard] },
   { path: 'settings', component: SettingsComponent, canActivate: [authGuard] },
-  { path: 'docs', component: DocsComponent },
-  { path: 'docs/:section', component: DocsComponent },
-  { path: 'docs/:section/:page', component: DocsComponent },
-  
-  // Wildcard redirect
-  { path: '**', redirectTo: '/landing' }
+
+  { path: '**', canActivate: [homeGuard], children: [] }
 ];

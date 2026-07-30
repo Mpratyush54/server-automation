@@ -26,6 +26,8 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           default_bump: patch
+          # Keep SDK tags off the product v* train (images + platformctl).
+          tag_prefix: sdk-v
 
   publish-npm:
     needs: version

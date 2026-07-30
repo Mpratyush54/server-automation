@@ -6,6 +6,7 @@ import (
 	"github.com/fatih/color"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 )
 
 func IsInstalled() bool {
@@ -15,46 +16,44 @@ func IsInstalled() bool {
 func Install() error {
 	color.Cyan("\n  ■ Installing Helm...")
 
-	if IsInstalled() {
+	if state.IsDone("helm") && IsInstalled() {
 		color.Green("  ✓ Helm already installed")
-		return nil
+		return addRepos()
 	}
 
-	cmds := []string{
-		"curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash",
-	}
-
-	for _, c := range cmds {
-		if err := shell.RunBash(c); err != nil {
+	if !IsInstalled() {
+		if err := shell.RunBash("curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"); err != nil {
 			return fmt.Errorf("helm install failed: %w", err)
 		}
+	} else {
+		color.Green("  ✓ Helm already installed")
 	}
 
-	return addRepos()
+	if err := addRepos(); err != nil {
+		return err
+	}
+	return state.MarkDone("helm")
 }
 
 func addRepos() error {
 	color.Cyan("  ■ Adding Helm repositories...")
 
 	repos := map[string]string{
-		"bitnami":    "https://charts.bitnami.com/bitnami",
-		"ingress-nginx": "https://kubernetes.github.io/ingress-nginx",
-		"jetstack":   "https://charts.jetstack.io",
-		"grafana":    "https://grafana.github.io/helm-charts",
+		"bitnami":              "https://charts.bitnami.com/bitnami",
+		"ingress-nginx":        "https://kubernetes.github.io/ingress-nginx",
+		"jetstack":             "https://charts.jetstack.io",
+		"grafana":              "https://grafana.github.io/helm-charts",
 		"prometheus-community": "https://prometheus-community.github.io/helm-charts",
-		"argo":       "https://argoproj.github.io/argo-helm",
-		"minio":      "https://operator.min.io",
-		"portainer":  "https://portainer.github.io/k8s",
-		"infisical":  "https://dl.cloudsmith.io/public/infisical/helm/helm/charts",
+		"argo":                 "https://argoproj.github.io/argo-helm",
+		"portainer":            "https://portainer.github.io/k8s/",
+		"oauth2-proxy":         "https://oauth2-proxy.github.io/manifests",
 	}
 
 	for name, url := range repos {
-		if err := shell.RunBash(fmt.Sprintf("helm repo add %s %s 2>/dev/null || true", name, url)); err != nil {
-			return fmt.Errorf("failed to add repo %s: %w", name, err)
-		}
+		_ = shell.RunBash(fmt.Sprintf("helm repo add %s %s 2>/dev/null || true", name, url))
 	}
 
-	shell.RunBash("helm repo update 2>/dev/null || true")
+	_ = shell.RunBash("helm repo update 2>/dev/null || true")
 	color.Green("  ✓ Helm repositories configured")
 	return nil
 }

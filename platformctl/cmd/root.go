@@ -7,6 +7,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/apt"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/docker"
@@ -24,7 +25,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "platformctl",
 	Short: "Platform server bootstrap and management tool",
-	Long:  `PlatformCTL provisions and manages a full Platform stack on a fresh Ubuntu server.`,
+	Long:  `PlatformCTL provisions and manages a full Platform stack on a fresh Ubuntu server using pre-built GHCR images (no on-server compile).`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
@@ -32,7 +33,7 @@ var rootCmd = &cobra.Command{
 
 var provisionCmd = &cobra.Command{
 	Use:   "provision",
-	Short: "Full server bootstrap (replaces bootstrap.sh)",
+	Short: "Full server bootstrap from pre-built images",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runProvision()
 	},
@@ -79,6 +80,7 @@ var versionCmd = &cobra.Command{
 	Short: "Print platformctl version",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("platformctl %s\n", Version)
+		fmt.Printf("default image tag: %s\n", config.DefaultImageTag)
 	},
 }
 
@@ -103,6 +105,9 @@ func runProvision() error {
 	color.Cyan("\n  ========================================")
 	color.Cyan("   Platform Server Bootstrap v%s", Version)
 	color.Cyan("  ========================================\n")
+	color.Cyan("  Images: %s/*:%s\n", cfg.ImageRegistry, cfg.ImageTag)
+
+	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
 
 	if !cfg.NonInteractive {
 		if err := cfg.PromptInteractive(); err != nil {
@@ -111,6 +116,10 @@ func runProvision() error {
 	}
 
 	cfg.GenerateSecrets()
+
+	if err := cfg.SaveEnvFile("/etc/platform/.env"); err != nil {
+		color.Yellow("  ⚠ could not write /etc/platform/.env yet: %v", err)
+	}
 
 	if !cfg.SkipPreflight {
 		color.Cyan("\n  ■ Pre-flight Checks\n")
@@ -121,74 +130,80 @@ func runProvision() error {
 		}
 	}
 
-	if err := docker.Install(); err != nil {
-		return fmt.Errorf("docker install failed: %w", err)
+	must := func(step string, err error) error {
+		if err != nil {
+			color.Red("  ✗ %s failed: %v", step, err)
+			return fmt.Errorf("%s failed: %w", step, err)
+		}
+		return nil
 	}
 
-	if err := docker.WaitReady(); err != nil {
+	if err := must("prereqs", apt.InstallPrereqs()); err != nil {
+		return err
+	}
+	if err := must("docker", docker.Install()); err != nil {
+		return err
+	}
+	if err := must("docker-ready", docker.WaitReady()); err != nil {
 		return err
 	}
 
 	if !cfg.SkipK8s {
-		if err := k3s.Install(); err != nil {
-			return fmt.Errorf("k3s install failed: %w", err)
+		if err := must("k3s", k3s.Install(cfg.Domain)); err != nil {
+			return err
 		}
 	}
 
-	if err := helm.Install(); err != nil {
-		return fmt.Errorf("helm install failed: %w", err)
+	if err := must("helm", helm.Install()); err != nil {
+		return err
+	}
+	if err := must("namespaces", components.Namespace()); err != nil {
+		return err
 	}
 
-	if err := components.Namespace(); err != nil {
-		color.Yellow("  ⚠ namespace creation: %v", err)
-	}
-
-	installList := []struct {
+	steps := []struct {
 		name string
 		fn   func(*config.Config) error
+		skip bool
 	}{
-		{"ingress-nginx", components.InstallIngressNginx},
-		{"cert-manager", components.InstallCertManager},
-		{"postgresql", components.InstallPostgreSQL},
-		{"mongodb", components.InstallMongoDB},
-		{"redis", components.InstallRedis},
-		{"minio", components.InstallMinIO},
+		{"ingress-nginx", components.InstallIngressNginx, false},
+		{"cert-manager", components.InstallCertManager, !cfg.InstallCertManager},
+		{"postgresql", components.InstallPostgreSQL, false},
+		{"mongodb", components.InstallMongoDB, false},
+		{"redis", components.InstallRedis, false},
+		{"minio", components.InstallMinIO, false},
+		{"argocd", components.InstallArgoCD, !cfg.InstallArgoCD},
+		{"monitoring", components.InstallMonitoring, !cfg.InstallMonitoring},
+		{"oauth2-proxy", components.InstallOAuthProxy, false},
+		{"portainer", components.InstallPortainer, !cfg.InstallPortainer},
+		{"infisical", components.InstallInfisical, !cfg.InstallInfisical},
+		{"platform", components.InstallPlatform, false},
 	}
 
-	for _, item := range installList {
-		if err := item.fn(cfg); err != nil {
-			color.Red("  ✗ %s failed: %v", item.name, err)
+	for _, item := range steps {
+		if item.skip {
+			color.Yellow("  ○ skipping %s", item.name)
+			continue
+		}
+		if err := must(item.name, item.fn(cfg)); err != nil {
+			color.Red("\n  Provision stopped. Fix the error and re-run:")
+			color.Red("    sudo platformctl provision --auto")
+			color.Red("  Completed steps are skipped via /etc/platform/.bootstrap_state")
+			return err
 		}
 	}
 
-	if cfg.InstallArgoCD {
-		components.InstallArgoCD(cfg)
+	if err := components.SeedAdmin(cfg); err != nil {
+		color.Yellow("  ⚠ seed: %v", err)
 	}
 
-	if cfg.InstallMonitoring {
-		components.InstallMonitoring(cfg)
-	}
-
-	components.InstallOAuthProxy(cfg)
-
-	if cfg.InstallPortainer {
-		components.InstallPortainer(cfg)
-	}
-
-	if cfg.InstallInfisical {
-		components.InstallInfisical(cfg)
-	}
-
-	components.InstallPlatform(cfg)
-
+	_ = cfg.SaveEnvFile("/etc/platform/.env")
 	components.ProvisionComplete(cfg)
-
-	cfg.SaveEnvFile("/etc/platform/.env")
-
 	return nil
 }
 
 func runInstall(name string) error {
+	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
 	comp := components.Find(name)
 	if comp == nil {
 		return fmt.Errorf("unknown component: %s\nAvailable: ingress-nginx, cert-manager, postgresql, mongodb, redis, minio, argocd, monitoring, oauth2-proxy, portainer, infisical, platform", name)

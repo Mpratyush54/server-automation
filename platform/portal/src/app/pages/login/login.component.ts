@@ -41,6 +41,11 @@ export class LoginComponent implements OnInit {
         this.loading = false;
         return;
       }
+      if (!this.password || this.password.length < 1) {
+        this.errorMessage = 'Please enter your password.';
+        this.loading = false;
+        return;
+      }
       await firstValueFrom(this.auth.login(this.email, this.password));
 
       const returnUrl = this.route.snapshot.queryParams['returnUrl'];

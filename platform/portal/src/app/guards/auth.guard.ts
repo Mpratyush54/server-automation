@@ -1,13 +1,19 @@
 import { inject } from '@angular/core';
 import { Router, CanActivateFn } from '@angular/router';
+import { isPublicMarketingHost } from './public-domain.guard';
 
 export const authGuard: CanActivateFn = () => {
   const router = inject(Router);
-  
-  // Extract token from URL if redirected from OAuth callback
+
+  // Public marketing site never serves the authenticated app.
+  if (isPublicMarketingHost()) {
+    router.navigate(['/landing']);
+    return false;
+  }
+
   const urlParams = new URLSearchParams(window.location.search);
   const tokenFromUrl = urlParams.get('token');
-  
+
   if (tokenFromUrl) {
     localStorage.setItem('plat_auth_token', tokenFromUrl);
     try {
@@ -19,25 +25,15 @@ export const authGuard: CanActivateFn = () => {
     } catch (e) {
       console.error('Failed to decode token from URL', e);
     }
-    
-    // Redirect to clean path without query parameters
-    const cleanUrl = window.location.pathname;
-    router.navigateByUrl(cleanUrl);
+    router.navigateByUrl(window.location.pathname);
     return true;
   }
-
-  const hostname = window.location.hostname;
-  const isPublicDomain = hostname === 'platform.pratyushes.dev' || hostname.endsWith('.pratyushes.dev');
 
   const token = localStorage.getItem('plat_auth_token');
   if (token) {
-    if (isPublicDomain) {
-      router.navigate(['/landing']);
-      return false;
-    }
     return true;
   }
-  router.navigate([isPublicDomain ? '/landing' : '/login']);
+  router.navigate(['/login']);
   return false;
 };
 export default authGuard;

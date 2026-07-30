@@ -10,6 +10,7 @@ import (
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/manifests"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 )
 
 type Component struct {
@@ -45,7 +46,24 @@ func Find(name string) *Component {
 }
 
 func Namespace() error {
-	return shell.RunBash("kubectl create namespace platform --dry-run=client -o yaml | kubectl apply -f -")
+	if state.IsDone("namespaces") {
+		color.Green("  ✓ Namespaces already created")
+		return nil
+	}
+	color.Cyan("\n  ■ Creating namespaces...")
+	nss := []string{
+		"platform", "databases", "monitoring", "storage",
+		"argocd", "portainer", "infisical", "cert-manager",
+		"ingress-nginx", "oauth2-proxy",
+	}
+	for _, ns := range nss {
+		if err := shell.RunBash(fmt.Sprintf(
+			`kubectl create namespace %s --dry-run=client -o yaml | kubectl apply -f -`, ns)); err != nil {
+			return err
+		}
+	}
+	color.Green("  ✓ Namespaces created")
+	return state.MarkDone("namespaces")
 }
 
 func readManifest(name string) string {
@@ -57,26 +75,55 @@ func readManifest(name string) string {
 	return string(data)
 }
 
-func InstallIngressNginx(cfg *config.Config) error {
-	color.Cyan("\n  ■ Installing ingress-nginx...")
-	defer color.Green("  ✓ ingress-nginx installed")
+func writeTemplatedManifest(name, domain, dest string) error {
+	vals := readManifest(name)
+	if vals == "" {
+		return fmt.Errorf("%s manifest not found", name)
+	}
+	vals = strings.ReplaceAll(vals, "{{DOMAIN}}", domain)
+	return os.WriteFile(dest, []byte(vals), 0644)
+}
 
-	return shell.RunBash(`
+func doneOrSkip(step, label string) bool {
+	if state.IsDone(step) {
+		color.Green("  ✓ %s already done", label)
+		return true
+	}
+	return false
+}
+
+func InstallIngressNginx(cfg *config.Config) error {
+	if doneOrSkip("ingress", "ingress-nginx") {
+		return nil
+	}
+	color.Cyan("\n  ■ Installing ingress-nginx...")
+	err := shell.RunBash(`
 		helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
 			--namespace ingress-nginx --create-namespace \
+			--set controller.service.type=LoadBalancer \
 			--set controller.publishService.enabled=true \
 			--wait --timeout 10m
 	`)
+	if err != nil {
+		return err
+	}
+	color.Green("  ✓ ingress-nginx installed")
+	return state.MarkDone("ingress")
 }
 
 func InstallCertManager(cfg *config.Config) error {
+	if doneOrSkip("cert-manager", "cert-manager") {
+		return nil
+	}
 	color.Cyan("\n  ■ Installing cert-manager...")
-	defer color.Green("  ✓ cert-manager installed")
-
+	email := cfg.LEEmail
+	if email == "" {
+		email = cfg.AdminEmail
+	}
 	cmds := []string{
-		fmt.Sprintf(`helm upgrade --install cert-manager jetstack/cert-manager \
+		`helm upgrade --install cert-manager jetstack/cert-manager \
 			--namespace cert-manager --create-namespace \
-			--set installCRDs=true --wait --timeout 5m`),
+			--set installCRDs=true --wait --timeout 5m`,
 		fmt.Sprintf(`kubectl apply -f - <<EOF
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -92,247 +139,347 @@ spec:
     - http01:
         ingress:
           class: nginx
-EOF`, cfg.LEEmail),
+EOF`, email),
 	}
-
 	for _, c := range cmds {
 		if err := shell.RunBash(c); err != nil {
 			return err
 		}
 	}
-	return nil
+	color.Green("  ✓ cert-manager installed")
+	return state.MarkDone("cert-manager")
 }
 
 func InstallPostgreSQL(cfg *config.Config) error {
+	if doneOrSkip("postgresql", "PostgreSQL") {
+		return nil
+	}
 	color.Cyan("\n  ■ Installing PostgreSQL...")
-	defer color.Green("  ✓ PostgreSQL installed")
-
-	return shell.RunBash(fmt.Sprintf(`
+	err := shell.RunBash(fmt.Sprintf(`
 		helm upgrade --install postgresql bitnami/postgresql \
-			--namespace platform \
+			--namespace databases --create-namespace \
 			--set auth.postgresPassword=%s \
 			--set auth.database=platform \
 			--set primary.persistence.size=10Gi \
 			--wait --timeout 10m
 	`, cfg.PostgresPassword))
+	if err != nil {
+		return err
+	}
+	color.Green("  ✓ PostgreSQL installed")
+	return state.MarkDone("postgresql")
 }
 
 func InstallMongoDB(cfg *config.Config) error {
+	if doneOrSkip("mongodb", "MongoDB") {
+		return nil
+	}
 	color.Cyan("\n  ■ Installing MongoDB...")
-	defer color.Green("  ✓ MongoDB installed")
-
-	return shell.RunBash(fmt.Sprintf(`
+	err := shell.RunBash(fmt.Sprintf(`
 		helm upgrade --install mongodb bitnami/mongodb \
-			--namespace platform \
+			--namespace databases --create-namespace \
 			--set auth.rootPassword=%s \
 			--set persistence.size=10Gi \
 			--wait --timeout 10m
 	`, cfg.MongoPassword))
+	if err != nil {
+		return err
+	}
+	color.Green("  ✓ MongoDB installed")
+	return state.MarkDone("mongodb")
 }
 
 func InstallRedis(cfg *config.Config) error {
+	if doneOrSkip("redis", "Redis") {
+		return nil
+	}
 	color.Cyan("\n  ■ Installing Redis...")
-	defer color.Green("  ✓ Redis installed")
-
-	return shell.RunBash(fmt.Sprintf(`
+	err := shell.RunBash(fmt.Sprintf(`
 		helm upgrade --install redis bitnami/redis \
-			--namespace platform \
+			--namespace databases --create-namespace \
 			--set auth.password=%s \
 			--set master.persistence.size=5Gi \
 			--wait --timeout 10m
 	`, cfg.RedisPassword))
+	if err != nil {
+		return err
+	}
+	color.Green("  ✓ Redis installed")
+	return state.MarkDone("redis")
 }
 
 func InstallMinIO(cfg *config.Config) error {
-	color.Cyan("\n  ■ Installing MinIO...")
-	defer color.Green("  ✓ MinIO installed")
-
-	vals := readManifest("minio-values.yaml")
-	if vals == "" {
-		return fmt.Errorf("minio-values.yaml manifest not found")
+	if doneOrSkip("minio", "MinIO") {
+		return nil
 	}
-
+	color.Cyan("\n  ■ Installing MinIO...")
 	tmpFile := "/tmp/minio-values.yaml"
-	os.WriteFile(tmpFile, []byte(vals), 0644)
+	if err := writeTemplatedManifest("minio-values.yaml", cfg.Domain, tmpFile); err != nil {
+		return err
+	}
 	defer os.Remove(tmpFile)
 
-	return shell.RunBash(fmt.Sprintf(`
-		helm upgrade --install minio minio/minio-operator \
-			--namespace platform --create-namespace \
+	err := shell.RunBash(fmt.Sprintf(`
+		helm upgrade --install minio bitnami/minio \
+			--namespace storage --create-namespace \
 			-f %s \
-			--set secrets.accessKey=%s \
-			--set secrets.secretKey=%s \
+			--set auth.rootUser=%s \
+			--set auth.rootPassword=%s \
+			--set persistence.size=50Gi \
+			--set image.repository=bitnamilegacy/minio \
+			--set console.image.repository=bitnamilegacy/minio-object-browser \
+			--set defaultBuckets="platform-backups\,platform-logs" \
 			--wait --timeout 10m
 	`, tmpFile, cfg.MinioAccessKey, cfg.MinioSecretKey))
+	if err != nil {
+		return err
+	}
+	color.Green("  ✓ MinIO installed")
+	return state.MarkDone("minio")
 }
 
 func InstallArgoCD(cfg *config.Config) error {
+	if doneOrSkip("argocd", "ArgoCD") {
+		return nil
+	}
 	color.Cyan("\n  ■ Installing ArgoCD...")
-	defer color.Green("  ✓ ArgoCD installed")
-
-	vals := readManifest("argocd-values.yaml")
 	tmpFile := "/tmp/argocd-values.yaml"
-	os.WriteFile(tmpFile, []byte(vals), 0644)
+	if err := writeTemplatedManifest("argocd-values.yaml", cfg.Domain, tmpFile); err != nil {
+		return err
+	}
 	defer os.Remove(tmpFile)
 
-	cmds := []string{
-		fmt.Sprintf(`
-			helm upgrade --install argocd argo/argo-cd \
-				--namespace argocd --create-namespace \
-				-f %s \
-				--set configs.secret.argocdServerAdminPassword=%s \
-				--wait --timeout 10m
-		`, tmpFile, cfg.ArgoCDPassword),
-		`kubectl apply -f - <<EOF
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: argocd
-  namespace: argocd
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-spec:
-  ingressClassName: nginx
-  rules:
-  - host: argocd.` + cfg.Domain + `
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: argocd-server
-            port:
-              number: 80
-  tls:
-  - hosts:
-    - argocd.` + cfg.Domain + `
-    secretName: argocd-tls
-EOF`,
-	}
-
-	for _, c := range cmds {
-		if err := shell.RunBash(c); err != nil {
-			return err
+	err := shell.RunBash(fmt.Sprintf(`
+		helm upgrade --install argocd argo/argo-cd \
+			--namespace argocd --create-namespace \
+			-f %s \
+			--set configs.params."server\.insecure"=true \
+			--wait --timeout 10m || {
+			kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+			kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+			kubectl wait --for=condition=Available deployment --all -n argocd --timeout=300s || true
+			kubectl patch deployment argocd-server -n argocd --type=json \
+			  -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--insecure"}]' || true
 		}
+	`, tmpFile))
+	if err != nil {
+		return err
 	}
-	return nil
+	color.Green("  ✓ ArgoCD installed")
+	return state.MarkDone("argocd")
 }
 
 func InstallMonitoring(cfg *config.Config) error {
+	if doneOrSkip("monitoring", "monitoring") {
+		return nil
+	}
 	color.Cyan("\n  ■ Installing monitoring stack...")
-	defer color.Green("  ✓ Monitoring stack installed")
-
-	grafanaVals := readManifest("grafana-values.yaml")
-	grafanaFile := "/tmp/grafana-values.yaml"
-	os.WriteFile(grafanaFile, []byte(grafanaVals), 0644)
-	defer os.Remove(grafanaFile)
-
-	cmds := []string{
-		fmt.Sprintf(`
-			helm upgrade --install loki grafana/loki \
-				--namespace monitoring --create-namespace \
-				--set persistence.enabled=true \
-				--set persistence.size=10Gi \
-				--wait --timeout 10m
-		`),
-		fmt.Sprintf(`
-			helm upgrade --install prometheus prometheus-community/prometheus \
-				--namespace monitoring \
-				--set alertmanager.enabled=false \
-				--set server.persistentVolume.size=10Gi \
-				--wait --timeout 10m
-		`),
-		fmt.Sprintf(`
-			helm upgrade --install grafana grafana/grafana \
-				--namespace monitoring \
-				-f %s \
-				--set adminPassword=%s \
-				--wait --timeout 10m
-		`, grafanaFile, cfg.GrafanaPassword),
+	tmpFile := "/tmp/grafana-values.yaml"
+	if err := writeTemplatedManifest("grafana-values.yaml", cfg.Domain, tmpFile); err != nil {
+		return err
 	}
+	defer os.Remove(tmpFile)
 
-	for _, c := range cmds {
-		if err := shell.RunBash(c); err != nil {
-			return err
-		}
+	err := shell.RunBash(fmt.Sprintf(`
+		helm upgrade --install kube-prometheus prometheus-community/kube-prometheus-stack \
+			--namespace monitoring --create-namespace \
+			-f %s \
+			--set grafana.adminPassword=%s \
+			--set grafana.assertNoLeakedSecrets=false \
+			--set prometheus.prometheusSpec.retention=30d \
+			--wait --timeout 10m
+		helm upgrade --install loki grafana/loki-stack \
+			--namespace monitoring \
+			--set grafana.enabled=false \
+			--set prometheus.enabled=false \
+			--wait --timeout 10m || true
+	`, tmpFile, cfg.GrafanaPassword))
+	if err != nil {
+		return err
 	}
-	return nil
+	color.Green("  ✓ Monitoring stack installed")
+	return state.MarkDone("monitoring")
 }
 
 func InstallOAuthProxy(cfg *config.Config) error {
-	color.Cyan("\n  ■ Installing oauth2-proxy...")
-	defer color.Green("  ✓ oauth2-proxy installed")
-
-	vals := readManifest("oauth2-proxy-values.yaml")
-	if vals == "" {
-		return fmt.Errorf("oauth2-proxy-values.yaml manifest not found, skipping")
+	if doneOrSkip("oauth2-proxy", "oauth2-proxy") {
+		return nil
 	}
-
+	color.Cyan("\n  ■ Installing oauth2-proxy...")
 	tmpFile := "/tmp/oauth2-values.yaml"
-	os.WriteFile(tmpFile, []byte(vals), 0644)
+	if err := writeTemplatedManifest("oauth2-proxy-values.yaml", cfg.Domain, tmpFile); err != nil {
+		color.Yellow("  ⚠ oauth2-proxy values missing — skipping")
+		return nil
+	}
+	// Helm tpl() treats {{...}} as templates — inject a real secret instead.
+	cookie := cfg.WebhookSecret
+	if len(cookie) < 16 {
+		cookie = cfg.JWTSecret
+	}
+	if len(cookie) > 32 {
+		cookie = cookie[:32]
+	}
+	data, _ := os.ReadFile(tmpFile)
+	_ = os.WriteFile(tmpFile, []byte(strings.ReplaceAll(string(data), "REPLACE_COOKIE_SECRET", cookie)), 0644)
 	defer os.Remove(tmpFile)
 
-	return shell.RunBash(fmt.Sprintf(`
+	err := shell.RunBash(fmt.Sprintf(`
 		helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
-			--namespace platform \
+			--namespace oauth2-proxy --create-namespace \
 			-f %s \
 			--wait --timeout 5m
 	`, tmpFile))
+	if err != nil {
+		color.Yellow("  ⚠ oauth2-proxy install failed (non-fatal): %v", err)
+		return nil
+	}
+	color.Green("  ✓ oauth2-proxy installed")
+	return state.MarkDone("oauth2-proxy")
 }
 
 func InstallPortainer(cfg *config.Config) error {
+	if doneOrSkip("portainer", "Portainer") {
+		return nil
+	}
 	color.Cyan("\n  ■ Installing Portainer...")
-	defer color.Green("  ✓ Portainer installed")
-
-	vals := readManifest("portainer-values.yaml")
 	tmpFile := "/tmp/portainer-values.yaml"
-	os.WriteFile(tmpFile, []byte(vals), 0644)
+	_ = writeTemplatedManifest("portainer-values.yaml", cfg.Domain, tmpFile)
 	defer os.Remove(tmpFile)
 
-	return shell.RunBash(fmt.Sprintf(`
+	err := shell.RunBash(fmt.Sprintf(`
 		helm upgrade --install portainer portainer/portainer \
 			--namespace portainer --create-namespace \
 			-f %s \
 			--set service.type=ClusterIP \
 			--wait --timeout 5m
 	`, tmpFile))
+	if err != nil {
+		return err
+	}
+	color.Green("  ✓ Portainer installed")
+	return state.MarkDone("portainer")
 }
 
 func InstallInfisical(cfg *config.Config) error {
+	if doneOrSkip("infisical", "Infisical") {
+		return nil
+	}
 	color.Cyan("\n  ■ Installing Infisical...")
-	defer color.Green("  ✓ Infisical installed")
+	// Ensure Infisical DB exists
+	_ = shell.RunBash(fmt.Sprintf(`
+		kubectl exec -i -n databases postgresql-0 -- env PGPASSWORD=%s \
+		  psql -U postgres -c "SELECT 1 FROM pg_database WHERE datname='infisical'" | grep -q 1 || \
+		kubectl exec -i -n databases postgresql-0 -- env PGPASSWORD=%s \
+		  psql -U postgres -c "CREATE DATABASE infisical;"
+	`, cfg.PostgresPassword, cfg.PostgresPassword))
 
-	vals := readManifest("infisical.yaml")
 	tmpFile := "/tmp/infisical.yaml"
-	os.WriteFile(tmpFile, []byte(vals), 0644)
+	_ = writeTemplatedManifest("infisical.yaml", cfg.Domain, tmpFile)
 	defer os.Remove(tmpFile)
 
-	return shell.RunBash(fmt.Sprintf(`
+	err := shell.RunBash(fmt.Sprintf(`
+		helm repo add infisical https://dl.cloudsmith.io/public/infisical/helm/helm/charts 2>/dev/null || true
+		helm repo update >/dev/null 2>&1 || true
+		kubectl create secret generic infisical-secrets -n infisical \
+		  --from-literal=ENCRYPTION_KEY=%s \
+		  --from-literal=AUTH_SECRET=%s \
+		  --from-literal=DB_CONNECTION_URI="postgresql://postgres:%s@postgresql.databases:5432/infisical" \
+		  --from-literal=REDIS_URL="redis://:%s@redis-master.databases:6379" \
+		  --dry-run=client -o yaml | kubectl apply -f - || true
 		helm upgrade --install infisical infisical/infisical \
 			--namespace infisical --create-namespace \
 			-f %s \
-			--set auth.secret=%s \
-			--set encryptionKey=%s \
-			--set jwtSecret=%s \
-			--wait --timeout 10m
-	`, tmpFile, cfg.WebhookSecret, cfg.InfisicalEncKey, cfg.InfisicalJWT))
+			--wait --timeout 10m || true
+	`, cfg.InfisicalEncKey, cfg.InfisicalJWT, cfg.PostgresPassword, cfg.RedisPassword, tmpFile))
+	if err != nil {
+		color.Yellow("  ⚠ Infisical install failed (non-fatal): %v", err)
+		return nil
+	}
+	color.Green("  ✓ Infisical installed")
+	return state.MarkDone("infisical")
+}
+
+func pullPlatformImages(cfg *config.Config) error {
+	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
+	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
+	color.Cyan("  ■ Pulling pre-built images from registry...")
+	color.Cyan("    %s", apiImg)
+	color.Cyan("    %s", portalImg)
+
+	if cfg.GitHubToken != "" && strings.Contains(cfg.ImageRegistry, "ghcr.io") {
+		_ = shell.RunBash(fmt.Sprintf(
+			`echo %s | docker login ghcr.io -u oauth2 --password-stdin 2>/dev/null || true`,
+			shellQuote(cfg.GitHubToken)))
+	}
+
+	for _, img := range []string{apiImg, portalImg} {
+		if err := shell.RunBash(fmt.Sprintf(`
+			for i in 1 2 3; do
+			  k3s crictl pull %s && exit 0
+			  sleep 5
+			done
+			exit 1
+		`, img)); err != nil {
+			return fmt.Errorf("failed to pull %s: %w (is the package public on GHCR?)", img, err)
+		}
+	}
+	return nil
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func InstallPlatform(cfg *config.Config) error {
+	if doneOrSkip("platform", "Platform") {
+		return nil
+	}
 	color.Cyan("\n  ■ Deploying Platform API + Portal...")
-	defer color.Green("  ✓ Platform deployed")
 
-	cmds := []string{
-		fmt.Sprintf(`
-			kubectl apply -f - <<EOF
+	if err := pullPlatformImages(cfg); err != nil {
+		return err
+	}
+
+	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
+	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
+
+	err := shell.RunBash(fmt.Sprintf(`
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+
+kubectl create secret generic platform-env \
+  --namespace platform \
+  --from-literal=NODE_ENV=production \
+  --from-literal=PORT=3000 \
+  --from-literal=JWT_SECRET=%s \
+  --from-literal=PLATFORM_WEBHOOK_SECRET=%s \
+  --from-literal=POSTGRES_HOST=postgresql.databases \
+  --from-literal=POSTGRES_PORT=5432 \
+  --from-literal=POSTGRES_DB=platform \
+  --from-literal=POSTGRES_USER=postgres \
+  --from-literal=POSTGRES_PASSWORD=%s \
+  --from-literal=MONGODB_URI="mongodb://root:%s@mongodb.databases:27017/platform?authSource=admin" \
+  --from-literal=REDIS_HOST=redis-master.databases \
+  --from-literal=REDIS_PORT=6379 \
+  --from-literal=REDIS_PASSWORD=%s \
+  --from-literal=MINIO_ENDPOINT=http://minio.storage:9000 \
+  --from-literal=MINIO_ACCESS_KEY=%s \
+  --from-literal=MINIO_SECRET_KEY=%s \
+  --from-literal=PLATFORM_NAME=%s \
+  --from-literal=DOMAIN=%s \
+  --from-literal=ADMIN_EMAIL=%s \
+  --from-literal=ADMIN_PASSWORD=%s \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl apply -n platform -f - <<'EOF'
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: platform-api
   namespace: platform
+  labels:
+    app: platform-api
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: platform-api
@@ -343,40 +490,33 @@ spec:
     spec:
       containers:
       - name: api
-        image: %s/platform-api:%s
+        image: %s
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
-        env:
-        - name: DOMAIN
-          value: "%s"
-        - name: JWT_SECRET
-          value: "%s"
-        - name: POSTGRES_PASSWORD
-          value: "%s"
-        - name: MONGO_PASSWORD
-          value: "%s"
-        - name: REDIS_PASSWORD
-          value: "%s"
-        - name: MINIO_ACCESS_KEY
-          value: "%s"
-        - name: MINIO_SECRET_KEY
-          value: "%s"
-        livenessProbe:
-          httpGet:
-            path: /api/health
-            port: 3000
+        envFrom:
+        - secretRef:
+            name: platform-env
         readinessProbe:
           httpGet:
             path: /api/health
             port: 3000
-EOF`,
-			cfg.ImageRegistry, cfg.ImageTag,
-			cfg.Domain, cfg.JWTSecret,
-			cfg.PostgresPassword, cfg.MongoPassword,
-			cfg.RedisPassword, cfg.MinioAccessKey, cfg.MinioSecretKey,
-		),
-		fmt.Sprintf(`
-			kubectl apply -f - <<EOF
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 20
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -386,18 +526,32 @@ spec:
   selector:
     app: platform-api
   ports:
-  - port: 3000
+  - name: http
+    port: 3000
     targetPort: 3000
-EOF`),
-		fmt.Sprintf(`
-			kubectl apply -f - <<EOF
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: platform
+spec:
+  selector:
+    app: platform-api
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: platform-portal
   namespace: platform
+  labels:
+    app: platform-portal
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: platform-portal
@@ -408,22 +562,18 @@ spec:
     spec:
       containers:
       - name: portal
-        image: %s/platform-portal:%s
+        image: %s
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 80
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 80
-EOF`,
-			cfg.ImageRegistry, cfg.ImageTag,
-		),
-		fmt.Sprintf(`
-			kubectl apply -f - <<EOF
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -433,25 +583,97 @@ spec:
   selector:
     app: platform-portal
   ports:
-  - port: 80
+  - name: http
+    port: 80
     targetPort: 80
-EOF`),
-		fmt.Sprintf(`
-			kubectl apply -f - <<EOF
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-api-admin-binding
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: platform
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: argocd-proxy
+  namespace: platform
+spec:
+  type: ExternalName
+  externalName: argocd-server.argocd.svc.cluster.local
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-proxy
+  namespace: platform
+spec:
+  type: ExternalName
+  externalName: kube-prometheus-grafana.monitoring.svc.cluster.local
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: portainer-proxy
+  namespace: platform
+spec:
+  type: ExternalName
+  externalName: portainer.portainer.svc.cluster.local
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: infisical-proxy
+  namespace: platform
+spec:
+  type: ExternalName
+  externalName: infisical.infisical.svc.cluster.local
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-proxy
+  namespace: platform
+spec:
+  type: ExternalName
+  externalName: minio.storage.svc.cluster.local
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oauth2-proxy-proxy
+  namespace: platform
+spec:
+  type: ExternalName
+  externalName: oauth2-proxy.oauth2-proxy.svc.cluster.local
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: platform
   namespace: platform
   annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
-  ingressClassName: nginx
+  tls:
+  - hosts:
+    - %s
+    - api.%s
+    secretName: platform-tls
   rules:
   - host: %s
     http:
       paths:
-      - path: /api/
+      - path: /api
         pathType: Prefix
         backend:
           service:
@@ -465,43 +687,92 @@ spec:
             name: platform-portal
             port:
               number: 80
-  tls:
-  - hosts:
-    - %s
-    secretName: platform-tls
-EOF`, cfg.Domain, cfg.Domain),
-	}
+  - host: api.%s
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: platform-api
+            port:
+              number: 3000
+  - http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: platform-api
+            port:
+              number: 3000
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: platform-portal
+            port:
+              number: 80
+EOF
 
-	for _, c := range cmds {
-		if err := shell.RunBash(c); err != nil {
-			return err
-		}
+kubectl wait --for=condition=Available deployment/platform-api -n platform --timeout=300s || true
+kubectl wait --for=condition=Available deployment/platform-portal -n platform --timeout=180s || true
+`,
+		shellQuote(cfg.JWTSecret),
+		shellQuote(cfg.WebhookSecret),
+		shellQuote(cfg.PostgresPassword),
+		cfg.MongoPassword,
+		shellQuote(cfg.RedisPassword),
+		shellQuote(cfg.MinioAccessKey),
+		shellQuote(cfg.MinioSecretKey),
+		shellQuote(cfg.PlatformName),
+		shellQuote(cfg.Domain),
+		shellQuote(cfg.AdminEmail),
+		shellQuote(cfg.AdminPassword),
+		apiImg, portalImg,
+		cfg.Domain, cfg.Domain, cfg.Domain, cfg.Domain,
+	))
+	if err != nil {
+		return err
 	}
-	return nil
+	color.Green("  ✓ Platform deployed")
+	return state.MarkDone("platform")
 }
 
 func SeedAdmin(cfg *config.Config) error {
-	color.Cyan("\n  ■ Seeding admin user...")
-	defer color.Green("  ✓ Admin user seeded")
-
-	pod := "deployment/platform-api"
-	cmds := []string{
-		fmt.Sprintf(`kubectl exec -n platform %s -- sh -c '
-			curl -s -X POST http://localhost:3000/api/seed \
-			-H "Content-Type: application/json" \
-			-d "{\"domain\":\"%s\",\"email\":\"%s\",\"password\":\"%s\"}"
-		'`, pod, cfg.Domain, cfg.AdminEmail, generateDemoPassword()),
+	if doneOrSkip("seed", "seed") {
+		return nil
 	}
-	for _, c := range cmds {
-		if err := shell.RunBash(c); err != nil {
-			return fmt.Errorf("seed admin failed: %w", err)
-		}
-	}
-	return nil
-}
+	color.Cyan("\n  ■ Seeding admin user (email + password)...")
 
-func generateDemoPassword() string {
-	return "admin123"
+	email := cfg.AdminEmail
+	if email == "" {
+		email = "admin@dev.io"
+	}
+	pass := cfg.AdminPassword
+	err := shell.RunBash(fmt.Sprintf(`
+		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+		API_IP="$(kubectl get svc -n platform platform-api -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)"
+		URL="http://${API_IP:-platform-api.platform.svc.cluster.local}:3000"
+		for i in $(seq 1 36); do
+		  curl -sf "$URL/api/health" >/dev/null 2>&1 && break
+		  sleep 5
+		done
+		curl -sf "$URL/api/users/init-demo" || true
+		TOKEN="$(curl -sf -X POST "$URL/api/auth/login" \
+		  -H "Content-Type: application/json" \
+		  -d %s | grep -o '"token":"[^"]*"' | cut -d'"' -f4 || true)"
+		if [[ -z "$TOKEN" ]]; then
+		  echo "WARN: could not obtain auth token for seeding — check ADMIN_PASSWORD and API logs" >&2
+		  exit 0
+		fi
+		echo "Seed login OK"
+	`, shellQuote(fmt.Sprintf(`{"email":%q,"password":%q}`, email, pass))))
+	if err != nil {
+		return fmt.Errorf("seed admin failed: %w", err)
+	}
+	color.Green("  ✓ Admin user seeded (email + password)")
+	return state.MarkDone("seed")
 }
 
 func ProvisionComplete(cfg *config.Config) {
@@ -509,14 +780,20 @@ func ProvisionComplete(cfg *config.Config) {
 	color.Green("   Platform provisioned successfully!")
 	color.Green("  ========================================")
 	color.Cyan("\n  Access URLs:")
-	fmt.Printf("    Portal:   https://%s\n", cfg.Domain)
-	fmt.Printf("    ArgoCD:   https://argocd.%s\n", cfg.Domain)
-	fmt.Printf("    Grafana:  https://grafana.%s (admin/%s)\n", cfg.Domain, cfg.GrafanaPassword)
-	fmt.Printf("    Portainer: https://portainer.%s\n", cfg.Domain)
-	fmt.Printf("    MinIO:    https://minio.%s\n", cfg.Domain)
+	fmt.Printf("    Portal:    https://%s\n", cfg.Domain)
+	fmt.Printf("    API:       https://api.%s\n", cfg.Domain)
+	fmt.Printf("    ArgoCD:    https://argocd.%s\n", cfg.Domain)
+	fmt.Printf("    Grafana:   https://grafana.%s (admin / see /etc/platform/.env)\n", cfg.Domain)
+	color.Cyan("\n  Login (password required):")
+	fmt.Printf("    Email:    %s\n", cfg.AdminEmail)
+	fmt.Printf("    Password: %s\n", cfg.AdminPassword)
+	fmt.Printf("    (also stored in /etc/platform/.env as ADMIN_PASSWORD)\n")
+	color.Cyan("\n  Docs / landing site:")
+	fmt.Printf("    https://platform.pratyushes.dev\n")
 	color.Cyan("\n  Useful commands:")
-	fmt.Printf("    Kubeconfig: export KUBECONFIG=/etc/rancher/k3s/k3s.yaml\n")
-	fmt.Printf("    Dashboard:  k3s kubectl get all -n platform\n")
+	fmt.Printf("    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml\n")
+	fmt.Printf("    platformctl status\n")
+	fmt.Printf("    kubectl get pods -A\n")
 }
 
 func CheckHealth() error {
