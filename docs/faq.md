@@ -28,7 +28,7 @@ behind the same single sign-on.
 
 **Q: Where's the admin password?**
 
-There isn't one. The seeded admin is `admin@dev.io` and you sign in by typing that
+There isn't one. The seeded admin is `admin@pratyushes.dev` and you sign in by typing that
 email — no password to remember, no default to change. If you want to lock the
 account down, add an OIDC provider and disable email-only auth in Settings.
 

@@ -83,17 +83,17 @@ ng serve
 # Seed demo users
 curl http://localhost:3000/api/users/init-demo
 
-# Login at http://localhost:4200 with admin@dev.io
+# Login at http://localhost:4200 with admin@pratyushes.dev
 ```
 
 ## Demo Accounts
 
 | Name | Email | Role |
 |---|---|---|
-| Admin | admin@dev.io | Admin (full access) |
-| DevOps Boss | devops@dev.io | DevOps Engineer |
-| Sarah Lead | sarah@dev.io | Tech Lead |
-| John Dev | john@dev.io | Developer |
+| Admin | admin@pratyushes.dev | Admin (full access) |
+| DevOps Boss | devops@pratyushes.dev | DevOps Engineer |
+| Sarah Lead | sarah@pratyushes.dev | Tech Lead |
+| John Dev | john@pratyushes.dev | Developer |
 
 ## License
 

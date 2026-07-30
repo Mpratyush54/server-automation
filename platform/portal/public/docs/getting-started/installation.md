@@ -101,10 +101,10 @@ Local/demo seed (`init-demo`) creates accounts with password from `ADMIN_PASSWOR
 
 | Email | Role | Password |
 |---|---|---|
-| `admin@dev.io` | Admin | `ADMIN_PASSWORD` / `Admin@123` |
-| `devops@dev.io` | DevOps Engineer | same |
-| `sarah@dev.io` | Tech Lead | same |
-| `john@dev.io` | Developer | same |
+| `admin@pratyushes.dev` | Admin | `ADMIN_PASSWORD` / `Admin@123` |
+| `devops@pratyushes.dev` | DevOps Engineer | same |
+| `sarah@pratyushes.dev` | Tech Lead | same |
+| `john@pratyushes.dev` | Developer | same |
 
 Server installs generate a random `ADMIN_PASSWORD` into `/etc/platform/.env` — there is **no passwordless login**.
 

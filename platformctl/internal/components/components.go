@@ -33,6 +33,7 @@ func All() []Component {
 		{"portainer", "Container management UI", InstallPortainer},
 		{"infisical", "Secret management", InstallInfisical},
 		{"platform", "Platform API + Portal", InstallPlatform},
+		{"auto-update", "GHCR auto-update policy (Image Updater + CronJob)", InstallAutoUpdate},
 	}
 }
 
@@ -747,7 +748,7 @@ func SeedAdmin(cfg *config.Config) error {
 
 	email := cfg.AdminEmail
 	if email == "" {
-		email = "admin@dev.io"
+		email = "admin@pratyushes.dev"
 	}
 	pass := cfg.AdminPassword
 	err := shell.RunBash(fmt.Sprintf(`
@@ -790,9 +791,16 @@ func ProvisionComplete(cfg *config.Config) {
 	fmt.Printf("    (also stored in /etc/platform/.env as ADMIN_PASSWORD)\n")
 	color.Cyan("\n  Docs / landing site:")
 	fmt.Printf("    https://platform.pratyushes.dev\n")
+	color.Cyan("\n  Auto-update:")
+	if cfg.AutoUpdate {
+		fmt.Printf("    Enabled (CronJob every 15m + Argo Image Updater). Manual: platformctl update\n")
+	} else {
+		fmt.Printf("    Disabled. Enable with AUTO_UPDATE=true or: platformctl install auto-update\n")
+	}
 	color.Cyan("\n  Useful commands:")
 	fmt.Printf("    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml\n")
 	fmt.Printf("    platformctl status\n")
+	fmt.Printf("    platformctl update\n")
 	fmt.Printf("    kubectl get pods -A\n")
 }
 
@@ -823,4 +831,169 @@ func CheckHealth() error {
 		return fmt.Errorf("unhealthy components: %s", strings.Join(failed, ", "))
 	}
 	return nil
+}
+
+// UpdateImages pulls the configured GHCR tags and rolls the Platform deployments.
+func UpdateImages(cfg *config.Config) error {
+	color.Cyan("\n  ■ Updating Platform images (%s)...", cfg.ImageTag)
+	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
+	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
+
+	if err := pullPlatformImages(cfg); err != nil {
+		return err
+	}
+	err := shell.RunBash(fmt.Sprintf(`
+		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+		kubectl set image -n platform deploy/platform-api api=%s
+		kubectl set image -n platform deploy/platform-portal portal=%s
+		kubectl patch deploy platform-api -n platform -p '{"spec":{"template":{"spec":{"containers":[{"name":"api","imagePullPolicy":"Always"}]}}}}' || true
+		kubectl patch deploy platform-portal -n platform -p '{"spec":{"template":{"spec":{"containers":[{"name":"portal","imagePullPolicy":"Always"}]}}}}' || true
+		kubectl rollout status -n platform deploy/platform-api --timeout=300s
+		kubectl rollout status -n platform deploy/platform-portal --timeout=180s
+	`, apiImg, portalImg))
+	if err != nil {
+		return err
+	}
+	color.Green("  ✓ Images updated to %s / %s", apiImg, portalImg)
+	return nil
+}
+
+// InstallAutoUpdate installs Argo CD Image Updater + a CronJob so every env
+// keeps platform-api / platform-portal on the newest published GHCR tags.
+func InstallAutoUpdate(cfg *config.Config) error {
+	if !cfg.AutoUpdate {
+		color.Yellow("  ○ AUTO_UPDATE=false — skipping auto-update policy")
+		return nil
+	}
+	if doneOrSkip("auto-update", "auto-update") {
+		return nil
+	}
+	color.Cyan("\n  ■ Configuring auto-update policy (GHCR → all envs)...")
+
+	apiImg := fmt.Sprintf("%s/platform-api", cfg.ImageRegistry)
+	portalImg := fmt.Sprintf("%s/platform-portal", cfg.ImageRegistry)
+	tag := cfg.ImageTag
+	if tag == "" {
+		tag = "latest"
+	}
+
+	script := fmt.Sprintf(`
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+
+# Argo CD Image Updater (watches GHCR, writes new tags into the Application)
+helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
+helm repo update >/dev/null 2>&1 || true
+helm upgrade --install argocd-image-updater argo/argocd-image-updater \
+  --namespace argocd --create-namespace \
+  --set config.registries[0].name=ghcr \
+  --set config.registries[0].api_url=https://ghcr.io \
+  --set config.registries[0].prefix=ghcr.io \
+  --set config.registries[0].insecure=false \
+  --wait --timeout 5m || true
+
+# Ensure Deployments always pull when the tag moves (e.g. :latest digest change)
+kubectl patch deploy platform-api -n platform --type=merge -p '{"spec":{"template":{"spec":{"containers":[{"name":"api","imagePullPolicy":"Always"}]}}}}' || true
+kubectl patch deploy platform-portal -n platform --type=merge -p '{"spec":{"template":{"spec":{"containers":[{"name":"portal","imagePullPolicy":"Always"}]}}}}' || true
+
+# CronJob fallback: every 15 minutes pull + roll to the configured tag.
+# Works even if Image Updater / Argo Application sync is unavailable.
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-auto-update
+  namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-auto-update
+  namespace: platform
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-auto-update
+  namespace: platform
+subjects:
+  - kind: ServiceAccount
+    name: platform-auto-update
+    namespace: platform
+roleRef:
+  kind: Role
+  name: platform-auto-update
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: platform-auto-update
+  namespace: platform
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: platform-auto-update
+          restartPolicy: OnFailure
+          containers:
+            - name: update
+              image: bitnami/kubectl:latest
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  API="%s:%s"
+                  PORTAL="%s:%s"
+                  kubectl set image -n platform deploy/platform-api api="$API"
+                  kubectl set image -n platform deploy/platform-portal portal="$PORTAL"
+                  echo "auto-update applied $API $PORTAL"
+EOF
+
+# Argo Application with Image Updater annotations (optional GitOps path)
+kubectl apply -f - <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform
+  namespace: argocd
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: platform-api=%s,platform-portal=%s
+    argocd-image-updater.argoproj.io/platform-api.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/platform-portal.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/platform-api.force-update: "true"
+    argocd-image-updater.argoproj.io/platform-portal.force-update: "true"
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+spec:
+  project: default
+  source:
+    repoURL: %s
+    targetRevision: HEAD
+    path: k8s/platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+EOF
+`, apiImg, tag, portalImg, tag, apiImg, portalImg, cfg.RepoURL)
+
+	if err := shell.RunBash(script); err != nil {
+		color.Yellow("  ⚠ auto-update setup had errors (non-fatal): %v", err)
+		return nil
+	}
+	color.Green("  ✓ Auto-update enabled (Image Updater + CronJob */15)")
+	return state.MarkDone("auto-update")
 }

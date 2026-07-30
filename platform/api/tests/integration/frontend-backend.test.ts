@@ -23,7 +23,7 @@ jest.mock('../../src/lib/k8s', () => ({
 const mockUser = {
   id: '00000000-0000-0000-0000-000000000001',
   name: 'DevOps Boss',
-  email: 'devops@@dev.io',
+  email: 'devops@@pratyushes.dev',
   role: 'devops' // matches UserRole.DEVOPS
 };
 
@@ -54,14 +54,14 @@ const mockAuditLog = {
 
 const mockUserRepository = {
   findOne: jest.fn().mockImplementation(({ where }) => {
-    if (where.email === 'devops@@dev.io' || where.id === mockUser.id) {
+    if (where.email === 'devops@@pratyushes.dev' || where.id === mockUser.id) {
       return Promise.resolve(mockUser);
     }
-    if (where.email === 'dev@@dev.io' || where.id === '00000002') {
+    if (where.email === 'dev@@pratyushes.dev' || where.id === '00000002') {
       return Promise.resolve({
         id: '00000002',
         name: 'Dev Boss',
-        email: 'dev@@dev.io',
+        email: 'dev@@pratyushes.dev',
         role: 'developer'
       });
     }
@@ -150,11 +150,11 @@ describe('Frontend & Backend Integration Tests', () => {
     it('should authenticate a valid user and return a JWT token with user object', async () => {
       const res = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'devops@@dev.io' });
+        .send({ email: 'devops@@pratyushes.dev' });
 
       expect(res.status).toBe(200);
       expect(res.body.token).toBeDefined();
-      expect(res.body.user.email).toBe('devops@@dev.io');
+      expect(res.body.user.email).toBe('devops@@pratyushes.dev');
       expect(res.body.user.role).toBe('devops');
       expect(mockUserRepository.findOne).toHaveBeenCalled();
     });
@@ -162,7 +162,7 @@ describe('Frontend & Backend Integration Tests', () => {
     it('should return 401 when email is unknown', async () => {
       const res = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'unknown@@dev.io' });
+        .send({ email: 'unknown@@pratyushes.dev' });
 
       expect(res.status).toBe(401);
       expect(res.body.error).toBeDefined();
@@ -203,7 +203,7 @@ describe('Frontend & Backend Integration Tests', () => {
 
     it('should fail with 403 Forbidden for a regular developer user', async () => {
       const devToken = jwt.sign(
-        { id: '00000002', email: 'dev@@dev.io', name: 'Dev', role: 'developer' },
+        { id: '00000002', email: 'dev@@pratyushes.dev', name: 'Dev', role: 'developer' },
         JWT_SECRET,
         { expiresIn: '24h' }
       );

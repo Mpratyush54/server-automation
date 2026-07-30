@@ -49,4 +49,4 @@ Then restart the API (it auto-seeds).
 
 **Q: What's the login format with `@@`?**
 
-A: **Fixed** — all demo accounts now use single `@` (e.g., admin@dev.io). If you're on an older version, use double `@`.
+A: **Fixed** — all demo accounts now use single `@` (e.g., admin@pratyushes.dev). If you're on an older version, use double `@`.

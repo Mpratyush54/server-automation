@@ -9,7 +9,7 @@ The Platform API issues JSON Web Tokens (JWT) for authentication. Tokens are sig
 ```json
 {
   "id": "11111111-1111-1111-1111-111111111111",
-  "email": "john@dev.io",
+  "email": "john@pratyushes.dev",
   "name": "John Dev",
   "role": "developer",
   "iat": 1719000000,
@@ -50,7 +50,7 @@ The login endpoint accepts **only an email address** — no password is required
 1. **Internal PaaS context** — Platform is designed for internal/private deployments behind a VPN or OAuth2 proxy. The email itself is the identity.
 2. **SSO-first architecture** — Authentication is delegated to OAuth2/OIDC providers (see OIDC/SSO section). The email-only login exists for development convenience.
 3. **Simplified user onboarding** — No password management, no reset flows, no hashing overhead.
-4. **Demo-friendly** — Four demo users (`admin@dev.io`, `devops@dev.io`, `sarah@dev.io`, `john@dev.io`) can be seeded instantly.
+4. **Demo-friendly** — Four demo users (`admin@pratyushes.dev`, `devops@pratyushes.dev`, `sarah@pratyushes.dev`, `john@pratyushes.dev`) can be seeded instantly.
 
 ### API
 
@@ -58,7 +58,7 @@ The login endpoint accepts **only an email address** — no password is required
 POST /api/auth/login
 Content-Type: application/json
 
-{"email": "john@dev.io"}
+{"email": "john@pratyushes.dev"}
 ```
 
 **Response:**
@@ -68,7 +68,7 @@ Content-Type: application/json
   "token": "eyJhbGciOiJIUzI1NiIs...",
   "user": {
     "id": "11111111-1111-1111-1111-111111111111",
-    "email": "john@dev.io",
+    "email": "john@pratyushes.dev",
     "name": "John Dev",
     "role": "developer"
   }

@@ -23,7 +23,7 @@ function replaceInFile(relativePath, replacements) {
 }
 
 replaceInFile('getting-started/installation.md', [
-    { from: /admin@platform\.local/g, to: 'admin@dev.io' },
+    { from: /admin@platform\.local/g, to: 'admin@pratyushes.dev' },
     { from: /and the password `admin123`/g, to: 'and wait for the one-time magic link (passwordless authentication)' }
 ]);
 

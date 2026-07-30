@@ -141,7 +141,7 @@ Authorization: Bearer eyJhbGciOiJSUzI1NiIs...
 {
   "sub": "user-uuid",
   "name": "John Dev",
-  "email": "john@dev.io",
+  "email": "john@pratyushes.dev",
   "email_verified": true,
   "groups": ["developer"],
   "roles": ["developer"]

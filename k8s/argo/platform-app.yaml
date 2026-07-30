@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform
+  namespace: argocd
+  annotations:
+    # Auto-update policy: pull newest GHCR tags for API + Portal on every env
+    # that runs Argo CD Image Updater (installed by platformctl when AUTO_UPDATE=true).
+    argocd-image-updater.argoproj.io/image-list: |
+      platform-api=ghcr.io/mpratyush54/platform-api,
+      platform-portal=ghcr.io/mpratyush54/platform-portal
+    argocd-image-updater.argoproj.io/platform-api.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/platform-portal.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/platform-api.force-update: "true"
+    argocd-image-updater.argoproj.io/platform-portal.force-update: "true"
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Mpratyush54/SERVER-automation.git
+    targetRevision: HEAD
+    path: k8s/platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -39,7 +39,7 @@ List every user.
   {
     "id": "00000000-0000-0000-0000-000000000001",
     "name": "Admin",
-    "email": "admin@dev.io",
+    "email": "admin@pratyushes.dev",
     "role": "admin",
     "roleId": null,
     "gitlabId": null,
@@ -63,7 +63,7 @@ The currently-authenticated user, including their custom role reference.
 {
   "id": "00000000-0000-0000-0000-000000000001",
   "name": "Admin",
-  "email": "admin@dev.io",
+  "email": "admin@pratyushes.dev",
   "role": "admin",
   "roleId": null,
   "roleRef": null,
@@ -210,8 +210,8 @@ UI-level "can I do X" checks.
 
 ### `GET` /api/users/init-demo
 
-Bootstrap the demo users (`admin@dev.io`, `devops@dev.io`, `sarah@dev.io`,
-`john@dev.io`). Runs automatically on first API boot; call it manually if the
+Bootstrap the demo users (`admin@pratyushes.dev`, `devops@pratyushes.dev`, `sarah@pratyushes.dev`,
+`john@pratyushes.dev`). Runs automatically on first API boot; call it manually if the
 `users` table is empty for any reason.
 
 **Auth:** None

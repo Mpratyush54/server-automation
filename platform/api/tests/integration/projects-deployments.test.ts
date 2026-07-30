@@ -61,11 +61,11 @@ const seedToken = {
 const userRepo = {
   findOne: jest.fn().mockImplementation(({ where }: any) => {
     const roles: Record<string, string> = {
-      'admin@@dev.io':   'admin',
+      'admin@@pratyushes.dev':   'admin',
       'devops@@caps.io': 'devops',
-      'sarah@@dev.io':   'tech_lead',
-      'john@@dev.io':    'developer',
-      'view@@dev.io':    'viewer',
+      'sarah@@pratyushes.dev':   'tech_lead',
+      'john@@pratyushes.dev':    'developer',
+      'view@@pratyushes.dev':    'viewer',
     };
     if (where?.email && roles[where.email]) {
       return Promise.resolve({ id: `user-${roles[where.email]}`, email: where.email, name: 'User', role: roles[where.email], roleId: null, isActive: true });

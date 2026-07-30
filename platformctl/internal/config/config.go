@@ -30,11 +30,12 @@ type Config struct {
 	RepoURL       string
 	GitHubToken   string
 
-	InstallArgoCD      bool
-	InstallMonitoring  bool
-	InstallPortainer   bool
-	InstallInfisical   bool
-	InstallCertManager bool
+	InstallArgoCD         bool
+	InstallMonitoring     bool
+	InstallPortainer      bool
+	InstallInfisical      bool
+	InstallCertManager    bool
+	AutoUpdate            bool
 
 	PostgresPassword  string
 	MongoPassword     string
@@ -63,7 +64,7 @@ func Load() *Config {
 		RepoURL:            getEnv("PLATFORM_REPO_URL", "https://github.com/Mpratyush54/SERVER-automation"),
 		GitHubToken:        getEnv("GITHUB_TOKEN", ""),
 		Domain:             getEnv("DOMAIN", os.Getenv("PLATFORM_DOMAIN")),
-		AdminEmail:         getEnv("ADMIN_EMAIL", "admin@dev.io"),
+		AdminEmail:         getEnv("ADMIN_EMAIL", "admin@pratyushes.dev"),
 		AdminPassword:      getEnv("ADMIN_PASSWORD", ""),
 		NonInteractive:     os.Getenv("NON_INTERACTIVE") == "true" || os.Getenv("PLATFORMCTL_AUTO") == "true",
 		SkipK8s:            os.Getenv("SKIP_K8S") == "true",
@@ -73,6 +74,7 @@ func Load() *Config {
 		InstallPortainer:   getEnvBool("INSTALL_PORTAINER", true),
 		InstallInfisical:   getEnvBool("INSTALL_INFISICAL", true),
 		InstallCertManager: getEnvBool("INSTALL_CERTMANAGER", true),
+		AutoUpdate:         getEnvBool("AUTO_UPDATE", true),
 		MinioAccessKey:     getEnv("MINIO_ACCESS_KEY", "platformadmin"),
 	}
 	return c
@@ -84,7 +86,7 @@ func (c *Config) PromptInteractive() error {
 	}
 
 	ask("Enter your domain (e.g., platform.example.com or 148.113.59.97.sslip.io)", &c.Domain, "")
-	ask("Enter admin email for Let's Encrypt", &c.AdminEmail, "admin@dev.io")
+	ask("Enter admin email for Let's Encrypt", &c.AdminEmail, "admin@pratyushes.dev")
 	ask("Enter platform name", &c.PlatformName, "Platform")
 	c.LEEmail = c.AdminEmail
 
@@ -159,10 +161,10 @@ func (c *Config) GenerateSecrets() {
 		c.LEEmail = c.AdminEmail
 	}
 	if c.LEEmail == "" {
-		c.LEEmail = "admin@dev.io"
+		c.LEEmail = "admin@pratyushes.dev"
 	}
 	if c.AdminEmail == "" {
-		c.AdminEmail = "admin@dev.io"
+		c.AdminEmail = "admin@pratyushes.dev"
 	}
 	if c.Domain == "" {
 		c.Domain = "localhost"
@@ -194,6 +196,8 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("INFISICAL_ENCRYPTION_KEY=%s\n", c.InfisicalEncKey))
 	b.WriteString(fmt.Sprintf("INFISICAL_JWT_SECRET=%s\n", c.InfisicalJWT))
 	b.WriteString(fmt.Sprintf("PORTAINER_ADMIN_PASSWORD=%s\n", c.PortainerPassword))
+	b.WriteString(fmt.Sprintf("PLATFORM_IMAGE_TAG=%s\n", c.ImageTag))
+	b.WriteString(fmt.Sprintf("AUTO_UPDATE=%t\n", c.AutoUpdate))
 	return os.WriteFile(path, []byte(b.String()), 0600)
 }
 

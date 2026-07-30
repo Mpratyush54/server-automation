@@ -17,7 +17,7 @@
    npm install
    npm run start
    ```
-5. Open <http://localhost:4200> and sign in as `admin@dev.io` (no password).
+5. Open <http://localhost:4200> and sign in as `admin@pratyushes.dev` (no password).
 
 Full walkthrough: [getting-started/installation.md](getting-started/installation.md).
 

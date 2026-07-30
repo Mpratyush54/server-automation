@@ -95,7 +95,7 @@ router.get('/auth/gitlab/callback', async (req: Request, res: Response) => {
     const gitlabProfile = {
       id: '123456',
       name: 'GitLab Developer',
-      email: 'gitlab_dev@@dev.io',
+      email: 'gitlab_dev@pratyushes.dev',
       avatarUrl: 'https://assets.gitlab-static.net/uploads/-/system/user/avatar/123456/avatar.png',
     };
 
@@ -146,10 +146,10 @@ router.get('/users/init-demo', async (req: Request, res: Response) => {
     const passwordHash = await bcrypt.hash(adminPassword, 10);
 
     const demoUsers = [
-      { id: '00000000-0000-0000-0000-000000000001', name: 'Admin', email: 'admin@dev.io', username: 'admin', passwordHash, role: UserRole.ADMIN },
-      { id: '11111111-1111-1111-1111-111111111111', name: 'John Dev', email: 'john@dev.io', username: 'john', passwordHash, role: UserRole.DEVELOPER },
-      { id: '22222222-2222-2222-2222-222222222222', name: 'Sarah Lead', email: 'sarah@dev.io', username: 'sarah', passwordHash, role: UserRole.TECH_LEAD },
-      { id: '33333333-3333-3333-3333-333333333333', name: 'DevOps Boss', email: 'devops@dev.io', username: 'devops', passwordHash, role: UserRole.DEVOPS },
+      { id: '00000000-0000-0000-0000-000000000001', name: 'Admin', email: 'admin@pratyushes.dev', username: 'admin', passwordHash, role: UserRole.ADMIN },
+      { id: '11111111-1111-1111-1111-111111111111', name: 'John Dev', email: 'john@pratyushes.dev', username: 'john', passwordHash, role: UserRole.DEVELOPER },
+      { id: '22222222-2222-2222-2222-222222222222', name: 'Sarah Lead', email: 'sarah@pratyushes.dev', username: 'sarah', passwordHash, role: UserRole.TECH_LEAD },
+      { id: '33333333-3333-3333-3333-333333333333', name: 'DevOps Boss', email: 'devops@pratyushes.dev', username: 'devops', passwordHash, role: UserRole.DEVOPS },
     ];
 
     const created: User[] = [];

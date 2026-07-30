@@ -2,11 +2,11 @@
 
 ## Symptom
 
-> Angular build fails with: `NG5002: Incomplete block "xxx"` — pointing to a line in an HTML template that contains the `@` character (e.g., an email address like `admin@dev.io`).
+> Angular build fails with: `NG5002: Incomplete block "xxx"` — pointing to a line in an HTML template that contains the `@` character (e.g., an email address like `admin@pratyushes.dev`).
 
 ## Root Cause
 
-Angular 19 introduced `@` control flow syntax (`@if`, `@for`, `@switch`, etc.). When Angular's template compiler encounters a bare `@` symbol in the template, it interprets it as the start of a control flow block. An email address such as `admin@dev.io` is parsed as an incomplete `@if` / `@for` block, triggering the `NG5002` error.
+Angular 19 introduced `@` control flow syntax (`@if`, `@for`, `@switch`, etc.). When Angular's template compiler encounters a bare `@` symbol in the template, it interprets it as the start of a control flow block. An email address such as `admin@pratyushes.dev` is parsed as an incomplete `@if` / `@for` block, triggering the `NG5002` error.
 
 ## Fix
 
@@ -15,13 +15,13 @@ Replace every bare `@` in HTML templates with the `&#64;` HTML entity.
 ### Before
 
 ```html
-<p>Contact us at admin@dev.io</p>
+<p>Contact us at admin@pratyushes.dev</p>
 ```
 
 ### After
 
 ```html
-<p>Contact us at admin&#64;dev.io</p>
+<p>Contact us at admin&#64;pratyushes.dev</p>
 ```
 
 ### Search all templates for bare `@` occurrences

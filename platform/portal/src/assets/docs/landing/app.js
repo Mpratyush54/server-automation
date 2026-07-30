@@ -387,7 +387,7 @@ Content-Type: application/json
 
 # Returns JWT token valid 24h</code></pre>
 
-<div class="docs-alert tip">💡 Demo users are seeded automatically: <code>admin@dev.io</code>, <code>devops@platform.io</code>, <code>john@dev.io</code>, <code>sarah@dev.io</code></div>
+<div class="docs-alert tip">💡 Demo users are seeded automatically: <code>admin@pratyushes.dev</code>, <code>devops@platform.io</code>, <code>john@pratyushes.dev</code>, <code>sarah@pratyushes.dev</code></div>
 
 <h2>Step 5 — Create Your First Project</h2>
 <pre><code>POST /api/projects

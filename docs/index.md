@@ -79,7 +79,7 @@ npm install
 npm run start
 ```
 
-Then sign in at `http://localhost:4200` with **`admin@dev.io`** — no password
+Then sign in at `http://localhost:4200` with **`admin@pratyushes.dev`** — no password
 required (Platform uses passwordless email-based JWT). Demo users are auto-seeded
 on first API startup; if you ever need to re-seed manually:
 
@@ -93,10 +93,10 @@ Server / production install is a single command — see [Getting Started](gettin
 
 | Name | Email | Role |
 |---|---|---|
-| Admin | admin@dev.io | Admin (full access) |
-| DevOps Boss | devops@dev.io | DevOps Engineer |
-| Sarah Lead | sarah@dev.io | Tech Lead |
-| John Dev | john@dev.io | Developer |
+| Admin | admin@pratyushes.dev | Admin (full access) |
+| DevOps Boss | devops@pratyushes.dev | DevOps Engineer |
+| Sarah Lead | sarah@pratyushes.dev | Tech Lead |
+| John Dev | john@pratyushes.dev | Developer |
 
 ## License
 
