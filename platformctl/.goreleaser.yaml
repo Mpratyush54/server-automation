@@ -33,10 +33,28 @@ snapshot:
   version_template: "{{ .Tag }}-next"
 changelog:
   sort: asc
+  use: github
   filters:
     exclude:
       - "^docs:"
       - "^test:"
+      - "^ci:"
+  groups:
+    - title: "🚀 Features"
+      regexp: '^.*?feat(\([^)]*\))?:.*$'
+      order: 0
+    - title: "🐛 Bug Fixes"
+      regexp: '^.*?fix(\([^)]*\))?:.*$'
+      order: 1
+    - title: "🔧 Maintenance"
+      regexp: '^.*?(chore|refactor|perf)(\([^)]*\))?:.*$'
+      order: 2
+    - title: "📖 Documentation"
+      regexp: '^.*?docs(\([^)]*\))?:.*$'
+      order: 3
+    - title: "Other Changes"
+      order: 999
+  format: "{{.GroupLabel}}\n{{range .Commits}}- {{.Subject}} (@{{.AuthorUsername}})\n{{end}}\n"
 release:
   github:
     owner: Mpratyush54
@@ -48,11 +66,29 @@ release:
 
     Platform server bootstrap and management tool.
 
-    Images for this release: `ghcr.io/mpratyush54/platform-api:{{ .Version }}` and `ghcr.io/mpratyush54/platform-portal:{{ .Version }}`.
+    ### 📦 Downloads
 
-    ### Installation
+    | OS / Arch | Link |
+    |-----------|------|
+    | Linux amd64 | [platformctl_{{ .Version }}_linux_amd64.tar.gz]({{ .ReleaseURL }}/download/{{ .Tag }}/platformctl_{{ .Version }}_linux_amd64.tar.gz) |
+    | Linux arm64 | [platformctl_{{ .Version }}_linux_arm64.tar.gz]({{ .ReleaseURL }}/download/{{ .Tag }}/platformctl_{{ .Version }}_linux_arm64.tar.gz) |
+    | macOS amd64 | [platformctl_{{ .Version }}_darwin_amd64.tar.gz]({{ .ReleaseURL }}/download/{{ .Tag }}/platformctl_{{ .Version }}_darwin_amd64.tar.gz) |
+    | macOS arm64 | [platformctl_{{ .Version }}_darwin_arm64.tar.gz]({{ .ReleaseURL }}/download/{{ .Tag }}/platformctl_{{ .Version }}_darwin_arm64.tar.gz) |
+    | Windows amd64 | [platformctl_{{ .Version }}_windows_amd64.zip]({{ .ReleaseURL }}/download/{{ .Tag }}/platformctl_{{ .Version }}_windows_amd64.zip) |
+    | Windows arm64 | [platformctl_{{ .Version }}_windows_arm64.zip]({{ .ReleaseURL }}/download/{{ .Tag }}/platformctl_{{ .Version }}_windows_arm64.zip) |
+    | Checksums | [checksums.txt]({{ .ReleaseURL }}/download/{{ .Tag }}/checksums.txt) |
+    | Install script | [install.sh]({{ .ReleaseURL }}/download/{{ .Tag }}/install.sh) |
+
+    ### 🐳 Container Images
+
+    - `ghcr.io/mpratyush54/platform-api:{{ .Version }}`
+    - `ghcr.io/mpratyush54/platform-portal:{{ .Version }}`
+
+    ### 🚀 Quick Install
 
     ```bash
     curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/download/{{ .Tag }}/install.sh | sh
     sudo platformctl provision
     ```
+
+    ### 📋 Changelog

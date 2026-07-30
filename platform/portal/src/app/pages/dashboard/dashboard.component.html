@@ -5,6 +5,10 @@
   </div>
   <div class="flex items-center gap-3 text-xs text-[#a1a1aa]">
     <span class="flex items-center gap-1.5"><div class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div> Live Sync</span>
+    <span *ngIf="platformVersion" class="flex items-center gap-1.5 border-l border-[#333] pl-3">
+      <a *ngIf="releasesUrl" [href]="releasesUrl" target="_blank" class="hover:text-white transition-colors">v{{ platformVersion }}</a>
+      <span *ngIf="!releasesUrl">v{{ platformVersion }}</span>
+    </span>
   </div>
 </div>
 

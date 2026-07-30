@@ -21,6 +21,8 @@ export class DashboardComponent implements OnInit {
   grafanaEmbedUrl!: SafeResourceUrl;
   showIframe = true;
   iframeLoaded = false;
+  platformVersion: string = '';
+  releasesUrl: string = '';
 
   constructor(private api: ApiService, private sanitizer: DomSanitizer, private auth: AuthService) {}
 
@@ -106,6 +108,15 @@ export class DashboardComponent implements OnInit {
     } catch { 
       this.stats.services = 0; 
       this.systemHealth = [];
+    }
+
+    // 5. Fetch platform version
+    try {
+      const ver = await firstValueFrom(this.api.getPlatformVersion()) as any;
+      this.platformVersion = ver.imageTag || ver.platformVersion || '';
+      this.releasesUrl = ver.releases || '';
+    } catch {
+      this.platformVersion = '';
     }
   }
 

@@ -99,10 +99,13 @@ export async function expressAuthenticate(req: Request, res: Response, next: Nex
 export function expressRequireRole(roles: UserRole[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     const user = (req as AuthenticatedRequest).user;
-    if (!user || !roles.includes(user.role)) {
-      return res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized: Not authenticated' });
     }
-    next();
+    if (user.role === UserRole.ADMIN || roles.includes(user.role)) {
+      return next();
+    }
+    return res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
   };
 }
 
