@@ -11,7 +11,8 @@
       "Bash(xargs grep -l \"provideRouter\\\\|RouterModule.forRoot\\\\|withInMemoryScrolling\\\\|scrollPositionRestoration\")",
       "Bash(xargs grep -l \"markdown\\\\|marked\\\\|mermaid\")",
       "Bash(cp -f docs/api-reference/platform-api/users.md platform/portal/src/assets/docs/api-reference/platform-api/users.md)",
-      "Bash(cp -f docs/api-reference/platform-api/users.md platform/portal/public/docs/api-reference/platform-api/users.md)"
+      "Bash(cp -f docs/api-reference/platform-api/users.md platform/portal/public/docs/api-reference/platform-api/users.md)",
+      "PowerShell(gh run view 30567237474 --repo Mpratyush54/SERVER-automation --json status,conclusion --jq \"{status,conclusion}\")"
     ]
   }
 }
