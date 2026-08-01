@@ -29,6 +29,17 @@ Portal project: **sdk-demo-apps** → Metrics / API Latency.
 ADMIN_PASSWORD='…' bash /tmp/vps-deploy-sdk-apps.sh /tmp/sdk-apps-src
 ```
 
+## Package-level examples (snippets)
+
+| SDK | Path |
+|-----|------|
+| Node | [`sdk-node/examples`](../../sdk-node/examples) |
+| React | [`sdk-react/examples`](../../sdk-react/examples) |
+| Angular | [`sdk-angular/examples`](../../sdk-angular/examples) |
+| Python | [`sdk-python/examples`](../../sdk-python/examples) |
+
+Docs index: [`docs/getting-started/sdk-examples.md`](../../docs/getting-started/sdk-examples.md)
+
 ## Local demos
 
 ```powershell

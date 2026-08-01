@@ -1,6 +1,8 @@
 # Python SDK Quickstart
 
-Instrument your Python application with metrics, structured logging, and bug reporting.
+Instrument a Python service with registration, heartbeats, structured logs, config, and optional databases.
+
+Package: [`mpratyush54-sdk`](https://pypi.org/project/mpratyush54-sdk/) · Examples: [`sdk-python/examples`](../../sdk-python/examples)
 
 ## Installation
 
@@ -8,101 +10,79 @@ Instrument your Python application with metrics, structured logging, and bug rep
 pip install mpratyush54-sdk
 ```
 
-## Basic Usage
+## Basic usage
 
 ```python
 from platform_sdk import PlatformClient
 
-client = PlatformClient(
-    api_url='http://localhost:3000',
-    sdk_token='sdk_xxxxx',
-    project_id='proj-xxxxx'
+client = PlatformClient()
+client.init(
+    project_name="my-python-service",
+    platform_url=os.environ["PLATFORM_URL"],
+    environment_name="development",
 )
-client.init()
 
-# Track an API call metric
-client.metrics.track_api_call('/api/users', 200, 45, 1024)
-#  ──────────────┬─────────  ─┬─  ─┬─  ─┬─
-#     route        status  ms    bytes
-
-# Forward structured logs
-client.logger.info('App started successfully')
-client.logger.warn('Memory usage high', extra={'memory_mb': 256})
-client.logger.error('Failed to connect', exc_info=True)
+client.log("INFO", "ready")
+print(client.config("FEATURE_X"))
+client.shutdown()
 ```
 
-## Flask Middleware
-
-Automatically instrument all incoming Flask requests:
+Or use the module singleton:
 
 ```python
-from flask import Flask
-from platform_sdk import PlatformClient
-from platform_sdk.flask import flask_middleware
+from platform_sdk import platform
 
-app = Flask(__name__)
-client = PlatformClient(
-    api_url='http://localhost:3000',
-    sdk_token='sdk_xxxxx',
-    project_id='proj-xxxxx'
+platform.init(project_name="my-service", platform_url="https://api.example.sslip.io")
+platform.log("INFO", "hello")
+```
+
+## Databases
+
+```python
+client.init(
+    project_name="my-service",
+    platform_url=os.environ["PLATFORM_URL"],
+    databases=["postgres", "mongo", "redis"],
 )
-client.init()
 
-flask_middleware(app, client)
-# Tracks route, status code, duration, and response size for every request
-
-@app.route('/api/users')
-def get_users():
-    return {'users': []}
+rows = client.db["postgres"].execute("SELECT 1")
 ```
 
-## Django Middleware
+Managers live under `client.db["postgres" | "mongo" | "redis"]`. Connection failures are logged and non-blocking.
 
-Add to your Django `MIDDLEWARE` setting:
+## Logging & storage
 
 ```python
-# settings.py
-MIDDLEWARE = [
-    'platform_sdk.django.middleware.PlatformMiddleware',
-    # ... other middleware
-]
-
-PLATFORM = {
-    'api_url': 'http://localhost:3000',
-    'sdk_token': 'sdk_xxxxx',
-    'project_id': 'proj-xxxxx',
-}
+client.log("WARN", "high latency", {"route": "/api/users", "ms": 900})
+client.storage_upload("/tmp/report.bin", "uploads")
 ```
 
-## Database Helpers
+## Flask / FastAPI
 
-```python
-from platform_sdk.db import MongoClient, PostgresPool, RedisClient
+The SDK does **not** ship framework middleware yet. Time requests yourself and call `client.log(...)` — see:
 
-# MongoDB
-mongo = MongoClient('mongodb://localhost:27017/mydb')
-await mongo.connect()
+- [`sdk-python/examples/03_flask_manual_metrics.py`](../../sdk-python/examples/03_flask_manual_metrics.py)
+- [`sdk-python/examples/04_fastapi_manual_metrics.py`](../../sdk-python/examples/04_fastapi_manual_metrics.py)
 
-# PostgreSQL
-pg = PostgresPool('postgresql://user:pass@localhost/mydb')
-await pg.connect()
+## Parameters
 
-# Redis
-redis = RedisClient('redis://localhost:6379/0')
-await redis.connect()
-```
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `project_name` | — | Required |
+| `platform_url` | — | Required API base |
+| `environment_name` | `development` | Env label |
+| `version` / `branch` / `commit_sha` | — | Build metadata |
+| `databases` | `[]` | `postgres` · `mongo` · `redis` |
 
-## Configuration
+## More examples
 
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `api_url` | `str` | — | Platform API base URL |
-| `sdk_token` | `str` | — | SDK token from Project Settings |
-| `project_id` | `str` | — | Project ID (`proj-xxxxx`) |
-| `environment` | `str` | `os.environ.get('ENVIRONMENT', 'production')` | Deployment environment name |
-| `flush_interval_ms` | `int` | `5000` | How often to batch-send metrics/logs |
-| `max_queue_size` | `int` | `1000` | Max queued events before flush |
+| Path | Topic |
+|------|--------|
+| [`01_basic.py`](../../sdk-python/examples/01_basic.py) | Init + log + config |
+| [`02_with_databases.py`](../../sdk-python/examples/02_with_databases.py) | DB managers |
+| [`03_flask_manual_metrics.py`](../../sdk-python/examples/03_flask_manual_metrics.py) | Flask timing |
+| [`04_fastapi_manual_metrics.py`](../../sdk-python/examples/04_fastapi_manual_metrics.py) | FastAPI timing |
 
-## API Reference
+## API reference
 
-See the full [Python SDK API Reference](../api-reference/sdk-python/PlatformClient.md).
+[PlatformClient](../api-reference/sdk-python/PlatformClient.md) · [Postgres](../api-reference/sdk-python/db-postgres.md) · [Mongo](../api-reference/sdk-python/db-mongo.md) · [Redis](../api-reference/sdk-python/db-redis.md)

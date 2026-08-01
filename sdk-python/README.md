@@ -1,39 +1,77 @@
 # mpratyush54-sdk
 
-The official Python SDK for the Platform.
+Official Python SDK for Platform — registration, heartbeats, logging, config, storage helpers, and managed DB connections.
 
-This SDK provides core backend integrations for your Python microservices, including auto-registration with the platform, metrics aggregation, structured logging, and standardized database connections.
+**Requires Python ≥ 3.10.** Package: [`mpratyush54-sdk`](https://pypi.org/project/mpratyush54-sdk/)
 
-## Installation
+## Install
 
 ```bash
 pip install mpratyush54-sdk
 ```
 
-## Features
+Optional DB drivers are declared as package dependencies (`psycopg2-binary`, `pymongo`, `redis`).
 
-- **Service Registration:** Automatically registers your microservice with the Platform API on startup.
-- **Metrics Aggregation:** Utility decorators and middleware to record route metrics, execution times, and memory deltas.
-- **Database Connections:** Pre-configured Psycopg2 (PostgreSQL), PyMongo (MongoDB), and Redis connection utilities.
-- **Logging:** Structured logging that automatically ships to the platform.
-
-## Usage
+## Quick start
 
 ```python
-from platform_sdk import PlatformSDK
+from platform_sdk import PlatformClient  # or: from platform_sdk import platform
 
-sdk = PlatformSDK(
-    project_id="your-project-id",
-    environment="production",
-    api_url="https://api.your-platform.com"
+client = PlatformClient()
+client.init(
+    project_name="my-python-service",
+    platform_url="https://api.example.sslip.io",
+    environment_name="development",
+    databases=["postgres", "mongo", "redis"],  # optional
 )
 
-# Initialize connections and register service
-sdk.initialize()
+client.log("INFO", "service ready", {"pid": 1})
+flag = client.config("FEATURE_X")
 
-# Use database connections safely
-db = sdk.connections.get_postgres()
-cursor = db.cursor()
-cursor.execute("SELECT version();")
-print(cursor.fetchone())
+# After init with databases=...
+rows = client.db["postgres"].execute("SELECT 1")
+client.shutdown()
 ```
+
+Singleton style:
+
+```python
+from platform_sdk import platform
+
+platform.init(project_name="my-service", platform_url="https://api.example.sslip.io")
+platform.log("INFO", "hello")
+```
+
+## What `init()` does
+
+1. Registers with `POST /api/sdk/register`
+2. Starts a daemon **heartbeat** thread (every 15s)
+3. Connects any of `postgres` / `mongo` / `redis` listed in `databases` (non-blocking on failure)
+
+## API surface
+
+| Method / prop | Purpose |
+|---------------|---------|
+| `init(...)` | Configure + register + optional DBs |
+| `config(key)` | Fetch remote config value |
+| `log(level, message, metadata?)` | Ship a log line |
+| `storage_upload(path, bucket)` | Request an upload URL |
+| `db` | Dict of connected managers (`postgres` / `mongo` / `redis`) |
+| `shutdown()` | Disconnect DBs |
+
+There is **no** built-in Flask/Django middleware yet — record metrics yourself or put a reverse proxy in front. See examples for manual timing patterns.
+
+## Examples
+
+| File | Topic |
+|------|--------|
+| [`examples/01_basic.py`](./examples/01_basic.py) | Init + log + config |
+| [`examples/02_with_databases.py`](./examples/02_with_databases.py) | Postgres / Mongo / Redis |
+| [`examples/03_flask_manual_metrics.py`](./examples/03_flask_manual_metrics.py) | Flask + timed requests |
+| [`examples/04_fastapi_manual_metrics.py`](./examples/04_fastapi_manual_metrics.py) | FastAPI + middleware timing |
+
+Docs: [Python quickstart](../docs/getting-started/python-sdk-quickstart.md) · [API](../docs/api-reference/sdk-python/PlatformClient.md)
+
+## License
+
+MIT

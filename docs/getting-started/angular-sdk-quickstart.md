@@ -1,6 +1,8 @@
 # Angular SDK Quickstart
 
-Instrument your Angular application with HTTP interception, error handling, and bug reporting.
+Instrument an Angular app with HTTP metrics, a global error handler, and a bug-reporter component.
+
+Package: [`@mpratyush54/sdk-angular`](https://www.npmjs.com/package/@mpratyush54/sdk-angular) · Examples: [`sdk-angular/examples`](../../sdk-angular/examples)
 
 ## Installation
 
@@ -8,86 +10,74 @@ Instrument your Angular application with HTTP interception, error handling, and 
 npm install @mpratyush54/sdk-angular
 ```
 
-## Module Setup
+## NgModule setup
 
-Import `PlatformModule` and configure it with the `forRoot` pattern:
+Config fields are `apiBase` / `token` / `projectId` (not `apiUrl` / `sdkToken`):
 
-```typescript
-import { NgModule } from '@angular/core';
-import { BrowserModule } from '@angular/platform-browser';
+```ts
 import { PlatformModule } from '@mpratyush54/sdk-angular';
-import { AppComponent } from './app.component';
 
 @NgModule({
-  declarations: [AppComponent],
   imports: [
-    BrowserModule,
+    HttpClientModule,
     PlatformModule.forRoot({
-      apiUrl: 'http://localhost:3000',
-      sdkToken: 'sdk_xxxxx',
-      projectId: 'proj-xxxxx'
-    })
+      apiBase: 'https://api.example.sslip.io',
+      token: 'sdk_live_…',
+      projectId: 'your-project-id',
+      environment: 'development',
+      appName: 'my-angular-app',
+    }),
   ],
-  bootstrap: [AppComponent]
 })
-export class AppModule { }
+export class AppModule {}
 ```
 
-## Features
+Template:
 
-| Feature | Provider | Description |
-|---|---|---|
-| HTTP Interceptor | `PlatformHttpInterceptor` | Automatically tracks all HTTP request metrics (route, status, duration, bytes) |
-| Error Handler | `PlatformErrorHandler` | Replaces Angular's default `ErrorHandler` — sends uncaught errors to the platform |
-| Bug Reporter | `BugReporterComponent` | A dialog component users can open to submit bug reports with screenshots |
-
-## Using the Bug Reporter
-
-```typescript
-import { Component } from '@angular/core';
-import { BugReporterComponent } from '@mpratyush54/sdk-angular';
-
-@Component({
-  template: `<button (click)="reportBug()">Report Bug</button>`
-})
-export class MyComponent {
-  constructor(private bugReporter: BugReporterComponent) {}
-
-  reportBug() {
-    this.bugReporter.open({ category: 'ui', severity: 'minor' });
-  }
-}
+```html
+<platform-bug-reporter></platform-bug-reporter>
 ```
 
-## Custom Error Handling
+## Standalone bootstrap
 
-The `PlatformErrorHandler` is registered automatically. To extend it:
+```ts
+import { importProvidersFrom } from '@angular/core';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
+import { PlatformModule } from '@mpratyush54/sdk-angular';
 
-```typescript
-import { ErrorHandler } from '@angular/core';
-import { PlatformErrorHandler } from '@mpratyush54/sdk-angular';
-
-export class CustomErrorHandler extends PlatformErrorHandler {
-  override handleError(error: any): void {
-    // Custom logic before reporting
-    console.error('Custom handler:', error);
-    super.handleError(error);
-  }
-}
-
-// In AppModule:
-providers: [{ provide: ErrorHandler, useClass: CustomErrorHandler }]
+bootstrapApplication(AppComponent, {
+  providers: [
+    provideHttpClient(withInterceptorsFromDi()),
+    importProvidersFrom(
+      PlatformModule.forRoot({
+        apiBase: environment.platformUrl,
+        token: environment.sdkToken,
+        projectId: environment.projectId,
+      }),
+    ),
+  ],
+});
 ```
 
-## Configuration
+See [`sdk-angular/examples/app.config.ts`](../../sdk-angular/examples/app.config.ts).
 
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `apiUrl` | `string` | — | Platform API base URL |
-| `sdkToken` | `string` | — | SDK token from Project Settings |
-| `projectId` | `string` | — | Project ID (`proj-xxxxx`) |
-| `environment` | `string` | `'production'` | Deployment environment |
+## What is registered
 
-## API Reference
+| Provider | Role |
+|----------|------|
+| `PlatformHttpInterceptor` | Times `HttpClient` → `/api/sdk/api-metrics` |
+| `PlatformErrorHandler` | Global `ErrorHandler` |
+| `BugReporterComponent` | `<platform-bug-reporter>` |
 
-See the full [Angular SDK API Reference](../api-reference/sdk-angular/PlatformModule.md).
+## More examples
+
+| Path | Topic |
+|------|--------|
+| [`app.module.ts`](../../sdk-angular/examples/app.module.ts) | NgModule |
+| [`app.config.ts`](../../sdk-angular/examples/app.config.ts) | Standalone |
+| [`usage.component.ts`](../../sdk-angular/examples/usage.component.ts) | HttpClient + reporter |
+| [`examples/sdk-apps/angular-web`](../../examples/sdk-apps/angular-web) | Deployed demo |
+
+## API reference
+
+[PlatformModule](../api-reference/sdk-angular/PlatformModule.md) · [HTTP Interceptor](../api-reference/sdk-angular/PlatformHttpInterceptor.md) · [Error Handler](../api-reference/sdk-angular/PlatformErrorHandler.md) · [Bug Reporter](../api-reference/sdk-angular/BugReporterComponent.md)

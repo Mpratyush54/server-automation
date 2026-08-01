@@ -53,6 +53,7 @@ export class DocsComponent implements OnInit, AfterViewChecked {
         { label: 'React Quickstart', section: 'getting-started', page: 'react-sdk-quickstart' },
         { label: 'Angular Quickstart', section: 'getting-started', page: 'angular-sdk-quickstart' },
         { label: 'Python Quickstart', section: 'getting-started', page: 'python-sdk-quickstart' },
+        { label: 'SDK Examples', section: 'getting-started', page: 'sdk-examples' },
         { label: 'Deploy Your App', section: 'getting-started', page: 'deploy-your-app' },
         { label: 'Upgrade Guide', section: 'getting-started', page: 'upgrade-guide' },
       ],
