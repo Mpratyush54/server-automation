@@ -40,21 +40,22 @@ changelog:
       - "^test:"
       - "^ci:"
   groups:
-    - title: "🚀 Features"
+    - title: Features
       regexp: '^.*?feat(\([^)]*\))?:.*$'
       order: 0
-    - title: "🐛 Bug Fixes"
+    - title: Bug Fixes
       regexp: '^.*?fix(\([^)]*\))?:.*$'
       order: 1
-    - title: "🔧 Maintenance"
+    - title: Maintenance
       regexp: '^.*?(chore|refactor|perf)(\([^)]*\))?:.*$'
       order: 2
-    - title: "📖 Documentation"
+    - title: Documentation
       regexp: '^.*?docs(\([^)]*\))?:.*$'
       order: 3
-    - title: "Other Changes"
+    - title: Other Changes
       order: 999
-  format: "{{.GroupLabel}}\n{{range .Commits}}- {{.Subject}} (@{{.AuthorUsername}})\n{{end}}\n"
+  # Per-commit line only — GroupLabel is invalid in goreleaser v2 `format`
+  format: "- {{.Subject}} (@{{.AuthorUsername}})"
 release:
   github:
     owner: Mpratyush54
