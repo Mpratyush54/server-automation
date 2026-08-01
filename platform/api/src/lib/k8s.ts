@@ -164,6 +164,11 @@ export async function deployK8sPreview(
   const projectSlug = projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
   const baseDomain = process.env.DOMAIN || 'sslip.io';
   const domain = `${projectSlug}-${sanitized}.preview.${baseDomain}`;
+  // Allow full image refs (nginx:alpine, ghcr.io/org/app:tag); otherwise GitLab registry convention.
+  const image =
+    imageTag.includes('/') || imageTag.includes(':')
+      ? imageTag
+      : `registry.gitlab.com/platform/${projectName}:${imageTag}`;
 
   try {
     // Ensure preview namespace exists
@@ -177,7 +182,7 @@ export async function deployK8sPreview(
 
     // Create/patch Deployment
     const deployment: k8s.V1Deployment = {
-      metadata: { name: deploymentName, namespace: 'preview', labels: { app: deploymentName, branch: sanitized } },
+      metadata: { name: deploymentName, namespace: 'preview', labels: { app: deploymentName, branch: sanitized, project: projectSlug } },
       spec: {
         replicas: 1,
         selector: { matchLabels: { app: deploymentName } },
@@ -186,7 +191,7 @@ export async function deployK8sPreview(
           spec: {
             containers: [{
               name: 'web',
-              image: `registry.gitlab.com/platform/${projectName}:${imageTag}`,
+              image,
               ports: [{ containerPort: 80 }],
             }],
           },
@@ -211,10 +216,51 @@ export async function deployK8sPreview(
     try {
       await coreApi.createNamespacedService({ namespace: 'preview', body: svc });
     } catch {
-      // already exists
+      // already exists — patch selector/ports
+      try {
+        await coreApi.replaceNamespacedService({ name: deploymentName, namespace: 'preview', body: svc });
+      } catch {
+        // ignore
+      }
     }
 
-    console.log(`[k8s] Preview deployed: ${deploymentName} → ${domain}`);
+    // Ingress so the preview URL is reachable
+    const networkApi = kc.makeApiClient(k8s.NetworkingV1Api);
+    const ingress: k8s.V1Ingress = {
+      metadata: {
+        name: deploymentName,
+        namespace: 'preview',
+        annotations: {
+          'kubernetes.io/ingress.class': 'nginx',
+          'cert-manager.io/cluster-issuer': 'letsencrypt-prod',
+        },
+      },
+      spec: {
+        ingressClassName: 'nginx',
+        tls: [{ hosts: [domain], secretName: `${deploymentName}-tls` }],
+        rules: [{
+          host: domain,
+          http: {
+            paths: [{
+              path: '/',
+              pathType: 'Prefix',
+              backend: { service: { name: deploymentName, port: { number: 80 } } },
+            }],
+          },
+        }],
+      },
+    };
+    try {
+      await networkApi.createNamespacedIngress({ namespace: 'preview', body: ingress });
+    } catch {
+      try {
+        await networkApi.replaceNamespacedIngress({ name: deploymentName, namespace: 'preview', body: ingress });
+      } catch (e: any) {
+        console.warn(`[k8s] preview ingress: ${e.message}`);
+      }
+    }
+
+    console.log(`[k8s] Preview deployed: ${deploymentName} → https://${domain} (image=${image})`);
     return true;
   } catch (err: any) {
     console.warn(`[k8s] deployK8sPreview failed: ${err.message}`);
