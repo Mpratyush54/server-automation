@@ -13,6 +13,23 @@ import (
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 )
 
+// helmLockHelper clears stuck Helm release secrets (pending-install/upgrade/rollback)
+// so re-provision can continue after an interrupted helm --wait.
+const helmLockHelper = `
+clear_helm_lock() {
+  local release="$1" ns="$2"
+  kubectl -n "$ns" get secrets -l "owner=helm,name=${release}" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.status}{"\n"}{end}' 2>/dev/null \
+  | while IFS="$(printf '\t')" read -r name status; do
+      case "$status" in
+        pending-install|pending-upgrade|pending-rollback)
+          echo "Clearing stuck Helm lock: $name ($status)"
+          kubectl -n "$ns" delete secret "$name" --ignore-not-found
+          ;;
+      esac
+    done
+}
+`
+
 type Component struct {
 	Name        string
 	Description string
@@ -404,13 +421,22 @@ func InstallOAuthProxy(cfg *config.Config) error {
 	err := shell.RunBash(fmt.Sprintf(`
 		set -euo pipefail
 		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+		%s
 		helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests 2>/dev/null || true
 		helm repo update oauth2-proxy >/dev/null 2>&1 || true
-		helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
+		clear_helm_lock oauth2-proxy oauth2-proxy
+		if ! helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
+			--namespace oauth2-proxy --create-namespace \
+			-f %s \
+			--wait --timeout 5m; then
+		  echo "oauth2-proxy upgrade failed — clearing lock and retrying"
+		  clear_helm_lock oauth2-proxy oauth2-proxy
+		  helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
 			--namespace oauth2-proxy --create-namespace \
 			-f %s \
 			--wait --timeout 5m
-	`, tmpFile))
+		fi
+	`, helmLockHelper, tmpFile, tmpFile))
 	if err != nil {
 		color.Yellow("  ⚠ oauth2-proxy install failed (non-fatal): %v", err)
 		return nil
@@ -442,11 +468,14 @@ func InstallPortainer(cfg *config.Config) error {
 	if err := shell.RunBash(fmt.Sprintf(`
 		set -euo pipefail
 		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+		%s
 		kubectl create namespace portainer --dry-run=client -o yaml | kubectl apply -f -
 		kubectl -n portainer create secret generic portainer-admin-password \
 		  --from-literal=password=%s \
 		  --dry-run=client -o yaml | kubectl apply -f -
-		helm upgrade --install portainer portainer/portainer \
+		clear_helm_lock portainer portainer
+		helm_install_portainer() {
+		  helm upgrade --install portainer portainer/portainer \
 			--namespace portainer --create-namespace \
 			-f %s \
 			--set service.type=ClusterIP \
@@ -454,13 +483,27 @@ func InstallPortainer(cfg *config.Config) error {
 			--set adminPassword.existingSecret=portainer-admin-password \
 			--set 'feature.flags[0]=--no-setup-token' \
 			--wait --timeout 5m
+		}
+		if ! helm_install_portainer; then
+		  echo "Portainer Helm failed — resetting and retrying"
+		  clear_helm_lock portainer portainer
+		  helm uninstall portainer -n portainer --wait --timeout 2m 2>/dev/null || true
+		  kubectl delete namespace portainer --wait=true --timeout=120s 2>/dev/null || true
+		  kubectl create namespace portainer
+		  kubectl -n portainer create secret generic portainer-admin-password \
+		    --from-literal=password=%s \
+		    --dry-run=client -o yaml | kubectl apply -f -
+		  helm_install_portainer
+		fi
 		kubectl rollout status deploy/portainer -n portainer --timeout=180s
-	`, shellQuote(pass), tmpFile)); err != nil {
+	`, helmLockHelper, shellQuote(pass), tmpFile, shellQuote(pass))); err != nil {
 		return err
 	}
 
 	if err := ensurePortainerAdminAndSSO(cfg, pass); err != nil {
-		return err
+		// Non-fatal: Portainer UI still works with admin password; SSO can be re-applied later.
+		color.Yellow("  ⚠ Portainer SSO seed failed (non-fatal): %v", err)
+		color.Yellow("    Admin login still works; re-run: sudo platformctl install portainer")
 	}
 	color.Green("  ✓ Portainer installed (https://portainer.%s — Platform SSO)", cfg.Domain)
 	_ = state.MarkDone("portainer")
@@ -501,6 +544,7 @@ func ensurePortainerAdminAndSSO(cfg *config.Config, pass string) error {
 	return shell.RunBash(fmt.Sprintf(`
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+CURL=(curl -sk --connect-timeout 5 --max-time 20)
 
 portainer_base() {
   local ip
@@ -515,8 +559,8 @@ portainer_base() {
 wait_ready() {
   local base="$1"
   local i
-  for i in $(seq 1 36); do
-    curl -skf "$base/api/system/status" >/dev/null 2>&1 && return 0
+  for i in $(seq 1 24); do
+    "${CURL[@]}" -f "$base/api/system/status" >/dev/null 2>&1 && return 0
     sleep 5
   done
   return 1
@@ -524,20 +568,19 @@ wait_ready() {
 
 login() {
   local base="$1"
-  curl -sk -X POST "$base/api/auth" \
+  "${CURL[@]}" -X POST "$base/api/auth" \
     -H 'Content-Type: application/json' \
     -d %s | grep -o '"jwt":"[^"]*"' | cut -d'"' -f4 || true
 }
 
 configure_sso() {
   local base="$1" token="$2"
-  curl -sk -X PUT "$base/api/settings" \
+  "${CURL[@]}" -X PUT "$base/api/settings" \
     -H "Authorization: Bearer $token" \
     -H 'Content-Type: application/json' \
     -d %s >/dev/null
-  # Verify SSO is actually on
   local method
-  method="$(curl -sk "$base/api/settings/public" | grep -o '"AuthenticationMethod":[0-9]*' | head -1 | cut -d: -f2 || true)"
+  method="$("${CURL[@]}" "$base/api/settings/public" | grep -o '"AuthenticationMethod":[0-9]*' | head -1 | cut -d: -f2 || true)"
   if [[ "$method" != "3" ]]; then
     echo "Portainer AuthenticationMethod=$method (want 3=OAuth)" >&2
     return 1
@@ -550,12 +593,13 @@ wait_ready "$BASE" || { echo "Portainer API not ready at $BASE" >&2; exit 1; }
 
 TOKEN="$(login "$BASE")"
 if [[ -z "$TOKEN" ]]; then
-  echo "Admin login failed — resetting Portainer volume so --admin-password-file can seed admin"
-  kubectl -n portainer delete deploy portainer --ignore-not-found
-  kubectl -n portainer delete pvc portainer --ignore-not-found
+  echo "Admin login failed — resetting Portainer volume so admin can be re-seeded"
+  kubectl -n portainer delete deploy portainer --ignore-not-found --wait=true --timeout=60s
+  kubectl -n portainer delete pvc portainer --ignore-not-found --wait=true --timeout=60s
   sleep 3
   helm upgrade --install portainer portainer/portainer \
     --namespace portainer --create-namespace \
+    -f /tmp/portainer-values.yaml \
     --set service.type=ClusterIP \
     --set ingress.enabled=false \
     --set adminPassword.existingSecret=portainer-admin-password \
