@@ -1,0 +1,7 @@
+# Synced by Platform SDK register → ArgoCD Application (path examples/sdk-demo/k8s).
+# Namespace comes from the Argo destination (CreateNamespace=true).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml

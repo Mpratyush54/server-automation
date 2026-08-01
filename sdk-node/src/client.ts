@@ -24,7 +24,18 @@ export interface PlatformOptions {
   infisicalEnv?: string;
   databases?: string[];
   sdkToken?: string;
+  /** GitHub/GitLab repo URL — SDK register wires ArgoCD to sync this repo */
+  repositoryUrl?: string;
+  /** Path inside the repo for manifests (default: examples/sdk-demo/k8s) */
+  gitPath?: string;
+  /** Git revision / branch for ArgoCD (default: branch or main) */
+  gitRevision?: string;
+  /** Project domain used for ingress hosts */
+  domain?: string;
+  /** When true (default if repositoryUrl set), skip phantom :latest Deployment */
+  gitops?: boolean;
 }
+
 
 export class PlatformClient {
   private http: AxiosInstance;
@@ -100,6 +111,11 @@ export class PlatformClient {
         metadata: { sdkVersion: '1.0.0' },
         dbTypes: this.options.databases,
         infisicalEnv: this.options.infisicalEnv,
+        repositoryUrl: this.options.repositoryUrl,
+        gitPath: this.options.gitPath,
+        gitRevision: this.options.gitRevision || this.options.branch,
+        domain: this.options.domain,
+        gitops: this.options.gitops,
       });
     } catch (err: any) {
       console.error('[platform] Registration failed (non-blocking):', err.message);

@@ -137,43 +137,101 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       }
     }
 
-    // Auto-create ArgoCD Application for GitOps (staging)
-    if (project.repositoryUrl) {
+    // Persist Git repo from SDK so ArgoCD GitOps can be wired on register.
+    let projectDirty = false;
+    if (body.repositoryUrl && body.repositoryUrl !== project.repositoryUrl) {
+      project.repositoryUrl = body.repositoryUrl;
+      projectDirty = true;
+    }
+    if (body.domain && body.domain !== project.domain) {
+      project.domain = body.domain;
+      projectDirty = true;
+    }
+    if (projectDirty) {
+      project = await projectRepo.save(project);
+    }
+
+    const repoUrl = project.repositoryUrl || body.repositoryUrl || '';
+    const gitPath =
+      body.gitPath ||
+      body.k8sPath ||
+      (repoUrl.includes('server-automation') ? 'examples/sdk-demo/k8s' : 'k8s');
+    const gitRevision = body.gitRevision || body.branch || 'main';
+    const useGitops = body.gitops !== false && !!repoUrl;
+    const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-');
+    const destNamespace = body.namespace || `${projectSlug}-staging`;
+    let gitopsInfo: Record<string, any> | null = null;
+
+    // Auto-create / refresh ArgoCD Application from SDK register (GitHub → ArgoCD)
+    if (useGitops) {
       try {
         const customApi = new k8s.KubeConfig();
         try { customApi.loadFromCluster(); } catch { try { customApi.loadFromDefault(); } catch {} }
         const apiClient = customApi.makeApiClient(k8s.CustomObjectsApi);
-        const appName = `${project.name}-staging`.toLowerCase();
+        const appName = `${projectSlug}-staging`.replace(/[^a-z0-9-]/g, '-').slice(0, 63);
+        const application = {
+          apiVersion: 'argoproj.io/v1alpha1',
+          kind: 'Application',
+          metadata: {
+            name: appName,
+            namespace: 'argocd',
+            labels: {
+              'app.kubernetes.io/managed-by': 'platform-sdk',
+              'platform.project': projectSlug,
+            },
+          },
+          spec: {
+            project: 'default',
+            source: {
+              repoURL: repoUrl,
+              targetRevision: gitRevision,
+              path: gitPath,
+            },
+            destination: {
+              server: 'https://kubernetes.default.svc',
+              namespace: destNamespace,
+            },
+            syncPolicy: {
+              automated: { prune: true, selfHeal: true },
+              syncOptions: ['CreateNamespace=true'],
+            },
+          },
+        };
+
         try {
-          await apiClient.getNamespacedCustomObject({
+          const existing: any = await apiClient.getNamespacedCustomObject({
             group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd',
             plural: 'applications', name: appName,
           });
+          (application.metadata as any).resourceVersion = existing?.metadata?.resourceVersion;
+          await apiClient.replaceNamespacedCustomObject({
+            group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd',
+            plural: 'applications', name: appName, body: application as any,
+          });
         } catch {
-          // Application doesn't exist — create it
-          const domain = project.domain || process.env.DOMAIN || 'sslip.io';
           await apiClient.createNamespacedCustomObject({
             group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd',
             plural: 'applications',
-            body: {
-              apiVersion: 'argoproj.io/v1alpha1',
-              kind: 'Application',
-              metadata: { name: appName, namespace: 'argocd' },
-              spec: {
-                project: 'default',
-                source: { repoURL: project.repositoryUrl, targetRevision: 'main', path: 'k8s' },
-                destination: { server: 'https://kubernetes.default.svc', namespace: 'platform' },
-                syncPolicy: { automated: { prune: true, selfHeal: true } },
-              },
-            },
+            body: application as any,
           });
         }
+
+        gitopsInfo = {
+          argoApplication: appName,
+          repositoryUrl: repoUrl,
+          gitPath,
+          gitRevision,
+          namespace: destNamespace,
+        };
       } catch (e) {
         console.warn('[sdk/register] Failed to create ArgoCD Application:', (e as Error).message);
+        gitopsInfo = { error: (e as Error).message, repositoryUrl: repoUrl, gitPath, gitRevision };
       }
     }
 
-    // Auto-create K8s Deployment, Service, and Ingress for the service
+    // Legacy fallback: direct Deployment only when NOT using GitOps from GitHub.
+    // (Avoids ImagePullBackOff on "{project}:latest" while Argo owns the real deploy.)
+    if (!useGitops) {
     const serviceName = body.serviceName || project.name;
     try {
       const kc = new k8s.KubeConfig();
@@ -183,6 +241,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       const networkV1 = kc.makeApiClient(k8s.NetworkingV1Api);
       const ns = 'platform';
       const deployName = `${project.name}-${body.serviceName || 'app'}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      const image = body.image || `${project.name}:latest`;
 
       // Deployment
       const deployment = {
@@ -195,7 +254,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
             spec: {
               containers: [{
                 name: 'app',
-                image: `${project.name}:latest`,
+                image,
                 ports: [{ containerPort: 3001 }],
               }],
             },
@@ -249,8 +308,9 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
     } catch (e) {
       console.warn('[sdk/register] Failed to create K8s resources:', (e as Error).message);
     }
+    }
 
-    return res.status(201).json(saved);
+    return res.status(201).json({ ...saved, gitops: gitopsInfo });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }

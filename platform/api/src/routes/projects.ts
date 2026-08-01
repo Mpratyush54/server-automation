@@ -251,7 +251,11 @@ router.get('/projects/:projectId/argocd-status', expressAuthenticate, async (req
     try {
       kc.loadFromDefault();
       const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
-      const appName = `${project.name}-staging`.toLowerCase();
+      const appName = `${project.name}-staging`
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, '-')
+        .replace(/--+/g, '-')
+        .slice(0, 63);
       
       const appResponse: any = await customApi.getNamespacedCustomObject({
         group: 'argoproj.io',
