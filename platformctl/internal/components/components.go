@@ -282,10 +282,24 @@ func InstallArgoCD(cfg *config.Config) error {
 		  echo "Resetting ArgoCD for clean Helm install..."
 		  helm uninstall argocd -n argocd --wait --timeout 3m 2>/dev/null || true
 		  kubectl delete namespace argocd --wait=true --timeout=180s 2>/dev/null || true
-		  for i in $(seq 1 60); do
+		  # kubectl get still succeeds while status=Terminating — wait until fully gone.
+		  for i in $(seq 1 90); do
 		    kubectl get ns argocd >/dev/null 2>&1 || break
 		    sleep 2
 		  done
+		  if kubectl get ns argocd >/dev/null 2>&1; then
+		    echo "Forcing removal of stuck argocd namespace finalizers..."
+		    kubectl get ns argocd -o json | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+d.setdefault("spec",{})["finalizers"]=[]
+json.dump(d,sys.stdout)
+' | kubectl replace --raw /api/v1/namespaces/argocd/finalize -f - 2>/dev/null || true
+		    for i in $(seq 1 30); do
+		      kubectl get ns argocd >/dev/null 2>&1 || break
+		      sleep 2
+		    done
+		  fi
 		  # Cluster-scoped leftovers from raw install.yaml / prior charts
 		  kubectl get clusterrole,clusterrolebinding -o name 2>/dev/null \
 		    | grep -E 'argocd|argo-cd' \
@@ -318,10 +332,15 @@ func InstallArgoCD(cfg *config.Config) error {
 		    --wait --timeout 10m
 		}
 
-		# Prefer in-place upgrade when a real Helm release already exists.
-		# On any failure (immutable selectors, ownership, partial raw install),
-		# wipe once and retry so re-provision is self-healing.
-		if helm status argocd -n argocd >/dev/null 2>&1; then
+		argocd_healthy() {
+		  helm status argocd -n argocd >/dev/null 2>&1 \
+		    && kubectl -n argocd get deploy argocd-server >/dev/null 2>&1 \
+		    && kubectl -n argocd get configmap argocd-cm >/dev/null 2>&1
+		}
+
+		# Prefer in-place upgrade when a real healthy release exists.
+		# Otherwise (or on upgrade failure), wipe once and reinstall.
+		if argocd_healthy; then
 		  if ! helm_install_argocd; then
 		    echo "ArgoCD Helm upgrade failed — self-healing with clean reinstall"
 		    reset_argocd
@@ -333,6 +352,14 @@ func InstallArgoCD(cfg *config.Config) error {
 		  apply_argocd_crds
 		  helm_install_argocd
 		fi
+
+		if ! argocd_healthy; then
+		  echo "ArgoCD install finished but argocd-server/argocd-cm missing — retrying clean install" >&2
+		  reset_argocd
+		  apply_argocd_crds
+		  helm_install_argocd
+		fi
+		argocd_healthy
 
 		# Hard-guarantee subpath settings
 		kubectl -n argocd create configmap argocd-cmd-params-cm \
