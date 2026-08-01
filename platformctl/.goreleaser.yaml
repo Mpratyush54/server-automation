@@ -32,30 +32,13 @@ checksum:
 snapshot:
   version_template: "{{ .Tag }}-next"
 changelog:
-  sort: asc
-  use: github
+  # github-native avoids custom format/group template mismatches across goreleaser v2.x
+  use: github-native
   filters:
     exclude:
       - "^docs:"
       - "^test:"
       - "^ci:"
-  groups:
-    - title: Features
-      regexp: '^.*?feat(\([^)]*\))?:.*$'
-      order: 0
-    - title: Bug Fixes
-      regexp: '^.*?fix(\([^)]*\))?:.*$'
-      order: 1
-    - title: Maintenance
-      regexp: '^.*?(chore|refactor|perf)(\([^)]*\))?:.*$'
-      order: 2
-    - title: Documentation
-      regexp: '^.*?docs(\([^)]*\))?:.*$'
-      order: 3
-    - title: Other Changes
-      order: 999
-  # Per-commit line only — GroupLabel is invalid in goreleaser v2 `format`
-  format: "- {{.Subject}} (@{{.AuthorUsername}})"
 release:
   github:
     owner: Mpratyush54
