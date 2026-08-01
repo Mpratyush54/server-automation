@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 
@@ -16,10 +17,10 @@ import (
 var DefaultImageTag = "latest"
 
 type Config struct {
-	Domain       string
-	AdminEmail   string
+	Domain        string
+	AdminEmail    string
 	AdminPassword string
-	PlatformName string
+	PlatformName  string
 
 	NonInteractive bool
 	SkipK8s        bool
@@ -30,12 +31,12 @@ type Config struct {
 	RepoURL       string
 	GitHubToken   string
 
-	InstallArgoCD         bool
-	InstallMonitoring     bool
-	InstallPortainer      bool
-	InstallInfisical      bool
-	InstallCertManager    bool
-	AutoUpdate            bool
+	InstallArgoCD      bool
+	InstallMonitoring  bool
+	InstallPortainer   bool
+	InstallInfisical   bool
+	InstallCertManager bool
+	AutoUpdate         bool
 
 	PostgresPassword  string
 	MongoPassword     string
@@ -50,6 +51,9 @@ type Config struct {
 	InfisicalJWT      string
 	PortainerPassword string
 	LEEmail           string
+
+	// PasswordGenerated is set when admin password was auto-created this run.
+	PasswordGenerated bool
 }
 
 func Load() *Config {
@@ -67,7 +71,7 @@ func Load() *Config {
 		RepoURL:            getEnv("PLATFORM_REPO_URL", "https://github.com/Mpratyush54/SERVER-automation"),
 		GitHubToken:        getEnv("GITHUB_TOKEN", ""),
 		Domain:             firstNonEmpty(os.Getenv("DOMAIN"), os.Getenv("PLATFORM_DOMAIN")),
-		AdminEmail:         getEnv("ADMIN_EMAIL", "admin@pratyushes.dev"),
+		AdminEmail:         os.Getenv("ADMIN_EMAIL"), // empty → prompt will ask
 		AdminPassword:      getEnv("ADMIN_PASSWORD", ""),
 		NonInteractive:     os.Getenv("NON_INTERACTIVE") == "true" || os.Getenv("PLATFORMCTL_AUTO") == "true",
 		SkipK8s:            os.Getenv("SKIP_K8S") == "true",
@@ -88,6 +92,7 @@ func Load() *Config {
 		ArgoCDPassword:     os.Getenv("ARGOCD_PASSWORD"),
 		GrafanaPassword:    os.Getenv("GRAFANA_PASSWORD"),
 		PortainerPassword:  firstNonEmpty(os.Getenv("PORTAINER_ADMIN_PASSWORD"), os.Getenv("PORTAINER_PASSWORD")),
+		LEEmail:            firstNonEmpty(os.Getenv("LE_EMAIL"), os.Getenv("ADMIN_EMAIL")),
 	}
 	return c
 }
@@ -131,29 +136,117 @@ func (c *Config) PromptInteractive() error {
 		return nil
 	}
 
-	ask("Enter your domain (e.g., platform.example.com or 148.113.59.97.sslip.io)", &c.Domain, "")
-	ask("Enter admin email for Let's Encrypt", &c.AdminEmail, "admin@pratyushes.dev")
-	ask("Enter platform name", &c.PlatformName, "Platform")
+	color.Cyan("\n  ■ Configuration")
+	color.Yellow("    Press Enter to keep the value in [brackets]. Saved under /etc/platform/.env\n")
+
+	domainDefault := c.Domain
+	if domainDefault == "" {
+		domainDefault = suggestDomain()
+	}
+	askAlways("Domain (FQDN or <ip>.sslip.io)", &c.Domain, domainDefault)
+
+	emailDefault := c.AdminEmail
+	if emailDefault == "" {
+		emailDefault = "admin@example.com"
+	}
+	askAlways("Admin email (login + Let's Encrypt)", &c.AdminEmail, emailDefault)
 	c.LEEmail = c.AdminEmail
+
+	askAlways("Platform display name", &c.PlatformName, "Platform")
+
+	hadPassword := c.AdminPassword != ""
+	askPasswordOrAuto("Admin password (Enter = auto-generate)", &c.AdminPassword)
+	if !hadPassword && c.AdminPassword != "" {
+		// Will be finalized in GenerateSecrets if still empty; mark if user typed one.
+	}
+	if c.AdminPassword == "" {
+		c.PasswordGenerated = true
+	}
+
+	color.Cyan("\n  ■ Optional components (Y/n)\n")
+	askBool("Install ArgoCD (GitOps at /argocd)", &c.InstallArgoCD)
+	askBool("Install Monitoring (Grafana + Prometheus)", &c.InstallMonitoring)
+	askBool("Install Portainer (portainer.<domain>)", &c.InstallPortainer)
+	askBool("Install Infisical (secrets)", &c.InstallInfisical)
+	askBool("Install cert-manager (HTTPS / Let's Encrypt)", &c.InstallCertManager)
+	askBool("Enable image auto-update", &c.AutoUpdate)
 
 	return nil
 }
 
-func ask(prompt string, target *string, defaultVal string) {
-	if *target != "" {
-		return
+// suggestDomain builds <public-or-primary-ip>.sslip.io when possible.
+func suggestDomain() string {
+	if ip := publicIPHint(); ip != "" {
+		return ip + ".sslip.io"
+	}
+	return "platform.local"
+}
+
+func publicIPHint() string {
+	// Prefer a non-loopback IPv4 from local interfaces (VPS primary NIC).
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	var fallback string
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, _ := iface.Addrs()
+		for _, a := range addrs {
+			var ip net.IP
+			switch v := a.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() {
+				continue
+			}
+			ip = ip.To4()
+			if ip == nil {
+				continue
+			}
+			s := ip.String()
+			// Prefer public-looking addresses; keep private as fallback.
+			if !ip.IsPrivate() {
+				return s
+			}
+			if fallback == "" {
+				fallback = s
+			}
+		}
+	}
+	return fallback
+}
+
+func askAlways(prompt string, target *string, defaultVal string) {
+	cur := strings.TrimSpace(*target)
+	if cur == "" {
+		cur = defaultVal
 	}
 	fmt.Print(color.CyanString("  ? " + prompt))
-	if defaultVal != "" {
-		fmt.Print(color.YellowString(" [%s]", defaultVal))
+	if cur != "" {
+		fmt.Print(color.YellowString(" [%s]", cur))
 	}
 	fmt.Print(": ")
 	var input string
-	fmt.Scanln(&input)
+	_, _ = fmt.Scanln(&input)
+	input = strings.TrimSpace(input)
 	if input == "" {
-		input = defaultVal
+		input = cur
 	}
 	*target = input
+}
+
+func ask(prompt string, target *string, defaultVal string) {
+	// Kept for tests / callers that only ask when empty.
+	if *target != "" {
+		return
+	}
+	askAlways(prompt, target, defaultVal)
 }
 
 func askSecret(prompt string, target *string) {
@@ -164,6 +257,48 @@ func askSecret(prompt string, target *string) {
 	byteInput, _ := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Println()
 	*target = string(byteInput)
+}
+
+func askPasswordOrAuto(prompt string, target *string) {
+	fmt.Print(color.CyanString("  ? " + prompt))
+	if *target != "" {
+		fmt.Print(color.YellowString(" [set — Enter keeps, or type new]"))
+	}
+	fmt.Print(": ")
+	byteInput, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+	if err != nil {
+		// Non-TTY fallback
+		var plain string
+		_, _ = fmt.Scanln(&plain)
+		plain = strings.TrimSpace(plain)
+		if plain != "" {
+			*target = plain
+		}
+		return
+	}
+	input := strings.TrimSpace(string(byteInput))
+	if input != "" {
+		*target = input
+	}
+	// empty input → keep existing or leave empty for GenerateSecrets auto-gen
+}
+
+func askBool(prompt string, target *bool) {
+	def := "Y/n"
+	if !*target {
+		def = "y/N"
+	}
+	fmt.Print(color.CyanString("  ? " + prompt))
+	fmt.Print(color.YellowString(" [%s]", def))
+	fmt.Print(": ")
+	var input string
+	_, _ = fmt.Scanln(&input)
+	input = strings.TrimSpace(strings.ToLower(input))
+	if input == "" {
+		return
+	}
+	*target = input == "y" || input == "yes" || input == "true" || input == "1"
 }
 
 func (c *Config) GenerateSecrets() {
@@ -199,9 +334,9 @@ func (c *Config) GenerateSecrets() {
 	}
 	if c.AdminPassword == "" {
 		c.AdminPassword = generatePassword(24)
+		c.PasswordGenerated = true
 	}
 	if c.PortainerPassword == "" {
-		// Portainer requires ≥12 chars; reuse platform admin password when possible.
 		if len(c.AdminPassword) >= 12 {
 			c.PortainerPassword = c.AdminPassword
 		} else {
@@ -211,14 +346,15 @@ func (c *Config) GenerateSecrets() {
 	if c.LEEmail == "" {
 		c.LEEmail = c.AdminEmail
 	}
-	if c.LEEmail == "" {
-		c.LEEmail = "admin@pratyushes.dev"
-	}
 	if c.AdminEmail == "" {
-		c.AdminEmail = "admin@pratyushes.dev"
+		c.AdminEmail = "admin@example.com"
+		c.LEEmail = c.AdminEmail
+	}
+	if c.LEEmail == "" {
+		c.LEEmail = c.AdminEmail
 	}
 	if c.Domain == "" {
-		c.Domain = "localhost"
+		c.Domain = suggestDomain()
 	}
 }
 
@@ -233,6 +369,7 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString("# Platform configuration generated by platformctl\n")
 	b.WriteString(fmt.Sprintf("DOMAIN=%s\n", c.Domain))
 	b.WriteString(fmt.Sprintf("ADMIN_EMAIL=%s\n", c.AdminEmail))
+	b.WriteString(fmt.Sprintf("LE_EMAIL=%s\n", c.LEEmail))
 	b.WriteString(fmt.Sprintf("ADMIN_PASSWORD=%s\n", c.AdminPassword))
 	b.WriteString(fmt.Sprintf("PLATFORM_NAME=%s\n", c.PlatformName))
 	b.WriteString(fmt.Sprintf("POSTGRES_PASSWORD=%s\n", c.PostgresPassword))
@@ -249,6 +386,11 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("PORTAINER_ADMIN_PASSWORD=%s\n", c.PortainerPassword))
 	b.WriteString(fmt.Sprintf("PLATFORM_IMAGE_TAG=%s\n", c.ImageTag))
 	b.WriteString(fmt.Sprintf("AUTO_UPDATE=%t\n", c.AutoUpdate))
+	b.WriteString(fmt.Sprintf("INSTALL_ARGOCD=%t\n", c.InstallArgoCD))
+	b.WriteString(fmt.Sprintf("INSTALL_MONITORING=%t\n", c.InstallMonitoring))
+	b.WriteString(fmt.Sprintf("INSTALL_PORTAINER=%t\n", c.InstallPortainer))
+	b.WriteString(fmt.Sprintf("INSTALL_INFISICAL=%t\n", c.InstallInfisical))
+	b.WriteString(fmt.Sprintf("INSTALL_CERTMANAGER=%t\n", c.InstallCertManager))
 	return os.WriteFile(path, []byte(b.String()), 0600)
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/helm"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/k3s"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/preflight"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 )
 
 var (
@@ -112,10 +113,17 @@ func init() {
 }
 
 func runProvision() error {
+	unlock, err := state.AcquireLock("provision")
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	color.Cyan("\n  ========================================")
 	color.Cyan("   Platform Server Bootstrap v%s", Version)
 	color.Cyan("  ========================================\n")
 	color.Cyan("  Images: %s/*:%s\n", cfg.ImageRegistry, cfg.ImageTag)
+	color.Cyan("  Resume: %s (%s)\n", state.StatusLine(), state.DefaultPath)
 
 	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
 
@@ -123,12 +131,20 @@ func runProvision() error {
 		if err := cfg.PromptInteractive(); err != nil {
 			return err
 		}
+	} else {
+		color.Yellow("  · non-interactive (--auto): using /etc/platform/.env and environment\n")
 	}
 
 	cfg.GenerateSecrets()
+	if cfg.PasswordGenerated {
+		color.Green("  ✓ Admin password auto-generated (saved to /etc/platform/.env)")
+		fmt.Printf("    ADMIN_PASSWORD=%s\n", cfg.AdminPassword)
+	}
 
 	if err := cfg.SaveEnvFile("/etc/platform/.env"); err != nil {
 		color.Yellow("  ⚠ could not write /etc/platform/.env yet: %v", err)
+	} else {
+		color.Cyan("  · config saved → /etc/platform/.env (domain=%s email=%s)\n", cfg.Domain, cfg.AdminEmail)
 	}
 
 	if !cfg.SkipPreflight {
@@ -148,10 +164,18 @@ func runProvision() error {
 		return nil
 	}
 
-	if err := must("prereqs", apt.InstallPrereqs()); err != nil {
+	runStep := func(name string, fn func() error) error {
+		_ = state.MarkInProgress(name)
+		if err := fn(); err != nil {
+			return must(name, err)
+		}
+		return nil
+	}
+
+	if err := runStep("prereqs", func() error { return apt.InstallPrereqs() }); err != nil {
 		return err
 	}
-	if err := must("docker", docker.Install()); err != nil {
+	if err := runStep("docker", func() error { return docker.Install() }); err != nil {
 		return err
 	}
 	if err := must("docker-ready", docker.WaitReady()); err != nil {
@@ -159,15 +183,15 @@ func runProvision() error {
 	}
 
 	if !cfg.SkipK8s {
-		if err := must("k3s", k3s.Install(cfg.Domain)); err != nil {
+		if err := runStep("k3s", func() error { return k3s.Install(cfg.Domain) }); err != nil {
 			return err
 		}
 	}
 
-	if err := must("helm", helm.Install()); err != nil {
+	if err := runStep("helm", func() error { return helm.Install() }); err != nil {
 		return err
 	}
-	if err := must("namespaces", components.Namespace()); err != nil {
+	if err := runStep("namespaces", func() error { return components.Namespace() }); err != nil {
 		return err
 	}
 
@@ -197,10 +221,12 @@ func runProvision() error {
 			color.Yellow("  ○ skipping %s", item.name)
 			continue
 		}
+		_ = state.MarkInProgress(item.name)
 		if err := must(item.name, item.fn(cfg)); err != nil {
 			color.Red("\n  Provision stopped. Fix the error and re-run:")
 			color.Red("    sudo platformctl provision --auto")
-			color.Red("  Completed steps are skipped via /etc/platform/.bootstrap_state")
+			color.Red("  Progress saved in %s — completed steps are skipped", state.DefaultPath)
+			color.Red("  Only one provision can run at a time (lock: %s)", state.DefaultLockPath)
 			return err
 		}
 	}
@@ -215,6 +241,12 @@ func runProvision() error {
 }
 
 func runInstall(name string) error {
+	unlock, err := state.AcquireLock("install:" + name)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
 	comp := components.Find(name)
 	if comp == nil {
