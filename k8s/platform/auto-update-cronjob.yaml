@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: platform-auto-update
+  namespace: platform
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  suspend: false
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: platform-auto-update
+          restartPolicy: OnFailure
+          containers:
+            - name: update
+              image: bitnami/kubectl:latest
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  API="ghcr.io/mpratyush54/platform-api:latest"
+                  PORTAL="ghcr.io/mpratyush54/platform-portal:latest"
+                  test -n "$API" && test -n "$PORTAL"
+                  kubectl set image -n platform deploy/platform-api api="$API"
+                  kubectl set image -n platform deploy/platform-portal portal="$PORTAL"
+                  kubectl patch deploy platform-api -n platform --type=merge -p '{"spec":{"template":{"spec":{"containers":[{"name":"api","imagePullPolicy":"Always"}]}}}}' || true
+                  kubectl patch deploy platform-portal -n platform --type=merge -p '{"spec":{"template":{"spec":{"containers":[{"name":"portal","imagePullPolicy":"Always"}]}}}}' || true
+                  # Force pull new :latest digests from GHCR after Actions publishes
+                  kubectl rollout restart -n platform deploy/platform-api deploy/platform-portal
+                  kubectl rollout status -n platform deploy/platform-api --timeout=180s || true
+                  kubectl rollout status -n platform deploy/platform-portal --timeout=180s || true
+                  echo "auto-update applied $API $PORTAL"

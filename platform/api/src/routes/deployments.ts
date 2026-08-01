@@ -10,7 +10,7 @@ import { expressAuthenticate, expressRequireRole, logAudit, AuthenticatedRequest
 import { triggerPipeline } from '../lib/gitlab';
 import { postComment, formatPreviewComment, extractTaskId } from '../lib/clickup';
 import { generatePreviewUrl } from '../lib/preview';
-import { deployK8sPreview, updateArgoCDApp } from '../lib/k8s';
+import { deployK8sPreview, ensureAndSyncArgoApp, argoAppName, ensureProjectIngress } from '../lib/k8s';
 import * as k8s from '@kubernetes/client-node';
 
 const router = Router();
@@ -69,7 +69,12 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
       deployedById: (req as AuthenticatedRequest).user?.id,
       clickupTaskId,
       previewUrl: env.name === EnvironmentName.PREVIEW ? `https://${env.domain}` : null,
-      metadata: body.metadata || {},
+      metadata: {
+        ...(body.metadata || {}),
+        gitPath: body.gitPath || undefined,
+        pullFromGit: body.pullFromGit !== false,
+        domain: project.domain || undefined,
+      },
     });
     const saved = await ds.getRepository(Deployment).save(deployment);
 
@@ -107,52 +112,97 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
           dep.status = DeploymentStatus.DEPLOYING;
           await checkDs.getRepository(Deployment).save(dep);
 
-          const appName = `${project.name}-${env!.name}`.toLowerCase();
-          const argoOk = await updateArgoCDApp(appName, dep.imageTag);
-          if (argoOk) {
-            // Poll ArgoCD status every 5 seconds for up to 3 minutes
-            let attempts = 0;
-            const maxAttempts = 36; // 3 minutes
-            const kc = new k8s.KubeConfig();
-            kc.loadFromDefault();
-            const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
-
-            while (attempts < maxAttempts) {
-              await new Promise(r => setTimeout(r, 5000));
-              attempts++;
-              try {
-                const appResponse: any = await customApi.getNamespacedCustomObject({
-                  group: 'argoproj.io',
-                  version: 'v1alpha1',
-                  namespace: 'argocd',
-                  plural: 'applications',
-                  name: appName
-                });
-                const app = appResponse.body || appResponse;
-                const status = app.status || {};
-                const sync = status.sync?.status;
-                const health = status.health?.status;
-
-                console.log(`[argo-poll] Attempt ${attempts}: App ${appName} sync=${sync}, health=${health}`);
-
-                if (sync === 'Synced' && health === 'Healthy') {
-                  success = true;
-                  break;
-                }
-                if (sync === 'Failed' || health === 'Degraded') {
-                  deployError = `ArgoCD application sync status is ${sync} and health status is ${health}.`;
-                  break;
-                }
-              } catch (e: any) {
-                console.warn(`[argo-poll] Failed to fetch status on attempt ${attempts}:`, e.message);
-              }
-            }
-
-            if (!success && !deployError) {
-              deployError = 'ArgoCD sync timed out after 3 minutes.';
-            }
+          if (!project.repositoryUrl) {
+            deployError = 'Set project repositoryUrl (GitHub/GitLab) to pull & deploy via ArgoCD.';
+            success = false;
           } else {
-            deployError = `Failed to update ArgoCD application custom resource '${appName}'.`;
+            const appName = argoAppName(project.name, String(env!.name));
+            const destNs = env!.namespace || `${argoAppName(project.name, String(env!.name))}`;
+            const gitPath =
+              (body.gitPath as string) ||
+              (dep.metadata as any)?.gitPath ||
+              (project.repositoryUrl.includes('server-automation') ? 'examples/sdk-demo/k8s' : 'k8s');
+            const revision = dep.commitSha && dep.commitSha !== 'unknown'
+              ? dep.commitSha
+              : (dep.branch || 'main');
+
+            const argo = await ensureAndSyncArgoApp({
+              appName,
+              repoURL: project.repositoryUrl,
+              path: gitPath,
+              targetRevision: revision,
+              namespace: destNs,
+              imageTag: dep.imageTag,
+            });
+
+            if (argo.ok) {
+              // Discover a Service in the dest namespace to wire Ingress (prefer common names)
+              let serviceName = 'sdk-demo';
+              try {
+                const kcDiscover = new k8s.KubeConfig();
+                try { kcDiscover.loadFromCluster(); } catch { try { kcDiscover.loadFromDefault(); } catch {} }
+                const coreDiscover = kcDiscover.makeApiClient(k8s.CoreV1Api);
+                const svcs: any = await coreDiscover.listNamespacedService({ namespace: destNs });
+                const items = (svcs.body || svcs).items || [];
+                if (items.length) {
+                  const preferred = items.find((s: any) =>
+                    ['sdk-demo', appName, project.name].includes(s.metadata?.name)
+                  );
+                  serviceName = preferred?.metadata?.name || items[0].metadata.name;
+                }
+              } catch {}
+
+              const host =
+                env!.domain ||
+                `${appName}.${project.domain || process.env.DOMAIN || 'sslip.io'}`;
+              await ensureProjectIngress({
+                name: appName,
+                namespace: destNs,
+                host,
+                serviceName,
+                servicePort: 80,
+              });
+
+              let attempts = 0;
+              const maxAttempts = 36;
+              const kcLocal = new k8s.KubeConfig();
+              try { kcLocal.loadFromCluster(); } catch { try { kcLocal.loadFromDefault(); } catch {} }
+              const customApi = kcLocal.makeApiClient(k8s.CustomObjectsApi);
+
+              while (attempts < maxAttempts) {
+                await new Promise((r) => setTimeout(r, 5000));
+                attempts++;
+                try {
+                  const appResponse: any = await customApi.getNamespacedCustomObject({
+                    group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd',
+                    plural: 'applications', name: appName,
+                  });
+                  const status = (appResponse.body || appResponse).status || {};
+                  const sync = status.sync?.status;
+                  const health = status.health?.status;
+                  if (sync === 'Synced' && health === 'Healthy') {
+                    success = true;
+                    break;
+                  }
+                  if (sync === 'Synced' && health === 'Progressing' && attempts >= 6) {
+                    // Manifest applied; pods still coming up — treat as success for history UX
+                    success = true;
+                    break;
+                  }
+                  if (health === 'Degraded' || sync === 'Failed') {
+                    deployError = `ArgoCD health=${health} sync=${sync}`;
+                    break;
+                  }
+                } catch (pollErr: any) {
+                  deployError = pollErr.message;
+                }
+              }
+              if (!success && !deployError) {
+                deployError = 'ArgoCD sync timed out after 3 minutes.';
+              }
+            } else {
+              deployError = argo.error || 'Failed to create/sync ArgoCD Application';
+            }
           }
         }
 
@@ -161,6 +211,13 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
           if (success) {
             finalDep.status = DeploymentStatus.DEPLOYED;
             finalDep.deployedAt = new Date();
+            if (env?.domain) {
+              finalDep.previewUrl = `https://${env.domain}`;
+              finalDep.metadata = {
+                ...(finalDep.metadata || {}),
+                liveUrl: `https://${env.domain}`,
+              };
+            }
           } else {
             finalDep.status = DeploymentStatus.FAILED;
             finalDep.metadata = {

@@ -5,6 +5,7 @@ import { Environment, EnvironmentName } from '../entities/Environment';
 import { SdkCredential } from '../entities/SdkCredential';
 import { expressAuthenticate, expressRequireRole, logAudit, AuthenticatedRequest } from '../middleware/auth';
 import { UserRole } from '../entities/User';
+import { argoAppName } from '../lib/k8s';
 import * as k8s from '@kubernetes/client-node';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -70,7 +71,11 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
       ip: req.ip,
     });
 
-    return res.status(201).json(saved);
+    const withRelations = await ds.getRepository(Project).findOne({
+      where: { id: saved.id },
+      relations: ['environments', 'deployments'],
+    });
+    return res.status(201).json(withRelations || saved);
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
@@ -92,18 +97,19 @@ router.get('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
   }
 });
 
-router.put('/projects/:id', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
+router.put('/projects/:id', expressAuthenticate, expressRequireRole([UserRole.ADMIN, UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
   try {
     const body = req.body;
     const ds = await getDb();
     const repo = ds.getRepository(Project);
 
-    const project = await repo.findOne({ where: { id: req.params.id } });
+    const project = await repo.findOne({ where: { id: req.params.id }, relations: ['environments'] });
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
 
     const allowedFields = ['name', 'stack', 'description', 'repositoryUrl', 'domain', 'clickupListId'];
+    const domainChanged = body.domain !== undefined && body.domain !== project.domain;
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
         (project as any)[field] = body[field];
@@ -111,6 +117,16 @@ router.put('/projects/:id', expressAuthenticate, expressRequireRole([UserRole.DE
     }
 
     const updated = await repo.save(project);
+
+    if (domainChanged && updated.domain) {
+      const projectSlug = updated.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
+      const envRepo = ds.getRepository(Environment);
+      const envs = await envRepo.find({ where: { projectId: updated.id } });
+      for (const env of envs) {
+        env.domain = `${projectSlug}-${env.name}.${updated.domain}`;
+        await envRepo.save(env);
+      }
+    }
 
     await logAudit({
       userId: (req as AuthenticatedRequest).user?.id,
@@ -120,7 +136,8 @@ router.put('/projects/:id', expressAuthenticate, expressRequireRole([UserRole.DE
       ip: req.ip,
     });
 
-    return res.json(updated);
+    const fresh = await repo.findOne({ where: { id: updated.id }, relations: ['environments', 'deployments'] });
+    return res.json(fresh || updated);
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
@@ -244,19 +261,20 @@ router.delete('/projects/:projectId/tokens/:tokenId', expressAuthenticate, expre
 router.get('/projects/:projectId/argocd-status', expressAuthenticate, async (req: Request, res: Response) => {
   try {
     const ds = await getDb();
-    const project = await ds.getRepository(Project).findOne({ where: { id: req.params.projectId } });
+    const project = await ds.getRepository(Project).findOne({
+      where: { id: req.params.projectId },
+      relations: ['environments'],
+    });
     if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const envHint = String(req.query.env || 'development');
+    const appName = argoAppName(project.name, envHint);
 
     const kc = new k8s.KubeConfig();
     try {
-      kc.loadFromDefault();
+      try { kc.loadFromCluster(); } catch { kc.loadFromDefault(); }
       const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
-      const appName = `${project.name}-staging`
-        .toLowerCase()
-        .replace(/[^a-z0-9-]/g, '-')
-        .replace(/--+/g, '-')
-        .slice(0, 63);
-      
+
       const appResponse: any = await customApi.getNamespacedCustomObject({
         group: 'argoproj.io',
         version: 'v1alpha1',
@@ -270,15 +288,20 @@ router.get('/projects/:projectId/argocd-status', expressAuthenticate, async (req
       return res.json({
         connected: true,
         appName,
+        repositoryUrl: project.repositoryUrl,
+        domain: project.domain,
         syncStatus: status.sync?.status || 'Unknown',
         healthStatus: status.health?.status || 'Unknown',
         revision: status.sync?.revision || 'Unknown',
-        syncTime: status.sync?.comparedTo?.time || null
+        syncTime: status.operationState?.finishedAt || status.reconciledAt || null
       });
     } catch (err: any) {
       return res.json({
         connected: false,
-        error: `Could not reach ArgoCD: ${err.message}`,
+        appName,
+        repositoryUrl: project.repositoryUrl,
+        domain: project.domain,
+        error: `Could not reach ArgoCD app '${appName}': ${err.message}`,
         syncStatus: 'Offline',
         healthStatus: 'Unknown'
       });

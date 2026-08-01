@@ -15,7 +15,7 @@ import { ApiService } from '../../services/api.service';
 export class ProjectsComponent implements OnInit {
   projects: any[] = [];
   showCreate = false;
-  newProject: any = { name: '', stack: 'nodejs', repositoryUrl: '' };
+  newProject: any = { name: '', stack: 'nodejs', repositoryUrl: '', domain: '' };
 
   constructor(private api: ApiService) {}
 
@@ -28,7 +28,7 @@ export class ProjectsComponent implements OnInit {
       const p = await firstValueFrom(this.api.createProject(this.newProject));
       this.projects.push(p);
       this.showCreate = false;
-      this.newProject = { name: '', stack: 'nodejs', repositoryUrl: '' };
+      this.newProject = { name: '', stack: 'nodejs', repositoryUrl: '', domain: '' };
     } catch (err: any) { alert('Failed to create project: ' + (err.error?.error || err.message)); }
   }
 

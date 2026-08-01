@@ -19,6 +19,8 @@ import { BugReportModel } from '../schemas/BugReport';
 import * as k8s from '@kubernetes/client-node';
 import { ApiMetricModel } from '../schemas/ApiMetric';
 import { postComment } from '../lib/clickup';
+import { resolveProjectRef } from '../lib/project-resolve';
+import { ensureProjectIngress } from '../lib/k8s';
 
 const router = Router();
 
@@ -35,20 +37,40 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       project = projectRepo.create({
         name: body.projectName,
         stack: StackType.NODEJS,
+        domain: body.domain || process.env.DOMAIN || null,
+        repositoryUrl: body.repositoryUrl || null,
       });
       project = await projectRepo.save(project);
+    } else {
+      let dirty = false;
+      if (body.domain && body.domain !== project.domain) {
+        project.domain = body.domain;
+        dirty = true;
+      }
+      if (body.repositoryUrl && body.repositoryUrl !== project.repositoryUrl) {
+        project.repositoryUrl = body.repositoryUrl;
+        dirty = true;
+      }
+      if (dirty) project = await projectRepo.save(project);
     }
 
     // Resolve environment ID by name
     const envRepo = ds.getRepository(Environment);
     let env = await envRepo.findOne({ where: { projectId: project.id, name: body.environmentName } });
     if (!env) {
+      const baseDomain = project.domain || process.env.DOMAIN || 'sslip.io';
+      const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
       env = envRepo.create({
         name: body.environmentName as any,
-        namespace: `${project.name}-${body.environmentName}`,
-        domain: `${project.name}-${body.environmentName}.example.com`,
+        namespace: `${projectSlug}-${body.environmentName}`,
+        domain: `${projectSlug}-${body.environmentName}.${baseDomain}`,
         projectId: project.id,
       });
+      env = await envRepo.save(env);
+    } else if ((!env.domain || env.domain.includes('example.com')) && (project.domain || process.env.DOMAIN)) {
+      const baseDomain = project.domain || process.env.DOMAIN!;
+      const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
+      env.domain = `${projectSlug}-${env.name}.${baseDomain}`;
       env = await envRepo.save(env);
     }
 
@@ -223,6 +245,27 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
           gitRevision,
           namespace: destNamespace,
         };
+
+        // Wire HTTPS Ingress for the environment host (Let's Encrypt, incl. sslip.io)
+        try {
+          const { ensureProjectIngress } = await import('../lib/k8s');
+          const host = env.domain || `${projectSlug}-${body.environmentName}.${project.domain || process.env.DOMAIN || 'sslip.io'}`;
+          const ingress = await ensureProjectIngress({
+            name: appName,
+            namespace: destNamespace,
+            host,
+            serviceName: 'sdk-demo',
+            servicePort: 80,
+          });
+          gitopsInfo.ingressHost = ingress.host;
+          gitopsInfo.tls = ingress.ok;
+          if (ingress.ok && (!env.domain || env.domain.includes('example.com'))) {
+            env.domain = host;
+            await envRepo.save(env);
+          }
+        } catch (ingErr: any) {
+          console.warn('[sdk/register] ingress TLS setup:', ingErr.message);
+        }
       } catch (e) {
         console.warn('[sdk/register] Failed to create ArgoCD Application:', (e as Error).message);
         gitopsInfo = { error: (e as Error).message, repositoryUrl: repoUrl, gitPath, gitRevision };
@@ -275,20 +318,24 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       try { await coreV1.createNamespacedService({ namespace: ns, body: service as any }); }
       catch { try { await coreV1.replaceNamespacedService({ name: deployName, namespace: ns, body: service as any }); } catch {} }
 
-      // Ingress — only request Let's Encrypt cert for real domains, not sslip.io
+      // Ingress with Let's Encrypt TLS (sslip.io included — HTTP-01 works per-host)
       const domain = project.domain || process.env.DOMAIN || 'sslip.io';
-      const isRealDomain = !domain.includes('sslip.io') && !domain.match(/^\d+\.\d+\.\d+\.\d+/);
+      const host = `${deployName}.${domain}`;
       const ingress: any = {
         metadata: {
           name: deployName,
           namespace: ns,
           annotations: {
             'kubernetes.io/ingress.class': 'nginx',
+            'cert-manager.io/cluster-issuer': 'letsencrypt-prod',
+            'nginx.ingress.kubernetes.io/ssl-redirect': 'true',
           },
         },
         spec: {
+          ingressClassName: 'nginx',
+          tls: [{ hosts: [host], secretName: `${deployName}-tls` }],
           rules: [{
-            host: `${deployName}.${domain}`,
+            host,
             http: {
               paths: [{
                 path: '/',
@@ -299,10 +346,6 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
           }],
         },
       };
-      if (isRealDomain) {
-        ingress.metadata.annotations['cert-manager.io/cluster-issuer'] = 'letsencrypt-prod';
-        ingress.spec.tls = [{ hosts: [`${deployName}.${domain}`], secretName: `${deployName}-tls` }];
-      }
       try { await networkV1.createNamespacedIngress({ namespace: ns, body: ingress as any }); }
       catch { try { await networkV1.replaceNamespacedIngress({ name: deployName, namespace: ns, body: ingress as any }); } catch {} }
     } catch (e) {
@@ -383,9 +426,12 @@ router.post('/sdk/heartbeat', sdkTokenAuth, async (req: Request, res: Response) 
     }
 
     await connectMongo();
+    const projectRef = registration
+      ? { id: registration.projectId, name: body.projectId }
+      : await resolveProjectRef(ds, body.projectId);
     await MetricsRawModel.create({
       registrationId: registration?.id || null,
-      projectId: registration?.projectId || body.projectId,
+      projectId: projectRef?.id || registration?.projectId || body.projectId,
       environment: body.environment || registration?.environmentId || 'development',
       cpuPct: body.cpuPct || Math.random() * 20,
       memoryMb: body.memoryMb || 128 + Math.random() * 64,
@@ -587,8 +633,11 @@ router.post('/sdk/api-metrics', sdkTokenAuth, async (req: Request, res: Response
     const { metrics, projectId } = req.body;
     if (!Array.isArray(metrics) || metrics.length === 0) return res.json({ saved: 0 });
     await connectMongo();
+    const ds = await getDb();
+    const projectRef = await resolveProjectRef(ds, projectId || metrics[0]?.projectId);
+    const resolvedId = projectRef?.id || projectId || metrics[0]?.projectId || 'unknown';
     const docs = metrics.map((m: any) => ({
-      projectId: projectId || m.projectId || 'unknown',
+      projectId: resolvedId,
       route: m.route || '/',
       method: (m.method || 'GET').toUpperCase(),
       statusCode: m.statusCode || 200,
@@ -610,10 +659,13 @@ router.get('/sdk/api-metrics', expressAuthenticate, async (req: Request, res: Re
     const { projectId, environment, from, to } = req.query as Record<string, string>;
     if (!projectId) return res.status(400).json({ error: 'projectId required' });
     await connectMongo();
+    const ds = await getDb();
+    const { projectIdMongoFilter } = await import('../lib/project-resolve');
+    const idFilter = await projectIdMongoFilter(ds, projectId);
     const dateFilter: any = {};
     if (from) dateFilter.$gte = new Date(from);
     if (to) dateFilter.$lte = new Date(to);
-    const match: any = { projectId };
+    const match: any = { ...idFilter };
     if (environment) match.environment = environment;
     if (Object.keys(dateFilter).length) match.timestamp = dateFilter;
 

@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { connectMongo } from '../config/mongoose';
+import { getDb } from '../config/database';
 import { MetricsRawModel } from '../schemas/MetricsRaw';
-import { expressAuthenticate, AuthenticatedRequest } from '../middleware/auth';
+import { expressAuthenticate } from '../middleware/auth';
+import { projectIdMongoFilter } from '../lib/project-resolve';
 
 const router = Router();
 
@@ -9,8 +11,10 @@ router.get('/metrics', expressAuthenticate, async (req: Request, res: Response) 
   try {
     const { projectId } = req.query as Record<string, string>;
     await connectMongo();
-    const filter: Record<string, any> = {};
-    if (projectId) filter.projectId = projectId;
+    const ds = await getDb();
+    const filter: Record<string, any> = projectId
+      ? await projectIdMongoFilter(ds, projectId)
+      : {};
 
     const raw = await MetricsRawModel.find(filter).sort({ timestamp: -1 }).limit(100).lean();
     return res.json(raw);
@@ -23,8 +27,10 @@ router.get('/metrics/aggregated', expressAuthenticate, async (req: Request, res:
   try {
     const { projectId } = req.query as Record<string, string>;
     await connectMongo();
-    const filter: Record<string, any> = {};
-    if (projectId) filter.projectId = projectId;
+    const ds = await getDb();
+    const filter: Record<string, any> = projectId
+      ? await projectIdMongoFilter(ds, projectId)
+      : {};
 
     const raw = await MetricsRawModel.find(filter).sort({ timestamp: -1 }).limit(20).lean();
     if (raw.length === 0) return res.json({ cpuAvg: 0, memoryAvg: 0, errorRate: 0 });
