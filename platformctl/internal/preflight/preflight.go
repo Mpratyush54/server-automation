@@ -82,14 +82,45 @@ func checkDisk(r *Result) {
 }
 
 func checkPorts(r *Result) {
+	// Resume-friendly: ports owned by our own stack (k3s / ingress-nginx) are OK.
 	ports := []int{80, 443, 6443}
 	for _, port := range ports {
 		out, _ := shell.Output("ss", "-tlnp", fmt.Sprintf("sport = :%d", port))
-		if strings.Contains(out, fmt.Sprintf(":%d", port)) {
-			r.Errors = append(r.Errors, fmt.Sprintf("port %d is already in use", port))
-			r.Passed = false
+		if !strings.Contains(out, fmt.Sprintf(":%d", port)) {
+			continue
+		}
+		if portOwnedByPlatform(out, port) {
+			color.Yellow("  · port %d in use by platform stack (ok for resume)", port)
+			continue
+		}
+		r.Errors = append(r.Errors, fmt.Sprintf("port %d is already in use", port))
+		r.Passed = false
+	}
+}
+
+// portOwnedByPlatform returns true when ss output shows k3s, kube-apiserver,
+// or ingress-nginx holding the port (normal on re-provision / resume).
+func portOwnedByPlatform(ssOut string, port int) bool {
+	lower := strings.ToLower(ssOut)
+	owners := []string{
+		"k3s",
+		"kube-apiserver",
+		"kubelet",
+		"nginx",
+		"ingress-nginx",
+		"traefik",
+	}
+	for _, o := range owners {
+		if strings.Contains(lower, o) {
+			return true
 		}
 	}
+	// ss may omit process names without elevated privileges — treat API port as
+	// ours when k3s is already installed (resume after interrupted provision).
+	if port == 6443 && (shell.Exists("k3s") || shell.FileExists("/etc/rancher/k3s/k3s.yaml")) {
+		return true
+	}
+	return false
 }
 
 func checkCmds(r *Result) {

@@ -1,7 +1,7 @@
 configs:
   cm:
     url: "https://{{DOMAIN}}/argocd"
-    # Portal iframes always use /argocd/ — keep path-based on every install.
+    # Portal uses full-page /argocd/ — keep path-based on every install.
     server.basehref: "/argocd"
     server.rootpath: "/argocd"
     oidc.config: |
@@ -20,6 +20,10 @@ configs:
       g, DevOps, role:admin
       g, Tech Lead, role:readonly
       g, Developer, role:readonly
+# ApplicationSet CRD exceeds kubectl client-side annotation limit (262144).
+# We do not use ApplicationSets — disable to avoid broken CRD installs.
+applicationSet:
+  enabled: false
 server:
   insecure: true
   extraArgs:

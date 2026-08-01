@@ -247,8 +247,8 @@ func InstallMinIO(cfg *config.Config) error {
 }
 
 func InstallArgoCD(cfg *config.Config) error {
-	// Always re-apply values so subpath config stays correct for portal iframes.
-	color.Cyan("\n  ■ Installing ArgoCD (path /argocd for portal iframes)...")
+	// Always re-apply values so /argocd subpath stays correct.
+	color.Cyan("\n  ■ Installing ArgoCD (path /argocd)...")
 	tmpFile := "/tmp/argocd-values.yaml"
 	if err := writeTemplatedManifest("argocd-values.yaml", cfg.Domain, tmpFile); err != nil {
 		return err
@@ -256,15 +256,24 @@ func InstallArgoCD(cfg *config.Config) error {
 	defer os.Remove(tmpFile)
 
 	err := shell.RunBash(fmt.Sprintf(`
+		set -euo pipefail
+		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+		helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
+		helm repo update argo >/dev/null 2>&1 || true
+		kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+
+		# CRDs first via server-side apply — avoids
+		# "metadata.annotations: Too long: may not be more than 262144 bytes"
+		# from client-side last-applied-configuration on ApplicationSet CRD.
+		helm show crds argo/argo-cd | kubectl apply --server-side --force-conflicts -f -
+
 		helm upgrade --install argocd argo/argo-cd \
-			--namespace argocd --create-namespace \
+			--namespace argocd \
 			-f %s \
-			--wait --timeout 10m || {
-			kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-			kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-			kubectl wait --for=condition=Available deployment --all -n argocd --timeout=300s || true
-		}
-		# Hard-guarantee subpath settings (portal embeds /argocd/)
+			--skip-crds \
+			--wait --timeout 10m
+
+		# Hard-guarantee subpath settings
 		kubectl -n argocd create configmap argocd-cmd-params-cm \
 		  --from-literal=server.rootpath=/argocd \
 		  --from-literal=server.basehref=/argocd \
@@ -320,19 +329,26 @@ func InstallMonitoring(cfg *config.Config) error {
 }
 
 func InstallOAuthProxy(cfg *config.Config) error {
-	if doneOrSkip("oauth2-proxy", "oauth2-proxy") {
-		return nil
-	}
+	// Always re-apply — cookie-secret length must be exactly 16 or 32 bytes.
 	color.Cyan("\n  ■ Installing oauth2-proxy...")
 	tmpFile := "/tmp/oauth2-values.yaml"
 	if err := writeTemplatedManifest("oauth2-proxy-values.yaml", cfg.Domain, tmpFile); err != nil {
 		color.Yellow("  ⚠ oauth2-proxy values missing — skipping")
 		return nil
 	}
-	// Helm tpl() treats {{...}} as templates — inject a real secret instead.
+	// oauth2-proxy requires cookie secret of exactly 16 or 32 bytes.
 	cookie := cfg.WebhookSecret
 	if len(cookie) < 16 {
 		cookie = cfg.JWTSecret
+	}
+	if len(cookie) < 16 {
+		cookie = "platform-oauth2-cookie" // 22 chars — pad below
+	}
+	for len(cookie) < 16 {
+		cookie += "0"
+	}
+	if len(cookie) > 16 && len(cookie) < 32 {
+		cookie = cookie[:16]
 	}
 	if len(cookie) > 32 {
 		cookie = cookie[:32]
@@ -342,6 +358,10 @@ func InstallOAuthProxy(cfg *config.Config) error {
 	defer os.Remove(tmpFile)
 
 	err := shell.RunBash(fmt.Sprintf(`
+		set -euo pipefail
+		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+		helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests 2>/dev/null || true
+		helm repo update oauth2-proxy >/dev/null 2>&1 || true
 		helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
 			--namespace oauth2-proxy --create-namespace \
 			-f %s \
