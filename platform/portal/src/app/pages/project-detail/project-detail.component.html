@@ -27,9 +27,41 @@
 </div>
 
 <!-- DEPLOYMENTS TAB -->
-<div *ngIf="activeTab === 'deployments'" class="grid-2">
+<div *ngIf="activeTab === 'deployments'">
+  <div class="card" style="margin-bottom:20px;">
+    <h2 style="margin-top:0;">Project Settings — Git & Domain</h2>
+    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;">
+      ArgoCD pulls manifests from this repository. Set a custom domain so environments get routable hosts.
+    </p>
+    <div class="grid-2">
+      <div class="form-group">
+        <label>Git Repository URL</label>
+        <input [(ngModel)]="projectSettings.repositoryUrl" placeholder="https://github.com/org/repo.git" style="width:100%;">
+      </div>
+      <div class="form-group">
+        <label>Custom Domain (base)</label>
+        <input [(ngModel)]="projectSettings.domain" placeholder="mysite.com or 148.113.59.3.sslip.io" style="width:100%;">
+      </div>
+    </div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+      <button class="btn btn-sm btn-primary" (click)="saveProjectSettings()" [disabled]="savingSettings || role === 'developer'">
+        {{ savingSettings ? 'Saving…' : 'Save Settings' }}
+      </button>
+      <span *ngIf="project?.domain" style="font-size:0.8rem;color:var(--color-text-secondary);">
+        Live base: <code>{{ project.domain }}</code>
+      </span>
+    </div>
+  </div>
+
+  <div class="grid-2">
   <div class="card">
     <h2>Trigger Deployment</h2>
+    <p style="color:var(--color-text-secondary);font-size:0.8rem;margin-top:0;">
+      Pulls the Git branch/commit into ArgoCD and syncs Kubernetes manifests from the path below.
+    </p>
+    <div *ngIf="!project?.repositoryUrl && !projectSettings.repositoryUrl" style="margin-bottom:12px;padding:10px 12px;border-radius:8px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#fde047;font-size:0.85rem;">
+      Set a Git repository URL above before deploying.
+    </div>
     <div class="form-group">
       <label>Target Environment</label>
       <select [(ngModel)]="deployDto.environmentId" style="width:100%;">
@@ -42,24 +74,32 @@
     </div>
     <div class="form-group">
       <label>Git Branch</label>
-      <input [(ngModel)]="deployDto.branch" placeholder="feature/CU-842-auth-fix" style="width:100%;">
+      <input [(ngModel)]="deployDto.branch" placeholder="main" style="width:100%;">
     </div>
     <div class="form-group">
-      <label>Commit SHA</label>
-      <input [(ngModel)]="deployDto.commitSha" placeholder="a3f92c1" style="width:100%;">
+      <label>Commit SHA <span style="font-weight:400;color:var(--color-text-secondary);">(optional — leave blank to use branch tip)</span></label>
+      <input [(ngModel)]="deployDto.commitSha" placeholder="optional" style="width:100%;">
     </div>
     <div class="form-group">
-      <label>Docker Image Tag</label>
-      <input [(ngModel)]="deployDto.imageTag" placeholder="v1.0.0" style="width:100%;">
+      <label>Manifests Path in Repo</label>
+      <input [(ngModel)]="deployDto.gitPath" placeholder="k8s" style="width:100%;">
     </div>
-    <div *ngIf="role === 'developer' && deployDto.environmentId === 'production'" style="margin-bottom:15px;color:var(--danger);font-size:0.85rem;font-weight:600;">
-      ⚠️ Developers are not authorized to deploy directly to production.
+    <div class="form-group">
+      <label>Docker Image Tag <span style="font-weight:400;color:var(--color-text-secondary);">(Helm apps only)</span></label>
+      <input [(ngModel)]="deployDto.imageTag" placeholder="latest" style="width:100%;">
     </div>
-    <button class="btn btn-primary" (click)="deploy()" [disabled]="!deployDto.version || (role === 'developer' && deployDto.environmentId === 'production')" style="width:100%;">Deploy Service</button>
+    <button class="btn btn-primary" (click)="deploy()"
+      [disabled]="deployInProgress || !deployDto.version || !deployDto.environmentId || (!project?.repositoryUrl && !projectSettings.repositoryUrl)"
+      style="width:100%;">
+      {{ deployInProgress ? 'Pulling from Git…' : 'Pull from Git & Deploy' }}
+    </button>
   </div>
 
   <div class="card" style="flex:2;">
-    <h2>Deployment History</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <h2 style="margin:0;">Deployment History</h2>
+      <button class="btn btn-sm" (click)="loadDeployments()">Refresh</button>
+    </div>
     <div style="overflow-x:auto;">
       <table>
         <thead>
@@ -80,29 +120,34 @@
             <td>
               <div style="font-family:monospace;font-size:0.85rem;">{{ dep.branch }}</div>
               <div style="font-size:0.75rem;color:var(--color-text-secondary);font-family:monospace;">SHA: {{ dep.commitSha }}</div>
+              <div *ngIf="dep.metadata?.gitPath" style="font-size:0.7rem;color:var(--color-text-muted);">path: {{ dep.metadata.gitPath }}</div>
             </td>
             <td>
               <span class="badge" 
                 [class.badge-active]="dep.status === 'deployed' || dep.status === 'active'"
-                [class.badge-pending]="dep.status === 'pending' || dep.status === 'deploying'"
+                [class.badge-pending]="dep.status === 'pending' || dep.status === 'deploying' || dep.status === 'building'"
                 [class.badge-failed]="dep.status === 'failed'">
                 {{ dep.status }}
               </span>
+              <div *ngIf="dep.status === 'failed' && dep.metadata?.error" style="font-size:0.7rem;color:#ef4444;margin-top:4px;max-width:220px;">
+                {{ dep.metadata.error }}
+              </div>
             </td>
             <td>{{ dep.deployedAt || dep.createdAt | date:'short' }}</td>
             <td>
               <div style="display:flex;gap:4px;">
                 <button class="btn btn-sm btn-danger" *ngIf="role !== 'developer'" (click)="rollback(dep.id)">Rollback</button>
-                <button class="btn btn-sm" *ngIf="role === 'devops'" (click)="restartDeploy(dep.id)">Restart</button>
+                <button class="btn btn-sm" *ngIf="role === 'devops' || role === 'admin'" (click)="restartDeploy(dep.id)">Restart</button>
               </div>
             </td>
           </tr>
           <tr *ngIf="deployments.length === 0">
-            <td colspan="5" style="text-align:center;color:var(--color-text-muted);">No deployment history found</td>
+            <td colspan="5" style="text-align:center;color:var(--color-text-muted);">No deployment history yet. Pull from Git & Deploy to create the first record.</td>
           </tr>
         </tbody>
       </table>
     </div>
+  </div>
   </div>
 </div>
 
@@ -209,7 +254,9 @@
           </tr>
           <tr *ngIf="apiMetrics.length === 0">
             <td colspan="10" style="text-align:center;color:var(--color-text-muted);padding:40px;">
-              No API metrics yet. Install SDK and call <code style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:4px;">platform.expressMiddleware()</code>
+              No API latency history yet. In your service, init the SDK and call
+              <code style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:4px;">app.use(platform.expressMiddleware())</code>,
+              then hit a few routes — this table refreshes every few seconds.
             </td>
           </tr>
         </tbody>
@@ -475,7 +522,10 @@ platform.captureConsole(); // forward all console.*</pre>
       </div>
       <div style="margin-top:14px;">
         <div style="font-size:0.75rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;letter-spacing:0.05em;">Routing Domain</div>
-        <div style="font-family:monospace;font-size:0.9rem;margin-top:4px;"><a href="http://{{ env.domain }}" target="_blank">{{ env.domain }}</a></div>
+        <div style="font-family:monospace;font-size:0.9rem;margin-top:4px;"><a href="https://{{ env.domain }}" target="_blank">{{ env.domain }}</a></div>
+      </div>
+      <div *ngIf="project?.domain" style="margin-top:10px;font-size:0.75rem;color:var(--color-text-muted);">
+        Project base domain: {{ project.domain }}
       </div>
       <div *ngIf="env.name === 'preview'" style="margin-top:14px;border-top:1px solid var(--border-glass);padding-top:10px;display:flex;justify-content:space-between;align-items:center;">
         <span style="font-size:0.8rem;color:var(--danger);font-weight:600;">⌛ Expiry: 71h 59m</span>
@@ -628,7 +678,7 @@ platform.captureConsole(); // forward all console.*</pre>
         <div class="card text-center" style="margin:0; padding:12px 20px; width:220px; border-color:rgba(255,255,255,0.08); background:rgba(0,0,0,0.3);">
           <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:700;">Git Repository</div>
           <div style="font-family:monospace; font-size:0.85rem; font-weight:600; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:4px;">
-            {{ project?.name }}
+            {{ project?.repositoryUrl || project?.name }}
           </div>
           <div style="font-size:0.75rem; color:var(--primary); font-family:monospace; margin-top:2px;">
             {{ project?.deployments[0]?.branch || 'main' }}

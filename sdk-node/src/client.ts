@@ -90,9 +90,6 @@ export class PlatformClient {
       this.options.hostname
     );
 
-    // Configure metrics tracker
-    this.metrics.configure(this.http, this.options.projectName, this.options.environmentName!);
-
     this.configClient.configure(this.options.projectName, this.options.environmentName!);
     this.storage.configure(this.options.projectName);
 
@@ -120,6 +117,10 @@ export class PlatformClient {
     } catch (err: any) {
       console.error('[platform] Registration failed (non-blocking):', err.message);
     }
+
+    // Prefer UUID from register so portal API-latency queries match stored metrics
+    const metricsProjectId = registrationData?.projectId || this.options.projectName;
+    this.metrics.configure(this.http, metricsProjectId, this.options.environmentName!);
 
     // Load configs from API
     await this.configClient.loadAll();

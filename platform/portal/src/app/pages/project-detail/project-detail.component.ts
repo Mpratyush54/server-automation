@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { ApiService } from '../../services/api.service';
+import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-project-detail',
@@ -51,7 +52,10 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   backupInProgress = false;
 
   // Form DTOs
-  deployDto = { version: '1.0.0', branch: 'feature/CU-123-auth', environmentId: '', commitSha: 'a3f92c1', imageTag: 'v1.0.0' };
+  deployDto = { version: '1.0.0', branch: 'main', environmentId: '', commitSha: '', imageTag: 'latest', gitPath: 'k8s' };
+  deployInProgress = false;
+  projectSettings = { repositoryUrl: '', domain: '' };
+  savingSettings = false;
   newConfig = { key: '', value: '', environmentId: '', isSecret: false };
   newFileCategoryRoute = { category: '', provider: 'local' };
   searchLogQuery = { level: '', search: '' };
@@ -73,13 +77,10 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   // Timer for logs & heartbeats refresh
   private refreshTimer?: any;
 
-  constructor(private route: ActivatedRoute, private api: ApiService) {}
+  constructor(private route: ActivatedRoute, private api: ApiService, private auth: AuthService) {}
 
   async ngOnInit() {
-    const token = localStorage.getItem('plat_auth_token') || '33333333-3333-3333-3333-333333333333';
-    if (token === '11111111-1111-1111-1111-111111111111') this.role = 'developer';
-    else if (token === '22222222-2222-2222-2222-222222222222') this.role = 'tech_lead';
-    else this.role = 'devops';
+    this.role = (this.auth.getRole() || 'developer').toLowerCase();
 
     await this.fetchData();
     this.refreshTimer = setInterval(() => this.pollData(), 5000);
@@ -97,6 +98,10 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
       if (this.project?.environments?.length) {
         this.deployDto.environmentId = this.project.environments[0].id;
       }
+      this.projectSettings = {
+        repositoryUrl: this.project?.repositoryUrl || '',
+        domain: this.project?.domain || '',
+      };
     } catch { this.project = null; }
 
     await this.loadDeployments();
@@ -112,6 +117,9 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   }
 
   async pollData() {
+    if (this.activeTab === 'deployments' || this.hasInFlightDeploy()) {
+      await this.loadDeployments();
+    }
     if (this.activeTab === 'logs') await this.loadLogs();
     if (this.activeTab === 'metrics') await this.loadMetrics();
     if (this.activeTab === 'api-metrics') await this.loadApiMetrics();
@@ -120,6 +128,32 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     if (this.activeTab === 'gitops') {
       await this.loadK8sPods();
       await this.loadArgoStatus();
+    }
+  }
+
+  hasInFlightDeploy(): boolean {
+    return this.deployments.some((d) =>
+      ['pending', 'building', 'deploying'].includes(String(d.status || '').toLowerCase())
+    );
+  }
+
+  async saveProjectSettings() {
+    if (!this.project) return;
+    this.savingSettings = true;
+    try {
+      this.project = await firstValueFrom(this.api.updateProject(this.project.id, {
+        repositoryUrl: this.projectSettings.repositoryUrl || null,
+        domain: this.projectSettings.domain || null,
+      }));
+      this.projectSettings = {
+        repositoryUrl: this.project?.repositoryUrl || '',
+        domain: this.project?.domain || '',
+      };
+      alert('Project settings saved.');
+    } catch (err: any) {
+      alert('Failed to save settings: ' + (err.error?.error || err.message));
+    } finally {
+      this.savingSettings = false;
     }
   }
 
@@ -174,20 +208,37 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   }
 
   async deploy() {
+    if (!this.project?.repositoryUrl && !this.projectSettings.repositoryUrl) {
+      alert('Set a Git repository URL on this project first (Project Settings below), then Pull from Git & Deploy.');
+      return;
+    }
+    if (!this.project.repositoryUrl && this.projectSettings.repositoryUrl) {
+      await this.saveProjectSettings();
+    }
+    const selectedEnv = this.project?.environments?.find((e: any) => e.id === this.deployDto.environmentId);
+    if (this.role === 'developer' && selectedEnv?.name === 'production') {
+      alert('Developers are not authorized to deploy directly to production.');
+      return;
+    }
+    this.deployInProgress = true;
     try {
       const payload = {
         projectId: this.project.id,
         environmentId: this.deployDto.environmentId,
         version: this.deployDto.version,
-        branch: this.deployDto.branch,
-        commitSha: this.deployDto.commitSha,
-        imageTag: this.deployDto.imageTag
+        branch: this.deployDto.branch || 'main',
+        commitSha: this.deployDto.commitSha || undefined,
+        imageTag: this.deployDto.imageTag || 'latest',
+        gitPath: this.deployDto.gitPath || 'k8s',
+        pullFromGit: true,
       };
       await firstValueFrom(this.api.deploy(payload));
       await this.loadDeployments();
-      this.deployDto.version = '1.0.0';
+      this.activeTab = 'deployments';
     } catch (err: any) {
       alert('Deploy failed: ' + (err.error?.error || err.message));
+    } finally {
+      this.deployInProgress = false;
     }
   }
 
@@ -488,6 +539,14 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
 
   switchTab(tab: string) {
     this.activeTab = tab;
+    if (tab === 'api-metrics') this.loadApiMetrics();
+    if (tab === 'metrics') this.loadMetrics();
+    if (tab === 'deployments') this.loadDeployments();
+    if (tab === 'logs') this.loadLogs();
+    if (tab === 'gitops') {
+      this.loadK8sPods();
+      this.loadArgoStatus();
+    }
   }
 
   formatBytes(bytes: number): string {

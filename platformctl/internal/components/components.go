@@ -120,6 +120,9 @@ func InstallIngressNginx(cfg *config.Config) error {
 	color.Cyan("\n  ■ Installing ingress-nginx...")
 	// allowSnippetAnnotations is required so portal iframes can hide
 	// X-Frame-Options / CSP from ArgoCD/Grafana/Portainer backends.
+	// Disable HSTS includeSubDomains so project hosts like
+	// {app}.{ip}.sslip.io are not force-HTTPS'd with the default fake cert
+	// before their own Let's Encrypt Ingress exists.
 	err := shell.RunBash(`
 		helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
 			--namespace ingress-nginx --create-namespace \
@@ -127,6 +130,9 @@ func InstallIngressNginx(cfg *config.Config) error {
 			--set controller.publishService.enabled=true \
 			--set controller.allowSnippetAnnotations=true \
 			--set controller.config.annotations-risk-level=Critical \
+			--set controller.config.hsts=true \
+			--set controller.config.hsts-include-subdomains=false \
+			--set controller.config.hsts-max-age=31536000 \
 			--wait --timeout 10m
 	`)
 	if err != nil {
@@ -1339,6 +1345,8 @@ func UpdateImages(cfg *config.Config) error {
 		kubectl set image -n platform deploy/platform-portal portal=%s
 		kubectl patch deploy platform-api -n platform -p '{"spec":{"template":{"spec":{"containers":[{"name":"api","imagePullPolicy":"Always"}]}}}}' || true
 		kubectl patch deploy platform-portal -n platform -p '{"spec":{"template":{"spec":{"containers":[{"name":"portal","imagePullPolicy":"Always"}]}}}}' || true
+		# Force new pods even when the tag string (e.g. :latest) did not change
+		kubectl rollout restart -n platform deploy/platform-api deploy/platform-portal
 		kubectl rollout status -n platform deploy/platform-api --timeout=300s
 		kubectl rollout status -n platform deploy/platform-portal --timeout=180s
 	`, apiImg, portalImg))
@@ -1452,6 +1460,12 @@ spec:
                   test -n "\$API" && test -n "\$PORTAL"
                   kubectl set image -n platform deploy/platform-api api="\$API"
                   kubectl set image -n platform deploy/platform-portal portal="\$PORTAL"
+                  # :latest tag string often unchanged after GHCR push — force pull new digests
+                  kubectl patch deploy platform-api -n platform --type=merge -p '{"spec":{"template":{"spec":{"containers":[{"name":"api","imagePullPolicy":"Always"}]}}}}' || true
+                  kubectl patch deploy platform-portal -n platform --type=merge -p '{"spec":{"template":{"spec":{"containers":[{"name":"portal","imagePullPolicy":"Always"}]}}}}' || true
+                  kubectl rollout restart -n platform deploy/platform-api deploy/platform-portal
+                  kubectl rollout status -n platform deploy/platform-api --timeout=180s || true
+                  kubectl rollout status -n platform deploy/platform-portal --timeout=180s || true
                   echo "auto-update applied \$API \$PORTAL"
 EOF
 
