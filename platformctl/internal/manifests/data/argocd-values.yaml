@@ -20,9 +20,12 @@ configs:
       g, DevOps, role:admin
       g, Tech Lead, role:readonly
       g, Developer, role:readonly
-# ApplicationSet CRD exceeds kubectl client-side annotation limit (262144).
-# We do not use ApplicationSets — disable to avoid broken CRD installs.
+# Slim install: ApplicationSet CRD is huge; notifications/dex unused with Platform OIDC.
 applicationSet:
+  enabled: false
+notifications:
+  enabled: false
+dex:
   enabled: false
 server:
   insecure: true
