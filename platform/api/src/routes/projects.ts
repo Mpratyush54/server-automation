@@ -3,9 +3,20 @@ import { getDb } from '../config/database';
 import { Project, StackType } from '../entities/Project';
 import { Environment, EnvironmentName } from '../entities/Environment';
 import { SdkCredential } from '../entities/SdkCredential';
+import { User } from '../entities/User';
+import { ProjectMember, ProjectAccessRole } from '../entities/ProjectMember';
 import { expressAuthenticate, expressRequireRole, logAudit, AuthenticatedRequest } from '../middleware/auth';
 import { UserRole } from '../entities/User';
 import { argoAppName } from '../lib/k8s';
+import { fetchRepoBranches, fetchBranchCommits, fetchRepoReleases } from '../lib/git-remote';
+import { assignedNamespace, assignedEnvHost } from '../lib/project-namespace';
+import {
+  listAccessibleProjectIds,
+  ensureProjectOwner,
+  requireProjectAccess,
+  isGlobalProjectAdmin,
+} from '../lib/project-access';
+import { In } from 'typeorm';
 import * as k8s from '@kubernetes/client-node';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -14,9 +25,17 @@ const router = Router();
 router.get('/projects', expressAuthenticate, async (req: Request, res: Response) => {
   try {
     const ds = await getDb();
-    const projects = await ds.getRepository(Project).find({
-      relations: ['environments', 'deployments'],
-    });
+    const user = (req as AuthenticatedRequest).user!;
+    const ids = await listAccessibleProjectIds(user);
+    const repo = ds.getRepository(Project);
+    const projects = ids === null
+      ? await repo.find({ relations: ['environments', 'deployments'] })
+      : ids.length === 0
+        ? []
+        : await repo.find({
+            where: { id: In(ids) },
+            relations: ['environments', 'deployments'],
+          });
     return res.json(projects);
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
@@ -27,6 +46,7 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
   try {
     const body = req.body;
     const ds = await getDb();
+    const userId = (req as AuthenticatedRequest).user?.id;
 
     const project = ds.getRepository(Project).create({
       name: body.name,
@@ -35,36 +55,29 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
       repositoryUrl: body.repositoryUrl,
       domain: body.domain,
       clickupListId: body.clickupListId,
-      createdById: (req as AuthenticatedRequest).user?.id,
+      createdById: userId,
     });
     const saved = await ds.getRepository(Project).save(project);
-    const projectSlug = saved.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
+    const baseDomain = body.domain || process.env.DOMAIN || 'example.com';
 
-    // Create Environments: development, staging, production
     const envRepo = ds.getRepository(Environment);
-    const envNames = [EnvironmentName.STAGING, EnvironmentName.PRODUCTION];
-    
-    // Also include development environment dynamically
-    const devEnv = envRepo.create({
-      name: 'development' as any,
-      namespace: `${projectSlug}-development`,
-      domain: body.domain ? `${projectSlug}-development.${body.domain}` : `${projectSlug}-development.example.com`,
-      projectId: saved.id,
-    });
-    await envRepo.save(devEnv);
-
+    const envNames = ['development', EnvironmentName.STAGING, EnvironmentName.PRODUCTION];
     for (const name of envNames) {
       const env = envRepo.create({
-        name,
-        namespace: `${projectSlug}-${name}`,
-        domain: body.domain ? `${projectSlug}-${name}.${body.domain}` : `${projectSlug}-${name}.example.com`,
+        name: name as any,
+        namespace: assignedNamespace(saved.name, name),
+        domain: assignedEnvHost(saved.name, name, baseDomain),
         projectId: saved.id,
       });
       await envRepo.save(env);
     }
 
+    if (userId) {
+      await ensureProjectOwner(saved.id, userId);
+    }
+
     await logAudit({
-      userId: (req as AuthenticatedRequest).user?.id,
+      userId,
       action: 'project.created',
       targetType: 'Project',
       targetId: saved.id,
@@ -83,6 +96,9 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
 
 router.get('/projects/:id', expressAuthenticate, async (req: Request, res: Response) => {
   try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.id, ProjectAccessRole.VIEWER);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
+
     const ds = await getDb();
     const project = await ds.getRepository(Project).findOne({
       where: { id: req.params.id },
@@ -97,9 +113,25 @@ router.get('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
   }
 });
 
-router.put('/projects/:id', expressAuthenticate, expressRequireRole([UserRole.ADMIN, UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
+router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Response) => {
   try {
+    const user = (req as AuthenticatedRequest).user;
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.id, ProjectAccessRole.DEVOPS);
+    const allowedByPlatform =
+      !!user &&
+      (isGlobalProjectAdmin(user) || user.role === UserRole.TECH_LEAD);
+    if (!access.ok && !allowedByPlatform) {
+      const denied = access as { ok: false; status: number; error: string };
+      return res.status(denied.status).json({ error: denied.error });
+    }
+
     const body = req.body;
+    if (body.namespace || body.environments?.some?.((e: any) => e.namespace)) {
+      return res.status(400).json({
+        error: 'Namespaces are assigned by the server and cannot be changed',
+      });
+    }
+
     const ds = await getDb();
     const repo = ds.getRepository(Project);
 
@@ -119,11 +151,12 @@ router.put('/projects/:id', expressAuthenticate, expressRequireRole([UserRole.AD
     const updated = await repo.save(project);
 
     if (domainChanged && updated.domain) {
-      const projectSlug = updated.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
       const envRepo = ds.getRepository(Environment);
       const envs = await envRepo.find({ where: { projectId: updated.id } });
       for (const env of envs) {
-        env.domain = `${projectSlug}-${env.name}.${updated.domain}`;
+        // Re-assert server namespace + host (never accept client namespace)
+        env.namespace = assignedNamespace(updated.name, env.name);
+        env.domain = assignedEnvHost(updated.name, env.name, updated.domain);
         await envRepo.save(env);
       }
     }
@@ -306,6 +339,243 @@ router.get('/projects/:projectId/argocd-status', expressAuthenticate, async (req
         healthStatus: 'Unknown'
       });
     }
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+/** List branches (+ tip SHAs) from the project's GitHub/GitLab repository. */
+router.get('/projects/:projectId/git/branches', expressAuthenticate, async (req: Request, res: Response) => {
+  try {
+    const ds = await getDb();
+    const project = await ds.getRepository(Project).findOne({ where: { id: req.params.projectId } });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    if (!project.repositoryUrl) {
+      return res.status(400).json({ error: 'Project has no repositoryUrl — set a GitHub/GitLab URL first' });
+    }
+    const data = await fetchRepoBranches(project.repositoryUrl);
+    return res.json({
+      repositoryUrl: project.repositoryUrl,
+      ...data,
+    });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+/** List recent commits for a branch from the project's Git repository. */
+router.get('/projects/:projectId/git/commits', expressAuthenticate, async (req: Request, res: Response) => {
+  try {
+    const ds = await getDb();
+    const project = await ds.getRepository(Project).findOne({ where: { id: req.params.projectId } });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    if (!project.repositoryUrl) {
+      return res.status(400).json({ error: 'Project has no repositoryUrl — set a GitHub/GitLab URL first' });
+    }
+    const branch = String(req.query.branch || 'main');
+    const limit = Math.min(parseInt(String(req.query.limit || '20'), 10) || 20, 50);
+    const commits = await fetchBranchCommits(project.repositoryUrl, branch, limit);
+    return res.json({
+      repositoryUrl: project.repositoryUrl,
+      branch,
+      commits,
+    });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+/** List GitHub/GitLab releases so the UI can offer one-click update. */
+router.get('/projects/:projectId/git/releases', expressAuthenticate, async (req: Request, res: Response) => {
+  try {
+    const ds = await getDb();
+    const project = await ds.getRepository(Project).findOne({
+      where: { id: req.params.projectId },
+      relations: ['deployments'],
+    });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    if (!project.repositoryUrl) {
+      return res.status(400).json({ error: 'Project has no repositoryUrl — set a GitHub/GitLab URL first' });
+    }
+    const limit = Math.min(parseInt(String(req.query.limit || '10'), 10) || 10, 30);
+    const releases = await fetchRepoReleases(project.repositoryUrl, limit);
+    const latestDeployed = (project.deployments || [])
+      .slice()
+      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .find((d: any) => ['deployed', 'active'].includes(String(d.status)));
+    const currentVersion = latestDeployed?.version || latestDeployed?.imageTag || null;
+    const currentTag = latestDeployed?.imageTag || latestDeployed?.version || null;
+    const latestRelease = releases.find((r) => !r.prerelease) || releases[0] || null;
+    const updateAvailable = !!(
+      latestRelease &&
+      currentTag &&
+      latestRelease.tag !== currentTag &&
+      latestRelease.tag !== `v${currentTag}` &&
+      latestRelease.tag.replace(/^v/, '') !== String(currentTag).replace(/^v/, '')
+    );
+
+    return res.json({
+      repositoryUrl: project.repositoryUrl,
+      currentVersion,
+      currentTag,
+      updateAvailable,
+      latestRelease,
+      releases,
+    });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+// ─── Project-level access (members) ─────────────────────────────────────────
+
+router.get('/projects/:id/members', expressAuthenticate, async (req: Request, res: Response) => {
+  try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.id, ProjectAccessRole.VIEWER);
+    if (access.ok === false && !isGlobalProjectAdmin((req as AuthenticatedRequest).user)) {
+      return res.status(access.status).json({ error: access.error });
+    }
+    const ds = await getDb();
+    const members = await ds.getRepository(ProjectMember).find({
+      where: { projectId: req.params.id },
+      order: { createdAt: 'ASC' as any },
+    });
+    const users = members.length
+      ? await ds.getRepository(User).find({ where: { id: In(members.map((m) => m.userId)) } })
+      : [];
+    const byId = new Map(users.map((u) => [u.id, u]));
+    return res.json(members.map((m) => {
+      const u = byId.get(m.userId);
+      return {
+        id: m.id,
+        projectId: m.projectId,
+        userId: m.userId,
+        role: m.role,
+        grantedById: m.grantedById,
+        createdAt: m.createdAt,
+        user: u
+          ? { id: u.id, name: u.name, email: u.email, username: u.username, platformRole: u.role }
+          : null,
+      };
+    }));
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/projects/:id/members', expressAuthenticate, async (req: Request, res: Response) => {
+  try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.id, ProjectAccessRole.OWNER);
+    const user = (req as AuthenticatedRequest).user;
+    if (access.ok === false && !isGlobalProjectAdmin(user)) {
+      return res.status(access.status).json({
+        error: access.error || 'Forbidden: only project owners (or platform admin/devops) can grant access',
+      });
+    }
+
+    const { userId, email, role } = req.body || {};
+    const accessRole = (role as ProjectAccessRole) || ProjectAccessRole.VIEWER;
+    if (!Object.values(ProjectAccessRole).includes(accessRole)) {
+      return res.status(400).json({ error: `Invalid role. Allowed: ${Object.values(ProjectAccessRole).join(', ')}` });
+    }
+
+    const ds = await getDb();
+    const userRepo = ds.getRepository(User);
+    let target = userId ? await userRepo.findOne({ where: { id: userId } }) : null;
+    if (!target && email) {
+      target = await userRepo.findOne({ where: { email } });
+    }
+    if (!target) {
+      return res.status(404).json({ error: 'User not found — create the user first, then grant project access' });
+    }
+
+    const memberRepo = ds.getRepository(ProjectMember);
+    let member = await memberRepo.findOne({ where: { projectId: req.params.id, userId: target.id } });
+    if (member) {
+      member.role = accessRole;
+      member.grantedById = user?.id || null;
+      member = await memberRepo.save(member);
+    } else {
+      member = await memberRepo.save(memberRepo.create({
+        projectId: req.params.id,
+        userId: target.id,
+        role: accessRole,
+        grantedById: user?.id || null,
+      }));
+    }
+
+    await logAudit({
+      userId: user?.id,
+      action: 'project.member.granted',
+      targetType: 'Project',
+      targetId: req.params.id,
+      metadata: { memberUserId: target.id, role: accessRole },
+      ip: req.ip,
+    });
+
+    return res.status(201).json({
+      id: member.id,
+      projectId: member.projectId,
+      userId: member.userId,
+      role: member.role,
+      user: { id: target.id, name: target.name, email: target.email, username: target.username },
+    });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/projects/:id/members/:memberId', expressAuthenticate, async (req: Request, res: Response) => {
+  try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.id, ProjectAccessRole.OWNER);
+    const user = (req as AuthenticatedRequest).user;
+    if (access.ok === false && !isGlobalProjectAdmin(user)) {
+      return res.status(access.status).json({ error: access.error });
+    }
+    const { role } = req.body || {};
+    if (!Object.values(ProjectAccessRole).includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Allowed: ${Object.values(ProjectAccessRole).join(', ')}` });
+    }
+    const ds = await getDb();
+    const memberRepo = ds.getRepository(ProjectMember);
+    const member = await memberRepo.findOne({ where: { id: req.params.memberId, projectId: req.params.id } });
+    if (!member) return res.status(404).json({ error: 'Membership not found' });
+    member.role = role;
+    member.grantedById = user?.id || null;
+    await memberRepo.save(member);
+    return res.json(member);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/projects/:id/members/:memberId', expressAuthenticate, async (req: Request, res: Response) => {
+  try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.id, ProjectAccessRole.OWNER);
+    const user = (req as AuthenticatedRequest).user;
+    if (access.ok === false && !isGlobalProjectAdmin(user)) {
+      return res.status(access.status).json({ error: access.error });
+    }
+    const ds = await getDb();
+    const memberRepo = ds.getRepository(ProjectMember);
+    const member = await memberRepo.findOne({ where: { id: req.params.memberId, projectId: req.params.id } });
+    if (!member) return res.status(404).json({ error: 'Membership not found' });
+    if (member.role === ProjectAccessRole.OWNER) {
+      const owners = await memberRepo.count({ where: { projectId: req.params.id, role: ProjectAccessRole.OWNER } });
+      if (owners <= 1) {
+        return res.status(400).json({ error: 'Cannot remove the last project owner' });
+      }
+    }
+    await memberRepo.remove(member);
+    await logAudit({
+      userId: user?.id,
+      action: 'project.member.revoked',
+      targetType: 'Project',
+      targetId: req.params.id,
+      metadata: { memberUserId: member.userId },
+      ip: req.ip,
+    });
+    return res.json({ success: true });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }

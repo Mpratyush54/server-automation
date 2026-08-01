@@ -7,7 +7,7 @@ Platform was originally branded as **Caps**. This guide helps you migrate from t
 | Old Package | New Package |
 |---|---|
 | `@caps/sdk-node` | `@mpratyush54/sdk-node` |
-| `@caps/sdk-python` | `platform-sdk-python` |
+| `@caps/sdk-python` / `mpratyush54-sdk` | `mpratyush54-sdk` |
 | `@caps/sdk-react` | `@mpratyush54/sdk-react` |
 | `@caps/sdk-angular` | `@mpratyush54/sdk-angular` |
 

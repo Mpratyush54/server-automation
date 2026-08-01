@@ -19,12 +19,13 @@ export interface PlatformOptions {
   version?: string;
   branch?: string;
   commitSha?: string;
+  /** Ignored — K8s namespace is always assigned by the platform server */
   namespace?: string;
   hostname?: string;
   infisicalEnv?: string;
   databases?: string[];
   sdkToken?: string;
-  /** GitHub/GitLab repo URL — SDK register wires ArgoCD to sync this repo */
+  /** GitHub/GitLab repo URL — must match the project repositoryUrl on the server */
   repositoryUrl?: string;
   /** Path inside the repo for manifests (default: examples/sdk-demo/k8s) */
   gitPath?: string;
@@ -34,6 +35,9 @@ export interface PlatformOptions {
   domain?: string;
   /** When true (default if repositoryUrl set), skip phantom :latest Deployment */
   gitops?: boolean;
+  /** K8s Service name for ingress (default: projectName) */
+  serviceName?: string;
+  servicePort?: number;
 }
 
 
@@ -99,7 +103,7 @@ export class PlatformClient {
       registrationData = await this.registration.register({
         projectName: this.options.projectName,
         environmentName: this.options.environmentName!,
-        serviceName: this.options.projectName,
+        serviceName: this.options.serviceName || this.options.projectName,
         version: this.options.version!,
         branch: this.options.branch,
         commitSha: this.options.commitSha,
@@ -113,6 +117,7 @@ export class PlatformClient {
         gitRevision: this.options.gitRevision || this.options.branch,
         domain: this.options.domain,
         gitops: this.options.gitops,
+        servicePort: this.options.servicePort,
       });
     } catch (err: any) {
       console.error('[platform] Registration failed (non-blocking):', err.message);
@@ -189,10 +194,14 @@ export class PlatformClient {
       } catch {}
     }, 10000);
 
-    // Setup DB manager pools
+    // Setup DB manager pools (ensure/init via platform if missing)
     if (this.options.databases!.includes('postgres')) {
       try {
-        const creds = await this.registration.getDbCredentials(this.options.projectName, ['postgres']);
+        const creds = await this.registration.getDbCredentials(
+          this.options.projectName,
+          ['postgres'],
+          this.options.environmentName,
+        );
         this.db.postgres = new PostgresManager(creds.postgres || {});
         await this.db.postgres.connect();
       } catch { this.db.postgres = new PostgresManager({}); }
@@ -200,7 +209,11 @@ export class PlatformClient {
 
     if (this.options.databases!.includes('mongo')) {
       try {
-        const creds = await this.registration.getDbCredentials(this.options.projectName, ['mongo']);
+        const creds = await this.registration.getDbCredentials(
+          this.options.projectName,
+          ['mongo'],
+          this.options.environmentName,
+        );
         this.db.mongo = new MongoManager(creds.mongo || {});
         await this.db.mongo.connect();
       } catch { this.db.mongo = new MongoManager({}); }
@@ -208,7 +221,11 @@ export class PlatformClient {
 
     if (this.options.databases!.includes('redis')) {
       try {
-        const creds = await this.registration.getDbCredentials(this.options.projectName, ['redis']);
+        const creds = await this.registration.getDbCredentials(
+          this.options.projectName,
+          ['redis'],
+          this.options.environmentName,
+        );
         this.db.redis = new RedisManager(creds.redis || {});
         await this.db.redis.connect();
       } catch { this.db.redis = new RedisManager({}); }

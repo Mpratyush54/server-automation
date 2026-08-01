@@ -51,13 +51,23 @@ export class AuthService {
     return this.getRole() === 'devops';
   }
 
+  isAdmin(): boolean {
+    return this.getRole() === 'admin';
+  }
+
+  /** Admin or DevOps can manage users / infra settings */
+  canManageUsers(): boolean {
+    const role = this.getRole();
+    return role === 'admin' || role === 'devops';
+  }
+
   isTechLead(): boolean {
     return this.getRole() === 'tech_lead';
   }
 
   isTechLeadOrDevOps(): boolean {
     const role = this.getRole();
-    return role === 'tech_lead' || role === 'devops';
+    return role === 'tech_lead' || role === 'devops' || role === 'admin';
   }
 
   decodeToken(token: string): any {

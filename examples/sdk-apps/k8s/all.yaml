@@ -1,0 +1,257 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sdk-demo-apps-development
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: platform-sdk-token
+  namespace: sdk-demo-apps-development
+type: Opaque
+stringData:
+  # Replaced at deploy time by bootstrap script if empty
+  PLATFORM_SDK_TOKEN: "REPLACE_ME"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sdk-node-api
+  namespace: sdk-demo-apps-development
+  labels:
+    app: sdk-node-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sdk-node-api
+  template:
+    metadata:
+      labels:
+        app: sdk-node-api
+    spec:
+      containers:
+        - name: api
+          image: sdk-node-api:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 4100
+              name: http
+          env:
+            - name: PORT
+              value: "4100"
+            - name: PLATFORM_URL
+              value: "https://api.148.113.59.3.sslip.io"
+            - name: PROJECT_NAME
+              value: "sdk-demo-apps"
+            - name: ENVIRONMENT_NAME
+              value: "development"
+            - name: PROJECT_DOMAIN
+              value: "148.113.59.3.sslip.io"
+            - name: REPOSITORY_URL
+              value: "https://github.com/Mpratyush54/SERVER-automation.git"
+            - name: GIT_PATH
+              value: "examples/sdk-apps/k8s"
+            - name: NODE_TLS_REJECT_UNAUTHORIZED
+              value: "0"
+            - name: PLATFORM_SDK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: platform-sdk-token
+                  key: PLATFORM_SDK_TOKEN
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4100
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sdk-node-api
+  namespace: sdk-demo-apps-development
+spec:
+  selector:
+    app: sdk-node-api
+  ports:
+    - port: 80
+      targetPort: 4100
+      name: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sdk-react-web
+  namespace: sdk-demo-apps-development
+  labels:
+    app: sdk-react-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sdk-react-web
+  template:
+    metadata:
+      labels:
+        app: sdk-react-web
+    spec:
+      containers:
+        - name: web
+          image: sdk-react-web:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sdk-react-web
+  namespace: sdk-demo-apps-development
+spec:
+  selector:
+    app: sdk-react-web
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sdk-angular-web
+  namespace: sdk-demo-apps-development
+  labels:
+    app: sdk-angular-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sdk-angular-web
+  template:
+    metadata:
+      labels:
+        app: sdk-angular-web
+    spec:
+      containers:
+        - name: web
+          image: sdk-angular-web:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: API_BASE
+              value: "https://sdk-demo-apps-development.148.113.59.3.sslip.io"
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sdk-angular-web
+  namespace: sdk-demo-apps-development
+spec:
+  selector:
+    app: sdk-angular-web
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sdk-node-api
+  namespace: sdk-demo-apps-development
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - sdk-demo-apps-development.148.113.59.3.sslip.io
+      secretName: sdk-node-api-tls
+  rules:
+    - host: sdk-demo-apps-development.148.113.59.3.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sdk-node-api
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sdk-react-web
+  namespace: sdk-demo-apps-development
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - sdk-react.148.113.59.3.sslip.io
+      secretName: sdk-react-web-tls
+  rules:
+    - host: sdk-react.148.113.59.3.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sdk-react-web
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sdk-angular-web
+  namespace: sdk-demo-apps-development
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - sdk-angular.148.113.59.3.sslip.io
+      secretName: sdk-angular-web-tls
+  rules:
+    - host: sdk-angular.148.113.59.3.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sdk-angular-web
+                port:
+                  number: 80

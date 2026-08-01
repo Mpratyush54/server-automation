@@ -21,6 +21,7 @@
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'secrets'" (click)="switchTab('secrets')" *ngIf="role === 'devops' || role === 'tech_lead' || role === 'admin'">🔐 Secrets</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'storage'" (click)="switchTab('storage')">📁 Storage</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'environments'" (click)="switchTab('environments')">🌐 Environments</button>
+  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'access'" (click)="switchTab('access')">👥 Access</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'sdk-tokens'" (click)="switchTab('sdk-tokens')">🔑 SDK Tokens</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'gitops'" (click)="switchTab('gitops')">🐙 GitOps / ArgoCD</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'databases'" (click)="switchTab('databases')">🗄️ Databases</button>
@@ -31,11 +32,12 @@
   <div class="card" style="margin-bottom:20px;">
     <h2 style="margin-top:0;">Project Settings — Git & Domain</h2>
     <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;">
-      ArgoCD pulls manifests from this repository. Set a custom domain so environments get routable hosts.
+      ArgoCD pulls manifests from this GitHub repository. The SDK <code>repositoryUrl</code> must match this origin exactly.
+      Set a custom domain so environments get routable hosts. Namespaces are server-assigned.
     </p>
     <div class="grid-2">
       <div class="form-group">
-        <label>Git Repository URL</label>
+        <label>GitHub Repository URL</label>
         <input [(ngModel)]="projectSettings.repositoryUrl" placeholder="https://github.com/org/repo.git" style="width:100%;">
       </div>
       <div class="form-group">
@@ -53,14 +55,79 @@
     </div>
   </div>
 
+  <div *ngIf="updateAvailable && latestRelease" class="card" style="margin-bottom:20px;background:rgba(16,185,129,0.08);border-color:rgba(16,185,129,0.35);">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+      <div>
+        <h2 style="margin:0;border:0;padding:0;font-size:1.05rem;color:#34d399;">New GitHub release available</h2>
+        <p style="margin:6px 0 0 0;font-size:0.85rem;color:var(--color-text-secondary);">
+          Running <code>{{ currentDeployedVersion || 'none' }}</code>
+          → latest <code>{{ latestRelease.tag }}</code>
+          <span *ngIf="latestRelease.name"> ({{ latestRelease.name }})</span>
+        </p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <a *ngIf="latestRelease.htmlUrl" [href]="latestRelease.htmlUrl" target="_blank" class="btn btn-sm">View on GitHub</a>
+        <button class="btn btn-sm btn-primary" (click)="deployRelease(latestRelease)" [disabled]="deployInProgress || !deployDto.environmentId">
+          Update to {{ latestRelease.tag }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="gitReleases.length" class="card" style="margin-bottom:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h2 style="margin:0;">GitHub Releases</h2>
+      <button class="btn btn-sm" (click)="loadGitInfo()" [disabled]="gitLoading">Refresh</button>
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Tag</th>
+            <th>Name</th>
+            <th>Published</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let r of gitReleases">
+            <td style="font-family:monospace;font-weight:700;">
+              {{ r.tag }}
+              <span *ngIf="r.prerelease" class="badge badge-pending" style="margin-left:6px;">pre</span>
+              <span *ngIf="latestRelease?.tag === r.tag" class="badge badge-active" style="margin-left:6px;">latest</span>
+            </td>
+            <td>{{ r.name }}</td>
+            <td style="font-size:0.8rem;color:var(--color-text-secondary);">{{ r.publishedAt | date:'short' }}</td>
+            <td>
+              <button class="btn btn-sm btn-primary" (click)="deployRelease(r)" [disabled]="deployInProgress || !deployDto.environmentId">
+                Deploy this version
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="grid-2">
   <div class="card">
     <h2>Trigger Deployment</h2>
     <p style="color:var(--color-text-secondary);font-size:0.8rem;margin-top:0;">
-      Pulls the Git branch/commit into ArgoCD and syncs Kubernetes manifests from the path below.
+      Values are loaded from GitHub — pick a real branch/commit, or use a release above.
     </p>
     <div *ngIf="!project?.repositoryUrl && !projectSettings.repositoryUrl" style="margin-bottom:12px;padding:10px 12px;border-radius:8px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#fde047;font-size:0.85rem;">
-      Set a Git repository URL above before deploying.
+      Set a GitHub repository URL above before deploying.
+    </div>
+    <div *ngIf="gitLoading" style="margin-bottom:12px;font-size:0.85rem;color:var(--color-text-secondary);">
+      Loading branches &amp; releases from GitHub…
+    </div>
+    <div *ngIf="gitError" style="margin-bottom:12px;padding:10px 12px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;font-size:0.85rem;">
+      {{ gitError }}
+      <button class="btn btn-sm" style="margin-left:8px;" (click)="loadGitInfo()">Retry</button>
+    </div>
+    <div *ngIf="gitMeta.ownerRepo" style="margin-bottom:12px;font-size:0.8rem;color:var(--color-text-secondary);">
+      Repo: <a [href]="'https://github.com/' + gitMeta.ownerRepo" target="_blank" style="color:var(--primary);"><code>{{ gitMeta.ownerRepo }}</code></a>
+      <button class="btn btn-sm" style="margin-left:8px;" (click)="loadGitInfo()" [disabled]="gitLoading">Refresh from GitHub</button>
     </div>
     <div class="form-group">
       <label>Target Environment</label>
@@ -69,16 +136,22 @@
       </select>
     </div>
     <div class="form-group">
-      <label>Version</label>
-      <input [(ngModel)]="deployDto.version" placeholder="1.0.0" style="width:100%;">
+      <label>Git Branch / Tag</label>
+      <select *ngIf="gitBranches.length" [(ngModel)]="deployDto.branch" (ngModelChange)="onBranchChange($event)" style="width:100%;">
+        <option *ngFor="let b of gitBranches" [value]="b.name">{{ b.name }} — {{ b.sha | slice:0:7 }}</option>
+      </select>
+      <input *ngIf="!gitBranches.length" [(ngModel)]="deployDto.branch" (change)="onBranchChange()" placeholder="main" style="width:100%;">
     </div>
     <div class="form-group">
-      <label>Git Branch</label>
-      <input [(ngModel)]="deployDto.branch" placeholder="main" style="width:100%;">
+      <label>Commit (from GitHub)</label>
+      <select *ngIf="gitCommits.length" [(ngModel)]="deployDto.commitSha" (ngModelChange)="onCommitChange()" style="width:100%;">
+        <option *ngFor="let c of gitCommits" [value]="c.sha">{{ c.sha | slice:0:7 }} — {{ c.message | slice:0:60 }}</option>
+      </select>
+      <input *ngIf="!gitCommits.length" [(ngModel)]="deployDto.commitSha" (change)="onCommitChange()" placeholder="leave blank for branch tip" style="width:100%;">
     </div>
     <div class="form-group">
-      <label>Commit SHA <span style="font-weight:400;color:var(--color-text-secondary);">(optional — leave blank to use branch tip)</span></label>
-      <input [(ngModel)]="deployDto.commitSha" placeholder="optional" style="width:100%;">
+      <label>Version label</label>
+      <input [(ngModel)]="deployDto.version" placeholder="auto from commit / release tag" style="width:100%;">
     </div>
     <div class="form-group">
       <label>Manifests Path in Repo</label>
@@ -89,9 +162,9 @@
       <input [(ngModel)]="deployDto.imageTag" placeholder="latest" style="width:100%;">
     </div>
     <button class="btn btn-primary" (click)="deploy()"
-      [disabled]="deployInProgress || !deployDto.version || !deployDto.environmentId || (!project?.repositoryUrl && !projectSettings.repositoryUrl)"
+      [disabled]="deployInProgress || gitLoading || !deployDto.branch || !deployDto.environmentId || (!project?.repositoryUrl && !projectSettings.repositoryUrl)"
       style="width:100%;">
-      {{ deployInProgress ? 'Pulling from Git…' : 'Pull from Git & Deploy' }}
+      {{ deployInProgress ? 'Pulling from GitHub…' : 'Pull from GitHub & Deploy' }}
     </button>
   </div>
 
@@ -510,6 +583,9 @@ platform.captureConsole(); // forward all console.*</pre>
 
 <!-- ENVIRONMENTS TAB -->
 <div *ngIf="activeTab === 'environments'">
+  <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:0 0 16px 0;">
+    Kubernetes namespaces are assigned by the server as <code>{project}-{environment}</code> and cannot be changed.
+  </p>
   <div class="grid-3">
     <div class="card" *ngFor="let env of project?.environments">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
@@ -517,7 +593,7 @@ platform.captureConsole(); // forward all console.*</pre>
         <span class="badge badge-active">ONLINE</span>
       </div>
       <div style="margin-top:16px;">
-        <div style="font-size:0.75rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;letter-spacing:0.05em;">Kubernetes Namespace</div>
+        <div style="font-size:0.75rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;letter-spacing:0.05em;">Kubernetes Namespace (read-only)</div>
         <div style="font-family:monospace;font-size:0.9rem;margin-top:4px;">{{ env.namespace }}</div>
       </div>
       <div style="margin-top:14px;">
@@ -536,6 +612,72 @@ platform.captureConsole(); // forward all console.*</pre>
   </div>
 </div>
 
+<!-- ACCESS TAB -->
+<div *ngIf="activeTab === 'access'">
+  <div class="card" style="margin-bottom:20px;">
+    <h2 style="margin-top:0;">Project access</h2>
+    <p style="color:var(--color-text-secondary);font-size:0.85rem;">
+      Grant users project-level roles: <strong>owner</strong>, <strong>devops</strong>, <strong>developer</strong>, or <strong>viewer</strong>.
+      Platform admin/devops can always manage all projects.
+    </p>
+    <div *ngIf="canManageAccess" class="grid-2" style="align-items:end;gap:12px;margin-top:16px;">
+      <div class="form-group" style="margin:0;">
+        <label>User email</label>
+        <input [(ngModel)]="newMember.email" type="email" placeholder="dev@company.com" style="width:100%;">
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label>Role</label>
+        <select [(ngModel)]="newMember.role">
+          <option value="viewer">Viewer</option>
+          <option value="developer">Developer</option>
+          <option value="devops">DevOps</option>
+          <option value="owner">Owner</option>
+        </select>
+      </div>
+    </div>
+    <button *ngIf="canManageAccess" class="btn btn-primary" style="margin-top:12px;" (click)="grantMember()" [disabled]="!newMember.email || memberBusy">
+      {{ memberBusy ? 'Saving…' : 'Grant access' }}
+    </button>
+    <p *ngIf="memberError" style="color:#fca5a5;font-size:0.85rem;">{{ memberError }}</p>
+  </div>
+
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table>
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Email</th>
+          <th>Project role</th>
+          <th *ngIf="canManageAccess" style="text-align:right;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let m of members">
+          <td style="font-weight:600;">{{ m.user?.name || '—' }}</td>
+          <td>{{ m.user?.email || m.userId }}</td>
+          <td>
+            <select *ngIf="canManageAccess" [ngModel]="m.role" (ngModelChange)="changeMemberRole(m, $event)">
+              <option value="viewer">viewer</option>
+              <option value="developer">developer</option>
+              <option value="devops">devops</option>
+              <option value="owner">owner</option>
+            </select>
+            <span *ngIf="!canManageAccess" class="badge">{{ m.role }}</span>
+          </td>
+          <td *ngIf="canManageAccess" style="text-align:right;">
+            <button class="btn btn-danger btn-sm" (click)="revokeMember(m)">Revoke</button>
+          </td>
+        </tr>
+        <tr *ngIf="members.length === 0">
+          <td colspan="4" style="text-align:center;color:var(--color-text-muted);padding:24px;">
+            No project members yet. Grant access by email above.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <!-- SDK TOKENS TAB -->
 <div *ngIf="activeTab === 'sdk-tokens'">
   <div class="grid-2">
@@ -543,7 +685,7 @@ platform.captureConsole(); // forward all console.*</pre>
     <div class="card" *ngIf="role === 'devops' || role === 'tech_lead'">
       <h2>Generate SDK Token</h2>
       <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;margin-bottom:20px;">
-        Generate an API key that your service can use with `&#64;mpratyush54/sdk-node` or `platform-sdk-python` to authenticate and register.
+        Generate an API key that your service can use with `&#64;mpratyush54/sdk-node` or `mpratyush54-sdk` to authenticate and register.
       </p>
 
       <div class="form-group">

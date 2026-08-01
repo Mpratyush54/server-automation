@@ -51,11 +51,25 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   backupDbName = '';
   backupInProgress = false;
 
-  // Form DTOs
-  deployDto = { version: '1.0.0', branch: 'main', environmentId: '', commitSha: '', imageTag: 'latest', gitPath: 'k8s' };
+  // Form DTOs — empty until loaded from project's GitHub/GitLab repo
+  deployDto = { version: '', branch: '', environmentId: '', commitSha: '', imageTag: 'latest', gitPath: 'k8s' };
   deployInProgress = false;
+  gitBranches: { name: string; sha: string }[] = [];
+  gitCommits: { sha: string; message: string; author: string; date: string }[] = [];
+  gitReleases: any[] = [];
+  latestRelease: any = null;
+  updateAvailable = false;
+  currentDeployedVersion: string | null = null;
+  gitLoading = false;
+  gitError = '';
+  gitMeta: { ownerRepo?: string; defaultBranch?: string; provider?: string } = {};
   projectSettings = { repositoryUrl: '', domain: '' };
   savingSettings = false;
+  members: any[] = [];
+  newMember = { email: '', role: 'developer' };
+  memberBusy = false;
+  memberError = '';
+  canManageAccess = false;
   newConfig = { key: '', value: '', environmentId: '', isSecret: false };
   newFileCategoryRoute = { category: '', provider: 'local' };
   searchLogQuery = { level: '', search: '' };
@@ -81,6 +95,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
 
   async ngOnInit() {
     this.role = (this.auth.getRole() || 'developer').toLowerCase();
+    this.canManageAccess = this.role === 'admin' || this.role === 'devops' || this.auth.canManageUsers?.() === true;
 
     await this.fetchData();
     this.refreshTimer = setInterval(() => this.pollData(), 5000);
@@ -102,6 +117,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
         repositoryUrl: this.project?.repositoryUrl || '',
         domain: this.project?.domain || '',
       };
+      await this.loadGitInfo();
     } catch { this.project = null; }
 
     await this.loadDeployments();
@@ -114,6 +130,61 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     await this.loadK8sPods();
     await this.loadArgoStatus();
     await this.loadSecrets();
+    await this.loadMembers();
+  }
+
+  async loadMembers() {
+    if (!this.project?.id) return;
+    try {
+      this.members = await firstValueFrom(this.api.getProjectMembers(this.project.id));
+      const me = this.auth.getUser();
+      const myMembership = this.members.find((m: any) => m.userId === me?.id || m.user?.email === me?.email);
+      if (myMembership?.role === 'owner' || myMembership?.role === 'devops') {
+        this.canManageAccess = true;
+      }
+    } catch {
+      this.members = [];
+    }
+  }
+
+  async grantMember() {
+    if (!this.project?.id || !this.newMember.email) return;
+    this.memberBusy = true;
+    this.memberError = '';
+    try {
+      await firstValueFrom(this.api.addProjectMember(this.project.id, {
+        email: this.newMember.email.trim(),
+        role: this.newMember.role,
+      }));
+      this.newMember = { email: '', role: 'developer' };
+      await this.loadMembers();
+    } catch (err: any) {
+      this.memberError = err.error?.error || err.message || 'Failed to grant access';
+    } finally {
+      this.memberBusy = false;
+    }
+  }
+
+  async changeMemberRole(m: any, role: string) {
+    if (!this.project?.id) return;
+    try {
+      await firstValueFrom(this.api.updateProjectMember(this.project.id, m.id, role));
+      await this.loadMembers();
+    } catch (err: any) {
+      alert(err.error?.error || err.message);
+      await this.loadMembers();
+    }
+  }
+
+  async revokeMember(m: any) {
+    if (!this.project?.id) return;
+    if (!confirm(`Revoke project access for ${m.user?.email || m.userId}?`)) return;
+    try {
+      await firstValueFrom(this.api.removeProjectMember(this.project.id, m.id));
+      await this.loadMembers();
+    } catch (err: any) {
+      alert(err.error?.error || err.message);
+    }
   }
 
   async pollData() {
@@ -149,12 +220,117 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
         repositoryUrl: this.project?.repositoryUrl || '',
         domain: this.project?.domain || '',
       };
+      await this.loadGitInfo();
       alert('Project settings saved.');
     } catch (err: any) {
       alert('Failed to save settings: ' + (err.error?.error || err.message));
     } finally {
       this.savingSettings = false;
     }
+  }
+
+  async loadGitInfo() {
+    this.gitError = '';
+    this.gitBranches = [];
+    this.gitCommits = [];
+    this.gitReleases = [];
+    this.latestRelease = null;
+    this.updateAvailable = false;
+    this.currentDeployedVersion = null;
+    this.gitMeta = {};
+    if (!this.project?.repositoryUrl && !this.projectSettings.repositoryUrl) {
+      this.deployDto.branch = '';
+      this.deployDto.commitSha = '';
+      this.deployDto.version = '';
+      return;
+    }
+    this.gitLoading = true;
+    try {
+      const data = await firstValueFrom(this.api.getProjectGitBranches(this.project.id));
+      this.gitBranches = data.branches || [];
+      this.gitMeta = {
+        ownerRepo: data.ownerRepo,
+        defaultBranch: data.defaultBranch,
+        provider: data.provider,
+      };
+      const preferred =
+        this.gitBranches.find((b) => b.name === data.defaultBranch)?.name ||
+        this.gitBranches[0]?.name ||
+        '';
+      this.deployDto.branch = preferred;
+      if (preferred) {
+        await this.onBranchChange(preferred);
+      }
+      if (!this.deployDto.version) {
+        this.deployDto.version = this.shortSha(this.deployDto.commitSha) || '0.0.1';
+      }
+
+      try {
+        const rel = await firstValueFrom(this.api.getProjectGitReleases(this.project.id));
+        this.gitReleases = rel.releases || [];
+        this.latestRelease = rel.latestRelease || null;
+        this.updateAvailable = !!rel.updateAvailable;
+        this.currentDeployedVersion = rel.currentVersion || rel.currentTag || null;
+      } catch {
+        this.gitReleases = [];
+      }
+    } catch (err: any) {
+      this.gitError = err.error?.error || err.message || 'Failed to load branches from Git';
+      if (!this.deployDto.branch) this.deployDto.branch = 'main';
+    } finally {
+      this.gitLoading = false;
+    }
+  }
+
+  async onBranchChange(branch?: string) {
+    const name = branch || this.deployDto.branch;
+    if (!this.project || !name) return;
+    const tip = this.gitBranches.find((b) => b.name === name);
+    if (tip?.sha) {
+      this.deployDto.commitSha = tip.sha;
+      this.deployDto.version = this.shortSha(tip.sha);
+      this.deployDto.imageTag = this.shortSha(tip.sha) || 'latest';
+    }
+    try {
+      const data = await firstValueFrom(this.api.getProjectGitCommits(this.project.id, name, 15));
+      this.gitCommits = data.commits || [];
+      if (this.gitCommits.length) {
+        this.deployDto.commitSha = this.gitCommits[0].sha;
+        this.deployDto.version = this.shortSha(this.gitCommits[0].sha);
+        this.deployDto.imageTag = this.shortSha(this.gitCommits[0].sha) || 'latest';
+      }
+    } catch {
+      this.gitCommits = [];
+    }
+  }
+
+  onCommitChange() {
+    if (this.deployDto.commitSha) {
+      this.deployDto.version = this.shortSha(this.deployDto.commitSha);
+      this.deployDto.imageTag = this.shortSha(this.deployDto.commitSha) || 'latest';
+    }
+  }
+
+  shortSha(sha?: string): string {
+    if (!sha) return '';
+    return sha.slice(0, 7);
+  }
+
+  /** One-click: select a GitHub release tag and deploy it. */
+  async deployRelease(release: any) {
+    if (!release?.tag) return;
+    this.deployDto.branch = release.tag;
+    this.deployDto.commitSha = release.sha || release.tag;
+    this.deployDto.version = release.tag;
+    this.deployDto.imageTag = release.tag;
+    // Load commits for the tag if possible (non-blocking)
+    try {
+      await this.onBranchChange(release.tag);
+      this.deployDto.version = release.tag;
+      this.deployDto.imageTag = release.tag;
+      if (release.sha) this.deployDto.commitSha = release.sha;
+    } catch {}
+    await this.deploy();
   }
 
   async loadDeployments() {
@@ -543,6 +719,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     if (tab === 'metrics') this.loadMetrics();
     if (tab === 'deployments') this.loadDeployments();
     if (tab === 'logs') this.loadLogs();
+    if (tab === 'access') this.loadMembers();
     if (tab === 'gitops') {
       this.loadK8sPods();
       this.loadArgoStatus();

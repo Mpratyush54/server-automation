@@ -1,13 +1,13 @@
 # PlatformClient (Python SDK)
 
-The main entry point for the `platform-sdk-python` package. Handles service registration, heartbeat, logging, config, storage, and optional database connections.
+The main entry point for the `mpratyush54-sdk` package. Handles service registration, heartbeat, logging, config, storage, and optional database connections.
 
 ---
 
 ## Installation
 
 ```bash
-pip install platform-sdk-python
+pip install mpratyush54-sdk
 ```
 
 Requires **Python >= 3.10**.

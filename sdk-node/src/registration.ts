@@ -20,6 +20,9 @@ export interface RegisterPayload {
   domain?: string;
   /** Prefer GitOps over creating a local :latest Deployment */
   gitops?: boolean;
+  servicePort?: number;
+  ingressServiceName?: string;
+  ingressServicePort?: number;
 }
 
 export class RegistrationClient {
@@ -41,10 +44,14 @@ export class RegistrationClient {
     } catch {}
   }
 
-  async getDbCredentials(projectId: string, dbTypes: string[]): Promise<Record<string, any>> {
+  async getDbCredentials(projectId: string, dbTypes: string[], environment?: string): Promise<Record<string, any>> {
     try {
       const { data } = await this.http.get('/api/sdk/db-credentials', {
-        params: { projectId, dbTypes: dbTypes.join(',') },
+        params: {
+          projectId,
+          dbTypes: dbTypes.join(','),
+          ...(environment ? { environment } : {}),
+        },
       });
       return data;
     } catch {

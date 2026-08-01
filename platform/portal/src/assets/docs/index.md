@@ -59,7 +59,7 @@ Platform is a self-hosted PaaS control center that brings together:
 | SDK | Package | Docs |
 |---|---|---|
 | Node.js | `@mpratyush54/sdk-node` | [Node.js SDK](api-reference/sdk-node/PlatformClient.md) |
-| Python | `platform-sdk-python` | [Python SDK](api-reference/sdk-python/PlatformClient.md) |
+| Python | `mpratyush54-sdk` | [Python SDK](api-reference/sdk-python/PlatformClient.md) |
 | React | `@mpratyush54/sdk-react` | [React SDK](api-reference/sdk-react/PlatformProvider.md) |
 | Angular | `@mpratyush54/sdk-angular` | [Angular SDK](api-reference/sdk-angular/PlatformModule.md) |
 

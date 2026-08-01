@@ -7,7 +7,7 @@ The four SDKs (Node.js, Python, React, Angular) follow a common lifecycle patter
 ```mermaid
 graph TB
     subgraph App["Application (SDK-embedded)"]
-        SDK["Platform SDK Client<br/>@mpratyush54/sdk-node<br/>platform-sdk-python<br/>React / Angular"]
+        SDK["Platform SDK Client<br/>@mpratyush54/sdk-node<br/>platform-sdk<br/>React / Angular"]
     end
 
     subgraph API["Platform API — SDK Endpoints"]

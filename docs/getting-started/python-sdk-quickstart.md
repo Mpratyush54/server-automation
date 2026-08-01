@@ -5,7 +5,7 @@ Instrument your Python application with metrics, structured logging, and bug rep
 ## Installation
 
 ```bash
-pip install platform-sdk-python
+pip install mpratyush54-sdk
 ```
 
 ## Basic Usage

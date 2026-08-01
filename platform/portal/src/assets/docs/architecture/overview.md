@@ -131,7 +131,7 @@ graph LR
     subgraph Apps["Customer applications"]
         direction TB
         NodeApp["Node.js<br/>@mpratyush54/sdk-node"]
-        PyApp["Python<br/>platform-sdk-python"]
+        PyApp["Python<br/>platform-sdk"]
         ReactApp["React<br/>@mpratyush54/sdk-react"]
         AngularApp["Angular<br/>@mpratyush54/sdk-angular"]
     end
@@ -186,7 +186,7 @@ Which SDK uses which endpoint:
 <div class="dashboard-card">
   <div class="dashboard-card-header">
     <div class="dashboard-card-icon">🔵</div>
-    <h4>Python SDK — <code>platform-sdk-python</code></h4>
+    <h4>Python SDK — <code>platform-sdk</code></h4>
   </div>
   <p><strong>Auth:</strong> SDK token. <strong>Key feature:</strong> <code>PlatformClient()</code> provides registration, metrics reporting, logging, and config fetching.</p>
 </div>

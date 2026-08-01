@@ -12,6 +12,20 @@
   </div>
 </div>
 
+<div *ngIf="updateAvailable && latestRelease" class="card mb-6 p-4" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.35);">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+    <div>
+      <div style="font-weight:700;color:#34d399;">Platform update available from GitHub</div>
+      <div style="font-size:0.85rem;color:#a1a1aa;margin-top:4px;">
+        Running <code>v{{ platformVersion }}</code> → latest <code>{{ latestRelease.tag }}</code>
+      </div>
+    </div>
+    <a [href]="releasesUrl || 'https://github.com/Mpratyush54/SERVER-automation/releases'" target="_blank" class="btn btn-sm btn-primary">
+      View release &amp; update
+    </a>
+  </div>
+</div>
+
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
   <div class="card p-5 relative overflow-hidden group">
     <div class="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all duration-500"></div>
@@ -125,35 +139,53 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-[#a1a1aa]"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
       Telemetry
     </h3>
-    <div class="flex gap-2">
-      <button class="px-2 py-1 text-xs bg-[#222] border border-[#333] rounded text-[#ededed] hover:bg-[#333]">1h</button>
-      <button class="px-2 py-1 text-xs bg-transparent text-[#a1a1aa] hover:text-white">24h</button>
+    <div class="flex gap-2 items-center">
+      <button class="px-2 py-1 text-xs border rounded"
+              [class.bg-[#222]]="telemetryWindow === '1h'"
+              [class.border-[#333]]="true"
+              [class.text-[#ededed]]="telemetryWindow === '1h'"
+              [class.text-[#a1a1aa]]="telemetryWindow !== '1h'"
+              (click)="setTelemetryWindow('1h')">1h</button>
+      <button class="px-2 py-1 text-xs border rounded"
+              [class.bg-[#222]]="telemetryWindow === '24h'"
+              [class.border-[#333]]="true"
+              [class.text-[#ededed]]="telemetryWindow === '24h'"
+              [class.text-[#a1a1aa]]="telemetryWindow !== '24h'"
+              (click)="setTelemetryWindow('24h')">24h</button>
+      <a [href]="grafanaFullUrl" target="_blank" class="px-2 py-1 text-xs text-blue-400 hover:text-blue-300">Open Grafana →</a>
     </div>
   </div>
-  
-  <div class="relative w-full h-[350px] bg-[#000] flex items-center justify-center group">
-    <!-- Subtle grid background -->
-    <div class="absolute inset-0 bg-[linear-gradient(to_right,#333_1px,transparent_1px),linear-gradient(to_bottom,#333_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_50%,#000_70%,transparent_100%)] opacity-20"></div>
 
-    <iframe [src]="grafanaEmbedUrl" 
-            width="100%" 
-            height="100%" 
-            frameborder="0" 
-            class="z-10 relative opacity-80 group-hover:opacity-100 transition-opacity duration-300 mix-blend-screen filter contrast-125"
-            (load)="onIframeLoad()"
-            *ngIf="showIframe"></iframe>
-            
-    <div *ngIf="!iframeLoaded" class="absolute inset-0 p-8 flex flex-col justify-between z-0">
-      <!-- Minimalist Vercel style mock chart -->
-      <svg width="100%" height="200" class="overflow-visible opacity-50 absolute top-1/2 left-0 transform -translate-y-1/2">
-        <path d="M 0 150 Q 100 50, 200 120 T 400 90 T 600 70 T 800 130 T 1000 80 T 1200 100 L 1200 200 L 0 200 Z" fill="none" stroke="#333" stroke-width="1"/>
-        <path d="M 0 150 Q 100 50, 200 120 T 400 90 T 600 70 T 800 130 T 1000 80 T 1200 100" fill="none" stroke="#0070F3" stroke-width="2"/>
-        <!-- Data points -->
-        <circle cx="200" cy="120" r="3" fill="#000" stroke="#0070F3" stroke-width="2"/>
-        <circle cx="400" cy="90" r="3" fill="#000" stroke="#0070F3" stroke-width="2"/>
-        <circle cx="600" cy="70" r="3" fill="#000" stroke="#0070F3" stroke-width="2"/>
-        <circle cx="800" cy="130" r="3" fill="#000" stroke="#0070F3" stroke-width="2"/>
-      </svg>
+  <div class="p-5 grid grid-cols-1 md:grid-cols-3 gap-4 border-b border-[#222]">
+    <div>
+      <div class="text-xs text-[#a1a1aa] mb-1">Heartbeats</div>
+      <div class="text-2xl font-mono text-white">{{ telemetry.heartbeats }}</div>
+      <div class="text-xs text-[#666] mt-1">{{ telemetry.projectsWithData }} project(s) reporting</div>
     </div>
+    <div>
+      <div class="text-xs text-[#a1a1aa] mb-1">Avg CPU</div>
+      <div class="text-2xl font-mono text-white">{{ telemetry.cpuAvg | number:'1.0-1' }}%</div>
+    </div>
+    <div>
+      <div class="text-xs text-[#a1a1aa] mb-1">Avg Memory</div>
+      <div class="text-2xl font-mono text-white">{{ telemetry.memoryAvg | number:'1.0-0' }} MB</div>
+    </div>
+  </div>
+
+  <div class="relative w-full h-[280px] bg-[#000] flex items-center justify-center">
+    <div class="absolute inset-0 bg-[linear-gradient(to_right,#333_1px,transparent_1px),linear-gradient(to_bottom,#333_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-20"></div>
+
+    <div *ngIf="telemetryLoading" class="z-10 text-sm text-[#a1a1aa]">Loading telemetry…</div>
+    <div *ngIf="!telemetryLoading && telemetryError" class="z-10 text-sm text-red-400">{{ telemetryError }}</div>
+    <div *ngIf="!telemetryLoading && !telemetryError && telemetry.heartbeats === 0" class="z-10 text-center px-6">
+      <div class="text-white font-medium mb-2">No SDK heartbeats yet</div>
+      <p class="text-sm text-[#a1a1aa] max-w-md">
+        Start a service with the Platform SDK (or open a project → Metrics). Cluster Grafana charts need a separate Grafana login.
+      </p>
+    </div>
+
+    <svg *ngIf="!telemetryLoading && telemetry.sparkPath" viewBox="0 0 600 120" class="z-10 relative w-full h-full px-4 py-6" preserveAspectRatio="none">
+      <path [attr.d]="telemetry.sparkPath" fill="none" stroke="#0070F3" stroke-width="2" vector-effect="non-scaling-stroke"/>
+    </svg>
   </div>
 </div>

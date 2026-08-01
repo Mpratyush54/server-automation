@@ -11,7 +11,7 @@
 4. [Portal — Role-Based Views](#4-portal--role-based-views)
 5. [Preview Environment Pipeline](#5-preview-environment-pipeline)
 6. [ClickUp Integration](#6-clickup-integration)
-7. [SDK — @mpratyush54/sdk-node & platform-sdk-python](#7-sdk--mpratyush54sdk-node--platform-sdk-python)
+7. [SDK — @mpratyush54/sdk-node & platform-sdk](#7-sdk--mpratyush54sdk-node--platform-sdk)
 8. [Module Specifications](#8-module-specifications)
 9. [Database Schema](#9-database-schema)
 10. [API Reference](#10-api-reference)
@@ -109,7 +109,7 @@ There are three distinct roles in Platform. Every UI element, API endpoint, and 
 
 ┌─────────────────────────────────────────────────────────────┐
 │                       SDK LAYER                             │
-│  @mpratyush54/sdk-node (npm)  │  platform-sdk-python (pip)             │
+│  @mpratyush54/sdk-node (npm)  │  platform-sdk (pip)             │
 │  Installed in every Platform service                            │
 │  Auto-registration │ Metrics │ Logs │ Config │ DB │ Storage │
 └─────────────────────────────────────────────────────────────┘
@@ -347,7 +347,7 @@ A DevOps engineer configures the following in ClickUp once:
 
 ---
 
-## 7. SDK — @mpratyush54/sdk-node & platform-sdk-python
+## 7. SDK — @mpratyush54/sdk-node & platform-sdk
 
 ### Installation
 
@@ -356,7 +356,7 @@ A DevOps engineer configures the following in ClickUp once:
 npm install @mpratyush54/sdk-node
 
 # Python
-pip install platform-sdk-python
+pip install platform-sdk
 ```
 
 Both packages are published to GitLab's private package registry. They are not on npm or PyPI public registries.
@@ -1194,7 +1194,7 @@ sdk-node/               @mpratyush54/sdk-node npm package
 │   └── registration/        Auto-registration
 └── package.json
 
-sdk-python/             platform-sdk-python pip package
+sdk-python/             platform-sdk pip package
 ├── platform_sdk/
 │   ├── __init__.py
 │   ├── database.py
@@ -1223,7 +1223,7 @@ platform-bootstrap/              Bootstrap scripts
 
 **Goal:** Everyone can develop against the platform locally. Nothing is "done" but everything is scaffolded.
 
-- Monorepo setup with platform, sdk-node, platform-sdk-python, platform-bootstrap
+- Monorepo setup with platform, sdk-node, platform-sdk, platform-bootstrap
 - PostgreSQL schema migrations written and applied
 - MongoDB collections and TTL indexes created
 - Next.JS API skeleton with all modules stubbed (routes exist, return 201/200 with empty data)

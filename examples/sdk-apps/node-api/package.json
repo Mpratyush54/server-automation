@@ -1,0 +1,15 @@
+{
+  "name": "sdk-node-api-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "@mpratyush54/sdk-node": "file:../../../sdk-node",
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}

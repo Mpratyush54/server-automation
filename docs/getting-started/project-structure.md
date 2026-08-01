@@ -15,7 +15,7 @@ graph TB
     API["api/<br/>Express + TypeORM + Mongoose"]:::platform
     Portal["portal/<br/>Angular 19 Dashboard"]:::platform
     SDKNode["sdk-node/<br/>@mpratyush54/sdk-node"]:::code
-    SDKPython["sdk-python/<br/>platform-sdk-python"]:::code
+    SDKPython["sdk-python/<br/>platform-sdk"]:::code
     SDKReact["sdk-react/<br/>@mpratyush54/sdk-react"]:::code
     SDKAngular["sdk-angular/<br/>@mpratyush54/sdk-angular"]:::code
     Bootstrap["platform-bootstrap/<br/>k3s Cluster Setup"]:::action

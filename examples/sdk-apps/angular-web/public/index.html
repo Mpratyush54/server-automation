@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Angular → Platform SDK demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, Segoe UI, sans-serif; max-width: 720px; margin: 40px auto; padding: 16px; }
+    button { margin: 0 8px 8px 0; padding: 8px 12px; cursor: pointer; }
+    pre { background: #0b0f19; color: #60a5fa; padding: 16px; border-radius: 8px; min-height: 180px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Angular client → Node API (Platform SDK)</h1>
+  <p style="color:#555">Browser traffic → Node Express → Platform SDK metrics/heartbeats (same path React uses).</p>
+  <div id="app">
+    <button id="hello">GET /api/hello</button>
+    <button id="users">GET /api/users</button>
+    <button id="orders">POST /api/orders</button>
+    <button id="slow">GET /api/slow</button>
+    <button id="dbcheck">GET /api/db-check</button>
+    <pre id="log">No requests yet.</pre>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
