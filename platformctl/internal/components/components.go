@@ -264,7 +264,12 @@ func InstallMinIO(cfg *config.Config) error {
 }
 
 func InstallArgoCD(cfg *config.Config) error {
-	// Always re-apply values so /argocd subpath stays correct.
+	if state.IsDone("argocd") && argocdLooksHealthy() {
+		color.Green("  ✓ ArgoCD already done")
+		_ = patchArgoCDSubpath(cfg)
+		return nil
+	}
+	_ = state.MarkInProgress("argocd")
 	color.Cyan("\n  ■ Installing ArgoCD (path /argocd)...")
 	tmpFile := "/tmp/argocd-values.yaml"
 	if err := writeTemplatedManifest("argocd-values.yaml", cfg.Domain, tmpFile); err != nil {
@@ -282,7 +287,6 @@ func InstallArgoCD(cfg *config.Config) error {
 		  echo "Resetting ArgoCD for clean Helm install..."
 		  helm uninstall argocd -n argocd --wait --timeout 3m 2>/dev/null || true
 		  kubectl delete namespace argocd --wait=true --timeout=180s 2>/dev/null || true
-		  # kubectl get still succeeds while status=Terminating — wait until fully gone.
 		  for i in $(seq 1 90); do
 		    kubectl get ns argocd >/dev/null 2>&1 || break
 		    sleep 2
@@ -300,7 +304,6 @@ json.dump(d,sys.stdout)
 		      sleep 2
 		    done
 		  fi
-		  # Cluster-scoped leftovers from raw install.yaml / prior charts
 		  kubectl get clusterrole,clusterrolebinding -o name 2>/dev/null \
 		    | grep -E 'argocd|argo-cd' \
 		    | xargs -r kubectl delete --ignore-not-found 2>/dev/null || true
@@ -308,9 +311,6 @@ json.dump(d,sys.stdout)
 		}
 
 		apply_argocd_crds() {
-		  # CRDs live under templates/ (helm show crds is empty). Server-side apply
-		  # avoids client-side last-applied-configuration 262144-byte limit.
-		  # Skip ApplicationSet CRD (huge + unused).
 		  local chart_dir
 		  chart_dir=$(mktemp -d)
 		  helm pull argo/argo-cd --untar -d "$chart_dir"
@@ -329,6 +329,9 @@ json.dump(d,sys.stdout)
 		    --create-namespace \
 		    -f %s \
 		    --set crds.install=false \
+		    --set applicationSet.enabled=false \
+		    --set notifications.enabled=false \
+		    --set dex.enabled=false \
 		    --wait --timeout 10m
 		}
 
@@ -338,8 +341,6 @@ json.dump(d,sys.stdout)
 		    && kubectl -n argocd get configmap argocd-cm >/dev/null 2>&1
 		}
 
-		# Prefer in-place upgrade when a real healthy release exists.
-		# Otherwise (or on upgrade failure), wipe once and reinstall.
 		if argocd_healthy; then
 		  if ! helm_install_argocd; then
 		    echo "ArgoCD Helm upgrade failed — self-healing with clean reinstall"
@@ -360,28 +361,40 @@ json.dump(d,sys.stdout)
 		  helm_install_argocd
 		fi
 		argocd_healthy
+	`, tmpFile))
+	if err != nil {
+		return err
+	}
+	_ = patchArgoCDSubpath(cfg)
+	color.Green("  ✓ ArgoCD installed (/argocd subpath)")
+	_ = state.MarkDone("argocd")
+	return nil
+}
 
-		# Hard-guarantee subpath settings
+func argocdLooksHealthy() bool {
+	out, err := shell.OutputBash(`
+		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+		helm status argocd -n argocd >/dev/null 2>&1 \
+		  && kubectl -n argocd get deploy argocd-server >/dev/null 2>&1 \
+		  && kubectl -n argocd get configmap argocd-cm >/dev/null 2>&1
+	`)
+	_ = out
+	return err == nil
+}
+
+func patchArgoCDSubpath(cfg *config.Config) error {
+	if cfg.Domain == "" {
+		return nil
+	}
+	return shell.RunBash(fmt.Sprintf(`
+		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 		kubectl -n argocd create configmap argocd-cmd-params-cm \
 		  --from-literal=server.rootpath=/argocd \
 		  --from-literal=server.basehref=/argocd \
 		  --from-literal=server.insecure=true \
-		  --dry-run=client -o yaml | kubectl apply -f -
-		kubectl -n argocd patch configmap argocd-cm --type merge -p '{"data":{"url":"https://%s/argocd","server.basehref":"/argocd","server.rootpath":"/argocd"}}' || true
-		kubectl -n argocd patch deployment argocd-server --type=json -p '[
-		  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--insecure"},
-		  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--rootpath=/argocd"},
-		  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--basehref=/argocd"}
-		]' 2>/dev/null || true
-		kubectl rollout restart deployment argocd-server -n argocd || true
-		kubectl rollout status deployment argocd-server -n argocd --timeout=180s || true
-	`, tmpFile, cfg.Domain))
-	if err != nil {
-		return err
-	}
-	color.Green("  ✓ ArgoCD installed (/argocd subpath)")
-	_ = state.MarkDone("argocd")
-	return nil
+		  --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1 || true
+		kubectl -n argocd patch configmap argocd-cm --type merge -p '{"data":{"url":"https://%s/argocd","server.basehref":"/argocd","server.rootpath":"/argocd"}}' >/dev/null 2>&1 || true
+	`, cfg.Domain))
 }
 
 func InstallMonitoring(cfg *config.Config) error {
@@ -417,7 +430,10 @@ func InstallMonitoring(cfg *config.Config) error {
 }
 
 func InstallOAuthProxy(cfg *config.Config) error {
-	// Always re-apply — cookie-secret length must be exactly 16 or 32 bytes.
+	if doneOrSkip("oauth2-proxy", "oauth2-proxy") {
+		return nil
+	}
+	_ = state.MarkInProgress("oauth2-proxy")
 	color.Cyan("\n  ■ Installing oauth2-proxy...")
 	tmpFile := "/tmp/oauth2-values.yaml"
 	if err := writeTemplatedManifest("oauth2-proxy-values.yaml", cfg.Domain, tmpFile); err != nil {
@@ -473,6 +489,10 @@ func InstallOAuthProxy(cfg *config.Config) error {
 }
 
 func InstallPortainer(cfg *config.Config) error {
+	if doneOrSkip("portainer", "Portainer") {
+		return nil
+	}
+	_ = state.MarkInProgress("portainer")
 	// Guarantees on every install/reinstall:
 	//  1. Admin is pre-seeded (no "create administrator" wizard)
 	//  2. Platform OAuth/SSO is enabled (SSO button on login page)
@@ -917,42 +937,39 @@ kubectl wait --for=condition=Available deployment/platform-portal -n platform --
 // (iframe /grafana), and Portainer (subdomain + /portainer redirect) stay correct.
 // Also re-applies Portainer SSO in case Portainer was installed before ingress existed.
 func InstallRouting(cfg *config.Config) error {
+	if doneOrSkip("routing", "routing") {
+		return nil
+	}
+	_ = state.MarkInProgress("routing")
 	color.Cyan("\n  ■ Fixing service routing (ArgoCD / Grafana / Portainer)...")
 	if err := ApplyServiceRouting(cfg); err != nil {
 		return err
 	}
-	// Re-assert ArgoCD subpath (idempotent)
-	if err := InstallArgoCD(cfg); err != nil {
-		color.Yellow("  ⚠ ArgoCD re-apply: %v", err)
-	}
+	// Light subpath patch only — never wipe/reinstall ArgoCD during routing.
+	_ = patchArgoCDSubpath(cfg)
 	// Grafana embedding + subpath
 	_ = shell.RunBash(fmt.Sprintf(`
 		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 		helm upgrade kube-prometheus prometheus-community/kube-prometheus-stack \
-		  --namespace monitoring \
-		  --reuse-values \
-		  --set grafana.grafana\.ini.server.root_url="https://%s/grafana/" \
-		  --set grafana.grafana\.ini.server.serve_from_sub_path=true \
-		  --set grafana.grafana\.ini.security.allow_embedding=true \
-		  --set grafana.grafana\.ini.security.cookie_samesite=none \
-		  --set grafana.grafana\.ini.security.cookie_secure=true \
-		  --timeout 10m || true
-		kubectl rollout restart deploy -n monitoring -l app.kubernetes.io/name=grafana || true
+			--namespace monitoring --reuse-values \
+			--set grafana.grafana\.ini.server.root_url=https://%s/grafana \
+			--set grafana.grafana\.ini.server.serve_from_sub_path=true \
+			--set grafana.grafana\.ini.security.allow_embedding=true \
+			--set grafana.grafana\.ini.security.cookie_samesite=none \
+			--set grafana.grafana\.ini.security.cookie_secure=true \
+			--timeout 5m 2>/dev/null || true
 	`, cfg.Domain))
-	// Portainer SSO must run after ingress/DNS exist; idempotent re-apply
-	if cfg.InstallPortainer {
-		pass := cfg.PortainerPassword
-		if pass == "" {
-			pass = cfg.AdminPassword
-		}
-		if len(pass) >= 12 {
-			if err := ensurePortainerAdminAndSSO(cfg, pass); err != nil {
-				return fmt.Errorf("portainer SSO: %w", err)
-			}
+	// Portainer SSO (non-fatal)
+	pass := cfg.PortainerPassword
+	if pass == "" {
+		pass = cfg.AdminPassword
+	}
+	if pass != "" && len(pass) >= 12 {
+		if err := ensurePortainerAdminAndSSO(cfg, pass); err != nil {
+			color.Yellow("  ⚠ Portainer SSO refresh: %v", err)
 		}
 	}
-	color.Green("  ✓ Service routing fixed")
-	_ = state.Clear("routing")
+	color.Green("  ✓ Routing applied")
 	return state.MarkDone("routing")
 }
 
