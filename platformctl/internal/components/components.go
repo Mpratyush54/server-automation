@@ -280,6 +280,7 @@ func InstallArgoCD(cfg *config.Config) error {
 			--namespace argocd \
 			-f %s \
 			--set crds.install=false \
+			--take-ownership \
 			--wait --timeout 10m
 
 		# Hard-guarantee subpath settings
