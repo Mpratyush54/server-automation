@@ -52,10 +52,17 @@ await client.init(options: PlatformOptions): Promise<void>
 | `version` | `string` | `'1.0.0'` | Application version |
 | `branch` | `string` | `'main'` | Git branch name |
 | `commitSha` | `string?` | — | Git commit SHA |
-| `namespace` | `string?` | — | Kubernetes namespace or equivalent |
+| `namespace` | `string?` | — | **Ignored** — server assigns `{project}-{environment}` |
 | `hostname` | `string` | `os.hostname()` | Machine hostname |
 | `infisicalEnv` | `string?` | — | Infisical environment slug for secret injection |
 | `databases` | `string[]` | `[]` | Database types to auto-connect: `'postgres'`, `'mongo'`, `'redis'` |
+| `repositoryUrl` | `string?` | — | Must match project `repositoryUrl` for GitOps register |
+| `gitPath` | `string?` | — | Path to manifests in the repo |
+| `gitRevision` | `string?` | branch / `main` | Git revision for ArgoCD |
+| `domain` | `string?` | — | Base domain for ingress hosts |
+| `gitops` | `boolean?` | — | Prefer GitOps path when repo is set |
+| `serviceName` | `string?` | `projectName` | K8s Service name for ingress |
+| `servicePort` | `number?` | — | Service port for ingress |
 
 ### What `init()` does
 

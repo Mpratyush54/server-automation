@@ -7,14 +7,14 @@ logger = logging.getLogger('platform')
 
 class PostgresManager:
     def __init__(self, config: dict = None):
-        self.config = config or {
-            "host": os.environ.get("PLATFORM_PG_HOST", "localhost"),
-            "port": int(os.environ.get("PLATFORM_PG_PORT", "5432")),
-            "user": os.environ.get("PLATFORM_PG_USER", "platform"),
-            "password": os.environ.get("PLATFORM_PG_PASSWORD", "platform"),
-            "database": os.environ.get("PLATFORM_PG_DB", "platform"),
-        }
         import os as _os
+        self.config = config or {
+            "host": _os.environ.get("PLATFORM_PG_HOST", "localhost"),
+            "port": int(_os.environ.get("PLATFORM_PG_PORT", "5432")),
+            "user": _os.environ.get("PLATFORM_PG_USER", "platform"),
+            "password": _os.environ.get("PLATFORM_PG_PASSWORD", "platform"),
+            "database": _os.environ.get("PLATFORM_PG_DB", "platform"),
+        }
         self._pool = None
         self.connected = False
 

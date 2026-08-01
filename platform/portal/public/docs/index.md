@@ -1,6 +1,8 @@
 # Platform Documentation
 
-**Platform** is an open-source, self-hosted internal Platform-as-a-Service that provides a unified control plane for deploying, managing, and monitoring your applications on Kubernetes (k3s).
+**Platform** is an open-source, self-hosted internal Platform-as-a-Service that
+provides a unified control plane for deploying, managing, and monitoring your
+applications on Kubernetes (k3s).
 
 ## Quick Links
 
@@ -19,74 +21,77 @@
 
 Platform is a self-hosted PaaS control center that brings together:
 
-- **Deployment Automation** — Preview environments on every Git push, staging/production on main branch
-- **Secrets Management** — AES-256-GCM encrypted secrets with versioning, rollback, and audit trails
-- **Database Provisioning** — One-click PostgreSQL, MongoDB, and Redis instances with automated backups
-- **Observability** — Real-time metrics (p50/p95/p99), distributed tracing, Loki log aggregation, Grafana dashboards
-- **Multi-SDK Support** — Node.js, Python, React, Angular SDKs with auto-registration, metrics, and bug reporting
-- **RBAC & Permissions** — Granular role-based access control with custom role definitions
-- **SSO / OIDC** — OAuth2 + OpenID Connect support for single sign-on
+- **Deployment automation** — Preview environments on every Git push, staging/production on `main`
+- **Secrets management** — AES-256-GCM encrypted secrets with versioning, rollback and audit trails; usable without Infisical
+- **Database provisioning** — One-click PostgreSQL, MongoDB and Redis instances with automated backups
+- **Observability** — Real-time metrics (p50/p95/p99), Loki log aggregation, Grafana dashboards
+- **Multi-SDK support** — Node.js, Python, React and Angular SDKs with auto-registration, metrics and bug reporting
+- **RBAC & permissions** — Granular role-based access control with custom role definitions
+- **SSO / OIDC** — OAuth2 + OpenID Connect via oauth2-proxy for any service that doesn't ship SSO in its OSS build
 
-## Architecture Overview
+## Architecture at a glance
 
 ```
                     ┌─────────────────────┐
-                    │     Browser/Client   │
+                    │    Browser / SDK    │
                     └──────────┬──────────┘
                                │
                     ┌──────────▼──────────┐
                     │   Nginx Ingress     │
-                    │  (SSL termination)  │
+                    │  (TLS termination)  │
                     └──────────┬──────────┘
                                │
               ┌────────────────┼────────────────┐
               │                │                │
      ┌────────▼──────┐  ┌─────▼──────┐  ┌──────▼─────┐
-     │   Platform    │  │   Portal   │  │   ArgoCD   │
-     │   API (3000)  │  │  Angular   │  │  (CD tool) │
+     │ Platform API  │  │  Portal    │  │  ArgoCD    │
+     │ (Node/TS)     │  │ (Angular)  │  │ (GitOps)   │
      └────────┬──────┘  └────────────┘  └────────────┘
               │
     ┌─────────┼──────────┐
     │         │          │
     ▼         ▼          ▼
-┌───────┐ ┌──────┐ ┌────────┐
-│PostgreSQL│MongoDB│  Redis │
-└───────┘ └──────┘ └────────┘
+┌────────┐ ┌───────┐ ┌───────┐
+│Postgres│ │Mongo  │ │Redis  │      (all in the `databases` namespace)
+└────────┘ └───────┘ └───────┘
 ```
 
 ## SDK Ecosystem
 
-| SDK | Package | Docs |
-|---|---|---|
-| Node.js | `@mpratyush54/sdk-node` | [Node.js SDK](api-reference/sdk-node/PlatformClient.md) |
-| Python | `mpratyush54-sdk` | [Python SDK](api-reference/sdk-python/PlatformClient.md) |
-| React | `@mpratyush54/sdk-react` | [React SDK](api-reference/sdk-react/PlatformProvider.md) |
-| Angular | `@mpratyush54/sdk-angular` | [Angular SDK](api-reference/sdk-angular/PlatformModule.md) |
+| SDK | Package | Quickstart | Examples |
+|---|---|---|---|
+| Node.js | `@mpratyush54/sdk-node` | [Quickstart](getting-started/node-sdk-quickstart.md) | [`sdk-node/examples`](../sdk-node/examples) |
+| React   | `@mpratyush54/sdk-react`  | [Quickstart](getting-started/react-sdk-quickstart.md) | [`sdk-react/examples`](../sdk-react/examples) |
+| Angular | `@mpratyush54/sdk-angular`| [Quickstart](getting-started/angular-sdk-quickstart.md) | [`sdk-angular/examples`](../sdk-angular/examples) |
+| Python  | `mpratyush54-sdk`     | [Quickstart](getting-started/python-sdk-quickstart.md) | [`sdk-python/examples`](../sdk-python/examples) |
 
-## Quick Start
+See also the [SDK examples index](getting-started/sdk-examples.md) and the cluster demo [`examples/sdk-apps`](../examples/sdk-apps).
+
+## Quick Start (local dev)
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/SERVER-automation.git
-cd platform
+git clone https://github.com/Mpratyush54/SERVER-automation.git
+cd SERVER-automation
 
-# Start the API
-cd api
+# Start Postgres + Mongo + Redis via docker-compose
+docker compose up -d postgres mongodb redis
+
+# Install deps and run both API (:3000) and Portal (:4200)
 npm install
-npm run dev
-
-# In another terminal, start the Portal
-cd portal
-npm install
-ng serve
-
-# Seed demo users
-npm run seed:db
-
-# Login at http://localhost:4200 with admin@pratyushes.dev
+npm run start
 ```
 
-## Demo Accounts
+Then sign in at `http://localhost:4200` with **`admin@pratyushes.dev`** — no password
+required (Platform uses passwordless email-based JWT). Demo users are auto-seeded
+on first API startup; if you ever need to re-seed manually:
+
+```bash
+npm --prefix platform/api run seed:db
+```
+
+Server / production install is a single command — see [Getting Started](getting-started/installation.md#deploy-to-a-server-single-command).
+
+## Demo Accounts (local dev)
 
 | Name | Email | Role |
 |---|---|---|
@@ -97,12 +102,4 @@ npm run seed:db
 
 ## License
 
-MIT License
-
-Copyright (c) 2024 Pratyush Mishra
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+MIT

@@ -58,12 +58,14 @@ Platform is a self-hosted PaaS control center that brings together:
 
 ## SDK Ecosystem
 
-| SDK | Package | Docs |
-|---|---|---|
-| Node.js | `@mpratyush54/sdk-node` | [Node.js SDK](api-reference/sdk-node/PlatformClient.md) |
-| Python  | `mpratyush54-sdk`     | [Python SDK](api-reference/sdk-python/PlatformClient.md) |
-| React   | `@mpratyush54/sdk-react`  | [React SDK](api-reference/sdk-react/PlatformProvider.md) |
-| Angular | `@mpratyush54/sdk-angular`| [Angular SDK](api-reference/sdk-angular/PlatformModule.md) |
+| SDK | Package | Quickstart | Examples |
+|---|---|---|---|
+| Node.js | `@mpratyush54/sdk-node` | [Quickstart](getting-started/node-sdk-quickstart.md) | [`sdk-node/examples`](../sdk-node/examples) |
+| React   | `@mpratyush54/sdk-react`  | [Quickstart](getting-started/react-sdk-quickstart.md) | [`sdk-react/examples`](../sdk-react/examples) |
+| Angular | `@mpratyush54/sdk-angular`| [Quickstart](getting-started/angular-sdk-quickstart.md) | [`sdk-angular/examples`](../sdk-angular/examples) |
+| Python  | `mpratyush54-sdk`     | [Quickstart](getting-started/python-sdk-quickstart.md) | [`sdk-python/examples`](../sdk-python/examples) |
+
+See also the [SDK examples index](getting-started/sdk-examples.md) and the cluster demo [`examples/sdk-apps`](../examples/sdk-apps).
 
 ## Quick Start (local dev)
 

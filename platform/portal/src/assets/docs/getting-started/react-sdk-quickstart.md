@@ -1,6 +1,8 @@
 # React SDK Quickstart
 
-Instrument your React application with error boundaries, bug reporting, and automatic metrics.
+Instrument a React (or Next.js) app with HTTP metrics, an error boundary, and a floating bug reporter.
+
+Package: [`@mpratyush54/sdk-react`](https://www.npmjs.com/package/@mpratyush54/sdk-react) · Examples: [`sdk-react/examples`](../../sdk-react/examples)
 
 ## Installation
 
@@ -8,88 +10,77 @@ Instrument your React application with error boundaries, bug reporting, and auto
 npm install @mpratyush54/sdk-react
 ```
 
-## Basic Setup
+## Setup
 
-Wrap your application root with `PlatformProvider` and `ErrorBoundary`:
+`PlatformProvider` takes a **`config` object** (not flat props):
 
 ```tsx
-import { PlatformProvider, ErrorBoundary, BugReporterWidget } from '@mpratyush54/sdk-react';
+import {
+  PlatformProvider,
+  ErrorBoundary,
+  BugReporterWidget,
+  usePlatform,
+} from '@mpratyush54/sdk-react';
 
-function App() {
+const config = {
+  apiBase: import.meta.env.VITE_PLATFORM_URL,
+  token: import.meta.env.VITE_PLATFORM_SDK_TOKEN,
+  projectId: import.meta.env.VITE_PLATFORM_PROJECT_ID,
+  environment: 'development',
+  appName: 'my-web',
+};
+
+export function App() {
   return (
-    <PlatformProvider
-      apiUrl="http://localhost:3000"
-      sdkToken="sdk_xxxxx"
-      projectId="proj-xxxxx"
-    >
+    <PlatformProvider config={config}>
       <ErrorBoundary>
-        <YourApp />
+        <Home />
       </ErrorBoundary>
-      <BugReporterWidget />
+      <BugReporterWidget config={config} />
     </PlatformProvider>
+  );
+}
+
+function Home() {
+  const { api, config: cfg } = usePlatform();
+
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        const { data } = await api.get('/api/health');
+        console.log(cfg.projectId, data);
+      }}
+    >
+      Ping
+    </button>
   );
 }
 ```
 
-## Hooks
-
-Access platform features from any child component:
-
-```tsx
-import { usePlatform, useBugReporter } from '@mpratyush54/sdk-react';
-
-function MyComponent() {
-  const platform = usePlatform();
-  const reporter = useBugReporter();
-
-  // Track a custom metric
-  platform.metrics.trackEvent('button_click', { buttonId: 'submit' });
-
-  // Report a bug with screenshot
-  const handleReportBug = () => {
-    reporter.open({ category: 'ui', severity: 'minor' });
-  };
-
-  return <button onClick={handleReportBug}>Report Bug</button>;
-}
-```
+Calls made with the context `api` Axios client are timed and posted to `/api/sdk/api-metrics`.
 
 ## Components
 
-| Component | Purpose |
-|---|---|
-| `PlatformProvider` | Context provider — initializes the SDK and makes it available to all children |
-| `ErrorBoundary` | Catches React render errors and reports them to the platform |
-| `BugReporterWidget` | Floating widget (bottom-right) that users can click to submit bug reports with screenshots |
+| Export | Purpose |
+|--------|---------|
+| `PlatformProvider` | Context + instrumented Axios |
+| `usePlatform()` | `{ config, api }` |
+| `ErrorBoundary` | Catch render errors |
+| `BugReporterWidget` | Floating reporter (pass same `config`) |
 
-## Environment-Specific Config
+## Next.js App Router
 
-```tsx
-const config = {
-  development: {
-    apiUrl: 'http://localhost:3000',
-    sdkToken: process.env.REACT_APP_SDK_TOKEN!,
-    projectId: process.env.REACT_APP_PROJECT_ID!,
-  },
-  production: {
-    apiUrl: 'https://platform.yourdomain.com',
-    sdkToken: process.env.REACT_APP_SDK_TOKEN!,
-    projectId: process.env.REACT_APP_PROJECT_ID!,
-  },
-}[process.env.NODE_ENV || 'development'];
+Wrap a **client** layout (see [`sdk-react/examples/nextjs-app-router.tsx`](../../sdk-react/examples/nextjs-app-router.tsx)) using `NEXT_PUBLIC_PLATFORM_*` env vars.
 
-function App() {
-  return (
-    <PlatformProvider {...config}>
-      <ErrorBoundary>
-        <MainRouter />
-      </ErrorBoundary>
-      <BugReporterWidget />
-    </PlatformProvider>
-  );
-}
-```
+## More examples
 
-## API Reference
+| Path | Topic |
+|------|--------|
+| [`basic-app.tsx`](../../sdk-react/examples/basic-app.tsx) | Provider + hook |
+| [`with-bug-reporter.tsx`](../../sdk-react/examples/with-bug-reporter.tsx) | Boundary + widget |
+| [`examples/sdk-apps/react-web`](../../examples/sdk-apps/react-web) | Deployed demo |
 
-See the full [React SDK API Reference](../api-reference/sdk-react/PlatformProvider.md).
+## API reference
+
+[PlatformProvider](../api-reference/sdk-react/PlatformProvider.md) · [usePlatform](../api-reference/sdk-react/usePlatform.md) · [BugReporterWidget](../api-reference/sdk-react/BugReporterWidget.md) · [ErrorBoundary](../api-reference/sdk-react/ErrorBoundary.md)

@@ -82,16 +82,18 @@ Full walkthrough with per-OS notes:
 
 ## SDKs
 
-| Language | Package | Docs |
-|---|---|---|
-| Node.js | `@mpratyush54/sdk-node` | [sdk-node/README.md](sdk-node/README.md) |
-| Python  | `mpratyush54-sdk`   | [sdk-python/README.md](sdk-python/README.md) |
-| React   | `@mpratyush54/sdk-react`  | [sdk-react/README.md](sdk-react/README.md) |
-| Angular | `@mpratyush54/sdk-angular`| [sdk-angular/README.md](sdk-angular/README.md) |
+| Language | Package | Docs | Examples |
+|---|---|---|---|
+| Node.js | `@mpratyush54/sdk-node` | [README](sdk-node/README.md) | [`sdk-node/examples`](sdk-node/examples) |
+| Python  | `mpratyush54-sdk`   | [README](sdk-python/README.md) | [`sdk-python/examples`](sdk-python/examples) |
+| React   | `@mpratyush54/sdk-react`  | [README](sdk-react/README.md) | [`sdk-react/examples`](sdk-react/examples) |
+| Angular | `@mpratyush54/sdk-angular`| [README](sdk-angular/README.md) | [`sdk-angular/examples`](sdk-angular/examples) |
 
-Each SDK auto-registers the running app with the Platform on start, ships request
-metrics, wires an error boundary that files bug reports back to the portal, and can
-pull config/secrets from the Platform without any extra infrastructure like Infisical.
+Index: [docs/getting-started/sdk-examples.md](docs/getting-started/sdk-examples.md) · cluster demo: [examples/sdk-apps](examples/sdk-apps)
+
+Each backend SDK can auto-register with the Platform on start, ship request metrics /
+heartbeats, and connect managed Postgres / Mongo / Redis. Frontend SDKs add HTTP
+metrics, error boundaries, and a floating bug reporter.
 
 ---
 
