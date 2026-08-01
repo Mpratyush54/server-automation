@@ -49,9 +49,22 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
           scope: '@mpratyush54'
+          package-manager-cache: false
+
+      # Trusted Publisher OIDC needs npm >= 11.5.1. setup-node's registry-url
+      # writes _authToken=${NODE_AUTH_TOKEN}; an empty token blocks OIDC.
+      - name: Prepare npm for OIDC trusted publishing
+        run: |
+          npm install -g npm@latest
+          npm --version
+          if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
+            sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
+            echo "Stripped _authToken from $NPM_CONFIG_USERCONFIG"
+            cat "$NPM_CONFIG_USERCONFIG" || true
+          fi
 
       - name: Update Versions
         run: |
@@ -62,8 +75,6 @@ jobs:
           cd sdk-angular && npm version $VERSION --no-git-tag-version && cd ..
 
       - name: Publish Node SDK
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd sdk-node
           npm install
@@ -71,8 +82,6 @@ jobs:
           npm publish --access public --provenance
 
       - name: Publish React SDK
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd sdk-react
           npm install
@@ -80,8 +89,6 @@ jobs:
           npm publish --access public --provenance
 
       - name: Publish Angular SDK
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd sdk-angular
           npm install
