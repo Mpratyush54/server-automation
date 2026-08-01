@@ -584,7 +584,7 @@ platform.captureConsole(); // forward all console.*</pre>
 <!-- ENVIRONMENTS TAB -->
 <div *ngIf="activeTab === 'environments'">
   <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:0 0 16px 0;">
-    Kubernetes namespaces are assigned by the server as <code>{project}-{environment}</code> and cannot be changed.
+    Kubernetes namespaces are assigned by the server as <code>{{ '{' }}project{{ '}' }}-{{ '{' }}environment{{ '}' }}</code> and cannot be changed.
   </p>
   <div class="grid-3">
     <div class="card" *ngFor="let env of project?.environments">
