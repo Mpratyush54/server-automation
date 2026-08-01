@@ -260,28 +260,62 @@ func InstallArgoCD(cfg *config.Config) error {
 		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 		helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
 		helm repo update argo >/dev/null 2>&1 || true
-		kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 
-		# Modern argo-cd charts keep CRDs under templates/ — helm show crds is empty.
-		# Apply Application + AppProject CRDs with server-side apply to avoid the
-		# client-side last-applied-configuration 262144-byte limit. Skip ApplicationSet
-		# (huge + unused; values disable the controller).
-		CHART_DIR=$(mktemp -d)
-		helm pull argo/argo-cd --untar -d "$CHART_DIR"
-		for crd in crd-application.yaml crd-appproject.yaml; do
-		  helm template argocd "$CHART_DIR/argo-cd" \
-		    --set crds.install=true \
-		    --show-only "templates/crds/${crd}" \
-		    | kubectl apply --server-side --force-conflicts -f -
-		done
-		rm -rf "$CHART_DIR"
+		reset_argocd() {
+		  echo "Resetting ArgoCD for clean Helm install..."
+		  helm uninstall argocd -n argocd --wait --timeout 3m 2>/dev/null || true
+		  kubectl delete namespace argocd --wait=true --timeout=180s 2>/dev/null || true
+		  for i in $(seq 1 60); do
+		    kubectl get ns argocd >/dev/null 2>&1 || break
+		    sleep 2
+		  done
+		  # Cluster-scoped leftovers from raw install.yaml / prior charts
+		  kubectl get clusterrole,clusterrolebinding -o name 2>/dev/null \
+		    | grep -E 'argocd|argo-cd' \
+		    | xargs -r kubectl delete --ignore-not-found 2>/dev/null || true
+		  kubectl create namespace argocd
+		}
 
-		helm upgrade --install argocd argo/argo-cd \
-			--namespace argocd \
-			-f %s \
-			--set crds.install=false \
-			--take-ownership \
-			--wait --timeout 10m
+		apply_argocd_crds() {
+		  # CRDs live under templates/ (helm show crds is empty). Server-side apply
+		  # avoids client-side last-applied-configuration 262144-byte limit.
+		  # Skip ApplicationSet CRD (huge + unused).
+		  local chart_dir
+		  chart_dir=$(mktemp -d)
+		  helm pull argo/argo-cd --untar -d "$chart_dir"
+		  for crd in crd-application.yaml crd-appproject.yaml; do
+		    helm template argocd "$chart_dir/argo-cd" \
+		      --set crds.install=true \
+		      --show-only "templates/crds/${crd}" \
+		      | kubectl apply --server-side --force-conflicts -f -
+		  done
+		  rm -rf "$chart_dir"
+		}
+
+		helm_install_argocd() {
+		  helm upgrade --install argocd argo/argo-cd \
+		    --namespace argocd \
+		    --create-namespace \
+		    -f %s \
+		    --set crds.install=false \
+		    --wait --timeout 10m
+		}
+
+		# Prefer in-place upgrade when a real Helm release already exists.
+		# On any failure (immutable selectors, ownership, partial raw install),
+		# wipe once and retry so re-provision is self-healing.
+		if helm status argocd -n argocd >/dev/null 2>&1; then
+		  if ! helm_install_argocd; then
+		    echo "ArgoCD Helm upgrade failed — self-healing with clean reinstall"
+		    reset_argocd
+		    apply_argocd_crds
+		    helm_install_argocd
+		  fi
+		else
+		  reset_argocd
+		  apply_argocd_crds
+		  helm_install_argocd
+		fi
 
 		# Hard-guarantee subpath settings
 		kubectl -n argocd create configmap argocd-cmd-params-cm \
