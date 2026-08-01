@@ -82,6 +82,9 @@ export async function expressAuthenticate(req: Request, res: Response, next: Nex
     if (!user) {
       return res.status(401).json({ error: 'Unauthorized: User not found' });
     }
+    if (user.isActive === false) {
+      return res.status(403).json({ error: 'Account is inactive. Contact an administrator.' });
+    }
 
     (req as AuthenticatedRequest).user = {
       id: user.id,

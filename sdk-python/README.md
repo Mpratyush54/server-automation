@@ -1,4 +1,4 @@
-# platform-sdk-python
+# mpratyush54-sdk
 
 The official Python SDK for the Platform.
 
@@ -7,7 +7,7 @@ This SDK provides core backend integrations for your Python microservices, inclu
 ## Installation
 
 ```bash
-pip install platform-sdk-python
+pip install mpratyush54-sdk
 ```
 
 ## Features

@@ -16,6 +16,12 @@ router.post('/projects/:projectId/databases/provision', expressAuthenticate, exp
 
     const { provisionPostgresDb } = await import('../lib/database-service');
     const creds = await provisionPostgresDb(project.name, environment);
+    try {
+      const { persistPostgresCreds } = await import('../lib/project-db-ensure');
+      await persistPostgresCreds(project.id, environment, creds);
+    } catch (e: any) {
+      console.warn('[db-provision] persist for SDK:', e.message);
+    }
 
     await logAudit({
       userId: (req as AuthenticatedRequest).user?.id,

@@ -14,6 +14,16 @@ export class ApiService {
   createProject(data: any): Observable<any> { return this.http.post(`${this.base}/projects`, data); }
   updateProject(id: string, data: any): Observable<any> { return this.http.put(`${this.base}/projects/${id}`, data); }
   deleteProject(id: string): Observable<any> { return this.http.delete(`${this.base}/projects/${id}`); }
+  getProjectMembers(projectId: string): Observable<any> { return this.http.get(`${this.base}/projects/${projectId}/members`); }
+  addProjectMember(projectId: string, data: { email?: string; userId?: string; role: string }): Observable<any> {
+    return this.http.post(`${this.base}/projects/${projectId}/members`, data);
+  }
+  updateProjectMember(projectId: string, memberId: string, role: string): Observable<any> {
+    return this.http.put(`${this.base}/projects/${projectId}/members/${memberId}`, { role });
+  }
+  removeProjectMember(projectId: string, memberId: string): Observable<any> {
+    return this.http.delete(`${this.base}/projects/${projectId}/members/${memberId}`);
+  }
 
   // Deployments
   deploy(data: any): Observable<any> { return this.http.post(`${this.base}/deploy`, data); }
@@ -75,6 +85,13 @@ export class ApiService {
   createProjectToken(projectId: string, name: string): Observable<any> { return this.http.post(`${this.base}/projects/${projectId}/tokens`, { name }); }
   deleteProjectToken(projectId: string, tokenId: string): Observable<any> { return this.http.delete(`${this.base}/projects/${projectId}/tokens/${tokenId}`); }
   getArgoCDStatus(projectId: string): Observable<any> { return this.http.get(`${this.base}/projects/${projectId}/argocd-status`); }
+  getProjectGitBranches(projectId: string): Observable<any> { return this.http.get(`${this.base}/projects/${projectId}/git/branches`); }
+  getProjectGitCommits(projectId: string, branch: string, limit = 20): Observable<any> {
+    return this.http.get(`${this.base}/projects/${projectId}/git/commits`, { params: { branch, limit: String(limit) } });
+  }
+  getProjectGitReleases(projectId: string, limit = 10): Observable<any> {
+    return this.http.get(`${this.base}/projects/${projectId}/git/releases`, { params: { limit: String(limit) } });
+  }
 
   // API Metrics (from Node.js SDK middleware)
   getApiMetrics(projectId: string, environment?: string): Observable<any> {

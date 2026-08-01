@@ -1,0 +1,3 @@
+# Local SDK demo secrets — do not commit
+.demo-env.json
+.demo-token

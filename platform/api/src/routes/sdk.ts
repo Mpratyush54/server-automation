@@ -21,6 +21,8 @@ import { ApiMetricModel } from '../schemas/ApiMetric';
 import { postComment } from '../lib/clickup';
 import { resolveProjectRef } from '../lib/project-resolve';
 import { ensureProjectIngress } from '../lib/k8s';
+import { gitUrlsMatch, normalizeGitUrl } from '../lib/git-url';
+import { assignedNamespace, assignedEnvHost, projectSlug as makeProjectSlug } from '../lib/project-namespace';
 
 const router = Router();
 
@@ -47,31 +49,58 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
         project.domain = body.domain;
         dirty = true;
       }
-      if (body.repositoryUrl && body.repositoryUrl !== project.repositoryUrl) {
-        project.repositoryUrl = body.repositoryUrl;
-        dirty = true;
+      // Git origin: SDK must match the project repo on the server (cannot silently overwrite)
+      if (body.repositoryUrl) {
+        if (project.repositoryUrl && !gitUrlsMatch(body.repositoryUrl, project.repositoryUrl)) {
+          return res.status(409).json({
+            error: 'SDK repositoryUrl does not match project repository on the server',
+            serverRepositoryUrl: project.repositoryUrl,
+            sdkRepositoryUrl: body.repositoryUrl,
+            hint: 'Update the project Git URL in the portal, or point the SDK at the same origin',
+          });
+        }
+        if (!project.repositoryUrl) {
+          project.repositoryUrl = body.repositoryUrl;
+          dirty = true;
+        }
       }
       if (dirty) project = await projectRepo.save(project);
     }
 
-    // Resolve environment ID by name
+    // Resolve environment — namespace is ALWAYS server-assigned
     const envRepo = ds.getRepository(Environment);
-    let env = await envRepo.findOne({ where: { projectId: project.id, name: body.environmentName } });
+    const envName = body.environmentName || 'development';
+    const baseDomain = project.domain || body.domain || process.env.DOMAIN || 'sslip.io';
+    const ns = assignedNamespace(project.name, envName);
+    const host = assignedEnvHost(project.name, envName, baseDomain);
+
+    let env = await envRepo.findOne({ where: { projectId: project.id, name: envName as any } });
     if (!env) {
-      const baseDomain = project.domain || process.env.DOMAIN || 'sslip.io';
-      const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
       env = envRepo.create({
-        name: body.environmentName as any,
-        namespace: `${projectSlug}-${body.environmentName}`,
-        domain: `${projectSlug}-${body.environmentName}.${baseDomain}`,
+        name: envName as any,
+        namespace: ns,
+        domain: host,
         projectId: project.id,
       });
       env = await envRepo.save(env);
-    } else if ((!env.domain || env.domain.includes('example.com')) && (project.domain || process.env.DOMAIN)) {
-      const baseDomain = project.domain || process.env.DOMAIN!;
-      const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
-      env.domain = `${projectSlug}-${env.name}.${baseDomain}`;
-      env = await envRepo.save(env);
+    } else {
+      // Force server-owned namespace/domain (ignore any client override)
+      let envDirty = false;
+      if (env.namespace !== ns) {
+        env.namespace = ns;
+        envDirty = true;
+      }
+      if (!env.domain || env.domain.includes('example.com') || env.domain !== host) {
+        env.domain = host;
+        envDirty = true;
+      }
+      if (envDirty) env = await envRepo.save(env);
+    }
+
+    if (body.namespace && body.namespace !== env.namespace) {
+      console.warn(
+        `[sdk/register] Ignoring client namespace "${body.namespace}" — server assigned "${env.namespace}"`,
+      );
     }
 
     const repo = ds.getRepository(ServiceRegistration);
@@ -146,42 +175,41 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       timestamp: new Date(),
     });
 
-    // Auto-provision PostgreSQL databases if requested
-    if (body.dbTypes && body.dbTypes.includes('postgres')) {
+    // Ensure/init project databases and persist credentials for getDbCredentials
+    let databasesStatus: Record<string, { status: string; error?: string }> = {};
+    if (body.dbTypes && Array.isArray(body.dbTypes) && body.dbTypes.length) {
       try {
-        const { provisionPostgresDb } = await import('../lib/database-service');
-        const envs = ['development', 'staging', 'production'];
+        const { ensureProjectDatabases } = await import('../lib/project-db-ensure');
+        // Provision for the active env first, then mirror to other envs for convenience
+        const envs = Array.from(new Set([body.environmentName, 'development', 'staging', 'production'].filter(Boolean)));
         for (const envName of envs) {
-          await provisionPostgresDb(project.name, envName).catch(() => {});
+          const status = await ensureProjectDatabases(project.id, project.name, envName, body.dbTypes);
+          if (envName === body.environmentName) databasesStatus = status;
         }
       } catch (e) {
-        console.warn('[sdk/register] Failed to auto-provision databases:', (e as Error).message);
+        console.warn('[sdk/register] Failed to ensure databases:', (e as Error).message);
+        databasesStatus = { _error: { status: 'error', error: (e as Error).message } };
       }
     }
 
-    // Persist Git repo from SDK so ArgoCD GitOps can be wired on register.
-    let projectDirty = false;
-    if (body.repositoryUrl && body.repositoryUrl !== project.repositoryUrl) {
-      project.repositoryUrl = body.repositoryUrl;
-      projectDirty = true;
-    }
-    if (body.domain && body.domain !== project.domain) {
+    // Domain may still be set once from SDK if project has none
+    if (body.domain && !project.domain) {
       project.domain = body.domain;
-      projectDirty = true;
-    }
-    if (projectDirty) {
       project = await projectRepo.save(project);
     }
 
-    const repoUrl = project.repositoryUrl || body.repositoryUrl || '';
+    // Always use server project repo (already validated against SDK origin if provided)
+    const repoUrl = project.repositoryUrl || '';
     const gitPath =
       body.gitPath ||
       body.k8sPath ||
-      (repoUrl.includes('server-automation') ? 'examples/sdk-demo/k8s' : 'k8s');
+      (repoUrl.toLowerCase().includes('server-automation')
+        ? 'examples/sdk-apps/k8s'
+        : 'k8s');
     const gitRevision = body.gitRevision || body.branch || 'main';
     const useGitops = body.gitops !== false && !!repoUrl;
-    const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-');
-    const destNamespace = body.namespace || `${projectSlug}-staging`;
+    const slug = makeProjectSlug(project.name);
+    const destNamespace = env.namespace; // server-owned only — never body.namespace
     let gitopsInfo: Record<string, any> | null = null;
 
     // Auto-create / refresh ArgoCD Application from SDK register (GitHub → ArgoCD)
@@ -190,7 +218,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
         const customApi = new k8s.KubeConfig();
         try { customApi.loadFromCluster(); } catch { try { customApi.loadFromDefault(); } catch {} }
         const apiClient = customApi.makeApiClient(k8s.CustomObjectsApi);
-        const appName = `${projectSlug}-staging`.replace(/[^a-z0-9-]/g, '-').slice(0, 63);
+        const appName = destNamespace.slice(0, 63);
         const application = {
           apiVersion: 'argoproj.io/v1alpha1',
           kind: 'Application',
@@ -199,7 +227,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
             namespace: 'argocd',
             labels: {
               'app.kubernetes.io/managed-by': 'platform-sdk',
-              'platform.project': projectSlug,
+              'platform.project': slug,
             },
           },
           spec: {
@@ -249,16 +277,21 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
         // Wire HTTPS Ingress for the environment host (Let's Encrypt, incl. sslip.io)
         try {
           const { ensureProjectIngress } = await import('../lib/k8s');
-          const host = env.domain || `${projectSlug}-${body.environmentName}.${project.domain || process.env.DOMAIN || 'sslip.io'}`;
+          const host = env.domain || assignedEnvHost(project.name, env.name, project.domain || process.env.DOMAIN || 'sslip.io');
+          const serviceName = body.serviceName || body.ingressServiceName || 'sdk-node-api';
+          const servicePort = Number(body.servicePort || body.ingressServicePort || 80);
           const ingress = await ensureProjectIngress({
             name: appName,
             namespace: destNamespace,
             host,
-            serviceName: 'sdk-demo',
-            servicePort: 80,
+            serviceName,
+            servicePort,
           });
           gitopsInfo.ingressHost = ingress.host;
           gitopsInfo.tls = ingress.ok;
+          gitopsInfo.serviceName = serviceName;
+          gitopsInfo.namespace = destNamespace;
+          gitopsInfo.repositoryUrlNormalized = normalizeGitUrl(repoUrl);
           if (ingress.ok && (!env.domain || env.domain.includes('example.com'))) {
             env.domain = host;
             await envRepo.save(env);
@@ -353,7 +386,18 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
     }
     }
 
-    return res.status(201).json({ ...saved, gitops: gitopsInfo });
+    return res.status(201).json({
+      ...saved,
+      projectId: project.id,
+      projectName: project.name,
+      namespace: destNamespace,
+      repositoryUrl: repoUrl || null,
+      databases: databasesStatus,
+      gitops: gitopsInfo,
+      warnings: body.namespace && body.namespace !== destNamespace
+        ? [`Client namespace ignored; server assigned ${destNamespace}`]
+        : [],
+    });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
@@ -578,50 +622,24 @@ router.get('/sdk/config', sdkTokenAuth, async (req: Request, res: Response) => {
 
 router.get('/sdk/db-credentials', sdkTokenAuth, async (req: Request, res: Response) => {
   try {
-    const { projectId, dbTypes } = req.query as Record<string, string>;
+    const { projectId, dbTypes, environment } = req.query as Record<string, string>;
     if (!projectId) {
       return res.status(400).json({ error: 'projectId is required' });
     }
 
     const ds = await getDb();
-    
-    // Resolve project ID by name if needed
-    let resolvedProjectId = projectId;
-    const project = await ds.getRepository(Project).findOne({ where: { name: projectId } });
-    if (project) resolvedProjectId = project.id;
-
-    // Fetch Infisical credentials dynamically if token exists, else return fallbacks
-    const secrets = await fetchSecrets(resolvedProjectId, 'development');
-
-    const result: Record<string, any> = {};
-    const types = dbTypes ? dbTypes.split(',').map((t) => t.trim()) : ['postgres', 'mongo', 'redis'];
-
-    if (types.includes('postgres')) {
-      result.postgres = {
-        host: secrets.POSTGRES_HOST || process.env.POSTGRES_HOST || 'localhost',
-        port: parseInt(secrets.POSTGRES_PORT || process.env.POSTGRES_PORT || '5432', 10),
-        user: secrets.POSTGRES_USER || process.env.POSTGRES_USER || 'plat',
-        password: secrets.POSTGRES_PASSWORD || process.env.POSTGRES_PASSWORD || 'plat',
-        database: secrets.POSTGRES_DB || process.env.POSTGRES_DB || 'plat_platform',
-        poolSize: 10,
-      };
+    let project = await ds.getRepository(Project).findOne({ where: { name: projectId } });
+    if (!project) {
+      project = await ds.getRepository(Project).findOne({ where: { id: projectId } });
+    }
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
     }
 
-    if (types.includes('mongo')) {
-      result.mongo = {
-        uri: secrets.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/plat_platform',
-        poolSize: 5,
-      };
-    }
-
-    if (types.includes('redis')) {
-      result.redis = {
-        host: secrets.REDIS_HOST || process.env.REDIS_HOST || 'localhost',
-        port: parseInt(secrets.REDIS_PORT || process.env.REDIS_PORT || '6379', 10),
-        password: secrets.REDIS_PASSWORD || process.env.REDIS_PASSWORD || '',
-      };
-    }
-
+    const envName = environment || 'development';
+    const types = dbTypes ? dbTypes.split(',').map((t) => t.trim()).filter(Boolean) : ['postgres', 'mongo', 'redis'];
+    const { resolveProjectDbCredentials } = await import('../lib/project-db-ensure');
+    const result = await resolveProjectDbCredentials(project.id, project.name, envName, types);
     return res.json(result);
   } catch (err: any) {
     return res.status(400).json({ error: err.message });

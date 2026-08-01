@@ -70,6 +70,10 @@ router.post('/auth/login', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid credentials.' });
     }
 
+    if (user.isActive === false) {
+      return res.status(403).json({ error: 'Account is inactive. Contact an administrator.' });
+    }
+
     user.lastLogin = new Date();
     await repo.save(user);
 
@@ -78,7 +82,8 @@ router.post('/auth/login', async (req: Request, res: Response) => {
       JWT_SECRET,
       { expiresIn: '24h' }
     );
-    return res.json({ token, user });
+    const { passwordHash: _, ...safeUser } = user as any;
+    return res.json({ token, user: safeUser });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
@@ -214,29 +219,61 @@ router.post('/auth/set-password', expressAuthenticate, async (req: Request, res:
   }
 });
 
-router.get('/users', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
+router.get('/users', expressAuthenticate, expressRequireRole([UserRole.ADMIN, UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
   try {
     const ds = await getDb();
-    const users = await ds.getRepository(User).find();
-    return res.json(users);
+    const users = await ds.getRepository(User).find({
+      order: { createdAt: 'DESC' as any },
+    });
+    // Never return password hashes to the client
+    return res.json(users.map((u) => {
+      const { passwordHash, ...safe } = u as any;
+      return { ...safe, hasPassword: !!passwordHash };
+    }));
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
 });
 
-router.post('/users', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+router.post('/users', expressAuthenticate, expressRequireRole([UserRole.ADMIN, UserRole.DEVOPS]), async (req: Request, res: Response) => {
   try {
     const body = req.body;
     const ds = await getDb();
     const repo = ds.getRepository(User);
 
+    if (!body.name || !body.email) {
+      return res.status(400).json({ error: 'name and email are required' });
+    }
+    if (!body.password || String(body.password).length < 8) {
+      return res.status(400).json({ error: 'password is required (min 8 characters) so the user can log in' });
+    }
+    const allowedRoles = Object.values(UserRole);
+    const role = (body.role as UserRole) || UserRole.DEVELOPER;
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Allowed: ${allowedRoles.join(', ')}` });
+    }
+
+    const existingByEmail = await repo.findOne({ where: { email: body.email } });
+    if (existingByEmail) {
+      return res.status(409).json({ error: 'A user with that email already exists' });
+    }
+    const username = body.username || body.email.split('@')[0];
+    const existingByUser = await repo.findOne({ where: { username } });
+    if (existingByUser) {
+      return res.status(409).json({ error: 'A user with that username already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(String(body.password), 10);
     const user = repo.create({
       id: uuidv4(),
       name: body.name,
       email: body.email,
-      role: body.role as UserRole,
+      username,
+      passwordHash,
+      role,
       gitlabId: body.gitlabId || null,
       avatarUrl: body.avatarUrl || null,
+      isActive: body.isActive !== false,
     });
     const saved = await repo.save(user);
 
@@ -248,13 +285,14 @@ router.post('/users', expressAuthenticate, expressRequireRole([UserRole.DEVOPS])
       ip: req.ip,
     });
 
-    return res.status(201).json(saved);
+    const { passwordHash: _, ...safe } = saved as any;
+    return res.status(201).json({ ...safe, hasPassword: true });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
 });
 
-router.put('/users/:id', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+router.put('/users/:id', expressAuthenticate, expressRequireRole([UserRole.ADMIN, UserRole.DEVOPS]), async (req: Request, res: Response) => {
   try {
     const body = req.body;
     const ds = await getDb();
@@ -264,11 +302,25 @@ router.put('/users/:id', expressAuthenticate, expressRequireRole([UserRole.DEVOP
 
     if (body.name !== undefined) user.name = body.name;
     if (body.email !== undefined) user.email = body.email;
-    if (body.role !== undefined) user.role = body.role as UserRole;
+    if (body.username !== undefined) user.username = body.username;
+    if (body.role !== undefined) {
+      if (!Object.values(UserRole).includes(body.role)) {
+        return res.status(400).json({ error: `Invalid role. Allowed: ${Object.values(UserRole).join(', ')}` });
+      }
+      user.role = body.role as UserRole;
+    }
     if (body.gitlabId !== undefined) user.gitlabId = body.gitlabId;
     if (body.avatarUrl !== undefined) user.avatarUrl = body.avatarUrl;
+    if (body.isActive !== undefined) user.isActive = !!body.isActive;
+    if (body.password) {
+      if (String(body.password).length < 8) {
+        return res.status(400).json({ error: 'password must be at least 8 characters' });
+      }
+      user.passwordHash = await bcrypt.hash(String(body.password), 10);
+    }
 
     const saved = await repo.save(user);
+    clearPermissionCache(saved.id);
 
     await logAudit({
       userId: (req as AuthenticatedRequest).user?.id,
@@ -278,18 +330,24 @@ router.put('/users/:id', expressAuthenticate, expressRequireRole([UserRole.DEVOP
       ip: req.ip,
     });
 
-    return res.json(saved);
+    const { passwordHash: _, ...safe } = saved as any;
+    return res.json({ ...safe, hasPassword: !!saved.passwordHash });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
 });
 
-router.delete('/users/:id', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+router.delete('/users/:id', expressAuthenticate, expressRequireRole([UserRole.ADMIN, UserRole.DEVOPS]), async (req: Request, res: Response) => {
   try {
     const ds = await getDb();
     const repo = ds.getRepository(User);
     const user = await repo.findOne({ where: { id: req.params.id } });
     if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Prevent deleting yourself
+    if ((req as AuthenticatedRequest).user?.id === user.id) {
+      return res.status(400).json({ error: 'You cannot delete your own account' });
+    }
 
     await repo.remove(user);
 

@@ -7,7 +7,7 @@ storage and SSO all wired up.
 
 - **Backend API** — Node.js + TypeScript + Express + TypeORM (Postgres) + Mongoose (Mongo) + ioredis
 - **Portal** — Angular 19 dashboard with a built-in docs site
-- **SDKs** — `@mpratyush54/sdk-node`, `platform-sdk-python`, `@mpratyush54/sdk-react`, `@mpratyush54/sdk-angular`
+- **SDKs** — `@mpratyush54/sdk-node`, `mpratyush54-sdk`, `@mpratyush54/sdk-react`, `@mpratyush54/sdk-angular`
 - **Bootstrap** — a single `bash` script that installs and configures the entire stack
 
 The full documentation lives in [`docs/`](docs/) and is also rendered inside the portal
@@ -23,7 +23,7 @@ SERVER-automation/
 │   ├── api/                 # Express + TypeORM + Mongoose backend
 │   └── portal/              # Angular 19 dashboard + docs
 ├── sdk-node/                # @mpratyush54/sdk-node
-├── sdk-python/              # platform-sdk-python (PyPI)
+├── sdk-python/              # mpratyush54-sdk (PyPI)
 ├── sdk-react/               # @mpratyush54/sdk-react
 ├── sdk-angular/             # @mpratyush54/sdk-angular
 ├── platform-bootstrap/      # Server install script (bootstrap.sh / bootstrap.ps1)
@@ -85,7 +85,7 @@ Full walkthrough with per-OS notes:
 | Language | Package | Docs |
 |---|---|---|
 | Node.js | `@mpratyush54/sdk-node` | [sdk-node/README.md](sdk-node/README.md) |
-| Python  | `platform-sdk-python`   | [sdk-python/README.md](sdk-python/README.md) |
+| Python  | `mpratyush54-sdk`   | [sdk-python/README.md](sdk-python/README.md) |
 | React   | `@mpratyush54/sdk-react`  | [sdk-react/README.md](sdk-react/README.md) |
 | Angular | `@mpratyush54/sdk-angular`| [sdk-angular/README.md](sdk-angular/README.md) |
 

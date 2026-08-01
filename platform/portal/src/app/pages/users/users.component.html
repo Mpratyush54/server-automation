@@ -1,11 +1,18 @@
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
   <div>
     <h2 style="margin:0;font-size:1.5rem;font-weight:700;">User Management</h2>
-    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:4px 0 0 0;">Provision and configure Platform developer roles</p>
+    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:4px 0 0 0;">
+      Create users with roles and passwords so they can log in. Admin and DevOps can manage accounts.
+    </p>
   </div>
-  <button *ngIf="isDevOps" class="btn btn-primary" (click)="openCreateModal()">
+  <button *ngIf="canManage" class="btn btn-primary" (click)="openCreateModal()">
     + Create User
   </button>
+</div>
+
+<div *ngIf="loadError" class="card" style="margin-bottom:16px;border-color:rgba(239,68,68,0.4);color:#fca5a5;">
+  {{ loadError }}
+  <button class="btn btn-sm" style="margin-left:8px;" (click)="loadUsers()">Retry</button>
 </div>
 
 <div class="card" style="padding:0;overflow:hidden;">
@@ -13,71 +20,90 @@
     <thead>
       <tr>
         <th>Name</th>
-        <th>Email</th>
+        <th>Email / Username</th>
         <th>Role</th>
-        <th>GitLab ID</th>
+        <th>Status</th>
         <th>Last Login</th>
-        <th *ngIf="isDevOps" style="text-align:right;">Actions</th>
+        <th *ngIf="canManage" style="text-align:right;">Actions</th>
       </tr>
     </thead>
     <tbody>
       <tr *ngFor="let u of users">
         <td style="font-weight:600;color:#fff;">{{ u.name }}</td>
-        <td>{{ u.email }}</td>
+        <td>
+          <div>{{ u.email }}</div>
+          <div style="font-size:0.75rem;color:var(--color-text-secondary);font-family:monospace;">{{ u.username || '—' }}</div>
+        </td>
         <td>
           <span class="badge" [ngClass]="{
-            'badge-active': u.role === 'devops',
+            'badge-active': u.role === 'devops' || u.role === 'admin',
             'badge-pending': u.role === 'tech_lead',
-            'badge-failed': u.role === 'developer'
+            'badge-failed': u.role === 'developer' || u.role === 'viewer'
           }" style="font-size:0.7rem;">
             {{ u.role | uppercase }}
           </span>
         </td>
-        <td>{{ u.gitlabId || '—' }}</td>
+        <td>
+          <span class="badge" [class.badge-active]="u.isActive !== false" [class.badge-failed]="u.isActive === false">
+            {{ u.isActive === false ? 'INACTIVE' : 'ACTIVE' }}
+          </span>
+          <span *ngIf="u.hasPassword === false" style="margin-left:6px;font-size:0.7rem;color:#f59e0b;">no password</span>
+        </td>
         <td>{{ u.lastLogin ? (u.lastLogin | date:'medium') : 'Never' }}</td>
-        <td *ngIf="isDevOps" style="text-align:right;display:flex;gap:8px;justify-content:flex-end;">
+        <td *ngIf="canManage" style="text-align:right;display:flex;gap:8px;justify-content:flex-end;">
           <button class="btn btn-sm" (click)="openEditModal(u)">Edit</button>
           <button class="btn btn-danger btn-sm" (click)="deleteUser(u.id)">Delete</button>
         </td>
       </tr>
-      <tr *ngIf="users.length === 0">
-        <td colspan="6" style="text-align:center;color:var(--color-text-muted);padding:32px;">
-          No users registered in database. Initialize demo users or create a new user.
+      <tr *ngIf="users.length === 0 && !loadError">
+        <td [attr.colspan]="canManage ? 6 : 5" style="text-align:center;color:var(--color-text-muted);padding:32px;">
+          No users found. Create a user with a password so they can sign in.
         </td>
       </tr>
     </tbody>
   </table>
 </div>
 
-<!-- Glassmorphism Modal Overlay -->
 <div *ngIf="showModal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;">
   <div class="card w-full max-w-md" style="margin:0;background:rgba(13,11,26,0.9);border:1px solid var(--border-glass-hover);box-shadow:0 24px 50px rgba(0,0,0,0.5);">
     <h2 style="font-size:1.25rem;font-weight:700;margin-top:0;margin-bottom:20px;border-bottom:1px solid var(--border-glass);padding-bottom:12px;">
-      {{ isEditMode ? 'Edit User Details' : 'Create New User' }}
+      {{ isEditMode ? 'Edit User' : 'Create User' }}
     </h2>
 
     <div class="form-group">
       <label>Name</label>
-      <input [(ngModel)]="currentUser.name" placeholder="John Dev">
+      <input [(ngModel)]="currentUser.name" placeholder="Jane Doe">
     </div>
 
     <div class="form-group">
       <label>Email Address</label>
-      <input [(ngModel)]="currentUser.email" placeholder="john@platform.dev" [disabled]="isEditMode">
+      <input [(ngModel)]="currentUser.email" type="email" placeholder="jane@company.com" [disabled]="isEditMode">
+    </div>
+
+    <div class="form-group">
+      <label>Username</label>
+      <input [(ngModel)]="currentUser.username" placeholder="jane">
     </div>
 
     <div class="form-group">
       <label>Role</label>
       <select [(ngModel)]="currentUser.role">
+        <option value="viewer">Viewer</option>
         <option value="developer">Developer</option>
         <option value="tech_lead">Tech Lead</option>
         <option value="devops">DevOps</option>
+        <option value="admin">Admin</option>
       </select>
     </div>
 
     <div class="form-group">
-      <label>GitLab User ID (Optional)</label>
-      <input [(ngModel)]="currentUser.gitlabId" placeholder="123456">
+      <label>{{ isEditMode ? 'New Password (optional)' : 'Password (required)' }}</label>
+      <input [(ngModel)]="currentUser.password" type="password" [placeholder]="isEditMode ? 'Leave blank to keep current' : 'min 8 characters'">
+    </div>
+
+    <div class="form-group" style="flex-direction:row;align-items:center;gap:10px;">
+      <input type="checkbox" [(ngModel)]="currentUser.isActive" id="userActive">
+      <label for="userActive" style="margin:0;cursor:pointer;">Account active</label>
     </div>
 
     <div style="display:flex;justify-content:flex-end;gap:12px;margin-top:24px;border-top:1px solid var(--border-glass);padding-top:16px;">

@@ -2,7 +2,7 @@ import os
 from setuptools import setup, find_packages
 
 setup(
-    name="platform-sdk-python",
+    name="mpratyush54-sdk",
     version="1.0.1",
     description="Platform Python SDK",
     packages=find_packages(include=['platform_sdk', 'platform_sdk.*']),
