@@ -262,15 +262,24 @@ func InstallArgoCD(cfg *config.Config) error {
 		helm repo update argo >/dev/null 2>&1 || true
 		kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 
-		# CRDs first via server-side apply — avoids
-		# "metadata.annotations: Too long: may not be more than 262144 bytes"
-		# from client-side last-applied-configuration on ApplicationSet CRD.
-		helm show crds argo/argo-cd | kubectl apply --server-side --force-conflicts -f -
+		# Modern argo-cd charts keep CRDs under templates/ — helm show crds is empty.
+		# Apply Application + AppProject CRDs with server-side apply to avoid the
+		# client-side last-applied-configuration 262144-byte limit. Skip ApplicationSet
+		# (huge + unused; values disable the controller).
+		CHART_DIR=$(mktemp -d)
+		helm pull argo/argo-cd --untar -d "$CHART_DIR"
+		for crd in crd-application.yaml crd-appproject.yaml; do
+		  helm template argocd "$CHART_DIR/argo-cd" \
+		    --set crds.install=true \
+		    --show-only "templates/crds/${crd}" \
+		    | kubectl apply --server-side --force-conflicts -f -
+		done
+		rm -rf "$CHART_DIR"
 
 		helm upgrade --install argocd argo/argo-cd \
 			--namespace argocd \
 			-f %s \
-			--skip-crds \
+			--set crds.install=false \
 			--wait --timeout 10m
 
 		# Hard-guarantee subpath settings
