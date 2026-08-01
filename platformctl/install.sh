@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 # Install platformctl from GitHub Releases.
 # Usage:
-#   curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | sh
-#   PLATFORMCTL_VERSION=v1.2.3 curl -fsSL .../install.sh | sh
+#   curl -fsSL https://github.com/Mpratyush54/server-automation/releases/latest/download/install.sh | bash
+#   PLATFORMCTL_VERSION=v0.1.4 curl -fsSL .../install.sh | bash
+#
+# Requires bash (Ubuntu's /bin/sh is dash and cannot run this script).
+if [ -z "${BASH_VERSION:-}" ]; then
+  echo "error: please run with bash, not sh:" >&2
+  echo "  curl -fsSL .../install.sh | bash" >&2
+  exit 1
+fi
 set -euo pipefail
 
-REPO="${PLATFORMCTL_REPO:-Mpratyush54/SERVER-automation}"
+# GitHub API is case-sensitive; repo is lowercase "server-automation"
+REPO="${PLATFORMCTL_REPO:-Mpratyush54/server-automation}"
 INSTALL_DIR="${PLATFORMCTL_INSTALL_DIR:-/usr/local/bin}"
 VERSION="${PLATFORMCTL_VERSION:-latest}"
 
@@ -31,21 +39,23 @@ esac
 if [[ "$VERSION" == "latest" ]]; then
   api="https://api.github.com/repos/${REPO}/releases/latest"
 else
-  # Accept v1.2.3 or 1.2.3
   tag="$VERSION"
   [[ "$tag" == v* ]] || tag="v${tag}"
   api="https://api.github.com/repos/${REPO}/releases/tags/${tag}"
 fi
 
 echo "Resolving platformctl release ($VERSION)..."
-release_json="$(curl -fsSL "$api")"
+release_json="$(curl -fsSL "$api")" || {
+  echo "failed to query $api" >&2
+  echo "hint: set PLATFORMCTL_VERSION=v0.1.4 or PLATFORMCTL_REPO=Mpratyush54/server-automation" >&2
+  exit 1
+}
 tag_name="$(printf '%s' "$release_json" | grep -o '"tag_name": *"[^"]*"' | head -1 | cut -d'"' -f4)"
 if [[ -z "$tag_name" ]]; then
-  echo "could not resolve release tag" >&2
+  echo "could not resolve release tag from $api" >&2
   exit 1
 fi
 
-# GoReleaser version is usually without leading v
 ver="${tag_name#v}"
 asset="platformctl_${ver}_${os}_${arch}.tar.gz"
 url="https://github.com/${REPO}/releases/download/${tag_name}/${asset}"
