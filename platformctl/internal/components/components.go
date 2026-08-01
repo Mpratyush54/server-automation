@@ -1388,6 +1388,8 @@ kubectl patch deploy platform-portal -n platform --type=merge -p '{"spec":{"temp
 
 # CronJob fallback: every 15 minutes pull + roll to the configured tag.
 # Works even if Image Updater / Argo Application sync is unavailable.
+# Escape $ so the OUTER bash (platformctl) does not expand $API/$PORTAL to empty
+# when writing the CronJob; the INNER job shell still expands them at runtime.
 kubectl apply -f - <<EOF
 apiVersion: v1
 kind: ServiceAccount
@@ -1429,6 +1431,7 @@ spec:
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 2
+  suspend: false
   jobTemplate:
     spec:
       template:
@@ -1446,9 +1449,10 @@ spec:
                   set -euo pipefail
                   API="%s:%s"
                   PORTAL="%s:%s"
-                  kubectl set image -n platform deploy/platform-api api="$API"
-                  kubectl set image -n platform deploy/platform-portal portal="$PORTAL"
-                  echo "auto-update applied $API $PORTAL"
+                  test -n "\$API" && test -n "\$PORTAL"
+                  kubectl set image -n platform deploy/platform-api api="\$API"
+                  kubectl set image -n platform deploy/platform-portal portal="\$PORTAL"
+                  echo "auto-update applied \$API \$PORTAL"
 EOF
 
 # Argo Application with Image Updater annotations (optional GitOps path)
