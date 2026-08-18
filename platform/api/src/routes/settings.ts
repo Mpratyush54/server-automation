@@ -4,7 +4,24 @@ import { SmtpConfig } from '../entities/SmtpConfig';
 import { StorageProvider } from '../entities/StorageProvider';
 import { Project } from '../entities/Project';
 import { User, UserRole } from '../entities/User';
+import { IntegrationSettings } from '../entities/IntegrationSettings';
 import { expressAuthenticate, expressRequireRole, logAudit, AuthenticatedRequest } from '../middleware/auth';
+import {
+  applyIntegrationsToEnv,
+  getOrCreateIntegrationSettings,
+  maskSecret,
+  publicAuthProviders,
+  resolveIntegrations,
+} from '../lib/integrations';
+import { notifyUser } from '../lib/notify';
+import { rotatePlatformSecrets } from '../lib/secret-rotate';
+
+function apiPublicBase(req: Request): string {
+  const fromEnv = (process.env.API_PUBLIC_URL || process.env.API_URL || '').replace(/\/+$/, '');
+  if (fromEnv) return fromEnv;
+  const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
+  return `${proto}://${req.get('host')}`;
+}
 
 const router = Router();
 
@@ -233,6 +250,109 @@ router.post('/projects/:projectId/databases/backups/:backupId/restore', expressA
 
     await logAudit({ userId: (req as AuthenticatedRequest).user?.id, action: 'database.restore.triggered', targetType: 'Project', targetId: req.params.projectId, metadata: { backupId: backup.id, dbName: backup.dbName }, ip: req.ip });
     return res.status(202).json({ message: 'Restore started', backupId: backup.id });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/settings/integrations', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+  try {
+    const row = await getOrCreateIntegrationSettings();
+    const resolved = await resolveIntegrations();
+    const base = apiPublicBase(req);
+    return res.json({
+      githubLoginEnabled: row.githubLoginEnabled !== false,
+      githubClientId: row.githubClientId || '',
+      githubClientSecret: maskSecret(row.githubClientSecret),
+      githubToken: maskSecret(row.githubToken),
+      githubOrg: row.githubOrg || '',
+      gitlabLoginEnabled: row.gitlabLoginEnabled !== false,
+      gitlabUrl: row.gitlabUrl || 'https://gitlab.com',
+      gitlabClientId: row.gitlabClientId || '',
+      gitlabClientSecret: maskSecret(row.gitlabClientSecret),
+      gitlabToken: maskSecret(row.gitlabToken),
+      gitlabGroup: row.gitlabGroup || '',
+      clickupToken: maskSecret(row.clickupToken),
+      clickupListId: row.clickupListId || '',
+      infisicalUrl: row.infisicalUrl || '',
+      infisicalToken: maskSecret(row.infisicalToken),
+      webhookSecret: maskSecret(process.env.PLATFORM_WEBHOOK_SECRET),
+      envFallback: {
+        githubOAuth: Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET),
+        gitlabOAuth: Boolean(process.env.GITLAB_CLIENT_ID && process.env.GITLAB_CLIENT_SECRET),
+      },
+      providers: publicAuthProviders(resolved),
+      resolved: {
+        githubOAuth: Boolean(resolved.githubClientId && resolved.githubClientSecret),
+        gitlabOAuth: Boolean(resolved.gitlabClientId && resolved.gitlabClientSecret),
+        githubToken: Boolean(resolved.githubToken),
+        gitlabToken: Boolean(resolved.gitlabToken),
+      },
+      callbackUrls: {
+        github: `${base}/api/auth/github/callback`,
+        gitlab: `${base}/api/auth/gitlab/callback`,
+      },
+    });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/settings/integrations', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+  try {
+    const ds = await getDb();
+    const row = await getOrCreateIntegrationSettings();
+    const b = req.body || {};
+    if (b.githubLoginEnabled !== undefined) row.githubLoginEnabled = Boolean(b.githubLoginEnabled);
+    if (b.githubClientId !== undefined) row.githubClientId = String(b.githubClientId || '').trim() || null;
+    if (b.githubClientSecret) row.githubClientSecret = String(b.githubClientSecret);
+    if (b.githubToken) row.githubToken = String(b.githubToken);
+    if (b.githubOrg !== undefined) row.githubOrg = String(b.githubOrg || '').trim() || null;
+    if (b.gitlabLoginEnabled !== undefined) row.gitlabLoginEnabled = Boolean(b.gitlabLoginEnabled);
+    if (b.gitlabUrl !== undefined) row.gitlabUrl = String(b.gitlabUrl || '').replace(/\/$/, '') || 'https://gitlab.com';
+    if (b.gitlabClientId !== undefined) row.gitlabClientId = String(b.gitlabClientId || '').trim() || null;
+    if (b.gitlabClientSecret) row.gitlabClientSecret = String(b.gitlabClientSecret);
+    if (b.gitlabToken) row.gitlabToken = String(b.gitlabToken);
+    if (b.gitlabGroup !== undefined) row.gitlabGroup = String(b.gitlabGroup || '').trim() || null;
+    if (b.clickupToken) row.clickupToken = String(b.clickupToken);
+    if (b.clickupListId !== undefined) row.clickupListId = String(b.clickupListId || '').trim() || null;
+    if (b.infisicalUrl !== undefined) row.infisicalUrl = String(b.infisicalUrl || '').replace(/\/$/, '') || null;
+    if (b.infisicalToken) row.infisicalToken = String(b.infisicalToken);
+    await ds.getRepository(IntegrationSettings).save(row);
+    applyIntegrationsToEnv(await resolveIntegrations());
+    await logAudit({
+      userId: (req as AuthenticatedRequest).user?.id,
+      action: 'settings.integrations.updated',
+      targetType: 'IntegrationSettings',
+      targetId: row.id,
+      ip: req.ip,
+    });
+    const authUser = (req as AuthenticatedRequest).user;
+    if (authUser?.id) {
+      await notifyUser({
+        userId: authUser.id,
+        kind: 'settings',
+        title: 'Integrations updated',
+        body: 'GitHub / GitLab login and linking credentials were saved. Users can sign in with those providers once OAuth apps are enabled.',
+        link: '/settings',
+      });
+    }
+    return res.json({ ok: true, providers: publicAuthProviders(await resolveIntegrations()) });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/settings/rotate-secrets', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+  try {
+    const confirm = String(req.body?.confirm || '');
+    if (confirm !== 'ROTATE') {
+      return res.status(400).json({ error: 'Type ROTATE in confirm to rotate cluster secrets' });
+    }
+    const result = await rotatePlatformSecrets({
+      actorUserId: (req as AuthenticatedRequest).user?.id,
+    });
+    return res.json(result);
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }

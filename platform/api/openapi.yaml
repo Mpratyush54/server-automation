@@ -13,6 +13,8 @@ tags:
   - name: AgentTokens
   - name: AgentCommands
   - name: Projects
+  - name: Settings
+  - name: Notifications
 paths:
   /health:
     get:
@@ -63,6 +65,93 @@ paths:
           description: JWT issued
         '401':
           description: Invalid credentials
+  /auth/providers:
+    get:
+      tags: [Auth]
+      summary: Public GitHub/GitLab login availability
+      security: []
+      responses:
+        '200':
+          description: Provider flags
+  /auth/github:
+    get:
+      tags: [Auth]
+      summary: Start GitHub OAuth login
+      security: []
+      responses:
+        '302':
+          description: Redirect to GitHub
+  /auth/gitlab:
+    get:
+      tags: [Auth]
+      summary: Start GitLab OAuth login
+      security: []
+      responses:
+        '302':
+          description: Redirect to GitLab
+  /users/me:
+    get:
+      tags: [Auth]
+      summary: Current user profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Profile
+    patch:
+      tags: [Auth]
+      summary: Update name and avatar
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Updated profile
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List current user notifications
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Inbox
+  /settings/integrations:
+    get:
+      tags: [Settings]
+      summary: GitHub/GitLab OAuth apps and linking tokens
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Masked integration settings
+    put:
+      tags: [Settings]
+      summary: Save GitHub/GitLab login and linking credentials
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Saved
+  /settings/rotate-secrets:
+    post:
+      tags: [Settings]
+      summary: One-click rotation of admin, database, and related secrets
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm]
+              properties:
+                confirm:
+                  type: string
+                  example: ROTATE
+      responses:
+        '200':
+          description: New values (shown once)
   /agent-tokens/me:
     get:
       tags: [AgentTokens]
