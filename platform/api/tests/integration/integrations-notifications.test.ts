@@ -16,6 +16,9 @@ jest.mock('../../src/lib/k8s', () => ({
   updateArgoCDApp: jest.fn().mockResolvedValue(true),
   patchSecretData: jest.fn().mockResolvedValue(undefined),
   restartNamedDeployment: jest.fn().mockResolvedValue(undefined),
+  upsertSecretData: jest.fn().mockResolvedValue(undefined),
+  readSecretData: jest.fn().mockResolvedValue({}),
+  deleteSecret: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../src/lib/lokilog', () => ({ forwardToLoki: jest.fn().mockResolvedValue(true) }));
 jest.mock('../../src/config/mongoose', () => ({ connectMongo: jest.fn().mockResolvedValue(true) }));
@@ -24,6 +27,15 @@ jest.mock('pg', () => ({
     connect = jest.fn().mockResolvedValue(undefined);
     query = jest.fn().mockResolvedValue({ rowCount: 1 });
     end = jest.fn().mockResolvedValue(undefined);
+  },
+}));
+jest.mock('ioredis', () => ({
+  __esModule: true,
+  default: class {
+    connect = jest.fn().mockResolvedValue(undefined);
+    config = jest.fn().mockResolvedValue('OK');
+    auth = jest.fn().mockResolvedValue('OK');
+    disconnect = jest.fn();
   },
 }));
 
@@ -135,6 +147,8 @@ jest.mock('../../src/config/database', () => ({
       };
     },
   }),
+  reconnectPostgres: jest.fn().mockResolvedValue({}),
+  isPostgresAuthError: () => false,
 }));
 
 import express from 'express';

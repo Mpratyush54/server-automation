@@ -326,7 +326,7 @@ import { AuthService } from '../../services/auth.service';
   <div *ngIf="activeTab === 'rotate' && isDevOps">
     <div class="card" style="padding:20px; max-width:720px;">
       <h2>One-click secret rotation</h2>
-      <p style="color:var(--text-secondary); font-size:0.8rem;">Rotates the platform admin password, PostgreSQL, Redis, MongoDB, MinIO, webhook, Portainer, and Argo CD admin credentials. Kubernetes join tokens stay on the node and are not rotated from this page. JWT is not rotated so nobody is logged out.</p>
+      <p style="color:var(--text-secondary); font-size:0.8rem;">Rotates credentials that can be changed live: platform admin, PostgreSQL, Redis, webhook, and Argo CD. If Postgres or Redis rejects the in-pod password after a rotate, the API retries every stored copy (including a write-ahead pending secret) and syncs Kubernetes secrets by itself — no SSH. MongoDB, MinIO, and Portainer are left unchanged so the API does not restart with passwords the servers still reject. JWT is not rotated.</p>
       <p style="color:var(--accent-danger); font-size:0.78rem;">New values are shown <strong>once</strong>. Copy them into a password manager before leaving this page.</p>
       <div class="form-group">
         <label>Type ROTATE to confirm</label>
