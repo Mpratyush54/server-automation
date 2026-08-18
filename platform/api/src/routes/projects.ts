@@ -51,7 +51,27 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
     const ds = await getDb();
     const userId = (req as AuthenticatedRequest).user?.id;
 
+    if (body.name === undefined || body.name === null || String(body.name).trim() === '') {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    if (String(body.name).length > 100) {
+      return res.status(400).json({ error: 'name must be at most 100 characters' });
+    }
+    if (!body.stack) {
+      return res.status(400).json({ error: 'stack is required' });
+    }
+    const validStacks = Object.values(StackType);
+    if (!validStacks.includes(body.stack)) {
+      return res.status(400).json({ error: `stack must be one of: ${validStacks.join('|')}` });
+    }
+
+    const existing = await ds.getRepository(Project).findOne({ where: { name: body.name } });
+    if (existing) {
+      return res.status(409).json({ error: 'Project name already exists' });
+    }
+
     const project = ds.getRepository(Project).create({
+      id: uuidv4(),
       name: body.name,
       stack: body.stack,
       description: body.description,

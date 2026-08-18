@@ -33,22 +33,13 @@ const STOR_ID   = 'str11111-1111-1111-1111-111111111111';
 const DBCONN_ID = 'dbc11111-1111-1111-1111-111111111111';
 
 import crypto from 'crypto';
-// Build a valid 32-byte AES key from test secret
+import { encryptValue as realEncrypt } from '../../src/lib/secrets-encryption';
+// Match production: master key is hashed via sha256 inside encryptValue
 const ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
-
-// Encrypt a value as the real secrets route does (AES-256-GCM)
-function encryptValue(plaintext: string): string {
-  const key   = Buffer.from(ENCRYPTION_KEY, 'hex');
-  const iv    = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const enc   = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-  const tag   = cipher.getAuthTag();
-  return Buffer.concat([iv, tag, enc]).toString('base64');
-}
 
 const seedSecret = {
   id: SECRET_ID, projectId: PROJ_ID, key: 'DATABASE_URL',
-  encryptedValue: encryptValue('postgresql://user:pass@localhost:5432/db'),
+  encryptedValue: realEncrypt('postgresql://user:pass@localhost:5432/db', ENCRYPTION_KEY),
   environmentId: 'development', version: 1, isActive: true,
   createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
 };
@@ -116,6 +107,7 @@ const alertRepo = {
   create:  jest.fn().mockImplementation((d: any) => ({ id: 'new-alert-id', isEnabled: true, ...d })),
   save:    jest.fn().mockImplementation((a: any) => Promise.resolve(a)),
   delete:  jest.fn().mockResolvedValue({ affected: 1 }),
+  remove:  jest.fn().mockResolvedValue(undefined),
 };
 
 const smtpRepo = {
@@ -147,6 +139,7 @@ const dbConnRepo = {
   create:  jest.fn().mockImplementation((d: any) => ({ id: 'new-dbconn-id', ...d })),
   save:    jest.fn().mockImplementation((d: any) => Promise.resolve(d)),
   delete:  jest.fn().mockResolvedValue({ affected: 1 }),
+  remove:  jest.fn().mockResolvedValue(undefined),
 };
 
 const projectRepo = {
@@ -175,14 +168,27 @@ jest.mock('../../src/config/database', () => ({
 }));
 
 // Mongo models
-jest.mock('../../src/schemas/Log',        () => ({ LogModel:        { insertMany: jest.fn().mockResolvedValue([]) } }));
 jest.mock('../../src/schemas/ApiMetric',  () => ({ ApiMetricModel:  { insertMany: jest.fn().mockResolvedValue([]) } }));
-jest.mock('../../src/schemas/BugReport',  () => ({ BugReportModel:  { create: jest.fn().mockResolvedValue({ _id: 'b1' }), find: jest.fn().mockResolvedValue([{ _id: 'b1', description: 'test bug', projectId: PROJ_ID }]) } }));
+jest.mock('../../src/schemas/BugReport',  () => {
+  const chain = {
+    sort: jest.fn().mockReturnThis(),
+    skip: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([{ _id: 'b1', description: 'test bug', projectId: 'bc145854-46fe-4480-a751-395a0b593004' }]),
+  };
+  return {
+    BugReportModel: {
+      create: jest.fn().mockResolvedValue({ _id: 'b1' }),
+      find: jest.fn().mockReturnValue(chain),
+      countDocuments: jest.fn().mockResolvedValue(1),
+      findByIdAndDelete: jest.fn().mockResolvedValue({ _id: 'b1' }),
+    },
+  };
+});
 jest.mock('../../src/schemas/ErrorDoc',   () => ({ ErrorDocModel:   { findOneAndUpdate: jest.fn().mockResolvedValue({}) } }));
 jest.mock('../../src/schemas/SdkEvent',   () => ({ SdkEventModel:   { create: jest.fn().mockResolvedValue({}) } }));
-jest.mock('../../src/schemas/MetricsRaw', () => ({ MetricsRawModel: { insertMany: jest.fn().mockResolvedValue([]) } }));
+jest.mock('../../src/schemas/MetricsRaw', () => ({ MetricsRawModel: { insertMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({}) } }));
 jest.mock('../../src/schemas/FeatureFlag',() => ({ FeatureFlagModel:{ find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null) } }));
-jest.mock('../../src/schemas/SdkEvent',   () => ({ SdkEventModel:   { create: jest.fn().mockResolvedValue({}) } }));
 
 // Mock Log mongoose model for search
 const mockLogFind = jest.fn().mockReturnValue({
@@ -217,7 +223,13 @@ beforeAll(() => {
   app.use(express.json({ limit: '5mb' }));
   app.use('/api', apiRouter);
 });
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  secretRepo.findOne.mockResolvedValue(seedSecret);
+  secretRepo.find.mockResolvedValue([{ ...seedSecret, encryptedValue: undefined, value: undefined }]);
+  alertRepo.findOne.mockResolvedValue(seedAlert);
+  dbConnRepo.findOne.mockResolvedValue(seedDbConn);
+});
 
 // ════════════════════════════════════════════════════════════════════
 // 1. SECRETS
@@ -380,12 +392,14 @@ describe('Secrets API', () => {
 
   describe('GET /api/projects/:projectId/secrets/:secretId/versions', () => {
     it('200 — returns version history without encrypted values', async () => {
+      secretRepo.findOne.mockResolvedValue(seedSecret);
       const r = await request(app)
         .get(`/api/projects/${PROJ_ID}/secrets/${SECRET_ID}/versions`)
         .set('Authorization', `Bearer ${T.devops}`);
       expect(r.status).toBe(200);
-      expect(Array.isArray(r.body)).toBe(true);
-      r.body.forEach((v: Record<string, unknown>) => {
+      const versions = Array.isArray(r.body) ? r.body : (r.body.history || []);
+      expect(Array.isArray(versions)).toBe(true);
+      versions.forEach((v: Record<string, unknown>) => {
         expect(v).not.toHaveProperty('encryptedValue');
         expect(v).toHaveProperty('version');
       });

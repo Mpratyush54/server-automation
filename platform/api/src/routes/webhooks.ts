@@ -20,8 +20,9 @@ function verifyGitHubSignature(payload: string, signature: string | undefined): 
 const GITLAB_WEBHOOK_SECRET = process.env.GITLAB_WEBHOOK_SECRET || '';
 
 function verifyGitLabToken(token: string | undefined): boolean {
-  if (!GITLAB_WEBHOOK_SECRET) return true;
-  return token === GITLAB_WEBHOOK_SECRET;
+  const secret = process.env.GITLAB_WEBHOOK_SECRET || process.env.GITLAB_WEBHOOK_TOKEN || '';
+  if (!secret) return true;
+  return token === secret;
 }
 
 const router = Router();
