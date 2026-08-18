@@ -27,6 +27,20 @@ func firstFilled(vals ...string) string {
 	return ""
 }
 
+func uniqueFilled(vals ...string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		v = strings.TrimSpace(v)
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
+}
+
 func kubeSecretValue(ns, name, key string) string {
 	script := fmt.Sprintf(`
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
@@ -50,14 +64,15 @@ func randomToken(n int) string {
 }
 
 const recoverScript = `
-set -euo pipefail
+set -uo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 
 b64() { printf '%s' "$1" | base64 -w0 2>/dev/null || printf '%s' "$1" | base64; }
 
 SQL_FILE="${PLATFORM_RECOVER_SQL}"
 ALTER_FILE="${PLATFORM_RECOVER_ALTER}"
-PG_PASS="${PLATFORM_RECOVER_PG_PASS}"
+CAND_FILE="${PLATFORM_RECOVER_PG_CANDIDATES}"
+PG_TARGET="${PLATFORM_RECOVER_PG_PASS}"
 RD_PASS="${PLATFORM_RECOVER_RD_PASS:-}"
 RD_OLD="${PLATFORM_RECOVER_RD_OLD:-}"
 
@@ -65,12 +80,107 @@ PG_POD="$(kubectl -n databases get pod -l app.kubernetes.io/name=postgresql -o j
 if [[ -z "$PG_POD" ]]; then PG_POD=postgresql-0; fi
 echo "  · using Postgres pod $PG_POD"
 
-if ! kubectl -n databases exec -i "$PG_POD" -- bash -lc 'psql -U postgres -d platform -v ON_ERROR_STOP=1' < "$SQL_FILE"; then
-  echo "  · retrying ALTER USER against database postgres"
-  kubectl -n databases exec -i "$PG_POD" -- bash -lc 'psql -U postgres -d postgres -v ON_ERROR_STOP=1' < "$ALTER_FILE"
+# Bitnami keeps the live password in env / secret files inside the pod.
+kubectl -n databases exec "$PG_POD" -- bash -lc '
+  for v in "$POSTGRESQL_PASSWORD" "$POSTGRES_PASSWORD" "$POSTGRES_POSTGRES_PASSWORD"; do
+    [ -n "$v" ] && printf "%s\n" "$v"
+  done
+  for f in /opt/bitnami/postgresql/secrets/postgres-password \
+           /opt/bitnami/postgresql/secrets/password \
+           /bitnami/postgresql/secrets/postgres-password; do
+    [ -f "$f" ] && cat "$f" && printf "\n"
+  done
+' 2>/dev/null >> "$CAND_FILE" || true
+
+# Decode password via base64 so it never hits psql stdin (which would prompt).
+psql_with_pw() {
+  local pw="$1"
+  local db="$2"
+  shift 2
+  local pw_b64 extra
+  pw_b64="$(b64 "$pw")"
+  extra=$(printf '%q ' "$@")
+  kubectl -n databases exec "$PG_POD" -- bash -lc \
+    "export PGPASSWORD=\$(printf '%s' '$pw_b64' | base64 -d 2>/dev/null || printf '%s' '$pw_b64' | base64 -D); exec psql -w -U postgres -d $(printf '%q' "$db") -v ON_ERROR_STOP=1 $extra"
+}
+
+WORKING=""
+while IFS= read -r cand || [[ -n "${cand:-}" ]]; do
+  [[ -z "${cand:-}" ]] && continue
+  if psql_with_pw "$cand" postgres -tAc "SELECT 1" >/dev/null 2>&1; then
+    WORKING="$cand"
+    echo "  · authenticated to Postgres with a stored password"
+    break
+  fi
+done < "$CAND_FILE"
+
+enable_trust() {
+  kubectl -n databases exec "$PG_POD" -- bash -lc '
+    HBA="$(find /opt/bitnami /bitnami -name pg_hba.conf 2>/dev/null | head -1)"
+    [ -n "$HBA" ] || exit 1
+    cp "$HBA" /tmp/pg_hba.recover.bak
+    { echo "local all all trust"; echo "host all all 127.0.0.1/32 trust"; echo "host all all ::1/128 trust"; cat /tmp/pg_hba.recover.bak; } > "$HBA"
+    PGDATA="${POSTGRESQL_DATA_DIR:-${PGDATA:-/bitnami/postgresql/data}}"
+    pg_ctl reload -D "$PGDATA" >/dev/null 2>&1 || /opt/bitnami/postgresql/bin/pg_ctl reload -D "$PGDATA" >/dev/null 2>&1 || kill -HUP 1 >/dev/null 2>&1 || true
+  '
+}
+
+restore_trust() {
+  kubectl -n databases exec "$PG_POD" -- bash -lc '
+    [ -f /tmp/pg_hba.recover.bak ] || exit 0
+    HBA="$(find /opt/bitnami /bitnami -name pg_hba.conf 2>/dev/null | head -1)"
+    [ -n "$HBA" ] && cp /tmp/pg_hba.recover.bak "$HBA"
+    PGDATA="${POSTGRESQL_DATA_DIR:-${PGDATA:-/bitnami/postgresql/data}}"
+    pg_ctl reload -D "$PGDATA" >/dev/null 2>&1 || /opt/bitnami/postgresql/bin/pg_ctl reload -D "$PGDATA" >/dev/null 2>&1 || kill -HUP 1 >/dev/null 2>&1 || true
+  ' 2>/dev/null || true
+}
+
+USED_TRUST=0
+if [[ -z "$WORKING" ]]; then
+  echo "  · no stored password worked — enabling temporary local trust"
+  enable_trust || { echo "  ✗ could not enable local trust (pg_hba.conf not found)" >&2; exit 2; }
+  USED_TRUST=1
+  sleep 2
+  if kubectl -n databases exec "$PG_POD" -- psql -w -U postgres -d postgres -tAc 'SELECT 1' >/dev/null 2>&1; then
+    echo "  · authenticated via local trust"
+  else
+    restore_trust
+    echo "  ✗ could not authenticate to Postgres" >&2
+    exit 2
+  fi
 fi
 
-PG_B64="$(b64 "$PG_PASS")"
+kubectl -n databases exec -i "$PG_POD" -- bash -lc 'cat > /tmp/platformctl-recover-alter.sql' < "$ALTER_FILE"
+kubectl -n databases exec -i "$PG_POD" -- bash -lc 'cat > /tmp/platformctl-recover.sql' < "$SQL_FILE"
+
+run_file() {
+  local db="$1"
+  local file="$2"
+  if [[ "$USED_TRUST" = "1" ]]; then
+    kubectl -n databases exec "$PG_POD" -- psql -w -U postgres -d "$db" -v ON_ERROR_STOP=1 -f "$file"
+  else
+    psql_with_pw "$WORKING" "$db" -f "$file"
+  fi
+}
+
+if ! run_file platform /tmp/platformctl-recover.sql; then
+  echo "  · running ALTER USER against database postgres"
+  run_file postgres /tmp/platformctl-recover-alter.sql
+fi
+
+if [[ "$USED_TRUST" = "1" ]]; then
+  restore_trust
+  # After restoring md5/scram, the target password must work.
+  if ! psql_with_pw "$PG_TARGET" postgres -tAc "SELECT 1" >/dev/null 2>&1; then
+    echo "  ⚠ local trust restored but target password not yet accepted; retrying ALTER" >&2
+    enable_trust
+    sleep 1
+    run_file postgres /tmp/platformctl-recover-alter.sql || true
+    restore_trust
+  fi
+fi
+
+PG_B64="$(b64 "$PG_TARGET")"
 kubectl -n platform patch secret platform-env --type merge -p "{\"data\":{\"POSTGRES_PASSWORD\":\"$PG_B64\"}}"
 kubectl -n databases patch secret postgresql --type merge -p "{\"data\":{\"postgres-password\":\"$PG_B64\",\"password\":\"$PG_B64\"}}" || true
 
@@ -94,12 +204,11 @@ kubectl -n platform rollout status deployment/platform-api --timeout=180s || tru
 
 // RecoverAccess restores Postgres/Redis credentials and admin login from the
 // k3s host when the API cannot authenticate after a partial secret rotate.
-// It uses local access inside the database pods (no API token required).
 func RecoverAccess(cfg *config.Config) error {
 	color.Cyan("\n  ■ Recovering platform access\n")
 	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
 
-	pgPass := firstFilled(
+	candidates := uniqueFilled(
 		cfg.PostgresPassword,
 		kubeSecretValue("platform", "platform-env", "POSTGRES_PASSWORD"),
 		kubeSecretValue("databases", "postgresql", "postgres-password"),
@@ -107,6 +216,11 @@ func RecoverAccess(cfg *config.Config) error {
 		kubeSecretValue("platform", "platform-rotate-pending", "POSTGRES_PASSWORD_OLD"),
 		kubeSecretValue("platform", "platform-rotate-pending", "POSTGRES_PASSWORD_NEW"),
 	)
+
+	pgPass := strings.TrimSpace(cfg.PostgresPassword)
+	if pgPass == "" {
+		pgPass = firstFilled(candidates...)
+	}
 	if pgPass == "" {
 		pgPass = randomToken(24)
 		color.Yellow("  · no stored Postgres password found — generated a new one")
@@ -136,6 +250,7 @@ func RecoverAccess(cfg *config.Config) error {
 
 	sqlPath := "/tmp/platformctl-recover.sql"
 	alterPath := "/tmp/platformctl-recover-alter.sql"
+	candPath := "/tmp/platformctl-recover-pg-candidates"
 	alterSQL := fmt.Sprintf("ALTER USER postgres WITH PASSWORD '%s';\n", sqlLiteral(pgPass))
 	fullSQL := alterSQL + fmt.Sprintf(
 		"UPDATE users SET password_hash = '%s', is_active = true WHERE role = 'admin';\n",
@@ -147,11 +262,16 @@ func RecoverAccess(cfg *config.Config) error {
 	if err := os.WriteFile(alterPath, []byte(alterSQL), 0600); err != nil {
 		return fmt.Errorf("write recover ALTER SQL: %w", err)
 	}
+	if err := os.WriteFile(candPath, []byte(strings.Join(candidates, "\n")+"\n"), 0600); err != nil {
+		return fmt.Errorf("write postgres candidates: %w", err)
+	}
 	defer os.Remove(sqlPath)
 	defer os.Remove(alterPath)
+	defer os.Remove(candPath)
 
 	_ = os.Setenv("PLATFORM_RECOVER_SQL", sqlPath)
 	_ = os.Setenv("PLATFORM_RECOVER_ALTER", alterPath)
+	_ = os.Setenv("PLATFORM_RECOVER_PG_CANDIDATES", candPath)
 	_ = os.Setenv("PLATFORM_RECOVER_PG_PASS", pgPass)
 	_ = os.Setenv("PLATFORM_RECOVER_RD_PASS", rdPass)
 	_ = os.Setenv("PLATFORM_RECOVER_RD_OLD", firstFilled(
