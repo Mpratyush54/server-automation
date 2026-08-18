@@ -9,7 +9,7 @@ describe('SidebarComponent', () => {
   let authService: jasmine.SpyObj<AuthService>;
 
   beforeEach(async () => {
-    const authSpy = jasmine.createSpyObj('AuthService', ['isDevOps', 'isTechLeadOrDevOps', 'logout']);
+    const authSpy = jasmine.createSpyObj('AuthService', ['isDevOps', 'isAdmin', 'isTechLeadOrDevOps', 'canManageUsers', 'logout']);
 
     await TestBed.configureTestingModule({
       imports: [SidebarComponent],
@@ -22,6 +22,8 @@ describe('SidebarComponent', () => {
     }).compileComponents();
 
     authService = TestBed.inject(AuthService) as jasmine.SpyObj<AuthService>;
+    authService.isAdmin.and.returnValue(false);
+    authService.canManageUsers.and.returnValue(false);
   });
 
   it('should create', () => {

@@ -26,6 +26,7 @@ import { LandingComponent } from './pages/landing/landing.component';
 import { OauthAuthorizeComponent } from './pages/oauth-authorize/oauth-authorize.component';
 import { IframeViewComponent } from './pages/iframe-view/iframe-view.component';
 import { DocsComponent } from './pages/docs/docs.component';
+import { ProfileComponent } from './pages/profile/profile.component';
 
 import { authGuard } from './guards/auth.guard';
 import { appHostGuard, marketingOnlyGuard, isPublicMarketingHost } from './guards/public-domain.guard';
@@ -101,6 +102,7 @@ export const routes: Routes = [
   { path: 'users', component: UsersComponent, canActivate: [authGuard] },
   { path: 'playground', component: PlaygroundComponent, canActivate: [authGuard] },
   { path: 'settings', component: SettingsComponent, canActivate: [authGuard] },
+  { path: 'profile', component: ProfileComponent, canActivate: [authGuard] },
 
   { path: '**', canActivate: [homeGuard], children: [] }
 ];

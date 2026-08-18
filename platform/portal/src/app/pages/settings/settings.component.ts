@@ -14,14 +14,71 @@ import { AuthService } from '../../services/auth.service';
   <!-- Page Header -->
   <div class="card" style="background:linear-gradient(135deg, rgba(91,110,245,0.05), rgba(45,212,160,0.02)); border-color:var(--border-subtle); margin-bottom:20px;">
     <h1 style="margin:0 0 4px 0; font-size:1.3rem; font-family:var(--font-heading);">⚙️ Platform Settings</h1>
-    <p style="margin:0; color:var(--text-secondary); font-size:0.8rem;">Configure SMTP, backup storage engines, and developer API integrations.</p>
+    <p style="margin:0; color:var(--text-secondary); font-size:0.8rem;">Configure GitHub / GitLab login after install, linking tokens, SMTP, storage, and one-click secret rotation.</p>
   </div>
 
   <!-- Tab Navigation -->
-  <div style="display:flex; gap:6px; margin-bottom:20px; border-bottom:1px solid var(--border-subtle); padding-bottom:8px;">
+  <div style="display:flex; gap:6px; margin-bottom:20px; border-bottom:1px solid var(--border-subtle); padding-bottom:8px; flex-wrap:wrap;">
+    <button *ngIf="isDevOps" class="btn btn-sm" [class.btn-primary]="activeTab === 'login'" (click)="activeTab = 'login'">🔐 Login (GitHub / GitLab)</button>
+    <button class="btn btn-sm" [class.btn-primary]="activeTab === 'integrations'" (click)="activeTab = 'integrations'">🔗 Git linking</button>
     <button *ngIf="isDevOps" class="btn btn-sm" [class.btn-primary]="activeTab === 'smtp'" (click)="activeTab = 'smtp'">📧 SMTP / Email</button>
     <button *ngIf="isDevOps" class="btn btn-sm" [class.btn-primary]="activeTab === 'storage'" (click)="activeTab = 'storage'">🗄️ Storage Providers</button>
-    <button class="btn btn-sm" [class.btn-primary]="activeTab === 'integrations'" (click)="activeTab = 'integrations'">🔗 Integrations</button>
+    <button *ngIf="isDevOps" class="btn btn-sm" [class.btn-primary]="activeTab === 'rotate'" (click)="activeTab = 'rotate'">⟳ Rotate secrets</button>
+  </div>
+
+  <!-- ─────────────────── LOGIN TAB ─────────────────── -->
+  <div *ngIf="activeTab === 'login' && isDevOps">
+    <div class="card" style="margin-bottom:16px; padding:16px;">
+      <p style="margin:0; color:var(--text-secondary); font-size:0.8rem;">OAuth apps are optional at install time. Create a GitHub OAuth App and a GitLab Application, paste the client ID/secret here, then users can sign in from the login page. Callback URLs must match exactly.</p>
+    </div>
+    <div class="grid-2" style="align-items:start;">
+      <div class="card" style="padding:20px;">
+        <h2>GitHub OAuth login</h2>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+          <input type="checkbox" id="ghLogin" [(ngModel)]="loginForm.githubLoginEnabled" style="width:14px; height:14px;">
+          <label for="ghLogin" style="margin:0; cursor:pointer; text-transform:none; letter-spacing:0;">Enable GitHub login</label>
+        </div>
+        <div class="form-group">
+          <label>Client ID</label>
+          <input [(ngModel)]="loginForm.githubClientId" placeholder="Ov23li…" style="width:100%;">
+        </div>
+        <div class="form-group">
+          <label>Client secret {{ loginHints.githubClientSecret?.set ? '(saved)' : '' }}</label>
+          <input type="password" [(ngModel)]="loginForm.githubClientSecret" [placeholder]="loginHints.githubClientSecret?.hint || 'Leave blank to keep current'" style="width:100%;">
+        </div>
+        <div class="form-group">
+          <label>Authorization callback URL</label>
+          <input [value]="callbackUrls.github" [readonly]="true" style="width:100%; background:rgba(0,0,0,0.15); font-family:var(--font-code); font-size:0.75rem;">
+        </div>
+        <div style="font-size:0.72rem; color:var(--text-muted);">Status: {{ providers.github?.enabled ? 'Login button is live' : 'Not ready — add client ID and secret' }}</div>
+      </div>
+      <div class="card" style="padding:20px;">
+        <h2>GitLab OAuth login</h2>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+          <input type="checkbox" id="glLogin" [(ngModel)]="loginForm.gitlabLoginEnabled" style="width:14px; height:14px;">
+          <label for="glLogin" style="margin:0; cursor:pointer; text-transform:none; letter-spacing:0;">Enable GitLab login</label>
+        </div>
+        <div class="form-group">
+          <label>GitLab URL</label>
+          <input [(ngModel)]="loginForm.gitlabUrl" placeholder="https://gitlab.com" style="width:100%;">
+        </div>
+        <div class="form-group">
+          <label>Application ID</label>
+          <input [(ngModel)]="loginForm.gitlabClientId" style="width:100%;">
+        </div>
+        <div class="form-group">
+          <label>Application secret {{ loginHints.gitlabClientSecret?.set ? '(saved)' : '' }}</label>
+          <input type="password" [(ngModel)]="loginForm.gitlabClientSecret" [placeholder]="loginHints.gitlabClientSecret?.hint || 'Leave blank to keep current'" style="width:100%;">
+        </div>
+        <div class="form-group">
+          <label>Redirect URI</label>
+          <input [value]="callbackUrls.gitlab" [readonly]="true" style="width:100%; background:rgba(0,0,0,0.15); font-family:var(--font-code); font-size:0.75rem;">
+        </div>
+        <div style="font-size:0.72rem; color:var(--text-muted);">Status: {{ providers.gitlab?.enabled ? 'Login button is live' : 'Not ready — add application ID and secret' }}</div>
+      </div>
+    </div>
+    <button class="btn btn-primary" style="margin-top:12px;" (click)="saveLogin()" [disabled]="savingIntegrations">Save login configuration</button>
+    <div *ngIf="saveMessage" style="margin-top:10px; font-size:0.8rem;" [style.color]="saveOk ? 'var(--accent-success)' : 'var(--accent-danger)'">{{ saveMessage }}</div>
   </div>
 
   <!-- ─────────────────── SMTP TAB ─────────────────── -->
@@ -199,30 +256,38 @@ import { AuthService } from '../../services/auth.service';
   <!-- ─────────────────── INTEGRATIONS TAB ─────────────────── -->
   <div *ngIf="activeTab === 'integrations'" class="grid-2" style="align-items:start;">
     <div class="card" style="padding:20px;">
-      <h2>🐙 GitHub Integration</h2>
-      <p style="color:var(--text-secondary); font-size:0.78rem; margin-bottom:12px;">Configure GitHub webhooks and auto-deploy on push. Platform will auto-register webhooks when you link a project to a GitHub repo.</p>
+      <h2>🐙 GitHub linking</h2>
+      <p style="color:var(--text-secondary); font-size:0.78rem; margin-bottom:12px;">Personal access token used to list branches, register webhooks, and pull repos. Login OAuth is on the Login tab.</p>
       <div class="form-group" *ngIf="isDevOps || isTechLeadOrDevOps">
-        <label>GitHub Personal Access Token</label>
+        <label>GitHub Personal Access Token {{ loginHints.githubToken?.set ? '(saved)' : '' }}</label>
         <input type="password" [(ngModel)]="integrations.githubToken" placeholder="ghp_xxxx..." style="width:100%;">
+      </div>
+      <div class="form-group" *ngIf="isDevOps || isTechLeadOrDevOps">
+        <label>Default org (optional)</label>
+        <input [(ngModel)]="integrations.githubOrg" placeholder="my-org" style="width:100%;">
       </div>
       <div class="form-group">
         <label>Webhook Secret</label>
-        <input [value]="integrations.webhookSecret || 'Not set'" [readonly]="true" style="width:100%; background:rgba(0,0,0,0.15); cursor:not-allowed; font-family:var(--font-code);">
+        <input [value]="loginHints.webhookSecret?.hint || 'Not set'" [readonly]="true" style="width:100%; background:rgba(0,0,0,0.15); cursor:not-allowed; font-family:var(--font-code);">
       </div>
       <button *ngIf="isDevOps || isTechLeadOrDevOps" class="btn btn-primary btn-sm" (click)="saveGitHubToken()">Save GitHub Token</button>
       <div style="font-size:0.72rem; color:var(--text-muted); margin-top:8px; font-family:var(--font-code);">Webhook URL: {{ apiBase }}/webhooks/github</div>
     </div>
 
     <div class="card" style="padding:20px;">
-      <h2>🦊 GitLab Integration</h2>
+      <h2>🦊 GitLab linking</h2>
       <p style="color:var(--text-secondary); font-size:0.78rem; margin-bottom:12px;">Connect to GitLab to trigger CI/CD pipelines and sync merge request events.</p>
       <div class="form-group" *ngIf="isDevOps || isTechLeadOrDevOps">
-        <label>GitLab Personal Access Token</label>
+        <label>GitLab Personal Access Token {{ loginHints.gitlabToken?.set ? '(saved)' : '' }}</label>
         <input type="password" [(ngModel)]="integrations.gitlabToken" placeholder="glpat-xxxx..." style="width:100%;">
       </div>
       <div class="form-group" *ngIf="isDevOps || isTechLeadOrDevOps">
         <label>GitLab Instance URL</label>
         <input [(ngModel)]="integrations.gitlabUrl" placeholder="https://gitlab.com" style="width:100%;">
+      </div>
+      <div class="form-group" *ngIf="isDevOps || isTechLeadOrDevOps">
+        <label>Default group (optional)</label>
+        <input [(ngModel)]="integrations.gitlabGroup" placeholder="my-group" style="width:100%;">
       </div>
       <button *ngIf="isDevOps || isTechLeadOrDevOps" class="btn btn-primary btn-sm" (click)="saveGitLabToken()">Save GitLab Config</button>
       <div style="font-size:0.72rem; color:var(--text-muted); margin-top:8px; font-family:var(--font-code);">Webhook URL: {{ apiBase }}/webhooks/gitlab</div>
@@ -232,7 +297,7 @@ import { AuthService } from '../../services/auth.service';
       <h2>📋 ClickUp Integration</h2>
       <p style="color:var(--text-secondary); font-size:0.78rem; margin-bottom:12px;">Connect ClickUp to link tasks with git branch commits and update tasks on pipeline changes.</p>
       <div class="form-group" *ngIf="isDevOps || isTechLeadOrDevOps">
-        <label>ClickUp API Token</label>
+        <label>ClickUp API Token {{ loginHints.clickupToken?.set ? '(saved)' : '' }}</label>
         <input type="password" [(ngModel)]="integrations.clickupToken" placeholder="pk_xxxx..." style="width:100%;">
       </div>
       <div class="form-group">
@@ -250,17 +315,42 @@ import { AuthService } from '../../services/auth.service';
         <input [(ngModel)]="integrations.infisicalUrl" placeholder="https://infisical.company.local" style="width:100%;">
       </div>
       <div class="form-group" *ngIf="isDevOps || isTechLeadOrDevOps">
-        <label>Service Token</label>
+        <label>Service Token {{ loginHints.infisicalToken?.set ? '(saved)' : '' }}</label>
         <input type="password" [(ngModel)]="integrations.infisicalToken" placeholder="st.xxxx..." style="width:100%;">
       </div>
       <button *ngIf="isDevOps || isTechLeadOrDevOps" class="btn btn-primary btn-sm" (click)="saveInfisicalConfig()">Save Infisical Config</button>
+    </div>
+  </div>
+
+  <!-- ─────────────────── ROTATE TAB ─────────────────── -->
+  <div *ngIf="activeTab === 'rotate' && isDevOps">
+    <div class="card" style="padding:20px; max-width:720px;">
+      <h2>One-click secret rotation</h2>
+      <p style="color:var(--text-secondary); font-size:0.8rem;">Rotates the platform admin password, PostgreSQL, Redis, MongoDB, MinIO, webhook, Portainer, and Argo CD admin credentials. Kubernetes join tokens stay on the node and are not rotated from this page. JWT is not rotated so nobody is logged out.</p>
+      <p style="color:var(--accent-danger); font-size:0.78rem;">New values are shown <strong>once</strong>. Copy them into a password manager before leaving this page.</p>
+      <div class="form-group">
+        <label>Type ROTATE to confirm</label>
+        <input [(ngModel)]="rotateConfirm" placeholder="ROTATE" style="width:100%; font-family:var(--font-code);">
+      </div>
+      <button class="btn btn-primary" (click)="rotateSecrets()" [disabled]="rotating || rotateConfirm !== 'ROTATE'">Rotate all secrets</button>
+      <div *ngIf="rotateError" style="margin-top:10px; color:var(--accent-danger); font-size:0.8rem;">{{ rotateError }}</div>
+      <div *ngIf="rotateValues" style="margin-top:16px;">
+        <h3 style="font-size:0.9rem;">New values (copy now)</h3>
+        <pre style="background:rgba(0,0,0,0.25); padding:12px; border-radius:8px; font-size:0.75rem; overflow:auto;">{{ rotateValues | json }}</pre>
+      </div>
+      <div *ngIf="rotateResults.length" style="margin-top:12px;">
+        <div *ngFor="let r of rotateResults" style="font-size:0.75rem; font-family:var(--font-code); margin-bottom:4px;"
+          [style.color]="r.ok ? 'var(--accent-success)' : 'var(--accent-danger)'">
+          {{ r.ok ? '✓' : '✗' }} {{ r.key }} — {{ r.detail }}
+        </div>
+      </div>
     </div>
   </div>
 </div>
   `
 })
 export class SettingsComponent implements OnInit {
-  activeTab = 'smtp';
+  activeTab = 'login';
   smtpConfigs: any[] = [];
   storageProviders: any[] = [];
   testResults: Record<string, any> = {};
@@ -268,27 +358,69 @@ export class SettingsComponent implements OnInit {
   apiBase = '/api';
   isDevOps = false;
   isTechLeadOrDevOps = false;
+  savingIntegrations = false;
+  saveMessage = '';
+  saveOk = false;
+  providers: any = { github: { enabled: false }, gitlab: { enabled: false } };
+  callbackUrls = { github: '', gitlab: '' };
+  loginHints: any = {};
+  loginForm: any = {
+    githubLoginEnabled: true,
+    githubClientId: '',
+    githubClientSecret: '',
+    gitlabLoginEnabled: true,
+    gitlabUrl: 'https://gitlab.com',
+    gitlabClientId: '',
+    gitlabClientSecret: '',
+  };
 
   newSmtp: any = { name: '', provider: 'custom', host: '', port: 587, secure: false, username: '', password: '', fromEmail: '', fromName: '', isDefault: false };
   newStorage: any = { name: '', providerType: 'minio', endpointUrl: '', bucketName: '', isDefault: false, credentials: { accessKeyId: '', secretAccessKey: '', region: '', clientId: '', clientSecret: '', refreshToken: '' } };
-  integrations: any = { githubToken: '', gitlabToken: '', gitlabUrl: 'https://gitlab.com', clickupToken: '', clickupListId: '', infisicalUrl: '', infisicalToken: '', webhookSecret: '' };
+  integrations: any = { githubToken: '', githubOrg: '', gitlabToken: '', gitlabUrl: 'https://gitlab.com', gitlabGroup: '', clickupToken: '', clickupListId: '', infisicalUrl: '', infisicalToken: '' };
+
+  rotateConfirm = '';
+  rotating = false;
+  rotateError = '';
+  rotateValues: Record<string, string> | null = null;
+  rotateResults: any[] = [];
 
   constructor(private api: ApiService, private auth: AuthService) {}
 
   async ngOnInit() {
-    this.isDevOps = this.auth.isDevOps();
+    this.isDevOps = this.auth.isDevOps() || this.auth.isAdmin();
     this.isTechLeadOrDevOps = this.auth.isTechLeadOrDevOps();
 
     if (this.isDevOps) {
-      this.activeTab = 'smtp';
-      await Promise.all([this.loadSmtp(), this.loadStorage()]);
+      this.activeTab = 'login';
+      await Promise.all([this.loadSmtp(), this.loadStorage(), this.loadIntegrations()]);
     } else {
       this.activeTab = 'integrations';
     }
 
-    // Load env-based defaults
-    this.apiBase = window.location.origin.replace('4200', '3000') + '/api';
-    this.integrations.webhookSecret = localStorage.getItem('plat_webhook_secret') || 'Use plat_webhook_secret env var';
+    this.apiBase = (window.location.origin.includes('4200')
+      ? window.location.origin.replace('4200', '3000')
+      : window.location.origin) + '/api';
+  }
+
+  async loadIntegrations() {
+    try {
+      const data = await firstValueFrom(this.api.getIntegrations());
+      this.loginForm.githubLoginEnabled = data.githubLoginEnabled !== false;
+      this.loginForm.githubClientId = data.githubClientId || '';
+      this.loginForm.gitlabLoginEnabled = data.gitlabLoginEnabled !== false;
+      this.loginForm.gitlabUrl = data.gitlabUrl || 'https://gitlab.com';
+      this.loginForm.gitlabClientId = data.gitlabClientId || '';
+      this.integrations.gitlabUrl = data.gitlabUrl || 'https://gitlab.com';
+      this.integrations.githubOrg = data.githubOrg || '';
+      this.integrations.gitlabGroup = data.gitlabGroup || '';
+      this.integrations.clickupListId = data.clickupListId || '';
+      this.integrations.infisicalUrl = data.infisicalUrl || '';
+      this.loginHints = data;
+      this.providers = data.providers || this.providers;
+      this.callbackUrls = data.callbackUrls || this.callbackUrls;
+    } catch {
+      this.loginHints = {};
+    }
   }
 
   async loadSmtp() {
@@ -347,8 +479,88 @@ export class SettingsComponent implements OnInit {
     await this.loadStorage();
   }
 
-  saveGitHubToken() { alert('GitHub token saved (env var approach — set GITHUB_TOKEN on your server).'); }
-  saveGitLabToken() { alert('GitLab config saved (env var approach — set GITLAB_URL and GITLAB_TOKEN on your server).'); }
-  saveClickupConfig() { alert('ClickUp config saved (env var approach — set CLICKUP_API_TOKEN on your server).'); }
-  saveInfisicalConfig() { alert('Infisical config saved (env var approach — set INFISICAL_URL and INFISICAL_TOKEN on your server).'); }
+  private async persistIntegrations(payload: any, okMessage: string) {
+    this.savingIntegrations = true;
+    this.saveMessage = '';
+    try {
+      await firstValueFrom(this.api.saveIntegrations(payload));
+      this.saveOk = true;
+      this.saveMessage = okMessage;
+      this.loginForm.githubClientSecret = '';
+      this.loginForm.gitlabClientSecret = '';
+      this.integrations.githubToken = '';
+      this.integrations.gitlabToken = '';
+      this.integrations.clickupToken = '';
+      this.integrations.infisicalToken = '';
+      await this.loadIntegrations();
+    } catch (err: any) {
+      this.saveOk = false;
+      this.saveMessage = err.error?.error || err.message || 'Save failed';
+      alert(this.saveMessage);
+    } finally {
+      this.savingIntegrations = false;
+    }
+  }
+
+  async saveLogin() {
+    await this.persistIntegrations({
+      githubLoginEnabled: this.loginForm.githubLoginEnabled,
+      githubClientId: this.loginForm.githubClientId,
+      githubClientSecret: this.loginForm.githubClientSecret,
+      gitlabLoginEnabled: this.loginForm.gitlabLoginEnabled,
+      gitlabUrl: this.loginForm.gitlabUrl,
+      gitlabClientId: this.loginForm.gitlabClientId,
+      gitlabClientSecret: this.loginForm.gitlabClientSecret,
+    }, 'Login configuration saved. GitHub / GitLab buttons appear on the login page once both client ID and secret are set.');
+  }
+
+  saveGitHubToken() {
+    return this.persistIntegrations({
+      githubToken: this.integrations.githubToken,
+      githubOrg: this.integrations.githubOrg,
+    }, 'GitHub linking token saved.');
+  }
+
+  saveGitLabToken() {
+    return this.persistIntegrations({
+      gitlabToken: this.integrations.gitlabToken,
+      gitlabUrl: this.integrations.gitlabUrl,
+      gitlabGroup: this.integrations.gitlabGroup,
+    }, 'GitLab linking config saved.');
+  }
+
+  saveClickupConfig() {
+    return this.persistIntegrations({
+      clickupToken: this.integrations.clickupToken,
+      clickupListId: this.integrations.clickupListId,
+    }, 'ClickUp config saved.');
+  }
+
+  saveInfisicalConfig() {
+    return this.persistIntegrations({
+      infisicalUrl: this.integrations.infisicalUrl,
+      infisicalToken: this.integrations.infisicalToken,
+    }, 'Infisical config saved.');
+  }
+
+  async rotateSecrets() {
+    this.rotateError = '';
+    this.rotateValues = null;
+    this.rotateResults = [];
+    if (this.rotateConfirm !== 'ROTATE') {
+      this.rotateError = 'Type ROTATE to confirm.';
+      return;
+    }
+    this.rotating = true;
+    try {
+      const res = await firstValueFrom(this.api.rotateSecrets('ROTATE'));
+      this.rotateValues = res.values || null;
+      this.rotateResults = res.results || [];
+      this.rotateConfirm = '';
+    } catch (err: any) {
+      this.rotateError = err.error?.error || err.message || 'Rotation failed';
+    } finally {
+      this.rotating = false;
+    }
+  }
 }

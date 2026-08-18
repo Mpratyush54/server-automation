@@ -165,5 +165,27 @@ describe('ApiService', () => {
       expect(req.request.method).toBe('GET');
       req.flush([]);
     });
+
+    it('should get auth providers', () => {
+      service.getAuthProviders().subscribe();
+      const req = httpMock.expectOne('/api/auth/providers');
+      expect(req.request.method).toBe('GET');
+      req.flush({ github: { enabled: false }, gitlab: { enabled: false } });
+    });
+
+    it('should get notifications', () => {
+      service.getNotifications().subscribe();
+      const req = httpMock.expectOne('/api/notifications');
+      expect(req.request.method).toBe('GET');
+      req.flush({ items: [], unreadCount: 0 });
+    });
+
+    it('should rotate secrets', () => {
+      service.rotateSecrets('ROTATE').subscribe();
+      const req = httpMock.expectOne('/api/settings/rotate-secrets');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ confirm: 'ROTATE' });
+      req.flush({ values: {}, results: [] });
+    });
   });
 });
