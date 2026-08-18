@@ -33,11 +33,20 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
     const body = req.body;
     const ds = await getDb();
 
+    if (!body?.projectId) {
+      return res.status(400).json({ error: 'projectId is required' });
+    }
+    if (!body?.environmentId && body.environmentName !== 'preview') {
+      return res.status(400).json({ error: 'environmentId is required' });
+    }
+
     // Verify project and environment
     const project = await ds.getRepository(Project).findOne({ where: { id: body.projectId } });
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
-    let env = await ds.getRepository(Environment).findOne({ where: { id: body.environmentId } });
+    let env = body.environmentId
+      ? await ds.getRepository(Environment).findOne({ where: { id: body.environmentId } })
+      : null;
     if (!env) {
       // If it's a preview env, create on the fly
       if (body.environmentName === 'preview') {

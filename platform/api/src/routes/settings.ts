@@ -18,6 +18,8 @@ router.get('/settings/smtp', expressAuthenticate, expressRequireRole([UserRole.D
 
 router.post('/settings/smtp', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
   try {
+    if (!req.body?.name) return res.status(400).json({ error: 'name is required' });
+    if (!req.body?.fromEmail) return res.status(400).json({ error: 'fromEmail is required' });
     const ds = await getDb();
     const repo = ds.getRepository(SmtpConfig);
     if (req.body.isDefault) await repo.update({ isDefault: true }, { isDefault: false });
@@ -56,6 +58,7 @@ router.get('/settings/storage', expressAuthenticate, expressRequireRole([UserRol
 
 router.post('/settings/storage', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
   try {
+    if (!req.body?.name) return res.status(400).json({ error: 'name is required' });
     const ds = await getDb();
     const repo = ds.getRepository(StorageProvider);
     if (req.body.isDefault) await repo.update({ isDefault: true }, { isDefault: false });
