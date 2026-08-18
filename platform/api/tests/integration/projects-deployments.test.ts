@@ -60,6 +60,12 @@ const seedToken = {
 // ── Repositories ──────────────────────────────────────────────────────
 const userRepo = {
   findOne: jest.fn().mockImplementation(({ where }: any) => {
+    const byId: Record<string, string> = {
+      'uid-devops': 'devops',
+      'uid-tl': 'tech_lead',
+      'uid-dev': 'developer',
+      'uid-view': 'viewer',
+    };
     const roles: Record<string, string> = {
       'admin@@pratyushes.dev':   'admin',
       'devops@@caps.io': 'devops',
@@ -69,6 +75,9 @@ const userRepo = {
     };
     if (where?.email && roles[where.email]) {
       return Promise.resolve({ id: `user-${roles[where.email]}`, email: where.email, name: 'User', role: roles[where.email], roleId: null, isActive: true });
+    }
+    if (where?.id && byId[where.id]) {
+      return Promise.resolve({ id: where.id, email: `${byId[where.id]}@@caps.io`, name: byId[where.id], role: byId[where.id], roleId: null, isActive: true });
     }
     if (where?.id) return Promise.resolve({ id: where.id, email: 'x@x.io', name: 'X', role: 'devops', roleId: null, isActive: true });
     return Promise.resolve(null);

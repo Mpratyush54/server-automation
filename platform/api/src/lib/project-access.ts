@@ -29,11 +29,24 @@ export async function userCanAccessProject(
   return PROJECT_ROLE_RANK[membership.role] >= PROJECT_ROLE_RANK[minRole];
 }
 
+function agentHasScope(req: AuthenticatedRequest, scope: string): boolean {
+  const scopes = req.agentToken?.scopes || [];
+  return scopes.includes('*') || scopes.includes(scope);
+}
+
 export async function requireProjectAccess(
   req: AuthenticatedRequest,
   projectId: string,
   minRole: ProjectAccessRole = ProjectAccessRole.VIEWER,
 ): Promise<{ ok: true; membership: ProjectMember | null } | { ok: false; status: number; error: string }> {
+  // Agent tokens with projects:read may view any project; mutating minRoles still require human JWT.
+  if (req.agentToken) {
+    if (minRole === ProjectAccessRole.VIEWER && agentHasScope(req, 'projects:read')) {
+      return { ok: true, membership: null };
+    }
+    return { ok: false, status: 403, error: 'Forbidden: agent token cannot perform this project action' };
+  }
+
   const user = req.user;
   if (!user) return { ok: false, status: 401, error: 'Unauthorized' };
   if (isGlobalProjectAdmin(user)) return { ok: true, membership: null };
@@ -47,8 +60,15 @@ export async function requireProjectAccess(
   return { ok: true, membership };
 }
 
-export async function listAccessibleProjectIds(user: { id: string; role: string }): Promise<string[] | null> {
+export async function listAccessibleProjectIds(
+  user: { id: string; role: string } | undefined,
+  agent?: { scopes: string[] } | null,
+): Promise<string[] | null> {
   // null = all projects
+  if (agent && (agent.scopes.includes('*') || agent.scopes.includes('projects:read'))) {
+    return null;
+  }
+  if (!user) return [];
   if (isGlobalProjectAdmin(user)) return null;
   const ds = await getDb();
   const rows = await ds.getRepository(ProjectMember).find({ where: { userId: user.id } });

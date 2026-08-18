@@ -312,6 +312,9 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
 router.post('/rollback', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
   try {
     const body = req.body;
+    if (!body?.deploymentId) {
+      return res.status(400).json({ error: 'deploymentId is required' });
+    }
     const ds = await getDb();
     const repo = ds.getRepository(Deployment);
 

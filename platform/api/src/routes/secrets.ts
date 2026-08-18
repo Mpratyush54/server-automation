@@ -39,6 +39,10 @@ router.post('/projects/:projectId/secrets/reveal', expressAuthenticate, requireP
     const { environmentId, key } = req.body;
     const userId = (req as AuthenticatedRequest).user?.id;
 
+    if (!key) {
+      return res.status(400).json({ error: 'key is required' });
+    }
+
     const ds = await getDb();
     const repo = ds.getRepository(Secret);
     const secret = await repo.findOne({

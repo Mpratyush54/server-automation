@@ -25,15 +25,18 @@ const router = Router();
 router.get('/projects', expressAuthenticate, async (req: Request, res: Response) => {
   try {
     const ds = await getDb();
-    const user = (req as AuthenticatedRequest).user!;
-    const ids = await listAccessibleProjectIds(user);
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.agentToken && !(authReq.agentToken.scopes.includes('projects:read') || authReq.agentToken.scopes.includes('*'))) {
+      return res.status(403).json({ error: 'Forbidden: Agent token missing projects:read scope' });
+    }
+    const ids = await listAccessibleProjectIds(authReq.user, authReq.agentToken);
     const repo = ds.getRepository(Project);
     const projects = ids === null
-      ? await repo.find({ relations: ['environments', 'deployments'] })
+      ? await repo.find({ where: { isActive: true }, relations: ['environments', 'deployments'] })
       : ids.length === 0
         ? []
         : await repo.find({
-            where: { id: In(ids) },
+            where: { id: In(ids), isActive: true },
             relations: ['environments', 'deployments'],
           });
     return res.json(projects);

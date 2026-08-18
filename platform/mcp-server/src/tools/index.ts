@@ -323,6 +323,31 @@ export function registerTools(client: PlatformClient): RegisteredTool[] {
       },
     },
     {
+      name: 'platform_reject_command',
+      description:
+        'Reject a pending agent command (POST /api/agent/commands/:id/reject). Requires a human JWT from platform_login.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Pending command approval ID' },
+          reason: { type: 'string', description: 'Optional rejection reason' },
+        },
+        required: ['id'],
+      },
+      handler: async (args) => {
+        try {
+          return jsonResult(
+            await client.rejectCommand(
+              String(args.id),
+              args.reason ? String(args.reason) : undefined,
+            ),
+          );
+        } catch (err) {
+          return toolError(err);
+        }
+      },
+    },
+    {
       name: 'platform_deploy',
       description:
         'Trigger a deployment (POST /api/deploy). Set confirm=true before submitting destructive or production deployments.',
