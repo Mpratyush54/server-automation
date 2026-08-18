@@ -1,7 +1,7 @@
 <header class="h-16 border-b border-[#333] bg-black/80 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-6 transition-all duration-300">
   <div class="flex items-center gap-4">
     <div class="flex items-center gap-2 text-sm text-[#a1a1aa]">
-      <span class="hover:text-white cursor-pointer transition-colors">mpratyush54</span>
+      <span class="hover:text-white cursor-pointer transition-colors">{{ currentUser?.name || 'Platform' }}</span>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
       <span class="text-white bg-[#111] border border-[#333] px-2 py-0.5 rounded-full text-xs font-medium">{{ title }}</span>
     </div>
@@ -9,23 +9,40 @@
 
   <div class="flex items-center gap-4">
     <div class="hidden md:flex items-center gap-4 mr-4 text-sm font-medium">
-      <a href="https://github.com/Mpratyush54/caps-platform/issues" target="_blank" class="text-[#a1a1aa] hover:text-white transition-colors">Feedback</a>
-      <a href="https://github.com/Mpratyush54/caps-platform/releases" target="_blank" class="text-[#a1a1aa] hover:text-white transition-colors">Changelog</a>
-      <a href="https://github.com/Mpratyush54/caps-platform/discussions" target="_blank" class="text-[#a1a1aa] hover:text-white transition-colors">Help</a>
+      <a href="https://github.com/Mpratyush54/server-automation/issues" target="_blank" class="text-[#a1a1aa] hover:text-white transition-colors">Feedback</a>
+      <a href="https://github.com/Mpratyush54/server-automation/releases" target="_blank" class="text-[#a1a1aa] hover:text-white transition-colors">Changelog</a>
+      <a routerLink="/settings" class="text-[#a1a1aa] hover:text-white transition-colors">Settings</a>
       <a href="https://platform.pratyushes.dev/docs" target="_blank" rel="noopener" class="text-[#a1a1aa] hover:text-white transition-colors">Docs</a>
     </div>
 
     <div class="w-px h-6 bg-[#333] hidden md:block"></div>
 
-    <button class="relative p-2 text-[#a1a1aa] hover:text-white transition-colors rounded-full hover:bg-[#111]">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-      <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-500 rounded-full border-2 border-black"></span>
-    </button>
-    
-    <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 p-[1px] cursor-pointer">
-      <div class="w-full h-full rounded-full bg-black border border-black overflow-hidden flex items-center justify-center">
-        <span class="text-xs text-white font-medium">MP</span>
+    <div class="relative" (click)="$event.stopPropagation()">
+      <button class="relative p-2 text-[#a1a1aa] hover:text-white transition-colors rounded-full hover:bg-[#111]" (click)="toggleInbox($event)" aria-label="Notifications">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+        <span *ngIf="unreadCount > 0" class="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-500 rounded-full border-2 border-black"></span>
+      </button>
+      <div *ngIf="inboxOpen" class="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-xl border border-[#333] bg-[#0a0a0a] shadow-2xl z-50">
+        <div class="flex items-center justify-between px-3 py-2 border-b border-[#222]">
+          <span class="text-xs font-medium text-white">Notifications</span>
+          <button *ngIf="unreadCount > 0" class="text-[11px] text-blue-400 hover:text-blue-300" (click)="markAllRead($event)">Mark all read</button>
+        </div>
+        <div *ngIf="notifications.length === 0" class="px-3 py-8 text-center text-xs text-[#71717a]">No notifications yet.</div>
+        <button *ngFor="let n of notifications" class="w-full text-left px-3 py-2.5 border-b border-[#1a1a1a] hover:bg-[#111] transition-colors"
+          [class.bg-[#111]]="!n.readAt"
+          (click)="openNotification(n, $event)">
+          <div class="text-xs text-white font-medium">{{ n.title }}</div>
+          <div *ngIf="n.body" class="text-[11px] text-[#a1a1aa] mt-0.5 line-clamp-2">{{ n.body }}</div>
+          <div class="text-[10px] text-[#52525b] mt-1">{{ n.createdAt | date:'short' }}</div>
+        </button>
       </div>
     </div>
+    
+    <a routerLink="/profile" class="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 p-[1px] cursor-pointer" title="Profile">
+      <div class="w-full h-full rounded-full bg-black border border-black overflow-hidden flex items-center justify-center">
+        <img *ngIf="currentUser?.avatarUrl" [src]="currentUser.avatarUrl" alt="" class="w-full h-full object-cover">
+        <span *ngIf="!currentUser?.avatarUrl" class="text-xs text-white font-medium">{{ initials }}</span>
+      </div>
+    </a>
   </div>
 </header>

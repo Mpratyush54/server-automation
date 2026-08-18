@@ -119,6 +119,23 @@ export class ApiService {
   setDefaultStorage(id: string): Observable<any> { return this.http.patch(`${this.base}/settings/storage/${id}/set-default`, {}); }
   deleteStorageProvider(id: string): Observable<any> { return this.http.delete(`${this.base}/settings/storage/${id}`); }
 
+  getAuthProviders(): Observable<any> { return this.http.get(`${this.base}/auth/providers`); }
+  getIntegrations(): Observable<any> { return this.http.get(`${this.base}/settings/integrations`); }
+  saveIntegrations(data: any): Observable<any> { return this.http.put(`${this.base}/settings/integrations`, data); }
+  rotateSecrets(confirm: string): Observable<any> { return this.http.post(`${this.base}/settings/rotate-secrets`, { confirm }); }
+
+  getNotifications(unread = false): Observable<any> {
+    return this.http.get(`${this.base}/notifications`, { params: unread ? { unread: 'true' } : {} });
+  }
+  markNotificationRead(id: string): Observable<any> { return this.http.post(`${this.base}/notifications/${id}/read`, {}); }
+  markAllNotificationsRead(): Observable<any> { return this.http.post(`${this.base}/notifications/read-all`, {}); }
+
+  getMe(): Observable<any> { return this.http.get(`${this.base}/users/me`); }
+  updateMe(data: any): Observable<any> { return this.http.patch(`${this.base}/users/me`, data); }
+  setPassword(data: { currentPassword?: string; newPassword: string }): Observable<any> {
+    return this.http.post(`${this.base}/auth/set-password`, data);
+  }
+
   // Bug Reporting
   submitBugReport(data: any): Observable<any> { return this.http.post(`${this.base}/sdk/bug-report`, data); }
 

@@ -27,6 +27,7 @@ export class UsersComponent implements OnInit {
     role: 'developer',
     password: '',
     gitlabId: '',
+    githubId: '',
     isActive: true,
   };
 
@@ -58,6 +59,7 @@ export class UsersComponent implements OnInit {
       role: 'developer',
       password: '',
       gitlabId: '',
+      githubId: '',
       isActive: true,
     };
     this.showModal = true;
@@ -74,6 +76,7 @@ export class UsersComponent implements OnInit {
       role: user.role,
       password: '',
       gitlabId: user.gitlabId || '',
+      githubId: user.githubId || '',
       isActive: user.isActive !== false,
     };
     this.showModal = true;
@@ -96,6 +99,7 @@ export class UsersComponent implements OnInit {
         username: this.currentUser.username || undefined,
         role: this.currentUser.role,
         gitlabId: this.currentUser.gitlabId || null,
+        githubId: this.currentUser.githubId || null,
         isActive: this.currentUser.isActive,
       };
       if (this.currentUser.password) payload.password = this.currentUser.password;

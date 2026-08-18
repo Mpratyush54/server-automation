@@ -38,7 +38,9 @@ export class AppComponent {
     'infrastructure': 'Infrastructure',
     'audit-logs': 'Audit Logs',
     'users': 'User Management',
-    'playground': 'API Documentation & Playground'
+    'playground': 'API Documentation & Playground',
+    'settings': 'Settings',
+    'profile': 'Profile'
   };
 
   constructor(router: Router) {
