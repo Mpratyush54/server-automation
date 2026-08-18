@@ -12,7 +12,9 @@
       "Bash(xargs grep -l \"markdown\\\\|marked\\\\|mermaid\")",
       "Bash(cp -f docs/api-reference/platform-api/users.md platform/portal/src/assets/docs/api-reference/platform-api/users.md)",
       "Bash(cp -f docs/api-reference/platform-api/users.md platform/portal/public/docs/api-reference/platform-api/users.md)",
-      "PowerShell(gh run view 30567237474 --repo Mpratyush54/SERVER-automation --json status,conclusion --jq \"{status,conclusion}\")"
+      "PowerShell(gh run view 30567237474 --repo Mpratyush54/SERVER-automation --json status,conclusion --jq \"{status,conclusion}\")",
+      "PowerShell(ssh -i \"C:\\\\Users\\\\Pratyush Mishra\\\\.ssh\\\\caps_key\" ubuntu@148.113.59.97 \"sudo PLATFORM_IMAGE_TAG=0.1.3 platformctl update\")",
+      "PowerShell(ssh -i \"C:\\\\Users\\\\Pratyush Mishra\\\\.ssh\\\\caps_key\" ubuntu@148.113.59.97 \"grep PLATFORM_IMAGE_TAG /etc/platform/.env; sudo env PLATFORM_IMAGE_TAG=0.1.3 platformctl update\")"
     ]
   }
 }
