@@ -113,8 +113,8 @@ router.get('/auth/providers', async (_req: Request, res: Response) => {
 router.get('/auth/github', async (req: Request, res: Response) => {
   const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
   const built = await buildAuthorizeUrl('github', req.get('host') || undefined, proto);
-  if (!built.ok) return res.status(built.status).json({ error: built.error });
-  return res.redirect(built.url);
+  if (built.ok) return res.redirect(built.url);
+  return res.status(built.status).json({ error: built.error });
 });
 
 router.get('/auth/github/callback', async (req: Request, res: Response) => {
@@ -136,8 +136,8 @@ router.get('/auth/github/callback', async (req: Request, res: Response) => {
 router.get('/auth/gitlab', async (req: Request, res: Response) => {
   const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
   const built = await buildAuthorizeUrl('gitlab', req.get('host') || undefined, proto);
-  if (!built.ok) return res.status(built.status).json({ error: built.error });
-  return res.redirect(built.url);
+  if (built.ok) return res.redirect(built.url);
+  return res.status(built.status).json({ error: built.error });
 });
 
 router.get('/auth/gitlab/callback', async (req: Request, res: Response) => {
