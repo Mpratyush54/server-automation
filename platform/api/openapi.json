@@ -1,0 +1,469 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Platform PaaS API",
+    "version": "0.3.14",
+    "description": "Internal Platform API including AI-first MCP agent tokens and guarded command execution.\n"
+  },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "Platform API base"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health"
+    },
+    {
+      "name": "Auth"
+    },
+    {
+      "name": "AgentTokens"
+    },
+    {
+      "name": "AgentCommands"
+    },
+    {
+      "name": "Projects"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health check",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "OpenAPI document",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3 document"
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Password login",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "password"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "username": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "JWT issued"
+          },
+          "401": {
+            "description": "Invalid credentials"
+          }
+        }
+      }
+    },
+    "/agent-tokens/me": {
+      "get": {
+        "tags": [
+          "AgentTokens"
+        ],
+        "summary": "Current agent token or human identity",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "agentTokenAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Identity"
+          }
+        }
+      }
+    },
+    "/agent-tokens": {
+      "get": {
+        "tags": [
+          "AgentTokens"
+        ],
+        "summary": "List agent tokens",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Token list"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "AgentTokens"
+        ],
+        "summary": "Create agent token",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created (includes raw token once)"
+          }
+        }
+      }
+    },
+    "/agent-tokens/{id}": {
+      "get": {
+        "tags": [
+          "AgentTokens"
+        ],
+        "summary": "Get agent token",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Token"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "AgentTokens"
+        ],
+        "summary": "Update agent token",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "AgentTokens"
+        ],
+        "summary": "Revoke agent token",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked"
+          }
+        }
+      }
+    },
+    "/agent/commands/validate": {
+      "post": {
+        "tags": [
+          "AgentCommands"
+        ],
+        "summary": "Validate a command against policy",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "agentTokenAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "command"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validation result (may include approvalId for destructive commands)"
+          }
+        }
+      }
+    },
+    "/agent/commands/execute": {
+      "post": {
+        "tags": [
+          "AgentCommands"
+        ],
+        "summary": "Execute an allowlisted command",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "agentTokenAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "command"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  },
+                  "confirm": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "approvalId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result"
+          },
+          "403": {
+            "description": "Denied or missing human approval"
+          }
+        }
+      }
+    },
+    "/agent/commands/pending": {
+      "get": {
+        "tags": [
+          "AgentCommands"
+        ],
+        "summary": "List pending approvals (human JWT only)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending approvals"
+          },
+          "403": {
+            "description": "Agent tokens are rejected"
+          }
+        }
+      }
+    },
+    "/agent/commands/{id}/approve": {
+      "post": {
+        "tags": [
+          "AgentCommands"
+        ],
+        "summary": "Approve a pending command (human JWT only)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Approved"
+          }
+        }
+      }
+    },
+    "/agent/commands/{id}/reject": {
+      "post": {
+        "tags": [
+          "AgentCommands"
+        ],
+        "summary": "Reject a pending command (human JWT only)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rejected"
+          }
+        }
+      }
+    },
+    "/projects": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "List projects",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "agentTokenAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Projects"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "IdPath": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Human JWT from POST /auth/login"
+      },
+      "agentTokenAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Agent token (plat_agent_*)"
+      }
+    }
+  }
+}

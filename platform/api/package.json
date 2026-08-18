@@ -31,7 +31,8 @@
     "pg": "^8.11.0",
     "reflect-metadata": "^0.1.13",
     "typeorm": "^0.3.19",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
