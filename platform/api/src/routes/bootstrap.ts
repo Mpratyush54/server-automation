@@ -3,7 +3,7 @@ import { getDb } from '../config/database';
 import { connectMongo } from '../config/mongoose';
 import { ClickupTaskLink } from '../entities/ClickupTaskLink';
 import { UserRole } from '../entities/User';
-import { expressAuthenticate, expressRequireRole, logAudit, AuthenticatedRequest } from '../middleware/auth';
+import { expressAuthenticate, expressRequireRole, requireAgentScopeOrRole, logAudit, AuthenticatedRequest } from '../middleware/auth';
 import { triggerPipeline } from '../lib/gitlab';
 import { getK8sNodes, getK8sNamespaces, getK8sPods, getPodLogs, deletePod, checkK8sConnection } from '../lib/k8s';
 import { v4 as uuidv4 } from 'uuid';
@@ -122,19 +122,19 @@ router.get('/bootstrap/history', expressAuthenticate, expressRequireRole([UserRo
   ]);
 });
 
-router.get('/bootstrap/nodes', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+router.get('/bootstrap/nodes', expressAuthenticate, requireAgentScopeOrRole(['cluster:read', 'bootstrap:read'], [UserRole.DEVOPS]), async (req: Request, res: Response) => {
   const isConnected = await checkK8sConnection();
   const nodes = await getK8sNodes();
   return res.json({ k8sConnected: isConnected, nodes });
 });
 
-router.get('/bootstrap/namespaces', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+router.get('/bootstrap/namespaces', expressAuthenticate, requireAgentScopeOrRole(['cluster:read', 'bootstrap:read'], [UserRole.DEVOPS]), async (req: Request, res: Response) => {
   const isConnected = await checkK8sConnection();
   const namespaces = await getK8sNamespaces();
   return res.json({ k8sConnected: isConnected, namespaces });
 });
 
-router.get('/bootstrap/pods', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+router.get('/bootstrap/pods', expressAuthenticate, requireAgentScopeOrRole(['cluster:read', 'bootstrap:read'], [UserRole.DEVOPS]), async (req: Request, res: Response) => {
   const isConnected = await checkK8sConnection();
   if (!isConnected) {
     // Return mock pods when disconnected, but indicate status
@@ -157,7 +157,7 @@ router.get('/bootstrap/pods', expressAuthenticate, expressRequireRole([UserRole.
   }
 });
 
-router.get('/bootstrap/pods/:namespace/:podName/logs', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+router.get('/bootstrap/pods/:namespace/:podName/logs', expressAuthenticate, requireAgentScopeOrRole(['cluster:read', 'bootstrap:read', 'logs:read'], [UserRole.DEVOPS]), async (req: Request, res: Response) => {
   try {
     const { namespace, podName } = req.params;
     const logs = await getPodLogs(namespace, podName);

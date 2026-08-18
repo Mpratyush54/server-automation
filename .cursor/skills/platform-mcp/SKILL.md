@@ -32,7 +32,8 @@ Env:
 2. Read-only: re-call with `confirm: true` (optional for read in API; MCP always validates first).
 3. Mutating: `confirm: true` + `reason`.
 4. Destructive: human must `platform_login` → `platform_list_pending_commands` →
-   `platform_approve_command` → agent re-runs with `confirm: true`, `reason`, and `approvalId`.
+   `platform_approve_command` (or `platform_reject_command`) → agent re-runs with
+   `confirm: true`, `reason`, and `approvalId` only after approval.
 
 Never approve destructive commands with an agent token.
 

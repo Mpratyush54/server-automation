@@ -171,6 +171,28 @@ export function expressRequireRole(roles: UserRole[]) {
   };
 }
 
+/**
+ * Allow either a human JWT with one of the roles, or an agent token with ANY of the listed scopes.
+ * Used for MCP-facing read endpoints (pods, audit logs, etc.).
+ */
+export function requireAgentScopeOrRole(scopes: string[], roles: UserRole[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.agentToken) {
+      const agent = authReq.agentToken;
+      const ok = agent.scopes.includes('*') || scopes.some((s) => agent.scopes.includes(s));
+      if (!ok) {
+        return res.status(403).json({
+          error: 'Forbidden: Agent token missing required scopes',
+          requiredAnyOf: scopes,
+        });
+      }
+      return next();
+    }
+    return expressRequireRole(roles)(req, res, next);
+  };
+}
+
 export function requirePermission(...permissions: Permission[]) {
   return async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthenticatedRequest;

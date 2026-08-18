@@ -257,6 +257,23 @@ export class PlatformClient {
     });
   }
 
+  async rejectCommand(id: string, reason?: string): Promise<unknown> {
+    if (!this.hasHumanJwt()) {
+      throw new PlatformApiError(
+        401,
+        {
+          error:
+            'Unauthorized: platform_reject_command requires a human JWT from platform_login. Agent tokens cannot reject commands.',
+        },
+        'Human JWT required',
+      );
+    }
+    return this.request('POST', `/agent/commands/${encodeURIComponent(id)}/reject`, {
+      body: reason ? { reason } : {},
+      tokenOverride: this.sessionJwt!,
+    });
+  }
+
   async deploy(body: Record<string, unknown>): Promise<unknown> {
     return this.request('POST', '/deploy', { body });
   }

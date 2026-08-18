@@ -349,9 +349,15 @@ router.delete('/users/:id', expressAuthenticate, expressRequireRole([UserRole.AD
 
 router.get('/users/me', expressAuthenticate, async (req: Request, res: Response) => {
   try {
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.agentToken) {
+      return res.status(400).json({
+        error: 'Agent tokens should use GET /api/agent-tokens/me instead of /api/users/me',
+      });
+    }
     const ds = await getDb();
     const user = await ds.getRepository(User).findOne({
-      where: { id: (req as AuthenticatedRequest).user!.id },
+      where: { id: authReq.user!.id },
       relations: ['roleRef'],
     });
     if (!user) return res.status(404).json({ error: 'User not found' });

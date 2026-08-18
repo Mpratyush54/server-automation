@@ -1,74 +1,75 @@
 import { fetchSecrets } from '../../../src/lib/infisical';
 
-describe('Infisical Library', () => {
-  const originalFetch = global.fetch;
+jest.mock('../../../src/config/database', () => ({
+  getDb: jest.fn(),
+}));
+
+jest.mock('../../../src/lib/secrets-encryption', () => ({
+  decryptValue: jest.fn((v: string) => `plain:${v}`),
+}));
+
+const { getDb } = require('../../../src/config/database');
+const { decryptValue } = require('../../../src/lib/secrets-encryption');
+
+describe('Infisical Library (DB-backed secrets)', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    delete process.env.INFISICAL_TOKEN;
+    delete process.env.SECRETS_ENCRYPTION_KEY;
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
     process.env = originalEnv;
   });
 
-  it('should return empty object when no INFISICAL_TOKEN is set', async () => {
-    const result = await fetchSecrets('project-1', 'production');
-    expect(result).toEqual({});
-  });
-
-  it('should fetch secrets when token is set', async () => {
-    process.env.INFISICAL_TOKEN = 'test-token';
-    const mockFetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        secrets: [
-          { secretKey: 'DB_HOST', secretValue: 'localhost' },
-          { secretKey: 'DB_PORT', secretValue: '5432' },
-        ],
+  it('should return empty object when encryption key is missing', async () => {
+    getDb.mockResolvedValue({
+      getRepository: () => ({
+        find: jest.fn().mockResolvedValue([{ key: 'DB_HOST', encryptedValue: 'enc' }]),
       }),
     });
-    global.fetch = mockFetch;
-
-    const result = await fetchSecrets('project-1', 'production');
-
-    expect(result).toEqual({ DB_HOST: 'localhost', DB_PORT: '5432' });
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('workspaceId=project-1'),
-      expect.objectContaining({
-        headers: { Authorization: 'Bearer test-token' },
-      })
-    );
-  });
-
-  it('should return empty object on API error', async () => {
-    process.env.INFISICAL_TOKEN = 'test-token';
-    const mockFetch = jest.fn().mockResolvedValue({ ok: false });
-    global.fetch = mockFetch;
-
     const result = await fetchSecrets('project-1', 'production');
     expect(result).toEqual({});
   });
 
-  it('should return empty object on network error', async () => {
-    process.env.INFISICAL_TOKEN = 'test-token';
-    const mockFetch = jest.fn().mockRejectedValue(new Error('Network error'));
-    global.fetch = mockFetch;
-
-    const result = await fetchSecrets('project-1', 'production');
-    expect(result).toEqual({});
-  });
-
-  it('should return empty object when response has no secrets', async () => {
-    process.env.INFISICAL_TOKEN = 'test-token';
-    const mockFetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({}),
+  it('should decrypt secrets from the database when key is set', async () => {
+    process.env.SECRETS_ENCRYPTION_KEY = 'a'.repeat(64);
+    const find = jest.fn().mockResolvedValue([
+      { key: 'DB_HOST', encryptedValue: 'enc-host' },
+      { key: 'DB_PORT', encryptedValue: 'enc-port' },
+    ]);
+    getDb.mockResolvedValue({
+      getRepository: () => ({ find }),
     });
-    global.fetch = mockFetch;
 
+    const result = await fetchSecrets('project-1', 'env-1');
+
+    expect(find).toHaveBeenCalledWith({
+      where: { projectId: 'project-1', environmentId: 'env-1', isActive: true },
+    });
+    expect(decryptValue).toHaveBeenCalled();
+    expect(result).toEqual({
+      DB_HOST: 'plain:enc-host',
+      DB_PORT: 'plain:enc-port',
+    });
+  });
+
+  it('should return empty object on database error', async () => {
+    process.env.SECRETS_ENCRYPTION_KEY = 'a'.repeat(64);
+    getDb.mockRejectedValue(new Error('db down'));
+    const result = await fetchSecrets('project-1', 'production');
+    expect(result).toEqual({});
+  });
+
+  it('should return empty object when no secrets exist', async () => {
+    process.env.SECRETS_ENCRYPTION_KEY = 'a'.repeat(64);
+    getDb.mockResolvedValue({
+      getRepository: () => ({
+        find: jest.fn().mockResolvedValue([]),
+      }),
+    });
     const result = await fetchSecrets('project-1', 'production');
     expect(result).toEqual({});
   });

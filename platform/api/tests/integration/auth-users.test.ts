@@ -453,7 +453,7 @@ describe('Users API', () => {
   });
 
   describe('PATCH /api/users/:id/role', () => {
-    it('devops can change role', async () => {
+    it('devops cannot change role without users.assign-role — 403', async () => {
       mockUserRepo.findOne.mockImplementation(({ where }: any) => {
         const { id } = where || {};
         return Promise.resolve(Object.values(USERS).find(u => u.id === id) ?? null);
@@ -462,7 +462,7 @@ describe('Users API', () => {
         .patch(`/api/users/${USERS.developer.id}/role`)
         .set('Authorization', `Bearer ${T.devops}`)
         .send({ role: 'tech_lead' });
-      expect([200, 400]).toContain(r.status);
+      expect(r.status).toBe(403);
     });
 
     it('developer cannot change role — 403', async () => {
@@ -544,12 +544,12 @@ describe('Roles API', () => {
   });
 
   describe('DELETE /api/roles/:id', () => {
-    it('devops can delete a role — 200', async () => {
+    it('devops without users.delete cannot delete roles — 403', async () => {
       mockRoleRepo.findOne.mockResolvedValue({ id: 'role-del', name: 'temp', isSystem: false });
       const r = await request(app)
         .delete('/api/roles/role-del')
         .set('Authorization', `Bearer ${T.devops}`);
-      expect([200, 404]).toContain(r.status);
+      expect(r.status).toBe(403);
     });
 
     it('developer cannot delete roles — 403', async () => {
@@ -642,13 +642,12 @@ describe('OIDC / OAuth2', () => {
 // 7. GET /api/permissions
 // ════════════════════════════════════════════════════════════════════
 describe('GET /api/permissions', () => {
-  it('returns list of all permission strings', async () => {
+  it('returns all permission strings (object map)', async () => {
     const r = await request(app)
       .get('/api/permissions')
       .set('Authorization', `Bearer ${T.devops}`);
-    expect([200, 403]).toContain(r.status);
-    if (r.status === 200) {
-      expect(Array.isArray(r.body)).toBe(true);
-    }
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual(expect.any(Object));
+    expect(Object.keys(r.body).length).toBeGreaterThan(0);
   });
 });
