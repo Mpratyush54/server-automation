@@ -31,16 +31,19 @@ From this release on, `platform-api` recovers without SSH:
 
 A new API pod coming up after a partial rotate should log `postgres auth recovered from …` and stay Ready. You do not need to exec into the node.
 
-## If a pod is still crash-looping on an older image
+## If a pod is still crash-looping
 
-Roll to an image that includes credential recovery (`platform-api` after this change). The in-cluster ServiceAccount is `cluster-admin`, so the new process can read those secrets and heal itself.
+On the k3s host (no API login required):
 
 ```bash
-kubectl -n platform rollout restart deployment/platform-api
-kubectl -n platform logs deploy/platform-api --tail=40
+curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | sh
+sudo platformctl recover
+sudo platformctl update
 ```
 
-Look for `PostgreSQL connected` or `postgres auth recovered from`.
+`platformctl recover` uses local access inside the Postgres/Redis pods, resets the admin password to `ADMIN_PASSWORD` in `/etc/platform/.env`, patches Kubernetes secrets **in place** (it does not recreate `platform-env`), and restarts `platform-api`. It then prints the portal login.
+
+Roll to an image that includes in-cluster credential recovery (`platform-api` after this change) with `platformctl update`. A new API pod heals on start as long as any stored password copy still matches the database role.
 
 ## Manual fallback (only if every stored copy is wrong)
 

@@ -1296,6 +1296,7 @@ func ProvisionComplete(cfg *config.Config) {
 	fmt.Printf("    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml\n")
 	fmt.Printf("    platformctl status\n")
 	fmt.Printf("    platformctl update\n")
+	fmt.Printf("    platformctl recover\n")
 	fmt.Printf("    kubectl get pods -A\n")
 }
 
