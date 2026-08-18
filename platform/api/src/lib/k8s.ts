@@ -1,5 +1,6 @@
 import * as k8s from '@kubernetes/client-node';
 import { PassThrough } from 'stream';
+import { deploymentRestartAnnotationsPatch, deploymentRestartJsonPatch } from './deployment-restart-patch';
 
 // ── Kubernetes client (in-cluster when running in a pod, local kubeconfig otherwise) ──
 function makeKubeConfig(): k8s.KubeConfig {
@@ -599,22 +600,30 @@ export async function deleteSecret(namespace: string, name: string): Promise<voi
   }
 }
 
+export { deploymentRestartJsonPatch } from './deployment-restart-patch';
+
 export async function restartNamedDeployment(namespace: string, name: string): Promise<void> {
-  const patch = {
-    spec: {
-      template: {
-        metadata: {
-          annotations: {
-            'kubectl.kubernetes.io/restartedAt': new Date().toISOString(),
-          },
-        },
-      },
-    },
-  };
-  await appsApi.patchNamespacedDeployment({
-    name,
-    namespace,
-    body: patch,
-  });
+  const restartedAt = new Date().toISOString();
+  const headers = { 'Content-Type': 'application/json-patch+json' };
+  try {
+    await appsApi.patchNamespacedDeployment(
+      {
+        name,
+        namespace,
+        body: deploymentRestartJsonPatch(restartedAt),
+      } as any,
+      { headers } as any,
+    );
+  } catch {
+    // annotations map may be missing — add the whole object
+    await appsApi.patchNamespacedDeployment(
+      {
+        name,
+        namespace,
+        body: deploymentRestartAnnotationsPatch(restartedAt),
+      } as any,
+      { headers } as any,
+    );
+  }
 }
 
