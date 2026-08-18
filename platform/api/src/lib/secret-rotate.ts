@@ -1,10 +1,17 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { Client } from 'pg';
-import { getDb } from '../config/database';
+import Redis from 'ioredis';
+import { getDb, reconnectPostgres } from '../config/database';
 import { User, UserRole } from '../entities/User';
 import { notifyRoles } from './notify';
 import { patchSecretData, restartNamedDeployment } from './k8s';
+import {
+  clearRotatePending,
+  recoverPostgresAuth,
+  recoverRedisAuth,
+  writeRotatePending,
+} from './credential-recover';
 
 function randomSecret(bytes = 18): string {
   return crypto.randomBytes(bytes).toString('base64url');
@@ -25,13 +32,24 @@ async function tryPatchSecret(namespace: string, name: string, data: Record<stri
   }
 }
 
+function postgresUser(): string {
+  return process.env.POSTGRES_USER || 'postgres';
+}
+
 async function alterPostgresPassword(newPassword: string): Promise<RotateResult> {
   const host = process.env.POSTGRES_HOST || 'postgresql.databases.svc.cluster.local';
   const port = parseInt(process.env.POSTGRES_PORT || '5432', 10);
-  const user = process.env.POSTGRES_USER || 'plat';
-  const current = process.env.POSTGRES_PASSWORD || 'plat';
-  const database = process.env.POSTGRES_DB || 'plat_platform';
-  const client = new Client({ host, port, user, password: current, database, connectionTimeoutMillis: 8000 });
+  const user = postgresUser();
+  const current = process.env.POSTGRES_PASSWORD || '';
+  const database = process.env.POSTGRES_DB || 'platform';
+  const client = new Client({
+    host,
+    port,
+    user,
+    password: current,
+    database,
+    connectionTimeoutMillis: 8000,
+  });
   try {
     await client.connect();
     const ident = user.replace(/"/g, '');
@@ -45,76 +63,32 @@ async function alterPostgresPassword(newPassword: string): Promise<RotateResult>
   }
 }
 
-/**
- * One-click rotation of platform admin + data-store credentials.
- * Returns plaintext values once. JWT is not rotated (would log everyone out).
- */
-export async function rotatePlatformSecrets(opts: {
-  actorUserId?: string;
-}): Promise<{ results: RotateResult[]; values: Record<string, string> }> {
-  const actorUserId = opts.actorUserId || '';
-  const results: RotateResult[] = [];
-  const values: Record<string, string> = {};
-
-  const postgres = randomSecret();
-  const redis = randomSecret();
-  const mongo = randomSecret();
-  const minio = randomSecret();
-  const webhook = randomSecret();
-  const admin = randomSecret(12);
-  const portainer = randomSecret(12);
-
-  const pgAlter = await alterPostgresPassword(postgres);
-  results.push(pgAlter);
-  if (pgAlter.ok) process.env.POSTGRES_PASSWORD = postgres;
-  values.POSTGRES_PASSWORD = postgres;
-  values.REDIS_PASSWORD = redis;
-  values.MONGO_PASSWORD = mongo;
-  values.MINIO_SECRET_KEY = minio;
-  values.PLATFORM_WEBHOOK_SECRET = webhook;
-  values.ADMIN_PASSWORD = admin;
-  values.PORTAINER_ADMIN_PASSWORD = portainer;
-
-  process.env.REDIS_PASSWORD = redis;
-  process.env.MONGO_PASSWORD = mongo;
-  process.env.MINIO_SECRET_KEY = minio;
-  process.env.PLATFORM_WEBHOOK_SECRET = webhook;
-  process.env.ADMIN_PASSWORD = admin;
-
-  const platformEnvPatch: Record<string, string> = {
-    REDIS_PASSWORD: redis,
-    MONGO_PASSWORD: mongo,
-    MINIO_SECRET_KEY: minio,
-    PLATFORM_WEBHOOK_SECRET: webhook,
-    ADMIN_PASSWORD: admin,
-  };
-  if (pgAlter.ok) platformEnvPatch.POSTGRES_PASSWORD = postgres;
-  results.push(await tryPatchSecret('platform', 'platform-env', platformEnvPatch));
-  results.push(await tryPatchSecret('databases', 'postgresql', {
-    'postgres-password': postgres,
-    password: postgres,
-  }));
-  results.push(await tryPatchSecret('databases', 'redis', { 'redis-password': redis }));
-  results.push(await tryPatchSecret('databases', 'mongodb', {
-    'mongodb-passwords': mongo,
-    'mongodb-root-password': mongo,
-  }));
-  results.push(await tryPatchSecret('storage', 'minio', { 'root-password': minio }));
-  results.push(await tryPatchSecret('portainer', 'portainer-admin-password', { password: portainer }));
-
-  const argocd = randomSecret(12);
-  values.ARGOCD_ADMIN_PASSWORD = argocd;
-  results.push(await tryPatchSecret('argocd', 'argocd-initial-admin-secret', { password: argocd }));
+async function alterRedisPassword(newPassword: string): Promise<RotateResult> {
+  const host = process.env.REDIS_HOST || 'redis-master.databases.svc.cluster.local';
+  const port = parseInt(process.env.REDIS_PORT || '6379', 10);
+  const current = process.env.REDIS_PASSWORD || '';
+  const client = new Redis({
+    host,
+    port,
+    password: current || undefined,
+    connectTimeout: 5000,
+    lazyConnect: true,
+    maxRetriesPerRequest: 1,
+    retryStrategy: () => null,
+  });
   try {
-    const hash = await bcrypt.hash(argocd, 10);
-    results.push(await tryPatchSecret('argocd', 'argocd-secret', {
-      'admin.password': hash,
-      'admin.passwordMtime': new Date().toISOString(),
-    }));
+    await client.connect();
+    await client.config('SET', 'requirepass', newPassword);
+    await client.auth(newPassword);
+    return { key: 'REDIS_PASSWORD', ok: true, detail: 'CONFIG SET requirepass' };
   } catch (err: any) {
-    results.push({ key: 'argocd/argocd-secret', ok: false, detail: err?.message || 'argocd password hash failed' });
+    return { key: 'REDIS_PASSWORD', ok: false, detail: err?.message || 'redis CONFIG SET failed' };
+  } finally {
+    client.disconnect();
   }
+}
 
+async function rotateAdminPassword(admin: string): Promise<RotateResult> {
   try {
     const ds = await getDb();
     const users = await ds.getRepository(User).find({ where: { role: UserRole.ADMIN } });
@@ -123,33 +97,199 @@ export async function rotatePlatformSecrets(opts: {
       u.passwordHash = hash;
       await ds.getRepository(User).save(u);
     }
-    results.push({ key: 'ADMIN_PASSWORD', ok: true, detail: `updated ${users.length} admin user(s)` });
+    return { key: 'ADMIN_PASSWORD', ok: true, detail: `updated ${users.length} admin user(s)` };
   } catch (err: any) {
-    results.push({ key: 'ADMIN_PASSWORD', ok: false, detail: err?.message || 'admin password update failed' });
+    return { key: 'ADMIN_PASSWORD', ok: false, detail: err?.message || 'admin password update failed' };
   }
+}
 
-  const restartTargets: Array<readonly [string, string]> = [
-    ['platform', 'platform-api'],
-    ['storage', 'minio'],
-  ];
-  if (pgAlter.ok) restartTargets.push(['databases', 'postgresql']);
-  for (const [ns, name] of restartTargets) {
-    try {
-      await restartNamedDeployment(ns, name);
-      results.push({ key: `restart:${ns}/${name}`, ok: true, detail: 'rollout restarted' });
-    } catch (err: any) {
-      results.push({ key: `restart:${ns}/${name}`, ok: false, detail: err?.message || 'restart failed' });
-    }
+async function healPostgres(results: RotateResult[]): Promise<void> {
+  try {
+    const recovered = await recoverPostgresAuth();
+    results.push({
+      key: 'POSTGRES_RECOVER',
+      ok: recovered.ok,
+      detail: recovered.detail,
+    });
+  } catch (err: any) {
+    results.push({
+      key: 'POSTGRES_RECOVER',
+      ok: false,
+      detail: err?.message || 'postgres self-recovery failed',
+    });
+  }
+}
+
+async function healRedis(results: RotateResult[]): Promise<void> {
+  try {
+    const recovered = await recoverRedisAuth();
+    results.push({
+      key: 'REDIS_RECOVER',
+      ok: recovered.ok,
+      detail: recovered.detail,
+    });
+  } catch (err: any) {
+    results.push({
+      key: 'REDIS_RECOVER',
+      ok: false,
+      detail: err?.message || 'redis self-recovery failed',
+    });
+  }
+}
+
+/**
+ * Rotate credentials that can be changed live, then patch matching Kubernetes
+ * secrets. Mongo/MinIO/Portainer passwords are not written to platform-env
+ * unless those servers were updated — otherwise the API crash-loops on restart.
+ *
+ * Write-ahead: old+new passwords are stored in platform-rotate-pending before
+ * ALTER USER / CONFIG SET. If this process dies or TypeORM cannot reconnect,
+ * the next API boot tries every stored copy and syncs secrets to whichever
+ * password still authenticates — no host SSH required.
+ */
+export async function rotatePlatformSecrets(opts: {
+  actorUserId?: string;
+}): Promise<{ results: RotateResult[]; values: Record<string, string> }> {
+  const actorUserId = opts.actorUserId || '';
+  const results: RotateResult[] = [];
+  const values: Record<string, string> = {};
+
+  const admin = randomSecret(12);
+  const webhook = randomSecret();
+  const postgres = randomSecret();
+  const redisPassword = randomSecret();
+  const previousPostgres = process.env.POSTGRES_PASSWORD || '';
+  const previousRedis = process.env.REDIS_PASSWORD || '';
+
+  const adminResult = await rotateAdminPassword(admin);
+  results.push(adminResult);
+  if (adminResult.ok) {
+    values.ADMIN_PASSWORD = admin;
+    process.env.ADMIN_PASSWORD = admin;
   }
 
   await notifyRoles({
     roles: [UserRole.ADMIN, UserRole.DEVOPS],
     title: 'Platform secrets rotated',
-    body: 'Admin, database, and related credentials were rotated. Copy the new values from Settings now — they are shown only once.',
+    body: 'Admin and live datastore credentials were rotated. Copy the new values from Settings now — they are shown only once. Also update POSTGRES_PASSWORD / REDIS_PASSWORD in /etc/platform/.env so bootstrap does not re-apply the old passwords.',
     kind: 'security',
     link: '/settings',
     metadata: { actorUserId },
   });
+
+  values.PLATFORM_WEBHOOK_SECRET = webhook;
+  process.env.PLATFORM_WEBHOOK_SECRET = webhook;
+
+  try {
+    await writeRotatePending({
+      POSTGRES_PASSWORD_OLD: previousPostgres,
+      POSTGRES_PASSWORD_NEW: postgres,
+      REDIS_PASSWORD_OLD: previousRedis,
+      REDIS_PASSWORD_NEW: redisPassword,
+    });
+    results.push({ key: 'platform/platform-rotate-pending', ok: true, detail: 'wrote old+new passwords for self-recovery' });
+  } catch (err: any) {
+    results.push({
+      key: 'platform/platform-rotate-pending',
+      ok: false,
+      detail: err?.message || 'could not write rotate-pending secret',
+    });
+  }
+
+  const redisResult = await alterRedisPassword(redisPassword);
+  results.push(redisResult);
+  if (redisResult.ok) {
+    values.REDIS_PASSWORD = redisPassword;
+    process.env.REDIS_PASSWORD = redisPassword;
+  } else {
+    await healRedis(results);
+  }
+
+  const pgAlter = await alterPostgresPassword(postgres);
+  results.push(pgAlter);
+  if (pgAlter.ok) {
+    values.POSTGRES_PASSWORD = postgres;
+    process.env.POSTGRES_PASSWORD = postgres;
+    try {
+      await reconnectPostgres(postgres);
+    } catch (err: any) {
+      results.push({
+        key: 'POSTGRES_RECONNECT',
+        ok: false,
+        detail: err?.message || 'TypeORM reconnect after ALTER failed',
+      });
+      await healPostgres(results);
+    }
+  } else {
+    await healPostgres(results);
+  }
+
+  const platformEnvPatch: Record<string, string> = {
+    PLATFORM_WEBHOOK_SECRET: webhook,
+  };
+  if (adminResult.ok) platformEnvPatch.ADMIN_PASSWORD = admin;
+  if (pgAlter.ok) platformEnvPatch.POSTGRES_PASSWORD = postgres;
+  if (redisResult.ok) platformEnvPatch.REDIS_PASSWORD = redisPassword;
+  results.push(await tryPatchSecret('platform', 'platform-env', platformEnvPatch));
+
+  if (pgAlter.ok) {
+    results.push(await tryPatchSecret('databases', 'postgresql', {
+      'postgres-password': postgres,
+      password: postgres,
+    }));
+  } else {
+    results.push({
+      key: 'databases/postgresql',
+      ok: false,
+      detail: 'skipped: postgres ALTER USER did not succeed',
+    });
+  }
+
+  if (redisResult.ok) {
+    results.push(await tryPatchSecret('databases', 'redis', { 'redis-password': redisPassword }));
+  } else {
+    results.push({
+      key: 'databases/redis',
+      ok: false,
+      detail: 'skipped: redis CONFIG SET did not succeed',
+    });
+  }
+
+  const argocd = randomSecret(12);
+  try {
+    const hash = await bcrypt.hash(argocd, 10);
+    const patched = await tryPatchSecret('argocd', 'argocd-secret', {
+      'admin.password': hash,
+      'admin.passwordMtime': new Date().toISOString(),
+    });
+    results.push(patched);
+    if (patched.ok) {
+      values.ARGOCD_ADMIN_PASSWORD = argocd;
+      results.push(await tryPatchSecret('argocd', 'argocd-initial-admin-secret', { password: argocd }));
+    }
+  } catch (err: any) {
+    results.push({ key: 'argocd/argocd-secret', ok: false, detail: err?.message || 'argocd password hash failed' });
+  }
+
+  if (pgAlter.ok && redisResult.ok) {
+    try {
+      await clearRotatePending();
+      results.push({ key: 'platform/platform-rotate-pending', ok: true, detail: 'cleared after successful rotate' });
+    } catch (err: any) {
+      results.push({
+        key: 'platform/platform-rotate-pending',
+        ok: false,
+        detail: err?.message || 'could not clear rotate-pending secret',
+      });
+    }
+  }
+
+  try {
+    await restartNamedDeployment('platform', 'platform-api');
+    results.push({ key: 'restart:platform/platform-api', ok: true, detail: 'rollout restarted' });
+  } catch (err: any) {
+    results.push({ key: 'restart:platform/platform-api', ok: false, detail: err?.message || 'restart failed' });
+  }
 
   return { results, values };
 }

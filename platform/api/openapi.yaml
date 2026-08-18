@@ -135,7 +135,7 @@ paths:
   /settings/rotate-secrets:
     post:
       tags: [Settings]
-      summary: One-click rotation of admin, database, and related secrets
+      summary: Rotate live admin/Postgres/Redis/webhook/Argo CD secrets with write-ahead self-recovery
       security:
         - bearerAuth: []
       requestBody:

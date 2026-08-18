@@ -1,4 +1,4 @@
-# `WRONGPASS` in `platform-api` logs after rotating a DB password
+# Database auth errors after rotating passwords
 
 ## Symptom
 
@@ -15,80 +15,49 @@ Or for Postgres:
 error: password authentication failed for user "postgres"
 ```
 
-## Root Cause
+## What the platform does by itself
 
-Somebody rotated the database's admin password (a leaked credential, or a
-scheduled rotation) but the Kubernetes `platform-env` Secret still contains the
-**old** password. The API reads env vars once at boot, gets rejected by the DB
-on every connection attempt, and enters a crash-loop.
+From this release on, `platform-api` recovers without SSH:
 
-Common trigger: after a secret leak (e.g. connection string committed to Git),
-you rotated Postgres/Mongo/Redis on-cluster but forgot the corresponding entry
-in `platform-env`.
+1. One-click rotate writes old + new passwords to `platform/platform-rotate-pending` **before** `ALTER USER` / Redis `CONFIG SET`.
+2. Live passwords are changed only if that command succeeds. Kubernetes secrets are patched only after that.
+3. TypeORM is reconnected in-process after a successful Postgres `ALTER USER` (it cannot keep using the old password).
+4. On the next boot, if Postgres still rejects `POSTGRES_PASSWORD`, the API tries every remaining copy:
+   - process env
+   - `platform-rotate-pending` (`POSTGRES_PASSWORD_NEW`, then `POSTGRES_PASSWORD_OLD`)
+   - `platform/platform-env`
+   - `databases/postgresql` (`postgres-password` / `password`)
+5. The first password that authenticates is written back to `platform-env` and the Bitnami secret. Redis `WRONGPASS` uses the same pattern.
 
-## Fix
+A new API pod coming up after a partial rotate should log `postgres auth recovered from …` and stay Ready. You do not need to exec into the node.
 
-### 1. Confirm the actual DB password
+## If a pod is still crash-looping on an older image
 
-```bash
-# PostgreSQL
-kubectl -n databases get secret postgresql -o jsonpath='{.data.postgres-password}' | base64 -d; echo
-
-# Redis
-kubectl -n databases get secret redis -o jsonpath='{.data.redis-password}' | base64 -d; echo
-
-# MongoDB
-kubectl -n databases get secret mongodb -o jsonpath='{.data.mongodb-root-password}' | base64 -d; echo
-```
-
-### 2. Update the API's `platform-env` Secret
-
-```bash
-kubectl -n platform edit secret platform-env
-```
-
-Values are base64-encoded — use `echo -n '<new-password>' | base64` to encode.
-
-Or, quicker, patch the specific keys:
-
-```bash
-NEW_PG=$(kubectl -n databases get secret postgresql -o jsonpath='{.data.postgres-password}' | base64 -d)
-NEW_RD=$(kubectl -n databases get secret redis      -o jsonpath='{.data.redis-password}'    | base64 -d)
-NEW_MG=$(kubectl -n databases get secret mongodb    -o jsonpath='{.data.mongodb-root-password}' | base64 -d)
-
-kubectl -n platform create secret generic platform-env \
-  --from-literal=POSTGRES_PASSWORD="$NEW_PG" \
-  --from-literal=REDIS_PASSWORD="$NEW_RD" \
-  --from-literal=MONGODB_URI="mongodb://root:$NEW_MG@mongodb.databases:27017/platform?authSource=admin" \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-> **Note:** `create secret ... --dry-run=client | apply -f -` **replaces** the
-> Secret. If you had integration tokens (GitHub, GitLab, ClickUp, SMTP) in the
-> same Secret, use `kubectl edit` instead, or re-run the bootstrap.
-
-### 3. Sync `/etc/platform/.env` on disk
-
-The `.env` file on the host is the source of truth for a re-run of the bootstrap.
-Keep it in sync:
-
-```bash
-sudo sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD='$NEW_PG'/" /etc/platform/.env
-sudo sed -i "s/^REDIS_PASSWORD=.*/REDIS_PASSWORD='$NEW_RD'/"       /etc/platform/.env
-sudo sed -i "s/^MONGO_PASSWORD=.*/MONGO_PASSWORD='$NEW_MG'/"       /etc/platform/.env
-```
-
-### 4. Roll the API
+Roll to an image that includes credential recovery (`platform-api` after this change). The in-cluster ServiceAccount is `cluster-admin`, so the new process can read those secrets and heal itself.
 
 ```bash
 kubectl -n platform rollout restart deployment/platform-api
-kubectl -n platform rollout status  deployment/platform-api
+kubectl -n platform logs deploy/platform-api --tail=40
 ```
 
-## Verification
+Look for `PostgreSQL connected` or `postgres auth recovered from`.
+
+## Manual fallback (only if every stored copy is wrong)
+
+Do **not** recreate `platform-env` with `kubectl create secret … | kubectl apply`. That wipes GitHub/GitLab tokens.
+
+Patch a single key:
 
 ```bash
-kubectl -n platform logs deploy/platform-api --tail=20
+# Encode a known-good password (the value Postgres actually accepts)
+ENC=$(printf '%s' 'known-good-password' | base64 -w0)
+kubectl -n platform patch secret platform-env --type merge -p "{\"data\":{\"POSTGRES_PASSWORD\":\"$ENC\"}}"
+kubectl -n databases patch secret postgresql --type merge -p "{\"data\":{\"postgres-password\":\"$ENC\",\"password\":\"$ENC\"}}"
+kubectl -n platform rollout restart deployment/platform-api
 ```
 
-Expected: `✅ Connected to Redis`, `✅ Connected to Postgres`, no `WRONGPASS`.
+Keep `/etc/platform/.env` in sync so a later bootstrap does not re-apply a stale password:
+
+```bash
+sudo sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD='known-good-password'/" /etc/platform/.env
+```

@@ -16,6 +16,15 @@ async function bootstrap() {
     // Initialize PostgreSQL
     const ds = await getDb();
     console.log(`[server] PostgreSQL connected to database: ${ds.options.database}`);
+    try {
+      const { recoverRedisAuth } = await import('./lib/credential-recover');
+      const redisHeal = await recoverRedisAuth();
+      if (!redisHeal.ok) {
+        console.warn(`[server] Redis self-recovery: ${redisHeal.detail}`);
+      }
+    } catch (redisErr: any) {
+      console.warn(`[server] Redis self-recovery skipped: ${redisErr.message}`);
+    }
 
     // One admin from ADMIN_EMAIL / ADMIN_PASSWORD (platformctl prompt). No demo roster.
     const userRepo = ds.getRepository(User);

@@ -554,6 +554,16 @@ export async function updateArgoCDApp(appName: string, imageTag: string): Promis
   }
 }
 
+export async function readSecretData(namespace: string, name: string): Promise<Record<string, string>> {
+  const existing: any = await coreApi.readNamespacedSecret({ name, namespace });
+  const secret = existing.body || existing;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(secret.data || {})) {
+    out[k] = Buffer.from(String(v), 'base64').toString('utf8');
+  }
+  return out;
+}
+
 export async function patchSecretData(namespace: string, name: string, data: Record<string, string>): Promise<void> {
   const existing: any = await coreApi.readNamespacedSecret({ name, namespace });
   const secret = existing.body || existing;
@@ -562,6 +572,31 @@ export async function patchSecretData(namespace: string, name: string, data: Rec
     secret.data[k] = Buffer.from(v, 'utf8').toString('base64');
   }
   await coreApi.replaceNamespacedSecret({ name, namespace, body: secret });
+}
+
+export async function upsertSecretData(namespace: string, name: string, data: Record<string, string>): Promise<void> {
+  try {
+    await patchSecretData(namespace, name, data);
+  } catch {
+    await coreApi.createNamespacedSecret({
+      namespace,
+      body: {
+        apiVersion: 'v1',
+        kind: 'Secret',
+        metadata: { name, namespace },
+        type: 'Opaque',
+        stringData: data,
+      },
+    });
+  }
+}
+
+export async function deleteSecret(namespace: string, name: string): Promise<void> {
+  try {
+    await coreApi.deleteNamespacedSecret({ name, namespace });
+  } catch {
+    // already gone
+  }
 }
 
 export async function restartNamedDeployment(namespace: string, name: string): Promise<void> {

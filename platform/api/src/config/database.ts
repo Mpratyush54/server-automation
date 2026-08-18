@@ -38,10 +38,49 @@ export const AppDataSource = new DataSource({
 
 let initialized = false;
 
-export async function getDb() {
-  if (!initialized) {
-    await AppDataSource.initialize();
-    initialized = true;
+export function isPostgresAuthError(err: unknown): boolean {
+  const anyErr = err as { message?: string; code?: string } | undefined;
+  const msg = String(anyErr?.message || err || '');
+  const code = String(anyErr?.code || '');
+  return code === '28P01' || /password authentication failed/i.test(msg);
+}
+
+export async function reconnectPostgres(password: string): Promise<DataSource> {
+  process.env.POSTGRES_PASSWORD = password;
+  if (AppDataSource.isInitialized) {
+    await AppDataSource.destroy();
   }
+  initialized = false;
+  const opts = AppDataSource.options as { password?: string; username?: string; host?: string; database?: string; port?: number };
+  opts.password = password;
+  if (process.env.POSTGRES_USER) opts.username = process.env.POSTGRES_USER;
+  if (process.env.POSTGRES_HOST) opts.host = process.env.POSTGRES_HOST;
+  if (process.env.POSTGRES_DB) opts.database = process.env.POSTGRES_DB;
+  if (process.env.POSTGRES_PORT) opts.port = parseInt(process.env.POSTGRES_PORT, 10);
+  await AppDataSource.initialize();
+  initialized = true;
   return AppDataSource;
+}
+
+export async function getDb() {
+  if (initialized && AppDataSource.isInitialized) {
+    return AppDataSource;
+  }
+  try {
+    if (!AppDataSource.isInitialized) {
+      if (process.env.POSTGRES_PASSWORD) {
+        (AppDataSource.options as { password?: string }).password = process.env.POSTGRES_PASSWORD;
+      }
+      await AppDataSource.initialize();
+    }
+    initialized = true;
+    return AppDataSource;
+  } catch (err) {
+    if (!isPostgresAuthError(err)) throw err;
+    const { recoverPostgresAuth } = await import('../lib/credential-recover');
+    const recovered = await recoverPostgresAuth();
+    if (!recovered.ok || !AppDataSource.isInitialized) throw err;
+    initialized = true;
+    return AppDataSource;
+  }
 }
