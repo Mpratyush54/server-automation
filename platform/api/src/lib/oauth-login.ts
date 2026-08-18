@@ -34,7 +34,7 @@ export async function buildAuthorizeUrl(
   provider: 'github' | 'gitlab',
   reqHost: string | undefined,
   proto: string,
-): Promise<{ ok: true; url: string } | { ok: false; error: string; status: number }> {
+): Promise<{ ok: boolean; url: string; error: string; status: number }> {
   const cfg = await resolveIntegrations();
   const state = crypto.randomBytes(16).toString('hex');
   oauthStates.set(state, { provider, createdAt: Date.now() });
@@ -42,18 +42,18 @@ export async function buildAuthorizeUrl(
 
   if (provider === 'github') {
     if (!cfg.githubLoginEnabled) {
-      return { ok: false, status: 400, error: 'GitHub login is not configured. Add a GitHub OAuth App under Settings → Login.' };
+      return { ok: false, url: '', status: 400, error: 'GitHub login is not configured. Add a GitHub OAuth App under Settings → Login.' };
     }
     const url = new URL('https://github.com/login/oauth/authorize');
     url.searchParams.set('client_id', cfg.githubClientId);
     url.searchParams.set('redirect_uri', redirectUri);
     url.searchParams.set('scope', 'read:user user:email');
     url.searchParams.set('state', state);
-    return { ok: true, url: url.toString() };
+    return { ok: true, url: url.toString(), error: '', status: 302 };
   }
 
   if (!cfg.gitlabLoginEnabled) {
-    return { ok: false, status: 400, error: 'GitLab login is not configured. Add a GitLab OAuth application under Settings → Login.' };
+    return { ok: false, url: '', status: 400, error: 'GitLab login is not configured. Add a GitLab OAuth application under Settings → Login.' };
   }
   const url = new URL(`${cfg.gitlabUrl}/oauth/authorize`);
   url.searchParams.set('client_id', cfg.gitlabClientId);
@@ -61,7 +61,7 @@ export async function buildAuthorizeUrl(
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('scope', 'read_user');
   url.searchParams.set('state', state);
-  return { ok: true, url: url.toString() };
+  return { ok: true, url: url.toString(), error: '', status: 302 };
 }
 
 async function exchangeGithub(code: string, redirectUri: string, cfg: Awaited<ReturnType<typeof resolveIntegrations>>) {
