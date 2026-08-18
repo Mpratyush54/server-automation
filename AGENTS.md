@@ -10,9 +10,13 @@ Use this section when running as a **Cloud Agent** (remote VM), not on a develop
 - Dependencies are installed by [`.cursor/install.sh`](.cursor/install.sh) during Cloud Builds.
 - Do **not** use Windows paths or PowerShell — the cloud VM is Ubuntu.
 
-### Active implementation plan: AI-first MCP access
+### Current release
 
-Execute the full plan end-to-end with **zero test/build errors**, then cut release **v0.3.14**.
+Ship **v1.0.0**. Do not retag older `v0.3.x` releases. MCP user docs live in [`docs/mcp/`](docs/mcp/); agent protocol is [`docs/mcp/for-agents.md`](docs/mcp/for-agents.md) and [`.cursor/skills/platform-mcp/SKILL.md`](.cursor/skills/platform-mcp/SKILL.md).
+
+### Active implementation plan: AI-first MCP access (complete — keep working)
+
+The original plan targeted v0.3.14 and is implemented. Continue with docs, rotate/recover hardening, and **v1.0.0** tags.
 
 #### Phase 1 — Backend agent tokens + auth
 
@@ -56,9 +60,9 @@ Add unit tests for command-guard and integration tests for agent tokens/commands
 - Tag and push:
 
 ```bash
-git tag v0.3.14
+git tag v1.0.0
 git push origin HEAD
-git push origin v0.3.14
+git push origin v1.0.0
 ```
 
 This triggers GoReleaser (`release-platformctl.yml`) and semver Docker images (`docker-build.yml`).
@@ -80,4 +84,4 @@ cd platformctl && go test ./...
 
 - Commit secrets or `.env` files
 - Self-approve destructive commands in tests without human JWT
-- Skip the v0.3.14 tag — the prior auth fix commit did not create a semver release
+- Skip the v1.0.0 tag when shipping a production cut — `v0.3.x` is historical

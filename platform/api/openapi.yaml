@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Platform PaaS API
-  version: 0.3.16
+  version: 1.0.0
   description: |
     Internal Platform API including AI-first MCP agent tokens and guarded command execution.
 servers:

@@ -76,6 +76,7 @@ export class DocsComponent implements OnInit, AfterViewChecked {
         { label: 'Overview', section: 'mcp', page: 'overview' },
         { label: 'Setup', section: 'mcp', page: 'setup' },
         { label: 'Tools & Policy', section: 'mcp', page: 'tools' },
+        { label: 'For AI agents', section: 'mcp', page: 'for-agents' },
       ],
     },
     {

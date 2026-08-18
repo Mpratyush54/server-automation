@@ -10,7 +10,7 @@ applications on Kubernetes (k3s).
 |---|---|
 | [Getting Started](getting-started/installation.md) | Set up Platform locally or on a server |
 | [platformctl CLI](getting-started/platformctl.md) | Every `platformctl` command (`provision`, `update`, `recover`, …) |
-| [MCP](mcp/overview.md) | Agent tokens, Cursor config, guarded commands |
+| [MCP](mcp/overview.md) | Agent tokens, Cursor/Claude setup, tools, and [agent protocol](mcp/for-agents.md) |
 | [API Reference](api-reference/platform-api/auth.md) | Complete API endpoint documentation |
 | [SDK Reference](api-reference/sdk-node/PlatformClient.md) | Node.js, Python, React, Angular SDKs |
 | [Architecture](architecture/overview.md) | System design, data flow, auth flow |

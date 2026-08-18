@@ -1,6 +1,18 @@
 # Changelog
 
-## v2.0.0 (2026-07-01)
+## v1.0.0 (2026-08-18)
+
+First git-tagged **1.0.0** Platform release (prior production tags were `v0.3.x`).
+
+- MCP server (`platform/mcp-server`) with agent tokens (`plat_agent_*`), command guard, and human approval for destructive commands
+- User + agent MCP documentation (overview, setup, tools/policy, for-agents) and homepage `curl | sh` install
+- `platformctl` commands: `provision`, `install`, `status`, `seed`, `update`, `recover`, `backup`, `version`
+- Safer secret rotate / recover: passwords fsynced to `/etc/platform` before `ALTER USER`; JSON Patch rollout restart for `platform-api`
+- GitHub / GitLab login, profile, notifications, one-click rotate UI
+
+The Caps-era notes below were documentation versions, not these git tags.
+
+## Caps docs v2.0.0 (2026-07-01)
 
 ### Breaking Changes
 
@@ -30,7 +42,6 @@
 - DNS IPv6 timeouts (systemd-resolved config)
 - cert-manager staging/production issuer workflow
 
-## v1.0.0 (2026-06-01)
+## Caps docs v1.0.0 (2026-06-01)
 
-- Initial release with core features
-- Caps branding (legacy)
+- Initial Caps-branded documentation snapshot (legacy; not git tag `v1.0.0`)

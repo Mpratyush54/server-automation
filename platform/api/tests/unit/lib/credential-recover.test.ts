@@ -47,7 +47,7 @@ jest.mock('../../../src/config/database', () => ({
   getDb: jest.fn(),
 }));
 
-import { recoverPostgresAuth, recoverRedisAuth } from '../../../src/lib/credential-recover';
+const { recoverPostgresAuth, recoverRedisAuth } = require('../../../src/lib/credential-recover');
 
 describe('credential-recover', () => {
   beforeEach(() => {

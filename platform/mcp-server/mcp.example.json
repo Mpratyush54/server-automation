@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "platform": {
+      "command": "node",
+      "args": ["/absolute/path/to/SERVER-automation/platform/mcp-server/dist/index.js"],
+      "env": {
+        "PLATFORM_URL": "https://YOUR_DOMAIN_OR_IP",
+        "PLATFORM_AGENT_TOKEN": "plat_agent_REPLACE_ME"
+      }
+    }
+  }
+}
