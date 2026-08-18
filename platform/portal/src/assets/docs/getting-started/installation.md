@@ -152,10 +152,11 @@ Useful overrides:
 |---|---|---|
 | `PLATFORM_IMAGE_REGISTRY` | `ghcr.io/mpratyush54` | Point at your fork's images |
 | `PLATFORM_IMAGE_TAG` | release version / `latest` | Pin API + portal images |
+| `AUTO_UPDATE` | `true` | CronJob + Argo Image Updater keep envs on newest GHCR tags |
 | `SKIP_K8S` | `false` | Use an existing cluster |
 | `SKIP_PREFLIGHT` | `false` | Skip RAM/disk/port checks |
 
-The installer is interactive, idempotent, and resumable via `/etc/platform/.bootstrap_state`. Details: [`platform-bootstrap/README.md`](../../platform-bootstrap/README.md).
+The installer is interactive, idempotent, and resumable via `/etc/platform/.bootstrap_state`. Command list: [platformctl CLI](platformctl.md). Details: [`platform-bootstrap/README.md`](../../platform-bootstrap/README.md).
 
 ### Windows / macOS
 

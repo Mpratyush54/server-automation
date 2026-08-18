@@ -47,6 +47,7 @@ export class DocsComponent implements OnInit, AfterViewChecked {
       label: 'Getting Started', id: 'getting-started',
       pages: [
         { label: 'Installation', section: 'getting-started', page: 'installation' },
+        { label: 'platformctl CLI', section: 'getting-started', page: 'platformctl' },
         { label: 'Project Structure', section: 'getting-started', page: 'project-structure' },
         { label: 'First Project', section: 'getting-started', page: 'first-project' },
         { label: 'Node.js Quickstart', section: 'getting-started', page: 'node-sdk-quickstart' },
@@ -67,6 +68,14 @@ export class DocsComponent implements OnInit, AfterViewChecked {
         { label: 'Monitoring', section: 'guides', page: 'monitoring' },
         { label: 'Testing', section: 'guides', page: 'testing' },
         { label: 'Production Checklist', section: 'guides', page: 'production-checklist' },
+      ],
+    },
+    {
+      label: 'MCP', id: 'mcp',
+      pages: [
+        { label: 'Overview', section: 'mcp', page: 'overview' },
+        { label: 'Setup', section: 'mcp', page: 'setup' },
+        { label: 'Tools & Policy', section: 'mcp', page: 'tools' },
       ],
     },
     {

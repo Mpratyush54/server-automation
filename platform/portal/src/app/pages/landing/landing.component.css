@@ -84,7 +84,34 @@ h1, h2, h3, h4, h5, h6 {
 .hero h1 { font-size: 4rem; line-height: 1.1; margin-bottom: 24px; }
 .hero p { font-size: 1.3rem; max-width: 600px; margin: 0 auto 32px; }
 
-.hero-actions { display: flex; gap: 16px; justify-content: center; }
+.hero-actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+
+.hero-install {
+  max-width: 720px;
+  margin: 36px auto 0;
+  text-align: left;
+}
+
+.hero-install-label {
+  text-align: center;
+  font-size: 1.2rem;
+  margin: 0 0 12px;
+}
+
+.hero-install-term { margin-bottom: 12px; position: relative; }
+
+.hero-install-hint {
+  text-align: center;
+  font-size: 1.05rem;
+  margin: 0;
+  opacity: 0.85;
+}
+
+.hero-install-hint a {
+  color: #2d5da1;
+  text-decoration: underline;
+  text-decoration-style: wavy;
+}
 
 .feature-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
