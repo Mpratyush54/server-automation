@@ -106,16 +106,32 @@ var updateCmd = &cobra.Command{
 var recoverCmd = &cobra.Command{
 	Use:   "recover",
 	Short: "Restore API and admin login after a broken secret rotate",
-	Long: `Aligns Postgres and Redis with /etc/platform/.env (or cluster secrets),
-resets admin passwords in the database to ADMIN_PASSWORD from that file,
-and restarts platform-api. Run on the k3s host when the portal is unreachable.
+	Long: `Backs up /etc/platform and cluster secrets, writes passwords to
+/etc/platform/.env and /etc/platform/credentials, then reconnects Postgres.
 
-After recover, pull the new images:
+ALTER USER is used only when no stored password still authenticates.
+The working password is saved on disk before any role change.
+
+After recover:
 
   sudo platformctl update`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
 		return components.RecoverAccess(cfg)
+	},
+}
+
+var backupCmd = &cobra.Command{
+	Use:   "backup",
+	Short: "Copy /etc/platform/.env and database secrets to a timestamped host backup",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
+		dir, err := components.BackupLocalState("", "")
+		if err != nil {
+			return err
+		}
+		fmt.Printf("backup written to %s\n", dir)
+		return nil
 	},
 }
 
@@ -126,6 +142,7 @@ func init() {
 	rootCmd.AddCommand(seedCmd)
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(recoverCmd)
+	rootCmd.AddCommand(backupCmd)
 	rootCmd.AddCommand(versionCmd)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default /etc/platform/.env)")

@@ -75,12 +75,27 @@ CAND_FILE="${PLATFORM_RECOVER_PG_CANDIDATES}"
 PG_TARGET="${PLATFORM_RECOVER_PG_PASS}"
 RD_PASS="${PLATFORM_RECOVER_RD_PASS:-}"
 RD_OLD="${PLATFORM_RECOVER_RD_OLD:-}"
+CRED_DIR="${PLATFORM_CRED_DIR:-/etc/platform/credentials}"
+ENV_FILE="${PLATFORM_ENV_FILE:-/etc/platform/.env}"
+WORKING_OUT="${PLATFORM_RECOVER_WORKING_OUT}"
+
+mkdir -p "$CRED_DIR"
+chmod 700 "$CRED_DIR" 2>/dev/null || true
+
+persist_pg_now() {
+  local pw="$1"
+  umask 077
+  printf '%s\n' "$pw" > "$CRED_DIR/postgres.tmp"
+  mv "$CRED_DIR/postgres.tmp" "$CRED_DIR/postgres"
+  chmod 600 "$CRED_DIR/postgres"
+  sync "$CRED_DIR/postgres" "$CRED_DIR" 2>/dev/null || sync
+  printf '%s' "$pw" > "$WORKING_OUT"
+}
 
 PG_POD="$(kubectl -n databases get pod -l app.kubernetes.io/name=postgresql -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
 if [[ -z "$PG_POD" ]]; then PG_POD=postgresql-0; fi
 echo "  · using Postgres pod $PG_POD"
 
-# Bitnami keeps the live password in env / secret files inside the pod.
 kubectl -n databases exec "$PG_POD" -- bash -lc '
   for v in "$POSTGRESQL_PASSWORD" "$POSTGRES_PASSWORD" "$POSTGRES_POSTGRES_PASSWORD"; do
     [ -n "$v" ] && printf "%s\n" "$v"
@@ -92,7 +107,6 @@ kubectl -n databases exec "$PG_POD" -- bash -lc '
   done
 ' 2>/dev/null >> "$CAND_FILE" || true
 
-# Decode password via base64 so it never hits psql stdin (which would prompt).
 psql_with_pw() {
   local pw="$1"
   local db="$2"
@@ -110,6 +124,7 @@ while IFS= read -r cand || [[ -n "${cand:-}" ]]; do
   if psql_with_pw "$cand" postgres -tAc "SELECT 1" >/dev/null 2>&1; then
     WORKING="$cand"
     echo "  · authenticated to Postgres with a stored password"
+    persist_pg_now "$WORKING"
     break
   fi
 done < "$CAND_FILE"
@@ -137,52 +152,38 @@ restore_trust() {
 
 USED_TRUST=0
 if [[ -z "$WORKING" ]]; then
-  echo "  · no stored password worked — enabling temporary local trust"
+  echo "  · no stored password worked — will ALTER only after passwords are on disk"
+  persist_pg_now "$PG_TARGET"
   enable_trust || { echo "  ✗ could not enable local trust (pg_hba.conf not found)" >&2; exit 2; }
   USED_TRUST=1
   sleep 2
-  if kubectl -n databases exec "$PG_POD" -- psql -w -U postgres -d postgres -tAc 'SELECT 1' >/dev/null 2>&1; then
-    echo "  · authenticated via local trust"
-  else
+  if ! kubectl -n databases exec "$PG_POD" -- psql -w -U postgres -d postgres -tAc 'SELECT 1' >/dev/null 2>&1; then
     restore_trust
     echo "  ✗ could not authenticate to Postgres" >&2
     exit 2
   fi
-fi
-
-kubectl -n databases exec -i "$PG_POD" -- bash -lc 'cat > /tmp/platformctl-recover-alter.sql' < "$ALTER_FILE"
-kubectl -n databases exec -i "$PG_POD" -- bash -lc 'cat > /tmp/platformctl-recover.sql' < "$SQL_FILE"
-
-run_file() {
-  local db="$1"
-  local file="$2"
-  if [[ "$USED_TRUST" = "1" ]]; then
-    kubectl -n databases exec "$PG_POD" -- psql -w -U postgres -d "$db" -v ON_ERROR_STOP=1 -f "$file"
-  else
-    psql_with_pw "$WORKING" "$db" -f "$file"
-  fi
-}
-
-if ! run_file platform /tmp/platformctl-recover.sql; then
-  echo "  · running ALTER USER against database postgres"
-  run_file postgres /tmp/platformctl-recover-alter.sql
-fi
-
-if [[ "$USED_TRUST" = "1" ]]; then
+  echo "  · authenticated via local trust; setting role password to the on-disk value"
+  kubectl -n databases exec -i "$PG_POD" -- bash -lc 'cat > /tmp/platformctl-recover-alter.sql' < "$ALTER_FILE"
+  kubectl -n databases exec "$PG_POD" -- psql -w -U postgres -d postgres -v ON_ERROR_STOP=1 -f /tmp/platformctl-recover-alter.sql
   restore_trust
-  # After restoring md5/scram, the target password must work.
   if ! psql_with_pw "$PG_TARGET" postgres -tAc "SELECT 1" >/dev/null 2>&1; then
-    echo "  ⚠ local trust restored but target password not yet accepted; retrying ALTER" >&2
-    enable_trust
-    sleep 1
-    run_file postgres /tmp/platformctl-recover-alter.sql || true
-    restore_trust
+    echo "  ✗ ALTER USER ran but on-disk password still does not authenticate — leaving backup in place" >&2
+    exit 2
   fi
+  WORKING="$PG_TARGET"
 fi
 
-PG_B64="$(b64 "$PG_TARGET")"
+# Never ALTER when we already had a working password — sync Kubernetes to it.
+PG_B64="$(b64 "$WORKING")"
 kubectl -n platform patch secret platform-env --type merge -p "{\"data\":{\"POSTGRES_PASSWORD\":\"$PG_B64\"}}"
 kubectl -n databases patch secret postgresql --type merge -p "{\"data\":{\"postgres-password\":\"$PG_B64\",\"password\":\"$PG_B64\"}}" || true
+
+kubectl -n databases exec -i "$PG_POD" -- bash -lc 'cat > /tmp/platformctl-recover-admin.sql' < "$SQL_FILE"
+if [[ "$USED_TRUST" = "1" ]]; then
+  kubectl -n databases exec "$PG_POD" -- psql -w -U postgres -d platform -v ON_ERROR_STOP=1 -f /tmp/platformctl-recover-admin.sql >/dev/null 2>&1 || true
+else
+  psql_with_pw "$WORKING" platform -f /tmp/platformctl-recover-admin.sql >/dev/null 2>&1 || true
+fi
 
 if [[ -n "$RD_PASS" ]]; then
   RD_POD="$(kubectl -n databases get pod -l app.kubernetes.io/name=redis -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
@@ -203,10 +204,16 @@ kubectl -n platform rollout status deployment/platform-api --timeout=180s || tru
 `
 
 // RecoverAccess restores Postgres/Redis credentials and admin login from the
-// k3s host when the API cannot authenticate after a partial secret rotate.
+// k3s host. It backs up and writes passwords to /etc/platform before any ALTER.
 func RecoverAccess(cfg *config.Config) error {
 	color.Cyan("\n  ■ Recovering platform access\n")
 	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
+
+	backupDir, err := BackupLocalState(defaultBackupRoot, defaultEnvFile)
+	if err != nil {
+		return fmt.Errorf("refusing to continue without a local backup: %w", err)
+	}
+	color.Green("  ✓ backup written to %s", backupDir)
 
 	candidates := uniqueFilled(
 		cfg.PostgresPassword,
@@ -221,9 +228,10 @@ func RecoverAccess(cfg *config.Config) error {
 	if pgPass == "" {
 		pgPass = firstFilled(candidates...)
 	}
+	generated := false
 	if pgPass == "" {
 		pgPass = randomToken(24)
-		color.Yellow("  · no stored Postgres password found — generated a new one")
+		generated = true
 	}
 	cfg.PostgresPassword = pgPass
 
@@ -240,7 +248,21 @@ func RecoverAccess(cfg *config.Config) error {
 	if strings.TrimSpace(adminPass) == "" {
 		adminPass = randomToken(16)
 		cfg.AdminPassword = adminPass
-		color.Yellow("  · ADMIN_PASSWORD was empty — generated a new admin password")
+		generated = true
+	}
+
+	// Disk first. Never ALTER until these writes succeed.
+	if err := PersistLocalCredentials(defaultEnvFile, defaultCredDir, map[string]string{
+		"POSTGRES_PASSWORD":      pgPass,
+		"POSTGRES_PASSWORD_PREV": firstFilled(candidates...),
+		"REDIS_PASSWORD":         rdPass,
+		"ADMIN_PASSWORD":         adminPass,
+	}); err != nil {
+		return fmt.Errorf("refusing to change database passwords; could not write /etc/platform: %w", err)
+	}
+	color.Green("  ✓ passwords stored at %s and %s", defaultEnvFile, defaultCredDir)
+	if generated {
+		color.Yellow("  · generated missing local passwords and saved them before touching Postgres")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(adminPass), 10)
@@ -251,12 +273,13 @@ func RecoverAccess(cfg *config.Config) error {
 	sqlPath := "/tmp/platformctl-recover.sql"
 	alterPath := "/tmp/platformctl-recover-alter.sql"
 	candPath := "/tmp/platformctl-recover-pg-candidates"
+	workingOut := "/tmp/platformctl-recover-working"
 	alterSQL := fmt.Sprintf("ALTER USER postgres WITH PASSWORD '%s';\n", sqlLiteral(pgPass))
-	fullSQL := alterSQL + fmt.Sprintf(
+	adminSQL := fmt.Sprintf(
 		"UPDATE users SET password_hash = '%s', is_active = true WHERE role = 'admin';\n",
 		sqlLiteral(string(hash)),
 	)
-	if err := os.WriteFile(sqlPath, []byte(fullSQL), 0600); err != nil {
+	if err := os.WriteFile(sqlPath, []byte(adminSQL), 0600); err != nil {
 		return fmt.Errorf("write recover SQL: %w", err)
 	}
 	if err := os.WriteFile(alterPath, []byte(alterSQL), 0600); err != nil {
@@ -265,15 +288,20 @@ func RecoverAccess(cfg *config.Config) error {
 	if err := os.WriteFile(candPath, []byte(strings.Join(candidates, "\n")+"\n"), 0600); err != nil {
 		return fmt.Errorf("write postgres candidates: %w", err)
 	}
+	_ = os.Remove(workingOut)
 	defer os.Remove(sqlPath)
 	defer os.Remove(alterPath)
 	defer os.Remove(candPath)
+	defer os.Remove(workingOut)
 
 	_ = os.Setenv("PLATFORM_RECOVER_SQL", sqlPath)
 	_ = os.Setenv("PLATFORM_RECOVER_ALTER", alterPath)
 	_ = os.Setenv("PLATFORM_RECOVER_PG_CANDIDATES", candPath)
 	_ = os.Setenv("PLATFORM_RECOVER_PG_PASS", pgPass)
 	_ = os.Setenv("PLATFORM_RECOVER_RD_PASS", rdPass)
+	_ = os.Setenv("PLATFORM_CRED_DIR", defaultCredDir)
+	_ = os.Setenv("PLATFORM_ENV_FILE", defaultEnvFile)
+	_ = os.Setenv("PLATFORM_RECOVER_WORKING_OUT", workingOut)
 	_ = os.Setenv("PLATFORM_RECOVER_RD_OLD", firstFilled(
 		kubeSecretValue("platform", "platform-rotate-pending", "REDIS_PASSWORD_OLD"),
 		kubeSecretValue("databases", "redis", "redis-password"),
@@ -281,19 +309,19 @@ func RecoverAccess(cfg *config.Config) error {
 	))
 
 	if err := shell.RunBash(recoverScript); err != nil {
-		return fmt.Errorf("recover failed: %w", err)
+		return fmt.Errorf("recover failed (backup kept at %s): %w", backupDir, err)
 	}
 
-	if err := config.UpsertEnvKey("/etc/platform/.env", "POSTGRES_PASSWORD", pgPass); err != nil {
-		color.Yellow("  ⚠ could not update POSTGRES_PASSWORD in /etc/platform/.env: %v", err)
-	}
-	if rdPass != "" {
-		if err := config.UpsertEnvKey("/etc/platform/.env", "REDIS_PASSWORD", rdPass); err != nil {
-			color.Yellow("  ⚠ could not update REDIS_PASSWORD in /etc/platform/.env: %v", err)
+	if data, err := os.ReadFile(workingOut); err == nil {
+		if w := strings.TrimSpace(string(data)); w != "" {
+			pgPass = w
+			cfg.PostgresPassword = w
+			_ = PersistLocalCredentials(defaultEnvFile, defaultCredDir, map[string]string{
+				"POSTGRES_PASSWORD": w,
+				"ADMIN_PASSWORD":    adminPass,
+				"REDIS_PASSWORD":    rdPass,
+			})
 		}
-	}
-	if err := config.UpsertEnvKey("/etc/platform/.env", "ADMIN_PASSWORD", adminPass); err != nil {
-		color.Yellow("  ⚠ could not update ADMIN_PASSWORD in /etc/platform/.env: %v", err)
 	}
 
 	email := cfg.AdminEmail
@@ -301,11 +329,17 @@ func RecoverAccess(cfg *config.Config) error {
 		email = "admin@pratyushes.dev"
 	}
 	color.Green("  ✓ Access restored")
-	color.Cyan("\n  Login (from /etc/platform/.env):")
-	fmt.Printf("    Portal:   https://%s\n", cfg.Domain)
+	color.Cyan("\n  Passwords are on this machine (not only the terminal):")
+	fmt.Printf("    Backup:      %s\n", backupDir)
+	fmt.Printf("    Env file:    %s\n", defaultEnvFile)
+	fmt.Printf("    Admin file:  %s/admin\n", defaultCredDir)
+	fmt.Printf("    Postgres:    %s/postgres\n", defaultCredDir)
+	color.Cyan("\n  Portal login:")
+	fmt.Printf("    URL:      https://%s\n", cfg.Domain)
 	fmt.Printf("    Email:    %s\n", email)
 	fmt.Printf("    Password: %s\n", adminPass)
-	color.Cyan("\n  Next: pull the new images with:")
+	fmt.Printf("    (same value as %s/admin)\n", defaultCredDir)
+	color.Cyan("\n  Next:")
 	fmt.Printf("    sudo platformctl update\n")
 	return nil
 }
