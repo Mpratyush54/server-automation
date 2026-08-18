@@ -62,6 +62,11 @@ export class AuthService {
     return profile ? JSON.parse(profile) : null;
   }
 
+  setUser(user: any) {
+    const current = this.getUser() || {};
+    localStorage.setItem('plat_user_profile', JSON.stringify({ ...current, ...user }));
+  }
+
   getRole(): string {
     const user = this.getUser();
     return user ? user.role : 'developer';

@@ -19,6 +19,10 @@ import { StorageProvider } from '../entities/StorageProvider';
 import { Secret } from '../entities/Secret';
 import { SecretVersion } from '../entities/SecretVersion';
 import { ProjectMember } from '../entities/ProjectMember';
+import { AgentToken } from '../entities/AgentToken';
+import { AgentCommandApproval } from '../entities/AgentCommandApproval';
+import { IntegrationSettings } from '../entities/IntegrationSettings';
+import { Notification } from '../entities/Notification';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -27,7 +31,7 @@ export const AppDataSource = new DataSource({
   username: process.env.POSTGRES_USER || 'plat',
   password: process.env.POSTGRES_PASSWORD || 'plat',
   database: process.env.POSTGRES_DB || 'plat_platform',
-  entities: [Project, Environment, Deployment, ServiceRegistration, ProjectConfig, File, Alert, DbConnection, User, Role, AuditLog, ClickupTaskLink, SdkCredential, DbBackup, SmtpConfig, StorageProvider, Secret, SecretVersion, ProjectMember],
+  entities: [Project, Environment, Deployment, ServiceRegistration, ProjectConfig, File, Alert, DbConnection, User, Role, AuditLog, ClickupTaskLink, SdkCredential, DbBackup, SmtpConfig, StorageProvider, Secret, SecretVersion, ProjectMember, AgentToken, AgentCommandApproval, IntegrationSettings, Notification],
   synchronize: true,
   logging: false,
 });

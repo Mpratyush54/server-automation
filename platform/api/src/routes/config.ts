@@ -91,7 +91,14 @@ router.post('/config', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
 
 router.delete('/config', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
   try {
-    const { projectId, key, environmentId } = req.query as Record<string, string>;
+    const q = req.query as Record<string, string>;
+    const b = (req.body || {}) as Record<string, string>;
+    const projectId = q.projectId || b.projectId;
+    const key = q.key || b.key;
+    const environmentId = q.environmentId || b.environmentId;
+    if (!projectId || !key) {
+      return res.status(400).json({ error: 'projectId and key are required' });
+    }
     const ds = await getDb();
     const repo = ds.getRepository(ProjectConfig);
     const config = await repo.findOne({

@@ -1,10 +1,9 @@
 const CLICKUP_API = 'https://api.clickup.com/api/v2';
-const TOKEN = process.env.CLICKUP_API_TOKEN;
 
 export async function postComment(taskId: string, comment: string): Promise<void> {
   await fetch(`${CLICKUP_API}/task/${taskId}/comment`, {
     method: 'POST',
-    headers: { 'Authorization': TOKEN, 'Content-Type': 'application/json' },
+    headers: { 'Authorization': process.env.CLICKUP_API_TOKEN || '', 'Content-Type': 'application/json' },
     body: JSON.stringify({ comment_text: comment }),
   });
 }

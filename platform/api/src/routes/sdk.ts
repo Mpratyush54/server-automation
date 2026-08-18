@@ -29,6 +29,12 @@ const router = Router();
 router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) => {
   try {
     const body = req.body;
+    if (!body?.projectName) {
+      return res.status(400).json({ error: 'projectName is required' });
+    }
+    if (!body?.environmentName) {
+      return res.status(400).json({ error: 'environmentName is required' });
+    }
     const ds = await getDb();
     
     // Resolve project ID by name if needed
@@ -388,6 +394,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
 
     return res.status(201).json({
       ...saved,
+      registrationId: saved.id,
       projectId: project.id,
       projectName: project.name,
       namespace: destNamespace,
@@ -501,8 +508,11 @@ const handleSdkLogs = async (req: Request, res: Response) => {
     const body = req.body;
     const logs: any[] = body.logs;
 
-    if (!Array.isArray(logs) || logs.length === 0) {
-      return res.status(400).json({ error: 'logs must be a non-empty array' });
+    if (!Array.isArray(logs)) {
+      return res.status(400).json({ error: 'logs must be an array' });
+    }
+    if (logs.length === 0) {
+      return res.status(201).json({ received: 0 });
     }
 
     await connectMongo();
@@ -649,7 +659,10 @@ router.get('/sdk/db-credentials', sdkTokenAuth, async (req: Request, res: Respon
 router.post('/sdk/api-metrics', sdkTokenAuth, async (req: Request, res: Response) => {
   try {
     const { metrics, projectId } = req.body;
-    if (!Array.isArray(metrics) || metrics.length === 0) return res.json({ saved: 0 });
+    if (!projectId) return res.status(400).json({ error: 'projectId is required' });
+    if (metrics === undefined || metrics === null) return res.status(400).json({ error: 'metrics array is required' });
+    if (!Array.isArray(metrics)) return res.status(400).json({ error: 'metrics must be an array' });
+    if (metrics.length === 0) return res.status(201).json({ saved: 0 });
     await connectMongo();
     const ds = await getDb();
     const projectRef = await resolveProjectRef(ds, projectId || metrics[0]?.projectId);
@@ -666,7 +679,7 @@ router.post('/sdk/api-metrics', sdkTokenAuth, async (req: Request, res: Response
       timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
     }));
     await ApiMetricModel.insertMany(docs);
-    return res.json({ saved: docs.length });
+    return res.status(201).json({ saved: docs.length });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }

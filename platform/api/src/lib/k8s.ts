@@ -553,3 +553,33 @@ export async function updateArgoCDApp(appName: string, imageTag: string): Promis
     return false;
   }
 }
+
+export async function patchSecretData(namespace: string, name: string, data: Record<string, string>): Promise<void> {
+  const existing: any = await coreApi.readNamespacedSecret({ name, namespace });
+  const secret = existing.body || existing;
+  secret.data = secret.data || {};
+  for (const [k, v] of Object.entries(data)) {
+    secret.data[k] = Buffer.from(v, 'utf8').toString('base64');
+  }
+  await coreApi.replaceNamespacedSecret({ name, namespace, body: secret });
+}
+
+export async function restartNamedDeployment(namespace: string, name: string): Promise<void> {
+  const patch = {
+    spec: {
+      template: {
+        metadata: {
+          annotations: {
+            'kubectl.kubernetes.io/restartedAt': new Date().toISOString(),
+          },
+        },
+      },
+    },
+  };
+  await appsApi.patchNamespacedDeployment({
+    name,
+    namespace,
+    body: patch,
+  });
+}
+

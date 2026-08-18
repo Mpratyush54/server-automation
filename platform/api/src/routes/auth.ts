@@ -10,6 +10,8 @@ import { v4 as uuidv4 } from 'uuid';
 
 import bcrypt from 'bcryptjs';
 import { ensureAdminUser } from '../lib/seed-admin';
+import { resolveIntegrations, publicAuthProviders } from '../lib/integrations';
+import { buildAuthorizeUrl, completeOAuthCallback, loginFailedRedirect } from '../lib/oauth-login';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'plat-super-secret-key';
 const router = Router();
@@ -99,52 +101,58 @@ router.post('/auth/login', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/auth/providers', async (_req: Request, res: Response) => {
+  try {
+    const cfg = await resolveIntegrations();
+    return res.json(publicAuthProviders(cfg));
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to load auth providers' });
+  }
+});
+
+router.get('/auth/github', async (req: Request, res: Response) => {
+  const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
+  const built = await buildAuthorizeUrl('github', req.get('host') || undefined, proto);
+  if (built.ok) return res.redirect(built.url);
+  return res.status(built.status).json({ error: built.error });
+});
+
+router.get('/auth/github/callback', async (req: Request, res: Response) => {
+  const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
+  try {
+    const result = await completeOAuthCallback({
+      provider: 'github',
+      code: typeof req.query.code === 'string' ? req.query.code : undefined,
+      state: typeof req.query.state === 'string' ? req.query.state : undefined,
+      reqHost: req.get('host') || undefined,
+      proto,
+    });
+    return res.redirect(result.redirect);
+  } catch (err: any) {
+    return res.redirect(loginFailedRedirect(req.get('host') || undefined, proto, err.message || 'GitHub login failed'));
+  }
+});
+
 router.get('/auth/gitlab', async (req: Request, res: Response) => {
-  // Simulate GitLab OAuth redirect callback
-  const redirectUrl = `/api/auth/gitlab/callback?code=mock_gitlab_code`;
-  return res.redirect(redirectUrl);
+  const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
+  const built = await buildAuthorizeUrl('gitlab', req.get('host') || undefined, proto);
+  if (built.ok) return res.redirect(built.url);
+  return res.status(built.status).json({ error: built.error });
 });
 
 router.get('/auth/gitlab/callback', async (req: Request, res: Response) => {
+  const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
   try {
-    const gitlabProfile = {
-      id: '123456',
-      name: 'GitLab Developer',
-      email: 'gitlab_dev@pratyushes.dev',
-      avatarUrl: 'https://assets.gitlab-static.net/uploads/-/system/user/avatar/123456/avatar.png',
-    };
-
-    const ds = await getDb();
-    const repo = ds.getRepository(User);
-    let user = await repo.findOne({ where: { email: gitlabProfile.email } });
-
-    if (!user) {
-      user = repo.create({
-        id: uuidv4(),
-        name: gitlabProfile.name,
-        email: gitlabProfile.email,
-        role: UserRole.DEVELOPER,
-        gitlabId: gitlabProfile.id,
-        avatarUrl: gitlabProfile.avatarUrl,
-        lastLogin: new Date(),
-      });
-      await repo.save(user);
-    } else {
-      user.lastLogin = new Date();
-      user.avatarUrl = gitlabProfile.avatarUrl;
-      await repo.save(user);
-    }
-
-    const token = jwt.sign(
-      { id: user.id, email: user.email, name: user.name, role: user.role },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
-    const portalUrl = process.env.PORTAL_URL || 'http://localhost:4200';
-    return res.redirect(`${portalUrl}/dashboard?token=${token}`);
+    const result = await completeOAuthCallback({
+      provider: 'gitlab',
+      code: typeof req.query.code === 'string' ? req.query.code : undefined,
+      state: typeof req.query.state === 'string' ? req.query.state : undefined,
+      reqHost: req.get('host') || undefined,
+      proto,
+    });
+    return res.redirect(result.redirect);
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return res.redirect(loginFailedRedirect(req.get('host') || undefined, proto, err.message || 'GitLab login failed'));
   }
 });
 
@@ -254,6 +262,7 @@ router.post('/users', expressAuthenticate, expressRequireRole([UserRole.ADMIN, U
       passwordHash,
       role,
       gitlabId: body.gitlabId || null,
+      githubId: body.githubId || null,
       avatarUrl: body.avatarUrl || null,
       isActive: body.isActive !== false,
     });
@@ -292,6 +301,7 @@ router.put('/users/:id', expressAuthenticate, expressRequireRole([UserRole.ADMIN
       user.role = body.role as UserRole;
     }
     if (body.gitlabId !== undefined) user.gitlabId = body.gitlabId;
+    if (body.githubId !== undefined) user.githubId = body.githubId;
     if (body.avatarUrl !== undefined) user.avatarUrl = body.avatarUrl;
     if (body.isActive !== undefined) user.isActive = !!body.isActive;
     if (body.password) {
@@ -349,9 +359,15 @@ router.delete('/users/:id', expressAuthenticate, expressRequireRole([UserRole.AD
 
 router.get('/users/me', expressAuthenticate, async (req: Request, res: Response) => {
   try {
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.agentToken) {
+      return res.status(400).json({
+        error: 'Agent tokens should use GET /api/agent-tokens/me instead of /api/users/me',
+      });
+    }
     const ds = await getDb();
     const user = await ds.getRepository(User).findOne({
-      where: { id: (req as AuthenticatedRequest).user!.id },
+      where: { id: authReq.user!.id },
       relations: ['roleRef'],
     });
     if (!user) return res.status(404).json({ error: 'User not found' });
