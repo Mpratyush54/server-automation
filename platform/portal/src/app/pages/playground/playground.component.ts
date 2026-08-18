@@ -42,10 +42,17 @@ export class PlaygroundComponent implements OnInit {
         {
           method: 'POST',
           path: '/api/auth/login',
-          description: 'Authenticate user email and retrieve active JWT token.',
+          description: 'Authenticate with email/username and password; returns a human JWT. Password is required (passwordless login is not supported).',
           parameters: [
-            { name: 'email', type: 'body', required: true, value: 'john@@pratyushes.dev', description: 'User login email address' }
+            { name: 'email', type: 'body', required: true, value: 'john@@pratyushes.dev', description: 'User login email address' },
+            { name: 'password', type: 'body', required: true, value: '', placeholder: 'Account password', description: 'Account password' }
           ]
+        },
+        {
+          method: 'GET',
+          path: '/api/agent-tokens/me',
+          description: 'Return the current agent token identity (plat_agent_*) or human JWT profile.',
+          parameters: []
         },
         {
           method: 'GET',
