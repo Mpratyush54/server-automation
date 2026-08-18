@@ -145,7 +145,7 @@ export class ApiService {
   getPlatformVersion(): Observable<any> { return this.http.get(`${this.base}/platform/version`); }
 
   // Authentication & Users
-  login(email: string): Observable<any> { return this.http.post(`${this.base}/auth/login`, { email }); }
+  login(email: string, password: string): Observable<any> { return this.http.post(`${this.base}/auth/login`, { email, password }); }
   initDemoUsers(): Observable<any> { return this.http.get(`${this.base}/users/init-demo`); }
   getUsers(): Observable<any> { return this.http.get(`${this.base}/users`); }
   createUser(data: any): Observable<any> { return this.http.post(`${this.base}/users`, data); }

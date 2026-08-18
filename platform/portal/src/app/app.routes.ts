@@ -29,11 +29,17 @@ import { DocsComponent } from './pages/docs/docs.component';
 
 import { authGuard } from './guards/auth.guard';
 import { appHostGuard, marketingOnlyGuard, isPublicMarketingHost } from './guards/public-domain.guard';
+import { AuthService } from './services/auth.service';
 
-/** Send users to landing on the marketing site, otherwise to login. */
+/** Marketing host → landing. App host → dashboard if logged in, otherwise login. */
 const homeGuard: CanActivateFn = () => {
   const router = inject(Router);
-  router.navigateByUrl(isPublicMarketingHost() ? '/landing' : '/login');
+  if (isPublicMarketingHost()) {
+    router.navigateByUrl('/landing');
+    return false;
+  }
+  const auth = inject(AuthService);
+  router.navigateByUrl(auth.isAuthenticated() ? '/dashboard' : '/login');
   return false;
 };
 

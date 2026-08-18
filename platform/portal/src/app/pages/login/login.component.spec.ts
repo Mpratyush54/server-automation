@@ -12,8 +12,8 @@ describe('LoginComponent', () => {
   let router: jasmine.SpyObj<Router>;
 
   beforeEach(async () => {
-    const authSpy = jasmine.createSpyObj('AuthService', ['login', 'getToken']);
-    const routerSpy = jasmine.createSpyObj('Router', ['navigate']);
+    const authSpy = jasmine.createSpyObj('AuthService', ['login', 'getToken', 'isAuthenticated']);
+    const routerSpy = jasmine.createSpyObj('Router', ['navigate', 'navigateByUrl']);
 
     await TestBed.configureTestingModule({
       imports: [LoginComponent],
@@ -36,63 +36,63 @@ describe('LoginComponent', () => {
   });
 
   it('should redirect to dashboard if already authenticated', () => {
-    authService.getToken.and.returnValue('existing-token');
+    authService.isAuthenticated.and.returnValue(true);
 
     TestBed.createComponent(LoginComponent);
 
     expect(router.navigate).toHaveBeenCalledWith(['/dashboard']);
   });
 
-  it('should login with email', async () => {
-    authService.getToken.and.returnValue(null);
+  it('should login with email and password', async () => {
+    authService.isAuthenticated.and.returnValue(false);
     authService.login.and.returnValue(of({ token: 'new-token' }));
 
     const fixture = TestBed.createComponent(LoginComponent);
     fixture.componentInstance.email = 'test@test.com';
+    fixture.componentInstance.password = 'TestPass123';
 
     await fixture.componentInstance.login();
 
-    expect(authService.login).toHaveBeenCalledWith('test@test.com');
+    expect(authService.login).toHaveBeenCalledWith('test@test.com', 'TestPass123');
     expect(router.navigate).toHaveBeenCalledWith(['/dashboard']);
   });
 
-  it('should show error when email is empty', async () => {
-    authService.getToken.and.returnValue(null);
+  it('should login with username when identity has no @', async () => {
+    authService.isAuthenticated.and.returnValue(false);
+    authService.login.and.returnValue(of({ token: 'new-token' }));
 
     const fixture = TestBed.createComponent(LoginComponent);
-    fixture.componentInstance.email = '';
+    fixture.componentInstance.email = 'devops';
+    fixture.componentInstance.password = 'TestPass123';
 
     await fixture.componentInstance.login();
 
-    expect(fixture.componentInstance.errorMessage).toBe('Please enter an email address.');
+    expect(authService.login).toHaveBeenCalledWith('', 'TestPass123', 'devops');
+  });
+
+  it('should show error when email is empty', async () => {
+    authService.isAuthenticated.and.returnValue(false);
+
+    const fixture = TestBed.createComponent(LoginComponent);
+    fixture.componentInstance.email = '';
+    fixture.componentInstance.password = 'x';
+
+    await fixture.componentInstance.login();
+
+    expect(fixture.componentInstance.errorMessage).toBe('Please enter your email or username.');
     expect(authService.login).not.toHaveBeenCalled();
   });
 
   it('should handle login failure', async () => {
-    authService.getToken.and.returnValue(null);
-    authService.login.and.returnValue(throwError({ error: { error: 'Invalid credentials' } }));
+    authService.isAuthenticated.and.returnValue(false);
+    authService.login.and.returnValue(throwError(() => ({ error: { error: 'Invalid credentials' } })));
 
     const fixture = TestBed.createComponent(LoginComponent);
     fixture.componentInstance.email = 'test@test.com';
+    fixture.componentInstance.password = 'wrong';
 
     await fixture.componentInstance.login();
 
     expect(fixture.componentInstance.errorMessage).toBe('Invalid credentials');
-  });
-
-  it('should login with demo account', async () => {
-    authService.getToken.and.returnValue(null);
-    authService.login.and.returnValue(of({ token: 'demo-token' }));
-
-    const fixture = TestBed.createComponent(LoginComponent);
-    await fixture.componentInstance.login('john@@pratyushes.dev');
-
-    expect(authService.login).toHaveBeenCalledWith('john@@pratyushes.dev');
-  });
-
-  it('should have demo accounts', () => {
-    const fixture = TestBed.createComponent(LoginComponent);
-    expect(fixture.componentInstance.demoAccounts.length).toBe(3);
-    expect(fixture.componentInstance.demoAccounts[0].email).toBe('john@@pratyushes.dev');
   });
 });

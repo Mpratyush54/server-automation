@@ -33,6 +33,20 @@ func TestMarkDoneDedupes(t *testing.T) {
 	}
 }
 
+func TestLockInfoMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	SetLockPath(filepath.Join(dir, "missing.lock"))
+	t.Cleanup(func() { SetLockPath(DefaultLockPath) })
+
+	meta, err := LockInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta != "" {
+		t.Fatalf("expected empty lock info, got %q", meta)
+	}
+}
+
 func TestMarkInProgressDoesNotDowngrade(t *testing.T) {
 	dir := t.TempDir()
 	SetPath(filepath.Join(dir, "state"))

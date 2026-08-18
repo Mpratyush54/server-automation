@@ -9,6 +9,7 @@ import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
 import bcrypt from 'bcryptjs';
+import { ensureAdminUser } from '../lib/seed-admin';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'plat-super-secret-key';
 const router = Router();
@@ -47,18 +48,27 @@ router.post('/auth/login', async (req: Request, res: Response) => {
     if (!password || typeof password !== 'string') {
       return res.status(401).json({ error: 'Password is required.' });
     }
-    if (!email && !username) {
+
+    const ident = [username, email]
+      .map((v) => (typeof v === 'string' ? v.trim() : ''))
+      .find((v) => v.length > 0) || '';
+    if (!ident) {
       return res.status(401).json({ error: 'Email or username is required.' });
     }
 
     const ds = await getDb();
     const repo = ds.getRepository(User);
 
-    let user: User | null = null;
-    if (username) {
-      user = await repo.findOne({ where: { username } });
-    } else if (email) {
-      user = await repo.findOne({ where: { email } });
+    let user: User | null = await repo.findOne({ where: { email: ident } });
+    if (!user) {
+      user = await repo.findOne({ where: { username: ident } });
+    }
+    const identLower = ident.toLowerCase();
+    if (!user && identLower !== ident) {
+      user = await repo.findOne({ where: { email: identLower } });
+    }
+    if (!user && identLower !== ident) {
+      user = await repo.findOne({ where: { username: identLower } });
     }
 
     if (!user || !user.passwordHash) {
@@ -142,42 +152,14 @@ router.get('/users/init-demo', async (req: Request, res: Response) => {
   try {
     const ds = await getDb();
     const repo = ds.getRepository(User);
-
-    // ADMIN_PASSWORD from env (set by platformctl / bootstrap). Local default for docker-compose only.
-    const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
-    if (adminPassword.length < 8) {
-      return res.status(500).json({ error: 'ADMIN_PASSWORD must be at least 8 characters.' });
-    }
-    const passwordHash = await bcrypt.hash(adminPassword, 10);
-
-    const demoUsers = [
-      { id: '00000000-0000-0000-0000-000000000001', name: 'Admin', email: 'admin@pratyushes.dev', username: 'admin', passwordHash, role: UserRole.ADMIN },
-      { id: '11111111-1111-1111-1111-111111111111', name: 'John Dev', email: 'john@pratyushes.dev', username: 'john', passwordHash, role: UserRole.DEVELOPER },
-      { id: '22222222-2222-2222-2222-222222222222', name: 'Sarah Lead', email: 'sarah@pratyushes.dev', username: 'sarah', passwordHash, role: UserRole.TECH_LEAD },
-      { id: '33333333-3333-3333-3333-333333333333', name: 'DevOps Boss', email: 'devops@pratyushes.dev', username: 'devops', passwordHash, role: UserRole.DEVOPS },
-    ];
-
-    const created: User[] = [];
-    for (const demo of demoUsers) {
-      const existing = await repo.findOne({ where: { email: demo.email } });
-      if (!existing) {
-        const user = repo.create(demo);
-        const saved = await repo.save(user);
-        created.push(saved);
-      } else {
-        let updated = false;
-        if (demo.username && !existing.username) { existing.username = demo.username; updated = true; }
-        // Always ensure a password exists (migrates old passwordless accounts)
-        if (!existing.passwordHash) { existing.passwordHash = demo.passwordHash; updated = true; }
-        if (updated) await repo.save(existing);
-      }
-    }
-
-    const all = await repo.find();
-    const safe = all.map(u => ({ ...u, passwordHash: undefined }));
+    const { user, created, removedDemo } = await ensureAdminUser(repo);
+    const { passwordHash: _, ...safe } = user as any;
     return res.json({
-      message: created.length > 0 ? `Created ${created.length} new demo users` : 'All demo users already exist',
-      users: safe,
+      message: created
+        ? `Created admin ${user.email}`
+        : `Admin ${user.email} already exists`,
+      removedDemo,
+      users: [{ ...safe, hasPassword: !!user.passwordHash }],
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
@@ -373,7 +355,8 @@ router.get('/users/me', expressAuthenticate, async (req: Request, res: Response)
       relations: ['roleRef'],
     });
     if (!user) return res.status(404).json({ error: 'User not found' });
-    return res.json(user);
+    const { passwordHash: _, ...safe } = user as any;
+    return res.json({ ...safe, hasPassword: !!user.passwordHash });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
@@ -391,7 +374,8 @@ router.patch('/users/me', expressAuthenticate, async (req: Request, res: Respons
     if (avatarUrl !== undefined) user.avatarUrl = avatarUrl;
 
     const saved = await repo.save(user);
-    return res.json(saved);
+    const { passwordHash: _, ...safe } = saved as any;
+    return res.json({ ...safe, hasPassword: !!saved.passwordHash });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
@@ -399,25 +383,38 @@ router.patch('/users/me', expressAuthenticate, async (req: Request, res: Respons
 
 router.post('/users/invite', expressAuthenticate, requirePermission('users.create'), async (req: Request, res: Response) => {
   try {
-    const { email, name, roleId, role } = req.body;
+    const { email, name, roleId, role, password, username } = req.body;
     if (!email || !name) {
       return res.status(400).json({ error: 'Email and name are required' });
+    }
+    if (!password || String(password).length < 8) {
+      return res.status(400).json({ error: 'password is required (min 8 characters) so the user can log in' });
     }
 
     const ds = await getDb();
     const repo = ds.getRepository(User);
 
-    const existing = await repo.findOne({ where: { email } });
+    const emailNorm = String(email).trim();
+    const existing = await repo.findOne({ where: { email: emailNorm } });
     if (existing) {
       return res.status(409).json({ error: 'User with this email already exists' });
     }
 
+    const uname = (username && String(username).trim()) || emailNorm.split('@')[0];
+    const existingByUser = await repo.findOne({ where: { username: uname } });
+    if (existingByUser) {
+      return res.status(409).json({ error: 'A user with that username already exists' });
+    }
+
     const userRole = (role as UserRole) || UserRole.DEVELOPER;
+    const passwordHash = await bcrypt.hash(String(password), 10);
 
     const user = repo.create({
       id: uuidv4(),
       name,
-      email,
+      email: emailNorm,
+      username: uname,
+      passwordHash,
       role: userRole,
       roleId: roleId || null,
     });
@@ -428,11 +425,12 @@ router.post('/users/invite', expressAuthenticate, requirePermission('users.creat
       action: 'user.invited',
       targetType: 'User',
       targetId: saved.id,
-      metadata: { email, role: userRole, roleId },
+      metadata: { email: emailNorm, role: userRole, roleId },
       ip: req.ip,
     });
 
-    return res.status(201).json(saved);
+    const { passwordHash: _, ...safe } = saved as any;
+    return res.status(201).json({ ...safe, hasPassword: true });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }

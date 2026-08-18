@@ -111,6 +111,21 @@ describe('AuthService', () => {
     });
   });
 
+  describe('isAuthenticated', () => {
+    it('should reject leftover passwordless dummy tokens', () => {
+      localStorage.setItem('plat_auth_token', '33333333-3333-3333-3333-333333333333');
+      expect(service.isAuthenticated()).toBeFalse();
+      expect(service.getToken()).toBeNull();
+    });
+
+    it('should accept an unexpired JWT with an id claim', () => {
+      const payload = { id: '1', email: 'test@test.com', exp: Math.floor(Date.now() / 1000) + 3600 };
+      const token = `header.${btoa(JSON.stringify(payload))}.signature`;
+      localStorage.setItem('plat_auth_token', token);
+      expect(service.isAuthenticated()).toBeTrue();
+    });
+  });
+
   describe('logout', () => {
     it('should clear localStorage', () => {
       localStorage.setItem('plat_auth_token', 'token');
