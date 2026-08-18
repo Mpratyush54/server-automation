@@ -17,31 +17,34 @@ error: password authentication failed for user "postgres"
 
 ## What the platform does by itself
 
-From this release on, `platform-api` recovers without SSH:
+Rotate and recover keep durable copies **on the host** before any database password change:
 
-1. One-click rotate writes old + new passwords to `platform/platform-rotate-pending` **before** `ALTER USER` / Redis `CONFIG SET`.
-2. Live passwords are changed only if that command succeeds. Kubernetes secrets are patched only after that.
-3. TypeORM is reconnected in-process after a successful Postgres `ALTER USER` (it cannot keep using the old password).
-4. On the next boot, if Postgres still rejects `POSTGRES_PASSWORD`, the API tries every remaining copy:
-   - process env
-   - `platform-rotate-pending` (`POSTGRES_PASSWORD_NEW`, then `POSTGRES_PASSWORD_OLD`)
-   - `platform/platform-env`
-   - `databases/postgresql` (`postgres-password` / `password`)
-5. The first password that authenticates is written back to `platform-env` and the Bitnami secret. Redis `WRONGPASS` uses the same pattern.
+1. `platformctl backup` (also run automatically by `recover`) copies `/etc/platform/.env` and Kubernetes secrets to `/var/lib/platform/backups/<timestamp>/`.
+2. Live passwords are written to `/etc/platform/.env` and `/etc/platform/credentials/{admin,postgres,redis}` (mode 0600) **before** `ALTER USER`. Previous/next values are stored as `postgres.prev` / `postgres.next`.
+3. One-click rotate also writes `platform/platform-rotate-pending`. If neither the host files nor that secret can be written, rotate **refuses** to change Postgres.
+4. `platformctl recover` tries stored passwords first and **does not ALTER** if one still works. It only ALTERs when nothing authenticates, and only to a password already fsynced on disk.
+5. On API boot, `getDb()` still tries env, pending, `platform-env`, and the Bitnami secret, then syncs the working password.
 
-A new API pod coming up after a partial rotate should log `postgres auth recovered from …` and stay Ready. You do not need to exec into the node.
+Passwords are not only flashed in the terminal. Read them with:
+
+```bash
+sudo cat /etc/platform/credentials/admin
+sudo cat /etc/platform/credentials/postgres
+sudo grep -E '^(ADMIN|POSTGRES|REDIS)_PASSWORD=' /etc/platform/.env
+```
 
 ## If a pod is still crash-looping
 
-On the k3s host (no API login required):
+On the k3s host:
 
 ```bash
 curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | sh
+sudo platformctl backup
 sudo platformctl recover
 sudo platformctl update
 ```
 
-`platformctl recover` uses local access inside the Postgres/Redis pods, resets the admin password to `ADMIN_PASSWORD` in `/etc/platform/.env`, patches Kubernetes secrets **in place** (it does not recreate `platform-env`), and restarts `platform-api`. It then prints the portal login.
+`recover` prints the backup directory and `/etc/platform/credentials/*` paths. Admin login is in `credentials/admin` and `ADMIN_PASSWORD` in `/etc/platform/.env`.
 
 Roll to an image that includes in-cluster credential recovery (`platform-api` after this change) with `platformctl update`. A new API pod heals on start as long as any stored password copy still matches the database role.
 

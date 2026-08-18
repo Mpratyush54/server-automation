@@ -809,6 +809,9 @@ spec:
         envFrom:
         - secretRef:
             name: platform-env
+        volumeMounts:
+        - name: platform-etc
+          mountPath: /etc/platform
         readinessProbe:
           httpGet:
             path: /api/health
@@ -828,6 +831,11 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "1000m"
+      volumes:
+      - name: platform-etc
+        hostPath:
+          path: /etc/platform
+          type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service
@@ -1296,6 +1304,7 @@ func ProvisionComplete(cfg *config.Config) {
 	fmt.Printf("    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml\n")
 	fmt.Printf("    platformctl status\n")
 	fmt.Printf("    platformctl update\n")
+	fmt.Printf("    platformctl backup\n")
 	fmt.Printf("    platformctl recover\n")
 	fmt.Printf("    kubectl get pods -A\n")
 }

@@ -75,12 +75,15 @@ jest.mock('../../../src/config/database', () => ({
 }));
 
 import { rotatePlatformSecrets } from '../../../src/lib/secret-rotate';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 describe('secret-rotate', () => {
   beforeEach(() => {
     patchSecretData.mockClear();
     restartNamedDeployment.mockClear();
-    upsertSecretData.mockClear();
+    upsertSecretData.mockReset().mockResolvedValue(undefined);
     deleteSecret.mockClear();
     reconnectPostgres.mockClear();
     saveUser.mockClear();
@@ -90,6 +93,10 @@ describe('secret-rotate', () => {
     process.env.POSTGRES_USER = 'postgres';
     process.env.POSTGRES_PASSWORD = 'old-pg';
     process.env.REDIS_PASSWORD = 'old-redis';
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'plat-rotate-'));
+    process.env.PLATFORM_ENV_FILE = path.join(tmp, '.env');
+    process.env.PLATFORM_CRED_DIR = path.join(tmp, 'credentials');
+    fs.writeFileSync(process.env.PLATFORM_ENV_FILE, 'POSTGRES_PASSWORD=old-pg\n');
   });
 
   it('updates admin hashes before ALTER USER, then patches postgres/redis secrets and restarts only the API', async () => {
@@ -129,6 +136,7 @@ describe('secret-rotate', () => {
       'platform-rotate-pending',
       expect.objectContaining({ POSTGRES_PASSWORD_OLD: 'old-pg' }),
     );
+    expect(result.results.some((r) => r.key === 'host:/etc/platform')).toBe(true);
     expect(reconnectPostgres).toHaveBeenCalled();
     expect(deleteSecret).toHaveBeenCalledWith('platform', 'platform-rotate-pending');
 
@@ -168,5 +176,18 @@ describe('secret-rotate', () => {
     const envPatch = patchSecretData.mock.calls.find(([ns, name]) => ns === 'platform' && name === 'platform-env');
     expect(envPatch[2]).not.toHaveProperty('REDIS_PASSWORD');
     expect(envPatch[2]).toHaveProperty('POSTGRES_PASSWORD');
+  });
+
+  it('refuses ALTER USER when neither host files nor pending secret can be written', async () => {
+    upsertSecretData.mockRejectedValue(new Error('forbidden'));
+    process.env.PLATFORM_ENV_FILE = '/proc/platformctl-nope.env';
+    process.env.PLATFORM_CRED_DIR = '/proc/platformctl-nope-creds';
+
+    const result = await rotatePlatformSecrets({ actorUserId: 'admin-1' });
+
+    expect(result.values).not.toHaveProperty('POSTGRES_PASSWORD');
+    expect(result.results.some((r) => /refused ALTER USER/.test(r.detail))).toBe(true);
+    const order: string[] = (globalThis as any).__rotateOrder;
+    expect(order).not.toContain('pgConnect');
   });
 });

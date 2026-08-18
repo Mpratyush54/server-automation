@@ -84,4 +84,7 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(output, "recover") {
 		t.Error("help should mention 'recover'")
 	}
+	if !strings.Contains(output, "backup") {
+		t.Error("help should mention 'backup'")
+	}
 }
