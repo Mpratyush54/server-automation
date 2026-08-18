@@ -3,6 +3,8 @@
   <a class="logo" routerLink="/landing">⚡ platform</a>
   <div style="display:flex;gap:20px;align-items:center;">
     <a routerLink="/docs" style="cursor:pointer">Docs</a>
+    <a routerLink="/docs/getting-started/platformctl" style="cursor:pointer">CLI</a>
+    <a routerLink="/docs/mcp/overview" style="cursor:pointer">MCP</a>
     <a routerLink="/docs/api-reference" style="cursor:pointer">API</a>
 
   </div>
@@ -19,7 +21,7 @@
 </div>
 
 <!-- HERO -->
-<div class="hero" style="position: relative; overflow: hidden; min-height: 100vh;">
+<div class="hero" style="position: relative; overflow-x: hidden; min-height: 100vh; padding-bottom: 48px;">
   <canvas id="heroCanvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; opacity: 0.3;"></canvas>
   
   <div class="max-w-4xl mx-auto text-center relative z-10" style="position: relative; z-index: 10; margin-top: 120px;">
@@ -74,7 +76,25 @@
     
     <div class="hero-actions">
       <button class="btn btn-primary" routerLink="/docs" style="font-size: 1.3rem; padding: 12px 24px;">Read the Docs</button>
+    </div>
 
+    <div class="hero-install">
+      <p class="hero-install-label">Install on a fresh Ubuntu server — copy and run:</p>
+      <div class="terminal-window hero-install-term">
+        <div class="terminal-header">
+          <div class="terminal-buttons">
+            <span class="dot dot-close"></span>
+            <span class="dot dot-minimize"></span>
+            <span class="dot dot-maximize"></span>
+          </div>
+          <span class="terminal-title">bash</span>
+          <button type="button" class="copy-btn" (click)="copyInstallCommand()">{{ installCopied ? 'Copied' : 'Copy' }}</button>
+        </div>
+        <div class="terminal-body">
+          <pre>{{ installCommand }}</pre>
+        </div>
+      </div>
+      <p class="hero-install-hint">Ubuntu 22.04+, sudo, ≥ 8 GB RAM. Then open your domain. CLI reference: <a routerLink="/docs/getting-started/platformctl">platformctl</a> · <a routerLink="/docs/mcp/overview">MCP</a></p>
     </div>
   </div>
 </div>
@@ -171,7 +191,7 @@ plat.<span style="color: #6f42c1;">captureConsole</span>();</pre>
       <div style="flex: 1; background: rgba(255,255,255,0.05); border: 2px dashed rgba(255,255,255,0.2); border-radius: 12px; padding: 32px; text-align: left;">
         <div style="font-size: 3rem; font-family: 'Kalam', cursive; font-weight: bold; color: #ffb86c; margin-bottom: 16px;">1.</div>
         <h3 style="font-size: 1.8rem; margin-bottom: 12px; color: #fff;">Install Platform</h3>
-        <p style="font-size: 1.1rem; line-height: 1.5; opacity: 0.8;">Run our helm chart or bootstrap script on your cluster. It provisions k3s, ArgoCD, MinIO, and Prometheus automatically.</p>
+        <p style="font-size: 1.1rem; line-height: 1.5; opacity: 0.8;">Copy the curl | sh command from this page onto an Ubuntu server, then run <code>sudo platformctl provision</code>. It installs k3s, ArgoCD, MinIO, and Prometheus automatically.</p>
       </div>
       <div style="flex: 1; background: rgba(255,255,255,0.05); border: 2px dashed rgba(255,255,255,0.2); border-radius: 12px; padding: 32px; text-align: left;">
         <div style="font-size: 3rem; font-family: 'Kalam', cursive; font-weight: bold; color: #50fa7b; margin-bottom: 16px;">2.</div>

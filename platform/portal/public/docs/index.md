@@ -8,7 +8,9 @@ applications on Kubernetes (k3s).
 
 | Section | Description |
 |---|---|
-| [Getting Started](getting-started/installation.md) | Set up Platform locally in 5 minutes |
+| [Getting Started](getting-started/installation.md) | Set up Platform locally or on a server |
+| [platformctl CLI](getting-started/platformctl.md) | Every `platformctl` command (`provision`, `update`, `recover`, …) |
+| [MCP](mcp/overview.md) | Agent tokens, Cursor config, guarded commands |
 | [API Reference](api-reference/platform-api/auth.md) | Complete API endpoint documentation |
 | [SDK Reference](api-reference/sdk-node/PlatformClient.md) | Node.js, Python, React, Angular SDKs |
 | [Architecture](architecture/overview.md) | System design, data flow, auth flow |
@@ -81,15 +83,22 @@ npm install
 npm run start
 ```
 
-Then sign in at `http://localhost:4200` with **`admin@pratyushes.dev`** — no password
-required (Platform uses passwordless email-based JWT). Demo users are auto-seeded
-on first API startup; if you ever need to re-seed manually:
+Then sign in at `http://localhost:4200` with **`admin@pratyushes.dev`** and the
+password from `ADMIN_PASSWORD` (docker-compose default: **`Admin@123`**). Demo users
+are auto-seeded on first API startup; if you ever need to re-seed manually:
 
 ```bash
 npm --prefix platform/api run seed:db
 ```
 
-Server / production install is a single command — see [Getting Started](getting-started/installation.md#deploy-to-a-server-single-command).
+**Server install** (copy from the [homepage](/landing) or run):
+
+```bash
+curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | sh
+sudo platformctl provision
+```
+
+Full CLI: [platformctl](getting-started/platformctl.md). Production walkthrough: [Deployment Guide](deployment/bootstrap.md).
 
 ## Demo Accounts (local dev)
 

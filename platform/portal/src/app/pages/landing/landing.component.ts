@@ -11,6 +11,9 @@ import { RouterModule } from '@angular/router';
 })
 export class LandingComponent implements OnInit, AfterViewInit, OnDestroy {
   currentTypedText = '';
+  installCopied = false;
+  readonly installCommand =
+    'curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | sh\nsudo platformctl provision';
   private texts = ["React Developers", "DevOps Engineers", "Node.js Backends", "You"];
   private typeIndex = 0;
   private charIndex = 0;
@@ -98,6 +101,36 @@ export class LandingComponent implements OnInit, AfterViewInit, OnDestroy {
       });
     };
     document.head.appendChild(script);
+  }
+
+  copyInstallCommand() {
+    const text = this.installCommand;
+    const done = () => {
+      this.installCopied = true;
+      setTimeout(() => { this.installCopied = false; }, 2000);
+    };
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => this.fallbackCopy(text, done));
+      return;
+    }
+    this.fallbackCopy(text, done);
+  }
+
+  private fallbackCopy(text: string, done: () => void) {
+    try {
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.setAttribute('readonly', '');
+      el.style.position = 'fixed';
+      el.style.left = '-9999px';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      done();
+    } catch {
+      // ignore
+    }
   }
 
   ngOnDestroy() {

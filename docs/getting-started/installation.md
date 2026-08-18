@@ -156,7 +156,7 @@ Useful overrides:
 | `SKIP_K8S` | `false` | Use an existing cluster |
 | `SKIP_PREFLIGHT` | `false` | Skip RAM/disk/port checks |
 
-The installer is interactive, idempotent, and resumable via `/etc/platform/.bootstrap_state`. Details: [`platform-bootstrap/README.md`](../../platform-bootstrap/README.md).
+The installer is interactive, idempotent, and resumable via `/etc/platform/.bootstrap_state`. Command list: [platformctl CLI](platformctl.md). Details: [`platform-bootstrap/README.md`](../../platform-bootstrap/README.md).
 
 ### Windows / macOS
 
