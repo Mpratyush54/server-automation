@@ -103,12 +103,29 @@ var updateCmd = &cobra.Command{
 	},
 }
 
+var recoverCmd = &cobra.Command{
+	Use:   "recover",
+	Short: "Restore API and admin login after a broken secret rotate",
+	Long: `Aligns Postgres and Redis with /etc/platform/.env (or cluster secrets),
+resets admin passwords in the database to ADMIN_PASSWORD from that file,
+and restarts platform-api. Run on the k3s host when the portal is unreachable.
+
+After recover, pull the new images:
+
+  sudo platformctl update`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
+		return components.RecoverAccess(cfg)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(provisionCmd)
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(seedCmd)
 	rootCmd.AddCommand(updateCmd)
+	rootCmd.AddCommand(recoverCmd)
 	rootCmd.AddCommand(versionCmd)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default /etc/platform/.env)")

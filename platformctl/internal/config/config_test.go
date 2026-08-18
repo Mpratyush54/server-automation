@@ -221,6 +221,46 @@ func TestPromptInteractiveNonInteractive(t *testing.T) {
 	}
 }
 
+func TestUpsertEnvKeyPreservesOtherKeys(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	if err := os.WriteFile(path, []byte("GITHUB_TOKEN=keep-me\nPOSTGRES_PASSWORD=old\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpsertEnvKey(path, "POSTGRES_PASSWORD", "new-pass"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "GITHUB_TOKEN=keep-me") {
+		t.Error("upsert must not drop other keys")
+	}
+	if !strings.Contains(content, "POSTGRES_PASSWORD=new-pass") {
+		t.Error("upsert should replace POSTGRES_PASSWORD")
+	}
+	if strings.Contains(content, "POSTGRES_PASSWORD=old") {
+		t.Error("old postgres password should be gone")
+	}
+}
+
+func TestUpsertEnvKeyAppendsMissing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	if err := os.WriteFile(path, []byte("DOMAIN=example.com\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpsertEnvKey(path, "ADMIN_PASSWORD", "secret"); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "ADMIN_PASSWORD=secret") {
+		t.Errorf("expected appended key, got %s", data)
+	}
+}
+
 func TestGetEnvBool(t *testing.T) {
 	tests := []struct {
 		val      string

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/fatih/color"
@@ -120,6 +121,47 @@ func loadDotEnv(path string) error {
 		}
 	}
 	return nil
+}
+
+// UpsertEnvKey sets KEY=value in a dotenv file without rewriting other keys.
+func UpsertEnvKey(path, key, value string) error {
+	if key == "" {
+		return fmt.Errorf("empty env key")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	lines := []string{}
+	if err == nil {
+		content := strings.ReplaceAll(string(data), "\r\n", "\n")
+		lines = strings.Split(content, "\n")
+	}
+	prefix := key + "="
+	found := false
+	for i, line := range lines {
+		trim := strings.TrimSpace(line)
+		if strings.HasPrefix(trim, prefix) {
+			lines[i] = prefix + value
+			found = true
+		}
+	}
+	if !found {
+		if len(lines) == 0 {
+			lines = []string{prefix + value}
+		} else if lines[len(lines)-1] == "" {
+			lines[len(lines)-1] = prefix + value
+			lines = append(lines, "")
+		} else {
+			lines = append(lines, prefix+value)
+		}
+	}
+	if dir := filepath.Dir(path); dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+	}
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0600)
 }
 
 func firstNonEmpty(vals ...string) string {
