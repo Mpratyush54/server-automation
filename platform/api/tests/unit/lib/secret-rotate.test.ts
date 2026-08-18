@@ -1,3 +1,8 @@
+jest.mock('bcryptjs', () => ({
+  hash: jest.fn().mockResolvedValue('hashed-admin'),
+  compare: jest.fn().mockResolvedValue(true),
+}));
+
 jest.mock('pg', () => {
   return {
     Client: class {
@@ -74,12 +79,16 @@ jest.mock('../../../src/config/database', () => ({
   isPostgresAuthError: (err: any) => /password authentication failed/i.test(String(err?.message || err || '')),
 }));
 
-import { rotatePlatformSecrets } from '../../../src/lib/secret-rotate';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
 describe('secret-rotate', () => {
+  let rotatePlatformSecrets: (opts: { actorUserId?: string }) => Promise<{ results: any[]; values: Record<string, string> }>;
+
+  beforeAll(async () => {
+    ({ rotatePlatformSecrets } = await import('../../../src/lib/secret-rotate'));
+  });
   beforeEach(() => {
     patchSecretData.mockClear();
     restartNamedDeployment.mockClear();
