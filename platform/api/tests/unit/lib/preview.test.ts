@@ -1,33 +1,49 @@
 import { generatePreviewUrl, validateBranchName } from '../../../src/lib/preview';
 
 describe('Preview Library', () => {
+  const originalDomain = process.env.DOMAIN;
+
+  beforeEach(() => {
+    delete process.env.DOMAIN;
+  });
+
+  afterAll(() => {
+    if (originalDomain === undefined) delete process.env.DOMAIN;
+    else process.env.DOMAIN = originalDomain;
+  });
+
   describe('generatePreviewUrl', () => {
     it('should generate preview URL from feature branch', () => {
-      expect(generatePreviewUrl('feature/CU-123-add-login')).toBe('cu-123-add-login.preview.platform.dev');
+      expect(generatePreviewUrl('feature/CU-123-add-login')).toBe('cu-123-add-login.preview.sslip.io');
     });
 
     it('should generate preview URL from fix branch', () => {
-      expect(generatePreviewUrl('fix/CU-456-bugfix')).toBe('cu-456-bugfix.preview.platform.dev');
+      expect(generatePreviewUrl('fix/CU-456-bugfix')).toBe('cu-456-bugfix.preview.sslip.io');
     });
 
     it('should remove special characters', () => {
-      expect(generatePreviewUrl('feature/my_branch.test')).toBe('my-branch-test.preview.platform.dev');
+      expect(generatePreviewUrl('feature/my_branch.test')).toBe('my-branch-test.preview.sslip.io');
     });
 
     it('should lowercase the URL', () => {
-      expect(generatePreviewUrl('feature/MyBranch')).toBe('mybranch.preview.platform.dev');
+      expect(generatePreviewUrl('feature/MyBranch')).toBe('mybranch.preview.sslip.io');
     });
 
     it('should handle branch without prefix', () => {
-      expect(generatePreviewUrl('CU-789-feature')).toBe('cu-789-feature.preview.platform.dev');
+      expect(generatePreviewUrl('CU-789-feature')).toBe('cu-789-feature.preview.sslip.io');
     });
 
     it('should collapse multiple hyphens', () => {
-      expect(generatePreviewUrl('feature/a---b')).toBe('a-b.preview.platform.dev');
+      expect(generatePreviewUrl('feature/a---b')).toBe('a-b.preview.sslip.io');
     });
 
     it('should trim leading and trailing hyphens', () => {
-      expect(generatePreviewUrl('feature/-test-')).toBe('test.preview.platform.dev');
+      expect(generatePreviewUrl('feature/-test-')).toBe('test.preview.sslip.io');
+    });
+
+    it('should honor DOMAIN override', () => {
+      process.env.DOMAIN = 'platform.dev';
+      expect(generatePreviewUrl('feature/CU-1-x')).toBe('cu-1-x.preview.platform.dev');
     });
   });
 

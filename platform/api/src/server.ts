@@ -40,6 +40,14 @@ async function bootstrap() {
     // Start preview environment decay scheduler (72h TTL)
     startPreviewDecayScheduler();
 
+    try {
+      const { hydrateIntegrationsEnv } = await import('./lib/integrations');
+      await hydrateIntegrationsEnv();
+      console.log('[server] Integration credentials loaded');
+    } catch (integErr: any) {
+      console.warn(`[server] Integration hydrate skipped: ${integErr.message}`);
+    }
+
     const app = express();
     const port = process.env.PORT || 3000;
 

@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
+import { ApiService } from '../../services/api.service';
 
 @Component({
   selector: 'app-login',
@@ -13,21 +14,43 @@ import { AuthService } from '../../services/auth.service';
   styleUrl: './login.component.css'
 })
 export class LoginComponent implements OnInit {
-  // Password mode fields
   email = '';
   password = '';
   showPassword = false;
-
-
-
   errorMessage = '';
   loading = false;
+  providers = {
+    github: { enabled: false, configured: false },
+    gitlab: { enabled: false, configured: false, url: 'https://gitlab.com' },
+  };
 
-  constructor(private auth: AuthService, private router: Router, private route: ActivatedRoute) {}
+  constructor(
+    private auth: AuthService,
+    private router: Router,
+    private route: ActivatedRoute,
+    private api: ApiService,
+  ) {}
 
-  ngOnInit() {
+  async ngOnInit() {
+    const oauthError = this.route.snapshot.queryParams['error'];
+    if (oauthError) {
+      this.errorMessage = oauthError;
+    }
     if (this.auth.isAuthenticated()) {
       this.router.navigate(['/dashboard']);
+      return;
+    }
+    await this.loadProviders();
+  }
+
+  async loadProviders() {
+    try {
+      this.providers = await firstValueFrom(this.api.getAuthProviders());
+    } catch {
+      this.providers = {
+        github: { enabled: false, configured: false },
+        gitlab: { enabled: false, configured: false, url: 'https://gitlab.com' },
+      };
     }
   }
 
@@ -66,9 +89,13 @@ export class LoginComponent implements OnInit {
     }
   }
 
-  loginWithGitLab() {
-    window.location.href = '/api/auth/gitlab';
+  loginWithGitHub() {
+    if (!this.providers.github?.enabled) return;
+    window.location.href = '/api/auth/github';
   }
 
-
+  loginWithGitLab() {
+    if (!this.providers.gitlab?.enabled) return;
+    window.location.href = '/api/auth/gitlab';
+  }
 }

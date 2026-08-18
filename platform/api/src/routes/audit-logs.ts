@@ -3,12 +3,12 @@ import { getDb } from '../config/database';
 import { connectMongo } from '../config/mongoose';
 import { AuditLog } from '../entities/AuditLog';
 import { UserRole } from '../entities/User';
-import { expressAuthenticate, expressRequireRole, AuthenticatedRequest } from '../middleware/auth';
+import { expressAuthenticate, expressRequireRole, requireAgentScopeOrRole, AuthenticatedRequest } from '../middleware/auth';
 import { LogModel } from '../schemas/Log';
 
 const router = Router();
 
-router.get('/audit-logs', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
+router.get('/audit-logs', expressAuthenticate, requireAgentScopeOrRole(['audit:read'], [UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
   try {
     const ds = await getDb();
     const logs = await ds.getRepository(AuditLog).find({
@@ -23,6 +23,13 @@ router.get('/audit-logs', expressAuthenticate, expressRequireRole([UserRole.DEVO
 
 router.get('/logs/search', expressAuthenticate, async (req: Request, res: Response) => {
   try {
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.agentToken) {
+      const scopes = authReq.agentToken.scopes || [];
+      if (!scopes.includes('*') && !scopes.includes('logs:read')) {
+        return res.status(403).json({ error: 'Forbidden: Agent token missing logs:read scope' });
+      }
+    }
     const { projectId, environmentId, serviceName, level, search, limit, offset } = req.query as Record<string, string>;
     await connectMongo();
     const filter: Record<string, any> = {};

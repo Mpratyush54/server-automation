@@ -1,13 +1,18 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import { getDb } from '../config/database';
 import { User, UserRole } from '../entities/User';
 import { Role } from '../entities/Role';
 import { AuditLog } from '../entities/AuditLog';
+import { AgentToken } from '../entities/AgentToken';
 import { Permission, ROLE_PRESETS } from '../config/permissions';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'plat-super-secret-key';
 const PERMISSION_CACHE_TTL_MS = 60_000;
+export const AGENT_TOKEN_PREFIX = 'plat_agent_';
+/** Characters of the raw token used for DB lookup (includes plat_agent_). */
+export const AGENT_TOKEN_LOOKUP_LEN = 20;
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -19,6 +24,14 @@ export interface AuthenticatedRequest extends Request {
   };
   sdkToken?: boolean;
   projectId?: string;
+  agentToken?: {
+    id: string;
+    name: string;
+    scopes: string[];
+    tokenPrefix: string;
+  };
+  /** True when authenticated via human JWT (not agent token / SDK). */
+  humanJwt?: boolean;
 }
 
 // Simple in-memory permission cache: userId → { permissions, expiresAt }
@@ -61,12 +74,53 @@ export function clearPermissionCache(userId?: string) {
   }
 }
 
+async function authenticateAgentToken(rawToken: string, req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  const prefix = rawToken.slice(0, AGENT_TOKEN_LOOKUP_LEN);
+  if (prefix.length < AGENT_TOKEN_LOOKUP_LEN) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid agent token' });
+  }
+
+  try {
+    const ds = await getDb();
+    const repo = ds.getRepository(AgentToken);
+    const record = await repo.findOne({ where: { tokenPrefix: prefix } });
+    if (!record || !record.isActive || record.revokedAt) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid or revoked agent token' });
+    }
+    if (record.expiresAt && record.expiresAt.getTime() < Date.now()) {
+      return res.status(401).json({ error: 'Unauthorized: Agent token expired' });
+    }
+
+    const valid = await bcrypt.compare(rawToken, record.tokenHash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid agent token' });
+    }
+
+    record.lastUsedAt = new Date();
+    await repo.save(record).catch(() => {});
+
+    req.agentToken = {
+      id: record.id,
+      name: record.name,
+      scopes: Array.isArray(record.scopes) ? record.scopes : [],
+      tokenPrefix: record.tokenPrefix,
+    };
+    return next();
+  } catch {
+    return res.status(401).json({ error: 'Unauthorized: Could not validate agent token' });
+  }
+}
+
 export async function expressAuthenticate(req: Request, res: Response, next: NextFunction) {
   const auth = req.headers.authorization;
   if (!auth?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized: Missing token' });
   }
   const token = auth.substring(7);
+
+  if (token.startsWith(AGENT_TOKEN_PREFIX)) {
+    return authenticateAgentToken(token, req as AuthenticatedRequest, res, next);
+  }
 
   if (token.startsWith('sdk-')) {
     (req as AuthenticatedRequest).sdkToken = true;
@@ -93,6 +147,7 @@ export async function expressAuthenticate(req: Request, res: Response, next: Nex
       name: user.name,
       email: user.email,
     };
+    (req as AuthenticatedRequest).humanJwt = true;
     next();
   } catch (err: any) {
     return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
@@ -101,7 +156,11 @@ export async function expressAuthenticate(req: Request, res: Response, next: Nex
 
 export function expressRequireRole(roles: UserRole[]) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const user = (req as AuthenticatedRequest).user;
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.agentToken) {
+      return res.status(403).json({ error: 'Forbidden: Agent tokens cannot use role-gated human endpoints' });
+    }
+    const user = authReq.user;
     if (!user) {
       return res.status(401).json({ error: 'Unauthorized: Not authenticated' });
     }
@@ -112,12 +171,42 @@ export function expressRequireRole(roles: UserRole[]) {
   };
 }
 
+/**
+ * Allow either a human JWT with one of the roles, or an agent token with ANY of the listed scopes.
+ * Used for MCP-facing read endpoints (pods, audit logs, etc.).
+ */
+export function requireAgentScopeOrRole(scopes: string[], roles: UserRole[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.agentToken) {
+      const agent = authReq.agentToken;
+      const ok = agent.scopes.includes('*') || scopes.some((s) => agent.scopes.includes(s));
+      if (!ok) {
+        return res.status(403).json({
+          error: 'Forbidden: Agent token missing required scopes',
+          requiredAnyOf: scopes,
+        });
+      }
+      return next();
+    }
+    return expressRequireRole(roles)(req, res, next);
+  };
+}
+
 export function requirePermission(...permissions: Permission[]) {
   return async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthenticatedRequest;
 
     // SDK tokens bypass permission checks (they use separate auth)
     if (authReq.sdkToken) return next();
+
+    // Agent tokens use scope checks instead of RBAC permissions
+    if (authReq.agentToken) {
+      return res.status(403).json({
+        error: 'Forbidden: Agent tokens cannot use permission-gated human endpoints',
+        required: permissions,
+      });
+    }
 
     const user = authReq.user;
     if (!user) {
@@ -140,11 +229,58 @@ export function requirePermission(...permissions: Permission[]) {
   };
 }
 
+/** Require an agent token that includes all listed scopes. Human JWTs bypass scope checks. */
+export function requireAgentScope(...scopes: string[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthenticatedRequest;
+
+    if (authReq.humanJwt && authReq.user) {
+      return next();
+    }
+
+    const agent = authReq.agentToken;
+    if (!agent) {
+      return res.status(401).json({ error: 'Unauthorized: Agent token or human JWT required' });
+    }
+
+    const missing = scopes.filter((s) => !agent.scopes.includes(s) && !agent.scopes.includes('*'));
+    if (missing.length > 0) {
+      return res.status(403).json({
+        error: 'Forbidden: Agent token missing required scopes',
+        required: scopes,
+        missing,
+      });
+    }
+    return next();
+  };
+}
+
+/** Require a human JWT — agent tokens are explicitly rejected. */
+export function requireHumanJwt(req: Request, res: Response, next: NextFunction) {
+  const authReq = req as AuthenticatedRequest;
+  if (authReq.agentToken) {
+    return res.status(403).json({
+      error: 'Forbidden: This action requires a human JWT from password login. Agent tokens cannot approve or list pending commands.',
+    });
+  }
+  if (!authReq.user || !authReq.humanJwt) {
+    return res.status(401).json({ error: 'Unauthorized: Human JWT required' });
+  }
+  return next();
+}
+
 export async function logAudit(params: { userId?: string; action: string; targetType?: string; targetId?: string; metadata?: any; ip?: string }) {
   try {
     const ds = await getDb();
     const repo = ds.getRepository(AuditLog);
-    await repo.save(repo.create(params));
+    await repo.save(repo.create({
+      userId: params.userId,
+      action: params.action,
+      targetType: params.targetType,
+      targetId: params.targetId,
+      metadata: params.metadata,
+      ipAddress: params.ip,
+    }));
   } catch {}
 }
 
