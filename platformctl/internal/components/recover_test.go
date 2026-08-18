@@ -26,3 +26,10 @@ func TestRandomTokenLength(t *testing.T) {
 		t.Errorf("len=%d want 16 (%q)", len(tok), tok)
 	}
 }
+
+func TestUniqueFilledDropsEmptyAndDupes(t *testing.T) {
+	got := uniqueFilled("", "a", "  ", "a", "b")
+	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Errorf("uniqueFilled = %#v", got)
+	}
+}
