@@ -41,6 +41,9 @@ export class User {
   @Column({ type: 'varchar', length: 100, nullable: true, name: 'gitlab_id' })
   gitlabId: string | null;
 
+  @Column({ type: 'varchar', length: 100, nullable: true, name: 'github_id' })
+  githubId: string | null;
+
   @Column({ type: 'text', nullable: true, name: 'avatar_url' })
   avatarUrl: string | null;
 

@@ -68,14 +68,27 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
   const podStatus = (ns: string, min = 1) =>
     !k8sOk ? 'unknown' : (podCounts[ns] || 0) >= min ? 'running' : podCounts[ns] === 0 ? 'offline' : 'degraded';
 
-  // ── Integration presence (env vars) ──────────────────────────────────────
+  // ── Integration presence (saved settings, then env vars) ─────────────────
+  let githubOk = !!(process.env.GITHUB_TOKEN);
+  let gitlabOk = !!(process.env.GITLAB_TOKEN);
+  let clickupOk = !!(process.env.CLICKUP_API_TOKEN);
+  let infisicalOk = !!(process.env.INFISICAL_URL || process.env.INFISICAL_TOKEN);
+  try {
+    const { resolveIntegrations } = await import('../lib/integrations');
+    const cfg = await resolveIntegrations();
+    githubOk = Boolean(cfg.githubToken);
+    gitlabOk = Boolean(cfg.gitlabToken);
+    clickupOk = Boolean(cfg.clickupToken);
+    infisicalOk = Boolean(cfg.infisicalUrl || cfg.infisicalToken);
+  } catch { /* env fallback already applied */ }
+
   const integrations = {
-    github:    !!(process.env.GITHUB_TOKEN),
-    gitlab:    !!(process.env.GITLAB_TOKEN),
-    clickup:   !!(process.env.CLICKUP_API_TOKEN),
+    github:    githubOk,
+    gitlab:    gitlabOk,
+    clickup:   clickupOk,
     smtp:      !!(process.env.SMTP_PROVIDER || process.env.SMTP_HOST || process.env.SENDGRID_API_KEY),
     argocd:    !!(process.env.ARGOCD_URL || process.env.ARGOCD_TOKEN || k8sOk),
-    infisical: !!(process.env.INFISICAL_URL || process.env.INFISICAL_TOKEN),
+    infisical: infisicalOk,
     minio:     !!(process.env.MINIO_ENDPOINT || process.env.MINIO_ACCESS_KEY),
     grafana:   !!(process.env.GRAFANA_URL || podStatus('monitoring') === 'running'),
   };

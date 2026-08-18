@@ -23,6 +23,7 @@ import dbProvisionRoutes from './db-provision';
 import versionRoutes from './version';
 import agentTokenRoutes from './agent-tokens';
 import agentCommandRoutes from './agent-commands';
+import notificationRoutes from './notifications';
 
 router.use('/', authRoutes);
 router.use('/', versionRoutes);
@@ -44,6 +45,7 @@ router.use('/', bugReportRoutes);
 router.use('/', dbProvisionRoutes);
 router.use('/', agentTokenRoutes);
 router.use('/', agentCommandRoutes);
+router.use('/', notificationRoutes);
 
 /** GET /api/openapi.json — OpenAPI 3 spec derived from openapi.yaml */
 router.get('/openapi.json', (_req, res) => {
