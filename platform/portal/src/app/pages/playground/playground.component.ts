@@ -50,7 +50,7 @@ export class PlaygroundComponent implements OnInit {
         {
           method: 'GET',
           path: '/api/users/init-demo',
-          description: 'Register standard Developer, Tech Lead, and DevOps demo users in PostgreSQL.',
+          description: 'Create or update the single ADMIN_EMAIL admin account (no demo users).',
           parameters: []
         },
         {

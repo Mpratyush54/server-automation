@@ -1237,9 +1237,6 @@ kubectl delete ingress argocd-ingress portainer-ingress -n platform --ignore-not
 }
 
 func SeedAdmin(cfg *config.Config) error {
-	if doneOrSkip("seed", "seed") {
-		return nil
-	}
 	color.Cyan("\n  ■ Seeding admin user (email + password)...")
 
 	email := cfg.AdminEmail
@@ -1255,12 +1252,13 @@ func SeedAdmin(cfg *config.Config) error {
 		  curl -sf "$URL/api/health" >/dev/null 2>&1 && break
 		  sleep 5
 		done
+		# Upserts ONLY ADMIN_EMAIL — never john/sarah/devops demo accounts
 		curl -sf "$URL/api/users/init-demo" || true
 		TOKEN="$(curl -sf -X POST "$URL/api/auth/login" \
 		  -H "Content-Type: application/json" \
 		  -d %s | grep -o '"token":"[^"]*"' | cut -d'"' -f4 || true)"
 		if [[ -z "$TOKEN" ]]; then
-		  echo "WARN: could not obtain auth token for seeding — check ADMIN_PASSWORD and API logs" >&2
+		  echo "WARN: could not obtain auth token for seeding — check ADMIN_EMAIL / ADMIN_PASSWORD and API logs" >&2
 		  exit 0
 		fi
 		echo "Seed login OK"
@@ -1268,7 +1266,7 @@ func SeedAdmin(cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("seed admin failed: %w", err)
 	}
-	color.Green("  ✓ Admin user seeded (email + password)")
+	color.Green("  ✓ Admin user seeded (%s)", email)
 	return state.MarkDone("seed")
 }
 

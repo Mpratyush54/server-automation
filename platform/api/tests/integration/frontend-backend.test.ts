@@ -20,10 +20,17 @@ jest.mock('../../src/lib/k8s', () => ({
 }));
 
 // MOCK DATABASE & MONGO CONNECTIONS
+import bcrypt from 'bcryptjs';
+
+const TEST_PASSWORD = 'TestPass123';
+const TEST_HASH = bcrypt.hashSync(TEST_PASSWORD, 4);
+
 const mockUser = {
   id: '00000000-0000-0000-0000-000000000001',
   name: 'DevOps Boss',
   email: 'devops@@pratyushes.dev',
+  username: 'devops',
+  passwordHash: TEST_HASH,
   role: 'devops' // matches UserRole.DEVOPS
 };
 
@@ -54,7 +61,7 @@ const mockAuditLog = {
 
 const mockUserRepository = {
   findOne: jest.fn().mockImplementation(({ where }) => {
-    if (where.email === 'devops@@pratyushes.dev' || where.id === mockUser.id) {
+    if (where.email === 'devops@@pratyushes.dev' || where.username === 'devops' || where.id === mockUser.id) {
       return Promise.resolve(mockUser);
     }
     if (where.email === 'dev@@pratyushes.dev' || where.id === '00000002') {
@@ -150,7 +157,7 @@ describe('Frontend & Backend Integration Tests', () => {
     it('should authenticate a valid user and return a JWT token with user object', async () => {
       const res = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'devops@@pratyushes.dev' });
+        .send({ email: 'devops@@pratyushes.dev', password: TEST_PASSWORD });
 
       expect(res.status).toBe(200);
       expect(res.body.token).toBeDefined();
@@ -162,7 +169,7 @@ describe('Frontend & Backend Integration Tests', () => {
     it('should return 401 when email is unknown', async () => {
       const res = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'unknown@@pratyushes.dev' });
+        .send({ email: 'unknown@@pratyushes.dev', password: TEST_PASSWORD });
 
       expect(res.status).toBe(401);
       expect(res.body.error).toBeDefined();

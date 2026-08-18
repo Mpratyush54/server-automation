@@ -150,6 +150,19 @@ func StatusLine() string {
 	return msg
 }
 
+// LockInfo reads provision-lock metadata without acquiring the lock.
+// Empty string means no lock file (or unreadable). Safe for `platformctl status`.
+func LockInfo() (string, error) {
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
 func AlivePID(pid int) bool {
 	if pid <= 0 {
 		return false

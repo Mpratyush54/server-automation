@@ -152,10 +152,10 @@ describe('ApiService', () => {
 
   describe('Auth', () => {
     it('should login', () => {
-      service.login('test@test.com').subscribe();
+      service.login('test@test.com', 'TestPass123').subscribe();
       const req = httpMock.expectOne('/api/auth/login');
       expect(req.request.method).toBe('POST');
-      expect(req.request.body).toEqual({ email: 'test@test.com' });
+      expect(req.request.body).toEqual({ email: 'test@test.com', password: 'TestPass123' });
       req.flush({ token: 'jwt-token' });
     });
 

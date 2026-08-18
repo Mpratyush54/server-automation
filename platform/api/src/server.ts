@@ -5,9 +5,10 @@ import cors from 'cors';
 import morgan from 'morgan';
 import { getDb } from './config/database';
 import { connectMongo } from './config/mongoose';
-import { User, UserRole } from './entities/User';
+import { User } from './entities/User';
 import apiRouter from './routes/api';
 import { startPreviewDecayScheduler } from './lib/preview-decay';
+import { configuredAdminEmail, ensureAdminUser } from './lib/seed-admin';
 
 async function bootstrap() {
   try {
@@ -16,33 +17,16 @@ async function bootstrap() {
     const ds = await getDb();
     console.log(`[server] PostgreSQL connected to database: ${ds.options.database}`);
 
-    // Seed demo users automatically if database is empty
+    // One admin from ADMIN_EMAIL / ADMIN_PASSWORD (platformctl prompt). No demo roster.
     const userRepo = ds.getRepository(User);
-    const userCount = await userRepo.count();
-    if (userCount === 0) {
-      console.log('[server] Seeding demo users in PostgreSQL...');
-      const demoUsers = [
-        userRepo.create({
-          id: '11111111-1111-1111-1111-111111111111',
-          name: 'John Dev',
-          email: 'john@pratyushes.dev',
-          role: UserRole.DEVELOPER,
-        }),
-        userRepo.create({
-          id: '22222222-2222-2222-2222-222222222222',
-          name: 'Sarah Lead',
-          email: 'sarah@pratyushes.dev',
-          role: UserRole.TECH_LEAD,
-        }),
-        userRepo.create({
-          id: '33333333-3333-3333-3333-333333333333',
-          name: 'DevOps Boss',
-          email: 'devops@pratyushes.dev',
-          role: UserRole.DEVOPS,
-        }),
-      ];
-      await userRepo.save(demoUsers);
-      console.log('[server] Seeding completed');
+    const seeded = await ensureAdminUser(userRepo);
+    if (seeded.created) {
+      console.log(`[server] Created admin login ${configuredAdminEmail()}`);
+    } else {
+      console.log(`[server] Admin login ready: ${configuredAdminEmail()}`);
+    }
+    if (seeded.removedDemo > 0) {
+      console.log(`[server] Removed ${seeded.removedDemo} leftover demo user(s)`);
     }
 
     // Initialize MongoDB

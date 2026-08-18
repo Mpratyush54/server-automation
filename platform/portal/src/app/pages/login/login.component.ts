@@ -26,7 +26,7 @@ export class LoginComponent implements OnInit {
   constructor(private auth: AuthService, private router: Router, private route: ActivatedRoute) {}
 
   ngOnInit() {
-    if (this.auth.getToken()) {
+    if (this.auth.isAuthenticated()) {
       this.router.navigate(['/dashboard']);
     }
   }
@@ -36,8 +36,9 @@ export class LoginComponent implements OnInit {
     this.loading = true;
 
     try {
-      if (!this.email) {
-        this.errorMessage = 'Please enter your email.';
+      const ident = (this.email || '').trim();
+      if (!ident) {
+        this.errorMessage = 'Please enter your email or username.';
         this.loading = false;
         return;
       }
@@ -46,7 +47,11 @@ export class LoginComponent implements OnInit {
         this.loading = false;
         return;
       }
-      await firstValueFrom(this.auth.login(this.email, this.password));
+      if (ident.includes('@')) {
+        await firstValueFrom(this.auth.login(ident, this.password));
+      } else {
+        await firstValueFrom(this.auth.login('', this.password, ident));
+      }
 
       const returnUrl = this.route.snapshot.queryParams['returnUrl'];
       if (returnUrl) {

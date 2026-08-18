@@ -12,9 +12,9 @@ export class AuthService {
   login(email: string, password: string, username?: string): Observable<any> {
     const body: any = { password };
     if (username) {
-      body.username = username;
+      body.username = username.trim();
     } else {
-      body.email = email;
+      body.email = email.trim();
     }
     return this.http.post<any>(`${this.base}/auth/login`, body).pipe(
       tap(res => {
@@ -28,13 +28,33 @@ export class AuthService {
   }
 
   logout() {
+    this.clearSession();
+    this.router.navigate(['/login']);
+  }
+
+  clearSession() {
     localStorage.removeItem('plat_auth_token');
     localStorage.removeItem('plat_user_profile');
-    this.router.navigate(['/login']);
   }
 
   getToken(): string | null {
     return localStorage.getItem('plat_auth_token');
+  }
+
+  /** True only for a real, unexpired JWT — not leftover dummy/passwordless tokens. */
+  isAuthenticated(): boolean {
+    const token = this.getToken();
+    if (!token) return false;
+    const decoded = this.decodeToken(token);
+    if (!decoded?.id) {
+      this.clearSession();
+      return false;
+    }
+    if (typeof decoded.exp === 'number' && decoded.exp * 1000 < Date.now()) {
+      this.clearSession();
+      return false;
+    }
+    return true;
   }
 
   getUser(): any {

@@ -23,13 +23,17 @@ jest.mock('../../src/lib/k8s', () => ({
 jest.mock('../../src/lib/lokilog', () => ({ forwardToLoki: jest.fn().mockResolvedValue(true) }));
 jest.mock('../../src/config/mongoose', () => ({ connectMongo: jest.fn().mockResolvedValue(true) }));
 
+const bcrypt = require('bcryptjs');
+const TEST_PASSWORD = 'TestPass123';
+const TEST_HASH = bcrypt.hashSync(TEST_PASSWORD, 4);
+
 // ── Seeded demo users (matching real init-demo seed) ────────────────
 const USERS = {
-  admin:     { id: '00000000-0000-0000-0000-000000000001', email: 'admin@pratyushes.dev',   name: 'Admin',      role: 'admin',     roleId: null, isActive: true },
-  devops:    { id: '33333333-3333-3333-3333-333333333333', email: 'devops@caps.io', name: 'DevOps Boss', role: 'devops',    roleId: null, isActive: true },
-  tech_lead: { id: '22222222-2222-2222-2222-222222222222', email: 'sarah@pratyushes.dev',   name: 'Sarah',      role: 'tech_lead', roleId: null, isActive: true },
-  developer: { id: '11111111-1111-1111-1111-111111111111', email: 'john@pratyushes.dev',    name: 'John Dev',   role: 'developer', roleId: null, isActive: true },
-  inactive:  { id: '55555555-5555-5555-5555-555555555555', email: 'gone@pratyushes.dev',    name: 'Gone',       role: 'viewer',    roleId: null, isActive: false },
+  admin:     { id: '00000000-0000-0000-0000-000000000001', email: 'admin@pratyushes.dev',   username: 'admin',  name: 'Admin',      role: 'admin',     roleId: null, isActive: true,  passwordHash: TEST_HASH },
+  devops:    { id: '33333333-3333-3333-3333-333333333333', email: 'devops@caps.io', username: 'devops', name: 'DevOps Boss', role: 'devops',    roleId: null, isActive: true,  passwordHash: TEST_HASH },
+  tech_lead: { id: '22222222-2222-2222-2222-222222222222', email: 'sarah@pratyushes.dev',   username: 'sarah',  name: 'Sarah',      role: 'tech_lead', roleId: null, isActive: true,  passwordHash: TEST_HASH },
+  developer: { id: '11111111-1111-1111-1111-111111111111', email: 'john@pratyushes.dev',    username: 'john',   name: 'John Dev',   role: 'developer', roleId: null, isActive: true,  passwordHash: TEST_HASH },
+  inactive:  { id: '55555555-5555-5555-5555-555555555555', email: 'gone@pratyushes.dev',    username: 'gone',   name: 'Gone',       role: 'viewer',    roleId: null, isActive: false, passwordHash: TEST_HASH },
 };
 
 const mockUserRepo = {
@@ -124,9 +128,9 @@ beforeEach(() => {
 
   // Default: every findOne resolves a known user based on email or id
   mockUserRepo.findOne.mockImplementation(({ where }: any) => {
-    const { email, id } = where || {};
+    const { email, id, username } = where || {};
     const found = Object.values(USERS).find(u =>
-      (email && u.email === email) || (id && u.id === id)
+      (email && u.email === email) || (username && u.username === username) || (id && u.id === id)
     );
     return Promise.resolve(found ?? null);
   });
@@ -168,12 +172,19 @@ describe('GET /api/health', () => {
 // ════════════════════════════════════════════════════════════════════
 describe('POST /api/auth/login', () => {
   it('returns 200 + JWT + user object for existing active user', async () => {
-    const r = await request(app).post('/api/auth/login').send({ email: USERS.devops.email });
+    const r = await request(app).post('/api/auth/login').send({ email: USERS.devops.email, password: TEST_PASSWORD });
     expect(r.status).toBe(200);
     expect(r.body).toHaveProperty('token');
     expect(r.body.token.split('.').length).toBe(3);  // valid JWT structure
     expect(r.body.user).toMatchObject({ email: USERS.devops.email, role: 'devops' });
     expect(r.body.user).not.toHaveProperty('password');
+    expect(r.body.user).not.toHaveProperty('passwordHash');
+  });
+
+  it('accepts username instead of email', async () => {
+    const r = await request(app).post('/api/auth/login').send({ username: 'john', password: TEST_PASSWORD });
+    expect(r.status).toBe(200);
+    expect(r.body.user.email).toBe(USERS.developer.email);
   });
 
   it('JWT payload contains id, email, name, role — no sensitive fields', () => {
@@ -188,7 +199,7 @@ describe('POST /api/auth/login', () => {
   });
 
   it('saves lastLogin on successful login', async () => {
-    await request(app).post('/api/auth/login').send({ email: USERS.developer.email });
+    await request(app).post('/api/auth/login').send({ email: USERS.developer.email, password: TEST_PASSWORD });
     expect(mockUserRepo.save).toHaveBeenCalledWith(
       expect.objectContaining({ email: USERS.developer.email })
     );
@@ -196,32 +207,42 @@ describe('POST /api/auth/login', () => {
 
   it('returns 401 when email not found in DB', async () => {
     mockUserRepo.findOne.mockResolvedValue(null);
-    const r = await request(app).post('/api/auth/login').send({ email: 'nobody@nope.io' });
+    const r = await request(app).post('/api/auth/login').send({ email: 'nobody@nope.io', password: TEST_PASSWORD });
     expect(r.status).toBe(401);
     expect(r.body).toHaveProperty('error');
   });
 
-  it('returns 400 when email field is absent from body', async () => {
-    const r = await request(app).post('/api/auth/login').send({});
-    expect(r.status).toBe(400);
+  it('returns 401 when password is wrong', async () => {
+    const r = await request(app).post('/api/auth/login').send({ email: USERS.devops.email, password: 'not-the-password' });
+    expect(r.status).toBe(401);
   });
 
-  it('returns 400 when body is completely empty', async () => {
+  it('returns 401 when password field is absent from body', async () => {
+    const r = await request(app).post('/api/auth/login').send({ email: USERS.devops.email });
+    expect(r.status).toBe(401);
+  });
+
+  it('returns 401 when email field is absent from body', async () => {
+    const r = await request(app).post('/api/auth/login').send({});
+    expect(r.status).toBe(401);
+  });
+
+  it('returns 401 when body is completely empty', async () => {
     const r = await request(app)
       .post('/api/auth/login')
       .set('Content-Type', 'application/json')
       .send('{}');
-    expect(r.status).toBe(400);
+    expect(r.status).toBe(401);
   });
 
-  it('returns 400 when email is null', async () => {
-    const r = await request(app).post('/api/auth/login').send({ email: null });
-    expect(r.status).toBe(400);
+  it('returns 401 when email is null', async () => {
+    const r = await request(app).post('/api/auth/login').send({ email: null, password: TEST_PASSWORD });
+    expect(r.status).toBe(401);
   });
 
-  it('returns 400 when email is a number', async () => {
-    const r = await request(app).post('/api/auth/login').send({ email: 12345 });
-    expect(r.status).toBe(400);
+  it('returns 401 when email is a number', async () => {
+    const r = await request(app).post('/api/auth/login').send({ email: 12345, password: TEST_PASSWORD });
+    expect(r.status).toBe(401);
   });
 
   it('GET /api/auth/login → 404 (wrong method)', async () => {
@@ -341,8 +362,15 @@ describe('Users API', () => {
 
   describe('POST /api/users/invite', () => {
     beforeEach(() => {
-      // For invite — user doesn't exist yet (409 check), then create succeeds
-      mockUserRepo.findOne.mockResolvedValue(null);
+      // Auth still needs the caller by id; email/username lookups start empty so invite can create.
+      mockUserRepo.findOne.mockImplementation(({ where }: any) => {
+        const { id, email, username } = where || {};
+        if (id) {
+          return Promise.resolve(Object.values(USERS).find(u => u.id === id) ?? null);
+        }
+        if (email || username) return Promise.resolve(null);
+        return Promise.resolve(null);
+      });
     });
 
     it('devops can invite — returns 201 with role defaulting to developer', async () => {
@@ -352,16 +380,23 @@ describe('Users API', () => {
       const r = await request(app)
         .post('/api/users/invite')
         .set('Authorization', `Bearer ${T.devops}`)
-        .send({ email: `invite-${Date.now()}@test.io`, name: 'New Member' });
-      expect([201, 400]).toContain(r.status); // 400 if email validation strict
+        .send({ email: `invite-${Date.now()}@test.io`, name: 'New Member', password: 'InvitePass123' });
+      expect(r.status).toBe(201);
+      expect(r.body).not.toHaveProperty('passwordHash');
+      expect(r.body.hasPassword).toBe(true);
     });
 
     it('409 when email already exists in DB', async () => {
-      mockUserRepo.findOne.mockResolvedValue(USERS.developer);
+      mockUserRepo.findOne.mockImplementation(({ where }: any) => {
+        const { id, email } = where || {};
+        if (id) return Promise.resolve(Object.values(USERS).find(u => u.id === id) ?? null);
+        if (email === USERS.developer.email) return Promise.resolve(USERS.developer);
+        return Promise.resolve(null);
+      });
       const r = await request(app)
         .post('/api/users/invite')
         .set('Authorization', `Bearer ${T.devops}`)
-        .send({ email: USERS.developer.email, name: 'Dup' });
+        .send({ email: USERS.developer.email, name: 'Dup', password: 'InvitePass123' });
       expect(r.status).toBe(409);
     });
 
@@ -381,11 +416,19 @@ describe('Users API', () => {
       expect(r.status).toBe(400);
     });
 
+    it('400 when password is missing', async () => {
+      const r = await request(app)
+        .post('/api/users/invite')
+        .set('Authorization', `Bearer ${T.devops}`)
+        .send({ email: 'valid@email.io', name: 'No Password' });
+      expect(r.status).toBe(400);
+    });
+
     it('developer cannot invite — 403', async () => {
       const r = await request(app)
         .post('/api/users/invite')
         .set('Authorization', `Bearer ${T.developer}`)
-        .send({ email: 'x@x.io', name: 'X' });
+        .send({ email: 'x@x.io', name: 'X', password: 'InvitePass123' });
       expect(r.status).toBe(403);
     });
 
@@ -393,7 +436,7 @@ describe('Users API', () => {
       const r = await request(app)
         .post('/api/users/invite')
         .set('Authorization', `Bearer ${T.tech_lead}`)
-        .send({ email: 'y@y.io', name: 'Y' });
+        .send({ email: 'y@y.io', name: 'Y', password: 'InvitePass123' });
       expect(r.status).toBe(403);
     });
   });
@@ -411,7 +454,10 @@ describe('Users API', () => {
 
   describe('PATCH /api/users/:id/role', () => {
     it('devops can change role', async () => {
-      mockUserRepo.findOne.mockResolvedValue(USERS.developer);
+      mockUserRepo.findOne.mockImplementation(({ where }: any) => {
+        const { id } = where || {};
+        return Promise.resolve(Object.values(USERS).find(u => u.id === id) ?? null);
+      });
       const r = await request(app)
         .patch(`/api/users/${USERS.developer.id}/role`)
         .set('Authorization', `Bearer ${T.devops}`)
