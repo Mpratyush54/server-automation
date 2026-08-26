@@ -4,13 +4,11 @@
   
   <div class="h-16 flex items-center justify-between px-4 border-b border-[#333]">
     <div class="flex items-center gap-2 overflow-hidden whitespace-nowrap" *ngIf="!isCollapsed">
-      <div class="w-8 h-8 bg-white rounded flex items-center justify-center text-black font-bold">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 22h20L12 2z"></path></svg>
-      </div>
+      <img src="logo-dark-icon.png" alt="platform" class="w-8 h-8 rounded object-cover flex-shrink-0" />
       <span class="font-semibold text-white tracking-tight">Platform</span>
     </div>
-    <div class="w-8 h-8 bg-white rounded flex items-center justify-center text-black font-bold" *ngIf="isCollapsed">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 22h20L12 2z"></path></svg>
+    <div class="flex items-center justify-center" *ngIf="isCollapsed">
+      <img src="logo-dark-icon.png" alt="platform" class="w-8 h-8 rounded object-cover" />
     </div>
   </div>
 
