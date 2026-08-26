@@ -52,13 +52,20 @@
     <!-- Content + TOC -->
     <main class="docs-content">
       <div class="docs-content-inner">
-        <!-- Breadcrumb -->
-        <div class="docs-breadcrumb" *ngIf="currentSection || !isLoading">
-          <a routerLink="/docs">Docs</a>
-          <span class="docs-breadcrumb-sep">/</span>
-          <span class="docs-breadcrumb-current">
-            {{ getBreadcrumbTitle() }}
-          </span>
+        <!-- Breadcrumb + mobile agent actions -->
+        <div class="docs-breadcrumb-row" *ngIf="currentSection || !isLoading">
+          <div class="docs-breadcrumb">
+            <a routerLink="/docs">Docs</a>
+            <span class="docs-breadcrumb-sep">/</span>
+            <span class="docs-breadcrumb-current">
+              {{ getBreadcrumbTitle() }}
+            </span>
+          </div>
+          <div class="docs-agent-mobile" *ngIf="!isLoading && content && rawMarkdown">
+            <button type="button" class="docs-agent-btn docs-agent-btn-primary" (click)="copyAgentPrompt()">
+              {{ agentCopyFeedback === 'prompt' ? 'Copied' : 'Copy for agent' }}
+            </button>
+          </div>
         </div>
 
         <!-- Loading -->
@@ -104,20 +111,41 @@
         </div>
       </div>
 
-      <!-- Right-hand TOC -->
-      <aside class="docs-toc" *ngIf="!isLoading && tocItems.length > 0">
-        <div class="docs-toc-header">On this page</div>
-        <nav class="docs-toc-nav">
-          <a
-            *ngFor="let item of tocItems"
-            class="docs-toc-link"
-            [class.toc-h2]="item.level === 'h2'"
-            [class.toc-h3]="item.level === 'h3'"
-            [class.toc-active]="item.id === activeTocId"
-            [attr.href]="'#' + item.id"
-            (click)="scrollToHeading($event, item.id)"
-          >{{ item.text }}</a>
-        </nav>
+      <!-- Right rail: agent actions + TOC -->
+      <aside class="docs-toc" *ngIf="!isLoading && content">
+        <div class="docs-agent-card" *ngIf="rawMarkdown">
+          <div class="docs-toc-header">For AI agents</div>
+          <p class="docs-agent-blurb">Copy this page into Cursor, Claude, ChatGPT, or any agent — no need to scrape the HTML.</p>
+          <button type="button" class="docs-agent-btn docs-agent-btn-primary" (click)="copyAgentPrompt()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+            {{ agentCopyFeedback === 'prompt' ? 'Copied for agent' : 'Copy page for agent' }}
+          </button>
+          <button type="button" class="docs-agent-btn" (click)="copyPageMarkdown()">
+            {{ agentCopyFeedback === 'page' ? 'Copied Markdown' : 'Copy Markdown' }}
+          </button>
+          <button type="button" class="docs-agent-btn" (click)="copyMarkdownUrl()">
+            {{ agentCopyFeedback === 'url' ? 'URL copied' : 'Copy Markdown URL' }}
+          </button>
+          <div class="docs-agent-links">
+            <a [href]="markdownAbsoluteUrl" target="_blank" rel="noopener">View as Markdown</a>
+            <a [href]="llmsTxtUrl" target="_blank" rel="noopener">llms.txt</a>
+          </div>
+        </div>
+
+        <ng-container *ngIf="tocItems.length > 0">
+          <div class="docs-toc-header" [class.docs-toc-header-spaced]="!!rawMarkdown">On this page</div>
+          <nav class="docs-toc-nav">
+            <a
+              *ngFor="let item of tocItems"
+              class="docs-toc-link"
+              [class.toc-h2]="item.level === 'h2'"
+              [class.toc-h3]="item.level === 'h3'"
+              [class.toc-active]="item.id === activeTocId"
+              [attr.href]="'#' + item.id"
+              (click)="scrollToHeading($event, item.id)"
+            >{{ item.text }}</a>
+          </nav>
+        </ng-container>
       </aside>
     </main>
   </div>

@@ -39,6 +39,12 @@ export class DocsComponent implements OnInit, AfterViewChecked {
   searchQuery = '';
   tocItems: { id: string; text: string; level: string }[] = [];
   activeTocId = '';
+  /** Raw markdown for the current page (agent copy). */
+  rawMarkdown = '';
+  /** Path used to fetch the page, e.g. /docs/mcp/for-agents.md */
+  markdownPath = '';
+  agentCopyFeedback: 'page' | 'url' | 'prompt' | null = null;
+  private agentCopyTimer: ReturnType<typeof setTimeout> | null = null;
   private rendering = false;
   private tocObserver: IntersectionObserver | null = null;
 
@@ -486,20 +492,108 @@ export class DocsComponent implements OnInit, AfterViewChecked {
     return parts[parts.length - 1].replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
 
+  /** Absolute URL for the raw .md twin of the current page. */
+  get markdownAbsoluteUrl(): string {
+    const path = this.markdownPath || '/docs/index.md';
+    if (typeof window === 'undefined') return path;
+    return `${window.location.origin}${path.startsWith('/') ? path : '/' + path}`;
+  }
+
+  get htmlAbsoluteUrl(): string {
+    if (typeof window === 'undefined') return '';
+    return window.location.href.split('#')[0];
+  }
+
+  get llmsTxtUrl(): string {
+    if (typeof window === 'undefined') return '/llms.txt';
+    return `${window.location.origin}/llms.txt`;
+  }
+
+  async copyPageMarkdown(): Promise<void> {
+    if (!this.rawMarkdown) return;
+    const ok = await this.writeClipboard(this.rawMarkdown);
+    if (ok) this.flashAgentCopy('page');
+  }
+
+  async copyMarkdownUrl(): Promise<void> {
+    const ok = await this.writeClipboard(this.markdownAbsoluteUrl);
+    if (ok) this.flashAgentCopy('url');
+  }
+
+  async copyAgentPrompt(): Promise<void> {
+    if (!this.rawMarkdown) return;
+    const title = this.getBreadcrumbTitle();
+    const prompt = [
+      `# Platform documentation — ${title}`,
+      '',
+      'Use this page as grounding. Prefer the Markdown source over scraped HTML.',
+      `Page (HTML): ${this.htmlAbsoluteUrl}`,
+      `Page (Markdown): ${this.markdownAbsoluteUrl}`,
+      `Site agent index: ${this.llmsTxtUrl}`,
+      `Full docs index: ${typeof window !== 'undefined' ? window.location.origin : ''}/llms-full.txt`,
+      '',
+      '---',
+      '',
+      this.rawMarkdown.trim(),
+      '',
+    ].join('\n');
+    const ok = await this.writeClipboard(prompt);
+    if (ok) this.flashAgentCopy('prompt');
+  }
+
+  private async writeClipboard(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* fall through */
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+
+  private flashAgentCopy(kind: 'page' | 'url' | 'prompt') {
+    if (this.agentCopyTimer) clearTimeout(this.agentCopyTimer);
+    this.agentCopyFeedback = kind;
+    this.agentCopyTimer = setTimeout(() => {
+      this.agentCopyFeedback = null;
+      this.cdr.detectChanges();
+    }, 2000);
+  }
+
   private async loadMarkdown(path: string) {
     this.isLoading = true;
     this.content = null;
+    this.rawMarkdown = '';
+    this.markdownPath = path;
+    this.agentCopyFeedback = null;
     this.http.get(path, { responseType: 'text' })
       .pipe(
         catchError(() => {
           this.isLoading = false;
           this.content = null;
+          this.rawMarkdown = '';
           return of(null);
         })
       )
       .subscribe(async (text) => {
         if (text) {
           try {
+            this.rawMarkdown = text;
             // Rewrite relative `.md` links so they resolve against the CURRENT
             // section, not against the docs root. Before this fix, a link like
             // `[Deployments API](deployments.md)` inside

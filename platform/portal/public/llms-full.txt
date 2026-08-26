@@ -1,0 +1,202 @@
+# Platform - full documentation index for AI agents
+# Generated 2026-08-26
+# Prefer these Markdown URLs for retrieval. HTML twin listed when the SPA can render it.
+
+Home: https://platform.pratyushes.dev/
+Landing: https://platform.pratyushes.dev/landing
+Docs HTML: https://platform.pratyushes.dev/docs
+llms.txt: https://platform.pratyushes.dev/llms.txt
+sitemap.xml: https://platform.pratyushes.dev/sitemap.xml
+
+- https://platform.pratyushes.dev/docs/api-reference/configuration/environment-variables.md
+  html: https://platform.pratyushes.dev/docs/api-reference/configuration/environment-variables
+- https://platform.pratyushes.dev/docs/api-reference/configuration/permissions.md
+  html: https://platform.pratyushes.dev/docs/api-reference/configuration/permissions
+- https://platform.pratyushes.dev/docs/api-reference/configuration/secrets-encryption.md
+  html: https://platform.pratyushes.dev/docs/api-reference/configuration/secrets-encryption
+- https://platform.pratyushes.dev/docs/api-reference/platform-api/audit-logs.md
+  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/audit-logs
+- https://platform.pratyushes.dev/docs/api-reference/platform-api/auth.md
+  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/auth
+- https://platform.pratyushes.dev/docs/api-reference/platform-api/databases.md
+  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/databases
+- https://platform.pratyushes.dev/docs/api-reference/platform-api/deployments.md
+  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/deployments
+- https://platform.pratyushes.dev/docs/api-reference/platform-api/files.md
+  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/files
+- https://platform.pratyushes.dev/docs/api-reference/platform-api/metrics.md
+  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/metrics
+- https://platform.pratyushes.dev/docs/api-reference/platform-api/oauth.md
+  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/oauth
+- https://platform.pratyushes.dev/docs/api-reference/platform-api/projects.md
+  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/projects
+- https://platform.pratyushes.dev/docs/api-reference/platform-api/secrets.md
+  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/secrets
+- https://platform.pratyushes.dev/docs/api-reference/platform-api/users.md
+  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/users
+- https://platform.pratyushes.dev/docs/api-reference/platform-api/webhooks.md
+  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/webhooks
+- https://platform.pratyushes.dev/docs/api-reference/sdk-angular/BugReporterComponent.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-angular/BugReporterComponent
+- https://platform.pratyushes.dev/docs/api-reference/sdk-angular/PlatformErrorHandler.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-angular/PlatformErrorHandler
+- https://platform.pratyushes.dev/docs/api-reference/sdk-angular/PlatformHttpInterceptor.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-angular/PlatformHttpInterceptor
+- https://platform.pratyushes.dev/docs/api-reference/sdk-angular/PlatformModule.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-angular/PlatformModule
+- https://platform.pratyushes.dev/docs/api-reference/sdk-node/PlatformClient.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-node/PlatformClient
+- https://platform.pratyushes.dev/docs/api-reference/sdk-node/captureConsole.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-node/captureConsole
+- https://platform.pratyushes.dev/docs/api-reference/sdk-node/db-mongo.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-node/db-mongo
+- https://platform.pratyushes.dev/docs/api-reference/sdk-node/db-postgres.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-node/db-postgres
+- https://platform.pratyushes.dev/docs/api-reference/sdk-node/db-redis.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-node/db-redis
+- https://platform.pratyushes.dev/docs/api-reference/sdk-node/expressMiddleware.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-node/expressMiddleware
+- https://platform.pratyushes.dev/docs/api-reference/sdk-node/storage.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-node/storage
+- https://platform.pratyushes.dev/docs/api-reference/sdk-python/PlatformClient.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-python/PlatformClient
+- https://platform.pratyushes.dev/docs/api-reference/sdk-python/db-mongo.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-python/db-mongo
+- https://platform.pratyushes.dev/docs/api-reference/sdk-python/db-postgres.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-python/db-postgres
+- https://platform.pratyushes.dev/docs/api-reference/sdk-python/db-redis.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-python/db-redis
+- https://platform.pratyushes.dev/docs/api-reference/sdk-react/BugReporterWidget.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-react/BugReporterWidget
+- https://platform.pratyushes.dev/docs/api-reference/sdk-react/ErrorBoundary.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-react/ErrorBoundary
+- https://platform.pratyushes.dev/docs/api-reference/sdk-react/PlatformProvider.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-react/PlatformProvider
+- https://platform.pratyushes.dev/docs/api-reference/sdk-react/useBugReporter.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-react/useBugReporter
+- https://platform.pratyushes.dev/docs/api-reference/sdk-react/usePlatform.md
+  html: https://platform.pratyushes.dev/docs/api-reference/sdk-react/usePlatform
+- https://platform.pratyushes.dev/docs/architecture/auth-flow.md
+  html: https://platform.pratyushes.dev/docs/architecture/auth-flow
+- https://platform.pratyushes.dev/docs/architecture/data-flow.md
+  html: https://platform.pratyushes.dev/docs/architecture/data-flow
+- https://platform.pratyushes.dev/docs/architecture/database-schema.md
+  html: https://platform.pratyushes.dev/docs/architecture/database-schema
+- https://platform.pratyushes.dev/docs/architecture/k8s-infrastructure.md
+  html: https://platform.pratyushes.dev/docs/architecture/k8s-infrastructure
+- https://platform.pratyushes.dev/docs/architecture/network-topology.md
+  html: https://platform.pratyushes.dev/docs/architecture/network-topology
+- https://platform.pratyushes.dev/docs/architecture/overview.md
+  html: https://platform.pratyushes.dev/docs/architecture/overview
+- https://platform.pratyushes.dev/docs/architecture/sdk-lifecycle.md
+  html: https://platform.pratyushes.dev/docs/architecture/sdk-lifecycle
+- https://platform.pratyushes.dev/docs/architecture/secrets-architecture.md
+  html: https://platform.pratyushes.dev/docs/architecture/secrets-architecture
+- https://platform.pratyushes.dev/docs/changelog.md
+- https://platform.pratyushes.dev/docs/contribution-guide.md
+- https://platform.pratyushes.dev/docs/deployment/backup-and-restore.md
+  html: https://platform.pratyushes.dev/docs/deployment/backup-and-restore
+- https://platform.pratyushes.dev/docs/deployment/bootstrap.md
+  html: https://platform.pratyushes.dev/docs/deployment/bootstrap
+- https://platform.pratyushes.dev/docs/deployment/rebuild-and-deploy.md
+  html: https://platform.pratyushes.dev/docs/deployment/rebuild-and-deploy
+- https://platform.pratyushes.dev/docs/deployment/scaling.md
+  html: https://platform.pratyushes.dev/docs/deployment/scaling
+- https://platform.pratyushes.dev/docs/deployment/ssl-certificates.md
+  html: https://platform.pratyushes.dev/docs/deployment/ssl-certificates
+- https://platform.pratyushes.dev/docs/deployment/update-secrets.md
+  html: https://platform.pratyushes.dev/docs/deployment/update-secrets
+- https://platform.pratyushes.dev/docs/faq.md
+- https://platform.pratyushes.dev/docs/getting-started/angular-sdk-quickstart.md
+  html: https://platform.pratyushes.dev/docs/getting-started/angular-sdk-quickstart
+- https://platform.pratyushes.dev/docs/getting-started/deploy-your-app.md
+  html: https://platform.pratyushes.dev/docs/getting-started/deploy-your-app
+- https://platform.pratyushes.dev/docs/getting-started/first-project.md
+  html: https://platform.pratyushes.dev/docs/getting-started/first-project
+- https://platform.pratyushes.dev/docs/getting-started/installation.md
+  html: https://platform.pratyushes.dev/docs/getting-started/installation
+- https://platform.pratyushes.dev/docs/getting-started/node-sdk-quickstart.md
+  html: https://platform.pratyushes.dev/docs/getting-started/node-sdk-quickstart
+- https://platform.pratyushes.dev/docs/getting-started/platformctl.md
+  html: https://platform.pratyushes.dev/docs/getting-started/platformctl
+- https://platform.pratyushes.dev/docs/getting-started/project-structure.md
+  html: https://platform.pratyushes.dev/docs/getting-started/project-structure
+- https://platform.pratyushes.dev/docs/getting-started/python-sdk-quickstart.md
+  html: https://platform.pratyushes.dev/docs/getting-started/python-sdk-quickstart
+- https://platform.pratyushes.dev/docs/getting-started/react-sdk-quickstart.md
+  html: https://platform.pratyushes.dev/docs/getting-started/react-sdk-quickstart
+- https://platform.pratyushes.dev/docs/getting-started/sdk-examples.md
+  html: https://platform.pratyushes.dev/docs/getting-started/sdk-examples
+- https://platform.pratyushes.dev/docs/getting-started/upgrade-guide.md
+  html: https://platform.pratyushes.dev/docs/getting-started/upgrade-guide
+- https://platform.pratyushes.dev/docs/guides/authentication.md
+  html: https://platform.pratyushes.dev/docs/guides/authentication
+- https://platform.pratyushes.dev/docs/guides/monitoring.md
+  html: https://platform.pratyushes.dev/docs/guides/monitoring
+- https://platform.pratyushes.dev/docs/guides/preview-environments.md
+  html: https://platform.pratyushes.dev/docs/guides/preview-environments
+- https://platform.pratyushes.dev/docs/guides/production-checklist.md
+  html: https://platform.pratyushes.dev/docs/guides/production-checklist
+- https://platform.pratyushes.dev/docs/guides/secrets-management.md
+  html: https://platform.pratyushes.dev/docs/guides/secrets-management
+- https://platform.pratyushes.dev/docs/guides/testing.md
+  html: https://platform.pratyushes.dev/docs/guides/testing
+- https://platform.pratyushes.dev/docs/index.md
+  html: https://platform.pratyushes.dev/docs
+- https://platform.pratyushes.dev/docs/mcp/for-agents.md
+  html: https://platform.pratyushes.dev/docs/mcp/for-agents
+- https://platform.pratyushes.dev/docs/mcp/overview.md
+  html: https://platform.pratyushes.dev/docs/mcp/overview
+- https://platform.pratyushes.dev/docs/mcp/setup.md
+  html: https://platform.pratyushes.dev/docs/mcp/setup
+- https://platform.pratyushes.dev/docs/mcp/tools.md
+  html: https://platform.pratyushes.dev/docs/mcp/tools
+- https://platform.pratyushes.dev/docs/troubleshooting/README.md
+- https://platform.pratyushes.dev/docs/troubleshooting/angular-template-at-symbol.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/angular-template-at-symbol
+- https://platform.pratyushes.dev/docs/troubleshooting/api-seed-failure.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/api-seed-failure
+- https://platform.pratyushes.dev/docs/troubleshooting/apt-lock.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/apt-lock
+- https://platform.pratyushes.dev/docs/troubleshooting/argocd-oidc-redirect.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/argocd-oidc-redirect
+- https://platform.pratyushes.dev/docs/troubleshooting/argocd-subpath-404.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/argocd-subpath-404
+- https://platform.pratyushes.dev/docs/troubleshooting/cert-manager-timeout.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/cert-manager-timeout
+- https://platform.pratyushes.dev/docs/troubleshooting/db-wrongpass-after-rotate.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/db-wrongpass-after-rotate
+- https://platform.pratyushes.dev/docs/troubleshooting/disk-pressure.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/disk-pressure
+- https://platform.pratyushes.dev/docs/troubleshooting/dns-ipv6-timeout.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/dns-ipv6-timeout
+- https://platform.pratyushes.dev/docs/troubleshooting/dockerhub-rate-limit.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/dockerhub-rate-limit
+- https://platform.pratyushes.dev/docs/troubleshooting/general-dns-resolution.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/general-dns-resolution
+- https://platform.pratyushes.dev/docs/troubleshooting/grafana-subpath-redirect.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/grafana-subpath-redirect
+- https://platform.pratyushes.dev/docs/troubleshooting/helm-name-reuse.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/helm-name-reuse
+- https://platform.pratyushes.dev/docs/troubleshooting/image-pull-backoff.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/image-pull-backoff
+- https://platform.pratyushes.dev/docs/troubleshooting/infisical-db-missing.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/infisical-db-missing
+- https://platform.pratyushes.dev/docs/troubleshooting/ingress-ownership.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/ingress-ownership
+- https://platform.pratyushes.dev/docs/troubleshooting/k3s-port-conflict.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/k3s-port-conflict
+- https://platform.pratyushes.dev/docs/troubleshooting/minio-pvc-not-found.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/minio-pvc-not-found
+- https://platform.pratyushes.dev/docs/troubleshooting/minio-template-error.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/minio-template-error
+- https://platform.pratyushes.dev/docs/troubleshooting/mongodb-validation.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/mongodb-validation
+- https://platform.pratyushes.dev/docs/troubleshooting/portainer-oidc-ssl.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/portainer-oidc-ssl
+- https://platform.pratyushes.dev/docs/troubleshooting/portainer-setup-token.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/portainer-setup-token
+- https://platform.pratyushes.dev/docs/troubleshooting/sslip-io-dns.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/sslip-io-dns
+- https://platform.pratyushes.dev/docs/troubleshooting/typescript-build-errors.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/typescript-build-errors

@@ -1,0 +1,54 @@
+# Platform
+
+> Self-hosted Kubernetes PaaS control plane: deploy, secrets, databases, observability, SDKs, and MCP for AI agents.
+
+Site: https://platform.pratyushes.dev
+Docs (HTML): https://platform.pratyushes.dev/docs
+Docs (Markdown corpus): https://platform.pratyushes.dev/docs/
+Full agent index: https://platform.pratyushes.dev/llms-full.txt
+Sitemap: https://platform.pratyushes.dev/sitemap.xml
+Source: https://github.com/Mpratyush54/SERVER-automation
+
+## Start here
+
+- [Landing](https://platform.pratyushes.dev/landing): product overview
+- [Docs home](https://platform.pratyushes.dev/docs): documentation index ([Markdown](https://platform.pratyushes.dev/docs/index.md))
+- [Installation](https://platform.pratyushes.dev/docs/getting-started/installation): install Platform ([Markdown](https://platform.pratyushes.dev/docs/getting-started/installation.md))
+- [platformctl CLI](https://platform.pratyushes.dev/docs/getting-started/platformctl): CLI reference ([Markdown](https://platform.pratyushes.dev/docs/getting-started/platformctl.md))
+
+## For AI agents (MCP)
+
+1. [MCP for AI agents](https://platform.pratyushes.dev/docs/mcp/for-agents) — hard protocol ([Markdown](https://platform.pratyushes.dev/docs/mcp/for-agents.md))
+2. [MCP overview](https://platform.pratyushes.dev/docs/mcp/overview) ([Markdown](https://platform.pratyushes.dev/docs/mcp/overview.md))
+3. [MCP setup](https://platform.pratyushes.dev/docs/mcp/setup) ([Markdown](https://platform.pratyushes.dev/docs/mcp/setup.md))
+4. [MCP tools & policy](https://platform.pratyushes.dev/docs/mcp/tools) ([Markdown](https://platform.pratyushes.dev/docs/mcp/tools.md))
+
+Prefer fetching the **.md** URLs for grounding. HTML routes are the human SPA shell.
+
+## Product docs
+
+- Getting started: https://platform.pratyushes.dev/docs/getting-started/installation
+- Guides: https://platform.pratyushes.dev/docs/guides/authentication
+- Architecture: https://platform.pratyushes.dev/docs/architecture/overview
+- Deployment: https://platform.pratyushes.dev/docs/deployment/bootstrap
+- API reference: https://platform.pratyushes.dev/docs/api-reference/platform-api/auth
+- FAQ: https://platform.pratyushes.dev/docs/faq.md
+- Changelog: https://platform.pratyushes.dev/docs/changelog.md
+- Contributing: https://platform.pratyushes.dev/docs/contribution-guide.md
+
+## SDKs
+
+- Node.js: https://platform.pratyushes.dev/docs/getting-started/node-sdk-quickstart
+- React: https://platform.pratyushes.dev/docs/getting-started/react-sdk-quickstart
+- Angular: https://platform.pratyushes.dev/docs/getting-started/angular-sdk-quickstart
+- Python: https://platform.pratyushes.dev/docs/getting-started/python-sdk-quickstart
+
+## Optional live API (when deployed on an app host)
+
+- OpenAPI JSON: `GET /api/openapi.json` (not served as marketing content on this host)
+
+## Crawl notes
+
+- Public host serves marketing + docs only.
+- Cache-friendly: `/`, `/landing`, `/docs*`, `/docs/**/*.md`, static logos/favicons.
+- Do not treat authenticated app routes as public content.
