@@ -22,7 +22,7 @@ h1, h2, h3, h4, h5, h6 {
 .landing-nav {
   position: fixed;
   top: 0; left: 0; right: 0; z-index: 200;
-  height: 60px;
+  height: 72px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -36,6 +36,15 @@ h1, h2, h3, h4, h5, h6 {
   font-size: 1.5rem;
   color: #2d2d2d;
   text-decoration: none;
+  display: flex;
+  align-items: center;
+}
+
+.landing-nav .landing-logo-img {
+  height: 56px;
+  width: auto;
+  display: block;
+  object-fit: contain;
 }
 
 .landing-nav a:not(.btn) {

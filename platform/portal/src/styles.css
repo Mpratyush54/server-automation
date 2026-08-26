@@ -160,3 +160,12 @@
   z-index: 0;
   pointer-events: none;
 }
+
+/* Brand logos — prefer dark mark on dark UI; swap under light scheme when both are present */
+.brand-logo-dark { display: block; }
+.brand-logo-light { display: none; }
+
+@media (prefers-color-scheme: light) {
+  .brand-logo-dark { display: none; }
+  .brand-logo-light { display: block; }
+}

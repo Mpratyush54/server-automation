@@ -91,6 +91,14 @@
   text-decoration: none;
 }
 
+.docs-logo-img {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
 .docs-close-sidebar {
   display: none;
   background: none;
