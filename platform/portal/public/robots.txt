@@ -1,0 +1,22 @@
+# platform.pratyushes.dev — marketing + docs only
+User-agent: *
+Allow: /
+Allow: /landing
+Allow: /docs
+Allow: /docs/
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /sitemap.xml
+Allow: /logo-
+Allow: /favicon
+Allow: /apple-touch-icon.png
+
+# Prefer canonical marketing/docs surfaces
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /login
+Disallow: /projects
+Disallow: /settings
+Disallow: /oauth/
+
+Sitemap: https://platform.pratyushes.dev/sitemap.xml
