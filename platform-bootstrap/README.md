@@ -9,7 +9,7 @@ images from GitHub Actions. **Do not clone this repo on the server** and do not 
 ## Quick Start
 
 ```bash
-curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
 sudo platformctl provision
 ```
 
