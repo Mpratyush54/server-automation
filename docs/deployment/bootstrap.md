@@ -7,7 +7,7 @@ Images: `ghcr.io/mpratyush54/platform-api` + `platform-portal` (built on GitHub 
 ## Overview
 
 ```bash
-curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
 sudo platformctl provision
 ```
 
