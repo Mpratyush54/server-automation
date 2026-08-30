@@ -71,7 +71,7 @@ release:
     ### 🚀 Quick Install
 
     ```bash
-    curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/download/{{ .Tag }}/install.sh | sh
+    curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/download/{{ .Tag }}/install.sh | bash
     sudo platformctl provision
     ```
 
