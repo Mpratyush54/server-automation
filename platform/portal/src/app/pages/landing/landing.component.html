@@ -3,12 +3,22 @@
   <a class="logo" routerLink="/landing" aria-label="platform home">
     <img src="logo-light.png" alt="platform" class="landing-logo-img" />
   </a>
-  <div style="display:flex;gap:20px;align-items:center;">
-    <a routerLink="/docs" style="cursor:pointer">Docs</a>
-    <a routerLink="/docs/getting-started/platformctl" style="cursor:pointer">CLI</a>
-    <a routerLink="/docs/mcp/overview" style="cursor:pointer">MCP</a>
-    <a routerLink="/docs/api-reference" style="cursor:pointer">API</a>
-
+  <button
+    type="button"
+    class="landing-nav-toggle"
+    (click)="toggleNav()"
+    [attr.aria-expanded]="navOpen"
+    aria-controls="landing-nav-links"
+    aria-label="Toggle navigation menu">
+    <span></span>
+    <span></span>
+    <span></span>
+  </button>
+  <div id="landing-nav-links" class="landing-nav-links" [class.open]="navOpen">
+    <a routerLink="/docs" (click)="closeNav()">Docs</a>
+    <a routerLink="/docs/getting-started/platformctl" (click)="closeNav()">CLI</a>
+    <a routerLink="/docs/mcp/overview" (click)="closeNav()">MCP</a>
+    <a routerLink="/docs/api-reference" (click)="closeNav()">API</a>
   </div>
 </nav>
 
@@ -23,22 +33,22 @@
 </div>
 
 <!-- HERO -->
-<div class="hero" style="position: relative; overflow-x: hidden; min-height: 100vh; padding-bottom: 48px;">
-  <canvas id="heroCanvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; opacity: 0.3;"></canvas>
-  
-  <div class="max-w-4xl mx-auto text-center relative z-10" style="position: relative; z-index: 10; margin-top: 120px;">
-    <div style="display: inline-block; background-color: #fff9c4; border: 3px solid #2d2d2d; box-shadow: 4px 4px 0px 0px #2d2d2d; border-radius: 225px 15px 255px 15px / 15px 255px 15px 225px; padding: 4px 16px; margin-bottom: 32px; transform: rotate(2deg); font-size: 1.25rem; font-weight: bold;">
+<div class="hero">
+  <canvas id="heroCanvas" class="hero-canvas" aria-hidden="true"></canvas>
+
+  <div class="hero-inner max-w-4xl mx-auto text-center">
+    <div class="hero-badge">
       Now in Production — v1.0 Live 📌
     </div>
-    
-    <h1 style="font-size: 4rem; line-height: 1.1; margin-bottom: 32px; letter-spacing: -0.02em;">
+
+    <h1 class="hero-title">
       The Platform Built<br/>
-      <span style="position: relative; display: inline-block;">
-        for <span id="typedText" style="color: #ff4d4d;">{{ currentTypedText }}</span><span class="animate-pulse">|</span>
+      <span class="hero-typed-wrap">
+        for <span id="typedText" class="hero-typed">{{ currentTypedText }}</span><span class="animate-pulse">|</span>
       </span>
     </h1>
-    
-    <p style="font-size: 1.5rem; max-width: 700px; margin: 0 auto 48px; line-height: 1.4;">
+
+    <p class="hero-subtitle">
       Platform is a Kubernetes-native DevOps layer that gives you 
       <span class="group relative inline-block cursor-help">
         <span style="background: rgba(255,77,77,0.2); padding: 0 4px; border-bottom: 3px dashed #ff4d4d;">observability</span>
@@ -138,11 +148,11 @@
 </div>
 
 <!-- CODE PREVIEW SECTION -->
-<div style="background-color: #fdfbf7; padding: 80px 24px; border-top: 3px dashed #2d2d2d; border-bottom: 3px dashed #2d2d2d;">
+<div class="landing-code-section">
   <div class="max-w-5xl mx-auto flex flex-col md:flex-row gap-12 items-center">
     <div class="flex-1 text-left">
-      <h2 style="font-size: 3rem; line-height: 1.1; margin-bottom: 16px;">Zero-Config SDKs</h2>
-      <p style="font-size: 1.25rem; margin-bottom: 24px; line-height: 1.5;">
+      <h2 class="landing-section-title landing-code-title">Zero-Config SDKs</h2>
+      <p class="landing-code-lead">
         Just import the SDK and initialize it. Platform automatically hooks into your framework to capture errors, track API latency, and inject encrypted secrets directly into your environment.
       </p>
       <ul style="list-style: none; padding: 0; font-size: 1.2rem; margin-bottom: 32px;">
@@ -153,15 +163,15 @@
       <a routerLink="/docs/api-reference" class="btn btn-primary" style="font-size: 1.2rem; padding: 10px 20px;">View SDK Docs</a>
     </div>
     
-    <div class="flex-1 w-full">
-      <div style="background: #fff; border: 3px solid #2d2d2d; border-radius: 15px 255px 15px 225px / 255px 15px 225px 15px; box-shadow: 6px 6px 0px 0px #2d2d2d; overflow: hidden;">
-        <div style="background: #e5e0d8; border-bottom: 3px solid #2d2d2d; height: 40px; display: flex; align-items: center; padding: 0 16px; gap: 8px;">
+    <div class="flex-1 w-full landing-code-window-wrap">
+      <div class="landing-code-window">
+        <div class="landing-code-window-header">
           <div style="width: 12px; height: 12px; border-radius: 50%; background: #ff4d4d; border: 2px solid #2d2d2d;"></div>
           <div style="width: 12px; height: 12px; border-radius: 50%; background: #ffb86c; border: 2px solid #2d2d2d;"></div>
           <div style="width: 12px; height: 12px; border-radius: 50%; background: #50fa7b; border: 2px solid #2d2d2d;"></div>
-          <span style="margin-left: auto; font-family: 'Kalam', cursive; font-size: 1.1rem; color: #2d2d2d;">server.js</span>
+          <span class="landing-code-filename">server.js</span>
         </div>
-        <div style="padding: 24px; background: #fff; font-family: 'Patrick Hand', cursive; font-size: 1.2rem; color: #2d5da1; overflow-x: auto;">
+        <div class="landing-code-body">
           <pre style="margin: 0; white-space: pre-wrap;"><span style="color: #6a737d;">// Initialize Platform</span>
 <span style="color: #d73a49;">const</span> plat = <span style="color: #6f42c1;">require</span>(<span style="color: #032f62;">'&#64;platform/sdk-node'</span>);
 
@@ -182,14 +192,14 @@ plat.<span style="color: #6f42c1;">captureConsole</span>();</pre>
 </div>
 
 <!-- HOW IT WORKS -->
-<div style="background-color: #2d2d2d; color: #fdfbf7; padding: 100px 24px; text-align: center;">
+<div class="landing-section landing-section-dark">
   <div class="max-w-5xl mx-auto">
-    <h2 style="font-size: 3rem; margin-bottom: 24px; color: #fff9c4;">How it Works</h2>
-    <p style="font-size: 1.3rem; margin-bottom: 60px; max-width: 600px; margin-left: auto; margin-right: auto; opacity: 0.9;">
+    <h2 class="landing-section-title landing-section-title-light">How it Works</h2>
+    <p class="landing-section-lead landing-section-lead-light">
       From local development to production Kubernetes clusters in three simple steps.
     </p>
     
-    <div style="display: flex; flex-direction: column; md:flex-row; gap: 32px; justify-content: center; align-items: stretch;">
+    <div class="how-it-works-grid">
       <div style="flex: 1; background: rgba(255,255,255,0.05); border: 2px dashed rgba(255,255,255,0.2); border-radius: 12px; padding: 32px; text-align: left;">
         <div style="font-size: 3rem; font-family: 'Kalam', cursive; font-weight: bold; color: #ffb86c; margin-bottom: 16px;">1.</div>
         <h3 style="font-size: 1.8rem; margin-bottom: 12px; color: #fff;">Install Platform</h3>
@@ -254,10 +264,10 @@ plat.<span style="color: #6f42c1;">captureConsole</span>();</pre>
 -->
 
 <!-- TECH STACK & TOOLS -->
-<div style="background-color: #fdfbf7; padding: 100px 24px; text-align: center;">
+<div class="landing-section">
   <div class="max-w-5xl mx-auto">
-    <h2 style="font-size: 3rem; margin-bottom: 24px; color: #2d2d2d;">Powered By Open Source</h2>
-    <p style="font-size: 1.3rem; margin-bottom: 60px; max-width: 700px; margin-left: auto; margin-right: auto; color: #555;">
+    <h2 class="landing-section-title">Powered By Open Source</h2>
+    <p class="landing-section-lead">
       Platform orchestrates the best-in-class DevOps tools under the hood. Hover over a tool to see how we use it!
     </p>
     
@@ -329,11 +339,11 @@ plat.<span style="color: #6f42c1;">captureConsole</span>();</pre>
 </div>
 
 <!-- GITHUB / OPEN SOURCE SECTION -->
-<div id="pricing" style="background-color: #fff9c4; padding: 80px 24px; border-bottom: 3px dashed #2d2d2d; text-align: center;">
+<div id="pricing" class="landing-section landing-section-accent">
   <div class="max-w-5xl mx-auto">
-    <div style="display: inline-block; font-size: 4rem; margin-bottom: 16px;">🐙</div>
-    <h2 style="font-size: 3rem; margin-bottom: 24px; color: #2d2d2d;">Proudly Open Source</h2>
-    <p style="font-size: 1.3rem; margin-bottom: 40px; line-height: 1.5; color: #2d2d2d;">
+    <div class="landing-emoji">🐙</div>
+    <h2 class="landing-section-title">Proudly Open Source</h2>
+    <p class="landing-section-lead landing-section-lead-dark">
       Platform is built by developers, for developers. We believe the best DevOps tools should be transparent, extensible, and free from vendor lock-in. Host it yourself or contribute to the core!
     </p>
     
@@ -375,7 +385,7 @@ plat.<span style="color: #6f42c1;">captureConsole</span>();</pre>
     </div>
   </div>
 
-  <div class="max-w-5xl mx-auto" style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 24px; display: flex; justify-content: space-between; align-items: center; opacity: 0.6; font-size: 0.9rem;">
+  <div class="landing-footer-bottom max-w-5xl mx-auto">
     <p>&copy; 2026 platform Inc. All rights reserved.</p>
     <div style="display: flex; gap: 16px;">
       <a href="https://github.com/Mpratyush54" target="_blank" style="color: #fff; text-decoration: none;">GitHub</a>
