@@ -12,6 +12,7 @@ import { RouterModule } from '@angular/router';
 export class LandingComponent implements OnInit, AfterViewInit, OnDestroy {
   currentTypedText = '';
   installCopied = false;
+  navOpen = false;
   readonly installCommand =
     'curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash\nsudo platformctl provision';
   private texts = ["React Developers", "DevOps Engineers", "Node.js Backends", "You"];
@@ -101,6 +102,14 @@ export class LandingComponent implements OnInit, AfterViewInit, OnDestroy {
       });
     };
     document.head.appendChild(script);
+  }
+
+  toggleNav() {
+    this.navOpen = !this.navOpen;
+  }
+
+  closeNav() {
+    this.navOpen = false;
   }
 
   copyInstallCommand() {
