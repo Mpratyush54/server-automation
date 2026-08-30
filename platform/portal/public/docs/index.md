@@ -94,7 +94,7 @@ npm --prefix platform/api run seed:db
 **Server install** (copy from the [homepage](/landing) or run):
 
 ```bash
-curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
 sudo platformctl provision
 ```
 

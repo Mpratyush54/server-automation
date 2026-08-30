@@ -3,7 +3,7 @@
 #  Platform — Server bootstrap (compatibility wrapper)
 #
 #  Preferred install (no repo clone, no on-server build):
-#    curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | sh
+#    curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
 #    sudo platformctl provision
 #
 #  This script installs platformctl (if needed) and runs `platformctl provision`.

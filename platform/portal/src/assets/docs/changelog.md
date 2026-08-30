@@ -5,7 +5,7 @@
 First git-tagged **1.0.0** Platform release (prior production tags were `v0.3.x`).
 
 - MCP server (`platform/mcp-server`) with agent tokens (`plat_agent_*`), command guard, and human approval for destructive commands
-- User + agent MCP documentation (overview, setup, tools/policy, for-agents) and homepage `curl | sh` install
+- User + agent MCP documentation (overview, setup, tools/policy, for-agents) and homepage `curl | bash` install
 - `platformctl` commands: `provision`, `install`, `status`, `seed`, `update`, `recover`, `backup`, `version`
 - Safer secret rotate / recover: passwords fsynced to `/etc/platform` before `ALTER USER`; JSON Patch rollout restart for `platform-api`
 - GitHub / GitLab login, profile, notifications, one-click rotate UI

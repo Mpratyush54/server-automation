@@ -13,7 +13,7 @@ export class LandingComponent implements OnInit, AfterViewInit, OnDestroy {
   currentTypedText = '';
   installCopied = false;
   readonly installCommand =
-    'curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | sh\nsudo platformctl provision';
+    'curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash\nsudo platformctl provision';
   private texts = ["React Developers", "DevOps Engineers", "Node.js Backends", "You"];
   private typeIndex = 0;
   private charIndex = 0;
