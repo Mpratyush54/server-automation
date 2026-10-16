@@ -58,46 +58,443 @@
         </p>
       </div>
       <div
-        class="system-illustration"
-        role="img"
-        aria-label="Conceptual workflow: Git and SDKs connect to Platform, which manages applications, data, and observability on your Kubernetes server."
+        class="product-story"
+        #storyElement
+        [attr.data-story-step]="storyStep"
+        [class.motion-paused]="storyPaused || !storyVisible"
+        aria-label="How Platform works: an animated five-step walkthrough"
       >
-        <div class="illustration-caption">
-          <span>THE BIG PICTURE</span><span>Workflow illustration</span>
+        <div class="story-topline">
+          <span
+            ><i class="status-dot" aria-hidden="true"></i> FROM YOUR SERVER TO
+            YOUR APP</span
+          ><button
+            type="button"
+            class="story-pause"
+            (click)="toggleStory()"
+            [attr.aria-pressed]="storyPaused"
+            aria-label="Pause or resume the walkthrough"
+          >
+            <span class="pause-word">Ⅱ Pause</span
+            ><span class="resume-word">▶ Play</span>
+          </button>
         </div>
-        <div class="input-row">
-          <span class="input-tag">⌘ Your Git repo</span
-          ><span class="input-tag">&lt;/&gt; Your app + SDK</span>
+        <div class="story-stage">
+          <section
+            class="story-scene scene-server"
+            [attr.aria-hidden]="storyStep !== 0"
+          >
+            <div class="story-heading">
+              <span>01 / MAKE IT YOURS</span>
+              <h3>One server. Your platform.</h3>
+            </div>
+            <svg
+              viewBox="0 0 600 340"
+              role="img"
+              aria-label="The CLI provisions your Ubuntu server with Kubernetes and Platform."
+            >
+              <path class="wire" d="M240 156H353" />
+              <path class="flow-pulse" d="M240 156H353" />
+              <g class="story-pop">
+                <rect
+                  class="node-paper"
+                  x="38"
+                  y="66"
+                  width="202"
+                  height="185"
+                  rx="10"
+                />
+                <text class="node-title" x="60" y="105">
+                  Your Ubuntu server
+                </text>
+                <rect
+                  class="server-slot"
+                  x="59"
+                  y="127"
+                  width="160"
+                  height="42"
+                  rx="5"
+                />
+                <rect
+                  class="server-slot"
+                  x="59"
+                  y="182"
+                  width="160"
+                  height="42"
+                  rx="5"
+                />
+                <circle class="server-led" cx="78" cy="148" r="4" />
+                <circle class="server-led led-later" cx="78" cy="203" r="4" />
+                <path class="slot-line" d="M96 148h99M96 203h99" />
+              </g>
+              <g class="story-pop pop-later">
+                <rect
+                  class="node-green"
+                  x="353"
+                  y="78"
+                  width="207"
+                  height="161"
+                  rx="10"
+                />
+                <text class="node-title" x="378" y="119">Platform</text>
+                <text class="node-detail" x="378" y="150">
+                  Your control plane
+                </text>
+                <rect
+                  class="node-paper"
+                  x="375"
+                  y="171"
+                  width="163"
+                  height="44"
+                  rx="5"
+                />
+                <text class="node-detail" x="392" y="199">
+                  Kubernetes · k3s
+                </text>
+              </g>
+              <rect
+                class="terminal-fill"
+                x="38"
+                y="279"
+                width="522"
+                height="43"
+                rx="6"
+              />
+              <text class="terminal-text" x="58" y="307">
+                $ platformctl provision
+                <tspan class="terminal-cursor">▌</tspan>
+              </text>
+            </svg>
+            <p>Provision the stack on infrastructure you own.</p>
+          </section>
+          <section
+            class="story-scene scene-deploy"
+            [attr.aria-hidden]="storyStep !== 1"
+          >
+            <div class="story-heading">
+              <span>02 / SHIP FROM GIT</span>
+              <h3>A commit becomes a deployment.</h3>
+            </div>
+            <svg
+              viewBox="0 0 600 340"
+              role="img"
+              aria-label="A Git commit moves through Argo CD to your application on Kubernetes."
+            >
+              <path class="wire" d="M175 165H231M377 165H433" />
+              <path class="flow-pulse" d="M175 165H231" />
+              <path class="flow-pulse pulse-later" d="M377 165H433" />
+              <g class="story-pop">
+                <rect
+                  class="node-paper"
+                  x="25"
+                  y="95"
+                  width="150"
+                  height="140"
+                  rx="10"
+                />
+                <path class="git-branch" d="M63 133v46m0-23h38v-23" />
+                <circle class="git-point" cx="63" cy="133" r="5" />
+                <circle class="git-point" cx="63" cy="179" r="5" />
+                <circle class="git-point" cx="101" cy="133" r="5" />
+                <text class="node-title" x="45" y="214">Git repo</text>
+              </g>
+              <g class="story-pop pop-later">
+                <rect
+                  class="node-coral"
+                  x="231"
+                  y="95"
+                  width="146"
+                  height="140"
+                  rx="10"
+                />
+                <g class="sync-rotor">
+                  <path
+                    d="M275 150a27 27 0 0 1 48-8l6 8m0-17v17h-17M329 180a27 27 0 0 1-48 8l-6-8m0 17v-17h17"
+                  />
+                </g>
+                <text class="node-title" x="252" y="214">Argo CD</text>
+              </g>
+              <g class="story-pop pop-last">
+                <rect
+                  class="node-green"
+                  x="433"
+                  y="95"
+                  width="142"
+                  height="140"
+                  rx="10"
+                />
+                <rect
+                  class="app-window"
+                  x="455"
+                  y="118"
+                  width="98"
+                  height="59"
+                  rx="4"
+                />
+                <path class="slot-line" d="M467 136h73M467 149h49M467 162h61" />
+                <text class="node-title" x="453" y="214">Your app</text>
+              </g>
+              <text class="story-svg-note" x="300" y="290" text-anchor="middle">
+                Git is the source. Your cluster follows.
+              </text>
+            </svg>
+            <p>Argo CD syncs your manifests to the cluster.</p>
+          </section>
+          <section
+            class="story-scene scene-data"
+            [attr.aria-hidden]="storyStep !== 2"
+          >
+            <div class="story-heading">
+              <span>03 / CONNECT THE PIECES</span>
+              <h3>Everything your app needs.</h3>
+            </div>
+            <svg
+              viewBox="0 0 600 340"
+              role="img"
+              aria-label="Your app connects to databases, encrypted secrets, and object storage."
+            >
+              <path
+                class="wire"
+                d="M210 170H270V69H338M270 170H338M270 170V271H338"
+              />
+              <path class="flow-pulse" d="M210 170H270V69H338" />
+              <path class="flow-pulse pulse-later" d="M210 170H338" />
+              <path class="flow-pulse pulse-last" d="M210 170H270V271H338" />
+              <g class="story-pop">
+                <rect
+                  class="node-coral"
+                  x="35"
+                  y="111"
+                  width="175"
+                  height="118"
+                  rx="10"
+                />
+                <text class="node-title" x="66" y="158">Your app</text>
+                <text class="node-detail" x="66" y="190">+ Platform SDK</text>
+              </g>
+              <g class="story-pop pop-later">
+                <rect
+                  class="node-paper"
+                  x="338"
+                  y="32"
+                  width="225"
+                  height="74"
+                  rx="8"
+                />
+                <text class="node-title" x="357" y="65">Databases</text>
+                <text class="node-detail" x="357" y="91">
+                  Postgres · MongoDB · Redis
+                </text>
+              </g>
+              <g class="story-pop pop-last">
+                <rect
+                  class="node-green"
+                  x="338"
+                  y="133"
+                  width="225"
+                  height="74"
+                  rx="8"
+                />
+                <text class="node-title" x="357" y="167">
+                  Encrypted secrets
+                </text>
+                <text class="node-detail" x="357" y="192">
+                  Versioned. Scoped.
+                </text>
+              </g>
+              <g class="story-pop pop-storage">
+                <rect
+                  class="node-paper"
+                  x="338"
+                  y="234"
+                  width="225"
+                  height="74"
+                  rx="8"
+                />
+                <text class="node-title" x="357" y="268">Object storage</text>
+                <text class="node-detail" x="357" y="293">
+                  Files, backed by MinIO
+                </text>
+              </g>
+            </svg>
+            <p>Connect data, secrets, and files through one platform.</p>
+          </section>
+          <section
+            class="story-scene scene-observe"
+            [attr.aria-hidden]="storyStep !== 3"
+          >
+            <div class="story-heading">
+              <span>04 / FOLLOW WHAT HAPPENS</span>
+              <h3>From a request to its context.</h3>
+            </div>
+            <svg
+              viewBox="0 0 600 340"
+              role="img"
+              aria-label="Application activity flows into logs, metrics, and errors in the dashboard."
+            >
+              <path class="wire" d="M219 169H310" />
+              <path class="flow-pulse" d="M219 169H310" />
+              <g class="story-pop">
+                <rect
+                  class="node-green"
+                  x="32"
+                  y="105"
+                  width="187"
+                  height="130"
+                  rx="10"
+                />
+                <text class="node-title" x="55" y="149">Your application</text>
+                <text class="node-detail" x="55" y="184">
+                  Request → service
+                </text>
+                <circle class="request-dot" cx="64" cy="211" r="5" />
+                <path class="slot-line" d="M81 211h109" />
+              </g>
+              <g class="story-pop pop-later">
+                <rect
+                  class="node-paper"
+                  x="310"
+                  y="43"
+                  width="257"
+                  height="256"
+                  rx="10"
+                />
+                <rect
+                  class="terminal-fill"
+                  x="310"
+                  y="43"
+                  width="257"
+                  height="49"
+                  rx="9"
+                />
+                <text class="terminal-text" x="329" y="75">OPERATIONS</text>
+                <text class="node-title" x="329" y="128">
+                  Logs · metrics · errors
+                </text>
+                <g class="log-lines">
+                  <path d="M331 157h186M331 178h159M331 199h197M331 220h138" />
+                  <path class="log-accent" d="M331 178h159" />
+                </g>
+                <rect
+                  class="node-green"
+                  x="330"
+                  y="249"
+                  width="215"
+                  height="29"
+                  rx="4"
+                />
+                <text class="node-detail" x="344" y="270">
+                  One dashboard. More context.
+                </text>
+              </g>
+            </svg>
+            <p>Inspect activity and find what needs attention.</p>
+          </section>
+          <section
+            class="story-scene scene-agents"
+            [attr.aria-hidden]="storyStep !== 4"
+          >
+            <div class="story-heading">
+              <span>05 / BRING YOUR AGENT</span>
+              <h3>Useful tools. Human control.</h3>
+            </div>
+            <svg
+              viewBox="0 0 600 340"
+              role="img"
+              aria-label="MCP uses scoped tokens and a command guard. Destructive actions stop for human approval."
+            >
+              <path class="wire" d="M175 146H228M378 146H430M303 205V261" />
+              <path class="flow-pulse" d="M175 146H228" />
+              <path class="flow-pulse pulse-later" d="M378 146H430" />
+              <path class="approval-pulse" d="M303 205V253" />
+              <g class="story-pop">
+                <rect
+                  class="node-paper"
+                  x="25"
+                  y="86"
+                  width="150"
+                  height="119"
+                  rx="10"
+                />
+                <text class="node-title" x="45" y="138">MCP client</text>
+                <text class="node-detail" x="45" y="169">Scoped token</text>
+              </g>
+              <g class="story-pop pop-later">
+                <rect
+                  class="node-green"
+                  x="228"
+                  y="86"
+                  width="150"
+                  height="119"
+                  rx="10"
+                />
+                <text class="node-title" x="247" y="138">Command</text>
+                <text class="node-title" x="247" y="165">guard</text>
+              </g>
+              <g class="story-pop pop-last">
+                <rect
+                  class="node-paper"
+                  x="430"
+                  y="86"
+                  width="145"
+                  height="119"
+                  rx="10"
+                />
+                <text class="node-title" x="449" y="138">Platform</text>
+                <text class="node-detail" x="449" y="169">Scoped tools</text>
+              </g>
+              <rect
+                class="approval-gate"
+                x="185"
+                y="261"
+                width="236"
+                height="54"
+                rx="8"
+              />
+              <text class="node-detail" x="303" y="294" text-anchor="middle">
+                Destructive? Human approval.
+              </text>
+            </svg>
+            <p>Validate commands. Keep destructive actions behind approval.</p>
+          </section>
         </div>
-        <div class="connector" aria-hidden="true">↓</div>
-        <div class="platform-hub">
-          <span class="hub-icon" aria-hidden="true">P.</span>
-          <div><strong>Platform</strong><span>Your control plane</span></div>
-          <span class="hub-badge">SELF-HOSTED</span>
+        <div class="story-chapters" role="group" aria-label="Choose a chapter">
+          <button
+            type="button"
+            (click)="selectStory(0)"
+            [attr.aria-pressed]="storyStep === 0"
+          >
+            <span>01</span> Server<i></i>
+          </button>
+          <button
+            type="button"
+            (click)="selectStory(1)"
+            [attr.aria-pressed]="storyStep === 1"
+          >
+            <span>02</span> Deploy<i></i>
+          </button>
+          <button
+            type="button"
+            (click)="selectStory(2)"
+            [attr.aria-pressed]="storyStep === 2"
+          >
+            <span>03</span> Connect<i></i>
+          </button>
+          <button
+            type="button"
+            (click)="selectStory(3)"
+            [attr.aria-pressed]="storyStep === 3"
+          >
+            <span>04</span> Observe<i></i>
+          </button>
+          <button
+            type="button"
+            (click)="selectStory(4)"
+            [attr.aria-pressed]="storyStep === 4"
+          >
+            <span>05</span> Agents<i></i>
+          </button>
         </div>
-        <div class="branch-lines" aria-hidden="true">
-          <span></span><span></span><span></span>
-        </div>
-        <div class="service-row">
-          <div class="service-box">
-            <span aria-hidden="true">↗</span><strong>Deploy</strong
-            ><small>Apps + environments</small>
-          </div>
-          <div class="service-box service-green">
-            <span aria-hidden="true">▤</span><strong>Connect</strong
-            ><small>Data + secrets</small>
-          </div>
-          <div class="service-box service-coral">
-            <span aria-hidden="true">⌁</span><strong>Observe</strong
-            ><small>Metrics + logs</small>
-          </div>
-        </div>
-        <div class="server-base">
-          <span class="server-lights" aria-hidden="true">● ●</span
-          ><span>Your Ubuntu server · Kubernetes (k3s)</span
-          ><span aria-hidden="true">▰</span>
-        </div>
-        <p class="hand-note">the whole stack, connected ↖</p>
       </div>
     </section>
     <div class="stack-strip">
@@ -171,64 +568,99 @@
             <h2 id="video-heading">One app. The whole journey.</h2>
           </div>
           <p>
-            A wireframe walkthrough, from a fresh server to deployments,
-            operations, and guarded AI access.
+            See your app move from a fresh server to deployment, data,
+            operations, and guarded agent access.
           </p>
         </div>
-        <div class="video-frame">
-          <video
-            controls
-            playsinline
-            preload="none"
-            poster="/media/platform-overview-poster.jpg"
-            width="1920"
-            height="1080"
-            aria-label="Platform product overview"
-          >
-            <source src="/media/platform-overview.mp4" type="video/mp4" />
-            <track
-              src="/media/platform-overview.en.vtt"
-              kind="captions"
-              srclang="en"
-              label="English"
-              default
-            />
-            <a href="/media/platform-overview.mp4"
-              >Download the Platform product overview</a
-            >.
-          </video>
-        </div>
-        <div class="video-footnote">
-          <span>Conceptual illustrations · English narration + captions</span
-          ><a href="/media/platform-short.mp4" download
-            >Download the portrait cut ↓</a
-          >
-        </div>
-        <details class="transcript">
-          <summary>Read the video transcript</summary>
-          <div>
-            <p>
-              Your app deserves a home you control. Platform turns your own
-              Ubuntu server into a connected developer platform, with Kubernetes
-              underneath and one place to manage it.
-            </p>
-            <p>
-              Install the CLI, provision your server, and connect your
-              repository. GitOps with Argo CD keeps your application manifests
-              in sync with the cluster.
-            </p>
-            <p>
-              Bring your app's data and operations together. Provision
-              PostgreSQL, MongoDB, and Redis. Manage encrypted secrets, inspect
-              logs, and follow application metrics from the dashboard.
-            </p>
-            <p>
-              Connect your AI tools through MCP with scoped agent tokens.
-              Commands are validated, and destructive actions need human
-              approval. Your server. Your apps. Start with the docs.
-            </p>
+        <div class="cinema-player landscape-player">
+          <div class="cinema-chrome">
+            <span><i></i> PLATFORM / THE WALKTHROUGH</span><span>01:00</span>
           </div>
-        </details>
+          <div class="cinema-screen">
+            <video
+              #landscapeVideo
+              controls
+              [controls]="landscapeStarted"
+              controlslist="nodownload"
+              playsinline
+              preload="none"
+              [poster]="media.overviewPoster"
+              width="1920"
+              height="1080"
+              aria-label="Platform product overview"
+              (play)="onVideoPlay('landscape')"
+              (ended)="landscapeStarted = false"
+            >
+              <source [src]="media.overview" type="video/mp4" />
+              <track
+                [src]="media.overviewCaptions"
+                kind="captions"
+                srclang="en"
+                label="English"
+              />
+              Your browser does not support embedded video.
+            </video>
+            <button
+              type="button"
+              class="cinema-cover"
+              [hidden]="landscapeStarted"
+              (click)="playVideo(landscapeVideo, 'landscape')"
+              aria-label="Play the one-minute Platform walkthrough"
+            >
+              <span class="cinema-play">▶</span
+              ><span class="cinema-cover-copy"
+                ><strong>Your server. In motion.</strong
+                ><span>Watch the 1-minute walkthrough</span></span
+              >
+            </button>
+          </div>
+        </div>
+        <div class="cinema-player portrait-player">
+          <div class="cinema-chrome">
+            <span><i></i> PLATFORM / IN ACTION</span><span>00:22</span>
+          </div>
+          <div class="cinema-screen">
+            <video
+              #portraitVideo
+              controls
+              [controls]="portraitStarted"
+              controlslist="nodownload"
+              playsinline
+              preload="none"
+              [poster]="media.portraitPoster"
+              width="1080"
+              height="1920"
+              aria-label="Platform portrait overview"
+              (play)="onVideoPlay('portrait')"
+              (ended)="portraitStarted = false"
+            >
+              <source [src]="media.portrait" type="video/mp4" />
+              <track
+                [src]="media.portraitCaptions"
+                kind="captions"
+                srclang="en"
+                label="English"
+              />
+              Your browser does not support embedded video.
+            </video>
+            <button
+              type="button"
+              class="cinema-cover"
+              [hidden]="portraitStarted"
+              (click)="playVideo(portraitVideo, 'portrait')"
+              aria-label="Play the portrait Platform walkthrough"
+            >
+              <span class="cinema-play">▶</span
+              ><span class="cinema-cover-copy"
+                ><strong>Your server.<br />Your apps.</strong
+                ><span>Watch Platform in action</span></span
+              >
+            </button>
+          </div>
+        </div>
+        <p class="video-error" role="status" [hidden]="!videoError">
+          {{ videoError }}
+        </p>
       </div>
     </section>
     <section
@@ -251,9 +683,17 @@
             CD. Inspect deployment state and trigger rollouts from the same
             control plane.
           </p>
-          <div class="deployment-flow" aria-hidden="true">
-            <span>Git commit</span><b>→</b><span>Argo CD</span><b>→</b
-            ><span class="live-tag">Your app</span>
+          <div
+            class="deployment-flow"
+            role="img"
+            aria-label="A Git commit flows through Argo CD to your app on Kubernetes."
+          >
+            <span class="flow-node git-node"><i>⌘</i>Git commit</span
+            ><b class="flow-track" aria-hidden="true"></b
+            ><span class="flow-node argo-node"
+              ><i class="sync-icon">↻</i>Argo CD</span
+            ><b class="flow-track track-later" aria-hidden="true"></b
+            ><span class="flow-node live-tag"><i>▣</i>Your app</span>
           </div>
           <a routerLink="/docs/api-reference/platform-api/deployments"
             >Deployment reference ↗</a
@@ -314,14 +754,23 @@
         role="img"
         aria-label="MCP client uses a scoped token to reach Platform tools. Commands are validated and destructive commands require human approval."
       >
-        <span class="diagram-caption">AGENT ACCESS / CONCEPTUAL FLOW</span>
+        <span class="diagram-caption">AGENT ACCESS / SCOPED BY DESIGN</span>
         <div class="agent-node">Your MCP client</div>
-        <span class="flow-label">↓ scoped agent token</span>
+        <span class="flow-label flow-connector"
+          ><i aria-hidden="true"></i><span>scoped agent token</span></span
+        >
         <div class="agent-node agent-node-accent">
           Platform tools + command guard
         </div>
-        <span class="flow-label">↓ validate before execution</span>
-        <div class="approval-box">✓ Human approval for destructive actions</div>
+        <span class="flow-label flow-connector approval-connector"
+          ><i aria-hidden="true"></i
+          ><span>validate before execution</span></span
+        >
+        <div class="approval-box">
+          <span class="approval-lock" aria-hidden="true">⊓</span
+          ><strong>Human approval</strong
+          ><span>Destructive actions wait for you.</span>
+        </div>
       </div>
     </section>
     <section class="sdk-section wrap" aria-labelledby="sdk-heading">

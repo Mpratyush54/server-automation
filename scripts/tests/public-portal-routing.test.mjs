@@ -33,6 +33,7 @@ before(async () => {
   await cp(join(repo, 'platform/portal/public'), root, { recursive: true });
   await mkdir(join(root, 'assets'));
   await writeFile(join(root, 'index.html'), html);
+  await writeFile(join(root, 'main-TEST1234.js'), '/* content-named bundle fixture */');
   pages = await prerenderDocs({ docsDir: join(root, 'docs'), outputDir: root });
   home = await prerenderLanding({ outputDir: root });
   for (const page of pages) {
@@ -134,15 +135,27 @@ test('public video, poster, and captions have browser-compatible media types', a
   for (const [file, mime] of [
     ['platform-overview.mp4', 'video/mp4'], ['platform-short.mp4', 'video/mp4'],
     ['platform-overview-poster.jpg', 'image/jpeg'],
+    ['platform-short-poster.jpg', 'image/jpeg'],
     ['platform-overview.en.vtt', 'text/vtt'], ['platform-short.en.vtt', 'text/vtt'],
   ]) {
     const response = await fetch(`${baseUrl}/media/${file}`);
     assert.equal(response.status, 200, file);
     assert.equal(response.headers.get('content-type'), mime, file);
+    assert.match(response.headers.get('cache-control'), /public, max-age=3600/);
+    assert.match(response.headers.get('cloudflare-cdn-cache-control'), /max-age=604800/);
     const bytes = await response.arrayBuffer();
     assert.ok(bytes.byteLength > 0, file);
     if (file.endsWith('.vtt')) assert.match(new TextDecoder().decode(bytes), /^WEBVTT/);
   }
+});
+
+test('content-named bundles are immutable while HTML revalidates', async () => {
+  const bundle = await fetch(`${baseUrl}/main-TEST1234.js`);
+  assert.equal(bundle.status, 200);
+  assert.match(bundle.headers.get('cache-control'), /max-age=31536000, immutable/);
+  const page = await fetch(baseUrl);
+  assert.equal(page.headers.get('cache-control'), 'public, max-age=0, must-revalidate');
+  assert.equal(page.headers.get('cloudflare-cdn-cache-control'), null);
 });
 
 test('both videos support byte-range seeking without authentication', async () => {
@@ -186,6 +199,12 @@ test('the homepage explains the product and links to real docs without JavaScrip
   assert.ok(!document.includes('{{'));
   assert.ok(!document.includes('routerLink='));
   assert.ok(!document.includes('three.min.js'));
+  assert.match(document, /data-story-step="0"/);
+  assert.match(document, /class="story-chapters"/);
+  assert.ok(!document.includes('Read the video transcript'));
+  assert.ok(!document.includes('Download the portrait cut'));
+  assert.ok(!document.includes('Conceptual illustrations · English narration'));
+  assert.match(document, /platform-short\.mp4\?v=[a-f0-9]{12}/);
   for (const link of document.matchAll(/href="(\/docs[^"]*)"/g)) {
     const url = link[1].split('#')[0];
     assert.ok(rendered.has(url), `Landing-page docs link has no generated page: ${url}`);
