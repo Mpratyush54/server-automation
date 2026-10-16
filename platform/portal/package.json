@@ -5,8 +5,10 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
+    "build:public": "ng build && node scripts/prerender-docs.mjs",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "test:docs": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.docs-spec.json --include=src/app/guards/docs.matcher.spec.ts --include=src/app/pages/docs/docs.component.spec.ts"
   },
   "private": true,
   "dependencies": {
