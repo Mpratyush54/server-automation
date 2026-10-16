@@ -8,13 +8,67 @@ export async function prerenderLanding({
   outputDir = join(portal, "dist/portal/browser"),
 } = {}) {
   const directory = join(portal, "src/app/pages/landing");
+  const mediaSource = await readFile(
+    join(directory, "landing-media.ts"),
+    "utf8",
+  );
+  const media = JSON.parse(mediaSource.match(/=\s*({[\s\S]*})\s+as const;/)[1]);
+  const initial = {
+    storyStep: 0,
+    storyPaused: false,
+    storyVisible: true,
+    landscapeStarted: false,
+    portraitStarted: false,
+    videoError: "",
+  };
+  const value = (expression) => {
+    const expressionValue = expression.trim();
+    if (expressionValue.startsWith("media.")) {
+      const result = media[expressionValue.slice(6)];
+      if (!result) throw new Error(`Unknown media binding: ${expressionValue}`);
+      return result;
+    }
+    if (Object.hasOwn(initial, expressionValue))
+      return initial[expressionValue];
+    if (expressionValue === "!videoError") return true;
+    if (expressionValue === "storyPaused || !storyVisible") return false;
+    const comparison = expressionValue.match(
+      /^storyStep\s*(===|!==)\s*([0-4])$/,
+    );
+    if (comparison)
+      return comparison[1] === "==="
+        ? Number(comparison[2]) === 0
+        : Number(comparison[2]) !== 0;
+    throw new Error(`Unhandled initial landing binding: ${expressionValue}`);
+  };
   // Use the actual component markup and CSS, so the initial HTML and the
   // interactive page have one source. Fail if a future binding needs handling.
   const template = (
     await readFile(join(directory, "landing.component.html"), "utf8")
   )
     .replace(/\s+routerLink="([^"]*)"/g, ' href="$1"')
+    .replace(/\s+#\w+(?:="[^"]*")?/g, "")
     .replace(/\s+\([^)]+\)="[^"]*"/g, "")
+    .replace(/\s+\[([^\]]+)\]="([^"]*)"/g, (_, binding, expression) => {
+      const result = value(expression);
+      if (binding.startsWith("class."))
+        return result
+          ? (() => {
+              throw new Error(
+                "Initial class bindings must be represented in the static class attribute",
+              );
+            })()
+          : "";
+      if (binding === "hidden") return result ? " hidden" : "";
+      // Keep native controls as the no-JavaScript fallback. Angular replaces
+      // them with the cover button until playback starts.
+      if (binding === "controls") return "";
+      const attribute = binding.startsWith("attr.")
+        ? binding.slice(5)
+        : binding;
+      return ` ${attribute}="${String(result).replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"`;
+    })
+    .replace(/\{\{\s*videoError\s*\}\}/g, "")
     .replace(
       /\{\{\s*installCopied\s*\?\s*['"]Copied['"]\s*:\s*['"]Copy commands['"]\s*\}\}/,
       "Copy commands",
@@ -56,7 +110,7 @@ export async function prerenderLanding({
     .replace(
       "<app-root></app-root>",
       () =>
-        `<app-root><style id="landing-initial-styles">${css}</style>${template}</app-root>`,
+        `<app-root><style id="landing-initial-styles">${css}</style><noscript><style>.cinema-cover { display: none !important; }</style></noscript>${template}</app-root>`,
     )
     .replace(
       "</head>",
