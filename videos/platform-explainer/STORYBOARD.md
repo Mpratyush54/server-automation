@@ -10,7 +10,7 @@ captions: none
 ---
 
 ## Video direction
-Cream canvas, ink wireframes, coral emphasis. Bold, readable developer editorial. Four beats for landscape, two for portrait. All visual props must come from actual repository entities. Clean hard cuts between frames; no cross-frame handoff. Conceptual diagrams, not claimed real UI. Each scene develops in three phases. Narration is local Ava (Microsoft neural voice). An original score runs under it; use the voiceover carve before checks. Closed captions are delivered as WebVTT and the website includes the full transcript.
+Cream canvas, ink wireframes, coral emphasis. Bold, readable developer editorial. Four beats for landscape, two for portrait. All visual props must come from actual repository entities. Clean hard cuts between frames; no cross-frame handoff. Conceptual diagrams, not claimed real UI. Each scene develops in three phases. Narration uses Microsoft neural voice Ava. An original score runs under it; use the voiceover carve before checks. Closed captions are delivered as WebVTT and SCRIPT.md retains the full transcript.
 
 ## Frame 1 — Your app deserves a home you control
 
