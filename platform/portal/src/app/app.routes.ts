@@ -29,6 +29,7 @@ import { DocsComponent } from './pages/docs/docs.component';
 import { ProfileComponent } from './pages/profile/profile.component';
 
 import { authGuard } from './guards/auth.guard';
+import { docsMatcher } from './guards/docs.matcher';
 import { appHostGuard, marketingOnlyGuard, isPublicMarketingHost } from './guards/public-domain.guard';
 import { AuthService } from './services/auth.service';
 
@@ -49,9 +50,7 @@ export const routes: Routes = [
 
   // Marketing site only (platform.pratyushes.dev)
   { path: 'landing', component: LandingComponent, canActivate: [marketingOnlyGuard] },
-  { path: 'docs', component: DocsComponent, canActivate: [marketingOnlyGuard] },
-  { path: 'docs/:section', component: DocsComponent, canActivate: [marketingOnlyGuard] },
-  { path: 'docs/:section/:page', component: DocsComponent, canActivate: [marketingOnlyGuard] },
+  { matcher: docsMatcher, component: DocsComponent, canActivate: [marketingOnlyGuard] },
 
   // App / server hosts only
   { path: 'login', component: LoginComponent, canActivate: [appHostGuard] },

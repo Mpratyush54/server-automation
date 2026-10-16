@@ -1,14 +1,14 @@
-import { Component, OnInit, ViewEncapsulation, HostListener, ElementRef, AfterViewChecked, ChangeDetectorRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, OnDestroy, ViewEncapsulation, HostListener, ElementRef, AfterViewChecked, ChangeDetectorRef, inject } from '@angular/core';
+import { CommonModule, DOCUMENT } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { DomSanitizer, Meta, SafeHtml, Title } from '@angular/platform-browser';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 import mermaid from 'mermaid';
 import { catchError } from 'rxjs/operators';
-import { of } from 'rxjs';
+import { of, Subscription } from 'rxjs';
 
 interface DocPage {
   label: string;
@@ -30,7 +30,10 @@ interface DocSection {
   templateUrl: './docs.component.html',
   styleUrl: './docs.component.css',
 })
-export class DocsComponent implements OnInit, AfterViewChecked {
+export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
+  private document = inject(DOCUMENT);
+  private title = inject(Title);
+  private meta = inject(Meta);
   content: SafeHtml | null = null;
   isLoading = true;
   currentSection = '';
@@ -47,6 +50,8 @@ export class DocsComponent implements OnInit, AfterViewChecked {
   private agentCopyTimer: ReturnType<typeof setTimeout> | null = null;
   private rendering = false;
   private tocObserver: IntersectionObserver | null = null;
+  private routeSubscription?: Subscription;
+  private loadSubscription?: Subscription;
 
   docSections: DocSection[] = [
     {
@@ -271,9 +276,10 @@ export class DocsComponent implements OnInit, AfterViewChecked {
   }
 
   ngOnInit() {
-    this.route.paramMap.subscribe(params => {
+    this.routeSubscription = this.route.paramMap.subscribe(params => {
       const section = params.get('section');
       const page = params.get('page');
+      const requested = [section, page].filter(Boolean).join('/');
 
       // Reset scroll on every docs navigation. The router-level
       // scrollPositionRestoration in app.config.ts only fires when the routed
@@ -282,26 +288,39 @@ export class DocsComponent implements OnInit, AfterViewChecked {
       // leaves the scroll where it was. Do it by hand.
       this.scrollToTop();
 
+      const category = requested && this.flatPages.find(p =>
+        p.section === requested || p.section.startsWith(requested + '/')
+      );
+      if (category) {
+        this.router.navigateByUrl(this.docUrl(category), { replaceUrl: true });
+        return;
+      }
       if (section && page) {
         this.currentSection = section;
         this.currentPage = page;
         this.loadMarkdown(`/docs/${section}/${page}.md`);
       } else if (section) {
-        const found = this.flatPages.find(p =>
-          p.section === section || p.section.startsWith(section + '/')
-        );
-        if (found) {
-          this.router.navigate(['/docs', found.section, found.page], { replaceUrl: true });
-          return;
-        }
-        this.isLoading = false;
-        this.content = null;
+        this.currentSection = '';
+        this.currentPage = section;
+        this.loadMarkdown(`/docs/${section}.md`);
       } else {
         this.currentSection = '';
         this.currentPage = '';
         this.loadMarkdown('/docs/index.md');
       }
     });
+  }
+
+  ngOnDestroy() {
+    this.routeSubscription?.unsubscribe();
+    this.loadSubscription?.unsubscribe();
+    this.tocObserver?.disconnect();
+    if (this.agentCopyTimer) clearTimeout(this.agentCopyTimer);
+    this.updateMetadata(
+      'Platform — From server to platform. Simplified.',
+      'Self-hosted Kubernetes PaaS: one-click deploys, secrets, databases, observability, SDKs, and MCP for AI agents. Docs and landing at platform.pratyushes.dev.',
+      'https://platform.pratyushes.dev/'
+    );
   }
 
   private scrollToTop() {
@@ -445,23 +464,43 @@ export class DocsComponent implements OnInit, AfterViewChecked {
 
   @HostListener('click', ['$event'])
   onClick(event: MouseEvent) {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     const target = event.target as HTMLElement;
     const anchor = target.closest('a');
-    if (!anchor || !anchor.getAttribute('href')) return;
+    if (!anchor?.closest('.docs-markdown') || !anchor.getAttribute('href') || anchor.target === '_blank') return;
     const href = anchor.getAttribute('href')!;
 
     if (href.startsWith('/docs/')) {
       event.preventDefault();
-      const parts = href.replace('/docs/', '').split('/');
-      if (parts.length >= 2) {
-        this.router.navigate(['/docs', parts[0], parts[1]]);
-      }
+      this.router.navigateByUrl(href);
     }
   }
 
   navigateTo(page: DocPage) {
     this.mobileNavOpen = false;
-    this.router.navigate(['/docs', page.section, page.page]);
+    this.router.navigateByUrl(this.docUrl(page));
+  }
+
+  docUrl(page: DocPage): string {
+    return `/docs/${page.section}/${page.page}`;
+  }
+
+  private updateMetadata(title: string, description: string, canonical: string) {
+    this.title.setTitle(title);
+    this.meta.updateTag({ name: 'description', content: description });
+    this.meta.updateTag({ name: 'robots', content: 'index,follow,max-image-preview:large' });
+    this.meta.updateTag({ property: 'og:title', content: title });
+    this.meta.updateTag({ property: 'og:description', content: description });
+    this.meta.updateTag({ property: 'og:url', content: canonical });
+    this.meta.updateTag({ name: 'twitter:title', content: title });
+    this.meta.updateTag({ name: 'twitter:description', content: description });
+    let link = this.document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    if (!link) {
+      link = this.document.createElement('link');
+      link.rel = 'canonical';
+      this.document.head.appendChild(link);
+    }
+    link.href = canonical;
   }
 
   isActive(page: DocPage): boolean {
@@ -576,17 +615,19 @@ export class DocsComponent implements OnInit, AfterViewChecked {
   }
 
   private async loadMarkdown(path: string) {
+    this.loadSubscription?.unsubscribe();
     this.isLoading = true;
     this.content = null;
     this.rawMarkdown = '';
     this.markdownPath = path;
     this.agentCopyFeedback = null;
-    this.http.get(path, { responseType: 'text' })
+    this.loadSubscription = this.http.get(path, { responseType: 'text' })
       .pipe(
         catchError(() => {
           this.isLoading = false;
           this.content = null;
           this.rawMarkdown = '';
+          this.meta.updateTag({ name: 'robots', content: 'noindex,follow' });
           return of(null);
         })
       )
@@ -594,6 +635,11 @@ export class DocsComponent implements OnInit, AfterViewChecked {
         if (text) {
           try {
             this.rawMarkdown = text;
+            const heading = text.match(/^#\s+(.+)$/m)?.[1].replace(/[*`]/g, '').trim() || 'Documentation';
+            const title = `${heading} | Platform Docs`;
+            const description = `Read ${heading} in the Platform documentation. Guides and reference for the self-hosted Platform control plane.`;
+            const canonical = 'https://platform.pratyushes.dev' + (path === '/docs/index.md' ? '/docs' : path.replace(/\.md$/, ''));
+            this.updateMetadata(title, description, canonical);
             // Rewrite relative `.md` links so they resolve against the CURRENT
             // section, not against the docs root. Before this fix, a link like
             // `[Deployments API](deployments.md)` inside

@@ -43,7 +43,7 @@
             *ngFor="let page of section.pages"
             class="docs-nav-link"
             [class.active]="isActive(page)"
-            (click)="navigateTo(page)"
+            [routerLink]="docUrl(page)" (click)="mobileNavOpen = false"
           >{{ page.label }}</a>
         </div>
       </nav>
@@ -93,14 +93,14 @@
         <!-- Footer nav -->
         <div *ngIf="!isLoading && content" class="docs-page-nav">
           <div class="docs-page-nav-row">
-            <a *ngIf="prevPage" class="docs-nav-item docs-nav-prev" (click)="navigateTo(prevPage)">
+            <a *ngIf="prevPage" class="docs-nav-item docs-nav-prev" [routerLink]="docUrl(prevPage)">
               <span class="docs-nav-arrow">&larr;</span>
               <span class="docs-nav-text">
                 <span class="docs-nav-label">Previous</span>
                 <span class="docs-nav-title">{{ prevPage.label }}</span>
               </span>
             </a>
-            <a *ngIf="nextPage" class="docs-nav-item docs-nav-next" (click)="navigateTo(nextPage)">
+            <a *ngIf="nextPage" class="docs-nav-item docs-nav-next" [routerLink]="docUrl(nextPage)">
               <span class="docs-nav-text">
                 <span class="docs-nav-label">Next</span>
                 <span class="docs-nav-title">{{ nextPage.label }}</span>
