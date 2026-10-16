@@ -317,8 +317,8 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.tocObserver?.disconnect();
     if (this.agentCopyTimer) clearTimeout(this.agentCopyTimer);
     this.updateMetadata(
-      'Platform — From server to platform. Simplified.',
-      'Self-hosted Kubernetes PaaS: one-click deploys, secrets, databases, observability, SDKs, and MCP for AI agents. Docs and landing at platform.pratyushes.dev.',
+      'Platform — Self-hosted Developer Platform for Kubernetes',
+      'Turn your Ubuntu server into a self-hosted developer platform. Deploy with GitOps, connect databases, manage secrets, and inspect logs with scoped MCP tools.',
       'https://platform.pratyushes.dev/'
     );
   }
@@ -363,7 +363,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     container.querySelectorAll('pre code.language-bash, pre code.language-sh, pre code.language-shell').forEach((block: unknown) => {
       const el = block as HTMLElement;
       let html = el.innerHTML;
-      
+
       // Prompts
       html = html.replace(
         /^(\s*)(\$)\s/gm,
@@ -374,7 +374,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
       const cliCommands = ['docker', 'docker-compose', 'npm', 'git', 'kubectl', 'helm', 'ng', 'python', 'node', 'npx', 'sudo', 'apt', 'apt-get'];
       const cliRegex = new RegExp(`(^|>|\\s)(${cliCommands.join('|')})(?=\\s|$)`, 'gm');
       html = html.replace(cliRegex, '$1<span class="hljs-built_in">$2</span>');
-      
+
       el.innerHTML = html;
     });
 
@@ -382,12 +382,12 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     container.querySelectorAll('pre code.language-python').forEach((block: unknown) => {
       const el = block as HTMLElement;
       let html = el.innerHTML;
-      
+
       // SDK Classes highlight.js misses when instantiated
       const pyClasses = ['MongoClient', 'PostgresPool', 'RedisClient', 'PlatformClient', 'MongoManager', 'PostgresManager', 'RedisManager'];
       const pyRegex = new RegExp(`(^|>|\\s|\\.)(${pyClasses.join('|')})(?=\\s|\\(|$)`, 'g');
       html = html.replace(pyRegex, '$1<span class="hljs-title class_">$2</span>');
-      
+
       el.innerHTML = html;
     });
 
@@ -395,7 +395,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     container.querySelectorAll('pre code.language-env, pre code.language-dotenv, pre code.language-properties').forEach((block: unknown) => {
       const el = block as HTMLElement;
       let html = el.innerHTML;
-      
+
       // Match KEY=value pattern if it's not already inside a span (basic fallback)
       html = html.replace(/^([A-Z0-9_]+)=(.+)$/gm, (match, key, value) => {
         // If hljs already wrapped the whole thing, just replace the inner text
@@ -403,7 +403,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
         const cleanVal = value.replace(/<[^>]*>/g, '');
         return `<span class="hljs-attr">${cleanKey}</span>=<span class="hljs-string">${cleanVal}</span>`;
       });
-      
+
       el.innerHTML = html;
     });
 

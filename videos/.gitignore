@@ -1,0 +1,15 @@
+**/node_modules/
+**/.hyperframes/
+**/.thumbnails/
+**/.waveform-cache/
+**/renders/
+**/CLAUDE.md
+**/assets/voice-test.wav
+**/.media/*.json*
+**/.media/index.md
+**/.media/prefs*
+**/package-lock.json
+**/audio_request.json
+**/.media/audio/voice/*.txt
+**/.media/audio/voice/*.neural.mp3
+**/.media/audio/bgm/*.wav

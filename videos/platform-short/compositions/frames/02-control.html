@@ -1,0 +1,112 @@
+<template>
+  <style>
+    @font-face{font-family:'Archivo Black';src:url('assets/fonts/ArchivoBlack.ttf') format('truetype');font-weight:400}
+    @font-face{font-family:'Space Grotesk';src:url('assets/fonts/SpaceGrotesk.ttf') format('truetype');font-weight:100 900}
+    @font-face{font-family:'JetBrains Mono';src:url('assets/fonts/JetBrainsMono.ttf') format('truetype');font-weight:100 900}
+    #f-02-control-root{position:relative;width:100%;height:100%;overflow:hidden;container-type:size;color:#28251f;font-family:'Space Grotesk'}
+    [id^='f-02-control-']{box-sizing:border-box}
+    #f-02-control-ground{position:absolute;inset:0;background:#f6f3eb;container-type:size}
+    [data-control-ground]{position:absolute;inset:0;background:#f6f3eb;container-type:size}
+    [data-control-close-ground]{position:absolute;inset:0;background:#843025}
+    [data-control-diagram],[data-control-finale]{position:absolute;inset:0;transform-origin:50% 45%}
+    [data-control-kicker]{position:absolute;left:8cqw;top:15.2cqw;font-family:'JetBrains Mono';font-size:4.1cqw;line-height:1.4;letter-spacing:.06em}
+    [data-control-heading]{position:absolute;left:8cqw;top:25cqw;width:84cqw;margin:0;font-family:'Archivo Black';font-size:9.4cqw;line-height:.98;letter-spacing:-.01em;text-transform:uppercase}
+    [data-control-heading] span{display:block}
+    [data-control-heading] span:last-child{color:#2c6a46}
+    [data-control-node]{position:absolute;left:8cqw;width:84cqw;border:.4cqw solid #28251f;padding:2.7cqw 3.4cqw;background:#f6f3eb}
+    [data-control-node] strong{display:block;font-family:'Archivo Black';font-size:5.5cqw;line-height:1.05;font-weight:400;text-transform:uppercase}
+    [data-control-node] small{display:block;font-family:'JetBrains Mono';font-size:4.1cqw;line-height:1.4;margin-top:1.3cqw}
+    [data-control-client]{top:58cqw;height:15cqw}
+    [data-control-guard]{top:85cqw;height:18cqw;background:#8DCFA9}
+    [data-control-gate]{top:117cqw;height:20cqw;background:#ECC2BC;transform-origin:50% 0;box-shadow:1.25cqw 1.25cqw 0 #2c6a46,1.25cqw 1.25cqw 0 .2cqw #28251f}
+    [data-control-rail]{position:absolute;left:0;top:0;width:100cqw;height:145cqw;overflow:visible;pointer-events:none}
+    [data-control-rail] path{fill:none;stroke:#28251f;stroke-width:6;stroke-linecap:square;stroke-linejoin:miter}
+    [data-control-rail] rect{fill:#c94d3c;stroke:#28251f;stroke-width:3}
+    #f-02-control-token{position:absolute;left:8cqw;top:50.8cqw;padding:.7cqw 1.6cqw;border:.28cqw solid #28251f;background:#ECC2BC;font-family:'JetBrains Mono';font-size:3.5cqw;line-height:1.25;letter-spacing:.035em}
+    #f-02-control-pending{position:absolute;left:8cqw;top:141.2cqw;color:#843025;font-family:'JetBrains Mono';font-size:3.5cqw;line-height:1.3;letter-spacing:.035em}
+    [data-control-logo]{position:absolute;left:14cqw;top:26cqw;width:72cqw;height:48cqw;object-fit:contain;border:.4cqw solid #f6f3eb}
+    [data-control-final-heading]{position:absolute;left:8cqw;top:87cqw;width:84cqw;margin:0;color:#f6f3eb;font-family:'Archivo Black';font-size:9.4cqw;line-height:.98;letter-spacing:-.01em;text-transform:uppercase}
+    [data-control-final-heading] span{display:block}
+    [data-control-doc-label]{position:absolute;left:8cqw;top:126cqw;color:#8DCFA9;font-family:'JetBrains Mono';font-size:4.1cqw;line-height:1.4;letter-spacing:.06em}
+    [data-control-url]{position:absolute;left:8cqw;top:137cqw;width:84cqw;color:#f6f3eb;font-family:'JetBrains Mono';font-size:4.1cqw;line-height:1.4;white-space:nowrap;letter-spacing:-.03em}
+  </style>
+  <div id="f-02-control-root" data-composition-id="02-control" data-width="1080" data-height="1920" data-duration="12.5">
+    <div id="f-02-control-ground" data-control-ground class="clip" data-start="0" data-duration="12.5" data-track-index="0"></div>
+    <!-- Only the empty full-canvas camera wrapper crosses the canvas edge;
+         diagram content keeps its authored 8cqw inset throughout the push. -->
+    <div id="f-02-control-diagram" data-control-diagram data-layout-allow-overflow>
+      <div id="f-02-control-kicker" data-control-kicker>SCOPED MCP ACCESS</div>
+      <h1 data-control-heading><span id="f-02-control-title-a">YOUR TOOLS.</span><span id="f-02-control-title-b">CONNECTED.</span></h1>
+      <div id="f-02-control-token">SCOPED TOKEN</div>
+      <svg data-control-rail viewBox="0 0 1080 1566" aria-hidden="true">
+        <path id="f-02-control-route-a" d="M540 788.4 L540 918 M518 894 L540 918 L562 894"/>
+        <path id="f-02-control-route-b" d="M540 1112.4 L540 1263.6 M518 1239.6 L540 1263.6 L562 1239.6"/>
+        <!-- Registry offset-path-traveler adaptation: one command artifact per
+             authored rail; destructive command stops before the human gate. -->
+        <g id="f-02-control-command-a"><rect x="523" y="789" width="34" height="34" rx="2"/></g>
+        <g id="f-02-control-command-b"><rect x="523" y="1095.4" width="34" height="34" rx="2"/></g>
+      </svg>
+      <div id="f-02-control-client" data-control-node data-control-client><strong>MCP CLIENT</strong></div>
+      <div id="f-02-control-guard" data-control-node data-control-guard><strong>PLATFORM</strong><small>Command guard</small></div>
+      <div id="f-02-control-gate" data-control-node data-control-gate><strong>HUMAN APPROVAL</strong><small>Destructive actions</small></div>
+      <div id="f-02-control-pending">AWAITING HUMAN</div>
+    </div>
+    <div id="f-02-control-close-ground" data-control-close-ground class="clip" data-start="8.4" data-duration="4.1" data-track-index="1"></div>
+    <!-- The tiny final camera push retains the 8cqw inset around all content. -->
+    <div id="f-02-control-finale" data-control-finale data-layout-allow-overflow>
+      <div data-control-kicker style="color:#f6f3eb">PLATFORM</div>
+      <img id="f-02-control-logo" data-control-logo src="assets/logo-light.png" alt="Platform"/>
+      <h2 data-control-final-heading><span id="f-02-control-server">YOUR SERVER.</span><span id="f-02-control-apps">YOUR APPS.</span></h2>
+      <div id="f-02-control-doc-label" data-control-doc-label>START WITH THE DOCS</div>
+      <div id="f-02-control-url" data-control-url>platform.pratyushes.dev/docs</div>
+    </div>
+  </div>
+  <script src="assets/gsap.min.js"></script>
+  <script>
+    (function(){
+      var tl=gsap.timeline({paused:true});
+      var ids=['f-02-control-kicker','f-02-control-title-a','f-02-control-title-b','f-02-control-client','f-02-control-guard'];
+      var starts=[.05,.18,.36,1.12,3.25];
+      var durations=[.13,.2,.17,.18,.18];
+      var offsets=[38,80,65,60,60];
+      ids.forEach(function(id,i){
+        var el=document.getElementById(id);
+        tl.set(el,{opacity:0,y:offsets[i]},0);
+        tl.set(el,{opacity:1,y:offsets[i]},starts[i]);
+        tl.to(el,{y:0,duration:durations[i],ease:'power4.out'},starts[i]);
+      });
+      tl.fromTo('#f-02-control-token',{opacity:0,y:22},{opacity:1,y:0,duration:.3,ease:'power3.out'},1.65);
+      ['f-02-control-route-a','f-02-control-route-b'].forEach(function(id,i){
+        var p=document.getElementById(id),len=p.getTotalLength();
+        tl.set(p,{strokeDasharray:len,strokeDashoffset:len},0);
+        tl.to(p,{strokeDashoffset:0,duration:.64,ease:'power2.out'},i===0?2.05:4.85);
+      });
+      tl.set(['#f-02-control-command-a','#f-02-control-command-b'],{opacity:0,y:0},0);
+      tl.fromTo('#f-02-control-command-a',{opacity:0},{opacity:1,duration:.08,immediateRender:false},2.65);
+      tl.fromTo('#f-02-control-command-a',{y:0},{y:95,duration:.9,ease:'none',immediateRender:false},2.73);
+      tl.to('#f-02-control-command-a',{opacity:0,duration:.12},3.51);
+      tl.fromTo('#f-02-control-guard',{backgroundColor:'#8DCFA9'},{backgroundColor:'#bce5c9',duration:.45,repeat:1,yoyo:true,ease:'sine.inOut',immediateRender:false},3.75);
+      tl.fromTo('#f-02-control-gate',{scale:.8,opacity:0},{scale:1,opacity:1,duration:.6,ease:'power3.out'},5.35);
+      tl.fromTo('#f-02-control-command-b',{opacity:0},{opacity:1,duration:.08,immediateRender:false},5.95);
+      tl.fromTo('#f-02-control-command-b',{y:0},{y:129.2,duration:1.05,ease:'power2.out',immediateRender:false},6.03);
+      tl.fromTo('#f-02-control-pending',{opacity:0,y:14},{opacity:1,y:0,duration:.3,ease:'power3.out'},7.13);
+      // The artifact holds outside the gate. No approval or execution is shown.
+      tl.fromTo('#f-02-control-diagram',{scale:1,y:0},{scale:1.018,y:-14,duration:7.4,ease:'none'},.2);
+      tl.to('#f-02-control-diagram',{y:-180,duration:.3,ease:'power4.in'},8.1);
+      tl.to('#f-02-control-diagram',{opacity:0,duration:.28,ease:'power1.in'},8.1);
+      tl.set('#f-02-control-finale',{opacity:0,y:180},0);
+      tl.fromTo('#f-02-control-finale',{y:180,opacity:.35},{y:0,opacity:1,duration:.3,ease:'power4.out',immediateRender:false},8.4);
+      tl.fromTo('#f-02-control-logo',{scale:0,opacity:0},{scale:1,opacity:1,duration:.65,ease:'power3.out'},8.45);
+      [['f-02-control-server',9.12,75,.2],['f-02-control-apps',9.3,55,.17],['f-02-control-doc-label',9.65,45,.15],['f-02-control-url',10.02,60,.18]].forEach(function(item){
+        var el=document.getElementById(item[0]);
+        tl.set(el,{opacity:0,y:item[2]},0);
+        tl.set(el,{opacity:1,y:item[2]},item[1]);
+        tl.to(el,{y:0,duration:item[3],ease:'power4.out'},item[1]);
+      });
+      tl.fromTo('#f-02-control-finale',{scale:1},{scale:1.007,duration:3.05,ease:'none',immediateRender:false},9.2);
+      tl.set({}, {},12.5);
+      window.__timelines=window.__timelines||{};
+      window.__timelines['02-control']=tl;
+    })();
+  </script>
+</template>

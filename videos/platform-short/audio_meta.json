@@ -1,0 +1,82 @@
+{
+  "bgm": {
+    "path": ".media/audio/bgm/original-score.mp3",
+    "volume": 0.15,
+    "duration_s": 21.568,
+    "query": "Original instrumental: warm minimal electronic, 96 BPM, no samples"
+  },
+  "bgm_pending": false,
+  "voices": [
+    {
+      "words": [],
+      "duration_s": 8.568,
+      "path": ".media/audio/voice/01-server.wav",
+      "frame": 1,
+      "cues": [
+        {
+          "start": 0.05,
+          "end": 1.1835106,
+          "text": "Your server."
+        },
+        {
+          "start": 1.1835106,
+          "end": 2.8989361,
+          "text": "Your developer platform."
+        },
+        {
+          "start": 2.8989361,
+          "end": 8.4973403,
+          "text": "Deploy with GitOps, connect your databases, and see your apps in one place."
+        }
+      ],
+      "provider": "Microsoft Edge online speech",
+      "voice": "en-US-AvaMultilingualNeural",
+      "rate": "-6%",
+      "start_s": 0.15,
+      "scene_duration_s": 9.068
+    },
+    {
+      "words": [],
+      "duration_s": 11.736,
+      "path": ".media/audio/voice/02-control.wav",
+      "frame": 2,
+      "cues": [
+        {
+          "start": 0.05,
+          "end": 3.4042553,
+          "text": "Platform connects your tools on Kubernetes."
+        },
+        {
+          "start": 3.4042553,
+          "end": 10.0531914,
+          "text": "Add scoped MCP access for your AI agents, with human approval for destructive actions."
+        },
+        {
+          "start": 10.0531915,
+          "end": 11.662234,
+          "text": "Start with the docs."
+        }
+      ],
+      "provider": "Microsoft Edge online speech",
+      "voice": "en-US-AvaMultilingualNeural",
+      "rate": "-6%",
+      "start_s": 9.218,
+      "scene_duration_s": 12.5
+    }
+  ],
+  "sfx": [
+    {
+      "file": ".media/audio/sfx/sfx_001.mp3",
+      "duration_s": 0.4,
+      "frame": 2,
+      "volume": 0.1,
+      "offset_s": 1.5
+    }
+  ],
+  "narration": {
+    "provider": "Microsoft Edge online speech",
+    "voice": "en-US-AvaMultilingualNeural",
+    "pronunciations": "../pronunciation.json"
+  },
+  "total_duration_s": 21.568
+}

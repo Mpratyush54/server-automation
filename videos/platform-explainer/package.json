@@ -1,0 +1,14 @@
+{
+  "name": "platform-explainer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes hyperframes@0.8.164 preview",
+    "check": "npx --yes hyperframes@0.8.164 check",
+    "render": "npx --yes hyperframes@0.8.164 render",
+    "publish": "npx --yes hyperframes@0.8.164 publish"
+  },
+  "devDependencies": {
+    "@hyperframes/core": "^0.8.164"
+  }
+}

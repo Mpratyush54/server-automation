@@ -9,14 +9,18 @@ import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { setTimeout } from 'node:timers/promises';
 import { prerenderDocs } from '../../platform/portal/scripts/prerender-docs.mjs';
+import { prerenderLanding } from '../../platform/portal/scripts/prerender-landing.mjs';
 
 // Run against a real nginx process: NGINX_BIN=/path/to/nginx node --test <this file>.
 const repo = fileURLToPath(new URL('../../', import.meta.url));
-const html = await readFile(process.env.PORTAL_BUILD_DIR
+const html = (await readFile(process.env.PORTAL_BUILD_DIR
   ? join(resolve(process.env.PORTAL_BUILD_DIR), 'index.html')
-  : join(repo, 'platform/portal/src/index.html'), 'utf8');
+  : join(repo, 'platform/portal/src/index.html'), 'utf8'))
+  .replace(/<app-root>[\s\S]*<\/app-root>/, '<app-root></app-root>')
+  .replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/g, '');
 const rendered = new Map();
 let pages;
+let home;
 let directory;
 let nginx;
 let baseUrl;
@@ -30,6 +34,7 @@ before(async () => {
   await mkdir(join(root, 'assets'));
   await writeFile(join(root, 'index.html'), html);
   pages = await prerenderDocs({ docsDir: join(root, 'docs'), outputDir: root });
+  home = await prerenderLanding({ outputDir: root });
   for (const page of pages) {
     const path = new URL(page).pathname;
     rendered.set(path, await readFile(join(root, 'prerender', path, 'index.html'), 'utf8'));
@@ -100,7 +105,7 @@ for (const userAgent of ['Mozilla/5.0', 'Googlebot/2.1 (+http://www.google.com/b
       const response = await fetch(baseUrl + path, { redirect: 'manual', headers: { 'User-Agent': userAgent } });
       assert.equal(response.status, 200);
       assert.match(response.headers.get('content-type'), /^text\/html/);
-      assert.equal(await response.text(), rendered.get(path.replace(/\/$/, '')) || html);
+      assert.equal(await response.text(), rendered.get(path.replace(/\/$/, '')) || home);
     });
   }
 }
@@ -118,12 +123,37 @@ for (const path of ['/robots.txt', '/llms.txt', '/llms-full.txt', '/docs/index.m
   });
 }
 
-for (const path of ['/docs/missing.md', '/assets/missing.js', '/prerender/docs/index.html']) {
+for (const path of ['/docs/missing.md', '/assets/missing.js', '/media/missing.mp4', '/prerender/docs/index.html']) {
   test(`missing static content returns 404 at ${path}`, async () => {
     const response = await fetch(baseUrl + path, { redirect: 'manual' });
     assert.equal(response.status, 404);
   });
 }
+
+test('public video, poster, and captions have browser-compatible media types', async () => {
+  for (const [file, mime] of [
+    ['platform-overview.mp4', 'video/mp4'], ['platform-short.mp4', 'video/mp4'],
+    ['platform-overview-poster.jpg', 'image/jpeg'],
+    ['platform-overview.en.vtt', 'text/vtt'], ['platform-short.en.vtt', 'text/vtt'],
+  ]) {
+    const response = await fetch(`${baseUrl}/media/${file}`);
+    assert.equal(response.status, 200, file);
+    assert.equal(response.headers.get('content-type'), mime, file);
+    const bytes = await response.arrayBuffer();
+    assert.ok(bytes.byteLength > 0, file);
+    if (file.endsWith('.vtt')) assert.match(new TextDecoder().decode(bytes), /^WEBVTT/);
+  }
+});
+
+test('both videos support byte-range seeking without authentication', async () => {
+  for (const file of ['platform-overview.mp4', 'platform-short.mp4']) {
+    const response = await fetch(`${baseUrl}/media/${file}`, { headers: { Range: 'bytes=0-1023' } });
+    assert.equal(response.status, 206, file);
+    assert.match(response.headers.get('content-range'), /^bytes 0-1023\/\d+$/);
+    const source = await readFile(join(repo, 'platform/portal/public/media', file));
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), source.subarray(0, 1024));
+  }
+});
 
 test('every generated sitemap URL serves readable HTML with its own canonical', async () => {
   const sitemap = await (await fetch(`${baseUrl}/sitemap.xml`)).text();
@@ -143,4 +173,26 @@ test('every generated sitemap URL serves readable HTML with its own canonical', 
       assert.ok(document.includes(script[0]), `Angular script missing at ${url}`);
     }
   }
+});
+
+test('the homepage explains the product and links to real docs without JavaScript', async () => {
+  const response = await fetch(baseUrl);
+  const document = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal([...document.matchAll(/<h1[\s>]/g)].length, 1);
+  assert.match(document, /A developer platform/);
+  assert.match(document, /self-hosted PaaS/);
+  assert.match(document, /<details>\s*<summary>What is Platform\?/);
+  assert.ok(!document.includes('{{'));
+  assert.ok(!document.includes('routerLink='));
+  assert.ok(!document.includes('three.min.js'));
+  for (const link of document.matchAll(/href="(\/docs[^"]*)"/g)) {
+    const url = link[1].split('#')[0];
+    assert.ok(rendered.has(url), `Landing-page docs link has no generated page: ${url}`);
+  }
+  assert.match(document, /<video[^>]*preload="none"/);
+  assert.ok(!document.includes('autoplay'));
+  assert.match(document, /kind="captions"/);
+  const schema = JSON.parse(document.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1]);
+  assert.ok(schema['@graph'].some(item => item['@type'] === 'SoftwareApplication'));
 });
