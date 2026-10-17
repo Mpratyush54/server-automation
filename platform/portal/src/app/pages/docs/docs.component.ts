@@ -9,6 +9,7 @@ import hljs from 'highlight.js';
 import mermaid from 'mermaid';
 import { catchError } from 'rxjs/operators';
 import { of, Subscription } from 'rxjs';
+import { prepareDocsHtml } from './docs-html.mjs';
 
 interface DocPage {
   label: string;
@@ -340,6 +341,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.addCopyButtons();
       this.renderMermaidDiagrams();
       this.buildToc();
+      this.cdr.detectChanges();
     }
   }
 
@@ -470,9 +472,9 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (!anchor?.closest('.docs-markdown') || !anchor.getAttribute('href') || anchor.target === '_blank') return;
     const href = anchor.getAttribute('href')!;
 
-    if (href.startsWith('/docs/')) {
+    if (href.startsWith('/docs/') || href.startsWith('/docs#')) {
       event.preventDefault();
-      this.router.navigateByUrl(href);
+      this.router.navigateByUrl(href).then(() => this.scrollToFragment());
     }
   }
 
@@ -640,52 +642,21 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
             const description = `Read ${heading} in the Platform documentation. Guides and reference for the self-hosted Platform control plane.`;
             const canonical = 'https://platform.pratyushes.dev' + (path === '/docs/index.md' ? '/docs' : path.replace(/\.md$/, ''));
             this.updateMetadata(title, description, canonical);
-            // Rewrite relative `.md` links so they resolve against the CURRENT
-            // section, not against the docs root. Before this fix, a link like
-            // `[Deployments API](deployments.md)` inside
-            // /docs/api-reference/platform-api/projects would render as
-            // `/docs/deployments` (404). Now it correctly resolves to
-            // `/docs/api-reference/platform-api/deployments`.
-            const currentDir = this.currentSection || '';
-            const processed = text.replace(
-              /\]\((\.{0,2}\/)?([a-zA-Z0-9_\/-]+)\.md(#[a-zA-Z0-9_-]+)?\)/g,
-              (_match, prefix: string, path: string, hash: string | undefined) => {
-                const hashPart = hash || '';
-                // Absolute paths starting with `/` — leave the rewriter alone
-                if (prefix === '/') {
-                  return `](/${path}${hashPart})`;
-                }
-                const segs = currentDir.split('/').filter(Boolean);
-                if (prefix === '../') {
-                  segs.pop();
-                  const target = segs.length ? `${segs.join('/')}/${path}` : path;
-                  return `](/docs/${target}${hashPart})`;
-                }
-                if (prefix === '../../') {
-                  segs.pop();
-                  segs.pop();
-                  const target = segs.length ? `${segs.join('/')}/${path}` : path;
-                  return `](/docs/${target}${hashPart})`;
-                }
-                // No prefix (or `./`) — same directory as current doc
-                const base = currentDir ? `${currentDir}/` : '';
-                return `](/docs/${base}${path}${hashPart})`;
-              }
-            );
-            let html = await marked.parse(processed);
+            let html = prepareDocsHtml(await marked.parse(text), path, window.location.origin);
             html = this.enhanceApiDocs(html);
             html = this.enhanceAuthBadges(html);
             html = this.enhanceResponseSections(html);
             html = this.enhanceSectionHeadings(html);
             html = this.transformMermaidBlocks(html);
             this.content = this.sanitizer.bypassSecurityTrustHtml(html as string);
+            this.isLoading = false;
             this.rendering = true;
             this.cdr.detectChanges();
             // Re-scroll after content mounts: the initial scrollToTop in
             // ngOnInit ran when the DOM still had the previous page's
             // content, so a user who scrolled during the async fetch would
             // land mid-page on the new doc otherwise.
-            queueMicrotask(() => this.scrollToTop());
+            queueMicrotask(() => { if (!this.scrollToFragment()) this.scrollToTop(); });
           } catch (e) {
             console.error('Error parsing markdown', e);
           }
@@ -703,7 +674,8 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
       const m = part.match(/<h2[^>]*>\s*<code>(GET|POST|PUT|PATCH|DELETE)<\/code>\s+(.+?)<\/h2>/i);
       if (m) {
         if (cardOpen) { out.push('</div></div>'); }
-        out.push(`<div class="api-card"><div class="api-card-header"><span class="api-method method-${m[1].toLowerCase()}">${m[1]}</span><code class="api-path">${m[2].trim()} <span class="api-http-version">HTTP/1.1</span></code></div><div class="api-card-body">`);
+        const id = part.match(/<h2\b[^>]*\bid="([^"]+)"/)?.[1];
+        out.push(`<div class="api-card"${id ? ` id="${id}"` : ''}><div class="api-card-header"><span class="api-method method-${m[1].toLowerCase()}">${m[1]}</span><code class="api-path">${m[2].trim()} <span class="api-http-version">HTTP/1.1</span></code></div><div class="api-card-body">`);
         cardOpen = true;
       } else {
         out.push(part);
@@ -714,8 +686,11 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     let result = out.join('');
 
     result = result.replace(
-      /<h3[^>]*>\s*<code>(GET|POST|PUT|PATCH|DELETE)<\/code>\s+(.+?)<\/h3>/gi,
-      '<div class="api-sub-card"><div class="api-card-header method-sub"><span class="api-method method-$1">$1</span><code class="api-path">$2 <span class="api-http-version">HTTP/1.1</span></code></div></div>'
+      /<h3([^>]*)>\s*<code>(GET|POST|PUT|PATCH|DELETE)<\/code>\s+(.+?)<\/h3>/gi,
+      (_heading, attributes: string, method: string, path: string) => {
+        const id = attributes.match(/\bid="([^"]+)"/)?.[1];
+        return `<div class="api-sub-card"${id ? ` id="${id}"` : ''}><div class="api-card-header method-sub"><span class="api-method method-${method.toLowerCase()}">${method}</span><code class="api-path">${path} <span class="api-http-version">HTTP/1.1</span></code></div></div>`;
+      }
     );
 
     return result;
@@ -771,13 +746,26 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   scrollToHeading(event: Event, id: string) {
+    if (event instanceof MouseEvent && (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)) return;
     event.preventDefault();
-    const el = document.getElementById(id);
+    this.router.navigateByUrl(this.headingUrl(id)).then(() => this.scrollToFragment());
+  }
+
+  headingUrl(id: string): string {
+    const path = this.markdownPath === '/docs/index.md' ? '/docs' : this.markdownPath.replace(/\.md$/, '');
+    return `${path}#${encodeURIComponent(id)}`;
+  }
+
+  private scrollToFragment(): boolean {
+    const id = this.router.parseUrl(this.router.url).fragment;
+    if (!id) return false;
+    const el = this.el.nativeElement.querySelector(`[id="${CSS.escape(id)}"]`) as HTMLElement | null;
     if (el) {
       const offset = 100;
       const top = el.getBoundingClientRect().top + window.scrollY - offset;
-      window.scrollTo({ top, behavior: 'smooth' });
+      window.scrollTo({ top, behavior: 'auto' });
     }
+    return !!el;
   }
 
   private buildToc() {
@@ -791,8 +779,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
 
     headings.forEach((h: Element) => {
       const el = h as HTMLElement;
-      let id = el.id || el.textContent?.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || '';
-      if (!el.id) { el.id = id; }
+      const id = el.id;
       this.tocItems.push({ id, text: el.textContent || '', level: el.tagName.toLowerCase() });
     });
 
@@ -977,16 +964,16 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
   private enhanceSectionHeadings(html: string): string {
     return html
       .replace(
-        /<h2[^>]*>Roles CRUD<\/h2>/gi,
-        '<h2 class="api-section-title">Roles CRUD</h2>'
+        /<h2([^>]*)>Roles CRUD<\/h2>/gi,
+        '<h2$1 class="api-section-title">Roles CRUD</h2>'
       )
       .replace(
-        /<h2[^>]*>Permission Validation<\/h2>/gi,
-        '<h2 class="api-section-title">Permission Validation</h2>'
+        /<h2([^>]*)>Permission Validation<\/h2>/gi,
+        '<h2$1 class="api-section-title">Permission Validation</h2>'
       )
       .replace(
-        /<h2[^>]*>Error Codes<\/h2>/gi,
-        '<h2 class="api-section-title">Error Codes</h2>'
+        /<h2([^>]*)>Error Codes<\/h2>/gi,
+        '<h2$1 class="api-section-title">Error Codes</h2>'
       );
   }
 }

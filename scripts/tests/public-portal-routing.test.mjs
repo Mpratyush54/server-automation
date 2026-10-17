@@ -181,10 +181,22 @@ test('every generated sitemap URL serves readable HTML with its own canonical', 
     const document = await response.text();
     const canonicals = [...document.matchAll(/<link rel="canonical" href="([^"]+)">/g)].map(match => match[1]);
     assert.deepEqual(canonicals, [url], url);
-    assert.match(document, /<article>[\s\S]*<h1>/, url);
+    assert.match(document, /<article>[\s\S]*<h1[\s>]/, url);
     for (const script of html.matchAll(/<script[^>]*>[\s\S]*?<\/script>/g)) {
       assert.ok(document.includes(script[0]), `Angular script missing at ${url}`);
     }
+  }
+});
+
+test('prerendered section links stay on their docs page and have real targets', async () => {
+  const path = '/docs/getting-started/installation';
+  const document = await (await fetch(baseUrl + path)).text();
+  for (const id of ['local-development', 'deploy-to-a-server-single-command']) {
+    assert.ok(document.includes(`href="${path}#${id}"`));
+    assert.ok(document.includes(`id="${id}"`));
+  }
+  for (const [url, document] of rendered) {
+    assert.ok(!/href="#/.test(document), `Bare fragment at ${url}`);
   }
 });
 
