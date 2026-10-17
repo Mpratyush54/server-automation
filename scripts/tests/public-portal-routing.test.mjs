@@ -193,7 +193,9 @@ test('the homepage explains the product and links to real docs without JavaScrip
   const document = await response.text();
   assert.equal(response.status, 200);
   assert.equal([...document.matchAll(/<h1[\s>]/g)].length, 1);
-  assert.match(document, /A developer platform/);
+  assert.match(document, /Ship your apps/);
+  assert.match(document, /From separate tools to one platform/);
+  assert.match(document, /YOU GET/);
   assert.match(document, /self-hosted PaaS/);
   assert.match(document, /<details>\s*<summary>What is Platform\?/);
   assert.ok(!document.includes('{{'));
