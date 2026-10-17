@@ -9,7 +9,7 @@
     "watch": "node scripts/build-docs-search.mjs && ng build --watch --configuration development",
     "test": "ng test",
     "test:docs": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.docs-spec.json --include=src/app/guards/docs.matcher.spec.ts --include=src/app/pages/docs/docs.component.spec.ts",
-    "test:public": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.docs-spec.json --include=src/app/guards/docs.matcher.spec.ts --include=src/app/pages/docs/docs.component.spec.ts --include=src/app/pages/docs/docs-search.spec.ts --include=src/app/pages/docs/docs-search.component.spec.ts --include=src/app/pages/landing/landing.component.spec.ts"
+    "test:public": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.docs-spec.json --include=src/app/guards/home.guard.spec.ts --include=src/app/guards/docs.matcher.spec.ts --include=src/app/pages/docs/docs.component.spec.ts --include=src/app/pages/docs/docs-search.spec.ts --include=src/app/pages/docs/docs-search.component.spec.ts --include=src/app/pages/landing/landing.component.spec.ts"
   },
   "private": true,
   "dependencies": {

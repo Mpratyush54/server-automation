@@ -103,7 +103,7 @@ after(async () => {
 });
 
 for (const userAgent of ['Mozilla/5.0', 'Googlebot/2.1 (+http://www.google.com/bot.html)']) {
-  for (const path of ['/', '/landing', '/docs', '/docs/', '/docs/getting-started', '/docs/getting-started/', '/docs/api-reference', '/docs/api-reference/platform-api', '/docs/api-reference/platform-api/', '/docs/getting-started/platformctl', '/docs/api-reference/configuration/environment-variables']) {
+  for (const path of ['/', '/docs', '/docs/', '/docs/getting-started', '/docs/getting-started/', '/docs/api-reference', '/docs/api-reference/platform-api', '/docs/api-reference/platform-api/', '/docs/getting-started/platformctl', '/docs/api-reference/configuration/environment-variables']) {
     test(`${userAgent.split('/')[0]} can open ${path} without a session or redirect`, async () => {
       const response = await fetch(baseUrl + path, { redirect: 'manual', headers: { 'User-Agent': userAgent } });
       assert.equal(response.status, 200);
@@ -151,13 +151,25 @@ test('public video, poster, and captions have browser-compatible media types', a
   }
 });
 
-test('content-named bundles are immutable while HTML revalidates', async () => {
+test('content-named bundles are immutable while HTML stays out of browser and CDN caches', async () => {
   const bundle = await fetch(`${baseUrl}/main-TEST1234.js`);
   assert.equal(bundle.status, 200);
   assert.match(bundle.headers.get('cache-control'), /max-age=31536000, immutable/);
   const page = await fetch(baseUrl);
-  assert.equal(page.headers.get('cache-control'), 'public, max-age=0, must-revalidate');
-  assert.equal(page.headers.get('cloudflare-cdn-cache-control'), null);
+  assert.equal(page.headers.get('cache-control'), 'no-store');
+  assert.equal(page.headers.get('cloudflare-cdn-cache-control'), 'no-store');
+});
+
+test('legacy landing URLs redirect to the canonical homepage and preserve queries', async () => {
+  for (const path of ['/landing', '/landing/', '/landing?campaign=launch']) {
+    const response = await fetch(baseUrl + path, {redirect:'manual'});
+    assert.equal(response.status, 308);
+    const location = new URL(response.headers.get('location'), baseUrl);
+    assert.equal(location.pathname, '/');
+    assert.equal(location.search, new URL(baseUrl + path).search);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(response.headers.get('cloudflare-cdn-cache-control'), 'no-store');
+  }
 });
 
 test('both videos support byte-range seeking without authentication', async () => {
