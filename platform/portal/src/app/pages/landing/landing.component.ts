@@ -22,6 +22,7 @@ export class LandingComponent implements AfterViewInit, OnDestroy {
   @ViewChild('portraitVideo')
   private portraitVideo?: ElementRef<HTMLVideoElement>;
   readonly media = landingMedia;
+  readonly storyChapterCount = 6;
   storyStep = 0;
   storyPaused = false;
   storyVisible = true;
@@ -77,7 +78,7 @@ export class LandingComponent implements AfterViewInit, OnDestroy {
     if (this.storyTimer) clearInterval(this.storyTimer);
     this.storyTimer = setInterval(() => {
       if (!this.storyPaused && this.storyVisible && !document.hidden)
-        this.storyStep = (this.storyStep + 1) % 5;
+        this.storyStep = (this.storyStep + 1) % this.storyChapterCount;
     }, 6000);
   }
 

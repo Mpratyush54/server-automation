@@ -32,16 +32,17 @@
     <section class="hero wrap" aria-labelledby="hero-heading">
       <div class="hero-copy">
         <p class="eyebrow">
-          <span class="status-dot" aria-hidden="true"></span> OPEN SOURCE.
-          SELF-HOSTED. YOURS.
+          <span class="status-dot" aria-hidden="true"></span> SELF-HOSTED
+          DEVELOPER PLATFORM
         </p>
         <h1 id="hero-heading">
-          A developer platform.<br /><span>On your own server.</span>
+          Ship your apps.<br /><span>Own the whole stack.</span>
         </h1>
         <p class="hero-lead">
-          Platform is a self-hosted PaaS that brings GitOps deployments,
-          databases, secrets, and observability to Kubernetes. One control plane
-          for the apps you build and the infrastructure you own.
+          Platform is a self-hosted PaaS that connects Kubernetes, GitOps,
+          databases, secrets, and observability on your server. Deploy and
+          operate through one dashboard, with SDKs for your apps and scoped
+          tools for your agents.
         </p>
         <div class="hero-actions">
           <a
@@ -54,7 +55,7 @@
           >
         </div>
         <p class="hero-note">
-          For developers and small teams running their own infrastructure.
+          One workspace. Your infrastructure. Open source.
         </p>
       </div>
       <div
@@ -62,12 +63,12 @@
         #storyElement
         [attr.data-story-step]="storyStep"
         [class.motion-paused]="storyPaused || !storyVisible"
-        aria-label="How Platform works: an animated five-step walkthrough"
+        aria-label="How Platform works: an animated six-step walkthrough"
       >
         <div class="story-topline">
           <span
-            ><i class="status-dot" aria-hidden="true"></i> FROM YOUR SERVER TO
-            YOUR APP</span
+            ><i class="status-dot" aria-hidden="true"></i> YOUR STACK. ONE
+            WORKFLOW.</span
           ><button
             type="button"
             class="story-pause"
@@ -165,7 +166,14 @@
                 <tspan class="terminal-cursor">▌</tspan>
               </text>
             </svg>
-            <p>Provision the stack on infrastructure you own.</p>
+            <div class="story-outcome">
+              <span>YOU GET</span
+              ><strong>A foundation you can build on.</strong>
+              <p>
+                The CLI provisions Kubernetes and your selected services on an
+                Ubuntu server you control.
+              </p>
+            </div>
           </section>
           <section
             class="story-scene scene-deploy"
@@ -238,7 +246,13 @@
                 Git is the source. Your cluster follows.
               </text>
             </svg>
-            <p>Argo CD syncs your manifests to the cluster.</p>
+            <div class="story-outcome">
+              <span>YOU GET</span><strong>A running app, backed by Git.</strong>
+              <p>
+                Sync application manifests with Argo CD, inspect deployments,
+                and manage environments from Platform.
+              </p>
+            </div>
           </section>
           <section
             class="story-scene scene-data"
@@ -317,7 +331,13 @@
                 </text>
               </g>
             </svg>
-            <p>Connect data, secrets, and files through one platform.</p>
+            <div class="story-outcome">
+              <span>YOU GET</span><strong>Connections your app can use.</strong>
+              <p>
+                Provision databases, manage encrypted secrets, and connect
+                application data and files through the SDKs.
+              </p>
+            </div>
           </section>
           <section
             class="story-scene scene-observe"
@@ -388,7 +408,14 @@
                 </text>
               </g>
             </svg>
-            <p>Inspect activity and find what needs attention.</p>
+            <div class="story-outcome">
+              <span>YOU GET</span
+              ><strong>One place to investigate an issue.</strong>
+              <p>
+                Bring application logs, request metrics, and errors into the
+                same operations workflow.
+              </p>
+            </div>
           </section>
           <section
             class="story-scene scene-agents"
@@ -455,7 +482,144 @@
                 Destructive? Human approval.
               </text>
             </svg>
-            <p>Validate commands. Keep destructive actions behind approval.</p>
+            <div class="story-outcome">
+              <span>YOU GET</span
+              ><strong>Agents that help. Access you control.</strong>
+              <p>
+                Scoped tokens expose tools. Commands are validated, and
+                destructive actions wait for human approval.
+              </p>
+            </div>
+          </section>
+          <section
+            class="story-scene scene-together"
+            [attr.aria-hidden]="storyStep !== 5"
+          >
+            <div class="story-heading">
+              <span>06 / THE CONNECTED WORKFLOW</span>
+              <h3>From separate tools to one platform.</h3>
+            </div>
+            <svg
+              viewBox="0 0 600 340"
+              role="img"
+              aria-label="Illustrated Platform workspace: Git, databases, and observability connect to one place to deploy applications, manage connections, inspect logs, and control agent access."
+            >
+              <path
+                class="wire"
+                d="M178 67H211V169H253M178 169H253M178 271H211V169"
+              />
+              <path class="flow-pulse" d="M178 67H211V169H253" />
+              <path class="flow-pulse pulse-later" d="M178 169H253" />
+              <path class="flow-pulse pulse-last" d="M178 271H211V169H253" />
+              <g class="story-pop">
+                <rect
+                  class="node-paper"
+                  x="18"
+                  y="34"
+                  width="160"
+                  height="66"
+                  rx="8"
+                />
+                <text class="node-title" x="34" y="62">Git + Argo CD</text>
+                <text class="node-detail" x="34" y="85">Deployment state</text>
+              </g>
+              <g class="story-pop pop-later">
+                <rect
+                  class="node-paper"
+                  x="18"
+                  y="136"
+                  width="160"
+                  height="66"
+                  rx="8"
+                />
+                <text class="node-title" x="34" y="164">Data + secrets</text>
+                <text class="node-detail" x="34" y="187">App connections</text>
+              </g>
+              <g class="story-pop pop-last">
+                <rect
+                  class="node-paper"
+                  x="18"
+                  y="238"
+                  width="160"
+                  height="66"
+                  rx="8"
+                />
+                <text class="node-title" x="34" y="266">Logs + metrics</text>
+                <text class="node-detail" x="34" y="289">
+                  Operational context
+                </text>
+              </g>
+              <g class="story-pop pop-later">
+                <rect
+                  class="node-paper"
+                  x="253"
+                  y="20"
+                  width="327"
+                  height="300"
+                  rx="12"
+                />
+                <rect
+                  class="terminal-fill"
+                  x="253"
+                  y="20"
+                  width="327"
+                  height="46"
+                  rx="10"
+                />
+                <text class="terminal-text" x="272" y="50">
+                  PLATFORM / YOUR WORKSPACE
+                </text>
+                <text class="node-title" x="273" y="101">Your application</text>
+                <text class="node-detail" x="273" y="127">
+                  One place to work with the stack.
+                </text>
+                <rect
+                  class="node-green"
+                  x="273"
+                  y="148"
+                  width="286"
+                  height="37"
+                  rx="5"
+                />
+                <text class="node-detail" x="287" y="173">
+                  Deployments + environments
+                </text>
+                <rect
+                  class="server-slot"
+                  x="273"
+                  y="195"
+                  width="286"
+                  height="37"
+                  rx="5"
+                />
+                <text class="node-detail" x="287" y="220">
+                  Databases, files + encrypted secrets
+                </text>
+                <rect
+                  class="server-slot"
+                  x="273"
+                  y="242"
+                  width="286"
+                  height="37"
+                  rx="5"
+                />
+                <text class="node-detail" x="287" y="267">
+                  Logs, metrics + scoped agent tools
+                </text>
+                <circle class="request-dot" cx="279" cy="299" r="4" />
+                <text class="node-detail" x="292" y="304">
+                  Your server. Your access rules.
+                </text>
+              </g>
+            </svg>
+            <div class="story-outcome">
+              <span>YOU GET</span
+              ><strong>One connected way to run your apps.</strong>
+              <p>
+                A dashboard for operations, SDKs for app connections, and
+                guarded MCP tools for your agents.
+              </p>
+            </div>
           </section>
         </div>
         <div class="story-chapters" role="group" aria-label="Choose a chapter">
@@ -494,12 +658,19 @@
           >
             <span>05</span> Agents<i></i>
           </button>
+          <button
+            type="button"
+            (click)="selectStory(5)"
+            [attr.aria-pressed]="storyStep === 5"
+          >
+            <span>06</span> Result<i></i>
+          </button>
         </div>
       </div>
     </section>
     <div class="stack-strip">
       <div class="wrap">
-        <p>Familiar tools.<br />Connected by Platform.</p>
+        <p>Tools you already know.<br />One place to use them.</p>
         <ul aria-label="Underlying open-source tools">
           <li>k3s</li>
           <li>Argo CD</li>

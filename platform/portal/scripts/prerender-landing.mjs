@@ -33,7 +33,7 @@ export async function prerenderLanding({
     if (expressionValue === "!videoError") return true;
     if (expressionValue === "storyPaused || !storyVisible") return false;
     const comparison = expressionValue.match(
-      /^storyStep\s*(===|!==)\s*([0-4])$/,
+      /^storyStep\s*(===|!==)\s*([0-5])$/,
     );
     if (comparison)
       return comparison[1] === "==="

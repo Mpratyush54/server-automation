@@ -74,6 +74,14 @@ describe('LandingComponent', () => {
         .querySelectorAll('.story-chapters button')[3]
         .getAttribute('aria-pressed'),
     ).toBe('true');
+    fixture.nativeElement.querySelectorAll('.story-chapters button')[5].click();
+    fixture.detectChanges();
+    expect(
+      fixture.nativeElement.querySelector('.scene-together .story-outcome')
+        .textContent,
+    ).toContain('One connected way to run your apps');
+    tick(6000);
+    expect(fixture.componentInstance.storyStep).toBe(0);
     fixture.destroy();
   }));
 
