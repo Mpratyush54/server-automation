@@ -9,7 +9,7 @@ export const authGuard: CanActivateFn = () => {
 
   // Public marketing site never serves the authenticated app.
   if (isPublicMarketingHost()) {
-    router.navigate(['/landing']);
+    router.navigate(['/']);
     return false;
   }
 

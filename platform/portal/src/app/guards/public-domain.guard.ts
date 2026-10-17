@@ -2,8 +2,7 @@ import { inject } from '@angular/core';
 import { Router, CanActivateFn } from '@angular/router';
 
 /** True only on the public marketing site (landing + docs). */
-export function isPublicMarketingHost(): boolean {
-  const host = window.location.hostname;
+export function isPublicMarketingHost(host = window.location.hostname): boolean {
   return host === 'platform.pratyushes.dev' || host.endsWith('.pratyushes.dev');
 }
 
@@ -28,6 +27,6 @@ export const appHostGuard: CanActivateFn = () => {
     return true;
   }
   const router = inject(Router);
-  router.navigate(['/landing']);
+  router.navigate(['/']);
   return false;
 };
