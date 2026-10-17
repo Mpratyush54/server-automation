@@ -141,7 +141,7 @@
               [class.toc-h2]="item.level === 'h2'"
               [class.toc-h3]="item.level === 'h3'"
               [class.toc-active]="item.id === activeTocId"
-              [attr.href]="'#' + item.id"
+              [attr.href]="headingUrl(item.id)"
               (click)="scrollToHeading($event, item.id)"
             >{{ item.text }}</a>
           </nav>

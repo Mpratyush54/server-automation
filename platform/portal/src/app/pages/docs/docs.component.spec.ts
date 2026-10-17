@@ -60,4 +60,37 @@ describe('DocsComponent', () => {
     params.next(convertToParamMap({ section: 'api-reference', page: 'configuration' }));
     expect(navigate).toHaveBeenCalledWith('/docs/api-reference/configuration/environment-variables', { replaceUrl: true });
   });
+
+  it('keeps Markdown and table-of-contents fragments on the current docs page', async () => {
+    get.and.returnValue(of('# Installation\n\n[Local setup](#local-development)\n\n## Local development\n\nUse Docker.\n\n## Local development\n\nAnother setup.'));
+    params.next(convertToParamMap({ section: 'getting-started', page: 'installation' }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const article = fixture.nativeElement.querySelector('.docs-markdown');
+    const anchor = article.querySelector('a');
+    expect(anchor.getAttribute('href')).toBe('/docs/getting-started/installation#local-development');
+    expect(article.querySelector('#local-development')).toBeTruthy();
+    expect(article.querySelector('#local-development-1')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.docs-toc-link').getAttribute('href'))
+      .toBe('/docs/getting-started/installation#local-development');
+    anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    expect(navigate).toHaveBeenCalledWith('/docs/getting-started/installation#local-development');
+    navigate.calls.reset();
+    const modifiedClick = new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true });
+    anchor.dispatchEvent(modifiedClick);
+    expect(modifiedClick.defaultPrevented).toBeFalse();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('resolves parent Markdown links and keeps API section fragment targets', async () => {
+    get.and.returnValue(of('# Auth\n\n[Monitoring](../../guides/monitoring.md#logs)\n\n## `GET` /api/projects\n\nEndpoint.\n\n### `POST` /api/projects\n\nEndpoint.\n\n## Error Codes\n\nNone.'));
+    params.next(convertToParamMap({ section: 'api-reference/platform-api', page: 'auth' }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const article = fixture.nativeElement.querySelector('.docs-markdown');
+    expect(article.querySelector('a').getAttribute('href')).toBe('/docs/guides/monitoring#logs');
+    expect(article.querySelector('.api-card#get-apiprojects')).toBeTruthy();
+    expect(article.querySelector('.api-sub-card#post-apiprojects')).toBeTruthy();
+    expect(article.querySelector('h2#error-codes')).toBeTruthy();
+  });
 });

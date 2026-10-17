@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { marked } from 'marked';
+import { prepareDocsHtml } from '../src/app/pages/docs/docs-html.mjs';
 
 const portal = fileURLToPath(new URL('../', import.meta.url));
 const origin = 'https://platform.pratyushes.dev';
@@ -30,13 +31,7 @@ export async function prerenderDocs({ docsDir = join(portal, 'public/docs'), out
     const heading = markdown.match(/^#\s+(.+)$/m)?.[1].replace(/[*`]/g, '').trim() || 'Documentation';
     const title = `${heading} | Platform Docs`;
     const description = `Read ${heading} in the Platform documentation. Guides and reference for the self-hosted Platform control plane.`;
-    const article = (await marked.parse(markdown)).replace(/href="([^"]+)"/g, (attribute, href) => {
-      // Keep nested relative Markdown links crawlable without JavaScript.
-      const url = new URL(href, `${origin}/docs/${file}`);
-      if (url.origin !== origin || !url.pathname.startsWith('/docs/') || !url.pathname.endsWith('.md')) return attribute;
-      const target = url.pathname === '/docs/index.md' ? '/docs' : url.pathname.slice(0, -3);
-      return `href="${escape(target + url.search + url.hash)}"`;
-    });
+    const article = prepareDocsHtml(await marked.parse(markdown), `/docs/${file}`, origin);
     // This content is sent to every client. Angular replaces app-root with its
     // interactive view on startup; the document remains readable without JS.
     const content = `<style>
