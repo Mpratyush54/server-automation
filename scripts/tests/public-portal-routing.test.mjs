@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout } from 'node:timers/promises';
 import { prerenderDocs } from '../../platform/portal/scripts/prerender-docs.mjs';
 import { prerenderLanding } from '../../platform/portal/scripts/prerender-landing.mjs';
+import { buildDocsSearch } from '../../platform/portal/scripts/build-docs-search.mjs';
 
 // Run against a real nginx process: NGINX_BIN=/path/to/nginx node --test <this file>.
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -31,6 +32,7 @@ before(async () => {
   await mkdir(join(directory, 'logs'));
   await mkdir(join(directory, 'temp'));
   await cp(join(repo, 'platform/portal/public'), root, { recursive: true });
+  await buildDocsSearch({ docsDir: join(root, 'docs'), output: join(root, 'docs-search.json') });
   await mkdir(join(root, 'assets'));
   await writeFile(join(root, 'index.html'), html);
   await writeFile(join(root, 'main-TEST1234.js'), '/* content-named bundle fixture */');
@@ -197,6 +199,23 @@ test('prerendered section links stay on their docs page and have real targets', 
   }
   for (const [url, document] of rendered) {
     assert.ok(!/href="#/.test(document), `Bare fragment at ${url}`);
+  }
+});
+
+test('public full-text search includes every docs page and points to real section IDs', async () => {
+  const response = await fetch(`${baseUrl}/docs-search.json`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /^application\/json/);
+  assert.equal(response.headers.get('cache-control'), 'public, max-age=0, must-revalidate');
+  const index = await response.json();
+  assert.equal(index.documents, pages.length);
+  assert.equal(new Set(index.entries.map(entry => entry.url.split('#')[0])).size, pages.length);
+  assert.ok(index.entries.some(entry => entry.text.includes('SECRETS_ENCRYPTION_KEY')));
+  assert.ok(index.entries.some(entry => entry.text.includes('WRONGPASS')));
+  for (const entry of index.entries) {
+    const [path, id] = entry.url.split('#');
+    assert.ok(rendered.has(path), `Unrendered search result: ${entry.url}`);
+    if (id) assert.ok(rendered.get(path).includes(`id="${id}"`), `Missing search target: ${entry.url}`);
   }
 });
 
