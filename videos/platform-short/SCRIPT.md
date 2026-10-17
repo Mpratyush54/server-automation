@@ -13,4 +13,4 @@
 
 **Delivery:** Calm, conversational, steady.
 
-    Platform connects your tools on Kubernetes. Add scoped MCP access for your AI agents, with human approval for destructive actions. Start with the docs.
+    Platform connects your tools on Kubernetes. Add scoped MCP access for your AI agents, with human approval for destructive actions. Build on your terms.

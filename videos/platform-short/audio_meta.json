@@ -37,24 +37,24 @@
     },
     {
       "words": [],
-      "duration_s": 11.736,
+      "duration_s": 11.76,
       "path": ".media/audio/voice/02-control.wav",
       "frame": 2,
       "cues": [
         {
           "start": 0.05,
-          "end": 3.4042553,
+          "end": 3.3909574,
           "text": "Platform connects your tools on Kubernetes."
         },
         {
-          "start": 3.4042553,
-          "end": 10.0531914,
+          "start": 3.3909574,
+          "end": 10.1196808,
           "text": "Add scoped MCP access for your AI agents, with human approval for destructive actions."
         },
         {
-          "start": 10.0531915,
-          "end": 11.662234,
-          "text": "Start with the docs."
+          "start": 10.1196808,
+          "end": 11.7021276,
+          "text": "Build on your terms."
         }
       ],
       "provider": "Microsoft Edge online speech",

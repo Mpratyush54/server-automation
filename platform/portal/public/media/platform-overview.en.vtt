@@ -21,17 +21,17 @@ Provision PostgreSQL, MongoDB, and Redis.
 00:00:37.397 --> 00:00:43.780
 Manage encrypted secrets, inspect logs, and follow application metrics from the dashboard.
 
-00:00:45.200 --> 00:00:50.296
+00:00:45.200 --> 00:00:50.283
 Connect your AI tools through MCP with scoped agent tokens.
 
-00:00:50.296 --> 00:00:54.977
+00:00:50.283 --> 00:00:55.030
 Commands are validated, and destructive actions need human approval.
 
-00:00:54.977 --> 00:00:56.081
+00:00:55.030 --> 00:00:56.094
 Your server.
 
-00:00:56.081 --> 00:00:57.277
+00:00:56.094 --> 00:00:57.331
 Your apps.
 
-00:00:57.277 --> 00:00:58.820
-Start with the docs.
+00:00:57.331 --> 00:00:58.900
+Build on your terms.

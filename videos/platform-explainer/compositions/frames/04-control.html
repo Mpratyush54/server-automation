@@ -41,9 +41,9 @@
   </style>
   <div data-hf-id="hf-csvu" id="root" data-composition-id="04-control" data-duration="15" data-width="1920" data-height="1080">
     <div data-hf-id="hf-4yjg" id="f-04-control-layer-1" class="clip" data-control="ground" data-start="0" data-duration="15" data-track-index="0"></div>
-    <div data-hf-id="hf-7ur9" class="clip" id="f-04-control-closing-ground" data-control="closing-ground" data-start="0" data-duration="15" data-track-index="1"><div id="f-04-control-closing-fill"></div></div>
+    <div data-hf-id="hf-7ur9" class="clip" id="f-04-control-closing-ground" data-control="closing-ground" data-start="0" data-duration="15" data-track-index="1"><div data-hf-id="hf-4nwe" id="f-04-control-closing-fill"></div></div>
     <div data-hf-id="hf-8n2c" class="clip" id="f-04-control-diagram" data-control="content" data-start="0" data-duration="15" data-track-index="2">
-      <div id="f-04-control-camera">
+      <div data-hf-id="hf-o2le" id="f-04-control-camera">
       <div data-hf-id="hf-usq9" data-control="top"><span data-hf-id="hf-amg8">Agent access</span><span data-hf-id="hf-7k3u" data-control="pill">Conceptual illustration</span></div>
       <h1 data-hf-id="hf-9cim" data-control="headline"><span data-hf-id="hf-1yki" id="f-04-control-ask">ASK YOUR AGENT.</span><span data-hf-id="hf-er7z" id="f-04-control-keep">KEEP THE CONTROLS.</span></h1>
       <svg data-hf-id="hf-38f4" data-control="paths" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -57,19 +57,19 @@
       <div data-hf-id="hf-ma4u" id="f-04-control-packet" data-control="packet"></div>
       <div data-hf-id="hf-5z0l" id="f-04-control-guard" data-control="node"><span data-hf-id="hf-ww77">Command guard</span><span data-hf-id="hf-i767" data-control="guard-sub">Validated commands</span></div>
       <div data-hf-id="hf-vjnk" id="f-04-control-approval" data-control="approval"><strong data-hf-id="hf-pu3u">Human approval</strong><span data-hf-id="hf-07m4">Destructive actions</span></div>
-      <div id="f-04-control-approval-packet"></div>
-      <div id="f-04-control-waiting">Waiting for a person</div>
-      <div id="f-04-control-approved">Approved by a person</div>
-      <svg id="f-04-control-human-cursor" viewBox="0 0 32 42" aria-hidden="true"><path d="M3 2 L3 33 L11 25 L18 40 L25 36 L18 22 L30 22 Z"/></svg>
+      <div data-hf-id="hf-e9jr" id="f-04-control-approval-packet"></div>
+      <div data-hf-id="hf-m5as" id="f-04-control-waiting">Waiting for a person</div>
+      <div data-hf-id="hf-t0xy" id="f-04-control-approved">Approved by a person</div>
+      <svg data-hf-id="hf-i7e5" id="f-04-control-human-cursor" viewBox="0 0 32 42" aria-hidden="true"><path data-hf-id="hf-ghbv" d="M3 2 L3 33 L11 25 L18 40 L25 36 L18 22 L30 22 Z"/></svg>
       </div>
     </div>
     <div data-hf-id="hf-8iwv" class="clip" id="f-04-control-closing" data-control="content" data-start="0" data-duration="15" data-track-index="3">
-      <div id="f-04-control-lockup">
+      <div data-hf-id="hf-kd59" id="f-04-control-lockup">
       <div data-hf-id="hf-jv5j" data-control="closing-chrome">Platform</div>
       <img data-hf-id="hf-3xoh" id="f-04-control-logo" data-control="logo" src="assets/logo-light.png" alt="Platform">
       <h2 data-hf-id="hf-n779" data-control="signoff"><span data-hf-id="hf-tp0r" id="f-04-control-server">YOUR SERVER.</span><span data-hf-id="hf-ntb3" id="f-04-control-apps">YOUR APPS.</span></h2>
-      <div data-hf-id="hf-5c9o" id="f-04-control-docs-label" data-control="docs-label">Start with the docs</div>
-      <div data-hf-id="hf-uqz7" id="f-04-control-cta" data-control="cta" aria-label="platform.pratyushes.dev/docs"><span data-hf-id="hf-bq2m" id="f-04-control-url-platform">platform.</span><span data-hf-id="hf-bk81" id="f-04-control-url-domain">pratyushes.dev</span><span data-hf-id="hf-ji3n" id="f-04-control-url-do">/do</span><span data-hf-id="hf-elye" id="f-04-control-url-cs">cs</span></div>
+      <div data-hf-id="hf-5c9o" id="f-04-control-docs-label" data-control="docs-label">Build on your terms</div>
+      <div data-hf-id="hf-uqz7" id="f-04-control-cta" data-control="cta" aria-label="platform.pratyushes.dev"><span data-hf-id="hf-bq2m" id="f-04-control-url-platform">platform.</span><span data-hf-id="hf-bk81" id="f-04-control-url-domain">pratyushes.dev</span></div>
       </div>
     </div>
   </div>
@@ -130,8 +130,8 @@
       tl.set(control('cta'),{opacity:1},12.05);
       waterfall('url-platform',12.05,78,.2);
       waterfall('url-domain',12.2,48,.16);
-      waterfall('url-do',12.33,70,.16);
-      waterfall('url-cs',12.44,70,.14);
+
+
       // The URL is fully readable for 2.42s, with only a gentle final push.
       tl.fromTo(control('lockup'),{scale:1},{scale:1.015,duration:4.15,ease:'power1.inOut',immediateRender:false},10.35);
       window.__timelines=window.__timelines||{};window.__timelines['04-control']=tl;

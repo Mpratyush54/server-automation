@@ -80,7 +80,7 @@ Use only the palette and font files in frame.md. Font paths: assets/fonts/SpaceG
 - transition_in: cut
 - status: animated
 - src: compositions/frames/04-control.html
-- voiceover: "Connect your AI tools through MCP with scoped agent tokens. Commands are validated, and destructive actions need human approval. Your server. Your apps. Start with the docs."
+- voiceover: "Connect your AI tools through MCP with scoped agent tokens. Commands are validated, and destructive actions need human approval. Your server. Your apps. Build on your terms."
 - asset_candidates: logo-light.png
 - focal: Agent access with human control
 - roles: logo-light.png — supporting brand lockup; wireframe diagrams — original vector illustrations
@@ -88,6 +88,6 @@ Use only the palette and font files in frame.md. Font paths: assets/fonts/SpaceG
 - rules: waterfall-entry, svg-path-draw, spring-pop-entrance
 - sfx: none
 
-Scene 1 (0–3s): Title ASK YOUR AGENT. KEEP THE CONTROLS. A node labeled MCP client connects to Platform tools, with Scoped token on the connector. Scene 2 (3–7s): svg-path-draw moves the command into a visible Command guard box; a Human approval gate appears for destructive actions. Scene 3 (7s–end): Simplify to the real logo and a giant YOUR SERVER. YOUR APPS. close. CTA platform.pratyushes.dev/docs appears with waterfall-entry. All claims trace to docs/mcp/overview.md. Keep the CTA and logo inside the frame with generous clearance.
+Scene 1 (0–3s): Title ASK YOUR AGENT. KEEP THE CONTROLS. A node labeled MCP client connects to Platform tools, with Scoped token on the connector. Scene 2 (3–7s): svg-path-draw moves the command into a visible Command guard box; a Human approval gate appears for destructive actions. Scene 3 (7s–end): Simplify to the real logo and a giant YOUR SERVER. YOUR APPS. close. CTA platform.pratyushes.dev appears with waterfall-entry. All claims trace to docs/mcp/overview.md. Keep the CTA and logo inside the frame with generous clearance.
 
 Use only the palette and font files in frame.md. Font paths: assets/fonts/SpaceGrotesk.ttf, assets/fonts/JetBrainsMono.ttf, assets/fonts/ArchivoBlack.ttf. Stage logo path assets/logo-light.png. Author unique DOM IDs prefixed by 04-control. Use a full-duration background clip. No audio in the frame.
