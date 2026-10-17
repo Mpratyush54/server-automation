@@ -1,5 +1,4 @@
-import { inject } from '@angular/core';
-import { Router, Routes, CanActivateFn } from '@angular/router';
+import { Routes } from '@angular/router';
 import { DashboardComponent } from './pages/dashboard/dashboard.component';
 import { ProjectsComponent } from './pages/projects/projects.component';
 import { ProjectDetailComponent } from './pages/project-detail/project-detail.component';
@@ -30,26 +29,14 @@ import { ProfileComponent } from './pages/profile/profile.component';
 
 import { authGuard } from './guards/auth.guard';
 import { docsMatcher } from './guards/docs.matcher';
-import { appHostGuard, marketingOnlyGuard, isPublicMarketingHost } from './guards/public-domain.guard';
-import { AuthService } from './services/auth.service';
-
-/** Marketing host → landing. App host → dashboard if logged in, otherwise login. */
-const homeGuard: CanActivateFn = () => {
-  const router = inject(Router);
-  if (isPublicMarketingHost()) {
-    router.navigateByUrl('/landing');
-    return false;
-  }
-  const auth = inject(AuthService);
-  router.navigateByUrl(auth.isAuthenticated() ? '/dashboard' : '/login');
-  return false;
-};
+import { appHostGuard, marketingOnlyGuard } from './guards/public-domain.guard';
+import { homeGuard, legacyLandingGuard } from './guards/home.guard';
 
 export const routes: Routes = [
-  { path: '', pathMatch: 'full', canActivate: [homeGuard], children: [] },
+  { path: '', pathMatch: 'full', component: LandingComponent, canActivate: [homeGuard] },
 
   // Marketing site only (platform.pratyushes.dev)
-  { path: 'landing', component: LandingComponent, canActivate: [marketingOnlyGuard] },
+  { path: 'landing', canActivate: [marketingOnlyGuard, legacyLandingGuard], children: [] },
   { matcher: docsMatcher, component: DocsComponent, canActivate: [marketingOnlyGuard] },
 
   // App / server hosts only
@@ -103,5 +90,5 @@ export const routes: Routes = [
   { path: 'settings', component: SettingsComponent, canActivate: [authGuard] },
   { path: 'profile', component: ProfileComponent, canActivate: [authGuard] },
 
-  { path: '**', canActivate: [homeGuard], children: [] }
+  { path: '**', redirectTo: '' }
 ];
