@@ -1,150 +1,153 @@
-import { Component, OnInit, OnDestroy, AfterViewInit, Inject, PLATFORM_ID } from '@angular/core';
-import { CommonModule, isPlatformBrowser } from '@angular/common';
+import {
+  AfterViewInit,
+  Component,
+  ElementRef,
+  OnDestroy,
+  ViewChild,
+} from '@angular/core';
 import { RouterModule } from '@angular/router';
+import { landingMedia } from './landing-media';
 
 @Component({
   selector: 'app-landing',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [RouterModule],
   templateUrl: './landing.component.html',
-  styleUrl: './landing.component.css'
+  styleUrl: './landing.component.css',
 })
-export class LandingComponent implements OnInit, AfterViewInit, OnDestroy {
-  currentTypedText = '';
+export class LandingComponent implements AfterViewInit, OnDestroy {
+  @ViewChild('storyElement') private storyElement?: ElementRef<HTMLElement>;
+  @ViewChild('landscapeVideo')
+  private landscapeVideo?: ElementRef<HTMLVideoElement>;
+  @ViewChild('portraitVideo')
+  private portraitVideo?: ElementRef<HTMLVideoElement>;
+  readonly media = landingMedia;
+  readonly storyChapterCount = 6;
+  storyStep = 0;
+  storyPaused = false;
+  storyVisible = true;
+  landscapeStarted = false;
+  portraitStarted = false;
+  videoError = '';
+  private storyTimer?: ReturnType<typeof setInterval>;
+  private storyObserver?: IntersectionObserver;
+  private motionPreference?: MediaQueryList;
+  private portraitPreference?: MediaQueryList;
+  private readonly onMotionChange = (event: MediaQueryListEvent) => {
+    if (event.matches) this.storyPaused = true;
+  };
+  private readonly onOrientationChange = () => {
+    if (this.portraitPreference?.matches)
+      this.landscapeVideo?.nativeElement.pause();
+    else this.portraitVideo?.nativeElement.pause();
+  };
   installCopied = false;
-  navOpen = false;
   readonly installCommand =
     'curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash\nsudo platformctl provision';
-  private texts = ["React Developers", "DevOps Engineers", "Node.js Backends", "You"];
-  private typeIndex = 0;
-  private charIndex = 0;
-  private isDeleting = false;
-  private typingTimeout: any;
-
-  constructor(@Inject(PLATFORM_ID) private platformId: Object) {}
-
-  ngOnInit() {
-    if (isPlatformBrowser(this.platformId)) {
-      this.startTypingEffect();
-    }
-  }
+  private copyTimer?: ReturnType<typeof setTimeout>;
 
   ngAfterViewInit() {
-    if (isPlatformBrowser(this.platformId)) {
-      // Initialize Three.js after view is ready
-      setTimeout(() => this.initThreeJs(), 100);
+    this.motionPreference = window.matchMedia(
+      '(prefers-reduced-motion: reduce)',
+    );
+    // Defer this preference update beyond Angular's initial change-detection pass.
+    Promise.resolve().then(() => {
+      this.storyPaused = this.motionPreference?.matches ?? false;
+    });
+    this.motionPreference.addEventListener('change', this.onMotionChange);
+    this.portraitPreference = window.matchMedia(
+      '(max-width: 760px), (orientation: portrait) and (max-width: 1050px)',
+    );
+    this.portraitPreference.addEventListener(
+      'change',
+      this.onOrientationChange,
+    );
+    if (typeof IntersectionObserver !== 'undefined' && this.storyElement) {
+      this.storyObserver = new IntersectionObserver(
+        ([entry]) => {
+          this.storyVisible = entry.isIntersecting;
+        },
+        { threshold: 0.15 },
+      );
+      this.storyObserver.observe(this.storyElement.nativeElement);
+    }
+    this.startStoryClock();
+  }
+
+  private startStoryClock() {
+    if (this.storyTimer) clearInterval(this.storyTimer);
+    this.storyTimer = setInterval(() => {
+      if (!this.storyPaused && this.storyVisible && !document.hidden)
+        this.storyStep = (this.storyStep + 1) % this.storyChapterCount;
+    }, 6000);
+  }
+
+  selectStory(step: number) {
+    this.storyStep = step;
+    this.startStoryClock();
+  }
+
+  toggleStory() {
+    this.storyPaused = !this.storyPaused;
+    this.startStoryClock();
+  }
+
+  onVideoPlay(format: 'landscape' | 'portrait') {
+    this.videoError = '';
+    if (format === 'landscape') {
+      this.landscapeStarted = true;
+      this.portraitVideo?.nativeElement.pause();
+    } else {
+      this.portraitStarted = true;
+      this.landscapeVideo?.nativeElement.pause();
     }
   }
 
-  startTypingEffect() {
-    const type = () => {
-      const current = this.texts[this.typeIndex];
-      if (this.isDeleting) {
-        this.currentTypedText = current.substring(0, this.charIndex - 1);
-        this.charIndex--;
-      } else {
-        this.currentTypedText = current.substring(0, this.charIndex + 1);
-        this.charIndex++;
-      }
-      
-      if (!this.isDeleting && this.charIndex === current.length) {
-        this.typingTimeout = setTimeout(() => { this.isDeleting = true; type(); }, 1500);
-        return;
-      } else if (this.isDeleting && this.charIndex === 0) {
-        this.isDeleting = false;
-        this.typeIndex = (this.typeIndex + 1) % this.texts.length;
-      }
-      
-      this.typingTimeout = setTimeout(type, this.isDeleting ? 50 : 150);
-    };
-    this.typingTimeout = setTimeout(type, 1000);
+  async playVideo(video: HTMLVideoElement, format: 'landscape' | 'portrait') {
+    this.videoError = '';
+    try {
+      await video.play();
+      this.onVideoPlay(format);
+    } catch {
+      this.videoError =
+        'The video could not start. Please try the play button again.';
+    }
   }
 
-  initThreeJs() {
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js';
-    script.onload = () => {
-      const THREE = (window as any).THREE;
-      if (!THREE) return;
-      
-      const canvas = document.getElementById('heroCanvas') as HTMLCanvasElement;
-      if (!canvas) return;
-
-      const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
-
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.z = 5;
-
-      const geometry = new THREE.IcosahedronGeometry(2, 0);
-      const material = new THREE.MeshBasicMaterial({ 
-        color: 0x2d2d2d, 
-        wireframe: true,
-        transparent: true,
-        opacity: 0.3
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      scene.add(mesh);
-
-      const animate = () => {
-        requestAnimationFrame(animate);
-        mesh.rotation.x += 0.005;
-        mesh.rotation.y += 0.005;
-        renderer.render(scene, camera);
-      };
-      animate();
-
-      window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-      });
-    };
-    document.head.appendChild(script);
-  }
-
-  toggleNav() {
-    this.navOpen = !this.navOpen;
-  }
-
-  closeNav() {
-    this.navOpen = false;
-  }
-
-  copyInstallCommand() {
-    const text = this.installCommand;
+  async copyInstallCommand() {
     const done = () => {
       this.installCopied = true;
-      setTimeout(() => { this.installCopied = false; }, 2000);
+      if (this.copyTimer) clearTimeout(this.copyTimer);
+      this.copyTimer = setTimeout(() => {
+        this.installCopied = false;
+      }, 2000);
     };
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).then(done).catch(() => this.fallbackCopy(text, done));
-      return;
-    }
-    this.fallbackCopy(text, done);
-  }
-
-  private fallbackCopy(text: string, done: () => void) {
     try {
-      const el = document.createElement('textarea');
-      el.value = text;
-      el.setAttribute('readonly', '');
-      el.style.position = 'fixed';
-      el.style.left = '-9999px';
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand('copy');
-      document.body.removeChild(el);
+      await navigator.clipboard.writeText(this.installCommand);
       done();
     } catch {
-      // ignore
+      const element = document.createElement('textarea');
+      element.value = this.installCommand;
+      element.style.position = 'fixed';
+      element.style.left = '-9999px';
+      document.body.appendChild(element);
+      element.select();
+      try {
+        if (document.execCommand('copy')) done();
+      } finally {
+        element.remove();
+      }
     }
   }
 
   ngOnDestroy() {
-    if (this.typingTimeout) {
-      clearTimeout(this.typingTimeout);
-    }
+    if (this.copyTimer) clearTimeout(this.copyTimer);
+    if (this.storyTimer) clearInterval(this.storyTimer);
+    this.storyObserver?.disconnect();
+    this.motionPreference?.removeEventListener('change', this.onMotionChange);
+    this.portraitPreference?.removeEventListener(
+      'change',
+      this.onOrientationChange,
+    );
   }
 }

@@ -15,8 +15,11 @@ build/
 package-lock.json
 .next/
 *.tsbuildinfo
+/renders/
+/.hyperframes/
 
 chats.json
 platformctl/platformctl-linux-*
 token.json
+/platform/portal/public/docs-search.json
 

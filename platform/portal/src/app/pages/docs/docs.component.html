@@ -1,11 +1,12 @@
 <div class="docs-page">
   <!-- Mobile toggle -->
-  <button class="docs-mobile-toggle" (click)="mobileNavOpen = !mobileNavOpen">
+  <div class="docs-mobile-bar"><button class="docs-mobile-toggle" (click)="mobileNavOpen = !mobileNavOpen">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
       <path d="M2.5 5h15M2.5 10h15M2.5 15h15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
     </svg>
     <span>Documentation</span>
-  </button>
+  </button><button type="button" class="docs-mobile-search" (click)="docsSearch.openSearch()" aria-haspopup="dialog" aria-label="Search documentation">Search <span aria-hidden="true">⌕</span></button></div>
+  <app-docs-search #docsSearch (resultSelected)="mobileNavOpen = false" />
 
   <div class="docs-layout">
     <!-- Sidebar -->
@@ -19,22 +20,17 @@
       </div>
 
       <!-- Search -->
-      <div class="docs-search">
+      <button type="button" class="docs-search docs-search-trigger" (click)="docsSearch.openSearch()" aria-haspopup="dialog" aria-label="Search documentation">
         <svg class="docs-search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
           <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.5"/>
           <path d="M9.5 9.5L13 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
         </svg>
-        <input
-          type="text"
-          placeholder="Search docs..."
-          [(ngModel)]="searchQuery"
-          class="docs-search-input"
-        />
-      </div>
+        <span>Search documentation</span><kbd>Ctrl K</kbd>
+      </button>
 
       <!-- Navigation -->
       <nav class="docs-nav">
-        <div *ngFor="let section of filteredSections" class="docs-nav-group">
+        <div *ngFor="let section of docSections" class="docs-nav-group">
           <div class="docs-nav-group-label">
             {{ section.label }}
             <span class="docs-page-count">({{ section.pages.length }})</span>
@@ -43,7 +39,7 @@
             *ngFor="let page of section.pages"
             class="docs-nav-link"
             [class.active]="isActive(page)"
-            (click)="navigateTo(page)"
+            [routerLink]="docUrl(page)" (click)="mobileNavOpen = false"
           >{{ page.label }}</a>
         </div>
       </nav>
@@ -93,14 +89,14 @@
         <!-- Footer nav -->
         <div *ngIf="!isLoading && content" class="docs-page-nav">
           <div class="docs-page-nav-row">
-            <a *ngIf="prevPage" class="docs-nav-item docs-nav-prev" (click)="navigateTo(prevPage)">
+            <a *ngIf="prevPage" class="docs-nav-item docs-nav-prev" [routerLink]="docUrl(prevPage)">
               <span class="docs-nav-arrow">&larr;</span>
               <span class="docs-nav-text">
                 <span class="docs-nav-label">Previous</span>
                 <span class="docs-nav-title">{{ prevPage.label }}</span>
               </span>
             </a>
-            <a *ngIf="nextPage" class="docs-nav-item docs-nav-next" (click)="navigateTo(nextPage)">
+            <a *ngIf="nextPage" class="docs-nav-item docs-nav-next" [routerLink]="docUrl(nextPage)">
               <span class="docs-nav-text">
                 <span class="docs-nav-label">Next</span>
                 <span class="docs-nav-title">{{ nextPage.label }}</span>
@@ -141,7 +137,7 @@
               [class.toc-h2]="item.level === 'h2'"
               [class.toc-h3]="item.level === 'h3'"
               [class.toc-active]="item.id === activeTocId"
-              [attr.href]="'#' + item.id"
+              [attr.href]="headingUrl(item.id)"
               (click)="scrollToHeading($event, item.id)"
             >{{ item.text }}</a>
           </nav>

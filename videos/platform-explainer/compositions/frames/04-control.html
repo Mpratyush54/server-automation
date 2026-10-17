@@ -1,0 +1,140 @@
+<template>
+  <style>
+    @font-face{font-family:'Archivo Black';src:url('assets/fonts/ArchivoBlack.ttf') format('truetype');font-weight:400;font-style:normal}
+    @font-face{font-family:'Space Grotesk';src:url('assets/fonts/SpaceGrotesk.ttf') format('truetype');font-weight:100 900;font-style:normal}
+    @font-face{font-family:'JetBrains Mono';src:url('assets/fonts/JetBrainsMono.ttf') format('truetype');font-weight:100 900;font-style:normal}
+    #root{position:relative;width:100%;height:100%;overflow:hidden;container-type:size;color:#28251f;font-family:'Space Grotesk'}
+    [data-control="ground"]{position:absolute;inset:0;background:#f6f3eb;container-type:size}
+    [data-control="closing-ground"]{position:absolute;inset:0;container-type:size}
+    #f-04-control-closing-fill{position:absolute;inset:0;background:#843025}
+    #f-04-control-camera,#f-04-control-lockup{position:absolute;inset:0;transform-origin:50% 55%}
+    [data-control="content"]{position:absolute;inset:0}
+    [data-control="top"]{position:absolute;left:5cqw;right:5cqw;top:4.3cqw;display:flex;justify-content:space-between;align-items:center;font-family:'JetBrains Mono';font-size:1.46cqw;line-height:1.3;letter-spacing:.06em;text-transform:uppercase}
+    [data-control="pill"]{border:.2cqw solid #28251f;border-radius:999px;padding:.45cqw 1cqw}
+    [data-control="headline"]{position:absolute;left:5cqw;top:11.1cqw;margin:0;width:88cqw;font-family:'Archivo Black';font-size:5.2cqw;line-height:.92;letter-spacing:-.01em;text-transform:uppercase}
+    [data-control="headline"] span{display:block}
+    [data-control="headline"] span:last-child{color:#843025}
+    [data-control="node"]{position:absolute;top:26cqw;box-sizing:border-box;height:8.3cqw;border:.21cqw solid #28251f;background:#f6f3eb;display:flex;justify-content:center;align-items:center;font-family:'JetBrains Mono';font-size:1.7cqw;line-height:1.25;letter-spacing:.02em}
+    #f-04-control-client{left:5cqw;width:19cqw;background:#ECC2BC}
+    #f-04-control-tools{left:74cqw;width:21cqw}
+    #f-04-control-guard{left:37.5cqw;width:25cqw;background:#8DCFA9;flex-direction:column;gap:.5cqw;font-family:'Archivo Black';font-size:2.4cqw;line-height:.92;letter-spacing:-.01em;text-transform:uppercase}
+    [data-control="guard-sub"]{font-family:'JetBrains Mono';font-size:1.46cqw;line-height:1.3;letter-spacing:.02em;text-transform:none}
+    [data-control="token"]{position:absolute;left:33cqw;top:23.1cqw;width:34cqw;text-align:center;font-family:'JetBrains Mono';font-size:1.46cqw;line-height:1.3;letter-spacing:.06em;text-transform:uppercase}
+    [data-control="paths"]{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+    [data-control="paths"] path{fill:none;stroke:#28251f;stroke-width:4;stroke-linejoin:miter;stroke-linecap:square}
+    [data-control="packet"]{position:absolute;left:24cqw;top:29.7cqw;width:.9cqw;height:.9cqw;box-sizing:border-box;background:#843025;border:.15cqw solid #28251f}
+    #f-04-control-approval-packet{position:absolute;left:49.55cqw;top:34.3cqw;width:.9cqw;height:.9cqw;border:.15cqw solid #28251f;background:#843025;box-sizing:border-box}
+    #f-04-control-human-cursor{position:absolute;left:61cqw;top:42.3cqw;width:2.1cqw;height:2.8cqw;overflow:visible;transform-origin:12% 8%}
+    #f-04-control-human-cursor path{fill:#28251f;stroke:#f6f3eb;stroke-width:2;stroke-linejoin:round}
+    #f-04-control-waiting,#f-04-control-approved{position:absolute;left:34cqw;top:46cqw;width:32cqw;text-align:center;font:400 1.46cqw/1.3 'JetBrains Mono';color:#843025}
+    #f-04-control-approved{color:#2c6a46}
+    [data-control="approval"]{position:absolute;left:35.5cqw;top:38.3cqw;width:29cqw;height:6.3cqw;box-sizing:border-box;background:#ECC2BC;border:.21cqw solid #28251f;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:.5cqw;font-family:'JetBrains Mono';font-size:1.46cqw;line-height:1.25;letter-spacing:.02em}
+    [data-control="approval"] strong{font-family:'Archivo Black';font-size:1.95cqw;line-height:.92;text-transform:uppercase;font-weight:400;letter-spacing:-.01em}
+    [data-control="closing-chrome"]{position:absolute;left:5cqw;top:4.3cqw;color:#f6f3eb;font-family:'JetBrains Mono';font-size:1.46cqw;letter-spacing:.06em;text-transform:uppercase}
+    [data-control="logo"]{position:absolute;left:5cqw;top:12.7cqw;width:19cqw;height:12.67cqw;object-fit:contain;border:.21cqw solid #28251f;box-sizing:border-box}
+    [data-control="signoff"]{position:absolute;left:29cqw;top:12.5cqw;margin:0;color:#f6f3eb;font-family:'Archivo Black';font-size:7.1cqw;line-height:.92;letter-spacing:-.01em;text-transform:uppercase;white-space:nowrap}
+    [data-control="signoff"] span{display:block}
+    [data-control="signoff"] span:last-child{margin-top:.7cqw;color:#8DCFA9}
+    [data-control="docs-label"]{position:absolute;left:29.4cqw;top:34cqw;color:#f6f3eb;font-family:'JetBrains Mono';font-size:1.46cqw;letter-spacing:.06em;line-height:1.3;text-transform:uppercase}
+    [data-control="cta"]{position:absolute;left:29cqw;top:37cqw;display:flex;align-items:baseline;border-bottom:.21cqw solid #8DCFA9;padding-bottom:.7cqw;color:#f6f3eb;font-family:'JetBrains Mono';font-size:2.1cqw;letter-spacing:-.025em;line-height:1.3;white-space:nowrap}
+    [data-control="cta"] span{display:inline-block}
+  </style>
+  <div data-hf-id="hf-csvu" id="root" data-composition-id="04-control" data-duration="15" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-4yjg" id="f-04-control-layer-1" class="clip" data-control="ground" data-start="0" data-duration="15" data-track-index="0"></div>
+    <div data-hf-id="hf-7ur9" class="clip" id="f-04-control-closing-ground" data-control="closing-ground" data-start="0" data-duration="15" data-track-index="1"><div data-hf-id="hf-4nwe" id="f-04-control-closing-fill"></div></div>
+    <div data-hf-id="hf-8n2c" class="clip" id="f-04-control-diagram" data-control="content" data-start="0" data-duration="15" data-track-index="2">
+      <div data-hf-id="hf-o2le" id="f-04-control-camera">
+      <div data-hf-id="hf-usq9" data-control="top"><span data-hf-id="hf-amg8">Agent access</span><span data-hf-id="hf-7k3u" data-control="pill">Conceptual illustration</span></div>
+      <h1 data-hf-id="hf-9cim" data-control="headline"><span data-hf-id="hf-1yki" id="f-04-control-ask">ASK YOUR AGENT.</span><span data-hf-id="hf-er7z" id="f-04-control-keep">KEEP THE CONTROLS.</span></h1>
+      <svg data-hf-id="hf-38f4" data-control="paths" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path data-hf-id="hf-685a" id="f-04-control-token-route" d="M460.8 579 H1420.8"/>
+        <path data-hf-id="hf-lr0i" id="f-04-control-guard-route" d="M460.8 579 H720 M1200 579 H1420.8"/>
+        <path data-hf-id="hf-juy5" id="f-04-control-approval-route" d="M960 658.6 V735.4"/>
+      </svg>
+      <div data-hf-id="hf-bszk" id="f-04-control-client" data-control="node">MCP client</div>
+      <div data-hf-id="hf-vz93" id="f-04-control-tools" data-control="node">Platform tools</div>
+      <div data-hf-id="hf-6gfb" id="f-04-control-token" data-control="token">Scoped token</div>
+      <div data-hf-id="hf-ma4u" id="f-04-control-packet" data-control="packet"></div>
+      <div data-hf-id="hf-5z0l" id="f-04-control-guard" data-control="node"><span data-hf-id="hf-ww77">Command guard</span><span data-hf-id="hf-i767" data-control="guard-sub">Validated commands</span></div>
+      <div data-hf-id="hf-vjnk" id="f-04-control-approval" data-control="approval"><strong data-hf-id="hf-pu3u">Human approval</strong><span data-hf-id="hf-07m4">Destructive actions</span></div>
+      <div data-hf-id="hf-e9jr" id="f-04-control-approval-packet"></div>
+      <div data-hf-id="hf-m5as" id="f-04-control-waiting">Waiting for a person</div>
+      <div data-hf-id="hf-t0xy" id="f-04-control-approved">Approved by a person</div>
+      <svg data-hf-id="hf-i7e5" id="f-04-control-human-cursor" viewBox="0 0 32 42" aria-hidden="true"><path data-hf-id="hf-ghbv" d="M3 2 L3 33 L11 25 L18 40 L25 36 L18 22 L30 22 Z"/></svg>
+      </div>
+    </div>
+    <div data-hf-id="hf-8iwv" class="clip" id="f-04-control-closing" data-control="content" data-start="0" data-duration="15" data-track-index="3">
+      <div data-hf-id="hf-kd59" id="f-04-control-lockup">
+      <div data-hf-id="hf-jv5j" data-control="closing-chrome">Platform</div>
+      <img data-hf-id="hf-3xoh" id="f-04-control-logo" data-control="logo" src="assets/logo-light.png" alt="Platform">
+      <h2 data-hf-id="hf-n779" data-control="signoff"><span data-hf-id="hf-tp0r" id="f-04-control-server">YOUR SERVER.</span><span data-hf-id="hf-ntb3" id="f-04-control-apps">YOUR APPS.</span></h2>
+      <div data-hf-id="hf-5c9o" id="f-04-control-docs-label" data-control="docs-label">Build on your terms</div>
+      <div data-hf-id="hf-uqz7" id="f-04-control-cta" data-control="cta" aria-label="platform.pratyushes.dev"><span data-hf-id="hf-bq2m" id="f-04-control-url-platform">platform.</span><span data-hf-id="hf-bk81" id="f-04-control-url-domain">pratyushes.dev</span></div>
+      </div>
+    </div>
+  </div>
+  <script src="assets/gsap.min.js"></script>
+  <script>
+    (function(){
+      var tl=gsap.timeline({paused:true});
+      function control(name){return document.getElementById('f-04-control-'+name);}
+      tl.set(control('closing-fill'),{opacity:0},0);
+      tl.set(control('lockup'),{opacity:0},0);
+      tl.set(control('cta'),{opacity:0},0);
+      tl.set([control('waiting'),control('approved'),control('approval-packet'),control('human-cursor')],{opacity:0},0);
+      tl.set(control('token-route'),{opacity:0},0);
+      function waterfall(name,start,y,duration){var el=control(name);tl.set(el,{opacity:0},0);tl.set(el,{opacity:1,y:y},start);tl.to(el,{y:0,duration:duration,ease:'power4.out'},start);}
+      waterfall('ask',.06,78,.20);
+      waterfall('keep',.25,60,.18);
+      tl.fromTo(control('client'),{scale:0,opacity:0},{scale:1,opacity:1,duration:.55,ease:'power3.out'},.15);
+      tl.fromTo(control('tools'),{scale:0,opacity:0},{scale:1,opacity:1,duration:.55,ease:'power3.out'},.65);
+      tl.fromTo(control('token'),{scale:0,opacity:0},{scale:1,opacity:1,duration:.5,ease:'power3.out'},1.65);
+      function draw(name,start,duration){var p=control(name);var len=p.getTotalLength();p.style.strokeDasharray=String(len);p.style.strokeDashoffset=String(len);tl.fromTo(p,{strokeDashoffset:len},{strokeDashoffset:0,duration:duration,ease:'power2.out'},start);}
+      draw('guard-route',1.9,.7);
+      tl.fromTo(control('guard'),{scale:0,opacity:0},{scale:1,opacity:1,duration:.6,ease:'power3.out'},1.85);
+      tl.fromTo(control('camera'),{scale:1,x:0,y:0},{scale:1.02,x:0,y:-7,duration:3.8,ease:'power1.inOut'},.6);
+      tl.fromTo(control('packet'),{scale:0,opacity:0,x:0},{scale:1,opacity:1,x:0,duration:.35,ease:'power3.out'},2.45);
+      tl.fromTo(control('packet'),{x:0},{x:250.56,duration:1.2,ease:'none',immediateRender:false},2.85);
+      tl.set(control('packet'),{opacity:0},4.05);
+      draw('approval-route',4.05,.5);
+      tl.fromTo(control('approval'),{scale:0,opacity:0,y:12},{scale:1,opacity:1,y:0,duration:.55,ease:'power3.out'},4.3);
+      tl.fromTo(control('camera'),{scale:1.02,x:0,y:-7},{scale:1.045,x:0,y:-17,duration:2.1,ease:'power1.inOut',immediateRender:false},4.4);
+      tl.set(control('approval-packet'),{opacity:1,y:0},4.85);
+      tl.fromTo(control('approval-packet'),{y:0},{y:58,duration:.8,ease:'none',immediateRender:false},4.85);
+      tl.set(control('approval-packet'),{opacity:0},5.65);
+      waterfall('waiting',5.3,18,.3);
+      // A visible human cursor supplies the approval; it is never shown as automatic.
+      tl.fromTo(control('human-cursor'),{x:118,y:88,opacity:0,scale:1},{x:0,y:0,opacity:1,scale:1,duration:.85,ease:'power3.out'},6.1);
+      tl.fromTo(control('human-cursor'),{scale:1},{scale:.82,duration:.12,ease:'power2.in',immediateRender:false},7.05);
+      tl.fromTo(control('human-cursor'),{scale:.82},{scale:1,duration:.16,ease:'power2.out',immediateRender:false},7.17);
+      tl.to(control('approval'),{backgroundColor:'#8DCFA9',duration:.3,ease:'power1.out'},7.17);
+      tl.to(control('waiting'),{opacity:0,duration:.18,ease:'power1.out'},7.17);
+      waterfall('approved',7.35,12,.25);
+      tl.to(control('human-cursor'),{x:40,y:30,opacity:0,duration:.4,ease:'power2.in'},7.5);
+      tl.set(control('approval-packet'),{opacity:1,y:58,backgroundColor:'#8DCFA9'},7.55);
+      tl.fromTo(control('approval-packet'),{y:58},{y:0,duration:.7,ease:'none',immediateRender:false},7.55);
+      tl.set(control('approval-packet'),{opacity:0},8.25);
+      // The tool-bound command appears only after the illustrated human decision.
+      tl.set(control('packet'),{x:730.56,opacity:1,backgroundColor:'#8DCFA9'},8.3);
+      tl.fromTo(control('packet'),{x:730.56},{x:951.36,duration:.85,ease:'none',immediateRender:false},8.3);
+      tl.set(control('packet'),{opacity:0},9.15);
+      tl.to(control('tools'),{backgroundColor:'#8DCFA9',duration:.25,ease:'power1.out'},9.15);
+      tl.fromTo(control('camera'),{scale:1.045,x:0,y:-17},{scale:1,x:0,y:0,duration:1.2,ease:'power2.inOut',immediateRender:false},8.1);
+      tl.to(control('camera'),{x:-230,opacity:0,duration:.4,ease:'power4.in'},9.55);
+      tl.set(control('closing-fill'),{opacity:1},9.95);
+      tl.fromTo(control('lockup'),{x:230,opacity:.35,scale:1},{x:0,opacity:1,scale:1,duration:.4,ease:'power4.out',immediateRender:false},9.95);
+      tl.fromTo(control('logo'),{scale:0,opacity:0},{scale:1,opacity:1,duration:.6,ease:'power3.out'},9.95);
+      waterfall('server',10.35,80,.2);
+      waterfall('apps',10.85,70,.18);
+      waterfall('docs-label',11.55,45,.16);
+      tl.set(control('cta'),{opacity:1},12.05);
+      waterfall('url-platform',12.05,78,.2);
+      waterfall('url-domain',12.2,48,.16);
+
+
+      // The URL is fully readable for 2.42s, with only a gentle final push.
+      tl.fromTo(control('lockup'),{scale:1},{scale:1.015,duration:4.15,ease:'power1.inOut',immediateRender:false},10.35);
+      window.__timelines=window.__timelines||{};window.__timelines['04-control']=tl;
+    })();
+  </script>
+</template>

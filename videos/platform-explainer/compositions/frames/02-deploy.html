@@ -1,0 +1,181 @@
+<template>
+  <div data-hf-id="hf-7djz" id="f-02-deploy-root" data-composition-id="02-deploy" data-duration="15" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-gblh" id="f-02-deploy-ground" class="clip" data-start="0" data-duration="15" data-track-index="0"></div>
+    <div data-hf-id="hf-ksbv" id="f-02-deploy-scene" class="clip" data-start="0" data-duration="15" data-track-index="1">
+      <div data-hf-id="hf-jqwj" id="f-02-deploy-chrome"><span data-hf-id="hf-76r5">DEPLOY / GITOPS</span><span data-hf-id="hf-c5bh" id="f-02-deploy-pill">PLATFORMCTL</span></div>
+      <h1 data-hf-id="hf-x1oz" id="f-02-deploy-title"><span data-hf-id="hf-v9ih" id="f-02-deploy-title-a">FROM SERVER</span><span data-hf-id="hf-ad5o" id="f-02-deploy-title-b">TO <span data-hf-id="hf-cv87" id="f-02-deploy-title-c">APP</span></span></h1>
+
+      <!-- Terminal Simulator registry primitive: chrome, body, terminal.
+           The content is a real command; no simulated logs or screenshots. -->
+      <div data-hf-id="hf-us49" id="f-02-deploy-terminal">
+        <div data-hf-id="hf-clko" id="f-02-deploy-terminal-chrome"><span data-hf-id="hf-2tzw" id="f-02-deploy-terminal-dot"></span><span data-hf-id="hf-grjd">SERVER / CLI</span><img data-hf-id="hf-avax" id="f-02-deploy-brand" src="assets/logo-light.png" alt="Platform" /></div>
+        <div data-hf-id="hf-np8i" id="f-02-deploy-terminal-body"><span data-hf-id="hf-kz82" id="f-02-deploy-terminal-label">PROVISION</span></div>
+        <div data-hf-id="hf-c5bl" id="f-02-deploy-terminal-command"><span data-hf-id="hf-0r9k" id="f-02-deploy-prompt">$</span> <span data-hf-id="hf-sz9s" id="f-02-deploy-sudo">sudo</span> <span data-hf-id="hf-5fxc" id="f-02-deploy-cli">platformctl</span> <span data-hf-id="hf-hv2y" id="f-02-deploy-provision">provision</span></div>
+      </div>
+
+      <svg data-hf-id="hf-y5go" id="f-02-deploy-connections" viewBox="0 0 1920 1080" aria-hidden="true">
+        <path data-hf-id="hf-0344" id="f-02-deploy-link-one" d="M 500 688 H 702" />
+        <path data-hf-id="hf-2iat" id="f-02-deploy-arrow-one" d="M 681 669 L 702 688 L 681 707" />
+        <path data-hf-id="hf-p0ah" id="f-02-deploy-link-two" d="M 1070 688 H 1290" />
+        <path data-hf-id="hf-s8u3" id="f-02-deploy-arrow-two" d="M 1269 669 L 1290 688 L 1269 707" />
+        <!-- Adapted from the registry offset-path-traveler primitive: a persistent
+             artifact follows each authored straight route on the paused timeline. -->
+        <g data-hf-id="hf-4c6b" id="f-02-deploy-packet-one" aria-hidden="true"><rect data-hf-id="hf-rjkc" x="488" y="676" width="24" height="24" rx="2" /></g>
+        <g data-hf-id="hf-qkrl" id="f-02-deploy-packet-two" aria-hidden="true"><rect data-hf-id="hf-bxym" x="1058" y="676" width="24" height="24" rx="2" /></g>
+      </svg>
+
+      <div data-hf-id="hf-542d" id="f-02-deploy-repo">
+        <div data-hf-id="hf-12o4" id="f-02-deploy-repo-label">GIT</div>
+        <svg data-hf-id="hf-b2ar" id="f-02-deploy-repo-icon" viewBox="0 0 210 130" aria-hidden="true">
+          <path data-hf-id="hf-c7hn" id="f-02-deploy-repo-folder" d="M 12 30 V 115 H 198 V 39 H 101 L 82 15 H 12 V 30" />
+          <path data-hf-id="hf-5oeh" id="f-02-deploy-repo-branch" d="M 70 53 V 91 M 70 76 H 130 V 54" />
+          <circle data-hf-id="hf-g7pp" id="f-02-deploy-repo-dot-a" cx="70" cy="50" r="7" />
+          <circle data-hf-id="hf-wdzy" id="f-02-deploy-repo-dot-b" cx="70" cy="94" r="7" />
+          <circle data-hf-id="hf-cwdy" id="f-02-deploy-repo-dot-c" cx="130" cy="50" r="7" />
+        </svg>
+        <span data-hf-id="hf-ctgb" id="f-02-deploy-repo-note">REPOSITORY</span>
+      </div>
+
+      <div data-hf-id="hf-rvxe" id="f-02-deploy-argo">
+        <div data-hf-id="hf-ygvd" id="f-02-deploy-argo-label">ARGO CD</div>
+        <svg data-hf-id="hf-pcs7" id="f-02-deploy-argo-icon" viewBox="0 0 150 110" aria-hidden="true">
+          <path data-hf-id="hf-yt64" id="f-02-deploy-sync-top" d="M 29 43 C 41 3 111 3 123 43 L 124 53 M 107 38 L 124 55 L 139 36" />
+          <path data-hf-id="hf-nuuz" id="f-02-deploy-sync-bottom" d="M 121 70 C 106 110 41 110 28 70 L 26 60 M 10 78 L 26 59 L 44 76" />
+        </svg>
+        <span data-hf-id="hf-0fwe" id="f-02-deploy-argo-note">MANIFEST SYNC</span>
+      </div>
+
+      <div data-hf-id="hf-oq6d" id="f-02-deploy-cluster">
+        <span data-hf-id="hf-p3t9" id="f-02-deploy-cluster-label">KUBERNETES</span>
+        <div data-hf-id="hf-c6am" id="f-02-deploy-app">
+          <div data-hf-id="hf-qrb5" id="f-02-deploy-app-chrome"><span data-hf-id="hf-uckh"></span><span data-hf-id="hf-l73p"></span><span data-hf-id="hf-me0s"></span></div>
+          <strong data-hf-id="hf-hu35" id="f-02-deploy-app-label">YOUR APP</strong>
+          <div data-hf-id="hf-dmth" id="f-02-deploy-app-layout"><span data-hf-id="hf-lzpr"></span><span data-hf-id="hf-n6mu"></span><span data-hf-id="hf-msbt"></span></div>
+        </div>
+      </div>
+      <div data-hf-id="hf-cdux" id="f-02-deploy-route-note">GITOPS</div>
+      <span data-hf-id="hf-8ql1" id="f-02-deploy-concept-note">CONCEPTUAL ILLUSTRATION</span>
+    </div>
+  </div>
+  <style>
+    @font-face{font-family:"Archivo Black";src:url("assets/fonts/ArchivoBlack.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
+    @font-face{font-family:"Space Grotesk";src:url("assets/fonts/SpaceGrotesk.ttf") format("truetype");font-weight:100 900;font-style:normal;font-display:swap}
+    @font-face{font-family:"JetBrains Mono";src:url("assets/fonts/JetBrainsMono.ttf") format("truetype");font-weight:100 900;font-style:normal;font-display:swap}
+    #f-02-deploy-root{position:relative;width:100%;height:100%;overflow:hidden;container-type:size;color:#28251f;font-family:"Space Grotesk"}
+    #f-02-deploy-ground{position:absolute;inset:0;background:#f6f3eb;container-type:size}
+    #f-02-deploy-scene{position:absolute;inset:0}
+    #f-02-deploy-chrome{position:absolute;left:5cqw;right:5cqw;top:3cqw;display:flex;justify-content:space-between;align-items:center;font-family:"JetBrains Mono";font-size:1.46cqw;letter-spacing:.06em}
+    #f-02-deploy-pill{border:.15cqw solid #28251f;border-radius:999px;padding:.45cqw 1.05cqw;font-size:1.46cqw}
+    #f-02-deploy-title{position:absolute;left:5cqw;top:9.6cqw;margin:0;width:40cqw;font-family:"Archivo Black";font-size:4.7cqw;font-weight:400;line-height:.92;letter-spacing:-.01em}
+    #f-02-deploy-title-a,#f-02-deploy-title-b{display:block;white-space:nowrap}
+    #f-02-deploy-title-b{margin-top:.6cqw}
+    #f-02-deploy-title-c{display:inline-block;color:#c94d3c}
+    #f-02-deploy-terminal{position:absolute;left:46.2cqw;top:9.4cqw;width:48.5cqw;height:15.5cqw;background:#28251f;border:.25cqw solid #28251f;color:#f6f3eb;box-sizing:border-box;font-family:"JetBrains Mono"}
+    #f-02-deploy-terminal-chrome{height:3.3cqw;border-bottom:.15cqw solid #f6f3eb;display:flex;align-items:center;gap:.85cqw;padding:0 1.45cqw;box-sizing:border-box;font-size:1.46cqw;letter-spacing:.06em}
+    #f-02-deploy-terminal-dot{display:block;width:.65cqw;height:.65cqw;background:#c94d3c}
+    #f-02-deploy-brand{display:block;margin-left:auto;width:8cqw;height:2.15cqw;object-fit:contain}
+    #f-02-deploy-terminal-body{padding:1.7cqw 1.45cqw .8cqw}
+    #f-02-deploy-terminal-label{font-size:1.46cqw;color:#ECC2BC;letter-spacing:.14em}
+    #f-02-deploy-terminal-command{padding:1.15cqw 1.45cqw 2cqw;font-size:1.68cqw;white-space:nowrap;letter-spacing:-.035em}
+    #f-02-deploy-terminal-command span{display:inline-block}
+    #f-02-deploy-prompt{color:#c94d3c;margin-right:.35cqw}
+    #f-02-deploy-connections{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+    #f-02-deploy-connections path{fill:none;stroke:#28251f;stroke-width:6;stroke-linejoin:miter}
+    #f-02-deploy-packet-one rect,#f-02-deploy-packet-two rect{fill:#c94d3c;stroke:#28251f;stroke-width:3}
+    #f-02-deploy-repo,#f-02-deploy-argo{position:absolute;top:29.3cqw;height:13cqw;border:.25cqw solid #28251f;box-sizing:border-box;background:#f6f3eb}
+    #f-02-deploy-repo{left:5cqw;width:21cqw}
+    #f-02-deploy-argo{left:36.6cqw;width:19.15cqw;background:#ECC2BC}
+    #f-02-deploy-repo-label,#f-02-deploy-argo-label{position:absolute;top:1cqw;left:1.3cqw;font-family:"Archivo Black";font-size:2.15cqw;line-height:.92;letter-spacing:-.01em}
+    #f-02-deploy-repo-icon{position:absolute;left:6cqw;top:3.35cqw;width:9cqw;height:5.4cqw}
+    #f-02-deploy-repo-icon path,#f-02-deploy-repo-icon circle{fill:none;stroke:#28251f;stroke-width:5;stroke-linejoin:miter}
+    #f-02-deploy-repo-note,#f-02-deploy-argo-note{position:absolute;left:1.3cqw;bottom:1.1cqw;font-family:"JetBrains Mono";font-size:1.46cqw;letter-spacing:.035em}
+    #f-02-deploy-argo-icon{position:absolute;left:6cqw;top:3.5cqw;width:7cqw;height:5.2cqw}
+    #f-02-deploy-argo-icon path{fill:none;stroke:#28251f;stroke-width:6;stroke-linejoin:miter}
+    #f-02-deploy-cluster{position:absolute;left:67.2cqw;top:27.6cqw;width:27.5cqw;height:15.3cqw;border:.2cqw dashed #28251f;box-sizing:border-box;background:#f6f3eb}
+    #f-02-deploy-cluster-label{position:absolute;left:1.2cqw;top:.8cqw;font-family:"JetBrains Mono";font-size:1.46cqw;letter-spacing:.06em}
+    #f-02-deploy-app{position:absolute;left:2.8cqw;top:3.3cqw;width:21.5cqw;height:10cqw;background:#c94d3c;color:#28251f;border:.25cqw solid #28251f;box-sizing:border-box;transform-origin:50% 50%}
+    #f-02-deploy-app-chrome{height:1.65cqw;padding-left:.7cqw;border-bottom:.2cqw solid #28251f;display:flex;gap:.35cqw;align-items:center}
+    #f-02-deploy-app-chrome span{width:.45cqw;height:.45cqw;background:#28251f}
+    #f-02-deploy-app-label{position:absolute;left:1.1cqw;top:3cqw;font-family:"Archivo Black";font-weight:400;font-size:2.35cqw;line-height:.92;letter-spacing:-.01em}
+    #f-02-deploy-app-layout{position:absolute;left:1.1cqw;right:1.1cqw;bottom:1.25cqw;display:flex;gap:.55cqw}
+    #f-02-deploy-app-layout span{height:.55cqw;background:#28251f;width:4cqw}
+    #f-02-deploy-app-layout span:first-child{width:9cqw}
+    #f-02-deploy-route-note{position:absolute;left:5cqw;top:44.4cqw;font-family:"JetBrains Mono";font-size:1.46cqw;letter-spacing:.14em}
+    #f-02-deploy-concept-note{position:absolute;right:5cqw;top:44.4cqw;font-family:"JetBrains Mono";font-size:1.2cqw;line-height:1.5;letter-spacing:.035em}
+  </style>
+  <script>
+    (function(){
+      const q = id => document.querySelector('[id="'+id+'"]');
+      const tl = gsap.timeline({paused:true});
+      const cascade = [
+        ['f-02-deploy-title-a',.06,80,.19],
+        ['f-02-deploy-title-b',.235,48,.155],
+        ['f-02-deploy-title-c',.37,65,.15],
+        ['f-02-deploy-sudo',1.03,42,.16],
+        ['f-02-deploy-cli',1.175,70,.18],
+        ['f-02-deploy-provision',1.338,48,.145]
+      ];
+      cascade.forEach(([id,start,y,duration])=>{
+        tl.set(q(id),{opacity:0},0);
+        tl.set(q(id),{opacity:1,y:y},start);
+        tl.to(q(id),{y:0,duration:duration,ease:'power4.out'},start);
+      });
+      tl.fromTo(q('f-02-deploy-terminal'),{y:55,opacity:0},{y:0,opacity:1,duration:.38,ease:'power3.out'},.3);
+      tl.fromTo(q('f-02-deploy-prompt'),{opacity:0},{opacity:1,duration:.01},.85);
+      tl.fromTo(q('f-02-deploy-terminal-label'),{opacity:0},{opacity:1,duration:.25,ease:'power1.out'},.72);
+      tl.fromTo(q('f-02-deploy-repo'),{y:24,opacity:0},{y:0,opacity:1,duration:.4,ease:'power3.out'},2.1);
+      tl.fromTo(q('f-02-deploy-argo'),{y:24,opacity:0},{y:0,opacity:1,duration:.4,ease:'power3.out'},4.75);
+      const draws = [
+        ['f-02-deploy-repo-folder',2.3,.6],
+        ['f-02-deploy-repo-branch',2.75,.45],
+        ['f-02-deploy-repo-dot-a',3.08,.25],
+        ['f-02-deploy-repo-dot-b',3.21,.25],
+        ['f-02-deploy-repo-dot-c',3.34,.25],
+        ['f-02-deploy-link-one',3.6,.7],
+        ['f-02-deploy-arrow-one',4.14,.25],
+        ['f-02-deploy-sync-top',5.05,.5],
+        ['f-02-deploy-sync-bottom',5.42,.5],
+        ['f-02-deploy-link-two',7.2,.75],
+        ['f-02-deploy-arrow-two',7.77,.28]
+      ];
+      draws.forEach(([id,start,duration])=>{
+        const el=q(id);const len=el.getTotalLength();
+        el.style.strokeDasharray=String(len);el.style.strokeDashoffset=String(len);
+        tl.fromTo(el,{strokeDashoffset:len},{strokeDashoffset:0,duration:duration,ease:'power2.out'},start);
+      });
+      // Repository content travels to the controller, then on to the app.
+      // Each pass has explicit poses so direct and reverse seeks are identical.
+      const travel = (id, distance, start, duration) => {
+        const el=q(id);
+        tl.set(el,{opacity:0,x:0},0);
+        tl.fromTo(el,{x:0,opacity:0},{x:0,opacity:1,duration:.08,immediateRender:false},start);
+        tl.fromTo(el,{x:0},{x:distance,duration:duration,ease:'none',immediateRender:false},start);
+        tl.to(el,{opacity:0,duration:.12},start+duration-.12);
+      };
+      travel('f-02-deploy-packet-one',202,4.3,.95);
+      travel('f-02-deploy-packet-two',220,8.05,1.05);
+      tl.fromTo(q('f-02-deploy-argo-icon'),{rotation:0},{rotation:360,duration:1.15,ease:'power2.inOut',transformOrigin:'50% 50%'},5.95);
+      tl.fromTo(q('f-02-deploy-cluster'),{opacity:0},{opacity:1,duration:.3,ease:'power1.out'},7.4);
+      tl.fromTo(q('f-02-deploy-app'),{scale:.78,opacity:0,y:18},{scale:1,opacity:1,y:0,duration:.65,ease:'power3.out'},9.03);
+      tl.fromTo(q('f-02-deploy-app-label'),{opacity:0},{opacity:1,duration:.3,ease:'power1.out'},9.6);
+      tl.fromTo(q('f-02-deploy-app-layout'),{scaleX:0,opacity:0},{scaleX:1,opacity:1,duration:.5,ease:'power3.out',transformOrigin:'left center'},9.88);
+      tl.fromTo(q('f-02-deploy-route-note'),{opacity:0,y:12},{opacity:1,y:0,duration:.4,ease:'power3.out'},10.1);
+      tl.fromTo(q('f-02-deploy-concept-note'),{opacity:0},{opacity:1,duration:.3},10.1);
+      // A second manifest pass proves GitOps remains connected after deployment.
+      // No elapsed-time, health, or build-result claims are simulated.
+      tl.fromTo(q('f-02-deploy-repo-icon'),{y:0},{y:-7,duration:.32,repeat:1,yoyo:true,ease:'sine.inOut',immediateRender:false},10.65);
+      tl.fromTo(q('f-02-deploy-packet-one'),{x:0,opacity:0},{x:0,opacity:1,duration:.08,immediateRender:false},11.18);
+      tl.fromTo(q('f-02-deploy-packet-one'),{x:0},{x:202,duration:1,ease:'none',immediateRender:false},11.18);
+      tl.to(q('f-02-deploy-packet-one'),{opacity:0,duration:.12},12.06);
+      tl.fromTo(q('f-02-deploy-argo-icon'),{rotation:360},{rotation:720,duration:1,ease:'power2.inOut',immediateRender:false},12.08);
+      tl.fromTo(q('f-02-deploy-packet-two'),{x:0,opacity:0},{x:0,opacity:1,duration:.08,immediateRender:false},13.05);
+      tl.fromTo(q('f-02-deploy-packet-two'),{x:0},{x:220,duration:1,ease:'none',immediateRender:false},13.05);
+      tl.to(q('f-02-deploy-packet-two'),{opacity:0,duration:.12},13.93);
+      const panels=q('f-02-deploy-app-layout').children;
+      tl.fromTo(panels,{scaleX:.65},{scaleX:1,duration:.35,stagger:.07,ease:'power2.out',transformOrigin:'left center',immediateRender:false},14.05);
+      tl.set({}, {},15);
+      window.__timelines=window.__timelines||{};
+      window.__timelines['02-deploy']=tl;
+    })();
+  </script>
+</template>
