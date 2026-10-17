@@ -1,0 +1,172 @@
+<div *ngIf="isOpen" class="docs-search-backdrop" (click)="closeSearch()">
+  <section
+    #dialog
+    class="docs-search-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="docs-search-title"
+    (click)="$event.stopPropagation()"
+  >
+    <div class="docs-search-dialog-heading">
+      <span id="docs-search-title">Search documentation</span
+      ><button
+        type="button"
+        class="docs-search-close"
+        (click)="closeSearch()"
+        aria-label="Close search"
+      >
+        Esc <span aria-hidden="true">×</span>
+      </button>
+    </div>
+    <div class="docs-search-field">
+      <svg
+        aria-hidden="true"
+        width="21"
+        height="21"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.7"
+      >
+        <circle cx="10" cy="10" r="7" />
+        <path d="m15 15 6 6" />
+      </svg>
+      <input
+        #searchInput
+        type="search"
+        role="combobox"
+        aria-label="Search documentation"
+        aria-autocomplete="list"
+        aria-controls="docs-search-results"
+        [attr.aria-expanded]="results.length > 0"
+        [attr.aria-activedescendant]="
+          results.length ? 'docs-search-result-' + activeIndex : null
+        "
+        autocomplete="off"
+        placeholder="Search tools, commands, errors…"
+        [ngModel]="query"
+        (ngModelChange)="updateQuery($event)"
+      />
+      <button
+        *ngIf="query"
+        type="button"
+        class="docs-search-clear"
+        (click)="chooseSuggestion('')"
+        aria-label="Clear search"
+      >
+        ×
+      </button>
+    </div>
+    <div class="docs-search-scroll">
+      <div *ngIf="loading" class="docs-search-message" role="status">
+        Loading documentation search…
+      </div>
+      <div *ngIf="error" class="docs-search-message" role="alert">
+        <strong>Search couldn’t load.</strong>
+        <p>Please try again.</p>
+        <button type="button" (click)="loadIndex()">Retry search</button>
+      </div>
+      <div
+        *ngIf="!loading && !error && query.trim().length < 2"
+        class="docs-search-start"
+      >
+        <p>Find a page. Jump to the right section.</p>
+        <span>TRY A TOPIC</span>
+        <div>
+          <button
+            type="button"
+            *ngFor="let suggestion of suggestions"
+            (click)="chooseSuggestion(suggestion)"
+          >
+            {{ suggestion }} <span aria-hidden="true">↗</span>
+          </button>
+        </div>
+        <p class="docs-search-start-hint">
+          Search page titles, instructions, configuration, and code examples.
+        </p>
+      </div>
+      <p
+        *ngIf="!loading && !error && query.trim().length >= 2"
+        class="docs-search-count"
+        role="status"
+        aria-live="polite"
+      >
+        {{ results.length ? results.length + " results" : "No results"
+        }}<span *ngIf="results.length && results[0].fuzzy">
+          · Including close matches</span
+        >
+      </p>
+      <div
+        id="docs-search-results"
+        role="listbox"
+        aria-label="Documentation results"
+      >
+        <a
+          *ngFor="let result of results; let i = index"
+          [id]="'docs-search-result-' + i"
+          class="docs-search-result"
+          role="option"
+          [class.selected]="i === activeIndex"
+          [attr.aria-selected]="i === activeIndex"
+          [href]="result.url"
+          (mousemove)="activeIndex = i"
+          (click)="openResult($event, result)"
+        >
+          <div class="docs-search-result-category">{{ result.section }}</div>
+          <div class="docs-search-result-title">
+            <span
+              ><ng-container *ngFor="let part of highlight(result.title, query)"
+                ><mark *ngIf="part.match">{{ part.text }}</mark
+                ><ng-container *ngIf="!part.match">{{
+                  part.text
+                }}</ng-container></ng-container
+              ></span
+            ><span class="docs-search-result-arrow" aria-hidden="true">↵</span>
+          </div>
+          <div
+            *ngIf="result.heading !== result.title"
+            class="docs-search-result-heading"
+          >
+            <span aria-hidden="true">#</span>
+            <ng-container *ngFor="let part of highlight(result.heading, query)"
+              ><mark *ngIf="part.match">{{ part.text }}</mark
+              ><ng-container *ngIf="!part.match">{{
+                part.text
+              }}</ng-container></ng-container
+            >
+          </div>
+          <p>
+            <ng-container *ngFor="let part of highlight(result.snippet, query)"
+              ><mark *ngIf="part.match">{{ part.text }}</mark
+              ><ng-container *ngIf="!part.match">{{
+                part.text
+              }}</ng-container></ng-container
+            >
+          </p>
+        </a>
+      </div>
+      <div
+        *ngIf="
+          !loading && !error && query.trim().length >= 2 && !results.length
+        "
+        class="docs-search-message"
+      >
+        <strong>No matches for “{{ query }}”</strong>
+        <p>
+          Try a tool name, a command, or part of an error message. For example:
+          <button type="button" (click)="chooseSuggestion('WRONGPASS')">
+            WRONGPASS</button
+          >.
+        </p>
+      </div>
+    </div>
+    <footer class="docs-search-footer">
+      <span>{{
+        documentCount
+          ? documentCount + " pages · Full-text search"
+          : "Platform documentation"
+      }}</span
+      ><span><kbd>↑</kbd><kbd>↓</kbd> Navigate <kbd>↵</kbd> Open</span>
+    </footer>
+  </section>
+</div>

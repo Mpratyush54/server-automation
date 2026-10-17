@@ -3,13 +3,13 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
-    "build": "ng build",
-    "build:public": "node scripts/version-public-media.mjs && ng build && node scripts/prerender-docs.mjs && node scripts/prerender-landing.mjs",
-    "watch": "ng build --watch --configuration development",
+    "start": "node scripts/build-docs-search.mjs && ng serve",
+    "build": "node scripts/build-docs-search.mjs && ng build",
+    "build:public": "node scripts/build-docs-search.mjs && node scripts/version-public-media.mjs && ng build && node scripts/prerender-docs.mjs && node scripts/prerender-landing.mjs",
+    "watch": "node scripts/build-docs-search.mjs && ng build --watch --configuration development",
     "test": "ng test",
     "test:docs": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.docs-spec.json --include=src/app/guards/docs.matcher.spec.ts --include=src/app/pages/docs/docs.component.spec.ts",
-    "test:public": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.docs-spec.json --include=src/app/guards/docs.matcher.spec.ts --include=src/app/pages/docs/docs.component.spec.ts --include=src/app/pages/landing/landing.component.spec.ts"
+    "test:public": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.docs-spec.json --include=src/app/guards/docs.matcher.spec.ts --include=src/app/pages/docs/docs.component.spec.ts --include=src/app/pages/docs/docs-search.spec.ts --include=src/app/pages/docs/docs-search.component.spec.ts --include=src/app/pages/landing/landing.component.spec.ts"
   },
   "private": true,
   "dependencies": {

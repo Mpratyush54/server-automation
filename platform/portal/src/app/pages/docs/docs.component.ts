@@ -1,6 +1,5 @@
 import { Component, OnInit, OnDestroy, ViewEncapsulation, HostListener, ElementRef, AfterViewChecked, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule, DOCUMENT } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
 import { DomSanitizer, Meta, SafeHtml, Title } from '@angular/platform-browser';
@@ -10,6 +9,7 @@ import mermaid from 'mermaid';
 import { catchError } from 'rxjs/operators';
 import { of, Subscription } from 'rxjs';
 import { prepareDocsHtml } from './docs-html.mjs';
+import { DocsSearchComponent } from './docs-search.component';
 
 interface DocPage {
   label: string;
@@ -26,7 +26,7 @@ interface DocSection {
 @Component({
   selector: 'app-docs',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, HttpClientModule],
+  imports: [CommonModule, RouterModule, HttpClientModule, DocsSearchComponent],
   encapsulation: ViewEncapsulation.None,
   templateUrl: './docs.component.html',
   styleUrl: './docs.component.css',
@@ -40,7 +40,6 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
   currentSection = '';
   currentPage = '';
   mobileNavOpen = false;
-  searchQuery = '';
   tocItems: { id: string; text: string; level: string }[] = [];
   activeTocId = '';
   /** Raw markdown for the current page (agent copy). */
@@ -215,20 +214,6 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   get flatPages(): DocPage[] {
     return this.docSections.flatMap(s => s.pages);
-  }
-
-  get filteredSections(): DocSection[] {
-    if (!this.searchQuery.trim()) return this.docSections;
-    const q = this.searchQuery.toLowerCase();
-    return this.docSections
-      .map(s => ({
-        ...s,
-        pages: s.pages.filter(p =>
-          p.label.toLowerCase().includes(q) ||
-          s.label.toLowerCase().includes(q)
-        ),
-      }))
-      .filter(s => s.pages.length > 0);
   }
 
   constructor(
