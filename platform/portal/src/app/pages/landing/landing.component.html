@@ -683,52 +683,178 @@
       </div>
     </div>
     <section
-      class="section wrap"
+      class="section wrap journey-section"
       id="how-it-works"
       aria-labelledby="how-heading"
     >
-      <div class="section-heading">
-        <p class="eyebrow">01 / FROM SERVER TO PLATFORM</p>
-        <h2 id="how-heading">
-          Less time connecting tools.<br />More time building your app.
-        </h2>
+      <div class="journey-heading">
+        <div>
+          <p class="eyebrow">01 / FROM SERVER TO PLATFORM</p>
+          <h2 id="how-heading">
+            Bring your server.<br /><span>Build your platform.</span>
+          </h2>
+        </div>
         <p>
-          Start with an Ubuntu server. Add your application. Keep deployments
-          and day-to-day operations in the same place.
+          Platform connects the infrastructure, deployment tools, and services
+          behind your app. Here is how the pieces become one working stack.
         </p>
       </div>
-      <div class="steps">
-        <article class="step">
-          <span class="step-number">01</span>
-          <h3>Provision your server</h3>
+      <ol class="journey-grid" aria-label="Three steps from server to platform">
+        <li>
+          <article class="journey-card journey-foundation">
+            <div class="journey-phase"><span>01</span> THE FOUNDATION</div>
+            <div
+              class="journey-visual provision-preview"
+              role="img"
+              aria-label="Provision an Ubuntu server with the CLI and choose Kubernetes, data, and observability services."
+            >
+              <div class="provision-window">
+                <div class="provision-window-bar">
+                  <i></i><i></i><i></i><span>your Ubuntu server</span>
+                </div>
+                <div class="provision-command">
+                  <span>$</span> platformctl <b>provision</b>
+                </div>
+                <div class="provision-services">
+                  <span>Kubernetes</span><span>Data</span
+                  ><span>Observability</span>
+                </div>
+              </div>
+              <span class="journey-visual-note"
+                >Your infrastructure. Your choice of services.</span
+              >
+            </div>
+            <div class="journey-card-copy">
+              <h3>Give your app a foundation.</h3>
+              <p>
+                Start with an Ubuntu server. Use the CLI to provision Kubernetes
+                and the services you choose, on infrastructure you control.
+              </p>
+              <a routerLink="/docs/getting-started/platformctl"
+                >Explore server setup <span aria-hidden="true">↗</span></a
+              >
+            </div>
+            <div class="journey-delivers">
+              <span>YOU GET</span><strong>A place to run your stack.</strong>
+            </div>
+          </article>
+        </li>
+        <li>
+          <article class="journey-card journey-delivery">
+            <div class="journey-phase"><span>02</span> THE APPLICATION</div>
+            <div
+              class="journey-visual delivery-preview"
+              role="img"
+              aria-label="Git application manifests are synced through Argo CD to your app, with projects and environments managed in Platform."
+            >
+              <div class="delivery-source">
+                <span class="delivery-branch" aria-hidden="true">⑂</span>
+                <div>
+                  <strong>Your Git repository</strong
+                  ><span>Application manifests</span>
+                </div>
+              </div>
+              <div class="delivery-route">
+                <i aria-hidden="true">↓</i
+                ><span>Argo CD syncs your desired state</span>
+              </div>
+              <div class="delivery-app">
+                <span class="delivery-app-icon" aria-hidden="true">↗</span>
+                <div>
+                  <strong>Your application</strong
+                  ><span>Projects + environments</span>
+                </div>
+              </div>
+            </div>
+            <div class="journey-card-copy">
+              <h3>Turn your repo into a running app.</h3>
+              <p>
+                Register your project and connect Git. Argo CD syncs application
+                manifests to your cluster; Platform gives you a place to inspect
+                deployments.
+              </p>
+              <a routerLink="/docs/getting-started/deploy-your-app"
+                >Follow the deployment guide
+                <span aria-hidden="true">↗</span></a
+              >
+            </div>
+            <div class="journey-delivers">
+              <span>YOU GET</span
+              ><strong>A deployment workflow backed by Git.</strong>
+            </div>
+          </article>
+        </li>
+        <li>
+          <article class="journey-card journey-operations">
+            <div class="journey-phase"><span>03</span> THE EVERYDAY WORK</div>
+            <div
+              class="journey-visual operations-preview"
+              role="img"
+              aria-label="Illustrated project workspace with deployments, data and secrets, and logs and metrics together."
+            >
+              <div class="operations-window">
+                <div class="operations-window-bar">
+                  <span class="status-dot"></span> YOUR PROJECT
+                  <span>Platform</span>
+                </div>
+                <div class="operations-row">
+                  <span class="operations-symbol" aria-hidden="true">↗</span>
+                  <div>
+                    <strong>Deployments</strong><span>Apps + environments</span>
+                  </div>
+                  <i aria-hidden="true">↗</i>
+                </div>
+                <div class="operations-row">
+                  <span class="operations-symbol" aria-hidden="true">▤</span>
+                  <div>
+                    <strong>Data + secrets</strong
+                    ><span>Connections for your app</span>
+                  </div>
+                  <i aria-hidden="true">↗</i>
+                </div>
+                <div class="operations-row">
+                  <span class="operations-symbol" aria-hidden="true">⌁</span>
+                  <div>
+                    <strong>Logs + metrics</strong
+                    ><span>Context for operations</span>
+                  </div>
+                  <i aria-hidden="true">↗</i>
+                </div>
+              </div>
+            </div>
+            <div class="journey-card-copy">
+              <h3>Keep the whole app in view.</h3>
+              <p>
+                Inspect logs and metrics, manage databases and encrypted
+                secrets, and connect application services through the SDKs.
+              </p>
+              <a routerLink="/docs/guides/monitoring"
+                >Explore day-to-day operations
+                <span aria-hidden="true">↗</span></a
+              >
+            </div>
+            <div class="journey-delivers">
+              <span>YOU GET</span
+              ><strong>One workspace for operating your app.</strong>
+            </div>
+          </article>
+        </li>
+      </ol>
+      <div class="journey-result">
+        <div class="journey-result-mark" aria-hidden="true">
+          P<span>.</span>
+        </div>
+        <div>
+          <p class="eyebrow">THE PIECES, CONNECTED</p>
+          <h3>Your app. Its services. One place to work.</h3>
           <p>
-            Install the CLI, then let <code>platformctl provision</code> set up
-            your Kubernetes cluster and the services you select.
+            A dashboard for your team, SDKs for your applications, and scoped
+            MCP tools for your agents. All on your infrastructure.
           </p>
-          <a routerLink="/docs/getting-started/platformctl"
-            >Explore the CLI ↗</a
-          >
-        </article>
-        <article class="step">
-          <span class="step-number">02</span>
-          <h3>Connect and deploy</h3>
-          <p>
-            Register a project, connect its repository, and use GitOps to sync
-            application manifests through Argo CD.
-          </p>
-          <a routerLink="/docs/getting-started/deploy-your-app"
-            >Deploy your first app ↗</a
-          >
-        </article>
-        <article class="step">
-          <span class="step-number">03</span>
-          <h3>Operate with context</h3>
-          <p>
-            Inspect logs, check metrics, manage databases, and update secrets
-            from your Platform dashboard.
-          </p>
-          <a routerLink="/docs/guides/monitoring">See the operations guide ↗</a>
-        </article>
+        </div>
+        <a routerLink="/docs/getting-started/installation"
+          >Build your stack <span aria-hidden="true">↗</span></a
+        >
       </div>
     </section>
     <section class="video-section" id="watch" aria-labelledby="video-heading">
