@@ -1,0 +1,37 @@
+WEBVTT
+
+00:00:00.200 --> 00:00:02.743
+Your app deserves a home you control.
+
+00:00:02.743 --> 00:00:10.974
+Platform turns your own Ubuntu server into a connected developer platform, with Kubernetes underneath and one place to manage it.
+
+00:00:15.200 --> 00:00:20.363
+Install the CLI, provision your server, and connect your repository.
+
+00:00:20.363 --> 00:00:26.028
+GitOps with Argo CD keeps your application manifests in sync with the cluster.
+
+00:00:30.200 --> 00:00:33.182
+Bring your app's data and operations together.
+
+00:00:33.182 --> 00:00:37.397
+Provision PostgreSQL, MongoDB, and Redis.
+
+00:00:37.397 --> 00:00:43.780
+Manage encrypted secrets, inspect logs, and follow application metrics from the dashboard.
+
+00:00:45.200 --> 00:00:50.283
+Connect your AI tools through MCP with scoped agent tokens.
+
+00:00:50.283 --> 00:00:55.030
+Commands are validated, and destructive actions need human approval.
+
+00:00:55.030 --> 00:00:56.094
+Your server.
+
+00:00:56.094 --> 00:00:57.331
+Your apps.
+
+00:00:57.331 --> 00:00:58.900
+Build on your terms.

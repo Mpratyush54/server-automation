@@ -6,6 +6,7 @@ on:
     paths:
       - "platform/portal/**"
       - "docs/**"
+      - "scripts/tests/public-portal-routing.test.mjs"
       - ".github/workflows/deploy-public-portal.yml"
   workflow_dispatch:
 
@@ -24,6 +25,22 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up Node.js for routing tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check public routes with nginx
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nginx
+          npm install --prefix platform/portal --no-audit --no-fund
+          node --test scripts/tests/public-portal-routing.test.mjs
+
+      - name: Check docs navigation and landing page
+        working-directory: platform/portal
+        run: npm run test:public
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -59,4 +76,3 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-

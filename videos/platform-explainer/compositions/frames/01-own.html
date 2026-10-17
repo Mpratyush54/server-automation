@@ -1,0 +1,134 @@
+<template>
+  <style>
+    @font-face{font-family:'Archivo Black';src:url('assets/fonts/ArchivoBlack.ttf') format('truetype');font-weight:400;font-style:normal}
+    @font-face{font-family:'Space Grotesk';src:url('assets/fonts/SpaceGrotesk.ttf') format('truetype');font-weight:100 900;font-style:normal}
+    @font-face{font-family:'JetBrains Mono';src:url('assets/fonts/JetBrainsMono.ttf') format('truetype');font-weight:100 900;font-style:normal}
+    #f-01-own-root{position:relative;width:100%;height:100%;overflow:hidden;container-type:size;color:#28251f;font-family:'Space Grotesk'}
+    [data-own="ground"]{position:absolute;inset:0;background:#f6f3eb;container-type:size}
+    [data-own="content"]{position:absolute;inset:0}
+    [data-own="camera"]{position:absolute;inset:0;transform-origin:50% 50%}
+    [data-own="top"]{position:absolute;left:5cqw;right:5cqw;top:4.3cqw;display:flex;justify-content:space-between;align-items:center;font-family:'JetBrains Mono';font-size:1.46cqw;line-height:1.3;letter-spacing:.06em;text-transform:uppercase}
+    [data-own="brand"]{width:10.5cqw;height:3.3cqw;object-fit:contain;object-position:left center}
+    [data-own="pill"]{border:.2cqw solid #28251f;padding:.45cqw 1cqw;border-radius:999px}
+    [data-own="headline"]{position:absolute;left:5cqw;top:11.4cqw;width:43cqw;margin:0;font-family:'Archivo Black';font-size:5.2cqw;line-height:.92;letter-spacing:-.01em;text-transform:uppercase}
+    [data-own="headline"] span{display:inline-block}
+    [data-own="line"]{display:block!important;white-space:nowrap}
+    [data-own="sub"]{position:absolute;left:5cqw;top:36.9cqw;font-family:'JetBrains Mono';font-size:1.46cqw;letter-spacing:.06em;text-transform:uppercase;border-left:.3cqw solid #c94d3c;padding-left:1cqw;line-height:1.4}
+    [data-own="diagram"]{position:absolute;left:50.6cqw;top:9.8cqw;width:44.4cqw;height:34.5cqw}
+    [data-own="svg"]{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+    [data-own="svg"] path{fill:none;stroke:#28251f;stroke-width:4;stroke-linejoin:miter;stroke-linecap:square}
+    [data-own="app"]{position:absolute;left:22.2cqw;top:0;width:16.8cqw;height:9.3cqw;border:.21cqw solid #28251f;background:#f6f3eb;box-sizing:border-box}
+    [data-own="appbar"]{height:2.5cqw;border-bottom:.21cqw solid #28251f;display:flex;align-items:center;padding:0 .9cqw;font-family:'JetBrains Mono';font-size:1.46cqw;letter-spacing:.06em;text-transform:uppercase;background:#ECC2BC}
+    [data-own="appgrid"]{position:absolute;left:1cqw;right:1cqw;top:3.6cqw;bottom:1cqw;display:grid;grid-template-columns:1fr 2.5fr;gap:.7cqw}
+    [data-own="appgrid"] i{display:block;border:.18cqw solid #28251f}
+    [data-own="appgrid"] i:last-child{background:#ECC2BC}
+    [data-own="appgrid"] i:last-child{padding:.6cqw;display:grid;gap:.4cqw;align-content:center;box-sizing:border-box}
+    [data-own="app-line"]{display:block;height:.32cqw;background:#c94d3c;transform-origin:left center}
+    [data-own="app-line"]:nth-child(2){width:76%}
+    [data-own="app-line"]:nth-child(3){width:88%}
+    [data-own="svg"] [data-own="packet"]{stroke:#c94d3c;stroke-width:10;stroke-linecap:butt;opacity:0}
+    [data-own="rack"]{position:absolute;left:23.1cqw;top:15.1cqw;width:15cqw;height:6cqw;border:.21cqw solid #28251f;background:#f6f3eb;box-sizing:border-box;padding:.65cqw .85cqw;display:grid;gap:.5cqw}
+    [data-own="rackrow"]{display:flex;align-items:center;gap:.5cqw;border:.16cqw solid #28251f;padding-left:.6cqw}
+    [data-own="rackrow"] b{width:.42cqw;height:.42cqw;background:#c94d3c;display:block}
+    [data-own="rackrow"] em{display:block;width:6cqw;border-top:.16cqw solid #28251f;margin-left:1cqw}
+    [data-own="platform"]{position:absolute;left:3.4cqw;top:11.4cqw;font-family:'Archivo Black';font-size:2.4cqw;line-height:1.35;text-transform:uppercase;background:#f6f3eb;padding:0 .7cqw}
+    [data-own="ubuntu"]{position:absolute;left:3.9cqw;top:16.1cqw;font-family:'JetBrains Mono';font-size:1.46cqw;line-height:1.4;letter-spacing:.02em;white-space:nowrap}
+    [data-own="k3s"]{position:absolute;left:3.9cqw;top:20cqw;font-family:'JetBrains Mono';font-size:1.46cqw;line-height:1.4;letter-spacing:.02em;white-space:nowrap;background:#ECC2BC;padding:.5cqw .7cqw;border:.21cqw solid #28251f}
+    [data-own="module"]{position:absolute;top:28.4cqw;width:11.4cqw;height:4.3cqw;border:.21cqw solid #28251f;background:#f6f3eb;display:flex;align-items:center;justify-content:center;box-sizing:border-box;font-family:'JetBrains Mono';font-size:1.46cqw;letter-spacing:.02em}
+    #f-01-own-deploy{left:3.9cqw;background:#ECC2BC}
+    #f-01-own-connect{left:17cqw}
+    #f-01-own-observe{left:30.1cqw}
+  </style>
+  <div data-hf-id="hf-empb" id="f-01-own-root" data-composition-id="01-own" data-duration="15" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-enw6" id="f-01-own-layer-1" class="clip" data-own="ground" data-start="0" data-duration="15" data-track-index="0"></div>
+    <div data-hf-id="hf-6uem" id="f-01-own-layer-2" class="clip" data-own="content" data-start="0" data-duration="15" data-track-index="1">
+      <div data-hf-id="hf-b8vx" data-own="camera" id="f-01-own-camera">
+      <div data-hf-id="hf-33m6" data-own="top"><img data-hf-id="hf-86vd" data-own="brand" src="assets/logo-light.png" alt="Platform"><span data-hf-id="hf-2i19" data-own="pill">Conceptual illustration</span></div>
+      <h1 data-hf-id="hf-6znr" data-own="headline"><span data-hf-id="hf-a6po" data-own="line"><span data-hf-id="hf-4vap" id="f-01-own-your1">YOUR</span></span><span data-hf-id="hf-xer8" data-own="line"><span data-hf-id="hf-wok4" id="f-01-own-server">SERVER.</span></span><span data-hf-id="hf-w7u5" data-own="line"><span data-hf-id="hf-vhe2" id="f-01-own-your2">YOUR</span></span><span data-hf-id="hf-seu2" data-own="line" id="f-01-own-emphasis"><span data-hf-id="hf-oh1a" id="f-01-own-plat">PLAT</span><span data-hf-id="hf-rtjc" id="f-01-own-form">FORM</span><span data-hf-id="hf-sfb1" id="f-01-own-dot">.</span></span></h1>
+      <div data-hf-id="hf-dbh6" data-own="sub" id="f-01-own-ownership"><div data-hf-id="hf-ayd0">Your infrastructure.</div><div data-hf-id="hf-1oh8">Your control.</div></div>
+      <div data-hf-id="hf-befc" data-own="diagram">
+        <svg data-hf-id="hf-co6t" data-own="svg" viewBox="0 0 852.48 662.4" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path data-hf-id="hf-9dof" id="f-01-own-app-link" d="M587.5 178.5 V289.9"/>
+          <path data-hf-id="hf-z0pv" id="f-01-own-control-outline" d="M38 227 H829 V651 H38 Z"/>
+          <path data-hf-id="hf-v65e" id="f-01-own-rack-link" d="M443.5 347.5 H411 V405 H395"/>
+          <path data-hf-id="hf-x1o3" id="f-01-own-module-rail" d="M587.5 405 V500 H184.3 V545.3 M184.3 500 H687.4 V545.3 M435.8 500 V545.3"/>
+          <path data-hf-id="hf-9b1x" id="f-01-own-packet-app" data-own="packet" d="M587.5 178.5 V289.9"/>
+          <path data-hf-id="hf-2mf1" id="f-01-own-packet-deploy" data-own="packet" d="M587.5 405 V500 H184.3 V545.3"/>
+          <path data-hf-id="hf-cj6k" id="f-01-own-packet-connect" data-own="packet" d="M587.5 405 V500 H435.8 V545.3"/>
+          <path data-hf-id="hf-paaj" id="f-01-own-packet-observe" data-own="packet" d="M587.5 405 V500 H687.4 V545.3"/>
+        </svg>
+        <div data-hf-id="hf-96yf" data-own="app" id="f-01-own-app"><div data-hf-id="hf-2h78" data-own="appbar">App</div><div data-hf-id="hf-gr3m" data-own="appgrid"><i data-hf-id="hf-wt6k"></i><i data-hf-id="hf-zeb8"><span data-hf-id="hf-mbzk" data-own="app-line" id="f-01-own-app-line-1"></span><span data-hf-id="hf-x7h7" data-own="app-line" id="f-01-own-app-line-2"></span><span data-hf-id="hf-t9d6" data-own="app-line" id="f-01-own-app-line-3"></span></i></div></div>
+        <div data-hf-id="hf-1npd" data-own="rack" id="f-01-own-rack"><div data-hf-id="hf-b72g" data-own="rackrow"><b data-hf-id="hf-xujp"></b><b data-hf-id="hf-ey49"></b><em data-hf-id="hf-2lav"></em></div><div data-hf-id="hf-c934" data-own="rackrow"><b data-hf-id="hf-g51c"></b><b data-hf-id="hf-fqqb"></b><em data-hf-id="hf-epg7"></em></div></div>
+        <div data-hf-id="hf-hnzq" data-own="platform" id="f-01-own-platform">Platform</div>
+        <div data-hf-id="hf-owah" data-own="ubuntu" id="f-01-own-ubuntu">Ubuntu server</div>
+        <div data-hf-id="hf-9b05" data-own="k3s" id="f-01-own-k3s">Kubernetes (k3s)</div>
+        <div data-hf-id="hf-7dn9" data-own="module" id="f-01-own-deploy">Deploy</div>
+        <div data-hf-id="hf-gf2r" data-own="module" id="f-01-own-connect">Connect</div>
+        <div data-hf-id="hf-rwi3" data-own="module" id="f-01-own-observe">Observe</div>
+      </div>
+      </div>
+    </div>
+  </div>
+  <script src="assets/gsap.min.js"></script>
+  <script>
+    (function(){
+      var tl=gsap.timeline({paused:true});
+      function own(name){return document.getElementById('f-01-own-'+name);}
+      tl.addLabel('own-your-server',0);
+      tl.addLabel('server-online',3.1);
+      tl.addLabel('platform-connected',6.5);
+      tl.addLabel('services-respond',8.6);
+      tl.addLabel('ownership-lockup',13.6);
+      var waterfall=[['your1',.08,78,.2],['server',.28,65,.19],['your2',.46,48,.15],['plat',.60,70,.16],['form',.74,70,.15],['dot',.86,42,.12]];
+      waterfall.forEach(function(v){var el=own(v[0]);tl.set(el,{opacity:0},0);tl.set(el,{opacity:1,y:v[2]},v[1]);tl.to(el,{y:0,duration:v[3],ease:'power4.out'},v[1]);});
+      tl.fromTo(own('app'),{scale:.86,opacity:0,y:28},{scale:1,opacity:1,y:0,duration:.7,ease:'power3.out'},.16);
+      tl.fromTo(own('rack'),{scale:.94,opacity:0,y:24},{scale:1,opacity:1,y:0,duration:.65,ease:'power3.out'},1.75);
+      tl.fromTo(own('ownership'),{opacity:0,y:12},{opacity:1,y:0,duration:.4,ease:'power3.out'},2.25);
+      var draws=[['app-link',2.55,.55],['control-outline',3.62,.8],['rack-link',6.1,.42],['module-rail',6.5,.8]];
+      draws.forEach(function(v){var p=own(v[0]);var len=p.getTotalLength();p.style.strokeDasharray=String(len);p.style.strokeDashoffset=String(len);tl.fromTo(p,{strokeDashoffset:len},{strokeDashoffset:0,duration:v[2],ease:'power2.out'},v[1]);});
+      tl.fromTo(own('platform'),{scale:0,opacity:0},{scale:1,opacity:1,duration:.5,ease:'power3.out'},4.55);
+      tl.fromTo(own('ubuntu'),{scale:0,opacity:0},{scale:1,opacity:1,duration:.6,ease:'power3.out'},5.05);
+      tl.fromTo(own('k3s'),{scale:0,opacity:0},{scale:1,opacity:1,duration:.6,ease:'power3.out'},6.15);
+      ['deploy','connect','observe'].forEach(function(name,i){tl.fromTo(own(name),{scale:.94,opacity:0,y:18},{scale:1,opacity:1,y:0,duration:.55,ease:'power3.out'},7.3+i*.65);});
+
+      // Tracing Beam registry mechanism: a measured traveling dash on each
+      // existing route, followed by a response from its destination. Routes
+      // remain in place, so every request visibly arrives at a real service.
+      function packet(name,at,duration){
+        var path=own('packet-'+name);
+        var length=path.getTotalLength();
+        var dash=22;
+        tl.set(path,{strokeDasharray:dash+' '+(length+dash),strokeDashoffset:dash,opacity:0},0);
+        tl.set(path,{strokeDashoffset:dash,opacity:1},at);
+        tl.to(path,{strokeDashoffset:-length,duration:duration,ease:'none'},at);
+        tl.set(path,{opacity:0},at+duration);
+      }
+      [3.15,5.55,7.95,10.35,12.75].forEach(function(at){
+        packet('app',at,.65);
+        var lights=own('rack').querySelectorAll('b');
+        tl.to(lights,{backgroundColor:'#2c6a46',duration:.14,stagger:.07,ease:'none'},at+.58);
+        tl.to(lights,{backgroundColor:'#c94d3c',duration:.25,stagger:.07,ease:'none'},at+1.3);
+      });
+      ['deploy','connect','observe'].forEach(function(name,i){
+        var at=8.6+i*1.25;
+        packet(name,at,.9);
+        tl.to(own(name),{backgroundColor:'#c94d3c',color:'#f6f3eb',y:-6,duration:.25,ease:'power2.out'},at+.82);
+        tl.to(own(name),{backgroundColor:name==='deploy'?'#ECC2BC':'#f6f3eb',color:'#28251f',y:0,duration:.45,ease:'power2.inOut'},at+1.25);
+        packet(name,12.45+i*.32,.95);
+        tl.to(own(name),{borderColor:'#c94d3c',duration:.25,ease:'power1.out'},13.3+i*.32);
+      });
+      [1,2,3].forEach(function(i){
+        tl.fromTo(own('app-line-'+i),{scaleX:0},{scaleX:1,duration:.45,ease:'power2.out'},1.0+i*.22);
+        tl.to(own('app-line-'+i),{backgroundColor:'#2c6a46',duration:.3,ease:'power1.out'},4.1+i*.15);
+      });
+      tl.to(own('app').querySelector('[data-own="appbar"]'),{backgroundColor:'#d4e2d4',duration:.4,ease:'power1.out'},4.05);
+      tl.to(own('emphasis'),{color:'#c94d3c',duration:.6,ease:'power1.out'},11.9);
+
+      // One restrained, continuous push preserves the readable layout while
+      // the successive app/server/service activity carries the explanation.
+      tl.fromTo(own('camera'),{scale:1,x:0,y:0},{scale:1.015,x:-3,y:-2,duration:8,ease:'none'},0);
+      tl.to(own('camera'),{scale:1.03,x:-8,y:-4,duration:6.5,ease:'sine.inOut'},8);
+      window.__timelines=window.__timelines||{};window.__timelines['01-own']=tl;
+    })();
+  </script>
+</template>

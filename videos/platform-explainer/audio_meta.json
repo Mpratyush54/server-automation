@@ -1,0 +1,138 @@
+{
+  "bgm": {
+    "path": ".media/audio/bgm/original-score.mp3",
+    "volume": 0.15,
+    "duration_s": 60,
+    "query": "Original instrumental: warm minimal electronic, 96 BPM, no samples"
+  },
+  "bgm_pending": false,
+  "voices": [
+    {
+      "words": [],
+      "duration_s": 10.896,
+      "path": ".media/audio/voice/01-own.wav",
+      "frame": 1,
+      "cues": [
+        {
+          "start": 0.05,
+          "end": 2.5930851,
+          "text": "Your app deserves a home you control."
+        },
+        {
+          "start": 2.5930851,
+          "end": 10.824468,
+          "text": "Platform turns your own Ubuntu server into a connected developer platform, with Kubernetes underneath and one place to manage it."
+        }
+      ],
+      "provider": "Microsoft Edge online speech",
+      "voice": "en-US-AvaMultilingualNeural",
+      "rate": "-6%",
+      "start_s": 0.15,
+      "scene_duration_s": 15
+    },
+    {
+      "words": [],
+      "duration_s": 10.944,
+      "path": ".media/audio/voice/02-deploy.wav",
+      "frame": 2,
+      "cues": [
+        {
+          "start": 0.05,
+          "end": 5.2127659,
+          "text": "Install the CLI, provision your server, and connect your repository."
+        },
+        {
+          "start": 5.2127659,
+          "end": 10.8776595,
+          "text": "GitOps with Argo CD keeps your application manifests in sync with the cluster."
+        }
+      ],
+      "provider": "Microsoft Edge online speech",
+      "voice": "en-US-AvaMultilingualNeural",
+      "rate": "-6%",
+      "start_s": 15.15,
+      "scene_duration_s": 15
+    },
+    {
+      "words": [],
+      "duration_s": 13.68,
+      "path": ".media/audio/voice/03-operate.wav",
+      "frame": 3,
+      "cues": [
+        {
+          "start": 0.05,
+          "end": 3.0319149,
+          "text": "Bring your app's data and operations together."
+        },
+        {
+          "start": 3.0319149,
+          "end": 7.2473404,
+          "text": "Provision PostgreSQL, MongoDB, and Redis."
+        },
+        {
+          "start": 7.2473404,
+          "end": 13.6303191,
+          "text": "Manage encrypted secrets, inspect logs, and follow application metrics from the dashboard."
+        }
+      ],
+      "provider": "Microsoft Edge online speech",
+      "voice": "en-US-AvaMultilingualNeural",
+      "rate": "-6%",
+      "start_s": 30.15,
+      "scene_duration_s": 15
+    },
+    {
+      "words": [],
+      "duration_s": 13.824,
+      "path": ".media/audio/voice/04-control.wav",
+      "frame": 4,
+      "cues": [
+        {
+          "start": 0.05,
+          "end": 5.1329787,
+          "text": "Connect your AI tools through MCP with scoped agent tokens."
+        },
+        {
+          "start": 5.1329787,
+          "end": 9.8803191,
+          "text": "Commands are validated, and destructive actions need human approval."
+        },
+        {
+          "start": 9.8803191,
+          "end": 10.9441488,
+          "text": "Your server."
+        },
+        {
+          "start": 10.9441489,
+          "end": 12.180851,
+          "text": "Your apps."
+        },
+        {
+          "start": 12.180851,
+          "end": 13.7499999,
+          "text": "Build on your terms."
+        }
+      ],
+      "provider": "Microsoft Edge online speech",
+      "voice": "en-US-AvaMultilingualNeural",
+      "rate": "-6%",
+      "start_s": 45.15,
+      "scene_duration_s": 15
+    }
+  ],
+  "sfx": [
+    {
+      "file": ".media/audio/sfx/sfx_001.mp3",
+      "duration_s": 0.4,
+      "frame": 2,
+      "volume": 0.1,
+      "offset_s": 1.5
+    }
+  ],
+  "narration": {
+    "provider": "Microsoft Edge online speech",
+    "voice": "en-US-AvaMultilingualNeural",
+    "pronunciations": "../pronunciation.json"
+  },
+  "total_duration_s": 60
+}

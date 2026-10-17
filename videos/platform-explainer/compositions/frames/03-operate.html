@@ -1,0 +1,179 @@
+<template>
+  <style>
+    @font-face{font-family:'Archivo Black';src:url('assets/fonts/ArchivoBlack.ttf') format('truetype');font-weight:400;font-display:swap}
+    @font-face{font-family:'JetBrains Mono';src:url('assets/fonts/JetBrainsMono.ttf') format('truetype');font-weight:400;font-display:swap}
+    @font-face{font-family:'Space Grotesk';src:url('assets/fonts/SpaceGrotesk.ttf') format('truetype');font-weight:400;font-display:swap}
+    #root{position:absolute;width:100%;height:100%;overflow:hidden;container-type:size;color:#28251f;font-family:'Space Grotesk'}
+    [id^='f-03-operate-']{box-sizing:border-box}
+    #f-03-operate-ground{position:absolute;inset:0;background:#f6f3eb;container-type:size}
+    #f-03-operate-content{position:absolute;inset:0}
+    #f-03-operate-logo{position:absolute;left:5cqw;top:2.3cqw;width:14cqw;height:3.5cqw;object-fit:contain;object-position:left center}
+    #f-03-operate-chip{position:absolute;right:5cqw;top:2.6cqw;padding:.5cqw 1cqw;border:.2cqw solid #28251f;border-radius:999px;font:400 1.46cqw/1.2 'JetBrains Mono';letter-spacing:.06em}
+    #f-03-operate-title,#f-03-operate-payoff{position:absolute;left:5cqw;top:7.6cqw;width:78cqw;font:400 7.6cqw/.92 'Archivo Black';letter-spacing:-.01em;text-transform:uppercase;margin:0}
+    #f-03-operate-title span,#f-03-operate-payoff span{display:inline-block}
+    #f-03-operate-title div,#f-03-operate-payoff div{white-space:nowrap}
+    #f-03-operate-diagram{position:absolute;inset:0;transform-origin:50% 58%}
+    #f-03-operate-wires{position:absolute;inset:0;width:100cqw;height:56.25cqw;overflow:visible}
+    #f-03-operate-wires path{fill:none;stroke:#c94d3c;stroke-width:6;stroke-linejoin:miter;stroke-linecap:butt}
+    #f-03-operate-wires circle{fill:#8DCFA9;stroke:#28251f;stroke-width:3;opacity:0}
+    #f-03-operate-data-label{position:absolute;left:5cqw;top:21.25cqw;font:400 1.46cqw/1.2 'JetBrains Mono';letter-spacing:.08em}
+    #f-03-operate-postgres,#f-03-operate-mongo,#f-03-operate-redis{position:absolute;left:5cqw;width:20.26cqw;height:5.21cqw;background:#f6f3eb;border:.21cqw solid #28251f;display:flex;align-items:center;padding:0 1.4cqw;font:400 1.92cqw/1 'JetBrains Mono'}
+    #f-03-operate-postgres{top:23.18cqw}
+    #f-03-operate-mongo{top:29.69cqw}
+    #f-03-operate-redis{top:36.2cqw}
+    #f-03-operate-app{position:absolute;left:33.85cqw;top:23.7cqw;width:31.25cqw;height:14.32cqw;border:.21cqw solid #28251f;background:#f6f3eb}
+    #f-03-operate-app-header{height:4.6cqw;border-bottom:.21cqw solid #28251f;background:#8DCFA9;display:flex;align-items:center;padding:0 1.45cqw;gap:1cqw}
+    #f-03-operate-app-symbol{width:1.5cqw;height:1.5cqw;flex:none;border:.21cqw solid #28251f;background:#f6f3eb}
+    #f-03-operate-app-name{font:400 2.7cqw/1 'JetBrains Mono'}
+    #f-03-operate-app-body{display:flex;gap:.8cqw;padding:1.45cqw;height:8.8cqw}
+    #f-03-operate-app-sidebar{width:5cqw;border:.21cqw solid #28251f;background:#ECC2BC}
+    #f-03-operate-app-rows{display:flex;flex:1;flex-direction:column;gap:.8cqw}
+    #f-03-operate-app-row-a,#f-03-operate-app-row-b,#f-03-operate-app-row-c{height:1.4cqw;border:.16cqw solid #28251f}
+    #f-03-operate-app-row-b{width:76%;background:#8DCFA9}
+    #f-03-operate-app-row-c{width:88%}
+    #f-03-operate-surface{position:absolute;left:72.4cqw;top:23.7cqw;width:22.4cqw;height:17.7cqw;border:.21cqw solid #28251f;background:#f6f3eb;box-shadow:.7cqw .7cqw 0 #2c6a46,.7cqw .7cqw 0 .16cqw #28251f;transform-origin:0% 50%}
+    #f-03-operate-surface-label{height:3.8cqw;display:flex;align-items:center;padding:0 1.1cqw;border-bottom:.21cqw solid #28251f;background:#28251f;color:#f6f3eb;font:400 1.46cqw/1 'JetBrains Mono';letter-spacing:.06em}
+    #f-03-operate-secrets,#f-03-operate-logs,#f-03-operate-metrics{height:4.5cqw;display:flex;align-items:center;gap:.8cqw;padding:0 1.1cqw;border-bottom:.16cqw solid #28251f;font:400 1.46cqw/1.15 'JetBrains Mono';white-space:nowrap}
+    #f-03-operate-metrics{border-bottom:0}
+    #f-03-operate-secrets-mark,#f-03-operate-logs-mark,#f-03-operate-metrics-mark{display:inline-block;width:.72cqw;height:.72cqw;border:.15cqw solid #28251f;flex:none}
+    #f-03-operate-concept{position:absolute;left:33.85cqw;top:39.4cqw;font:400 1.46cqw/1.2 'JetBrains Mono';letter-spacing:.06em}
+  </style>
+  <div data-hf-id="hf-uy6n" id="root" data-composition-id="03-operate" data-width="1920" data-height="1080" data-duration="15">
+    <div data-hf-id="hf-t4m5" id="f-03-operate-ground" class="clip" data-start="0" data-duration="15" data-track-index="0"></div>
+    <div data-hf-id="hf-q0ea" id="f-03-operate-content" class="clip" data-start="0" data-duration="15" data-track-index="1">
+      <img data-hf-id="hf-yj8r" id="f-03-operate-logo" src="assets/logo-light.png" alt="Platform" />
+      <div data-hf-id="hf-f232" id="f-03-operate-chip">CONCEPT DIAGRAM</div>
+      <h1 data-hf-id="hf-x4zh" id="f-03-operate-title"><div data-hf-id="hf-yeow"><span data-hf-id="hf-x8pf" id="f-03-operate-word-the">THE</span> <span data-hf-id="hf-o2c3" id="f-03-operate-word-app">APP</span> <span data-hf-id="hf-1akn" id="f-03-operate-word-is">IS</span> <span data-hf-id="hf-rcij" id="f-03-operate-word-just">JUST</span></div><div data-hf-id="hf-y7yw"><span data-hf-id="hf-1jgp" id="f-03-operate-word-the2">THE</span> <span data-hf-id="hf-7uzr" id="f-03-operate-word-start">START.</span></div></h1>
+      <h1 data-hf-id="hf-tyxw" id="f-03-operate-payoff"><div data-hf-id="hf-x11t"><span data-hf-id="hf-o5ff" id="f-03-operate-word-one">ONE</span> <span data-hf-id="hf-3bdv" id="f-03-operate-word-operations">OPERATIONS</span></div><div data-hf-id="hf-xfcu"><span data-hf-id="hf-ast9" id="f-03-operate-word-workflow">WORKFLOW.</span></div></h1>
+      <div data-hf-id="hf-5nxa" id="f-03-operate-diagram">
+        <svg data-hf-id="hf-d0zf" id="f-03-operate-wires" viewBox="0 0 1920 1080" aria-hidden="true">
+          <path data-hf-id="hf-5bsb" id="f-03-operate-line-postgres" d="M650 550 H570 V495 H485"/>
+          <path data-hf-id="hf-cjay" id="f-03-operate-line-mongo" d="M650 600 H485"/>
+          <path data-hf-id="hf-gbow" id="f-03-operate-line-redis" d="M650 650 H570 V745 H485"/>
+          <path data-hf-id="hf-c9kv" id="f-03-operate-line-ops" d="M1250 600 H1390"/>
+          <circle data-hf-id="hf-uxkn" id="f-03-operate-packet-postgres" cx="0" cy="0" r="9"/>
+          <circle data-hf-id="hf-0ada" id="f-03-operate-packet-mongo" cx="0" cy="0" r="9"/>
+          <circle data-hf-id="hf-9843" id="f-03-operate-packet-redis" cx="0" cy="0" r="9"/>
+          <circle data-hf-id="hf-lxru" id="f-03-operate-packet-ops" cx="0" cy="0" r="9"/>
+        </svg>
+        <div data-hf-id="hf-8bum" id="f-03-operate-data-label">DATA</div>
+        <div data-hf-id="hf-5x5g" id="f-03-operate-postgres">PostgreSQL</div>
+        <div data-hf-id="hf-bmb9" id="f-03-operate-mongo">MongoDB</div>
+        <div data-hf-id="hf-o8hf" id="f-03-operate-redis">Redis</div>
+        <div data-hf-id="hf-t0gw" id="f-03-operate-app">
+          <div data-hf-id="hf-g6ru" id="f-03-operate-app-header"><div data-hf-id="hf-cavx" id="f-03-operate-app-symbol"></div><div data-hf-id="hf-mn1k" id="f-03-operate-app-name">orders-api</div></div>
+          <div data-hf-id="hf-kwmt" id="f-03-operate-app-body"><div data-hf-id="hf-1gab" id="f-03-operate-app-sidebar"></div><div data-hf-id="hf-0t4m" id="f-03-operate-app-rows"><div data-hf-id="hf-ko0h" id="f-03-operate-app-row-a"></div><div data-hf-id="hf-om4i" id="f-03-operate-app-row-b"></div><div data-hf-id="hf-sk8j" id="f-03-operate-app-row-c"></div></div></div>
+        </div>
+        <div data-hf-id="hf-r7n1" id="f-03-operate-concept">APPLICATION</div>
+        <div data-hf-id="hf-mq1c" id="f-03-operate-surface">
+          <div data-hf-id="hf-h8xb" id="f-03-operate-surface-label">OPERATIONS</div>
+          <div data-hf-id="hf-3ker" id="f-03-operate-secrets"><span data-hf-id="hf-pka1" id="f-03-operate-secrets-mark"></span>Encrypted secrets</div>
+          <div data-hf-id="hf-khvp" id="f-03-operate-logs"><span data-hf-id="hf-gkqf" id="f-03-operate-logs-mark"></span>Logs</div>
+          <div data-hf-id="hf-4p6j" id="f-03-operate-metrics"><span data-hf-id="hf-wev1" id="f-03-operate-metrics-mark"></span>Metrics</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="assets/gsap.min.js"></script>
+  <script>
+    (function(){
+      const el = name => document.querySelector('[id="f-03-operate-' + name + '"]');
+      const tl = gsap.timeline({paused:true});
+      window.__timelines = window.__timelines || {};
+      const words = ['word-the','word-app','word-is','word-just','word-the2','word-start'];
+      tl.set(words.map(el),{opacity:0},0);
+      const arrivals = [0.03,.225,.36,.485,.602,.72];
+      words.forEach((name,i)=>{
+        const d=i===0?.18:(i===5?.17:.145);
+        tl.set(el(name),{opacity:1,y:i===0?80:(i===5?70:45)},arrivals[i]);
+        tl.to(el(name),{y:0,duration:d,ease:'power4.out'},arrivals[i]);
+      });
+      tl.fromTo(el('app'),{scale:0,opacity:0},{scale:1,opacity:1,duration:.55,ease:'power3.out'},.08);
+      tl.fromTo(el('concept'),{opacity:0,y:20},{opacity:1,y:0,duration:.35,ease:'power3.out'},.65);
+      // The diagram itself moves between proof poses; the title stays anchored.
+      tl.fromTo(el('diagram'),{scale:.975,x:0,y:0},{scale:1.018,x:0,y:-5,duration:6.9,ease:'power1.inOut'},0);
+      tl.fromTo(el('diagram'),{scale:1.018,x:0,y:-5},{scale:1.035,x:-8,y:-8,duration:3.7,ease:'power1.inOut',immediateRender:false},6.9);
+      tl.fromTo(el('diagram'),{scale:1.035,x:-8,y:-8},{scale:1.008,x:0,y:0,duration:3.9,ease:'power1.inOut',immediateRender:false},10.6);
+      ['line-postgres','line-mongo','line-redis','line-ops'].forEach(name=>{
+        const p=el(name),len=p.getTotalLength();
+        p.style.strokeDasharray=String(len);p.style.strokeDashoffset=String(len);
+      });
+      tl.fromTo(el('data-label'),{opacity:0,y:20},{opacity:1,y:0,duration:.3,ease:'power3.out'},3.05);
+      const data=[['postgres',3.25],['mongo',4.55],['redis',5.7]];
+      data.forEach(([name,time])=>{
+        tl.fromTo(el(name),{opacity:0,scale:0},{opacity:1,scale:1,duration:.48,ease:'power3.out'},time);
+        tl.to(el('line-'+name),{strokeDashoffset:0,duration:.65,ease:'power2.out'},time+.12);
+      });
+      tl.fromTo(el('surface'),{scale:0,opacity:0},{scale:1,opacity:1,duration:.6,ease:'power3.out'},7.04);
+      tl.to(el('line-ops'),{strokeDashoffset:0,duration:.55,ease:'power2.out'},7.18);
+      const ops=[['secrets',7.7],['logs',9.45],['metrics',11.2]];
+      ops.forEach(([name,time],i)=>{
+        tl.set(el(name),{opacity:0},0);
+        tl.set(el(name),{opacity:1,y:45-i*6},time);
+        tl.to(el(name),{y:0,duration:.16-i*.015,ease:'power4.out'},time);
+        tl.to(el(name),{backgroundColor:'#8DCFA9',duration:.24,ease:'power1.out'},time+.2);
+        tl.to(el(name+'-mark'),{backgroundColor:'#28251f',duration:.2,ease:'power1.out'},time+.2);
+        if(i<2){
+          tl.to(el(name),{backgroundColor:'#f6f3eb',duration:.24,ease:'power1.out'},ops[i+1][1]);
+          tl.to(el(name+'-mark'),{backgroundColor:'#f6f3eb',duration:.24,ease:'power1.out'},ops[i+1][1]);
+        }
+      });
+      // A finite, authored request/response schedule follows the existing links.
+      // Explicit points keep packets on their route during forward and reverse seek.
+      const travel=(name,points,at,duration)=>{
+        const dot=el('packet-'+name);
+        const lengths=points.slice(1).map((p,i)=>Math.hypot(p[0]-points[i][0],p[1]-points[i][1]));
+        const total=lengths.reduce((sum,n)=>sum+n,0);
+        tl.set(dot,{opacity:1,x:points[0][0],y:points[0][1]},at);
+        let cursor=at;
+        points.slice(1).forEach((p,i)=>{
+          const step=duration*lengths[i]/total;
+          tl.fromTo(dot,{x:points[i][0],y:points[i][1]},{x:p[0],y:p[1],duration:step,ease:'none',immediateRender:false},cursor);
+          cursor+=step;
+        });
+        tl.set(dot,{opacity:0},at+duration);
+      };
+      const routes={
+        postgres:[[485,495],[570,495],[570,550],[650,550]],
+        mongo:[[485,600],[650,600]],
+        redis:[[485,745],[570,745],[570,650],[650,650]],
+        ops:[[1250,600],[1390,600]]
+      };
+      const schedule={postgres:[4.1,6.8,9.5,12.3],mongo:[5.4,7.95,10.55,13.1],redis:[6.55,9.2,11.9],ops:[7.95,9.75,11.55,13.35]};
+      Object.entries(schedule).forEach(([name,times])=>{
+        times.forEach((at,i)=>{
+          const points=i%2===0?routes[name]:[...routes[name]].reverse();
+          travel(name,points,at,name==='ops'?1.2:1.45);
+        });
+      });
+      // Each operations action changes the app interior, rather than only its label.
+      tl.to(el('app-sidebar'),{backgroundColor:'#8DCFA9',duration:.3,ease:'power2.out'},7.95);
+      tl.fromTo(el('app-row-a'),{scaleX:.55,transformOrigin:'left center'},{scaleX:1,duration:.5,ease:'power2.out'},8.15);
+      [9.8,10.4,11].forEach((at,i)=>{
+        const row=el(['app-row-a','app-row-b','app-row-c'][i]);
+        tl.fromTo(row,{scaleX:.45},{scaleX:1,transformOrigin:'left center',duration:.45,ease:'power2.out',immediateRender:false},at);
+      });
+      [11.65,12.85,14.05].forEach((at,i)=>{
+        const row=el(['app-row-b','app-row-c','app-row-a'][i]);
+        tl.fromTo(row,{scaleX:1},{scaleX:.7,transformOrigin:'left center',duration:.24,ease:'power1.inOut',immediateRender:false},at);
+        tl.fromTo(row,{scaleX:.7},{scaleX:1,transformOrigin:'left center',duration:.25,ease:'power1.inOut',immediateRender:false},at+.24);
+      });
+      const payoff=['word-one','word-operations','word-workflow'];
+      tl.set(payoff.map(el),{x:230,opacity:0},0);
+      words.forEach((name,i)=>{
+        const t=12.05+i*.022;
+        tl.to(el(name),{x:-230,duration:.34,ease:'power4.in'},t);
+        tl.to(el(name),{opacity:0,duration:.18,ease:'power1.in'},t);
+      });
+      let start=12.43,gap=.05;
+      payoff.forEach(name=>{
+        tl.fromTo(el(name),{x:230,opacity:.35},{x:0,opacity:1,duration:.3,ease:'power4.out',immediateRender:false},start);
+        start+=gap;gap*=.84;
+      });
+      // Finish the active metrics state, with packet motion through 14.55s.
+      tl.to(el('metrics'),{backgroundColor:'#f6f3eb',duration:.3,ease:'power1.out'},14.2);
+      tl.to(el('metrics-mark'),{backgroundColor:'#8DCFA9',duration:.3,ease:'power1.out'},14.2);
+      window.__timelines['03-operate'] = tl;
+    })();
+  </script>
+</template>

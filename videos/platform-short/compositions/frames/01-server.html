@@ -1,0 +1,136 @@
+<template>
+  <style>
+    @font-face{font-family:"Archivo Black";src:url("assets/fonts/ArchivoBlack.ttf") format("truetype");font-weight:400;font-style:normal}
+    @font-face{font-family:"JetBrains Mono";src:url("assets/fonts/JetBrainsMono.ttf") format("truetype");font-weight:100 900;font-style:normal}
+    @font-face{font-family:"Space Grotesk";src:url("assets/fonts/SpaceGrotesk.ttf") format("truetype");font-weight:300 700;font-style:normal}
+    #f-01-server-root{position:relative;width:100%;height:100%;overflow:hidden;container-type:size;color:#28251f}
+    #f-01-server-ground{position:absolute;inset:0;background:#f6f3eb;container-type:size}
+    #f-01-server-content{position:absolute;inset:0;container-type:size}
+    #f-01-server-camera{position:absolute;inset:0;transform-origin:50% 50%}
+    #f-01-server-chrome{position:absolute;left:7.407cqw;right:7.407cqw;top:8.333cqh;height:5.208cqh;display:flex;align-items:center;justify-content:space-between;border-bottom:.37cqw solid #28251f;padding-bottom:1.2cqw;box-sizing:border-box}
+    #f-01-server-concept{font:400 4.074cqw/1.12 "JetBrains Mono";letter-spacing:-.025em;text-transform:uppercase;max-width:66cqw}
+    #f-01-server-brand{width:13.889cqw;height:6.296cqw;padding:1.1cqw;background:#28251f;object-fit:contain;box-sizing:border-box}
+    #f-01-server-hook{position:absolute;left:10cqw;top:15.1cqh;width:78cqw;font-family:"Archivo Black";font-weight:400;line-height:.92;letter-spacing:-.01em;text-transform:uppercase}
+    #f-01-server-line-a,#f-01-server-line-b{display:block;font-size:9.35cqw;white-space:nowrap}
+    #f-01-server-line-b{margin-top:1.15cqw}
+    #f-01-server-line-c{display:flex;font-size:12.3cqw;color:#c94d3c;white-space:nowrap;margin-top:.8cqw;letter-spacing:-.025em}
+    #f-01-server-frag-a,#f-01-server-frag-b,#f-01-server-dot{display:inline-block}
+    #f-01-server-app{position:absolute;left:18.519cqw;top:36.979cqh;width:62.963cqw;height:9.375cqh;border:.37cqw solid #28251f;box-sizing:border-box;background:#f6f3eb}
+    #f-01-server-app-bar{height:4.63cqw;border-bottom:.278cqw solid #28251f;display:flex;align-items:center;gap:1.1cqw;padding-left:1.852cqw}
+    #f-01-server-app-bar i{display:block;width:.925cqw;height:.925cqw;background:#28251f}
+    #f-01-server-app-label{position:absolute;top:6cqw;left:2.407cqw;font:400 4.074cqw/1.1 "JetBrains Mono";letter-spacing:.06em}
+    #f-01-server-app-panels{position:absolute;right:2.4cqw;top:6.3cqw;width:29cqw;display:flex;gap:1.6cqw}
+    #f-01-server-app-panels span{display:block;height:7.4cqw;border:.278cqw solid #28251f;flex:1;background:#ECC2BC;box-sizing:border-box}
+    #f-01-server-route{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+    #f-01-server-route path{fill:none;stroke:#28251f;stroke-width:5;stroke-linecap:square;stroke-linejoin:miter}
+    #f-01-server-route [data-server-packet]{stroke:#c94d3c;stroke-width:13;opacity:0;stroke-linecap:butt}
+    #f-01-server-platform{position:absolute;left:18.519cqw;top:50.521cqh;width:62.963cqw;height:7.292cqh;background:#c94d3c;border:.37cqw solid #28251f;box-sizing:border-box;display:flex;align-items:center;padding-left:3.15cqw;gap:2.4cqw}
+    #f-01-server-platform svg{width:6.5cqw;height:6.5cqw;flex:none}
+    #f-01-server-platform-label{font:400 6.2cqw/.92 "Archivo Black";letter-spacing:-.01em;text-transform:uppercase}
+    #f-01-server-base{position:absolute;left:18.519cqw;top:57.813cqh;width:62.963cqw;height:4.688cqh;background:#ECC2BC;border:.37cqw solid #28251f;border-top:0;box-sizing:border-box;display:flex;align-items:center;padding-left:3.15cqw;font:400 4.074cqw/1.1 "JetBrains Mono";letter-spacing:-.04em}
+    #f-01-server-modules{position:absolute;left:8.333cqw;top:64.063cqh;width:83.334cqw;display:grid;gap:.926cqw}
+    #f-01-server-mod-a,#f-01-server-mod-b,#f-01-server-mod-c{height:9.259cqw;border:.37cqw solid #28251f;background:#f6f3eb;box-sizing:border-box;display:flex;align-items:center;gap:2.778cqw;padding:1.5cqw 2.778cqw;transform-origin:50% 50%;font:400 4.074cqw/1.1 "JetBrains Mono";letter-spacing:-.035em}
+    #f-01-server-mod-a{background:#ECC2BC}
+    #f-01-server-mod-c{background:#28251f;color:#f6f3eb}
+    #f-01-server-modules svg{width:5.4cqw;height:5.4cqw;flex:none;fill:none;stroke:currentColor;stroke-width:3.5;stroke-linecap:square;stroke-linejoin:miter}
+    #f-01-server-modules span{white-space:nowrap}
+  </style>
+  <div data-hf-id="hf-2vle" id="f-01-server-root" data-composition-id="01-server" data-duration="9.068" data-width="1080" data-height="1920">
+    <div data-hf-id="hf-vjib" id="f-01-server-ground" class="clip" data-start="0" data-duration="9.068" data-track-index="0"></div>
+    <div data-hf-id="hf-di2a" id="f-01-server-content" class="clip" data-start="0" data-duration="9.068" data-track-index="1">
+      <div data-hf-id="hf-tuff" id="f-01-server-camera">
+      <div data-hf-id="hf-rth4" id="f-01-server-chrome"><div data-hf-id="hf-l62i" id="f-01-server-concept">Conceptual illustration</div><img data-hf-id="hf-fei8" id="f-01-server-brand" src="assets/logo-light.png" alt="Platform"></div>
+      <div data-hf-id="hf-hidz" id="f-01-server-hook">
+        <span data-hf-id="hf-6p8t" id="f-01-server-line-a">YOUR SERVER.</span>
+        <span data-hf-id="hf-70ah" id="f-01-server-line-b">YOUR</span>
+        <div data-hf-id="hf-42j8" id="f-01-server-line-c"><span data-hf-id="hf-zat2" id="f-01-server-frag-a">PLAT</span><span data-hf-id="hf-0p6a" id="f-01-server-frag-b">FORM</span><span data-hf-id="hf-9aj8" id="f-01-server-dot">.</span></div>
+      </div>
+      <div data-hf-id="hf-7ec3" id="f-01-server-app">
+        <div data-hf-id="hf-fsyj" id="f-01-server-app-bar"><i data-hf-id="hf-wt6k"></i><i data-hf-id="hf-zeb8"></i><i data-hf-id="hf-y7e5"></i></div>
+        <div data-hf-id="hf-5lfu" id="f-01-server-app-label">APPS</div>
+        <div data-hf-id="hf-dwnl" id="f-01-server-app-panels"><span data-hf-id="hf-uckh"></span><span data-hf-id="hf-l73p"></span><span data-hf-id="hf-me0s"></span></div>
+      </div>
+      <svg data-hf-id="hf-nkwr" id="f-01-server-route" viewBox="0 0 1080 1920" aria-hidden="true">
+        <path data-hf-id="hf-ckyy" id="f-01-server-path-a" d="M540 890 L540 970"/>
+        <path data-hf-id="hf-8ln7" id="f-01-server-path-b" d="M540 1200 L540 1215 L180 1215 L180 1230"/>
+        <path data-hf-id="hf-mzlo" id="f-01-server-path-c" d="M180 1215 H70 V1390 H90"/>
+        <path data-hf-id="hf-loz1" id="f-01-server-path-d" d="M70 1390 V1500 H90"/>
+        <path data-hf-id="hf-i6x8" id="f-01-server-packet-app" data-server-packet d="M540 890 V970"/>
+        <path data-hf-id="hf-0iwi" id="f-01-server-packet-deploy" data-server-packet d="M540 1200 V1215 H180 V1230"/>
+        <path data-hf-id="hf-ls1z" id="f-01-server-packet-data" data-server-packet d="M540 1200 V1215 H70 V1390 H90"/>
+        <path data-hf-id="hf-8ldj" id="f-01-server-packet-metrics" data-server-packet d="M540 1200 V1215 H70 V1500 H90"/>
+      </svg>
+      <div data-hf-id="hf-w24r" id="f-01-server-platform"><svg data-hf-id="hf-knf6" viewBox="0 0 70 70" aria-hidden="true"><rect data-hf-id="hf-bsbt" x="8" y="8" width="54" height="22" fill="none" stroke="#28251f" stroke-width="4"/><rect data-hf-id="hf-lw5z" x="8" y="40" width="54" height="22" fill="none" stroke="#28251f" stroke-width="4"/><path data-hf-id="hf-dur2" d="M18 19H24M18 51H24M35 19H52M35 51H52" fill="none" stroke="#28251f" stroke-width="4"/></svg><span data-hf-id="hf-n4e6" id="f-01-server-platform-label">PLATFORM</span></div>
+      <div data-hf-id="hf-f9vf" id="f-01-server-base">Kubernetes (k3s)</div>
+      <div data-hf-id="hf-axjh" id="f-01-server-modules">
+        <div data-hf-id="hf-xqvk" id="f-01-server-mod-a"><svg data-hf-id="hf-ha7k" viewBox="0 0 64 64" aria-hidden="true"><path data-hf-id="hf-ui18" d="M18 13V45C18 51 24 54 31 54H47M18 23H36C43 23 47 18 47 11"/><rect data-hf-id="hf-21ao" x="11" y="6" width="14" height="14"/><rect data-hf-id="hf-n8y4" x="40" y="40" width="14" height="14"/></svg><span data-hf-id="hf-8t7d">GitOps deploys</span></div>
+        <div data-hf-id="hf-6erf" id="f-01-server-mod-b"><svg data-hf-id="hf-9rk8" viewBox="0 0 64 64" aria-hidden="true"><ellipse data-hf-id="hf-aa6t" cx="32" cy="13" rx="22" ry="8"/><path data-hf-id="hf-dude" d="M10 13V49C10 59 54 59 54 49V13M10 31C10 41 54 41 54 31"/></svg><span data-hf-id="hf-7g0t">Databases</span></div>
+        <div data-hf-id="hf-2gne" id="f-01-server-mod-c"><svg data-hf-id="hf-8kn5" viewBox="0 0 64 64" aria-hidden="true"><path data-hf-id="hf-uvsb" d="M8 9V55H57M15 40L26 28L36 36L54 15M16 15H26M16 22H21"/></svg><span data-hf-id="hf-nvdq">Logs + metrics</span></div>
+      </div>
+      </div>
+    </div>
+  </div>
+  <script src="assets/gsap.min.js"></script>
+  <script>
+    (function(){
+      const el=(suffix)=>document.getElementById('f-01-server-'+suffix);
+      const tl=gsap.timeline({paused:true});
+      tl.addLabel('your-server',0);
+      tl.addLabel('platform-online',3.1);
+      tl.addLabel('connected-services',4.8);
+      tl.addLabel('one-place',7.7);
+      const arrivals=[['line-a',.04,80,.20],['line-b',.225,45,.16],['frag-a',.37,70,.16],['frag-b',.51,70,.15],['dot',.625,40,.12]];
+      arrivals.forEach(([id,start,y,duration])=>{
+        tl.set(el(id),{opacity:0},0);
+        tl.set(el(id),{opacity:1,y:y},start);
+        tl.fromTo(el(id),{y:y},{y:0,duration:duration,ease:'power4.out',immediateRender:false},start);
+      });
+      tl.fromTo(el('app'),{opacity:0,y:32},{opacity:1,y:0,duration:.55,ease:'power3.out'},1.12);
+      ['path-a','path-b','path-c','path-d'].forEach((id)=>{const p=el(id);const len=p.getTotalLength();p.style.strokeDasharray=String(len);p.style.strokeDashoffset=String(len);});
+      tl.to(el('path-a'),{strokeDashoffset:0,duration:.58,ease:'power2.out'},2.08);
+      tl.fromTo(el('platform'),{scale:0,opacity:0},{scale:1,opacity:1,duration:.6,ease:'power3.out'},2.58);
+      tl.fromTo(el('base'),{scaleY:0,opacity:0},{scaleY:1,opacity:1,duration:.5,ease:'power3.out'},3.42);
+      tl.to(el('path-b'),{strokeDashoffset:0,duration:.52,ease:'power2.out'},4.12);
+      tl.to(el('path-c'),{strokeDashoffset:0,duration:.55,ease:'power2.out'},4.85);
+      tl.to(el('path-d'),{strokeDashoffset:0,duration:.4,ease:'power2.out'},5.65);
+      tl.fromTo(el('mod-a'),{scale:.95,opacity:0,y:20},{scale:1,opacity:1,y:0,duration:.56,ease:'power3.out'},4.58);
+      tl.fromTo(el('mod-b'),{scale:.95,opacity:0,y:20},{scale:1,opacity:1,y:0,duration:.56,ease:'power3.out'},5.39);
+      tl.fromTo(el('mod-c'),{scale:.95,opacity:0,y:20},{scale:1,opacity:1,y:0,duration:.56,ease:'power3.out'},6.24);
+
+      // Adapt the Tracing Beam registry's measured dash to this portrait's
+      // existing routes. Every packet terminates on its real receiving card.
+      function packet(name,at,duration){
+        const path=el('packet-'+name);
+        const length=path.getTotalLength();
+        const dash=28;
+        tl.set(path,{strokeDasharray:dash+' '+(length+dash),strokeDashoffset:dash,opacity:0},0);
+        tl.set(path,{strokeDashoffset:dash,opacity:1},at);
+        tl.to(path,{strokeDashoffset:-length,duration:duration,ease:'none'},at);
+        tl.set(path,{opacity:0},at+duration);
+      }
+      [2.9,4.35,5.8,7.25].forEach((at)=>{
+        packet('app',at,.5);
+        tl.to(el('app-bar').querySelectorAll('i'),{backgroundColor:'#2c6a46',duration:.14,stagger:.07,ease:'none'},at+.48);
+        tl.to(el('app-bar').querySelectorAll('i'),{backgroundColor:'#28251f',duration:.18,stagger:.07,ease:'none'},at+.95);
+        tl.to(el('platform'),{borderColor:'#2c6a46',duration:.25,ease:'power1.out'},at+.5);
+      });
+      const services=[['deploy','mod-a',5.05,.65],['data','mod-b',5.82,.75],['metrics','mod-c',6.65,.85]];
+      services.forEach(([route,card,at,duration])=>{
+        packet(route,at,duration);
+        tl.to(el(card),{y:-5,borderColor:'#c94d3c',duration:.2,ease:'power2.out'},at+duration-.1);
+        tl.to(el(card),{y:0,duration:.35,ease:'power2.inOut'},at+duration+.1);
+      });
+      Array.from(el('app-panels').children).forEach((panel,i)=>{
+        tl.fromTo(panel,{scaleY:0},{scaleY:1,duration:.35,transformOrigin:'center bottom',ease:'power2.out'},1.55+i*.18);
+        tl.to(panel,{backgroundColor:'#d4e2d4',duration:.3,ease:'power1.out'},3.45+i*.18);
+      });
+      // A final completed request keeps the back of the shot active while
+      // the three connected capabilities remain fully readable.
+      packet('data',7.75,.8);
+      tl.to(el('mod-b'),{backgroundColor:'#d4e2d4',duration:.3,ease:'power1.out'},8.3);
+      tl.fromTo(el('camera'),{scale:1,y:0},{scale:1.016,y:-4,duration:8.6,ease:'none'},0);
+      window.__timelines=window.__timelines||{};
+      window.__timelines['01-server']=tl;
+    })();
+  </script>
+</template>

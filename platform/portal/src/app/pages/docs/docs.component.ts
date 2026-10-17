@@ -1,14 +1,15 @@
-import { Component, OnInit, ViewEncapsulation, HostListener, ElementRef, AfterViewChecked, ChangeDetectorRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
+import { Component, OnInit, OnDestroy, ViewEncapsulation, HostListener, ElementRef, AfterViewChecked, ChangeDetectorRef, inject } from '@angular/core';
+import { CommonModule, DOCUMENT } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { DomSanitizer, Meta, SafeHtml, Title } from '@angular/platform-browser';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 import mermaid from 'mermaid';
 import { catchError } from 'rxjs/operators';
-import { of } from 'rxjs';
+import { of, Subscription } from 'rxjs';
+import { prepareDocsHtml } from './docs-html.mjs';
+import { DocsSearchComponent } from './docs-search.component';
 
 interface DocPage {
   label: string;
@@ -25,18 +26,20 @@ interface DocSection {
 @Component({
   selector: 'app-docs',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, HttpClientModule],
+  imports: [CommonModule, RouterModule, HttpClientModule, DocsSearchComponent],
   encapsulation: ViewEncapsulation.None,
   templateUrl: './docs.component.html',
   styleUrl: './docs.component.css',
 })
-export class DocsComponent implements OnInit, AfterViewChecked {
+export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
+  private document = inject(DOCUMENT);
+  private title = inject(Title);
+  private meta = inject(Meta);
   content: SafeHtml | null = null;
   isLoading = true;
   currentSection = '';
   currentPage = '';
   mobileNavOpen = false;
-  searchQuery = '';
   tocItems: { id: string; text: string; level: string }[] = [];
   activeTocId = '';
   /** Raw markdown for the current page (agent copy). */
@@ -47,6 +50,8 @@ export class DocsComponent implements OnInit, AfterViewChecked {
   private agentCopyTimer: ReturnType<typeof setTimeout> | null = null;
   private rendering = false;
   private tocObserver: IntersectionObserver | null = null;
+  private routeSubscription?: Subscription;
+  private loadSubscription?: Subscription;
 
   docSections: DocSection[] = [
     {
@@ -211,20 +216,6 @@ export class DocsComponent implements OnInit, AfterViewChecked {
     return this.docSections.flatMap(s => s.pages);
   }
 
-  get filteredSections(): DocSection[] {
-    if (!this.searchQuery.trim()) return this.docSections;
-    const q = this.searchQuery.toLowerCase();
-    return this.docSections
-      .map(s => ({
-        ...s,
-        pages: s.pages.filter(p =>
-          p.label.toLowerCase().includes(q) ||
-          s.label.toLowerCase().includes(q)
-        ),
-      }))
-      .filter(s => s.pages.length > 0);
-  }
-
   constructor(
     private route: ActivatedRoute,
     private router: Router,
@@ -271,9 +262,10 @@ export class DocsComponent implements OnInit, AfterViewChecked {
   }
 
   ngOnInit() {
-    this.route.paramMap.subscribe(params => {
+    this.routeSubscription = this.route.paramMap.subscribe(params => {
       const section = params.get('section');
       const page = params.get('page');
+      const requested = [section, page].filter(Boolean).join('/');
 
       // Reset scroll on every docs navigation. The router-level
       // scrollPositionRestoration in app.config.ts only fires when the routed
@@ -282,26 +274,39 @@ export class DocsComponent implements OnInit, AfterViewChecked {
       // leaves the scroll where it was. Do it by hand.
       this.scrollToTop();
 
+      const category = requested && this.flatPages.find(p =>
+        p.section === requested || p.section.startsWith(requested + '/')
+      );
+      if (category) {
+        this.router.navigateByUrl(this.docUrl(category), { replaceUrl: true });
+        return;
+      }
       if (section && page) {
         this.currentSection = section;
         this.currentPage = page;
         this.loadMarkdown(`/docs/${section}/${page}.md`);
       } else if (section) {
-        const found = this.flatPages.find(p =>
-          p.section === section || p.section.startsWith(section + '/')
-        );
-        if (found) {
-          this.router.navigate(['/docs', found.section, found.page], { replaceUrl: true });
-          return;
-        }
-        this.isLoading = false;
-        this.content = null;
+        this.currentSection = '';
+        this.currentPage = section;
+        this.loadMarkdown(`/docs/${section}.md`);
       } else {
         this.currentSection = '';
         this.currentPage = '';
         this.loadMarkdown('/docs/index.md');
       }
     });
+  }
+
+  ngOnDestroy() {
+    this.routeSubscription?.unsubscribe();
+    this.loadSubscription?.unsubscribe();
+    this.tocObserver?.disconnect();
+    if (this.agentCopyTimer) clearTimeout(this.agentCopyTimer);
+    this.updateMetadata(
+      'Platform — Self-hosted Developer Platform for Kubernetes',
+      'Turn your Ubuntu server into a self-hosted developer platform. Deploy with GitOps, connect databases, manage secrets, and inspect logs with scoped MCP tools.',
+      'https://platform.pratyushes.dev/'
+    );
   }
 
   private scrollToTop() {
@@ -321,6 +326,7 @@ export class DocsComponent implements OnInit, AfterViewChecked {
       this.addCopyButtons();
       this.renderMermaidDiagrams();
       this.buildToc();
+      this.cdr.detectChanges();
     }
   }
 
@@ -344,7 +350,7 @@ export class DocsComponent implements OnInit, AfterViewChecked {
     container.querySelectorAll('pre code.language-bash, pre code.language-sh, pre code.language-shell').forEach((block: unknown) => {
       const el = block as HTMLElement;
       let html = el.innerHTML;
-      
+
       // Prompts
       html = html.replace(
         /^(\s*)(\$)\s/gm,
@@ -355,7 +361,7 @@ export class DocsComponent implements OnInit, AfterViewChecked {
       const cliCommands = ['docker', 'docker-compose', 'npm', 'git', 'kubectl', 'helm', 'ng', 'python', 'node', 'npx', 'sudo', 'apt', 'apt-get'];
       const cliRegex = new RegExp(`(^|>|\\s)(${cliCommands.join('|')})(?=\\s|$)`, 'gm');
       html = html.replace(cliRegex, '$1<span class="hljs-built_in">$2</span>');
-      
+
       el.innerHTML = html;
     });
 
@@ -363,12 +369,12 @@ export class DocsComponent implements OnInit, AfterViewChecked {
     container.querySelectorAll('pre code.language-python').forEach((block: unknown) => {
       const el = block as HTMLElement;
       let html = el.innerHTML;
-      
+
       // SDK Classes highlight.js misses when instantiated
       const pyClasses = ['MongoClient', 'PostgresPool', 'RedisClient', 'PlatformClient', 'MongoManager', 'PostgresManager', 'RedisManager'];
       const pyRegex = new RegExp(`(^|>|\\s|\\.)(${pyClasses.join('|')})(?=\\s|\\(|$)`, 'g');
       html = html.replace(pyRegex, '$1<span class="hljs-title class_">$2</span>');
-      
+
       el.innerHTML = html;
     });
 
@@ -376,7 +382,7 @@ export class DocsComponent implements OnInit, AfterViewChecked {
     container.querySelectorAll('pre code.language-env, pre code.language-dotenv, pre code.language-properties').forEach((block: unknown) => {
       const el = block as HTMLElement;
       let html = el.innerHTML;
-      
+
       // Match KEY=value pattern if it's not already inside a span (basic fallback)
       html = html.replace(/^([A-Z0-9_]+)=(.+)$/gm, (match, key, value) => {
         // If hljs already wrapped the whole thing, just replace the inner text
@@ -384,7 +390,7 @@ export class DocsComponent implements OnInit, AfterViewChecked {
         const cleanVal = value.replace(/<[^>]*>/g, '');
         return `<span class="hljs-attr">${cleanKey}</span>=<span class="hljs-string">${cleanVal}</span>`;
       });
-      
+
       el.innerHTML = html;
     });
 
@@ -445,23 +451,43 @@ export class DocsComponent implements OnInit, AfterViewChecked {
 
   @HostListener('click', ['$event'])
   onClick(event: MouseEvent) {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     const target = event.target as HTMLElement;
     const anchor = target.closest('a');
-    if (!anchor || !anchor.getAttribute('href')) return;
+    if (!anchor?.closest('.docs-markdown') || !anchor.getAttribute('href') || anchor.target === '_blank') return;
     const href = anchor.getAttribute('href')!;
 
-    if (href.startsWith('/docs/')) {
+    if (href.startsWith('/docs/') || href.startsWith('/docs#')) {
       event.preventDefault();
-      const parts = href.replace('/docs/', '').split('/');
-      if (parts.length >= 2) {
-        this.router.navigate(['/docs', parts[0], parts[1]]);
-      }
+      this.router.navigateByUrl(href).then(() => this.scrollToFragment());
     }
   }
 
   navigateTo(page: DocPage) {
     this.mobileNavOpen = false;
-    this.router.navigate(['/docs', page.section, page.page]);
+    this.router.navigateByUrl(this.docUrl(page));
+  }
+
+  docUrl(page: DocPage): string {
+    return `/docs/${page.section}/${page.page}`;
+  }
+
+  private updateMetadata(title: string, description: string, canonical: string) {
+    this.title.setTitle(title);
+    this.meta.updateTag({ name: 'description', content: description });
+    this.meta.updateTag({ name: 'robots', content: 'index,follow,max-image-preview:large' });
+    this.meta.updateTag({ property: 'og:title', content: title });
+    this.meta.updateTag({ property: 'og:description', content: description });
+    this.meta.updateTag({ property: 'og:url', content: canonical });
+    this.meta.updateTag({ name: 'twitter:title', content: title });
+    this.meta.updateTag({ name: 'twitter:description', content: description });
+    let link = this.document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    if (!link) {
+      link = this.document.createElement('link');
+      link.rel = 'canonical';
+      this.document.head.appendChild(link);
+    }
+    link.href = canonical;
   }
 
   isActive(page: DocPage): boolean {
@@ -576,17 +602,19 @@ export class DocsComponent implements OnInit, AfterViewChecked {
   }
 
   private async loadMarkdown(path: string) {
+    this.loadSubscription?.unsubscribe();
     this.isLoading = true;
     this.content = null;
     this.rawMarkdown = '';
     this.markdownPath = path;
     this.agentCopyFeedback = null;
-    this.http.get(path, { responseType: 'text' })
+    this.loadSubscription = this.http.get(path, { responseType: 'text' })
       .pipe(
         catchError(() => {
           this.isLoading = false;
           this.content = null;
           this.rawMarkdown = '';
+          this.meta.updateTag({ name: 'robots', content: 'noindex,follow' });
           return of(null);
         })
       )
@@ -594,52 +622,26 @@ export class DocsComponent implements OnInit, AfterViewChecked {
         if (text) {
           try {
             this.rawMarkdown = text;
-            // Rewrite relative `.md` links so they resolve against the CURRENT
-            // section, not against the docs root. Before this fix, a link like
-            // `[Deployments API](deployments.md)` inside
-            // /docs/api-reference/platform-api/projects would render as
-            // `/docs/deployments` (404). Now it correctly resolves to
-            // `/docs/api-reference/platform-api/deployments`.
-            const currentDir = this.currentSection || '';
-            const processed = text.replace(
-              /\]\((\.{0,2}\/)?([a-zA-Z0-9_\/-]+)\.md(#[a-zA-Z0-9_-]+)?\)/g,
-              (_match, prefix: string, path: string, hash: string | undefined) => {
-                const hashPart = hash || '';
-                // Absolute paths starting with `/` — leave the rewriter alone
-                if (prefix === '/') {
-                  return `](/${path}${hashPart})`;
-                }
-                const segs = currentDir.split('/').filter(Boolean);
-                if (prefix === '../') {
-                  segs.pop();
-                  const target = segs.length ? `${segs.join('/')}/${path}` : path;
-                  return `](/docs/${target}${hashPart})`;
-                }
-                if (prefix === '../../') {
-                  segs.pop();
-                  segs.pop();
-                  const target = segs.length ? `${segs.join('/')}/${path}` : path;
-                  return `](/docs/${target}${hashPart})`;
-                }
-                // No prefix (or `./`) — same directory as current doc
-                const base = currentDir ? `${currentDir}/` : '';
-                return `](/docs/${base}${path}${hashPart})`;
-              }
-            );
-            let html = await marked.parse(processed);
+            const heading = text.match(/^#\s+(.+)$/m)?.[1].replace(/[*`]/g, '').trim() || 'Documentation';
+            const title = `${heading} | Platform Docs`;
+            const description = `Read ${heading} in the Platform documentation. Guides and reference for the self-hosted Platform control plane.`;
+            const canonical = 'https://platform.pratyushes.dev' + (path === '/docs/index.md' ? '/docs' : path.replace(/\.md$/, ''));
+            this.updateMetadata(title, description, canonical);
+            let html = prepareDocsHtml(await marked.parse(text), path, window.location.origin);
             html = this.enhanceApiDocs(html);
             html = this.enhanceAuthBadges(html);
             html = this.enhanceResponseSections(html);
             html = this.enhanceSectionHeadings(html);
             html = this.transformMermaidBlocks(html);
             this.content = this.sanitizer.bypassSecurityTrustHtml(html as string);
+            this.isLoading = false;
             this.rendering = true;
             this.cdr.detectChanges();
             // Re-scroll after content mounts: the initial scrollToTop in
             // ngOnInit ran when the DOM still had the previous page's
             // content, so a user who scrolled during the async fetch would
             // land mid-page on the new doc otherwise.
-            queueMicrotask(() => this.scrollToTop());
+            queueMicrotask(() => { if (!this.scrollToFragment()) this.scrollToTop(); });
           } catch (e) {
             console.error('Error parsing markdown', e);
           }
@@ -657,7 +659,8 @@ export class DocsComponent implements OnInit, AfterViewChecked {
       const m = part.match(/<h2[^>]*>\s*<code>(GET|POST|PUT|PATCH|DELETE)<\/code>\s+(.+?)<\/h2>/i);
       if (m) {
         if (cardOpen) { out.push('</div></div>'); }
-        out.push(`<div class="api-card"><div class="api-card-header"><span class="api-method method-${m[1].toLowerCase()}">${m[1]}</span><code class="api-path">${m[2].trim()} <span class="api-http-version">HTTP/1.1</span></code></div><div class="api-card-body">`);
+        const id = part.match(/<h2\b[^>]*\bid="([^"]+)"/)?.[1];
+        out.push(`<div class="api-card"${id ? ` id="${id}"` : ''}><div class="api-card-header"><span class="api-method method-${m[1].toLowerCase()}">${m[1]}</span><code class="api-path">${m[2].trim()} <span class="api-http-version">HTTP/1.1</span></code></div><div class="api-card-body">`);
         cardOpen = true;
       } else {
         out.push(part);
@@ -668,8 +671,11 @@ export class DocsComponent implements OnInit, AfterViewChecked {
     let result = out.join('');
 
     result = result.replace(
-      /<h3[^>]*>\s*<code>(GET|POST|PUT|PATCH|DELETE)<\/code>\s+(.+?)<\/h3>/gi,
-      '<div class="api-sub-card"><div class="api-card-header method-sub"><span class="api-method method-$1">$1</span><code class="api-path">$2 <span class="api-http-version">HTTP/1.1</span></code></div></div>'
+      /<h3([^>]*)>\s*<code>(GET|POST|PUT|PATCH|DELETE)<\/code>\s+(.+?)<\/h3>/gi,
+      (_heading, attributes: string, method: string, path: string) => {
+        const id = attributes.match(/\bid="([^"]+)"/)?.[1];
+        return `<div class="api-sub-card"${id ? ` id="${id}"` : ''}><div class="api-card-header method-sub"><span class="api-method method-${method.toLowerCase()}">${method}</span><code class="api-path">${path} <span class="api-http-version">HTTP/1.1</span></code></div></div>`;
+      }
     );
 
     return result;
@@ -725,13 +731,26 @@ export class DocsComponent implements OnInit, AfterViewChecked {
   }
 
   scrollToHeading(event: Event, id: string) {
+    if (event instanceof MouseEvent && (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)) return;
     event.preventDefault();
-    const el = document.getElementById(id);
+    this.router.navigateByUrl(this.headingUrl(id)).then(() => this.scrollToFragment());
+  }
+
+  headingUrl(id: string): string {
+    const path = this.markdownPath === '/docs/index.md' ? '/docs' : this.markdownPath.replace(/\.md$/, '');
+    return `${path}#${encodeURIComponent(id)}`;
+  }
+
+  private scrollToFragment(): boolean {
+    const id = this.router.parseUrl(this.router.url).fragment;
+    if (!id) return false;
+    const el = this.el.nativeElement.querySelector(`[id="${CSS.escape(id)}"]`) as HTMLElement | null;
     if (el) {
       const offset = 100;
       const top = el.getBoundingClientRect().top + window.scrollY - offset;
-      window.scrollTo({ top, behavior: 'smooth' });
+      window.scrollTo({ top, behavior: 'auto' });
     }
+    return !!el;
   }
 
   private buildToc() {
@@ -745,8 +764,7 @@ export class DocsComponent implements OnInit, AfterViewChecked {
 
     headings.forEach((h: Element) => {
       const el = h as HTMLElement;
-      let id = el.id || el.textContent?.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || '';
-      if (!el.id) { el.id = id; }
+      const id = el.id;
       this.tocItems.push({ id, text: el.textContent || '', level: el.tagName.toLowerCase() });
     });
 
@@ -931,16 +949,16 @@ export class DocsComponent implements OnInit, AfterViewChecked {
   private enhanceSectionHeadings(html: string): string {
     return html
       .replace(
-        /<h2[^>]*>Roles CRUD<\/h2>/gi,
-        '<h2 class="api-section-title">Roles CRUD</h2>'
+        /<h2([^>]*)>Roles CRUD<\/h2>/gi,
+        '<h2$1 class="api-section-title">Roles CRUD</h2>'
       )
       .replace(
-        /<h2[^>]*>Permission Validation<\/h2>/gi,
-        '<h2 class="api-section-title">Permission Validation</h2>'
+        /<h2([^>]*)>Permission Validation<\/h2>/gi,
+        '<h2$1 class="api-section-title">Permission Validation</h2>'
       )
       .replace(
-        /<h2[^>]*>Error Codes<\/h2>/gi,
-        '<h2 class="api-section-title">Error Codes</h2>'
+        /<h2([^>]*)>Error Codes<\/h2>/gi,
+        '<h2$1 class="api-section-title">Error Codes</h2>'
       );
   }
 }
