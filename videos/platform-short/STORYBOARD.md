@@ -40,7 +40,7 @@ Use only the palette and font files in frame.md. Font paths: assets/fonts/SpaceG
 - transition_in: cut
 - status: animated
 - src: compositions/frames/02-control.html
-- voiceover: "Platform connects your tools on Kubernetes. Add scoped MCP access for your AI agents, with human approval for destructive actions. Start with the docs."
+- voiceover: "Platform connects your tools on Kubernetes. Add scoped MCP access for your AI agents, with human approval for destructive actions. Build on your terms."
 - asset_candidates: logo-light.png
 - focal: Connect your tools and keep control
 - roles: logo-light.png — supporting brand lockup; wireframe diagrams — original vector illustrations
@@ -48,6 +48,6 @@ Use only the palette and font files in frame.md. Font paths: assets/fonts/SpaceG
 - rules: waterfall-entry, svg-path-draw, spring-pop-entrance
 - sfx: none
 
-Portrait 1080x1920, native layout. Scene 1 (0–3s): Heading YOUR TOOLS. CONNECTED. and a vertical wireframe MCP client → Platform command guard. Scene 2 (3–6s): Human approval gate appears through spring-pop-entrance; label destructive actions. Scene 3 (6s–end): Real product logo lands above YOUR SERVER. YOUR APPS. CTA platform.pratyushes.dev/docs. Use waterfall-entry and svg-path-draw. Keep important copy within x=80..1000 and y=160..1550, minimum 44px body. No fabricated claims or data.
+Portrait 1080x1920, native layout. Scene 1 (0–3s): Heading YOUR TOOLS. CONNECTED. and a vertical wireframe MCP client → Platform command guard. Scene 2 (3–6s): Human approval gate appears through spring-pop-entrance; label destructive actions. Scene 3 (6s–end): Real product logo lands above YOUR SERVER. YOUR APPS. CTA platform.pratyushes.dev. Use waterfall-entry and svg-path-draw. Keep important copy within x=80..1000 and y=160..1550, minimum 44px body. No fabricated claims or data.
 
 Use only the palette and font files in frame.md. Font paths: assets/fonts/SpaceGrotesk.ttf, assets/fonts/JetBrainsMono.ttf, assets/fonts/ArchivoBlack.ttf. Stage logo path assets/logo-light.png. Author unique DOM IDs prefixed by 02-control. Use a full-duration background clip. No audio in the frame.

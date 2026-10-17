@@ -25,4 +25,4 @@
 
 **Delivery:** Calm, conversational, steady.
 
-    Connect your AI tools through MCP with scoped agent tokens. Commands are validated, and destructive actions need human approval. Your server. Your apps. Start with the docs.
+    Connect your AI tools through MCP with scoped agent tokens. Commands are validated, and destructive actions need human approval. Your server. Your apps. Build on your terms.

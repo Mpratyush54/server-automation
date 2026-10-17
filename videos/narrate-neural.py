@@ -15,7 +15,7 @@ import edge_tts
 ROOT = Path(__file__).resolve().parent
 
 
-async def generate(project, voice, rate):
+async def generate(project, voice, rate, frame=None):
     root = ROOT / project
     meta_path = root / 'audio_meta.json'
     meta = json.loads(meta_path.read_text(encoding='utf-8-sig'))
@@ -25,6 +25,8 @@ async def generate(project, voice, rate):
         raise ValueError(f'{project}: script and scene count differ')
     pronunciations = json.loads((ROOT / 'pronunciation.json').read_text(encoding='utf-8'))
     for entry, text in zip(meta['voices'], lines):
+        if frame is not None and entry['frame'] != frame:
+            continue
         spoken = text
         for official, pronunciation in pronunciations.items():
             spoken = re.sub(r'\b' + re.escape(official) + r'\b', pronunciation, spoken)
@@ -62,9 +64,10 @@ async def main():
     parser.add_argument('--voice', default='en-US-AvaMultilingualNeural')
     parser.add_argument('--rate', default='-6%')
     parser.add_argument('--project', choices=['platform-explainer', 'platform-short'])
+    parser.add_argument('--frame', type=int, help='Regenerate only this scene number')
     args = parser.parse_args()
     for project in ([args.project] if args.project else ['platform-explainer', 'platform-short']):
-        await generate(project, args.voice, args.rate)
+        await generate(project, args.voice, args.rate, args.frame)
 
 
 if __name__ == '__main__':
