@@ -3,6 +3,7 @@ package state
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -61,7 +62,7 @@ func loadMap() map[string]string {
 }
 
 func saveMap(m map[string]string) error {
-	if err := os.MkdirAll("/etc/platform", 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
 	keys := make([]string, 0, len(m))
@@ -76,7 +77,29 @@ func saveMap(m map[string]string) error {
 		b.WriteString(m[k])
 		b.WriteByte('\n')
 	}
-	return os.WriteFile(path, []byte(b.String()), 0644)
+	// Atomic replace: concurrent readers never see a truncated file.
+	tmp := fmt.Sprintf("%s.%d.tmp", path, os.Getpid())
+	if err := os.WriteFile(tmp, []byte(b.String()), 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// update applies fn to the state map under both the in-process mutex and the
+// cross-process file lock, then saves it.
+func update(fn func(m map[string]string) bool) error {
+	mu.Lock()
+	defer mu.Unlock()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	return withFileLock(func() error {
+		m := loadMap()
+		if !fn(m) {
+			return nil
+		}
+		return saveMap(m)
+	})
 }
 
 func IsDone(step string) bool {
@@ -86,30 +109,21 @@ func IsDone(step string) bool {
 }
 
 func MarkDone(step string) error {
-	mu.Lock()
-	defer mu.Unlock()
-	m := loadMap()
-	m[step] = "done"
-	return saveMap(m)
+	return update(func(m map[string]string) bool { m[step] = "done"; return true })
 }
 
 func MarkInProgress(step string) error {
-	mu.Lock()
-	defer mu.Unlock()
-	m := loadMap()
-	if m[step] == "done" {
-		return nil
-	}
-	m[step] = "in_progress"
-	return saveMap(m)
+	return update(func(m map[string]string) bool {
+		if m[step] == "done" {
+			return false
+		}
+		m[step] = "in_progress"
+		return true
+	})
 }
 
 func Clear(step string) error {
-	mu.Lock()
-	defer mu.Unlock()
-	m := loadMap()
-	delete(m, step)
-	return saveMap(m)
+	return update(func(m map[string]string) bool { delete(m, step); return true })
 }
 
 func DoneSteps() []string {
