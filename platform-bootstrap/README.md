@@ -37,6 +37,35 @@ Same stack as before (k3s, ingress-nginx, cert-manager, Postgres/Mongo/Redis,
 MinIO, ArgoCD, monitoring, Portainer, Infisical, Platform API + Portal). Images for
 API/Portal are **pulled** from GHCR — they are built by `.github/workflows/docker-build.yml`.
 
+### Install profiles
+
+`PLATFORM_PROFILE` (or `platformctl provision --profile <name>`) picks which optional
+components are installed. The choice is saved to `/etc/platform/.env`.
+
+| Profile | Installs |
+|---------|----------|
+| `minimal` | Core only: k3s, ingress, cert-manager, databases, MinIO, Platform API + Portal (no monitoring, Infisical, Portainer, ArgoCD) |
+| `standard` | Everything except Infisical |
+| `full` (default) | Everything |
+
+Explicit `INSTALL_*` variables (e.g. `INSTALL_MONITORING=true`) override the profile.
+When you choose a profile explicitly, `INSTALL_*` values saved by a previous run are
+ignored; without one, the saved profile and saved `INSTALL_*` choices are reused.
+
+### Offline bundle
+
+Each release ships `platform-bundle-<version>-<arch>.tar.zst` (+ `.sha256`) with the k3s
+airgap images, every pinned Helm chart and the platform container images. Installing it
+before k3s starts avoids almost all image/chart downloads:
+
+```bash
+sudo platformctl provision --bundle auto                     # download for this release
+sudo platformctl provision --bundle ./platform-bundle-v1.0.0-amd64.tar.zst
+```
+
+Images land in `/var/lib/rancher/k3s/agent/images/` (auto-imported by k3s) and charts in
+`/var/lib/platform/charts/`. Build one yourself with `scripts/build-bundle.sh <version> <arch>`.
+
 ---
 
 ## Legacy bash bootstrap
