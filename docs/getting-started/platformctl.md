@@ -74,6 +74,36 @@ sudo sed -i '/^platform=/d' /etc/platform/.bootstrap_state
 sudo platformctl install platform
 ```
 
+## Install profiles
+
+Set `PLATFORM_PROFILE` (or pass `--profile`) to `minimal`, `standard` or `full` (default):
+
+- `minimal` — core only; no monitoring, Infisical, Portainer or ArgoCD.
+- `standard` — everything except Infisical.
+- `full` — everything.
+
+Explicit `INSTALL_*` variables override the profile. The profile is saved as
+`PLATFORM_PROFILE` in `/etc/platform/.env`; choosing a new profile explicitly ignores the
+`INSTALL_*` values saved by an earlier run.
+
+## Offline bundle
+
+Releases include `platform-bundle-<version>-<arch>.tar.zst` and a `.sha256` file:
+k3s airgap images, all pinned Helm charts (`platformctl charts --json`) and the platform
+container images. `--bundle <path|auto>` verifies the checksum and extracts it before k3s is
+installed — images into `/var/lib/rancher/k3s/agent/images/`, charts into
+`/var/lib/platform/charts/` — so provisioning needs little or no network for images and charts.
+
+```bash
+sudo platformctl provision --bundle auto
+```
+
+To build a bundle locally (needs curl, jq, helm 3, docker, zstd):
+
+```bash
+scripts/build-bundle.sh v1.0.0 amd64   # writes dist/platform-bundle-v1.0.0-amd64.tar.zst
+```
+
 ## Day-2 operations
 
 **Update images after a release:**
