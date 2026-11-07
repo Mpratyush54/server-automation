@@ -1,0 +1,37 @@
+name: platformctl images check
+
+# Fails when platformctl/internal/images/images.txt is stale versus the pinned
+# chart versions / manifests. Fix: run scripts/gen-images.sh and commit.
+on:
+  pull_request:
+    paths:
+      - "platformctl/internal/versions/**"
+      - "platformctl/internal/manifests/**"
+      - "platformctl/internal/images/**"
+      - "scripts/gen-images.sh"
+      - ".github/workflows/platformctl-images-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: platformctl/go.mod
+          cache-dependency-path: platformctl/go.sum
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.22.1
+
+      - name: Check images.txt is up to date
+        run: scripts/gen-images.sh --check
