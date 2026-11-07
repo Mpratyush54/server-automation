@@ -23,3 +23,16 @@ platformctl/platformctl-linux-*
 token.json
 /platform/portal/public/docs-search.json
 
+
+# Never commit archives, keys or local agent state (see 2026-11 secret cleanup)
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.pem
+*.key
+tmp-*
+replacements.txt
+.claude/settings.local.json
+.claude/worktrees/
+.central-memory/

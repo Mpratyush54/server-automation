@@ -39,15 +39,9 @@ API/Portal are **pulled** from GHCR — they are built by `.github/workflows/doc
 
 ---
 
-## Legacy bash bootstrap
+## `bootstrap.sh`
 
 `bootstrap.sh` is a thin wrapper that installs `platformctl` and runs `provision`.
-The previous all-in-one bash installer is kept as `bootstrap-legacy.sh` for emergency
-use only:
-
-```bash
-PLATFORM_BOOTSTRAP_LEGACY=1 sudo ./bootstrap-legacy.sh
-```
 
 ---
 
