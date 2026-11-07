@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/fatih/color"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/apt"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/bundle"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/helm"
@@ -22,6 +24,7 @@ import (
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/preflight"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/runner"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
 )
 
 // childEnv marks a platformctl process started by provision to run one step.
@@ -32,7 +35,34 @@ const childEnv = "PLATFORMCTL_CHILD"
 // box (4 cores / 8 GB) responsive while overlapping image pulls and pod starts.
 const defaultParallel = 4
 
-var parallelFlag int
+var (
+	parallelFlag int
+	profileFlag  string
+	bundleFlag   string
+)
+
+// installBundle installs an offline bundle from a local path, or downloads the
+// one matching this release when path is "auto".
+func installBundle(path string) error {
+	if path == "auto" {
+		dir := "/var/lib/platform/bundles"
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+		color.Cyan("  ■ Downloading offline bundle %s (%s)...", config.DefaultImageTag, runtime.GOARCH)
+		p, err := bundle.Fetch(context.Background(), config.DefaultImageTag, runtime.GOARCH, dir)
+		if err != nil {
+			return fmt.Errorf("fetch bundle: %w", err)
+		}
+		path = p
+	}
+	color.Cyan("  ■ Installing offline bundle %s...", path)
+	if err := bundle.Install(path); err != nil {
+		return err
+	}
+	color.Green("  ✓ Offline bundle installed (images → k3s, charts → %s)", versions.ChartCacheDir)
+	return nil
+}
 
 func isChild() bool { return os.Getenv(childEnv) == "1" }
 
@@ -110,6 +140,13 @@ func runProvision() error {
 
 	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
 
+	if profileFlag != "" {
+		if err := cfg.ApplyProfile(profileFlag); err != nil {
+			return err
+		}
+		color.Cyan("  Profile: %s\n", profileFlag)
+	}
+
 	if !cfg.NonInteractive {
 		if err := cfg.PromptInteractive(); err != nil {
 			return err
@@ -160,6 +197,14 @@ func runProvision() error {
 	// ── Wave 0: host. Docker is no longer installed: k3s ships containerd.
 	if err := hostStep("prereqs", apt.InstallPrereqs); err != nil {
 		return err
+	}
+	// Offline bundle must land before k3s starts: k3s imports airgap image
+	// tarballs from its images dir at start-up, and cached charts make the
+	// prefetch below a no-op.
+	if bundleFlag != "" {
+		if err := hostStep("bundle", func() error { return installBundle(bundleFlag) }); err != nil {
+			return err
+		}
 	}
 	if err := hostStep("helm", helm.Install); err != nil {
 		return err

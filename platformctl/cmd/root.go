@@ -174,6 +174,10 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&cfg.NonInteractive, "auto", false, "non-interactive mode")
 	provisionCmd.Flags().IntVar(&parallelFlag, "parallel", 0,
 		"cluster steps to run at once (default 4, env PLATFORMCTL_PARALLEL; 1 = serial with live output)")
+	provisionCmd.Flags().StringVar(&profileFlag, "profile", "",
+		"component set: minimal | standard | full (default full, env PLATFORM_PROFILE)")
+	provisionCmd.Flags().StringVar(&bundleFlag, "bundle", "",
+		"offline bundle: path to platform-bundle-*.tar.zst, or 'auto' to download the matching release")
 }
 
 func runInstall(name string) error {
