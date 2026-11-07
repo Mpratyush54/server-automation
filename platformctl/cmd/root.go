@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/k3s"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/preflight"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
 )
 
 var (
@@ -135,7 +137,35 @@ var backupCmd = &cobra.Command{
 	},
 }
 
+var chartsJSON bool
+
+// chartsCmd prints the pinned version table (internal/versions) for CI scripts
+// such as the image-list generator and the offline bundle builder.
+var chartsCmd = &cobra.Command{
+	Use:    "charts",
+	Short:  "Print pinned k3s, Helm and chart versions",
+	Hidden: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if chartsJSON {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(map[string]any{
+				"k3s":    versions.K3sVersion,
+				"helm":   versions.HelmVersion,
+				"charts": versions.All(),
+			})
+		}
+		fmt.Printf("k3s  %s\nhelm %s\n", versions.K3sVersion, versions.HelmVersion)
+		for _, c := range versions.All() {
+			fmt.Printf("%-24s %-12s %s\n", c.Name, c.Version, c.RemoteRef())
+		}
+		return nil
+	},
+}
+
 func init() {
+	chartsCmd.Flags().BoolVar(&chartsJSON, "json", false, "machine-readable output")
+	rootCmd.AddCommand(chartsCmd)
 	rootCmd.AddCommand(provisionCmd)
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(statusCmd)
