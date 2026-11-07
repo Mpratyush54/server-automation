@@ -24,7 +24,7 @@ func TestRefFallsBackToRemote(t *testing.T) {
 	if got := c.Ref(); !strings.Contains(got, "--version 18.12.18") || !strings.HasPrefix(got, "oci://") {
 		t.Fatalf("unexpected ref %q", got)
 	}
-	if got := Get("ingress-nginx").Ref(); got != "ingress-nginx/ingress-nginx --version 4.15.1" {
+	if got := Get("ingress-nginx").Ref(); got != "ingress-nginx --repo https://kubernetes.github.io/ingress-nginx --version 4.15.1" {
 		t.Fatalf("unexpected ref %q", got)
 	}
 }

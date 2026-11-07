@@ -55,13 +55,23 @@ func (c Chart) CacheFile() string {
 	return filepath.Join(ChartCacheDir, fmt.Sprintf("%s-%s.tgz", c.Name, c.Version))
 }
 
-// Ref returns the arguments to pass to `helm upgrade --install <release>`:
-// a local tarball when cached, otherwise the remote ref plus --version.
+// Ref returns the chart arguments for `helm upgrade --install <release> <Ref>`
+// or `helm template`: a local tarball when cached, otherwise a remote ref.
+// Classic charts use `--repo <url>` so no `helm repo add` / `helm repo update`
+// (each of which downloads a full repo index) is ever needed.
 func (c Chart) Ref() string {
 	if _, err := os.Stat(c.CacheFile()); err == nil {
 		return c.CacheFile()
 	}
-	return fmt.Sprintf("%s --version %s", c.RemoteRef(), c.Version)
+	return c.PullArgs()
+}
+
+// PullArgs is the remote reference usable by `helm pull` / `helm install`.
+func (c Chart) PullArgs() string {
+	if c.IsOCI() {
+		return fmt.Sprintf("%s --version %s", c.Chart, c.Version)
+	}
+	return fmt.Sprintf("%s --repo %s --version %s", c.Chart, c.RepoURL, c.Version)
 }
 
 // Bitnami charts come from OCI: no multi-megabyte index.yaml download.
