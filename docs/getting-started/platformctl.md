@@ -74,6 +74,22 @@ sudo sed -i '/^platform=/d' /etc/platform/.bootstrap_state
 sudo platformctl install platform
 ```
 
+## Install speed, logs and timings
+
+`provision` installs cluster components in parallel, respecting dependencies (databases before the Platform API, ingress before routing):
+
+```bash
+sudo platformctl provision --auto              # default: 4 steps at a time
+sudo platformctl provision --auto --parallel 2 # gentler on small servers
+sudo platformctl provision --auto --parallel 1 # serial, live output (old behaviour)
+```
+
+- Per-step logs: `/var/log/platformctl/<step>.log` (the last lines are printed if a step fails)
+- Background image pre-pull log: `/var/log/platformctl/prepull.log`
+- Timing summary: printed at the end and saved to `/var/log/platformctl/timings.txt`
+
+Docker is **not** installed on the server; k3s uses its own containerd. For private GHCR images set `GITHUB_TOKEN` before provisioning; it is written to `/etc/rancher/k3s/registries.yaml`.
+
 ## Install profiles
 
 Set `PLATFORM_PROFILE` (or pass `--profile`) to `minimal`, `standard` or `full` (default):

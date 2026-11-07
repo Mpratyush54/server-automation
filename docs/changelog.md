@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — faster `platformctl provision`
+
+- **Parallel install:** cluster components install as a dependency graph, up to 4 at a time (`--parallel N`, `PLATFORMCTL_PARALLEL`; `--parallel 1` keeps the old serial, live-output behaviour). Each step logs to `/var/log/platformctl/<step>.log`.
+- **Step timings:** provision prints a per-step timing table and saves it to `/var/log/platformctl/timings.txt`.
+- **Image pre-pull:** every image the install needs is pulled in the background right after k3s starts.
+- **Pinned versions:** k3s, Helm and all charts are pinned in `platformctl/internal/versions`; chart tarballs are prefetched while k3s installs. No more `helm repo update`; Bitnami charts come from OCI.
+- **Docker CE is no longer installed** on the server — k3s uses its own containerd. Private GHCR pulls now use `GITHUB_TOKEN` via `/etc/rancher/k3s/registries.yaml`.
+- Removed duplicate Helm upgrades (ingress-nginx, kube-prometheus-stack) and the ArgoCD reset on fresh installs.
+- **Fix:** Infisical was never actually installed (dead chart repo); it is now applied from its manifest.
+- New `--profile minimal|standard|full` and `--bundle <path|auto>` (offline bundle release asset).
+
 ## v1.0.0 (2026-08-18)
 
 First git-tagged **1.0.0** Platform release (prior production tags were `v0.3.x`).
