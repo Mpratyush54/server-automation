@@ -136,12 +136,13 @@ rules:
   resourceNames: ["platform-env","platform-rotate-pending"]
   verbs: ["get", "update"]
 # The API's own configuration Secrets (issue #20): read at boot, updated on
-# secret rotation and OIDC signing-key rotation. Creation (first boot without
-# the installer) uses the namespace-wide create rule below.
+# secret rotation and OIDC signing-key rotation (KubeSecretStore does
+# read + replace with resourceVersion, so no patch). Creation (first boot
+# without the installer) uses the namespace-wide create rule below.
 - apiGroups: [""]
   resources: ["secrets"]
   resourceNames: ["platform-credentials","platform-oidc-signing-key"]
-  verbs: ["get", "update", "patch"]
+  verbs: ["get", "update"]
 - apiGroups: [""]
   resources: ["secrets"]
   resourceNames: ["platform-rotate-pending"]

@@ -20,7 +20,7 @@ The relevant secrets in the cluster:
 
 The API reads configuration **only** from these Secrets. The Deployment has no
 `hostPath` volume, so the pod can be rescheduled to any node and several
-replicas sign OIDC tokens with the same key. The API may `get`/`update`/`patch`
+replicas sign OIDC tokens with the same key. The API may `get`/`update`
 only the Secrets named above (RBAC `resourceNames`).
 
 `/etc/platform/.env`, `/etc/platform/credentials/` and
