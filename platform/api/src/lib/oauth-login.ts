@@ -6,8 +6,7 @@ import { User, UserRole } from '../entities/User';
 import { resolveIntegrations } from './integrations';
 import { notifyUser } from './notify';
 import { OneTimeCodeStore } from './oidc-codes';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'plat-super-secret-key';
+import { getJwtSecret } from '../config/security-env';
 
 /** Browser-binding cookie for the GitHub/GitLab login `state` (login-CSRF protection). */
 export const OAUTH_STATE_COOKIE = 'plat_oauth_state';
@@ -73,7 +72,7 @@ export function loginFailedRedirect(reqHost: string | undefined, proto: string, 
 export function signSessionToken(user: Pick<User, 'id' | 'email' | 'name' | 'role'>): string {
   return jwt.sign(
     { id: user.id, email: user.email, name: user.name, role: user.role },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: '24h' },
   );
 }
