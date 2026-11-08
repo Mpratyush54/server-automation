@@ -259,6 +259,23 @@ describe('Secrets API', () => {
         .set('Authorization', `Bearer ${T.viewer}`);
       expect(r.status).toBe(403);
     });
+
+    // M4 regression — RBAC permission alone is not enough; project membership is required.
+    it('403 — tech_lead with secrets.* permissions but no membership in the project', async () => {
+      const list = await request(app)
+        .get(`/api/projects/${PROJ_ID}/secrets`)
+        .set('Authorization', `Bearer ${T.tech_lead}`);
+      expect(list.status).toBe(403);
+      const reveal = await request(app)
+        .post(`/api/projects/${PROJ_ID}/secrets/reveal`)
+        .set('Authorization', `Bearer ${T.tech_lead}`)
+        .send({ key: 'API_KEY' });
+      expect(reveal.status).toBe(403);
+      const exp = await request(app)
+        .get(`/api/projects/${PROJ_ID}/secrets/export/e1111111-1111-1111-1111-111111111111`)
+        .set('Authorization', `Bearer ${T.tech_lead}`);
+      expect(exp.status).toBe(403);
+    });
   });
 
   describe('POST /api/projects/:projectId/secrets', () => {
