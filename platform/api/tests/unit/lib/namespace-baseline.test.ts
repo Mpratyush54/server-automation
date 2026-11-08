@@ -230,3 +230,43 @@ it('status stays responsive and explains legacy shared namespaces', async () => 
   await expect(namespaceBaselineStatus('project-a', env, c, 5)).resolves.toMatchObject({ policyApplied: false, error: 'Baseline status unavailable' });
   await expect(namespaceBaselineStatus('project-a', { name: 'preview', namespace: 'preview' }, c)).resolves.toMatchObject({ error: expect.stringMatching(/legacy/i) });
 });
+
+// @kubernetes/client-node serializes LimitRangeItem.default from `_default` and
+// NetworkPolicyIngressRule.from from `_from`; a plain key is silently dropped.
+// (The client's serializer is ESM-only, so its contract is restated here; the
+// VM e2e scripts/test-namespace-isolation.mjs exercises the real wire format.)
+it('sends LimitRange defaults and ingress peers under the typed client property names', async () => {
+  // Regression: plain keys were dropped on the wire, so LimitRanges had no
+  // default limits (quota rejected every pod) and allow-* ingress allowed all.
+  const c = clients();
+  await ensureProjectNamespace('project-a', env, { clients: c });
+  const body = (resource: string, name: string) => c.core[`create${resource}`].mock.calls.find(([a]: any) => a.body.metadata.name === name)[0].body;
+  const item = body('NamespacedLimitRange', 'project-defaults').spec.limits[0];
+  expect(item).toEqual({ type: 'Container', defaultRequest: { cpu: '100m', memory: '128Mi' }, _default: { cpu: '500m', memory: '512Mi' } });
+  const ingress = body('NamespacedNetworkPolicy', 'allow-project').spec.ingress;
+  expect(ingress).toEqual([{ _from: [{ podSelector: {} }] }]);
+  for (const p of manifests().policies) {
+    for (const rule of body('NamespacedNetworkPolicy', p.metadata.name).spec.ingress || []) {
+      expect(rule).not.toHaveProperty('from');
+      expect(rule._from?.length).toBeGreaterThan(0); // never an allow-from-anywhere rule
+    }
+  }
+  expect(manifests().limits.spec.limits[0]).toHaveProperty('default'); // manifests stay wire format
+});
+
+it('reports the baseline applied when specs come back in typed client shape', async () => {
+  const m = manifests(namespaceSettings('project-a', env.name));
+  const asModel = (spec: any, key: 'limits' | 'ingress', wire: string, model: string) => {
+    const out = JSON.parse(JSON.stringify(spec));
+    for (const x of out[key] || []) if (wire in x) { x[model] = x[wire]; delete x[wire]; }
+    return out;
+  };
+  const api: any = {
+    readNamespace: async () => m.namespace,
+    listNamespacedNetworkPolicy: async () => ({ items: m.policies.map(p => ({ ...p, spec: asModel(p.spec, 'ingress', 'from', '_from') })) }),
+    readNamespacedResourceQuota: async () => m.quota,
+    readNamespacedLimitRange: async () => ({ ...m.limits, spec: asModel(m.limits.spec, 'limits', 'default', '_default') }),
+  };
+  const status: any = await namespaceBaselineStatus('project-a', env, { core: api, network: api, rbac: api } as any);
+  expect(status).toMatchObject({ policyApplied: true, limitsApplied: true, quotaApplied: true });
+});

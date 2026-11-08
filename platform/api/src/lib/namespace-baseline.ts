@@ -1,5 +1,6 @@
 import * as k8s from '@kubernetes/client-node';
 import { readFileSync } from 'fs';
+import { loadKubeConfig } from './kube-config';
 
 export interface NamespaceEnvironment { name: string; namespace: string }
 export interface BaselineSettings {
@@ -98,9 +99,42 @@ export function namespaceBaselineManifests(projectId: string, env: NamespaceEnvi
 
 export function baselineClients() {
   const kc = new k8s.KubeConfig();
-  try { kc.loadFromCluster(); } catch { try { kc.loadFromDefault(); } catch {} }
+  loadKubeConfig(kc);
   return { core: kc.makeApiClient(k8s.CoreV1Api), network: kc.makeApiClient(k8s.NetworkingV1Api), rbac: kc.makeApiClient(k8s.RbacAuthorizationV1Api) };
 }
+/**
+ * @kubernetes/client-node serializes typed bodies from JS property names, and two
+ * fields we send use renamed properties: LimitRangeItem `default` is `_default`
+ * and NetworkPolicyIngressRule `from` is `_from`. A plain wire-format key is
+ * silently DROPPED, which left LimitRanges without default limits (quota then
+ * rejects every pod without explicit limits) and turned `allow-*` ingress rules
+ * into allow-from-anywhere. Convert at the client boundary, both directions.
+ */
+const renamed: Array<[kind: string, list: (spec: any) => any[] | undefined, wire: string, model: string]> = [
+  ['LimitRange', spec => spec?.limits, 'default', '_default'],
+  ['NetworkPolicy', spec => spec?.ingress, 'from', '_from'],
+];
+function renameFields(kind: string | undefined, spec: any, from: 'wire' | 'model'): any {
+  if (!spec) return spec;
+  const out = JSON.parse(JSON.stringify(spec));
+  for (const [k, list, wire, model] of renamed) {
+    if (kind && k !== kind) continue;
+    for (const item of list(out) || []) {
+      const [src, dst] = from === 'wire' ? [wire, model] : [model, wire];
+      if (item && src in item) { item[dst] = item[src]; delete item[src]; }
+    }
+  }
+  return out;
+}
+/** Wire-format manifest -> body the typed client serializes without losing fields. */
+export function toClientModel<T extends { kind?: string; spec?: any }>(body: T): T {
+  return body.spec ? { ...body, spec: renameFields(body.kind, body.spec, 'wire') } : body;
+}
+/** Spec read through the typed client -> wire format, for comparing with manifests. */
+export function fromClientModel(kind: string, spec: any): any {
+  return renameFields(kind, spec, 'model');
+}
+
 const missing = (e: any) => e.code === 404 || e.statusCode === 404 || e.response?.statusCode === 404;
 const conflict = (e: any) => e.code === 409 || e.statusCode === 409;
 
@@ -115,6 +149,7 @@ async function withRbacPropagation<T>(fn: () => Promise<T>, delays = [100, 250, 
 }
 
 async function upsert(api: any, resource: string, body: any) {
+  body = toClientModel(body);
   const args = { name: body.metadata.name, namespace: body.metadata.namespace };
   let existing: any;
   try { existing = await api[`read${resource}`](args); } catch (e) { if (!missing(e)) throw e; }
@@ -179,8 +214,8 @@ async function readBaselineStatus(projectId: string, env: NamespaceEnvironment, 
     ]);
     const expected = namespaceBaselineManifests(projectId, env, namespaceSettings(projectId, env.name));
     const additionalPolicies = policies.items.filter(p => !expected.policies.some(e => e.metadata.name === p.metadata?.name)).map(p => p.metadata?.name);
-    const policyApplied = !additionalPolicies.length && expected.policies.every(p => policies.items.some(actual => actual.metadata?.name === p.metadata.name && canonicalBaseline(actual.spec) === canonicalBaseline(p.spec)));
+    const policyApplied = !additionalPolicies.length && expected.policies.every(p => policies.items.some(actual => actual.metadata?.name === p.metadata.name && canonicalBaseline(fromClientModel('NetworkPolicy', actual.spec)) === canonicalBaseline(p.spec)));
     return { namespace: env.namespace, policyApplied, additionalPolicies, ownerMatches: ns.metadata?.labels?.['platform.io/project'] === projectId,
-      psa: ns.metadata?.labels?.['pod-security.kubernetes.io/enforce'], quota: { hard: quota.status?.hard || quota.spec?.hard, used: quota.status?.used || {} }, quotaApplied: canonicalBaseline(quota.spec) === canonicalBaseline(expected.quota.spec), limitsApplied: canonicalBaseline(limits.spec) === canonicalBaseline(expected.limits.spec) };
+      psa: ns.metadata?.labels?.['pod-security.kubernetes.io/enforce'], quota: { hard: quota.status?.hard || quota.spec?.hard, used: quota.status?.used || {} }, quotaApplied: canonicalBaseline(quota.spec) === canonicalBaseline(expected.quota.spec), limitsApplied: canonicalBaseline(fromClientModel('LimitRange', limits.spec)) === canonicalBaseline(expected.limits.spec) };
   } catch (e: any) { return { namespace: env.namespace, policyApplied: false, error: e.code === 404 ? 'Baseline not applied' : 'Baseline status unavailable' }; }
 }

@@ -37,7 +37,9 @@ try {
     assert.equal(admitted.spec.containers[0].resources.limits.memory, '512Mi');
     const privileged = pod(namespace);
     privileged.metadata.name = 'privileged-rejected';
-    privileged.spec.containers[0].securityContext.privileged = true;
+    // A valid spec (privileged implies privilege escalation), so the rejection
+    // must come from PodSecurity admission, not field validation.
+    privileged.spec.containers[0].securityContext = { privileged: true };
     const rejected = spawnSync('kubectl', ['create', '--dry-run=server', '-f', '-'], { input: JSON.stringify(privileged), encoding: 'utf8' });
     assert.notEqual(rejected.status, 0, 'Privileged pod was admitted');
     assert.match(rejected.stderr, /PodSecurity|violates.*restricted/i);
@@ -56,9 +58,11 @@ assert urllib.request.urlopen('http://web.${namespace}.svc.cluster.local:8080', 
 for host in ['${peer.status.podIP}', '${peerService.spec.clusterIP}', 'web.${other}.svc.cluster.local']:
     try:
         socket.create_connection((host, 8080), timeout=3)
-    except (socket.timeout, TimeoutError):
+    # Blocked either way: dropped (timeout) or rejected (k3s kube-router sends a
+    # reset). The peer is Ready via its 8080 readiness probe, so it is listening.
+    except (socket.timeout, TimeoutError, ConnectionRefusedError):
         continue
-    raise AssertionError('Expected cross-project connection timeout: ' + host)
+    raise AssertionError('Cross-project connection was allowed: ' + host)
 `);
     // Baseline reconciliation must preserve admitted pods and their identities.
     const before = JSON.parse(kubectl(['get', 'pod', 'probe', '-n', namespace, '-o', 'json']));
