@@ -194,6 +194,13 @@ async function bootstrap() {
 
     const app = buildApp();
     const port = process.env.PORT || 3000;
+    // Parse openapi.yaml once now, not on the first GET /api/openapi.json.
+    try {
+      const { loadOpenApiJson } = await import('./lib/openapi-spec');
+      loadOpenApiJson();
+    } catch (specErr: any) {
+      console.warn(`[server] OpenAPI spec not preloaded: ${specErr.message}`);
+    }
 
     const server = app.listen(port, () => {
       console.log(`[server] Platform Express backend running on http://localhost:${port}`);
