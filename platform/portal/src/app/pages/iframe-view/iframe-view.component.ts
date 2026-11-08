@@ -1,4 +1,5 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { CommonModule } from '@angular/common';
@@ -15,11 +16,12 @@ import { CommonModule } from '@angular/common';
 })
 export class IframeViewComponent implements OnInit {
   safeUrl?: SafeResourceUrl;
+  private readonly destroyRef = inject(DestroyRef);
 
   constructor(private route: ActivatedRoute, private sanitizer: DomSanitizer) {}
 
   ngOnInit() {
-    this.route.data.subscribe(data => {
+    this.route.data.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(data => {
       let path = data['url'] || '/';
       
       if (window.location.hostname === 'localhost') {

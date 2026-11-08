@@ -9,7 +9,8 @@
     "watch": "node scripts/build-docs-search.mjs && ng build --watch --configuration development",
     "test": "ng test",
     "test:docs": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.docs-spec.json --include=src/app/guards/docs.matcher.spec.ts --include=src/app/pages/docs/docs.component.spec.ts",
-    "test:public": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.docs-spec.json --include=src/app/guards/home.guard.spec.ts --include=src/app/guards/docs.matcher.spec.ts --include=src/app/pages/docs/docs.component.spec.ts --include=src/app/pages/docs/docs-search.spec.ts --include=src/app/pages/docs/docs-search.component.spec.ts --include=src/app/pages/landing/landing.component.spec.ts"
+    "test:security": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.security-spec.json --include=src/app/pages/docs/docs-sanitize.spec.ts --include=src/app/services/auth.interceptor.spec.ts --include=src/app/guards/public-domain.guard.spec.ts --include=src/app/pages/iframe-view/iframe-view.component.spec.ts && node --test scripts/nginx-headers.test.mjs scripts/prerender-docs.test.mjs",
+    "test:public": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.docs-spec.json --include=src/app/guards/home.guard.spec.ts --include=src/app/guards/docs.matcher.spec.ts --include=src/app/pages/docs/docs.component.spec.ts --include=src/app/pages/docs/docs-sanitize.spec.ts --include=src/app/pages/docs/docs-search.spec.ts --include=src/app/pages/docs/docs-search.component.spec.ts --include=src/app/pages/landing/landing.component.spec.ts"
   },
   "private": true,
   "dependencies": {
@@ -21,6 +22,7 @@
     "@angular/platform-browser": "^19.1.0",
     "@angular/platform-browser-dynamic": "^19.1.0",
     "@angular/router": "^19.1.0",
+    "dompurify": "^3.4.17",
     "highlight.js": "^11.11.1",
     "marked": "^18.0.5",
     "mermaid": "^11.16.0",
@@ -35,6 +37,7 @@
     "@types/jasmine": "~5.1.0",
     "autoprefixer": "^10.5.1",
     "jasmine-core": "~5.5.0",
+    "jsdom": "^25.0.1",
     "karma": "~6.4.0",
     "karma-chrome-launcher": "~3.2.0",
     "karma-coverage": "~2.2.0",

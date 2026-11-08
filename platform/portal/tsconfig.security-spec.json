@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.spec.json",
+  "include": [
+    "src/app/pages/docs/docs-sanitize.spec.ts",
+    "src/app/services/auth.interceptor.spec.ts",
+    "src/app/guards/public-domain.guard.spec.ts",
+    "src/app/pages/iframe-view/iframe-view.component.spec.ts",
+    "src/**/*.d.ts"
+  ]
+}

@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 import { IframeViewComponent } from './iframe-view.component';
-import { of } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 
 describe('IframeViewComponent', () => {
   let route: any;
@@ -28,5 +28,15 @@ describe('IframeViewComponent', () => {
     const fixture = TestBed.createComponent(IframeViewComponent);
     fixture.detectChanges();
     expect(fixture.componentInstance.safeUrl).toBeDefined();
+  });
+
+  it('stops listening to route data when destroyed', () => {
+    const data = new BehaviorSubject<Record<string, string>>({ url: '/grafana/' });
+    route.data = data;
+    const fixture = TestBed.createComponent(IframeViewComponent);
+    fixture.detectChanges();
+    expect(data.observed).toBeTrue();
+    fixture.destroy();
+    expect(data.observed).toBeFalse();
   });
 });
