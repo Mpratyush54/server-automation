@@ -13,6 +13,7 @@ import {
   writeRotatePending,
 } from './credential-recover';
 import { persistPlatformEnv } from './host-env';
+import { PLATFORM_CREDENTIALS_SECRET } from './config-store';
 
 function randomSecret(bytes = 18): string {
   return crypto.randomBytes(bytes).toString('base64url');
@@ -169,7 +170,7 @@ export async function rotatePlatformSecrets(opts: {
     process.env.ADMIN_PASSWORD = admin;
   }
 
-  const hostAhead = persistPlatformEnv({
+  const hostAhead = await persistPlatformEnv({
     ADMIN_PASSWORD: adminResult.ok ? admin : '',
     POSTGRES_PASSWORD_PREV: previousPostgres,
     POSTGRES_PASSWORD_NEXT: postgres,
@@ -177,17 +178,17 @@ export async function rotatePlatformSecrets(opts: {
     REDIS_PASSWORD_NEXT: redisPassword,
   });
   results.push({
-    key: 'host:/etc/platform',
+    key: `credentials:${PLATFORM_CREDENTIALS_SECRET}`,
     ok: hostAhead.ok,
     detail: hostAhead.ok
-      ? 'wrote previous/next passwords to /etc/platform/credentials before rotating'
-      : `could not write host files (${hostAhead.detail}); Kubernetes pending secret is required before ALTER`,
+      ? `wrote previous/next passwords before rotating (${hostAhead.detail})`
+      : `could not write the credentials store (${hostAhead.detail}); Kubernetes pending secret is required before ALTER`,
   });
 
   await notifyRoles({
     roles: [UserRole.ADMIN, UserRole.DEVOPS],
     title: 'Platform secrets rotated',
-    body: 'Admin and live datastore credentials were rotated. New values are stored on the host under /etc/platform/.env and /etc/platform/credentials (and shown once here).',
+    body: 'Admin and live datastore credentials were rotated. New values are stored in the platform-credentials Kubernetes Secret (and shown once here); `platformctl update` refreshes the host break-glass copy.',
     kind: 'security',
     link: '/settings',
     metadata: { actorUserId },
@@ -217,12 +218,12 @@ export async function rotatePlatformSecrets(opts: {
     results.push({
       key: 'POSTGRES_PASSWORD',
       ok: false,
-      detail: 'refused ALTER USER: neither /etc/platform nor platform-rotate-pending could be written',
+      detail: 'refused ALTER USER: neither platform-credentials nor platform-rotate-pending could be written',
     });
     results.push({
       key: 'REDIS_PASSWORD',
       ok: false,
-      detail: 'refused CONFIG SET: no durable password copy on disk or in Kubernetes',
+      detail: 'refused CONFIG SET: no durable password copy in Kubernetes',
     });
     return { results, values };
   }
@@ -232,7 +233,8 @@ export async function rotatePlatformSecrets(opts: {
   if (redisResult.ok) {
     values.REDIS_PASSWORD = redisPassword;
     process.env.REDIS_PASSWORD = redisPassword;
-    persistPlatformEnv({ REDIS_PASSWORD: redisPassword });
+    const saved = await persistPlatformEnv({ REDIS_PASSWORD: redisPassword });
+    results.push({ key: `${PLATFORM_CREDENTIALS_SECRET}:REDIS_PASSWORD`, ok: saved.ok, detail: saved.detail });
   } else {
     await healRedis(results);
   }
@@ -242,7 +244,8 @@ export async function rotatePlatformSecrets(opts: {
   if (pgAlter.ok) {
     values.POSTGRES_PASSWORD = postgres;
     process.env.POSTGRES_PASSWORD = postgres;
-    persistPlatformEnv({ POSTGRES_PASSWORD: postgres, ADMIN_PASSWORD: adminResult.ok ? admin : '' });
+    const saved = await persistPlatformEnv({ POSTGRES_PASSWORD: postgres, ADMIN_PASSWORD: adminResult.ok ? admin : '' });
+    results.push({ key: `${PLATFORM_CREDENTIALS_SECRET}:POSTGRES_PASSWORD`, ok: saved.ok, detail: saved.detail });
     try {
       await reconnectPostgres(postgres);
     } catch (err: any) {
@@ -257,13 +260,9 @@ export async function rotatePlatformSecrets(opts: {
     await healPostgres(results);
   }
 
-  const platformEnvPatch: Record<string, string> = {
-    PLATFORM_WEBHOOK_SECRET: webhook,
-  };
-  if (adminResult.ok) platformEnvPatch.ADMIN_PASSWORD = admin;
-  if (pgAlter.ok) platformEnvPatch.POSTGRES_PASSWORD = postgres;
-  if (redisResult.ok) platformEnvPatch.REDIS_PASSWORD = redisPassword;
-  results.push(await tryPatchSecret('platform', 'platform-env', platformEnvPatch));
+  // Credentials live in platform-credentials (written above via
+  // persistPlatformEnv); platform-env keeps only non-credential config.
+  results.push(await tryPatchSecret('platform', 'platform-env', { PLATFORM_WEBHOOK_SECRET: webhook }));
 
   if (pgAlter.ok) {
     results.push(await tryPatchSecret('databases', 'postgresql', {

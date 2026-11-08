@@ -81,18 +81,21 @@ func BackupLocalState(backupRoot, envFile string) (string, error) {
 			return "", err
 		}
 	}
-	readme := "Platform credential backup. Restore .env from env; Kubernetes secrets are YAML dumps.\nCreated by platformctl backup/recover.\n"
+	readme := "Platform credential backup. Restore .env from env; Kubernetes secrets are YAML dumps\n(platform-credentials and platform-oidc-signing-key are what the API reads).\nCreated by platformctl backup/recover.\n"
 	if err := config.WriteFileSync(filepath.Join(dir, "README"), readme, 0600); err != nil {
 		return "", err
 	}
 	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
 	_ = shell.RunBash(fmt.Sprintf(`
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-mkdir -p %s
-kubectl -n platform get secret platform-env -o yaml > %s/platform-env.secret.yaml 2>/dev/null || true
-kubectl -n databases get secret postgresql -o yaml > %s/postgresql.secret.yaml 2>/dev/null || true
-kubectl -n databases get secret redis -o yaml > %s/redis.secret.yaml 2>/dev/null || true
-kubectl -n platform get secret platform-rotate-pending -o yaml > %s/rotate-pending.secret.yaml 2>/dev/null || true
-`, dir, dir, dir, dir, dir))
+mkdir -p %[1]s
+umask 077
+kubectl -n platform get secret platform-env -o yaml > %[1]s/platform-env.secret.yaml 2>/dev/null || true
+kubectl -n platform get secret platform-credentials -o yaml > %[1]s/platform-credentials.secret.yaml 2>/dev/null || true
+kubectl -n platform get secret platform-oidc-signing-key -o yaml > %[1]s/platform-oidc-signing-key.secret.yaml 2>/dev/null || true
+kubectl -n databases get secret postgresql -o yaml > %[1]s/postgresql.secret.yaml 2>/dev/null || true
+kubectl -n databases get secret redis -o yaml > %[1]s/redis.secret.yaml 2>/dev/null || true
+kubectl -n platform get secret platform-rotate-pending -o yaml > %[1]s/rotate-pending.secret.yaml 2>/dev/null || true
+`, dir))
 	return dir, nil
 }

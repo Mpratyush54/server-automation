@@ -17,13 +17,12 @@ error: password authentication failed for user "postgres"
 
 ## What the platform does by itself
 
-Rotate and recover keep durable copies **on the host** before any database password change:
+Rotate and recover keep durable copies before any database password change:
 
-1. `platformctl backup` (also run automatically by `recover`) copies `/etc/platform/.env` and Kubernetes secrets to `/var/lib/platform/backups/<timestamp>/`.
-2. Live passwords are written to `/etc/platform/.env` and `/etc/platform/credentials/{admin,postgres,redis}` (mode 0600) **before** `ALTER USER`. Previous/next values are stored as `postgres.prev` / `postgres.next`.
-3. One-click rotate also writes `platform/platform-rotate-pending`. If neither the host files nor that secret can be written, rotate **refuses** to change Postgres.
-4. `platformctl recover` tries stored passwords first and **does not ALTER** if one still works. It only ALTERs when nothing authenticates, and only to a password already fsynced on disk.
-5. On API boot, `getDb()` still tries env, pending, `platform-env`, and the Bitnami secret, then syncs the working password.
+1. `platformctl backup` (also run automatically by `recover`) copies `/etc/platform/.env` and the Kubernetes Secrets (`platform-env`, `platform-credentials`, `platform-oidc-signing-key`, database secrets) to `/var/lib/platform/backups/<timestamp>/`.
+2. One-click rotate (portal) writes the previous/next passwords to the `platform/platform-credentials` Secret (`POSTGRES_PASSWORD_PREV`, `POSTGRES_PASSWORD_NEXT`, ...) and to `platform/platform-rotate-pending` **before** `ALTER USER`. If neither can be written, rotate **refuses** to change Postgres. The API no longer writes host files; `platformctl update` copies the new values to `/etc/platform` afterwards.
+3. `platformctl recover` reads the Secrets first, writes the passwords to the root-only host copy `/etc/platform/.env` and `/etc/platform/credentials/{admin,postgres,redis}` (mode 0600) **before** any `ALTER USER`, tries stored passwords first and **does not ALTER** if one still works, then syncs `platform-credentials`.
+4. On API boot, `getDb()` tries env, pending, `platform-credentials` (incl. previous/next), `platform-env` and the Bitnami secret, then syncs the working password to `platform-credentials`.
 
 Passwords are not only flashed in the terminal. Read them with:
 
@@ -50,14 +49,14 @@ Roll to an image that includes in-cluster credential recovery (`platform-api` af
 
 ## Manual fallback (only if every stored copy is wrong)
 
-Do **not** recreate `platform-env` with `kubectl create secret … | kubectl apply`. That wipes GitHub/GitLab tokens.
+Do **not** recreate `platform-env` or `platform-credentials` with `kubectl create secret … | kubectl apply`. That wipes other keys.
 
-Patch a single key:
+Patch a single key (credentials live in `platform-credentials`):
 
 ```bash
 # Encode a known-good password (the value Postgres actually accepts)
 ENC=$(printf '%s' 'known-good-password' | base64 -w0)
-kubectl -n platform patch secret platform-env --type merge -p "{\"data\":{\"POSTGRES_PASSWORD\":\"$ENC\"}}"
+kubectl -n platform patch secret platform-credentials --type merge -p "{\"data\":{\"POSTGRES_PASSWORD\":\"$ENC\"}}"
 kubectl -n databases patch secret postgresql --type merge -p "{\"data\":{\"postgres-password\":\"$ENC\",\"password\":\"$ENC\"}}"
 kubectl -n platform rollout restart deployment/platform-api
 ```

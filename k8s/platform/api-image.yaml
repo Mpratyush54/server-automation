@@ -32,14 +32,10 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
-          volumeMounts:
-            - name: platform-etc
-              mountPath: /etc/platform
+          # No hostPath: config and keys come from Secrets (platform-credentials
+          # wins over platform-env on duplicate keys), so the pod can run on any node.
           envFrom:
             - secretRef:
                 name: platform-env
-      volumes:
-        - name: platform-etc
-          hostPath:
-            path: /etc/platform
-            type: Directory
+            - secretRef:
+                name: platform-credentials

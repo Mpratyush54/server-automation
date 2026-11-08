@@ -66,6 +66,11 @@ spec:
         envFrom:
         - secretRef:
             name: platform-env
+        # Credentials live in platform-credentials (#20); optional so a Job run
+        # before the host-state migration still finds them in platform-env.
+        - secretRef:
+            name: platform-credentials
+            optional: true
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

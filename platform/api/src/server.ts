@@ -180,6 +180,12 @@ async function bootstrap() {
       console.warn(`[server] Integration hydrate skipped: ${integErr.message}`);
     }
 
+    // OIDC signing key from the platform-oidc-signing-key Secret (same key on
+    // every replica and across restarts). Never throws.
+    const { initOidcSigningKey } = await import('./lib/oidc-keys');
+    const oidcKey = await initOidcSigningKey();
+    console.log(`[server] OIDC signing key ready (kid ${oidcKey.kid}, source ${oidcKey.source})`);
+
     const app = buildApp();
     const port = process.env.PORT || 3000;
 

@@ -100,6 +100,8 @@ func fakeTools(t *testing.T) func() []toolCall {
 	t.Setenv("PLATFORMCTL_BACKUP_ROOT", filepath.Join(dir, "backups"))
 	state.SetPath(filepath.Join(dir, "state"))
 	t.Cleanup(func() { state.SetPath(state.DefaultPath) })
+	// Host break-glass copy and Secret reads stay inside the sandbox.
+	sandboxHostState(t, filepath.Join(dir, "etc-platform"), nil)
 	return func() []toolCall {
 		data, _ := os.ReadFile(log)
 		var out []toolCall
@@ -168,7 +170,7 @@ func TestPlatformSecretAndWorkloadIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	var script string
-	foundSecret := false
+	foundSecret, foundCreds := false, false
 	for _, c := range calls() {
 		if c.Tool == "bash" {
 			script += strings.Join(c.Args, " ")
@@ -176,18 +178,38 @@ func TestPlatformSecretAndWorkloadIsolation(t *testing.T) {
 		if c.Input != "" {
 			var secret struct {
 				Kind       string
+				Metadata   struct{ Name string }
 				StringData map[string]string
 			}
 			if json.Unmarshal([]byte(c.Input), &secret) == nil && secret.Kind == "Secret" {
-				foundSecret = true
-				if secret.StringData["SECRETS_ENCRYPTION_KEY"] != cfg.SecretsEncryptionKey || secret.StringData["ADMIN_PASSWORD"] != cfg.AdminPassword {
-					t.Fatal("required secret missing")
+				switch secret.Metadata.Name {
+				case "platform-env":
+					foundSecret = true
+					if secret.StringData["SECRETS_ENCRYPTION_KEY"] != cfg.SecretsEncryptionKey {
+						t.Fatal("required secret missing")
+					}
+					for _, k := range credentialKeys {
+						if _, ok := secret.StringData[k]; ok {
+							t.Fatalf("credential %s must live in platform-credentials, not platform-env", k)
+						}
+					}
+				case "platform-credentials":
+					foundCreds = true
+					if secret.StringData["ADMIN_PASSWORD"] != cfg.AdminPassword || !strings.Contains(secret.StringData["MONGODB_URI"], "mongodb://root:") {
+						t.Fatal("credentials secret incomplete")
+					}
 				}
 			}
 		}
 	}
-	if !foundSecret {
-		t.Fatal("platform-env not applied as structured input")
+	if !foundSecret || !foundCreds {
+		t.Fatal("platform-env / platform-credentials not applied as structured input")
+	}
+	if strings.Contains(script, "hostPath") || strings.Contains(script, "chgrp 1000") {
+		t.Fatal("API Deployment must not mount the node filesystem")
+	}
+	if !strings.Contains(script, "name: platform-credentials") {
+		t.Fatal("API Deployment must read platform-credentials")
 	}
 	if strings.Contains(script, cfg.MongoPassword) {
 		t.Fatal("Mongo password interpolated into shell")

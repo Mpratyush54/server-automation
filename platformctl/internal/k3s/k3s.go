@@ -169,8 +169,14 @@ func upstreamDNS() []string {
 }
 
 // ServerConfigYAML renders /etc/rancher/k3s/config.yaml.
+//
+// secrets-encryption encrypts Secrets at rest in the datastore: the API's
+// configuration, credentials and OIDC signing key live in Secrets (#20).
+// On an existing cluster k3s creates the key on the next restart; Secrets
+// are encrypted as they are next written (platformctl rewrites its own on
+// every provision/update; `k3s secrets-encrypt reencrypt` covers the rest).
 func ServerConfigYAML() string {
-	return "# Managed by platformctl\ndisable:\n  - traefik\nresolv-conf: " + ResolvConfPath + "\n"
+	return "# Managed by platformctl\ndisable:\n  - traefik\nresolv-conf: " + ResolvConfPath + "\nsecrets-encryption: true\n"
 }
 
 // ResolvConf renders the upstream resolver file.
