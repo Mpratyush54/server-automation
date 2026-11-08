@@ -3,7 +3,6 @@ package components
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -233,7 +232,7 @@ func InstallMinIO(cfg *config.Config) error {
 	}
 	defer os.Remove(tmpFile)
 
-	err = helmValues("minio", "minio", "storage", map[string]any{"auth": map[string]string{"rootUser": cfg.MinioAccessKey, "rootPassword": cfg.MinioSecretKey}}, "-f", tmpFile, "--set", "persistence.size=50Gi", "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser", "--set", `defaultBuckets=platform-backups\,platform-logs`, "--wait", "--timeout", "10m")
+	err = helmValues("minio", "minio", "storage", map[string]any{"auth": map[string]string{"rootUser": cfg.MinioAccessKey, "rootPassword": cfg.MinioSecretKey}}, "-f", tmpFile, "--set", "persistence.size=50Gi", "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser", "--set", `defaultBuckets=platform-backups\,platform-logs\,platform-uploads`, "--wait", "--timeout", "10m")
 	if err != nil {
 		return err
 	}
@@ -711,37 +710,33 @@ func InstallPlatform(cfg *config.Config) error {
 	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
 	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
 
+	// Credentials (incl. ones the API rotated at runtime) → platform-credentials,
+	// OIDC signing key → platform-oidc-signing-key; /etc/platform becomes a
+	// root-only break-glass copy. Must run before platform-env is applied so a
+	// rotated webhook secret is adopted rather than overwritten.
+	if err := MigrateHostState(cfg); err != nil {
+		return err
+	}
 	if err := applySecret("platform", "platform-env", map[string]string{
 		"NODE_ENV": "production", "PORT": "3000", "JWT_SECRET": cfg.JWTSecret,
 		"SECRETS_ENCRYPTION_KEY": cfg.SecretsEncryptionKey, "PLATFORM_WEBHOOK_SECRET": cfg.WebhookSecret,
-		"POSTGRES_HOST": "postgresql.databases", "POSTGRES_PORT": "5432", "POSTGRES_DB": "platform", "POSTGRES_USER": "postgres", "POSTGRES_PASSWORD": cfg.PostgresPassword,
-		"MONGODB_URI": "mongodb://root:" + url.QueryEscape(cfg.MongoPassword) + "@mongodb.databases:27017/platform?authSource=admin",
-		"REDIS_HOST":  "redis-master.databases", "REDIS_PORT": "6379", "REDIS_PASSWORD": cfg.RedisPassword,
-		"MINIO_ENDPOINT": "http://minio.storage:9000", "MINIO_ACCESS_KEY": cfg.MinioAccessKey, "MINIO_SECRET_KEY": cfg.MinioSecretKey,
-		"PLATFORM_NAME": cfg.PlatformName, "DOMAIN": cfg.Domain, "ADMIN_EMAIL": cfg.AdminEmail, "ADMIN_PASSWORD": cfg.AdminPassword,
+		"POSTGRES_HOST": "postgresql.databases", "POSTGRES_PORT": "5432", "POSTGRES_DB": "platform", "POSTGRES_USER": "postgres",
+		"REDIS_HOST": "redis-master.databases", "REDIS_PORT": "6379",
+		"MINIO_ENDPOINT": "http://minio.storage:9000",
+		"UPLOADS_BUCKET": "platform-uploads", "BACKUP_BUCKET": "platform-backups",
+		"PLATFORM_NAME": cfg.PlatformName, "DOMAIN": cfg.Domain, "ADMIN_EMAIL": cfg.AdminEmail,
 		"OIDC_ISSUER": cfg.OIDCIssuer(), "OIDC_CLIENTS": cfg.OIDCClientsJSON(),
 		"CORS_ORIGINS": "https://" + cfg.Domain,
 	}); err != nil {
 		return err
 	}
-	rbac := readManifest("platform-api-rbac.yaml")
-	if rbac == "" {
-		return fmt.Errorf("platform-api RBAC manifest missing")
-	}
-	if _, err := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, rbac); err != nil {
+	if err := applyAPIRBAC(); err != nil {
 		return err
 	}
 	err := shell.RunBash(fmt.Sprintf(`
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 kubectl delete clusterrolebinding platform-api-admin-binding --ignore-not-found
-# Rotation atomically renames files, requiring write access to the parent.
-mkdir -p /etc/platform
-chgrp 1000 /etc/platform
-chmod 0770 /etc/platform
-if [ -f /etc/platform/.env ]; then chown 1000:1000 /etc/platform/.env; chmod 0600 /etc/platform/.env; fi
-install -d -m 0700 -o 1000 -g 1000 /etc/platform/credentials
-find /etc/platform/credentials -maxdepth 1 -type f -exec chown 1000:1000 {} +
 kubectl apply -n platform -f - <<'EOF'
 apiVersion: apps/v1
 kind: Deployment
@@ -777,12 +772,13 @@ spec:
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
+        # Config and keys come from Secrets only (no node mounts): the pod can
+        # be rescheduled to any node. platform-credentials wins on duplicates.
         envFrom:
         - secretRef:
             name: platform-env
-        volumeMounts:
-        - name: platform-etc
-          mountPath: /etc/platform
+        - secretRef:
+            name: platform-credentials
         readinessProbe:
           httpGet:
             path: /api/health
@@ -802,11 +798,6 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "1000m"
-      volumes:
-      - name: platform-etc
-        hostPath:
-          path: /etc/platform
-          type: Directory
 ---
 apiVersion: v1
 kind: Service
@@ -895,6 +886,9 @@ kubectl wait --for=condition=Available deployment/platform-portal -n platform --
 	))
 	if err != nil {
 		return err
+	}
+	if err := stripCredentialKeysFromEnvSecret(); err != nil {
+		color.Yellow("  ⚠ %v", err)
 	}
 	// Ingress/routing is applied once by InstallRouting (runs after platform).
 	color.Green("  ✓ Platform deployed")

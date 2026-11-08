@@ -189,9 +189,21 @@ if [[ -z "$WORKING" ]]; then
   WORKING="$PG_TARGET"
 fi
 
+# Credentials live in platform-credentials (issue #20). Older installs kept
+# them in platform-env; update that copy too only when it still has the key.
+set_platform_credential() {
+  local key="$1" b64val="$2"
+  kubectl -n platform get secret platform-credentials >/dev/null 2>&1 \
+    || kubectl -n platform create secret generic platform-credentials >/dev/null
+  kubectl -n platform patch secret platform-credentials --type merge -p "{\"data\":{\"$key\":\"$b64val\"}}"
+  if [[ -n "$(kubectl -n platform get secret platform-env -o jsonpath="{.data.$key}" 2>/dev/null || true)" ]]; then
+    kubectl -n platform patch secret platform-env --type merge -p "{\"data\":{\"$key\":\"$b64val\"}}" || true
+  fi
+}
+
 # Never ALTER when we already had a working password — sync Kubernetes to it.
 PG_B64="$(b64 "$WORKING")"
-kubectl -n platform patch secret platform-env --type merge -p "{\"data\":{\"POSTGRES_PASSWORD\":\"$PG_B64\"}}"
+set_platform_credential POSTGRES_PASSWORD "$PG_B64"
 kubectl -n databases patch secret postgresql --type merge -p "{\"data\":{\"postgres-password\":\"$PG_B64\",\"password\":\"$PG_B64\"}}" || true
 
 kubectl -n databases exec -i "$PG_POD" -- bash -lc 'cat > /tmp/platformctl-recover-admin.sql' < "$SQL_FILE"
@@ -206,9 +218,12 @@ if [[ -n "$RD_PASS" ]]; then
     || kubectl -n databases exec "$RD_POD" -- redis-cli -a "$RD_PASS" CONFIG SET requirepass "$RD_PASS" >/dev/null 2>&1 \
     || echo "  · Redis CONFIG SET skipped (pod not ready)"
   RD_B64="$(b64 "$RD_PASS")"
-  kubectl -n platform patch secret platform-env --type merge -p "{\"data\":{\"REDIS_PASSWORD\":\"$RD_B64\"}}" || true
+  set_platform_credential REDIS_PASSWORD "$RD_B64" || true
   kubectl -n databases patch secret redis --type merge -p "{\"data\":{\"redis-password\":\"$RD_B64\"}}" || true
 fi
+
+ADMIN_B64="$(b64 "${PLATFORM_RECOVER_ADMIN_PASS}")"
+set_platform_credential ADMIN_PASSWORD "$ADMIN_B64" || true
 
 kubectl -n platform delete secret platform-rotate-pending --ignore-not-found >/dev/null 2>&1 || true
 kubectl -n platform rollout restart deployment/platform-api
@@ -216,7 +231,8 @@ kubectl -n platform rollout status deployment/platform-api --timeout=180s
 `
 
 // RecoverAccess restores Postgres/Redis credentials and admin login from the
-// k3s host. It backs up and writes passwords to /etc/platform before any ALTER.
+// k3s host. It backs up and writes passwords to the /etc/platform break-glass
+// copy before any ALTER, then syncs the platform-credentials Secret the API reads.
 func RecoverAccess(cfg *config.Config) error {
 	color.Cyan("\n  ■ Recovering platform access\n")
 	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
@@ -227,8 +243,17 @@ func RecoverAccess(cfg *config.Config) error {
 	}
 	color.Green("  ✓ backup written to %s", backupDir)
 
+	// The host copy may predate a portal rotation (the API writes Secrets, not
+	// host files): adopt the cluster's current values first when readable.
+	if err := SyncCredentialsFromCluster(cfg); err != nil {
+		color.Yellow("  · could not read platform Secrets (%v); using the host copy", err)
+	}
+
 	candidates := uniqueFilled(
 		cfg.PostgresPassword,
+		kubeSecretValue("platform", platformCredsSecret, "POSTGRES_PASSWORD"),
+		kubeSecretValue("platform", platformCredsSecret, "POSTGRES_PASSWORD_NEXT"),
+		kubeSecretValue("platform", platformCredsSecret, "POSTGRES_PASSWORD_PREV"),
 		kubeSecretValue("platform", "platform-env", "POSTGRES_PASSWORD"),
 		kubeSecretValue("databases", "postgresql", "postgres-password"),
 		kubeSecretValue("databases", "postgresql", "password"),
@@ -249,6 +274,7 @@ func RecoverAccess(cfg *config.Config) error {
 
 	rdPass := firstFilled(
 		cfg.RedisPassword,
+		kubeSecretValue("platform", platformCredsSecret, "REDIS_PASSWORD"),
 		kubeSecretValue("platform", "platform-env", "REDIS_PASSWORD"),
 		kubeSecretValue("databases", "redis", "redis-password"),
 		kubeSecretValue("platform", "platform-rotate-pending", "REDIS_PASSWORD_OLD"),
@@ -316,12 +342,14 @@ func RecoverAccess(cfg *config.Config) error {
 	_ = os.Setenv("PLATFORM_RECOVER_PG_CANDIDATES", candPath)
 	_ = os.Setenv("PLATFORM_RECOVER_PG_PASS", pgPass)
 	_ = os.Setenv("PLATFORM_RECOVER_RD_PASS", rdPass)
+	_ = os.Setenv("PLATFORM_RECOVER_ADMIN_PASS", adminPass)
 	_ = os.Setenv("PLATFORM_CRED_DIR", defaultCredDir)
 	_ = os.Setenv("PLATFORM_ENV_FILE", defaultEnvFile)
 	_ = os.Setenv("PLATFORM_RECOVER_WORKING_OUT", workingOut)
 	_ = os.Setenv("PLATFORM_RECOVER_RD_OLD", firstFilled(
 		kubeSecretValue("platform", "platform-rotate-pending", "REDIS_PASSWORD_OLD"),
 		kubeSecretValue("databases", "redis", "redis-password"),
+		kubeSecretValue("platform", platformCredsSecret, "REDIS_PASSWORD"),
 		kubeSecretValue("platform", "platform-env", "REDIS_PASSWORD"),
 	))
 

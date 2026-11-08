@@ -205,6 +205,41 @@ export class GoogleDriveAdapter implements StorageAdapter {
   }
 }
 
+// ──── Default backup target ──────────────────────────────────────────────────
+export const DEFAULT_BACKUP_BUCKET = 'platform-backups';
+
+/**
+ * Where backups go when no storage provider is marked default:
+ *  - BACKUP_STORAGE=local|minio|s3 forces one;
+ *  - otherwise the bundled MinIO (MINIO_ENDPOINT, set by platformctl), bucket
+ *    BACKUP_BUCKET (default platform-backups), or any S3-compatible target via
+ *    BACKUP_S3_ENDPOINT / BACKUP_S3_ACCESS_KEY / BACKUP_S3_SECRET_KEY / BACKUP_S3_REGION;
+ *  - LocalAdapter (BACKUP_DIR) only when no object store is configured (dev).
+ */
+export function defaultBackupProviderType(env: NodeJS.ProcessEnv = process.env): 'minio' | 's3' | 'local' {
+  const forced = (env.BACKUP_STORAGE || '').toLowerCase();
+  if (forced === 'local' || forced === 'minio' || forced === 's3') return forced;
+  if (env.BACKUP_S3_ENDPOINT) return 's3';
+  if (env.MINIO_ENDPOINT) return 'minio';
+  return 'local';
+}
+
+export function createDefaultBackupAdapter(env: NodeJS.ProcessEnv = process.env): StorageAdapter {
+  const type = defaultBackupProviderType(env);
+  if (type === 'local') return new LocalAdapter();
+  const s3 = type === 's3';
+  const endpoint = s3 ? env.BACKUP_S3_ENDPOINT || '' : env.MINIO_ENDPOINT || 'http://minio.storage:9000';
+  return new S3Adapter(
+    {
+      endpoint,
+      region: (s3 ? env.BACKUP_S3_REGION : '') || 'us-east-1',
+      accessKeyId: (s3 ? env.BACKUP_S3_ACCESS_KEY : env.MINIO_ACCESS_KEY) || '',
+      secretAccessKey: (s3 ? env.BACKUP_S3_SECRET_KEY : env.MINIO_SECRET_KEY) || '',
+    },
+    env.BACKUP_BUCKET || DEFAULT_BACKUP_BUCKET,
+  );
+}
+
 // ──── Storage Router ─────────────────────────────────────────────────────────
 export function createAdapter(
   providerType: string,

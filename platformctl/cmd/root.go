@@ -97,6 +97,10 @@ var updateCmd = &cobra.Command{
 	Short: "Pull newest Platform images from GHCR and roll deployments",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
+		// Move host state into Secrets and drop the hostPath before rolling (#20).
+		if err := components.PrepareUpdate(cfg); err != nil {
+			return err
+		}
 		return components.UpdateImages(cfg)
 	},
 }
@@ -104,8 +108,9 @@ var updateCmd = &cobra.Command{
 var recoverCmd = &cobra.Command{
 	Use:   "recover",
 	Short: "Restore API and admin login after a broken secret rotate",
-	Long: `Backs up /etc/platform and cluster secrets, writes passwords to
-/etc/platform/.env and /etc/platform/credentials, then reconnects Postgres.
+	Long: `Backs up /etc/platform and cluster secrets, writes passwords to the
+break-glass copy (/etc/platform/.env and /etc/platform/credentials) and to the
+platform-credentials Secret the API reads, then reconnects Postgres.
 
 ALTER USER is used only when no stored password still authenticates.
 The working password is saved on disk before any role change.
@@ -136,6 +141,11 @@ var repairCmd = &cobra.Command{
 		}
 		defer unlock()
 		os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
+		// Adopt credentials rotated at runtime before reusing them (SSO setup
+		// logs in to Portainer with the admin password).
+		if err := components.SyncCredentialsFromCluster(cfg); err != nil {
+			color.Yellow("  · could not read platform Secrets (%v); using /etc/platform/.env", err)
+		}
 		cfg.GenerateSecrets() // only fills values that are missing
 		if err := cfg.SaveEnvFile("/etc/platform/.env"); err != nil {
 			return fmt.Errorf("save /etc/platform/.env: %w", err)
@@ -152,7 +162,7 @@ var repairCmd = &cobra.Command{
 
 var backupCmd = &cobra.Command{
 	Use:   "backup",
-	Short: "Copy /etc/platform/.env and database secrets to a timestamped host backup",
+	Short: "Copy /etc/platform/.env and the platform/database Secrets to a timestamped host backup",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
 		dir, err := components.BackupLocalState("", "")

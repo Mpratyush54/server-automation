@@ -1,6 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 
+/**
+ * Dotenv helpers for the FileStore (local development and tests).
+ *
+ * In the cluster the API does not read or write /etc/platform: configuration
+ * lives in Kubernetes Secrets (see config-store.ts). platformctl keeps the
+ * host files as an operator-side break-glass copy.
+ */
 export function platformEnvFile(): string {
   return process.env.PLATFORM_ENV_FILE || '/etc/platform/.env';
 }
@@ -19,7 +26,8 @@ function assertNotHostPathInTests(filePath: string): void {
   }
 }
 
-function fsyncWrite(filePath: string, content: string): void {
+/** Atomic, fsync'd 0600 write (tmp file + rename). */
+export function writeFileAtomic(filePath: string, content: string): void {
   assertNotHostPathInTests(filePath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
   const tmp = `${filePath}.tmp`;
@@ -57,36 +65,21 @@ export function upsertDotEnvFile(filePath: string, values: Record<string, string
       }
     }
   }
-  fsyncWrite(filePath, lines.join('\n'));
+  writeFileAtomic(filePath, lines.join('\n'));
 }
 
-export function persistPlatformEnv(values: Record<string, string>): { ok: boolean; detail: string } {
+/**
+ * Durably store credentials (and rotation write-ahead copies) in the
+ * credentials ConfigStore: the platform-credentials Secret in the cluster,
+ * PLATFORM_ENV_FILE + PLATFORM_CRED_DIR elsewhere.
+ */
+export async function persistPlatformEnv(values: Record<string, string>): Promise<{ ok: boolean; detail: string }> {
   try {
-    const credDir = platformCredDir();
-    fs.mkdirSync(credDir, { recursive: true, mode: 0o700 });
-    const fileFor: Record<string, string> = {
-      POSTGRES_PASSWORD: 'postgres',
-      REDIS_PASSWORD: 'redis',
-      ADMIN_PASSWORD: 'admin',
-      POSTGRES_PASSWORD_PREV: 'postgres.prev',
-      POSTGRES_PASSWORD_NEXT: 'postgres.next',
-      REDIS_PASSWORD_PREV: 'redis.prev',
-      REDIS_PASSWORD_NEXT: 'redis.next',
-    };
-    const envPatch: Record<string, string> = {};
-    for (const [key, file] of Object.entries(fileFor)) {
-      const v = values[key];
-      if (!v) continue;
-      fsyncWrite(path.join(credDir, file), `${v}\n`);
-      if (key === 'POSTGRES_PASSWORD' || key === 'REDIS_PASSWORD' || key === 'ADMIN_PASSWORD') {
-        envPatch[key] = v;
-      }
-    }
-    if (Object.keys(envPatch).length > 0) {
-      upsertDotEnvFile(platformEnvFile(), envPatch);
-    }
-    return { ok: true, detail: `wrote ${platformEnvFile()} and ${credDir}` };
+    const { credentialsStore } = await import('./config-store');
+    const store = await credentialsStore();
+    await store.patch(values);
+    return { ok: true, detail: `wrote ${store.description}` };
   } catch (err: any) {
-    return { ok: false, detail: err?.message || 'host persist failed' };
+    return { ok: false, detail: err?.message || 'credential persist failed' };
   }
 }

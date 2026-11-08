@@ -24,7 +24,7 @@ func TestAPIRBACIsDedicatedAndResourceScoped(t *testing.T) {
 			t.Fatalf("excess permission %s", bad)
 		}
 	}
-	for _, required := range []string{"kind: ServiceAccount", "name: platform-api", "resourceNames:", "platform-env", "platform-rotate-pending", "namespace: databases", "namespace: argocd"} {
+	for _, required := range []string{"kind: ServiceAccount", "name: platform-api", "resourceNames:", "platform-env", "platform-rotate-pending", "platform-credentials", "platform-oidc-signing-key", "namespace: databases", "namespace: argocd"} {
 		if !strings.Contains(rbac, required) {
 			t.Fatalf("missing scoped permission %s", required)
 		}

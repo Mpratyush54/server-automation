@@ -53,13 +53,14 @@ describe('credential-recover', () => {
   beforeEach(() => {
     readSecretData.mockReset();
     patchSecretData.mockClear();
+    upsertSecretData.mockClear();
     reconnectPostgres.mockClear();
     process.env.POSTGRES_PASSWORD = 'stale-pg';
     process.env.REDIS_PASSWORD = 'stale-redis';
     readSecretData.mockImplementation(async () => ({}));
   });
 
-  it('reconnects postgres using the Bitnami secret when env is stale and syncs platform-env', async () => {
+  it('reconnects postgres using the Bitnami secret when env is stale and syncs platform-credentials', async () => {
     readSecretData.mockImplementation(async (namespace: string, name: string) => {
       if (namespace === 'databases' && name === 'postgresql') {
         return { 'postgres-password': 'working-pg' };
@@ -72,7 +73,7 @@ describe('credential-recover', () => {
     expect(result.ok).toBe(true);
     expect(result.source).toBe('postgresql-secret');
     expect(reconnectPostgres).toHaveBeenCalledWith('working-pg');
-    expect(patchSecretData).toHaveBeenCalledWith('platform', 'platform-env', {
+    expect(upsertSecretData).toHaveBeenCalledWith('platform', 'platform-credentials', {
       POSTGRES_PASSWORD: 'working-pg',
     });
     expect(patchSecretData).toHaveBeenCalledWith('databases', 'postgresql', {
@@ -115,8 +116,20 @@ describe('credential-recover', () => {
 
     expect(result.ok).toBe(true);
     expect(result.source).toBe('redis-secret');
-    expect(patchSecretData).toHaveBeenCalledWith('platform', 'platform-env', {
+    expect(upsertSecretData).toHaveBeenCalledWith('platform', 'platform-credentials', {
       REDIS_PASSWORD: 'working-redis',
     });
+  });
+
+  it('tries the rotation write-ahead copy kept in platform-credentials', async () => {
+    readSecretData.mockImplementation(async (namespace: string, name: string) => {
+      if (namespace === 'platform' && name === 'platform-credentials') {
+        return { POSTGRES_PASSWORD: 'stale-pg', POSTGRES_PASSWORD_NEXT: 'working-pg' };
+      }
+      return {};
+    });
+    const result = await recoverPostgresAuth();
+    expect(result.ok).toBe(true);
+    expect(result.source).toBe('platform-credentials-next');
   });
 });

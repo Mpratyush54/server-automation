@@ -6,13 +6,13 @@ import { expressAuthenticate, sdkOrUserAuthenticate, sdkProjectMatches, Authenti
 import { requireProjectAccess } from '../lib/project-access';
 import { resolveProjectRef } from '../lib/project-resolve';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { UPLOADS_DIR, containedUploadPath, getUploadStore } from '../lib/upload-store';
 
-export const UPLOADS_DIR = path.resolve(process.cwd(), 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
+export { UPLOADS_DIR, containedUploadPath };
+const PRESIGN_TTL_SECONDS = 900;
 const MAX_UPLOAD_BYTES = Number(process.env.STORAGE_MAX_UPLOAD_BYTES) || 100 * 1024 * 1024;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Types that are safe to render inline from the API origin. Everything else is served as a download. */
@@ -31,14 +31,13 @@ export function sanitizeDisplayName(name: unknown): string {
   return n.slice(0, 255) || 'file';
 }
 
-/** Resolve `name` inside UPLOADS_DIR; returns null if the result would escape the directory. */
-export function containedUploadPath(name: string): string | null {
-  const resolved = path.resolve(UPLOADS_DIR, name);
-  if (path.dirname(resolved) !== UPLOADS_DIR) return null;
-  return resolved;
+/** Object key of an upload — derived from server-generated ids, never client input. */
+function objectKey(file: File): string | null {
+  if (!UUID_RE.test(file.id) || !UUID_RE.test(String(file.projectId))) return null;
+  return `${file.projectId}/${file.id}`;
 }
 
-/** Physical path of an upload — always the server-generated UUID, never client input. */
+/** Physical path of a pre-object-storage upload — always the server-generated UUID. */
 function physicalPath(file: File): string | null {
   if (!UUID_RE.test(file.id)) return null;
   return containedUploadPath(file.id);
@@ -123,12 +122,15 @@ router.post('/storage/upload-url', sdkOrUserAuthenticate, async (req: Request, r
     const fileId = uuidv4();
     const displayName = sanitizeDisplayName(fileName);
     const storageKey = `${projectId}/${fileId}`;
+    const store = getUploadStore();
 
     const file = repo.create({
       id: fileId,
       projectId,
-      provider: provider || FileProvider.LOCAL,
-      bucket: typeof bucket === 'string' && bucket ? bucket.slice(0, 200) : 'default-bucket',
+      provider: store.kind === 's3' ? FileProvider.MINIO : (provider || FileProvider.LOCAL),
+      bucket: store.kind === 's3'
+        ? store.bucket
+        : (typeof bucket === 'string' && bucket ? bucket.slice(0, 200) : 'default-bucket'),
       storageKey,
       originalName: displayName,
       mimeType: typeof mimeType === 'string' && mimeType ? mimeType.slice(0, 100) : null,
@@ -137,9 +139,14 @@ router.post('/storage/upload-url', sdkOrUserAuthenticate, async (req: Request, r
     });
     await repo.save(file);
 
-    // Express local upload URL helper (requires the same credentials)
+    // `url` streams through the API (same credentials; works everywhere).
+    // `presignedUrl` is a direct object-store PUT, only when a public S3
+    // endpoint is configured (UPLOADS_S3_PUBLIC_ENDPOINT).
     const url = `/api/storage/upload-raw/${fileId}`;
-    return res.status(201).json({ url, fileId });
+    const presignedUrl = store.presign('PUT', storageKey, PRESIGN_TTL_SECONDS);
+    return res.status(201).json(presignedUrl
+      ? { url, fileId, presignedUrl, presignedMethod: 'PUT', expiresIn: PRESIGN_TTL_SECONDS }
+      : { url, fileId });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
@@ -152,11 +159,13 @@ router.put('/storage/upload-raw/:fileId', sdkOrUserAuthenticate, async (req: Req
     if (!file || file.isDeleted) return res.status(404).json({ error: 'File registration not found' });
     if (!(await authorizeProject(req, res, file.projectId, ProjectAccessRole.DEVELOPER))) return;
 
-    const filePath = physicalPath(file);
-    if (!filePath) return res.status(400).json({ error: 'Invalid file id' });
+    const key = objectKey(file);
+    if (!key) return res.status(400).json({ error: 'Invalid file id' });
 
+    // Spool to a private temp file (bounded), then hand it to the object store.
+    const filePath = path.join(os.tmpdir(), `platform-upload-${file.id}-${uuidv4()}`);
     const ds = await getDb();
-    const writeStream = fs.createWriteStream(filePath);
+    const writeStream = fs.createWriteStream(filePath, { mode: 0o600 });
     let written = 0;
     let aborted = false;
 
@@ -174,9 +183,13 @@ router.put('/storage/upload-raw/:fileId', sdkOrUserAuthenticate, async (req: Req
       if (aborted) return;
       const stats = fs.statSync(filePath);
       file.size = stats.size;
-      ds.getRepository(File).save(file).then(() => {
-        return res.json({ success: true, size: stats.size });
-      }).catch((e: any) => res.status(500).json({ error: e.message }));
+      getUploadStore().put(key, filePath, file.mimeType)
+        .then(() => ds.getRepository(File).save(file))
+        .then(() => res.json({ success: true, size: stats.size }))
+        .catch((e: any) => {
+          fs.unlink(filePath, () => {});
+          if (!res.headersSent) res.status(500).json({ error: e.message });
+        });
     });
     writeStream.on('error', (e: any) => {
       if (aborted || res.headersSent) return;
@@ -228,7 +241,15 @@ router.post('/storage/delete', sdkOrUserAuthenticate, async (req: Request, res: 
     file.deletedAt = new Date();
     await ds.getRepository(File).save(file);
 
-    // Delete local physical file if it exists (contained paths only)
+    const key = objectKey(file);
+    if (key) {
+      try {
+        await getUploadStore().delete(key);
+      } catch (e: any) {
+        console.warn(`[storage] object delete failed for ${file.id}: ${e.message}`);
+      }
+    }
+    // Pre-object-storage local file, if any (contained paths only)
     const filePath = existingPhysicalPath(file);
     if (filePath) {
       fs.unlinkSync(filePath);
@@ -245,18 +266,32 @@ router.get('/storage/file/:id', sdkOrUserAuthenticate, async (req: Request, res:
     if (!file || file.isDeleted) return res.status(404).json({ error: 'File not found' });
     if (!(await authorizeProject(req, res, file.projectId, ProjectAccessRole.VIEWER))) return;
 
-    const filePath = existingPhysicalPath(file);
-    if (filePath) {
-      const mime = (file.mimeType || 'application/octet-stream').toLowerCase();
-      const inline = INLINE_SAFE_TYPES.has(mime);
-      res.setHeader('Content-Type', inline ? mime : 'application/octet-stream');
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
-      const safeName = sanitizeDisplayName(file.originalName).replace(/[^\x20-\x7e]/g, '_');
-      res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${safeName}"`);
-      return res.sendFile(filePath);
+    const key = objectKey(file);
+    const store = getUploadStore();
+    if (key && req.query.presigned === '1') {
+      const presignedUrl = store.presign('GET', key, PRESIGN_TTL_SECONDS);
+      if (presignedUrl) return res.json({ url: presignedUrl, expiresIn: PRESIGN_TTL_SECONDS });
     }
-    return res.status(404).json({ error: 'Physical file not found' });
+    let body: NodeJS.ReadableStream | null = key ? await store.get(key) : null;
+    if (!body) {
+      const legacy = existingPhysicalPath(file);
+      if (legacy) body = fs.createReadStream(legacy);
+    }
+    if (!body) return res.status(404).json({ error: 'Physical file not found' });
+
+    const mime = (file.mimeType || 'application/octet-stream').toLowerCase();
+    const inline = INLINE_SAFE_TYPES.has(mime);
+    res.setHeader('Content-Type', inline ? mime : 'application/octet-stream');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    const safeName = sanitizeDisplayName(file.originalName).replace(/[^\x20-\x7e]/g, '_');
+    res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${safeName}"`);
+    body.on('error', (e: any) => {
+      if (!res.headersSent) res.status(500).json({ error: e.message });
+      else res.destroy(e);
+    });
+    body.pipe(res);
+    return;
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
@@ -287,9 +322,11 @@ router.get('/storage/analytics/:projectId', expressAuthenticate, async (req: Req
     return res.json({
       totalBytes,
       count,
-      providerBreakdown: {
-        local: count,
-      },
+      providerBreakdown: files.reduce((acc: Record<string, number>, f) => {
+        const k = f.provider || 'local';
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {}),
     });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
