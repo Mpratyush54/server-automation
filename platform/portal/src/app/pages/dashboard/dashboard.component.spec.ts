@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideHttpClient } from '@angular/common/http';
+import { provideRouter } from '@angular/router';
 import { DashboardComponent } from './dashboard.component';
 import { ApiService } from '../../services/api.service';
 import { of } from 'rxjs';
@@ -10,13 +11,14 @@ describe('DashboardComponent', () => {
   let apiService: jasmine.SpyObj<ApiService>;
 
   beforeEach(async () => {
-    const spy = jasmine.createSpyObj('ApiService', ['getProjects', 'getBootstrapStatus']);
+    const spy = jasmine.createSpyObj('ApiService', ['getProjects', 'getBootstrapStatus', 'getPlatformVersion']);
 
     await TestBed.configureTestingModule({
       imports: [DashboardComponent],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
+        provideRouter([]),
         { provide: ApiService, useValue: spy },
       ],
     }).compileComponents();
@@ -24,6 +26,7 @@ describe('DashboardComponent', () => {
     apiService = TestBed.inject(ApiService) as jasmine.SpyObj<ApiService>;
     apiService.getProjects.and.returnValue(of([]));
     apiService.getBootstrapStatus.and.returnValue(of({ services: {} }));
+    apiService.getPlatformVersion.and.returnValue(of({}));
   });
 
   it('should create', () => {
@@ -40,8 +43,10 @@ describe('DashboardComponent', () => {
 
     const fixture = TestBed.createComponent(DashboardComponent);
     component = fixture.componentInstance;
-    fixture.detectChanges();
-    await fixture.whenStable();
+    // ngOnInit starts a telemetry setInterval, so the zone never becomes stable;
+    // await init directly and destroy the fixture to clear the timer.
+    await component.ngOnInit();
+    fixture.destroy();
 
     expect(component.stats.projects).toBe(2);
   });
@@ -59,8 +64,10 @@ describe('DashboardComponent', () => {
 
     const fixture = TestBed.createComponent(DashboardComponent);
     component = fixture.componentInstance;
-    fixture.detectChanges();
-    await fixture.whenStable();
+    // ngOnInit starts a telemetry setInterval, so the zone never becomes stable;
+    // await init directly and destroy the fixture to clear the timer.
+    await component.ngOnInit();
+    fixture.destroy();
 
     expect(component.recentDeployments.length).toBe(2);
   });
@@ -71,8 +78,10 @@ describe('DashboardComponent', () => {
 
     const fixture = TestBed.createComponent(DashboardComponent);
     component = fixture.componentInstance;
-    fixture.detectChanges();
-    await fixture.whenStable();
+    // ngOnInit starts a telemetry setInterval, so the zone never becomes stable;
+    // await init directly and destroy the fixture to clear the timer.
+    await component.ngOnInit();
+    fixture.destroy();
 
     expect(component.stats.projects).toBe(0);
   });
@@ -84,8 +93,10 @@ describe('DashboardComponent', () => {
 
     const fixture = TestBed.createComponent(DashboardComponent);
     component = fixture.componentInstance;
-    fixture.detectChanges();
-    await fixture.whenStable();
+    // ngOnInit starts a telemetry setInterval, so the zone never becomes stable;
+    // await init directly and destroy the fixture to clear the timer.
+    await component.ngOnInit();
+    fixture.destroy();
 
     expect(component.systemHealth.length).toBe(3);
     expect(component.stats.services).toBe(2);

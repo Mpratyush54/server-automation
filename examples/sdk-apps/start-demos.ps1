@@ -24,7 +24,8 @@ if (-not $Token) {
 }
 
 Write-Host "Starting node-api :4100  project=$ProjectName"
-$nodeCmd = "set NODE_TLS_REJECT_UNAUTHORIZED=0&& set PLATFORM_SDK_TOKEN=$Token&& set PLATFORM_URL=$PlatformUrl&& set PROJECT_NAME=$ProjectName&& set PORT=4100&& npm start"
+# TLS verification stays on; set $env:NODE_EXTRA_CA_CERTS to trust a lab CA (inherited by the child process).
+$nodeCmd = "set PLATFORM_SDK_TOKEN=$Token&& set PLATFORM_URL=$PlatformUrl&& set PROJECT_NAME=$ProjectName&& set PORT=4100&& npm start"
 Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $nodeCmd -WorkingDirectory "$root\node-api" -WindowStyle Minimized
 
 Start-Sleep -Seconds 3

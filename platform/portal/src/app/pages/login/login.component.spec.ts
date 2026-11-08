@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideHttpClient } from '@angular/common/http';
-import { provideRouter } from '@angular/router';
+import { provideRouter, ActivatedRoute } from '@angular/router';
 import { LoginComponent } from './login.component';
 import { AuthService } from '../../services/auth.service';
 import { ApiService } from '../../services/api.service';
@@ -10,12 +10,13 @@ import { of, throwError } from 'rxjs';
 
 describe('LoginComponent', () => {
   let authService: jasmine.SpyObj<AuthService>;
-  let router: jasmine.SpyObj<Router>;
+  let router: Router;
+  let queryParams: Record<string, string>;
   let apiService: jasmine.SpyObj<ApiService>;
 
   beforeEach(async () => {
     const authSpy = jasmine.createSpyObj('AuthService', ['login', 'getToken', 'isAuthenticated']);
-    const routerSpy = jasmine.createSpyObj('Router', ['navigate', 'navigateByUrl']);
+    queryParams = {};
     const apiSpy = jasmine.createSpyObj('ApiService', ['getAuthProviders']);
     apiSpy.getAuthProviders.and.returnValue(of({
       github: { enabled: false, configured: false },
@@ -29,13 +30,16 @@ describe('LoginComponent', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         { provide: AuthService, useValue: authSpy },
-        { provide: Router, useValue: routerSpy },
+        { provide: ActivatedRoute, useValue: { snapshot: { get queryParams() { return queryParams; } } } },
         { provide: ApiService, useValue: apiSpy },
       ],
     }).compileComponents();
 
     authService = TestBed.inject(AuthService) as jasmine.SpyObj<AuthService>;
-    router = TestBed.inject(Router) as jasmine.SpyObj<Router>;
+    // Real router (the template uses routerLink); spy on navigation only.
+    router = TestBed.inject(Router);
+    spyOn(router, 'navigate').and.resolveTo(true);
+    spyOn(router, 'navigateByUrl').and.resolveTo(true);
     apiService = TestBed.inject(ApiService) as jasmine.SpyObj<ApiService>;
   });
 
@@ -44,10 +48,10 @@ describe('LoginComponent', () => {
     expect(fixture.componentInstance).toBeTruthy();
   });
 
-  it('should redirect to dashboard if already authenticated', () => {
+  it('should redirect to dashboard if already authenticated', async () => {
     authService.isAuthenticated.and.returnValue(true);
 
-    TestBed.createComponent(LoginComponent);
+    await TestBed.createComponent(LoginComponent).componentInstance.ngOnInit();
 
     expect(router.navigate).toHaveBeenCalledWith(['/dashboard']);
   });
@@ -112,5 +116,32 @@ describe('LoginComponent', () => {
     await fixture.componentInstance.login();
 
     expect(fixture.componentInstance.errorMessage).toBe('Invalid credentials');
+  });
+
+  it('should follow a same-origin returnUrl after login (SSO consent flow)', async () => {
+    authService.isAuthenticated.and.returnValue(false);
+    authService.login.and.returnValue(of({ token: 'new-token' }));
+    queryParams = { returnUrl: '/oauth/authorize?client_id=argocd' };
+
+    const fixture = TestBed.createComponent(LoginComponent);
+    fixture.componentInstance.email = 'test@test.com';
+    fixture.componentInstance.password = 'TestPass123';
+    await fixture.componentInstance.login();
+
+    expect(router.navigateByUrl).toHaveBeenCalledWith('/oauth/authorize?client_id=argocd');
+  });
+
+  it('should ignore an off-site returnUrl (open redirect)', async () => {
+    authService.isAuthenticated.and.returnValue(false);
+    authService.login.and.returnValue(of({ token: 'new-token' }));
+    queryParams = { returnUrl: '//evil.example/phish' };
+
+    const fixture = TestBed.createComponent(LoginComponent);
+    fixture.componentInstance.email = 'test@test.com';
+    fixture.componentInstance.password = 'TestPass123';
+    await fixture.componentInstance.login();
+
+    expect(router.navigateByUrl).not.toHaveBeenCalled();
+    expect(router.navigate).toHaveBeenCalledWith(['/dashboard']);
   });
 });

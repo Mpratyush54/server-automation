@@ -10,9 +10,8 @@ app.use(express.json());
 
 async function startServer() {
   console.log("Initializing Platform SDK...");
-  
-  // Disable certificate validation for dev environment if SSL is self-signed/testing
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  // Lab install with a self-signed / private CA? Start node with
+  // NODE_EXTRA_CA_CERTS=/path/to/platform-ca.pem instead of disabling TLS checks.
 
   try {
     await platform.init({

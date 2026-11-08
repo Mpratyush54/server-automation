@@ -31,6 +31,7 @@ export class ServiceRegistration {
   @Column({ type: 'varchar', length: 40, nullable: true, name: 'commit_sha' })
   commitSha: string | null;
 
+  // Legacy Infisical columns: kept so no migration is needed; no longer read or written.
   @Column({ type: 'varchar', length: 100, nullable: true, name: 'infisical_project' })
   infisicalProject: string | null;
 

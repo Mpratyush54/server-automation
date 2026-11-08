@@ -195,7 +195,8 @@ describe('SDK & API Integration Tests', () => {
   it('should register SDK client, send logs, track metrics, and submit bug report via API', async () => {
     // 1. Initialize the actual Node SDK pointing to our live test server
     const platformUrl = `http://localhost:${port}`;
-    const token = 'sdk-p1111111-1111-1111-1111-111111111111:dummy-secret';
+    // Only stored sdk_live_/sdk_test_ credentials are accepted (legacy sdk-{id}:{secret} is rejected).
+    const token = 'sdk_live_testtoken12345';
     
     await sdk.init({
       projectName: 'test-project',
@@ -205,10 +206,11 @@ describe('SDK & API Integration Tests', () => {
       databases: [],
     });
 
-    // Verify registration was triggered
+    // Verify registration was triggered against the token's own project (never looked up by name)
     expect(mockProjectRepository.findOne).toHaveBeenCalledWith(expect.objectContaining({
-      where: { name: 'test-project' }
+      where: { id: 'p1111111-1111-1111-1111-111111111111' }
     }));
+    expect(mockProjectRepository.create).not.toHaveBeenCalled();
 
     // 2. Test Logging Ingest
     sdk.logger.info('Hello integration test message from Node SDK');

@@ -3,38 +3,80 @@ import { getDb } from '../config/database';
 import { User, UserRole } from '../entities/User';
 import { Role } from '../entities/Role';
 import { expressAuthenticate, expressRequireRole, requirePermission, logAudit, clearPermissionCache, getUserPermissions, AuthenticatedRequest } from '../middleware/auth';
-import { Permission } from '../config/permissions';
+import { Permission, ROLE_RANK, isKnownPermission } from '../config/permissions';
+import { getJwtSecret } from '../config/security-env';
 import jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
 import bcrypt from 'bcryptjs';
-import { ensureAdminUser } from '../lib/seed-admin';
 import { resolveIntegrations, publicAuthProviders } from '../lib/integrations';
-import { buildAuthorizeUrl, completeOAuthCallback, loginFailedRedirect } from '../lib/oauth-login';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'plat-super-secret-key';
 const router = Router();
 
-// Generate RS256 Keypair for OIDC/SSO dynamically on startup
-let oauthPrivateKey: string = '';
-let oauthPublicKey: string = '';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+type GrantError = { status: number; error: string };
 
-try {
-  const { privateKey: pri, publicKey: pub } = crypto.generateKeyPairSync('rsa', {
-    modulusLength: 2048,
-    publicKeyEncoding: { type: 'spki', format: 'pem' },
-    privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
-  });
-  oauthPrivateKey = pri;
-  oauthPublicKey = pub;
-  console.log('[oauth] Successfully generated dynamic RSA-2048 keypair for OIDC/SSO.');
-} catch (err: any) {
-  console.error('[oauth] Failed to generate RSA keypair for OIDC:', err.message);
+/**
+ * Privilege-escalation guard for every endpoint that sets a user's role / custom role.
+ * - role must be one of the built-in roles
+ * - a caller may never grant a role above their own; only admins grant admin
+ * - only admins may modify admin accounts
+ * - a custom role (roleId) may only be granted if all its permissions are held by the caller
+ */
+async function checkRoleGrant(
+  actor: AuthenticatedRequest['user'],
+  opts: { role?: unknown; roleId?: unknown; target?: User | null },
+): Promise<GrantError | null> {
+  if (!actor) return { status: 401, error: 'Unauthorized: Not authenticated' };
+  const actorIsAdmin = actor.role === UserRole.ADMIN;
+
+  if (opts.role !== undefined) {
+    if (typeof opts.role !== 'string' || !(Object.values(UserRole) as string[]).includes(opts.role)) {
+      return { status: 400, error: `Invalid role. Allowed: ${Object.values(UserRole).join(', ')}` };
+    }
+    if (!actorIsAdmin && (opts.role === UserRole.ADMIN || (ROLE_RANK[opts.role] ?? 99) > (ROLE_RANK[actor.role] ?? 0))) {
+      return { status: 403, error: 'Forbidden: you cannot grant a role higher than your own' };
+    }
+  }
+
+  if (opts.target && opts.target.role === UserRole.ADMIN && !actorIsAdmin) {
+    return { status: 403, error: 'Forbidden: only admins may modify admin accounts' };
+  }
+
+  if (opts.roleId !== undefined && opts.roleId !== null && opts.roleId !== '') {
+    if (typeof opts.roleId !== 'string' || !UUID_RE.test(opts.roleId)) {
+      return { status: 400, error: 'Invalid roleId' };
+    }
+    const ds = await getDb();
+    const role = await ds.getRepository(Role).findOne({ where: { id: opts.roleId } });
+    if (!role) return { status: 400, error: 'Role not found' };
+    if (!actorIsAdmin) {
+      const actorPerms = await getUserPermissions(actor);
+      const extra = (role.permissions || []).filter((p) => !actorPerms.has(p));
+      if (extra.length > 0) {
+        return { status: 403, error: 'Forbidden: that role grants permissions you do not hold' };
+      }
+    }
+  }
+  return null;
 }
 
-// Map to store temporary authorization codes: code -> session info
-const authCodes = new Map<string, { userId: string; clientId: string; redirectUri: string; state: string }>();
+/** Custom role definitions: permissions must be known, and non-admins cannot exceed their own. */
+async function checkRolePermissions(actor: AuthenticatedRequest['user'], permissions: unknown): Promise<GrantError | null> {
+  if (permissions === undefined) return null;
+  if (!actor) return { status: 401, error: 'Unauthorized: Not authenticated' };
+  if (!Array.isArray(permissions) || !permissions.every(isKnownPermission)) {
+    return { status: 400, error: 'permissions must be an array of known permission names' };
+  }
+  if (actor.role !== UserRole.ADMIN) {
+    const actorPerms = await getUserPermissions(actor);
+    if (permissions.some((p) => !actorPerms.has(p))) {
+      return { status: 403, error: 'Forbidden: a role cannot include permissions you do not hold' };
+    }
+  }
+  return null;
+}
 
 router.get('/health', (req: Request, res: Response) => {
   return res.json({ status: 'ok' });
@@ -91,7 +133,7 @@ router.post('/auth/login', async (req: Request, res: Response) => {
 
     const token = jwt.sign(
       { id: user.id, email: user.email, name: user.name, role: user.role },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: '24h' }
     );
     const { passwordHash: _, ...safeUser } = user as any;
@@ -110,69 +152,11 @@ router.get('/auth/providers', async (_req: Request, res: Response) => {
   }
 });
 
-router.get('/auth/github', async (req: Request, res: Response) => {
-  const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
-  const built = await buildAuthorizeUrl('github', req.get('host') || undefined, proto);
-  if (built.ok) return res.redirect(built.url);
-  return res.status(built.status).json({ error: built.error });
-});
+// GitHub/GitLab login (/auth/github, /auth/gitlab and their callbacks) is served by routes/oidc.ts,
+// which binds `state` to a browser cookie and hands the portal a one-time exchange code.
 
-router.get('/auth/github/callback', async (req: Request, res: Response) => {
-  const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
-  try {
-    const result = await completeOAuthCallback({
-      provider: 'github',
-      code: typeof req.query.code === 'string' ? req.query.code : undefined,
-      state: typeof req.query.state === 'string' ? req.query.state : undefined,
-      reqHost: req.get('host') || undefined,
-      proto,
-    });
-    return res.redirect(result.redirect);
-  } catch (err: any) {
-    return res.redirect(loginFailedRedirect(req.get('host') || undefined, proto, err.message || 'GitHub login failed'));
-  }
-});
-
-router.get('/auth/gitlab', async (req: Request, res: Response) => {
-  const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
-  const built = await buildAuthorizeUrl('gitlab', req.get('host') || undefined, proto);
-  if (built.ok) return res.redirect(built.url);
-  return res.status(built.status).json({ error: built.error });
-});
-
-router.get('/auth/gitlab/callback', async (req: Request, res: Response) => {
-  const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
-  try {
-    const result = await completeOAuthCallback({
-      provider: 'gitlab',
-      code: typeof req.query.code === 'string' ? req.query.code : undefined,
-      state: typeof req.query.state === 'string' ? req.query.state : undefined,
-      reqHost: req.get('host') || undefined,
-      proto,
-    });
-    return res.redirect(result.redirect);
-  } catch (err: any) {
-    return res.redirect(loginFailedRedirect(req.get('host') || undefined, proto, err.message || 'GitLab login failed'));
-  }
-});
-
-router.get('/users/init-demo', async (req: Request, res: Response) => {
-  try {
-    const ds = await getDb();
-    const repo = ds.getRepository(User);
-    const { user, created, removedDemo } = await ensureAdminUser(repo);
-    const { passwordHash: _, ...safe } = user as any;
-    return res.json({
-      message: created
-        ? `Created admin ${user.email}`
-        : `Admin ${user.email} already exists`,
-      removedDemo,
-      users: [{ ...safe, hasPassword: !!user.passwordHash }],
-    });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
-});
+// GET /users/init-demo was removed: it was unauthenticated, re-promoted/reactivated the
+// admin and leaked its id. The admin is seeded at startup (server.ts → ensureAdminUser).
 
 /**
  * POST /api/auth/set-password
@@ -237,11 +221,9 @@ router.post('/users', expressAuthenticate, expressRequireRole([UserRole.ADMIN, U
     if (!body.password || String(body.password).length < 8) {
       return res.status(400).json({ error: 'password is required (min 8 characters) so the user can log in' });
     }
-    const allowedRoles = Object.values(UserRole);
     const role = (body.role as UserRole) || UserRole.DEVELOPER;
-    if (!allowedRoles.includes(role)) {
-      return res.status(400).json({ error: `Invalid role. Allowed: ${allowedRoles.join(', ')}` });
-    }
+    const grantErr = await checkRoleGrant((req as AuthenticatedRequest).user, { role });
+    if (grantErr) return res.status(grantErr.status).json({ error: grantErr.error });
 
     const existingByEmail = await repo.findOne({ where: { email: body.email } });
     if (existingByEmail) {
@@ -291,13 +273,13 @@ router.put('/users/:id', expressAuthenticate, expressRequireRole([UserRole.ADMIN
     const user = await repo.findOne({ where: { id: req.params.id } });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
+    const grantErr = await checkRoleGrant((req as AuthenticatedRequest).user, { role: body.role, target: user });
+    if (grantErr) return res.status(grantErr.status).json({ error: grantErr.error });
+
     if (body.name !== undefined) user.name = body.name;
     if (body.email !== undefined) user.email = body.email;
     if (body.username !== undefined) user.username = body.username;
     if (body.role !== undefined) {
-      if (!Object.values(UserRole).includes(body.role)) {
-        return res.status(400).json({ error: `Invalid role. Allowed: ${Object.values(UserRole).join(', ')}` });
-      }
       user.role = body.role as UserRole;
     }
     if (body.gitlabId !== undefined) user.gitlabId = body.gitlabId;
@@ -340,6 +322,8 @@ router.delete('/users/:id', expressAuthenticate, expressRequireRole([UserRole.AD
     if ((req as AuthenticatedRequest).user?.id === user.id) {
       return res.status(400).json({ error: 'You cannot delete your own account' });
     }
+    const grantErr = await checkRoleGrant((req as AuthenticatedRequest).user, { target: user });
+    if (grantErr) return res.status(grantErr.status).json({ error: grantErr.error });
 
     await repo.remove(user);
 
@@ -423,6 +407,8 @@ router.post('/users/invite', expressAuthenticate, requirePermission('users.creat
     }
 
     const userRole = (role as UserRole) || UserRole.DEVELOPER;
+    const grantErr = await checkRoleGrant((req as AuthenticatedRequest).user, { role: userRole, roleId });
+    if (grantErr) return res.status(grantErr.status).json({ error: grantErr.error });
     const passwordHash = await bcrypt.hash(String(password), 10);
 
     const user = repo.create({
@@ -462,6 +448,9 @@ router.patch('/users/:id/role', expressAuthenticate, requirePermission('users.as
     const user = await repo.findOne({ where: { id } });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
+    const grantErr = await checkRoleGrant((req as AuthenticatedRequest).user, { role, roleId, target: user });
+    if (grantErr) return res.status(grantErr.status).json({ error: grantErr.error });
+
     if (role !== undefined) user.role = role as UserRole;
     if (roleId !== undefined) user.roleId = roleId || null;
 
@@ -477,7 +466,8 @@ router.patch('/users/:id/role', expressAuthenticate, requirePermission('users.as
       ip: req.ip,
     });
 
-    return res.json(saved);
+    const { passwordHash: _ph, ...safeSaved } = saved as any;
+    return res.json({ ...safeSaved, hasPassword: !!saved.passwordHash });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
@@ -529,6 +519,8 @@ router.post('/roles', expressAuthenticate, requirePermission('users.create'), as
   try {
     const { name, description, permissions } = req.body;
     if (!name) return res.status(400).json({ error: 'Role name is required' });
+    const permErr = await checkRolePermissions((req as AuthenticatedRequest).user, permissions);
+    if (permErr) return res.status(permErr.status).json({ error: permErr.error });
 
     const ds = await getDb();
     const repo = ds.getRepository(Role);
@@ -571,6 +563,14 @@ router.put('/roles/:id', expressAuthenticate, requirePermission('users.update'),
     }
 
     const { name, description, permissions, isActive } = req.body;
+    const actor = (req as AuthenticatedRequest).user;
+    const permErr = await checkRolePermissions(actor, permissions);
+    if (permErr) return res.status(permErr.status).json({ error: permErr.error });
+    // Editing a role that already grants more than the caller holds is also escalation-adjacent.
+    if (actor && actor.role !== UserRole.ADMIN) {
+      const existingErr = await checkRolePermissions(actor, role.permissions || []);
+      if (existingErr) return res.status(existingErr.status).json({ error: existingErr.error });
+    }
     if (name !== undefined) role.name = name;
     if (description !== undefined) role.description = description;
     if (permissions !== undefined) role.permissions = permissions;
@@ -646,230 +646,6 @@ router.post('/roles/:id/permissions/validate', expressAuthenticate, requirePermi
     const valid = (permissions || []).filter((p: string) => p in ALL_PERMS);
     const invalid = (permissions || []).filter((p: string) => !(p in ALL_PERMS));
     return res.json({ valid, invalid, totalValid: valid.length, totalInvalid: invalid.length });
-  } catch (err: any) {
-    return res.status(400).json({ error: err.message });
-  }
-});
-
-router.get('/oauth/.well-known/openid-configuration', (req: Request, res: Response) => {
-  const domain = process.env.DOMAIN || req.headers.host || 'localhost:3000';
-  const protocol = process.env.DOMAIN ? 'https' : (req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http');
-  const baseUrl = `${protocol}://${domain}/api/oauth`;
-
-  return res.json({
-    issuer: baseUrl,
-    authorization_endpoint: `${baseUrl}/authorize`,
-    token_endpoint: `${baseUrl}/token`,
-    userinfo_endpoint: `${baseUrl}/userinfo`,
-    jwks_uri: `${baseUrl}/jwks`,
-    response_types_supported: ['code', 'token', 'id_token'],
-    subject_types_supported: ['public'],
-    id_token_signing_alg_values_supported: ['RS256'],
-    scopes_supported: ['openid', 'profile', 'email', 'groups']
-  });
-});
-
-router.get('/oauth/jwks', (req: Request, res: Response) => {
-  try {
-    if (!oauthPublicKey) {
-      return res.status(500).json({ error: 'OAuth public key is not initialized' });
-    }
-    const pubKeyObject = crypto.createPublicKey(oauthPublicKey);
-    const jwk = pubKeyObject.export({ format: 'jwk' }) as any;
-    return res.json({
-      keys: [
-        {
-          kid: 'plat-key-1',
-          use: 'sig',
-          alg: 'RS256',
-          kty: 'RSA',
-          ...jwk
-        }
-      ]
-    });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
-router.get('/oauth/authorize', async (req: Request, res: Response) => {
-  try {
-    const { client_id, redirect_uri, response_type, scope, state, token } = req.query as Record<string, string>;
-    
-    if (!client_id || !redirect_uri) {
-      return res.status(400).json({ error: 'client_id and redirect_uri are required' });
-    }
-
-    if (!token) {
-      // User is not authenticated via API redirection yet. Redirect to portal oauth page
-      const host = req.headers.host || 'localhost:3000';
-      const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-      let portalUrl = process.env.PORTAL_URL;
-      if (!portalUrl) {
-        if (host.startsWith('api.')) {
-          portalUrl = `${protocol}://${host.substring(4)}`;
-        } else if (host.includes(':3000')) {
-          portalUrl = `${protocol}://${host.replace(':3000', ':4200')}`;
-        } else {
-          portalUrl = `${protocol}://${host}`;
-        }
-      }
-
-      const params = new URLSearchParams({
-        client_id,
-        redirect_uri,
-        response_type: response_type || 'code',
-        scope: scope || 'openid',
-        state: state || ''
-      }).toString();
-
-      return res.redirect(`${portalUrl}/oauth/authorize?${params}`);
-    }
-
-    // Validate the user's portal JWT token
-    let decoded: any;
-    try {
-      decoded = jwt.verify(token, JWT_SECRET);
-    } catch {
-      return res.status(401).json({ error: 'Invalid or expired portal token' });
-    }
-
-    // Generate authorization code
-    const code = uuidv4();
-    authCodes.set(code, {
-      userId: decoded.id,
-      clientId: client_id,
-      redirectUri: redirect_uri,
-      state: state || ''
-    });
-    console.log(`[oauth/authorize] Generated code: ${code} for userId: ${decoded.id}, clientId: ${client_id}. Map size: ${authCodes.size}`);
-
-    // Clean up code after 5 minutes
-    setTimeout(() => {
-      if (authCodes.has(code)) {
-        console.log(`[oauth/timeout] Cleaning up expired code: ${code}`);
-        authCodes.delete(code);
-      }
-    }, 5 * 60 * 1000);
-
-    return res.redirect(`${redirect_uri}?code=${code}&state=${state || ''}`);
-  } catch (err: any) {
-    return res.status(400).json({ error: err.message });
-  }
-});
-
-router.post('/oauth/token', async (req: Request, res: Response) => {
-  try {
-    const { code, client_id, redirect_uri, grant_type } = req.body;
-    console.log(`[oauth/token] Received exchange request for code: ${code}, client_id: ${client_id}, redirect_uri: ${redirect_uri}`);
-    
-    // Extract client_id from HTTP Basic Auth header if not present in body
-    let clientId = client_id;
-    const authHeader = req.headers.authorization;
-    if (!clientId && authHeader && authHeader.toLowerCase().startsWith('basic ')) {
-      try {
-        const credentials = Buffer.from(authHeader.substring(6), 'base64').toString('utf-8');
-        clientId = credentials.split(':')[0];
-        console.log(`[oauth/token] Extracted clientId from Basic Auth header: ${clientId}`);
-      } catch (e: any) {
-        console.error('[oauth/token] Failed to parse basic auth header:', e.message);
-      }
-    }
-
-    const session = authCodes.get(code);
-
-    if (!session) {
-      console.warn(`[oauth/token] Code NOT found in map. Requested code: ${code}. Current map keys:`, Array.from(authCodes.keys()));
-      return res.status(400).json({ error: 'Invalid or expired authorization code' });
-    }
-
-    // Fall back to session clientId if still undefined
-    if (!clientId) {
-      clientId = session.clientId;
-      console.log(`[oauth/token] Using session clientId fallback: ${clientId}`);
-    }
-
-    console.log(`[oauth/token] Found session for code: ${code}. userId: ${session.userId}, clientId: ${session.clientId}`);
-    // Optional validation (we consume it once)
-    authCodes.delete(code);
-
-    const ds = await getDb();
-    const user = await ds.getRepository(User).findOne({ where: { id: session.userId } });
-    if (!user) {
-      console.warn(`[oauth/token] User not found for userId: ${session.userId}`);
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const host = req.headers.host || 'localhost:3000';
-    const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-    const issuer = `${protocol}://${host}/api/oauth`;
-
-    // Sign Access Token (standard JWT signed with RSA private key)
-    const accessToken = jwt.sign(
-      { id: user.id, email: user.email, name: user.name, role: user.role },
-      oauthPrivateKey,
-      { algorithm: 'RS256', expiresIn: '1h', issuer, audience: clientId, keyid: 'plat-key-1' }
-    );
-
-    // Sign ID Token (standard OIDC claims signed with RSA private key)
-    const idToken = jwt.sign(
-      {
-        iss: issuer,
-        sub: user.id,
-        aud: clientId,
-        exp: Math.floor(Date.now() / 1000) + 3600,
-        iat: Math.floor(Date.now() / 1000),
-        name: user.name,
-        email: user.email,
-        email_verified: true,
-        groups: [user.role],
-        roles: [user.role]
-      },
-      oauthPrivateKey,
-      { algorithm: 'RS256', keyid: 'plat-key-1' }
-    );
-
-    return res.json({
-      access_token: accessToken,
-      token_type: 'Bearer',
-      expires_in: 3600,
-      id_token: idToken
-    });
-  } catch (err: any) {
-    console.error('[oauth/token error]', err);
-    return res.status(400).json({ error: err.message });
-  }
-});
-
-router.get('/oauth/userinfo', async (req: Request, res: Response) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Authorization header with Bearer token is required' });
-    }
-    const token = authHeader.split(' ')[1];
-
-    let decoded: any;
-    try {
-      decoded = jwt.verify(token, oauthPublicKey);
-    } catch (err: any) {
-      return res.status(401).json({ error: `Invalid access token: ${err.message}` });
-    }
-
-    const ds = await getDb();
-    const user = await ds.getRepository(User).findOne({ where: { id: decoded.id } });
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    return res.json({
-      sub: user.id,
-      name: user.name,
-      email: user.email,
-      email_verified: true,
-      groups: [user.role],
-      roles: [user.role]
-    });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }

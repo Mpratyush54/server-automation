@@ -1,15 +1,20 @@
+import { parseGitRemote } from '../lib/git-remote';
+import { requireProjectAccess } from '../lib/project-access';
+import { ProjectAccessRole } from '../entities/ProjectMember';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { Project } from '../entities/Project';
 import { expressAuthenticate, expressRequireRole, AuthenticatedRequest } from '../middleware/auth';
 import { UserRole } from '../entities/User';
-import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 
 router.post('/cicd/register-webhook/:projectId', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
+    const access = await requireProjectAccess(req as AuthenticatedRequest, projectId, ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
+
     const ds = await getDb();
     const project = await ds.getRepository(Project).findOne({ where: { id: projectId } });
     if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -19,16 +24,20 @@ router.post('/cicd/register-webhook/:projectId', expressAuthenticate, expressReq
     }
 
     const webhookUrl = `${req.protocol}://${req.get('host')}/api/webhooks/gitlab`;
-    const token = process.env.GITLAB_WEBHOOK_SECRET || uuidv4();
+    const token = process.env.GITLAB_WEBHOOK_SECRET || process.env.GITLAB_WEBHOOK_TOKEN;
+    const remote = parseGitRemote(project.repositoryUrl);
+    if (!remote) return res.status(400).json({ error: 'Unsupported repository origin' });
 
-    if (project.repositoryUrl.includes('gitlab')) {
-      const GITLAB_API = process.env.GITLAB_API_URL || 'https://gitlab.com/api/v4';
+    if (remote.provider === 'gitlab') {
+      const GITLAB_API = remote.apiBase;
+      if (!token) return res.status(500).json({ error: 'GITLAB_WEBHOOK_SECRET must be configured' });
       const TOKEN = process.env.GITLAB_TOKEN;
       if (!TOKEN) return res.status(500).json({ error: 'GITLAB_TOKEN not configured' });
 
-      const projectIdPath = project.repositoryUrl.replace(/.*gitlab\.com\//, '').replace(/\.git$/, '');
+      const projectIdPath = `${remote.owner}/${remote.repo}`;
       const response = await fetch(`${GITLAB_API}/projects/${encodeURIComponent(projectIdPath)}/hooks`, {
         method: 'POST',
+        redirect: 'error',
         headers: {
           'Authorization': `Bearer ${TOKEN}`,
           'Content-Type': 'application/json',
@@ -48,16 +57,17 @@ router.post('/cicd/register-webhook/:projectId', expressAuthenticate, expressReq
       return res.json({ success: true, message: 'Webhook registered on GitLab', webhookUrl });
     }
 
-    if (project.repositoryUrl.includes('github')) {
+    if (remote.provider === 'github') {
       const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
       const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
       if (!GITHUB_TOKEN || !GITHUB_WEBHOOK_SECRET) {
         return res.status(500).json({ error: 'GITHUB_TOKEN and GITHUB_WEBHOOK_SECRET must be configured' });
       }
 
-      const ownerRepo = project.repositoryUrl.replace(/.*github\.com\//, '').replace(/\.git$/, '');
+      const ownerRepo = `${remote.owner}/${remote.repo}`;
       const response = await fetch(`https://api.github.com/repos/${ownerRepo}/hooks`, {
         method: 'POST',
+        redirect: 'error',
         headers: {
           'Authorization': `token ${GITHUB_TOKEN}`,
           'Accept': 'application/vnd.github.v3+json',

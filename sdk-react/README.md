@@ -31,7 +31,7 @@ const platformConfig = {
 export function App() {
   return (
     <PlatformProvider config={platformConfig}>
-      <ErrorBoundary>
+      <ErrorBoundary config={platformConfig}>
         <Dashboard />
       </ErrorBoundary>
       <BugReporterWidget config={platformConfig} />
@@ -56,17 +56,17 @@ function Dashboard() {
 
 | Export | Role |
 |--------|------|
-| `PlatformProvider` | Context + Axios client with latency interceptors |
+| `PlatformProvider` | Context + Axios client (sends `Authorization: Bearer <token>`) with latency interceptors; metrics go out on a separate client |
 | `usePlatform()` | `{ config, api }` — must be under the provider |
-| `ErrorBoundary` | Catches render errors and reports them |
-| `BugReporterWidget` | Floating 🐛 UI; attaches console + network snapshots |
+| `ErrorBoundary` | Catches render errors and reports them (`config` prop, or the enclosing provider's) |
+| `BugReporterWidget` | Floating 🐛 UI; attaches redacted console + request-URL history; screenshot only with `captureScreenshot` |
 
 ## `PlatformConfig`
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `apiBase` | yes | Platform API base URL |
-| `token` | yes | SDK bearer token |
+| `token` | yes | SDK token (`sdk_live_…` / `sdk_test_…`), sent as `Authorization: Bearer` |
 | `projectId` | yes | Project id used when posting metrics |
 | `environment` | no | Default `production` in metric payloads |
 | `appName` | no | App label |

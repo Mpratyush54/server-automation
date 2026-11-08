@@ -1,0 +1,29 @@
+# Root build context: platform/portal/Dockerfile.public and examples/**/Dockerfile.
+# Keep secrets, VCS metadata, dependencies and test material out of images.
+.git
+.github
+.gitignore
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/node_modules
+**/dist
+**/coverage
+**/tests
+**/__tests__
+**/*.tar
+**/*.tar.gz
+**/*.log
+**/*.tsbuildinfo
+.cache
+.claude
+.central-memory
+.cursor
+.hyperframes
+renders
+videos
+platformctl
+chats.json
+token.json
+replacements.txt

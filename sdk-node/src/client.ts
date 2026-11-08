@@ -22,7 +22,6 @@ export interface PlatformOptions {
   /** Ignored — K8s namespace is always assigned by the platform server */
   namespace?: string;
   hostname?: string;
-  infisicalEnv?: string;
   databases?: string[];
   sdkToken?: string;
   /** GitHub/GitLab repo URL — must match the project repositoryUrl on the server */
@@ -81,7 +80,13 @@ export class PlatformClient {
 
     if (this.options.sdkToken) {
       this.http.defaults.headers.common['Authorization'] = `Bearer ${this.options.sdkToken}`;
+    } else {
+      console.warn('[platform] No SDK token configured (set sdkToken or PLATFORM_SDK_TOKEN); Platform API calls will be rejected.');
     }
+
+    // Re-init safety: never leave a second set of timers running.
+    if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+    if (this.cpuSampleInterval) clearInterval(this.cpuSampleInterval);
 
     // Configure context inside singletons
     this.logger.configure(
@@ -111,7 +116,6 @@ export class PlatformClient {
         hostname: this.options.hostname,
         metadata: { sdkVersion: '1.0.0' },
         dbTypes: this.options.databases,
-        infisicalEnv: this.options.infisicalEnv,
         repositoryUrl: this.options.repositoryUrl,
         gitPath: this.options.gitPath,
         gitRevision: this.options.gitRevision || this.options.branch,
@@ -175,6 +179,7 @@ export class PlatformClient {
         });
       } catch {}
     }, 15000);
+    (this.heartbeatInterval as any).unref?.();
 
     // Real CPU sampling every 10 seconds
     this.cpuSampleInterval = setInterval(async () => {
@@ -193,6 +198,7 @@ export class PlatformClient {
         this.cpuPct = total > 0 ? Math.round((1 - idle / total) * 100) : 0;
       } catch {}
     }, 10000);
+    (this.cpuSampleInterval as any).unref?.();
 
     // Setup DB manager pools (ensure/init via platform if missing)
     if (this.options.databases!.includes('postgres')) {
@@ -204,7 +210,10 @@ export class PlatformClient {
         );
         this.db.postgres = new PostgresManager(creds.postgres || {});
         await this.db.postgres.connect();
-      } catch { this.db.postgres = new PostgresManager({}); }
+      } catch (err: any) {
+        console.error('[platform] PostgreSQL setup failed:', err.message);
+        if (!this.db.postgres) this.db.postgres = new PostgresManager({});
+      }
     }
 
     if (this.options.databases!.includes('mongo')) {
@@ -216,7 +225,10 @@ export class PlatformClient {
         );
         this.db.mongo = new MongoManager(creds.mongo || {});
         await this.db.mongo.connect();
-      } catch { this.db.mongo = new MongoManager({}); }
+      } catch (err: any) {
+        console.error('[platform] MongoDB setup failed:', err.message);
+        if (!this.db.mongo) this.db.mongo = new MongoManager({});
+      }
     }
 
     if (this.options.databases!.includes('redis')) {
@@ -228,7 +240,10 @@ export class PlatformClient {
         );
         this.db.redis = new RedisManager(creds.redis || {});
         await this.db.redis.connect();
-      } catch { this.db.redis = new RedisManager({}); }
+      } catch (err: any) {
+        console.error('[platform] Redis setup failed:', err.message);
+        if (!this.db.redis) this.db.redis = new RedisManager({});
+      }
     }
 
     this.initialized = true;

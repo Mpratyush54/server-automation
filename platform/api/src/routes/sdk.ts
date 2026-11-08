@@ -7,8 +7,8 @@ import { ServiceRegistration } from '../entities/ServiceRegistration';
 import { DbConnection, DbConnectionStatus, DbType } from '../entities/DbConnection';
 import { ProjectConfig } from '../entities/ProjectConfig';
 import { Secret } from '../entities/Secret';
-import { sdkTokenAuth, expressAuthenticate } from '../middleware/auth';
-import { fetchSecrets } from '../lib/infisical';
+import { sdkTokenAuth, expressAuthenticate, sdkProjectMatches, AuthenticatedRequest } from '../middleware/auth';
+import { requireProjectAccess } from '../lib/project-access';
 import { decryptValue } from '../lib/secrets-encryption';
 import { forwardToLoki } from '../lib/lokilog';
 import { LogModel } from '../schemas/Log';
@@ -26,6 +26,88 @@ import { assignedNamespace, assignedEnvHost, projectSlug as makeProjectSlug } fr
 
 const router = Router();
 
+/**
+ * SDK credentials are bound to exactly one project. Any project reference the client
+ * sends (UUID or name) must be that project; otherwise respond 403 and return true.
+ */
+function rejectForeignProject(req: Request, res: Response, ...refs: unknown[]): boolean {
+  const authReq = req as AuthenticatedRequest;
+  for (const ref of refs) {
+    if (!sdkProjectMatches(authReq, ref)) {
+      res.status(403).json({ error: 'Forbidden: SDK token is not valid for this project' });
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * True when a value is one of the platform's own secrets. project-db-ensure copies e.g. the
+ * shared REDIS_PASSWORD into project secrets, so /sdk/config must filter by value, not key.
+ */
+function isPlatformSecretValue(value: unknown): boolean {
+  if (typeof value !== 'string' || value.length < 4) return false;
+  const platformValues = [
+    process.env.POSTGRES_PASSWORD,
+    process.env.REDIS_PASSWORD,
+    process.env.MONGODB_URI,
+    process.env.MONGO_URI,
+    process.env.JWT_SECRET,
+    process.env.SECRETS_ENCRYPTION_KEY,
+  ].filter((v): v is string => !!v && v.length >= 4);
+  return platformValues.includes(value);
+}
+
+/**
+ * Defence in depth: never hand the platform's own database credentials to an SDK client.
+ * project-db-ensure returns per-project credentials (Postgres role, MongoDB user, Redis ACL
+ * user) or { status: 'error' }; anything that looks platform-owned is replaced by an error.
+ */
+function withoutPlatformCredentials(result: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = { ...result };
+  const refused = (db: string) => ({
+    status: 'error',
+    error: `${db} credentials for this project are not available (provisioning incomplete). Platform credentials are never returned.`,
+  });
+
+  const pg = out.postgres;
+  if (pg && pg.status !== 'error') {
+    const platUser = process.env.POSTGRES_USER || 'plat';
+    const platPass = process.env.POSTGRES_PASSWORD || 'plat';
+    const platDb = process.env.POSTGRES_DB || 'plat_platform';
+    if (!pg.user || !pg.password || pg.user === platUser || pg.user === 'postgres' || pg.password === platPass || pg.database === platDb) {
+      out.postgres = refused('postgres');
+    }
+  }
+
+  const mongo = out.mongo;
+  if (mongo) {
+    const platUri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/plat_platform';
+    const dbPath = (uri: string) => {
+      try { return new URL(uri).pathname.replace(/^\/+/, ''); } catch { return uri.split('?')[0].split('/').slice(3).join('/'); }
+    };
+    const uriUser = (uri: string) => {
+      const m = /^mongodb(?:\+srv)?:\/\/([^@/]*)@/.exec(uri);
+      return m ? decodeURIComponent(m[1].split(':')[0]) : '';
+    };
+    if (mongo.status !== 'error' && (!mongo.uri || mongo.uri === platUri || dbPath(mongo.uri) === dbPath(platUri) || dbPath(mongo.uri) === ''
+      || !uriUser(mongo.uri) || uriUser(mongo.uri) === uriUser(platUri))) {
+      // Only a per-project MongoDB user (readWrite on its own database) may be handed out.
+      out.mongo = refused('mongo');
+    }
+  }
+
+  const redis = out.redis;
+  const platRedisPass = process.env.REDIS_PASSWORD || '';
+  if (redis && redis.status !== 'error' && (!redis.keyPrefix || !redis.username || redis.username === 'default'
+    || !redis.password || (platRedisPass && redis.password === platRedisPass))) {
+    // Only a per-project ACL user confined to its key prefix is isolation; the default user or
+    // the platform's own Redis password would share the whole keyspace.
+    out.redis = refused('redis');
+  }
+  return out;
+}
+
 router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) => {
   try {
     const body = req.body;
@@ -35,20 +117,15 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
     if (!body?.environmentName) {
       return res.status(400).json({ error: 'environmentName is required' });
     }
+    if (rejectForeignProject(req, res, body.projectName, body.projectId)) return;
     const ds = await getDb();
-    
-    // Resolve project ID by name if needed
+
+    // The project is always the one the SDK token was issued for — never created or
+    // selected from the request body.
     const projectRepo = ds.getRepository(Project);
-    let project = await projectRepo.findOne({ where: { name: body.projectName } });
+    let project = await projectRepo.findOne({ where: { id: (req as AuthenticatedRequest).projectId } });
     if (!project) {
-      // Create project on-the-fly to facilitate local testing
-      project = projectRepo.create({
-        name: body.projectName,
-        stack: StackType.NODEJS,
-        domain: body.domain || process.env.DOMAIN || null,
-        repositoryUrl: body.repositoryUrl || null,
-      });
-      project = await projectRepo.save(project);
+      return res.status(404).json({ error: 'Project for this SDK token not found' });
     } else {
       let dirty = false;
       if (body.domain && body.domain !== project.domain) {
@@ -124,8 +201,6 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       registration.version = body.version ?? registration.version;
       registration.branch = body.branch ?? registration.branch;
       registration.commitSha = body.commitSha ?? registration.commitSha;
-      registration.infisicalProject = body.infisicalProject ?? registration.infisicalProject;
-      registration.infisicalEnv = body.infisicalEnv ?? registration.infisicalEnv;
       registration.envKeys = body.envKeys ?? registration.envKeys;
       registration.dbTypes = body.dbTypes ?? registration.dbTypes;
       registration.metadata = body.metadata ?? registration.metadata;
@@ -141,8 +216,6 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
         version: body.version || '1.0.0',
         branch: body.branch || 'main',
         commitSha: body.commitSha || 'unknown',
-        infisicalProject: body.infisicalProject || 'default',
-        infisicalEnv: body.infisicalEnv || 'dev',
         envKeys: body.envKeys || [],
         dbTypes: body.dbTypes || [],
         status: 'online',
@@ -321,9 +394,12 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       const appsV1 = kc.makeApiClient(k8s.AppsV1Api);
       const coreV1 = kc.makeApiClient(k8s.CoreV1Api);
       const networkV1 = kc.makeApiClient(k8s.NetworkingV1Api);
-      const ns = 'platform';
+      // Project namespace only — never the platform's own namespace (SDK tokens are project-scoped).
+      const ns = destNamespace;
       const deployName = `${project.name}-${body.serviceName || 'app'}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
-      const image = body.image || `${project.name}:latest`;
+      // Client-supplied images are not accepted: an SDK token must not choose what runs in the cluster.
+      const image = `${project.name}:latest`;
+      try { await coreV1.createNamespace({ body: { metadata: { name: ns } } as any }); } catch {}
 
       // Deployment
       const deployment = {
@@ -413,17 +489,17 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
 router.post('/sdk/deregister', sdkTokenAuth, async (req: Request, res: Response) => {
   try {
     const { projectId, serviceName } = req.body;
+    if (rejectForeignProject(req, res, projectId)) return;
+    if (!serviceName || typeof serviceName !== 'string') {
+      return res.status(400).json({ error: 'serviceName is required' });
+    }
     const ds = await getDb();
-    
-    // Resolve project
-    const project = await ds.getRepository(Project).findOne({ where: { name: projectId } });
-    if (project) {
-      const repo = ds.getRepository(ServiceRegistration);
-      const reg = await repo.findOne({ where: { projectId: project.id, serviceName } });
-      if (reg) {
-        reg.status = 'offline';
-        await repo.save(reg);
-      }
+
+    const repo = ds.getRepository(ServiceRegistration);
+    const reg = await repo.findOne({ where: { projectId: (req as AuthenticatedRequest).projectId, serviceName } });
+    if (reg) {
+      reg.status = 'offline';
+      await repo.save(reg);
     }
     return res.json({ success: true });
   } catch (err: any) {
@@ -433,19 +509,22 @@ router.post('/sdk/deregister', sdkTokenAuth, async (req: Request, res: Response)
 
 router.post('/sdk/heartbeat', sdkTokenAuth, async (req: Request, res: Response) => {
   try {
-    const body = req.body;
+    const body = req.body || {};
+    if (rejectForeignProject(req, res, body.projectId)) return;
+    const tokenProjectId = (req as AuthenticatedRequest).projectId!;
     const ds = await getDb();
 
     const regRepo = ds.getRepository(ServiceRegistration);
-    
-    // Lookup registration
-    let registration = await regRepo.findOne({ where: { id: body.registrationId } });
+
+    // Lookup registration — always constrained to the token's project
+    let registration: ServiceRegistration | null = null;
+    if (body.registrationId && typeof body.registrationId === 'string') {
+      registration = await regRepo.findOne({ where: { id: body.registrationId, projectId: tokenProjectId } });
+      if (registration && registration.projectId !== tokenProjectId) registration = null;
+    }
     if (!registration) {
-      // Lookup by project name fallback
-      const project = await ds.getRepository(Project).findOne({ where: { name: body.projectId } });
-      if (project) {
-        registration = await regRepo.findOne({ where: { projectId: project.id } });
-      }
+      registration = await regRepo.findOne({ where: { projectId: tokenProjectId } });
+      if (registration && registration.projectId !== tokenProjectId) registration = null;
     }
 
     if (registration) {
@@ -477,12 +556,9 @@ router.post('/sdk/heartbeat', sdkTokenAuth, async (req: Request, res: Response) 
     }
 
     await connectMongo();
-    const projectRef = registration
-      ? { id: registration.projectId, name: body.projectId }
-      : await resolveProjectRef(ds, body.projectId);
     await MetricsRawModel.create({
       registrationId: registration?.id || null,
-      projectId: projectRef?.id || registration?.projectId || body.projectId,
+      projectId: tokenProjectId,
       environment: body.environment || registration?.environmentId || 'development',
       cpuPct: body.cpuPct || Math.random() * 20,
       memoryMb: body.memoryMb || 128 + Math.random() * 64,
@@ -515,23 +591,16 @@ const handleSdkLogs = async (req: Request, res: Response) => {
       return res.status(201).json({ received: 0 });
     }
 
+    // Every entry must belong to the token's project (UUID or name, or omitted).
+    if (rejectForeignProject(req, res, body.projectId, ...logs.map((l) => l?.projectId))) return;
+    const tokenProjectId = (req as AuthenticatedRequest).projectId!;
+
     await connectMongo();
-    const ds = await getDb();
-    
-    // Resolve project IDs if SDK sent projectNames
-    const projectRepo = ds.getRepository(Project);
     const resolvedLogs = [];
 
     for (const log of logs) {
-      let resolvedProjectId = log.projectId;
-      // If it looks like a projectName (non-uuid), resolve it
-      if (log.projectId && !log.projectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-        const project = await projectRepo.findOne({ where: { name: log.projectId } });
-        if (project) resolvedProjectId = project.id;
-      }
-
       resolvedLogs.push({
-        projectId: resolvedProjectId,
+        projectId: tokenProjectId,
         environment: log.environment || 'development',
         branch: log.branch || 'main',
         commitSha: log.commitSha || 'unknown',
@@ -584,19 +653,21 @@ router.get('/sdk/config', sdkTokenAuth, async (req: Request, res: Response) => {
     if (!projectId) {
       return res.status(400).json({ error: 'projectId is required' });
     }
+    if (rejectForeignProject(req, res, projectId)) return;
+    if (environmentId !== undefined && typeof environmentId !== 'string') {
+      return res.status(400).json({ error: 'environmentId must be a string' });
+    }
+    // Always the token's project — never resolved from the query.
+    const resolvedProjectId = (req as AuthenticatedRequest).projectId!;
 
     const ds = await getDb();
-    
+
     // Resolve environment name to UUID if needed
     if (environmentId && !environmentId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
       const envRepo = ds.getRepository(Environment);
-      const env = await envRepo.findOne({ where: { name: environmentId as any, projectId } });
+      const env = await envRepo.findOne({ where: { name: environmentId as any, projectId: resolvedProjectId } });
       if (env) environmentId = env.id;
     }
-    // Resolve project ID by name if needed
-    let resolvedProjectId = projectId;
-    const project = await ds.getRepository(Project).findOne({ where: { name: projectId } });
-    if (project) resolvedProjectId = project.id;
 
     const repo = ds.getRepository(ProjectConfig);
     const allConfigs = await repo.find({
@@ -619,7 +690,10 @@ router.get('/sdk/config', sdkTokenAuth, async (req: Request, res: Response) => {
       for (const s of allSecrets) {
         if (s.environmentId && environmentId && s.environmentId !== environmentId) continue;
         try {
-          result[s.key] = decryptValue(s.encryptedValue, masterKey);
+          const value = decryptValue(s.encryptedValue, masterKey);
+          // Platform-owned credentials copied into project secrets are never served to SDKs.
+          if (isPlatformSecretValue(value)) continue;
+          result[s.key] = value;
         } catch {}
       }
     }
@@ -637,11 +711,13 @@ router.get('/sdk/db-credentials', sdkTokenAuth, async (req: Request, res: Respon
       return res.status(400).json({ error: 'projectId is required' });
     }
 
-    const ds = await getDb();
-    let project = await ds.getRepository(Project).findOne({ where: { name: projectId } });
-    if (!project) {
-      project = await ds.getRepository(Project).findOne({ where: { id: projectId } });
+    if (rejectForeignProject(req, res, projectId)) return;
+    if ((dbTypes !== undefined && typeof dbTypes !== 'string') || (environment !== undefined && typeof environment !== 'string')) {
+      return res.status(400).json({ error: 'dbTypes and environment must be strings' });
     }
+
+    const ds = await getDb();
+    const project = await ds.getRepository(Project).findOne({ where: { id: (req as AuthenticatedRequest).projectId } });
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
@@ -650,7 +726,7 @@ router.get('/sdk/db-credentials', sdkTokenAuth, async (req: Request, res: Respon
     const types = dbTypes ? dbTypes.split(',').map((t) => t.trim()).filter(Boolean) : ['postgres', 'mongo', 'redis'];
     const { resolveProjectDbCredentials } = await import('../lib/project-db-ensure');
     const result = await resolveProjectDbCredentials(project.id, project.name, envName, types);
-    return res.json(result);
+    return res.json(withoutPlatformCredentials(result));
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
@@ -660,13 +736,13 @@ router.post('/sdk/api-metrics', sdkTokenAuth, async (req: Request, res: Response
   try {
     const { metrics, projectId } = req.body;
     if (!projectId) return res.status(400).json({ error: 'projectId is required' });
+    if (rejectForeignProject(req, res, projectId)) return;
     if (metrics === undefined || metrics === null) return res.status(400).json({ error: 'metrics array is required' });
     if (!Array.isArray(metrics)) return res.status(400).json({ error: 'metrics must be an array' });
+    if (rejectForeignProject(req, res, ...metrics.map((m: any) => m?.projectId))) return;
     if (metrics.length === 0) return res.status(201).json({ saved: 0 });
     await connectMongo();
-    const ds = await getDb();
-    const projectRef = await resolveProjectRef(ds, projectId || metrics[0]?.projectId);
-    const resolvedId = projectRef?.id || projectId || metrics[0]?.projectId || 'unknown';
+    const resolvedId = (req as AuthenticatedRequest).projectId!;
     const docs = metrics.map((m: any) => ({
       projectId: resolvedId,
       route: m.route || '/',
@@ -689,8 +765,13 @@ router.get('/sdk/api-metrics', expressAuthenticate, async (req: Request, res: Re
   try {
     const { projectId, environment, from, to } = req.query as Record<string, string>;
     if (!projectId) return res.status(400).json({ error: 'projectId required' });
-    await connectMongo();
+    if (typeof projectId !== 'string') return res.status(400).json({ error: 'projectId must be a string' });
     const ds = await getDb();
+    const ref = await resolveProjectRef(ds, projectId);
+    if (!ref) return res.status(404).json({ error: 'Project not found' });
+    const access = await requireProjectAccess(req as AuthenticatedRequest, ref.id);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
+    await connectMongo();
     const { projectIdMongoFilter } = await import('../lib/project-resolve');
     const idFilter = await projectIdMongoFilter(ds, projectId);
     const dateFilter: any = {};
@@ -731,9 +812,11 @@ router.post('/sdk/bug-report', sdkTokenAuth, async (req: Request, res: Response)
   try {
     const body = req.body;
     if (!body.projectId || !body.description) return res.status(400).json({ error: 'projectId and description required' });
+    if (rejectForeignProject(req, res, body.projectId)) return;
+    const tokenProjectId = (req as AuthenticatedRequest).projectId!;
     await connectMongo();
     const report = await BugReportModel.create({
-      projectId: body.projectId,
+      projectId: tokenProjectId,
       environment: body.environment || 'unknown',
       description: body.description,
       category: body.category || 'Bug',
@@ -747,7 +830,7 @@ router.post('/sdk/bug-report', sdkTokenAuth, async (req: Request, res: Response)
     (async () => {
       try {
         const ds = await getDb();
-        const project = await ds.getRepository(Project).findOne({ where: { id: body.projectId } });
+        const project = await ds.getRepository(Project).findOne({ where: { id: tokenProjectId } });
         if (project && project.clickupListId) {
           const taskTitle = `[BUG] ${body.category || 'Bug'}: ${body.description.substring(0, 80)}`;
           await postComment('auto', `Bug report created:\n\n${taskTitle}\n\nEnvironment: ${body.environment || 'unknown'}`);

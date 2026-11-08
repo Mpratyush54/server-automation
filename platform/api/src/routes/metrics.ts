@@ -1,9 +1,10 @@
+import { requireProjectAccess, listAccessibleProjectIds } from '../lib/project-access';
 import { Router, Request, Response } from 'express';
 import { connectMongo } from '../config/mongoose';
 import { getDb } from '../config/database';
 import { MetricsRawModel } from '../schemas/MetricsRaw';
-import { expressAuthenticate } from '../middleware/auth';
-import { projectIdMongoFilter } from '../lib/project-resolve';
+import { expressAuthenticate, AuthenticatedRequest } from '../middleware/auth';
+import { projectIdMongoFilter, resolveProjectRef } from '../lib/project-resolve';
 
 const router = Router();
 
@@ -12,9 +13,19 @@ router.get('/metrics', expressAuthenticate, async (req: Request, res: Response) 
     const { projectId } = req.query as Record<string, string>;
     await connectMongo();
     const ds = await getDb();
-    const filter: Record<string, any> = projectId
-      ? await projectIdMongoFilter(ds, projectId)
-      : {};
+    const auth = req as AuthenticatedRequest;
+    const ids = await listAccessibleProjectIds(auth.user, auth.agentToken);
+    const filter: Record<string, any> = {};
+    if (projectId) {
+      const ref = await resolveProjectRef(ds, String(projectId));
+      if (!ref) return res.status(404).json({ error: 'Project not found' });
+      const access = await requireProjectAccess(auth, ref.id);
+      if (access.ok === false) return res.status(access.status).json({ error: access.error });
+      Object.assign(filter, await projectIdMongoFilter(ds, ref.id));
+    } else if (ids !== null) {
+      filter.$or = ids.length ? await Promise.all(ids.map(id => projectIdMongoFilter(ds, id))) : [{ projectId: { $in: [] } }];
+    }
+
 
     const raw = await MetricsRawModel.find(filter).sort({ timestamp: -1 }).limit(100).lean();
     return res.json(raw);
@@ -28,9 +39,19 @@ router.get('/metrics/aggregated', expressAuthenticate, async (req: Request, res:
     const { projectId } = req.query as Record<string, string>;
     await connectMongo();
     const ds = await getDb();
-    const filter: Record<string, any> = projectId
-      ? await projectIdMongoFilter(ds, projectId)
-      : {};
+    const auth = req as AuthenticatedRequest;
+    const ids = await listAccessibleProjectIds(auth.user, auth.agentToken);
+    const filter: Record<string, any> = {};
+    if (projectId) {
+      const ref = await resolveProjectRef(ds, String(projectId));
+      if (!ref) return res.status(404).json({ error: 'Project not found' });
+      const access = await requireProjectAccess(auth, ref.id);
+      if (access.ok === false) return res.status(access.status).json({ error: access.error });
+      Object.assign(filter, await projectIdMongoFilter(ds, ref.id));
+    } else if (ids !== null) {
+      filter.$or = ids.length ? await Promise.all(ids.map(id => projectIdMongoFilter(ds, id))) : [{ projectId: { $in: [] } }];
+    }
+
 
     const raw = await MetricsRawModel.find(filter).sort({ timestamp: -1 }).limit(20).lean();
     if (raw.length === 0) return res.json({ cpuAvg: 0, memoryAvg: 0, errorRate: 0 });

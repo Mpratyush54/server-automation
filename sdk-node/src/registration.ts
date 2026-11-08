@@ -11,7 +11,6 @@ export interface RegisterPayload {
   hostname?: string;
   metadata?: Record<string, any>;
   dbTypes?: string[];
-  infisicalEnv?: string;
   /** Wires ArgoCD Application to this Git repo on register */
   repositoryUrl?: string;
   /** Manifests path in repo (e.g. examples/sdk-demo/k8s) */

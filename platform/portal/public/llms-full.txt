@@ -180,8 +180,6 @@ sitemap.xml: https://platform.pratyushes.dev/sitemap.xml
   html: https://platform.pratyushes.dev/docs/troubleshooting/helm-name-reuse
 - https://platform.pratyushes.dev/docs/troubleshooting/image-pull-backoff.md
   html: https://platform.pratyushes.dev/docs/troubleshooting/image-pull-backoff
-- https://platform.pratyushes.dev/docs/troubleshooting/infisical-db-missing.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/infisical-db-missing
 - https://platform.pratyushes.dev/docs/troubleshooting/ingress-ownership.md
   html: https://platform.pratyushes.dev/docs/troubleshooting/ingress-ownership
 - https://platform.pratyushes.dev/docs/troubleshooting/k3s-port-conflict.md

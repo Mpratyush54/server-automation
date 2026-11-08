@@ -1,8 +1,9 @@
 import { Component, Inject, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { HttpClient } from '@angular/common/http';
+import { HttpBackend, HttpClient } from '@angular/common/http';
 import { PLATFORM_CONFIG, PlatformConfig } from './platform-config';
+import { platformHeaders, redactSensitive } from './platform-http';
 
 interface ConsoleEntry {
   level: string;
@@ -34,7 +35,7 @@ interface ConsoleEntry {
             class="platform-bug-textarea"
           ></textarea>
           <div class="platform-bug-hint">
-            Console logs and network history will be attached automatically.
+            Recent console messages (credentials redacted), the page URL and your browser info will be attached.
           </div>
         </div>
         <div class="platform-bug-footer">
@@ -93,17 +94,24 @@ export class BugReporterComponent implements OnInit, OnDestroy {
   private consoleLogs: ConsoleEntry[] = [];
   private origConsole = { log: console.log, warn: console.warn, error: console.error };
   private intervalId: any;
+  /** Bypasses HTTP_INTERCEPTORS so the report is not metered or re-intercepted. */
+  private readonly http: HttpClient;
 
   constructor(
     @Inject(PLATFORM_CONFIG) private config: PlatformConfig,
-    private http: HttpClient,
-  ) {}
+    backend: HttpBackend,
+  ) {
+    this.http = new HttpClient(backend);
+  }
 
   ngOnInit(): void {
     const capture = (level: string, ...args: any[]) => {
       this.consoleLogs.push({
         level,
-        message: args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '),
+        message: redactSensitive(args.map(a => {
+          if (typeof a === 'string') return a;
+          try { return JSON.stringify(a); } catch { return String(a); }
+        }).join(' ')),
         timestamp: new Date().toISOString(),
       });
       if (this.consoleLogs.length > 100) this.consoleLogs.shift();
@@ -137,10 +145,10 @@ export class BugReporterComponent implements OnInit, OnDestroy {
       consoleLogs: [...this.consoleLogs],
       browserInfo: {
         userAgent: navigator.userAgent,
-        url: window.location.href,
+        url: redactSensitive(window.location.href),
         viewport: `${window.innerWidth}x${window.innerHeight}`,
       },
-    }).subscribe({
+    }, { headers: platformHeaders(this.config) }).subscribe({
       next: () => {
         this.sent = true;
         setTimeout(() => { this.isOpen = false; this.sent = false; this.description = ''; }, 2000);

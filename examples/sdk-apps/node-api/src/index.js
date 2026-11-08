@@ -42,9 +42,8 @@ async function main() {
     process.exit(1);
   }
 
-  if (process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '0') {
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-  }
+  // TLS verification stays on. For a lab Platform with a private CA, run with
+  // NODE_EXTRA_CA_CERTS=/path/to/platform-ca.pem (see README).
 
   await platform.init({
     projectName: PROJECT_NAME,

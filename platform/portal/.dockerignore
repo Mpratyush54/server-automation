@@ -1,0 +1,21 @@
+# Build context: platform/portal (Dockerfile). Dockerfile.public uses the
+# repository root context and the root .dockerignore.
+.git
+.env
+.env.*
+*.pem
+*.key
+node_modules
+dist
+out-tsc
+coverage
+tests
+.angular
+.vscode
+*.tar
+*.tar.gz
+*.log
+*.tsbuildinfo
+Dockerfile
+Dockerfile.public
+.dockerignore

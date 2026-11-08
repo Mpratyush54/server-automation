@@ -32,7 +32,6 @@ something not covered, open an issue: <https://github.com/Mpratyush54/SERVER-aut
 - [minio-pvc-not-found.md](minio-pvc-not-found.md) — MinIO PVC stuck in `Pending`
 - [mongodb-validation.md](mongodb-validation.md) — Mongoose validation error on API startup
 - [db-wrongpass-after-rotate.md](db-wrongpass-after-rotate.md) — `WRONGPASS` after rotating a DB password
-- [infisical-db-missing.md](infisical-db-missing.md) — Infisical crash-loops with `database "infisical" does not exist`
 
 ## API & Seed
 

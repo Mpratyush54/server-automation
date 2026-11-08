@@ -306,20 +306,6 @@ import { AuthService } from '../../services/auth.service';
       </div>
       <button *ngIf="isDevOps || isTechLeadOrDevOps" class="btn btn-primary btn-sm" (click)="saveClickupConfig()">Save ClickUp Config</button>
     </div>
-
-    <div class="card" style="padding:20px;">
-      <h2>🔐 Infisical Integration</h2>
-      <p style="color:var(--text-secondary); font-size:0.78rem; margin-bottom:12px;">Connect to self-hosted Infisical instance to automatically provision environment secrets.</p>
-      <div class="form-group" *ngIf="isDevOps || isTechLeadOrDevOps">
-        <label>Infisical Base URL</label>
-        <input [(ngModel)]="integrations.infisicalUrl" placeholder="https://infisical.company.local" style="width:100%;">
-      </div>
-      <div class="form-group" *ngIf="isDevOps || isTechLeadOrDevOps">
-        <label>Service Token {{ loginHints.infisicalToken?.set ? '(saved)' : '' }}</label>
-        <input type="password" [(ngModel)]="integrations.infisicalToken" placeholder="st.xxxx..." style="width:100%;">
-      </div>
-      <button *ngIf="isDevOps || isTechLeadOrDevOps" class="btn btn-primary btn-sm" (click)="saveInfisicalConfig()">Save Infisical Config</button>
-    </div>
   </div>
 
   <!-- ─────────────────── ROTATE TAB ─────────────────── -->
@@ -376,7 +362,7 @@ export class SettingsComponent implements OnInit {
 
   newSmtp: any = { name: '', provider: 'custom', host: '', port: 587, secure: false, username: '', password: '', fromEmail: '', fromName: '', isDefault: false };
   newStorage: any = { name: '', providerType: 'minio', endpointUrl: '', bucketName: '', isDefault: false, credentials: { accessKeyId: '', secretAccessKey: '', region: '', clientId: '', clientSecret: '', refreshToken: '' } };
-  integrations: any = { githubToken: '', githubOrg: '', gitlabToken: '', gitlabUrl: 'https://gitlab.com', gitlabGroup: '', clickupToken: '', clickupListId: '', infisicalUrl: '', infisicalToken: '' };
+  integrations: any = { githubToken: '', githubOrg: '', gitlabToken: '', gitlabUrl: 'https://gitlab.com', gitlabGroup: '', clickupToken: '', clickupListId: '' };
 
   rotateConfirm = '';
   rotating = false;
@@ -414,7 +400,6 @@ export class SettingsComponent implements OnInit {
       this.integrations.githubOrg = data.githubOrg || '';
       this.integrations.gitlabGroup = data.gitlabGroup || '';
       this.integrations.clickupListId = data.clickupListId || '';
-      this.integrations.infisicalUrl = data.infisicalUrl || '';
       this.loginHints = data;
       this.providers = data.providers || this.providers;
       this.callbackUrls = data.callbackUrls || this.callbackUrls;
@@ -491,7 +476,6 @@ export class SettingsComponent implements OnInit {
       this.integrations.githubToken = '';
       this.integrations.gitlabToken = '';
       this.integrations.clickupToken = '';
-      this.integrations.infisicalToken = '';
       await this.loadIntegrations();
     } catch (err: any) {
       this.saveOk = false;
@@ -534,13 +518,6 @@ export class SettingsComponent implements OnInit {
       clickupToken: this.integrations.clickupToken,
       clickupListId: this.integrations.clickupListId,
     }, 'ClickUp config saved.');
-  }
-
-  saveInfisicalConfig() {
-    return this.persistIntegrations({
-      infisicalUrl: this.integrations.infisicalUrl,
-      infisicalToken: this.integrations.infisicalToken,
-    }, 'Infisical config saved.');
   }
 
   async rotateSecrets() {

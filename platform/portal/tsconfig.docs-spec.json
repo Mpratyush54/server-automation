@@ -4,6 +4,7 @@
     "src/app/guards/home.guard.spec.ts",
     "src/app/guards/docs.matcher.spec.ts",
     "src/app/pages/docs/docs.component.spec.ts",
+    "src/app/pages/docs/docs-sanitize.spec.ts",
     "src/app/pages/docs/docs-search.spec.ts",
     "src/app/pages/docs/docs-search.component.spec.ts",
     "src/app/pages/landing/landing.component.spec.ts",

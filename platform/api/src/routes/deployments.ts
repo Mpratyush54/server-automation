@@ -1,3 +1,5 @@
+import { requireProjectAccess } from '../lib/project-access';
+import { ProjectAccessRole } from '../entities/ProjectMember';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { Project } from '../entities/Project';
@@ -10,7 +12,7 @@ import { expressAuthenticate, expressRequireRole, logAudit, AuthenticatedRequest
 import { triggerPipeline } from '../lib/gitlab';
 import { postComment, formatPreviewComment, extractTaskId } from '../lib/clickup';
 import { generatePreviewUrl } from '../lib/preview';
-import { deployK8sPreview, ensureAndSyncArgoApp, argoAppName, ensureProjectIngress } from '../lib/k8s';
+import { deployK8sPreview, ensureAndSyncArgoApp, argoAppName, ensureProjectIngress, operateProjectWorkloads, terminateK8sPreview, previewResourceName } from '../lib/k8s';
 import * as k8s from '@kubernetes/client-node';
 
 const router = Router();
@@ -18,6 +20,8 @@ const router = Router();
 router.get('/deployments/:projectId', expressAuthenticate, async (req: Request, res: Response) => {
   try {
     const ds = await getDb();
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, ProjectAccessRole.VIEWER);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const deployments = await ds.getRepository(Deployment).find({
       where: { projectId: req.params.projectId },
       order: { createdAt: 'DESC' },
@@ -40,19 +44,21 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
       return res.status(400).json({ error: 'environmentId is required' });
     }
 
+    const access = await requireProjectAccess(req as AuthenticatedRequest, String(body.projectId), ProjectAccessRole.DEVELOPER);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
     // Verify project and environment
     const project = await ds.getRepository(Project).findOne({ where: { id: body.projectId } });
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     let env = body.environmentId
-      ? await ds.getRepository(Environment).findOne({ where: { id: body.environmentId } })
+      ? await ds.getRepository(Environment).findOne({ where: { id: body.environmentId, projectId: project.id } })
       : null;
     if (!env) {
       // If it's a preview env, create on the fly
       if (body.environmentName === 'preview') {
         const previewRepo = ds.getRepository(Environment);
         const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
-        const previewUrl = generatePreviewUrl(body.branch || 'preview', projectSlug, project.domain || process.env.DOMAIN || 'sslip.io');
+        const previewUrl = generatePreviewUrl(body.branch || 'preview', projectSlug, project.domain || process.env.DOMAIN || 'sslip.io', project.id);
         env = previewRepo.create({
           name: EnvironmentName.PREVIEW,
           namespace: 'preview',
@@ -64,6 +70,8 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
         return res.status(404).json({ error: 'Environment not found' });
       }
     }
+
+    if (env.name !== EnvironmentName.PREVIEW) await assertDedicatedNamespace(env);
 
     const clickupTaskId = body.branch ? extractTaskId(body.branch) : null;
 
@@ -79,7 +87,7 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
       clickupTaskId,
       previewUrl: env.name === EnvironmentName.PREVIEW ? `https://${env.domain}` : null,
       metadata: {
-        ...(body.metadata || {}),
+        previewResourceName: env.name === EnvironmentName.PREVIEW ? previewResourceName(project.id, body.branch || 'main') : undefined,
         gitPath: body.gitPath || undefined,
         pullFromGit: body.pullFromGit !== false,
         domain: project.domain || undefined,
@@ -113,7 +121,7 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
           dep.status = DeploymentStatus.DEPLOYING;
           await checkDs.getRepository(Deployment).save(dep);
 
-          success = await deployK8sPreview(project.name, dep.branch, dep.imageTag);
+          success = await deployK8sPreview(project.name, dep.branch, dep.imageTag, project.id);
           if (!success) {
             deployError = 'Preview deployment failed to apply or timeout occurred.';
           }
@@ -125,8 +133,8 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
             deployError = 'Set project repositoryUrl (GitHub/GitLab) to pull & deploy via ArgoCD.';
             success = false;
           } else {
-            const appName = argoAppName(project.name, String(env!.name));
-            const destNs = env!.namespace || `${argoAppName(project.name, String(env!.name))}`;
+            const appName = env!.namespace || argoAppName(project.name, String(env!.name), project.id);
+            const destNs = env!.namespace || argoAppName(project.name, String(env!.name), project.id);
             const gitPath =
               (body.gitPath as string) ||
               (dep.metadata as any)?.gitPath ||
@@ -332,6 +340,10 @@ router.post('/rollback', expressAuthenticate, expressRequireRole([UserRole.DEVOP
       return res.status(404).json({ error: 'Deployment not found' });
     }
 
+    const access = await requireProjectAccess(req as AuthenticatedRequest, current.projectId, ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
+    const env = await ds.getRepository(Environment).findOne({ where: { id: current.environmentId, projectId: current.projectId } });
+    if (!env) return res.status(404).json({ error: 'Deployment environment not found' });
     current.status = DeploymentStatus.ROLLED_BACK;
     current.terminatedAt = new Date();
     await repo.save(current);
@@ -374,16 +386,13 @@ router.post('/deployments/:id/restart', expressAuthenticate, expressRequireRole(
     const repo = ds.getRepository(Deployment);
     const deployment = await repo.findOne({ where: { id: req.params.id } });
     if (!deployment) return res.status(404).json({ error: 'Deployment not found' });
+    const access = await requireProjectAccess(req as AuthenticatedRequest, deployment.projectId, ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
 
-    deployment.status = DeploymentStatus.PENDING;
+    await controlDeployment(deployment, 'restart');
+    deployment.status = DeploymentStatus.DEPLOYED;
+    deployment.deployedAt = new Date();
     await repo.save(deployment);
-
-    setTimeout(async () => {
-      deployment.status = DeploymentStatus.DEPLOYED;
-      deployment.deployedAt = new Date();
-      const checkDs = await getDb();
-      await checkDs.getRepository(Deployment).save(deployment);
-    }, 2000);
 
     return res.json({ message: 'Restart triggered', deployment });
   } catch (err: any) {
@@ -398,7 +407,11 @@ router.patch('/deployments/:id/scale', expressAuthenticate, expressRequireRole([
     const repo = ds.getRepository(Deployment);
     const dep = await repo.findOne({ where: { id: req.params.id } });
     if (!dep) return res.status(404).json({ error: 'Deployment not found' });
+    const access = await requireProjectAccess(req as AuthenticatedRequest, dep.projectId, ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
 
+    if (!Number.isInteger(body.replicas) || body.replicas < 0 || body.replicas > 1000) return res.status(400).json({ error: 'replicas must be an integer between 0 and 1000' });
+    await controlDeployment(dep, 'scale', body.replicas);
     dep.metadata = { ...(dep.metadata || {}), replicas: body.replicas };
     await repo.save(dep);
 
@@ -423,7 +436,10 @@ router.post('/deployments/:id/terminate', expressAuthenticate, expressRequireRol
     const repo = ds.getRepository(Deployment);
     const dep = await repo.findOne({ where: { id: req.params.id } });
     if (!dep) return res.status(404).json({ error: 'Deployment not found' });
+    const access = await requireProjectAccess(req as AuthenticatedRequest, dep.projectId, ProjectAccessRole.DEVELOPER);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
 
+    await controlDeployment(dep, 'terminate');
     dep.status = DeploymentStatus.TERMINATED;
     dep.terminatedAt = new Date();
     await repo.save(dep);
@@ -441,5 +457,31 @@ router.post('/deployments/:id/terminate', expressAuthenticate, expressRequireRol
     return res.status(400).json({ error: err.message });
   }
 });
+
+async function controlDeployment(dep: Deployment, operation: 'restart' | 'scale' | 'terminate', replicas?: number): Promise<void> {
+  if (dep.metadata?.previewResourceName) {
+    if (operation !== 'terminate') throw new Error('Preview restart and scale are not supported');
+    if (!await terminateK8sPreview(dep.branch, dep.projectId, String(dep.metadata.previewResourceName))) throw new Error('Preview termination failed');
+    return;
+  }
+  const ds = await getDb();
+  const env = await ds.getRepository(Environment).findOne({ where: { id: dep.environmentId, projectId: dep.projectId } });
+  if (!env) throw new Error('Deployment environment not found');
+  if (env.name === EnvironmentName.PREVIEW) {
+    if (operation !== 'terminate') throw new Error('Preview restart and scale are not supported');
+    if (!await terminateK8sPreview(dep.branch, dep.projectId, dep.metadata?.previewResourceName as string | undefined)) throw new Error('Preview termination failed');
+    return;
+  }
+  await assertDedicatedNamespace(env);
+  await operateProjectWorkloads(env.namespace, env.namespace, operation, replicas);
+}
+
+async function assertDedicatedNamespace(env: Environment): Promise<void> {
+  const ds = await getDb();
+  const environments = await ds.getRepository(Environment).find({ where: { namespace: env.namespace } });
+  if (environments.some(other => other.namespace === env.namespace && other.projectId !== env.projectId)) {
+    throw new Error('Namespace is shared with another project; administrator migration required');
+  }
+}
 
 export default router;

@@ -1,3 +1,4 @@
+# __DOMAIN__ is a placeholder: the deploy script substitutes the platform's DOMAIN.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -41,19 +42,17 @@ spec:
             - name: PORT
               value: "4100"
             - name: PLATFORM_URL
-              value: "https://api.148.113.59.3.sslip.io"
+              value: "https://api.__DOMAIN__"
             - name: PROJECT_NAME
               value: "sdk-demo-apps"
             - name: ENVIRONMENT_NAME
               value: "development"
             - name: PROJECT_DOMAIN
-              value: "148.113.59.3.sslip.io"
+              value: "__DOMAIN__"
             - name: REPOSITORY_URL
               value: "https://github.com/Mpratyush54/SERVER-automation.git"
             - name: GIT_PATH
               value: "examples/sdk-apps/k8s"
-            - name: NODE_TLS_REJECT_UNAUTHORIZED
-              value: "0"
             - name: PLATFORM_SDK_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -108,7 +107,7 @@ spec:
           image: sdk-react-web:local
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 80
+            - containerPort: 8080
           resources:
             requests:
               cpu: 10m
@@ -127,7 +126,7 @@ spec:
     app: sdk-react-web
   ports:
     - port: 80
-      targetPort: 80
+      targetPort: 8080
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -152,9 +151,9 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: API_BASE
-              value: "https://sdk-demo-apps-development.148.113.59.3.sslip.io"
+              value: "https://sdk-demo-apps-development.__DOMAIN__"
           ports:
-            - containerPort: 80
+            - containerPort: 8080
           resources:
             requests:
               cpu: 10m
@@ -173,7 +172,7 @@ spec:
     app: sdk-angular-web
   ports:
     - port: 80
-      targetPort: 80
+      targetPort: 8080
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -188,10 +187,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - sdk-demo-apps-development.148.113.59.3.sslip.io
+        - sdk-demo-apps-development.__DOMAIN__
       secretName: sdk-node-api-tls
   rules:
-    - host: sdk-demo-apps-development.148.113.59.3.sslip.io
+    - host: sdk-demo-apps-development.__DOMAIN__
       http:
         paths:
           - path: /
@@ -215,10 +214,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - sdk-react.148.113.59.3.sslip.io
+        - sdk-react.__DOMAIN__
       secretName: sdk-react-web-tls
   rules:
-    - host: sdk-react.148.113.59.3.sslip.io
+    - host: sdk-react.__DOMAIN__
       http:
         paths:
           - path: /
@@ -242,10 +241,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - sdk-angular.148.113.59.3.sslip.io
+        - sdk-angular.__DOMAIN__
       secretName: sdk-angular-web-tls
   rules:
-    - host: sdk-angular.148.113.59.3.sslip.io
+    - host: sdk-angular.__DOMAIN__
       http:
         paths:
           - path: /

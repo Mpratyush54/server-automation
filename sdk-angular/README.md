@@ -73,16 +73,16 @@ Import `BugReporterComponent` into a standalone page and add `<platform-bug-repo
 
 | Piece | Behaviour |
 |-------|-----------|
-| `PlatformHttpInterceptor` | Times every `HttpClient` call → `/api/sdk/api-metrics` |
+| `PlatformHttpInterceptor` | Times every `HttpClient` call → `/api/sdk/api-metrics` (SDK's own calls are skipped) |
 | `PlatformErrorHandler` | Replaces Angular `ErrorHandler`; reports uncaught errors |
-| `BugReporterComponent` | Floating reporter; attaches console + recent network |
+| `BugReporterComponent` | Floating reporter; attaches recent console messages (credentials redacted) + browser info |
 
 ## `PlatformConfig`
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `apiBase` | yes | Platform API base URL |
-| `token` | yes | SDK bearer token |
+| `token` | yes | SDK token (`sdk_live_…` / `sdk_test_…`), sent as `Authorization: Bearer` on every Platform call |
 | `projectId` | yes | Project id for metrics / bugs |
 | `environment` | no | Environment label |
 | `appName` | no | App label |

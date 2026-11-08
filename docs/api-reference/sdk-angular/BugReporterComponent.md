@@ -29,15 +29,16 @@ The component is **standalone** and already included in `PlatformModule` — no 
 - Clicking toggles a dark-themed drawer:
   - **Textarea** for the user's description.
   - **Cancel** and **Submit Report** buttons.
-- On `ngOnInit`: patches `console.log`, `console.warn`, `console.error` to capture the last **100 console entries**.
+- On `ngOnInit`: patches `console.log`, `console.warn`, `console.error` to capture the last **100 console entries**. Authorization/Bearer values, SDK tokens, JWTs, cookies and password-like fields are redacted before they are stored.
 - On `ngOnDestroy`: restores the original console methods.
 - On submit:
-  - POSTs to `POST /api/sdk/bug-report` with:
+  - POSTs to `POST /api/sdk/bug-report` (`Authorization: Bearer <token>`, sent via `HttpBackend`) with:
     - `projectId`, `environment`
     - `description` — user's text
     - `category: 'user-report'`
     - `consoleLogs` — captured console entries with level, message, and timestamp
-    - `browserInfo` — `userAgent`, `url`, `viewport`
+    - `browserInfo` — `userAgent`, `url` (redacted), `viewport`
+  - No screenshot and no network history are collected.
   - Shows "Bug report submitted. Thank you!" for 2 s on success.
   - Shows `alert('Failed to submit bug report.')` on failure.
 
@@ -60,7 +61,7 @@ import { AppComponent } from './app.component';
     HttpClientModule,
     PlatformModule.forRoot({
       apiBase: 'https://platform.example.com',
-      token: 'sk-xxxx',
+      token: 'sdk_live_xxxx',
       projectId: 'my-app',
     }),
   ],

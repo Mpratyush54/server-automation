@@ -1,42 +1,25 @@
-/** Parse GitHub / GitLab HTTPS or SSH clone URLs into API-friendly parts. */
+/** Only configured provider origins may receive platform credentials. */
 export function parseGitRemote(repositoryUrl: string | null | undefined): {
-  provider: 'github' | 'gitlab' | 'unknown';
-  owner: string;
-  repo: string;
-  apiBase: string;
+  provider: 'github' | 'gitlab' | 'unknown'; owner: string; repo: string; apiBase: string;
 } | null {
   if (!repositoryUrl) return null;
-  const cleaned = repositoryUrl.trim().replace(/\.git$/i, '');
-
-  // git@github.com:owner/repo
-  let m = cleaned.match(/^git@([^:]+):([^/]+)\/(.+)$/i);
-  if (m) {
-    const host = m[1].toLowerCase();
-    const owner = m[2];
-    const repo = m[3];
-    if (host.includes('github')) {
+  try {
+    const input = repositoryUrl.trim().replace(/^git@([^:]+):/, 'https://$1/');
+    const url = new URL(input);
+    const gitlab = new URL(process.env.GITLAB_URL || 'https://gitlab.com');
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) return null;
+    const parts = url.pathname.replace(/\.git$/i, '').split('/').filter(Boolean);
+    if (parts.length < 2 || parts.some(p => !/^[a-zA-Z0-9_.-]+$/.test(p))) return null;
+    const repo = parts.pop()!;
+    const owner = parts.join('/');
+    if (url.origin === 'https://github.com' && parts.length === 1) {
       return { provider: 'github', owner, repo, apiBase: 'https://api.github.com' };
     }
-    if (host.includes('gitlab')) {
-      return { provider: 'gitlab', owner, repo, apiBase: `https://${host}/api/v4` };
+    if (gitlab.protocol === 'https:' && url.origin === gitlab.origin) {
+      return { provider: 'gitlab', owner, repo, apiBase: `${gitlab.origin}/api/v4` };
     }
-  }
-
-  // https://github.com/owner/repo
-  m = cleaned.match(/^https?:\/\/([^/]+)\/([^/]+)\/([^/#?]+)/i);
-  if (m) {
-    const host = m[1].toLowerCase();
-    const owner = m[2];
-    const repo = m[3];
-    if (host.includes('github')) {
-      return { provider: 'github', owner, repo, apiBase: 'https://api.github.com' };
-    }
-    if (host.includes('gitlab')) {
-      return { provider: 'gitlab', owner, repo, apiBase: `https://${host}/api/v4` };
-    }
-  }
-
-  return null;
+    return null;
+  } catch { return null; }
 }
 
 export async function fetchRepoBranches(repositoryUrl: string): Promise<{
@@ -57,7 +40,7 @@ export async function fetchRepoBranches(repositoryUrl: string): Promise<{
       headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
     }
 
-    const repoRes = await fetch(`${parsed.apiBase}/repos/${parsed.owner}/${parsed.repo}`, { headers });
+    const repoRes = await fetch(`${parsed.apiBase}/repos/${parsed.owner}/${parsed.repo}`, { headers, redirect: 'error' });
     if (!repoRes.ok) {
       const body = await repoRes.text();
       throw new Error(`GitHub repo lookup failed (${repoRes.status}): ${body.slice(0, 200)}`);
@@ -67,7 +50,7 @@ export async function fetchRepoBranches(repositoryUrl: string): Promise<{
 
     const brRes = await fetch(
       `${parsed.apiBase}/repos/${parsed.owner}/${parsed.repo}/branches?per_page=100`,
-      { headers }
+      { headers, redirect: 'error' }
     );
     if (!brRes.ok) {
       const body = await brRes.text();
@@ -102,7 +85,7 @@ export async function fetchRepoBranches(repositoryUrl: string): Promise<{
       headers['PRIVATE-TOKEN'] = process.env.GITLAB_TOKEN;
     }
     const projectPath = encodeURIComponent(`${parsed.owner}/${parsed.repo}`);
-    const projRes = await fetch(`${parsed.apiBase}/projects/${projectPath}`, { headers });
+    const projRes = await fetch(`${parsed.apiBase}/projects/${projectPath}`, { headers, redirect: 'error' });
     if (!projRes.ok) {
       const body = await projRes.text();
       throw new Error(`GitLab project lookup failed (${projRes.status}): ${body.slice(0, 200)}`);
@@ -111,7 +94,7 @@ export async function fetchRepoBranches(repositoryUrl: string): Promise<{
     const defaultBranch = proj.default_branch || 'main';
     const brRes = await fetch(
       `${parsed.apiBase}/projects/${projectPath}/repository/branches?per_page=100`,
-      { headers }
+      { headers, redirect: 'error' }
     );
     if (!brRes.ok) {
       const body = await brRes.text();
@@ -155,7 +138,7 @@ export async function fetchBranchCommits(
     }
     const res = await fetch(
       `${parsed.apiBase}/repos/${parsed.owner}/${parsed.repo}/commits?sha=${encodeURIComponent(branch)}&per_page=${limit}`,
-      { headers }
+      { headers, redirect: 'error' }
     );
     if (!res.ok) {
       const body = await res.text();
@@ -175,7 +158,7 @@ export async function fetchBranchCommits(
   const projectPath = encodeURIComponent(`${parsed.owner}/${parsed.repo}`);
   const res = await fetch(
     `${parsed.apiBase}/projects/${projectPath}/repository/commits?ref_name=${encodeURIComponent(branch)}&per_page=${limit}`,
-    { headers }
+    { headers, redirect: 'error' }
   );
   if (!res.ok) {
     const body = await res.text();
@@ -216,7 +199,7 @@ export async function fetchRepoReleases(
     }
     const res = await fetch(
       `${parsed.apiBase}/repos/${parsed.owner}/${parsed.repo}/releases?per_page=${limit}`,
-      { headers }
+      { headers, redirect: 'error' }
     );
     if (!res.ok) {
       // 404 = no releases yet — not an error for the UI
@@ -245,7 +228,7 @@ export async function fetchRepoReleases(
   const projectPath = encodeURIComponent(`${parsed.owner}/${parsed.repo}`);
   const res = await fetch(
     `${parsed.apiBase}/projects/${projectPath}/releases?per_page=${limit}`,
-    { headers }
+    { headers, redirect: 'error' }
   );
   if (!res.ok) {
     if (res.status === 404) return [];

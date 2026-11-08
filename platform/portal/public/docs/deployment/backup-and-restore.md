@@ -278,7 +278,7 @@ aws --endpoint-url http://localhost:9000 \
 
 ```bash
 # Backup all resources to YAML files
-NAMESPACES="platform databases monitoring storage argocd portainer infisical"
+NAMESPACES="platform databases monitoring storage argocd portainer"
 for ns in $NAMESPACES; do
   kubectl get all,configmap,secret,ingress,pvc -n "$ns" \
     -o yaml > "/tmp/backups/k8s_${ns}_$(date +%Y%m%d).yaml"
@@ -318,7 +318,7 @@ mongodump --uri="mongodb://root:$MONGO_PASSWORD@mongodb.databases:27017/platform
 
 # Kubernetes
 echo "  Backing up Kubernetes resources..."
-for ns in platform databases monitoring storage argocd portainer infisical; do
+for ns in platform databases monitoring storage argocd portainer; do
   kubectl get all,configmap,secret,ingress,pvc -n "$ns" -o yaml > "$BACKUP_DIR/k8s_$ns.yaml" 2>/dev/null
 done
 

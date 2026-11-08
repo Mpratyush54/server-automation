@@ -1,15 +1,30 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { getDb } from '../config/database';
 import { Secret } from '../entities/Secret';
 import { SecretVersion } from '../entities/SecretVersion';
 import { expressAuthenticate, requirePermission, logAudit, AuthenticatedRequest } from '../middleware/auth';
 import { encryptValue, decryptValue } from '../lib/secrets-encryption';
+import { ProjectAccessRole } from '../entities/ProjectMember';
+import { requireProjectAccess } from '../lib/project-access';
 
 const MASTER_KEY = () => process.env.SECRETS_ENCRYPTION_KEY || '';
 const router = Router();
 
+/** RBAC permission alone is not enough: the caller must also be a member of :projectId. */
+function requireProjectMember(minRole: ProjectAccessRole) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, minRole);
+      if (access.ok === false) return res.status(access.status).json({ error: access.error });
+      return next();
+    } catch {
+      return res.status(403).json({ error: 'Forbidden: could not verify project access' });
+    }
+  };
+}
+
 // List secrets for a project (values masked)
-router.get('/projects/:projectId/secrets', expressAuthenticate, requirePermission('secrets.list'), async (req: Request, res: Response) => {
+router.get('/projects/:projectId/secrets', expressAuthenticate, requirePermission('secrets.list'), requireProjectMember(ProjectAccessRole.VIEWER), async (req: Request, res: Response) => {
   try {
     const ds = await getDb();
     const repo = ds.getRepository(Secret);
@@ -34,7 +49,7 @@ router.get('/projects/:projectId/secrets', expressAuthenticate, requirePermissio
 });
 
 // Reveal a specific secret value (audit-logged)
-router.post('/projects/:projectId/secrets/reveal', expressAuthenticate, requirePermission('secrets.reveal'), async (req: Request, res: Response) => {
+router.post('/projects/:projectId/secrets/reveal', expressAuthenticate, requirePermission('secrets.reveal'), requireProjectMember(ProjectAccessRole.DEVELOPER), async (req: Request, res: Response) => {
   try {
     const { environmentId, key } = req.body;
     const userId = (req as AuthenticatedRequest).user?.id;
@@ -69,7 +84,7 @@ router.post('/projects/:projectId/secrets/reveal', expressAuthenticate, requireP
 });
 
 // Create or update a secret
-router.post('/projects/:projectId/secrets', expressAuthenticate, requirePermission('secrets.create'), async (req: Request, res: Response) => {
+router.post('/projects/:projectId/secrets', expressAuthenticate, requirePermission('secrets.create'), requireProjectMember(ProjectAccessRole.DEVELOPER), async (req: Request, res: Response) => {
   try {
     const { key, value, environmentId } = req.body;
     const userId = (req as AuthenticatedRequest).user?.id;
@@ -127,7 +142,7 @@ router.post('/projects/:projectId/secrets', expressAuthenticate, requirePermissi
 });
 
 // Delete a secret
-router.delete('/projects/:projectId/secrets/:secretId', expressAuthenticate, requirePermission('secrets.delete'), async (req: Request, res: Response) => {
+router.delete('/projects/:projectId/secrets/:secretId', expressAuthenticate, requirePermission('secrets.delete'), requireProjectMember(ProjectAccessRole.DEVELOPER), async (req: Request, res: Response) => {
   try {
     const userId = (req as AuthenticatedRequest).user?.id;
     const ds = await getDb();
@@ -149,7 +164,7 @@ router.delete('/projects/:projectId/secrets/:secretId', expressAuthenticate, req
 });
 
 // Export secrets as .env format
-router.get('/projects/:projectId/secrets/export/:environmentId', expressAuthenticate, requirePermission('secrets.export'), async (req: Request, res: Response) => {
+router.get('/projects/:projectId/secrets/export/:environmentId', expressAuthenticate, requirePermission('secrets.export'), requireProjectMember(ProjectAccessRole.DEVELOPER), async (req: Request, res: Response) => {
   try {
     const userId = (req as AuthenticatedRequest).user?.id;
     const masterKey = MASTER_KEY();
@@ -178,7 +193,7 @@ router.get('/projects/:projectId/secrets/export/:environmentId', expressAuthenti
 });
 
 // Bulk import secrets
-router.post('/projects/:projectId/secrets/bulk', expressAuthenticate, requirePermission('secrets.import'), async (req: Request, res: Response) => {
+router.post('/projects/:projectId/secrets/bulk', expressAuthenticate, requirePermission('secrets.import'), requireProjectMember(ProjectAccessRole.DEVELOPER), async (req: Request, res: Response) => {
   try {
     const { environmentId, secrets: secretList } = req.body;
     const userId = (req as AuthenticatedRequest).user?.id;
@@ -242,7 +257,7 @@ router.post('/projects/:projectId/secrets/bulk', expressAuthenticate, requirePer
 });
 
 // Get version history for a secret
-router.get('/projects/:projectId/secrets/:secretId/versions', expressAuthenticate, requirePermission('secrets.list'), async (req: Request, res: Response) => {
+router.get('/projects/:projectId/secrets/:secretId/versions', expressAuthenticate, requirePermission('secrets.list'), requireProjectMember(ProjectAccessRole.VIEWER), async (req: Request, res: Response) => {
   try {
     const ds = await getDb();
     const secretRepo = ds.getRepository(Secret);
@@ -273,7 +288,7 @@ router.get('/projects/:projectId/secrets/:secretId/versions', expressAuthenticat
 });
 
 // Rollback secret to a previous version
-router.post('/projects/:projectId/secrets/:secretId/rollback/:version', expressAuthenticate, requirePermission('secrets.rollback'), async (req: Request, res: Response) => {
+router.post('/projects/:projectId/secrets/:secretId/rollback/:version', expressAuthenticate, requirePermission('secrets.rollback'), requireProjectMember(ProjectAccessRole.DEVELOPER), async (req: Request, res: Response) => {
   try {
     const userId = (req as AuthenticatedRequest).user?.id;
     const targetVersion = parseInt(req.params.version, 10);

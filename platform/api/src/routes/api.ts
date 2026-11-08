@@ -4,6 +4,7 @@ import path from 'path';
 const router = Router();
 
 import authRoutes from './auth';
+import oidcRoutes from './oidc';
 import projectRoutes from './projects';
 import deploymentRoutes from './deployments';
 import configRoutes from './config';
@@ -25,6 +26,7 @@ import agentTokenRoutes from './agent-tokens';
 import agentCommandRoutes from './agent-commands';
 import notificationRoutes from './notifications';
 
+router.use('/', oidcRoutes); // before authRoutes: OIDC provider + GitHub/GitLab login (state cookie)
 router.use('/', authRoutes);
 router.use('/', versionRoutes);
 router.use('/', projectRoutes);

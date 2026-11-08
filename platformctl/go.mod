@@ -2,7 +2,7 @@ module github.com/Mpratyush54/SERVER-automation/platformctl
 
 go 1.26.0
 
-toolchain go1.26.1
+toolchain go1.26.10
 
 require (
 	github.com/fatih/color v1.18.0

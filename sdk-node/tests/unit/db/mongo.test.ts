@@ -6,6 +6,7 @@ jest.mock('mongoose', () => {
   };
   return {
     createConnection: jest.fn().mockReturnValue({
+      on: jest.fn(),
       asPromise: jest.fn().mockResolvedValue(mockConnection),
     }),
   };
@@ -44,6 +45,7 @@ describe('MongoManager', () => {
     it('should handle connection failure', async () => {
       const mongoose = require('mongoose');
       mongoose.createConnection.mockReturnValue({
+        on: jest.fn(),
         asPromise: jest.fn().mockRejectedValue(new Error('Connection refused')),
       });
 
@@ -74,5 +76,17 @@ describe('MongoManager', () => {
     it('should handle disconnect when not connected', async () => {
       await expect(mongoManager.disconnect()).resolves.not.toThrow();
     });
+  });
+});
+
+describe('MongoManager error handling', () => {
+  it('attaches an error listener to the connection before connecting', async () => {
+    const mongoose = require('mongoose');
+    const on = jest.fn();
+    mongoose.createConnection.mockReturnValue({ on, asPromise: jest.fn().mockResolvedValue({ close: jest.fn() }) });
+    const m = new MongoManager({ uri: 'mongodb://localhost:27017/test' });
+    await m.connect();
+    expect(on).toHaveBeenCalledWith('error', expect.any(Function));
+    await m.disconnect();
   });
 });

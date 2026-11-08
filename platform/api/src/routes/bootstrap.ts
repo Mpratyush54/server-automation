@@ -1,5 +1,7 @@
+import * as crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
+import mongoose from 'mongoose';
 import { connectMongo } from '../config/mongoose';
 import { ClickupTaskLink } from '../entities/ClickupTaskLink';
 import { UserRole } from '../entities/User';
@@ -7,6 +9,8 @@ import { expressAuthenticate, expressRequireRole, requireAgentScopeOrRole, logAu
 import { triggerPipeline } from '../lib/gitlab';
 import { getK8sNodes, getK8sNamespaces, getK8sPods, getPodLogs, deletePod, checkK8sConnection } from '../lib/k8s';
 import { v4 as uuidv4 } from 'uuid';
+import { withTimeout } from '../lib/with-timeout';
+import { resolveIntegrations } from '../lib/integrations';
 
 const router = Router();
 
@@ -24,63 +28,64 @@ router.post('/bootstrap/init', expressAuthenticate, expressRequireRole([UserRole
   }
 });
 
+const PROBE_TIMEOUT_MS = Number(process.env.STATUS_PROBE_TIMEOUT_MS) || 2500;
+
 router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: Response) => {
-  // ── PostgreSQL ────────────────────────────────────────────────────────────
-  let pgStatus = 'offline';
-  try {
+  const probePostgres = async (): Promise<string> => {
     const ds = await getDb();
-    if (ds.isInitialized) { await ds.query('SELECT 1'); pgStatus = 'running'; }
-  } catch { pgStatus = 'offline'; }
+    if (!ds.isInitialized) return 'offline';
+    await ds.query('SELECT 1');
+    return 'running';
+  };
 
-  // ── MongoDB ───────────────────────────────────────────────────────────────
-  let mongoStatus = 'offline';
-  try {
-    const mg = require('mongoose');
-    if (mg.connection && mg.connection.readyState === 1) {
-      mongoStatus = 'running';
-    } else {
-      await connectMongo();
-      mongoStatus = mg.connection?.readyState === 1 ? 'running' : 'offline';
-    }
-  } catch { mongoStatus = 'offline'; }
+  const probeMongo = async (): Promise<string> => {
+    // A function, not an inline check: readyState changes across the await.
+    const connected = () => Number(mongoose.connection?.readyState) === 1;
+    if (connected()) return 'running';
+    await connectMongo();
+    return connected() ? 'running' : 'offline';
+  };
 
-  // ── Kubernetes / real pod counts ──────────────────────────────────────────
-  let k8sOk = false;
-  const podCounts: Record<string, number> = {};
-  try {
-    k8sOk = await checkK8sConnection();
-    if (k8sOk) {
-      const { CoreV1Api } = await import('@kubernetes/client-node');
-      const kc = new (await import('@kubernetes/client-node')).KubeConfig();
-      kc.loadFromDefault();
-      const coreApi = kc.makeApiClient(CoreV1Api);
-      const namespaces = ['platform', 'databases', 'monitoring', 'storage', 'argocd', 'portainer', 'infisical', 'cert-manager', 'ingress-nginx'];
-      for (const ns of namespaces) {
-        try {
-          const r = await coreApi.listNamespacedPod({ namespace: ns });
-          podCounts[ns] = r.items.filter(p => p.status?.phase === 'Running').length;
-        } catch { podCounts[ns] = 0; }
-      }
-    }
-  } catch { k8sOk = false; }
+  // Real pod counts per namespace, fetched in parallel.
+  const probeK8s = async (): Promise<{ ok: boolean; podCounts: Record<string, number> }> => {
+    const podCounts: Record<string, number> = {};
+    if (!(await checkK8sConnection())) return { ok: false, podCounts };
+    // Reuse lib/k8s's shared client: loading @kubernetes/client-node and
+    // building a KubeConfig inside the request was slow and synchronous.
+    const namespaces = ['platform', 'databases', 'monitoring', 'storage', 'argocd', 'portainer', 'cert-manager', 'ingress-nginx'];
+    await Promise.all(namespaces.map(async (ns) => {
+      try {
+        const pods = await getK8sPods(ns);
+        podCounts[ns] = pods.filter((p: any) => p.status === 'Running').length;
+      } catch { podCounts[ns] = 0; }
+    }));
+    return { ok: true, podCounts };
+  };
+
+  // Saved integration settings live in the same Postgres the probe uses.
+  // Statically imported: a request-time import() compiles the module on first
+  // use, which blocks the event loop (and these timeouts) on a cold start.
+  const probeIntegrations = () => resolveIntegrations();
+
+  // Every lookup runs concurrently and each is bounded, so the endpoint
+  // answers within ~PROBE_TIMEOUT_MS even when every dependency is down.
+  const [pgStatus, mongoStatus, k8s, cfg] = await Promise.all([
+    withTimeout(probePostgres(), PROBE_TIMEOUT_MS, 'offline'),
+    withTimeout(probeMongo(), PROBE_TIMEOUT_MS, 'offline'),
+    withTimeout(probeK8s(), PROBE_TIMEOUT_MS, { ok: false, podCounts: {} as Record<string, number> }),
+    withTimeout(probeIntegrations(), PROBE_TIMEOUT_MS, null),
+  ]);
+  const k8sOk = k8s.ok;
+  const podCounts = k8s.podCounts;
 
   // Helper: map pod count to status string
   const podStatus = (ns: string, min = 1) =>
     !k8sOk ? 'unknown' : (podCounts[ns] || 0) >= min ? 'running' : podCounts[ns] === 0 ? 'offline' : 'degraded';
 
   // ── Integration presence (saved settings, then env vars) ─────────────────
-  let githubOk = !!(process.env.GITHUB_TOKEN);
-  let gitlabOk = !!(process.env.GITLAB_TOKEN);
-  let clickupOk = !!(process.env.CLICKUP_API_TOKEN);
-  let infisicalOk = !!(process.env.INFISICAL_URL || process.env.INFISICAL_TOKEN);
-  try {
-    const { resolveIntegrations } = await import('../lib/integrations');
-    const cfg = await resolveIntegrations();
-    githubOk = Boolean(cfg.githubToken);
-    gitlabOk = Boolean(cfg.gitlabToken);
-    clickupOk = Boolean(cfg.clickupToken);
-    infisicalOk = Boolean(cfg.infisicalUrl || cfg.infisicalToken);
-  } catch { /* env fallback already applied */ }
+  const githubOk = Boolean(cfg?.githubToken ?? process.env.GITHUB_TOKEN);
+  const gitlabOk = Boolean(cfg?.gitlabToken ?? process.env.GITLAB_TOKEN);
+  const clickupOk = Boolean(cfg?.clickupToken ?? process.env.CLICKUP_API_TOKEN);
 
   const integrations = {
     github:    githubOk,
@@ -88,7 +93,6 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
     clickup:   clickupOk,
     smtp:      !!(process.env.SMTP_PROVIDER || process.env.SMTP_HOST || process.env.SENDGRID_API_KEY),
     argocd:    !!(process.env.ARGOCD_URL || process.env.ARGOCD_TOKEN || k8sOk),
-    infisical: infisicalOk,
     minio:     !!(process.env.MINIO_ENDPOINT || process.env.MINIO_ACCESS_KEY),
     grafana:   !!(process.env.GRAFANA_URL || podStatus('monitoring') === 'running'),
   };
@@ -106,7 +110,6 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
     'prometheus':     podStatus('monitoring'),
     'loki':           podStatus('monitoring'),
     'portainer':      podStatus('portainer'),
-    'infisical':      podStatus('infisical'),
     'cert-manager':   podStatus('cert-manager'),
     'ingress-nginx':  podStatus('ingress-nginx'),
   };
@@ -201,6 +204,17 @@ router.delete('/bootstrap/pods/:namespace/:podName', expressAuthenticate, expres
 
 router.post('/integrations/clickup/webhook', async (req: Request, res: Response) => {
   try {
+    const secret = process.env.CLICKUP_WEBHOOK_SECRET;
+    const signature = req.get('x-signature');
+    const raw = (req as any).rawBody;
+    if (!secret || !Buffer.isBuffer(raw) || !signature || !/^[a-f0-9]{64}$/.test(signature)) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+    const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');
+    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
     const { task_id, status } = req.body;
     if (status === 'In Review') {
       const ds = await getDb();

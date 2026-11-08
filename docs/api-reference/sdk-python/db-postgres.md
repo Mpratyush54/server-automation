@@ -28,7 +28,7 @@ pg = PostgresManager(config: dict = None)
 | `host` | `PLATFORM_PG_HOST` | `localhost` |
 | `port` | `PLATFORM_PG_PORT` | `5432` |
 | `user` | `PLATFORM_PG_USER` | `platform` |
-| `password` | `PLATFORM_PG_PASSWORD` | `platform` |
+| `password` | `PLATFORM_PG_PASSWORD` | none (required; `connect()` raises if missing) |
 | `database` | `PLATFORM_PG_DB` | `platform` |
 | `pool_size` | — | `10` |
 

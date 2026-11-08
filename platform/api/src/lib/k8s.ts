@@ -1,3 +1,5 @@
+import { createHash } from 'crypto';
+import { assignedNamespace } from './project-namespace';
 import * as k8s from '@kubernetes/client-node';
 import { PassThrough } from 'stream';
 import { deploymentRestartAnnotationsPatch, deploymentRestartJsonPatch } from './deployment-restart-patch';
@@ -152,7 +154,8 @@ export async function deletePod(namespace: string, podName: string): Promise<boo
 export async function deployK8sPreview(
   projectName: string,
   branch: string,
-  imageTag: string
+  imageTag: string,
+  projectId: string,
 ): Promise<boolean> {
   const sanitized = branch
     .replace(/^(feature|fix|chore)\//i, '')
@@ -161,10 +164,11 @@ export async function deployK8sPreview(
     .replace(/--+/g, '-')
     .replace(/^-|-$/g, '');
 
-  const deploymentName = `preview-${sanitized}`;
+  if (!projectId) throw new Error('Immutable project ID is required for preview creation');
+  const deploymentName = previewResourceName(projectId, branch);
   const projectSlug = projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
   const baseDomain = process.env.DOMAIN || 'sslip.io';
-  const domain = `${projectSlug}-${sanitized}.preview.${baseDomain}`;
+  const domain = `${deploymentName}.preview.${baseDomain}`;
   // Allow full image refs (nginx:alpine, ghcr.io/org/app:tag); otherwise GitLab registry convention.
   const image =
     imageTag.includes('/') || imageTag.includes(':')
@@ -183,7 +187,7 @@ export async function deployK8sPreview(
 
     // Create/patch Deployment
     const deployment: k8s.V1Deployment = {
-      metadata: { name: deploymentName, namespace: 'preview', labels: { app: deploymentName, branch: sanitized, project: projectSlug } },
+      metadata: { name: deploymentName, namespace: 'preview', labels: { app: deploymentName, branch: sanitized.slice(0, 63), project: projectSlug.slice(0, 63), 'platform-project-id': projectId } },
       spec: {
         replicas: 1,
         selector: { matchLabels: { app: deploymentName } },
@@ -208,7 +212,7 @@ export async function deployK8sPreview(
 
     // Create/patch Service
     const svc: k8s.V1Service = {
-      metadata: { name: deploymentName, namespace: 'preview' },
+      metadata: { name: deploymentName, namespace: 'preview', labels: { 'platform-project-id': projectId } },
       spec: {
         selector: { app: deploymentName },
         ports: [{ port: 80, targetPort: 80 as any }],
@@ -231,6 +235,7 @@ export async function deployK8sPreview(
       metadata: {
         name: deploymentName,
         namespace: 'preview',
+        labels: { 'platform-project-id': projectId },
         annotations: {
           'kubernetes.io/ingress.class': 'nginx',
           'cert-manager.io/cluster-issuer': 'letsencrypt-prod',
@@ -272,19 +277,18 @@ export async function deployK8sPreview(
 // ──────────────────────────────────────────────────────────────────────────────
 // Terminate preview
 // ──────────────────────────────────────────────────────────────────────────────
-export async function terminateK8sPreview(branch: string): Promise<boolean> {
-  const sanitized = branch
-    .replace(/^(feature|fix|chore)\//i, '')
-    .replace(/[^a-zA-Z0-9-]/g, '-')
-    .toLowerCase()
-    .replace(/--+/g, '-')
-    .replace(/^-|-$/g, '');
-
-  const deploymentName = `preview-${sanitized}`;
+export async function terminateK8sPreview(branch: string, projectId?: string, storedName?: string): Promise<boolean> {
+  if (!projectId || !storedName) throw new Error('Recorded project preview identity required; legacy previews need administrator migration');
+  const deploymentName = storedName;
+  const ignoreMissing = (err: any) => { if (err.code !== 404 && err.statusCode !== 404) throw err; };
   try {
-    await appsApi.deleteNamespacedDeployment({ name: deploymentName, namespace: 'preview' }).catch(() => {});
-    await coreApi.deleteNamespacedService({ name: deploymentName, namespace: 'preview' }).catch(() => {});
-    console.log(`[k8s] Preview terminated: ${deploymentName}`);
+    const response: any = await appsApi.readNamespacedDeployment({ name: deploymentName, namespace: 'preview' });
+    const deployment = response.body || response;
+    if (deployment.metadata?.labels?.['platform-project-id'] !== projectId) throw new Error('Preview ownership could not be verified');
+    await appsApi.deleteNamespacedDeployment({ name: deploymentName, namespace: 'preview' }).catch(ignoreMissing);
+    await coreApi.deleteNamespacedService({ name: deploymentName, namespace: 'preview' }).catch(ignoreMissing);
+    const networkApi = kc.makeApiClient(k8s.NetworkingV1Api);
+    await networkApi.deleteNamespacedIngress({ name: deploymentName, namespace: 'preview' }).catch(ignoreMissing);
     return true;
   } catch (err: any) {
     console.warn(`[k8s] terminateK8sPreview failed: ${err.message}`);
@@ -305,7 +309,8 @@ function slugify(name: string): string {
     .slice(0, 48);
 }
 
-export function argoAppName(projectName: string, envName: string): string {
+export function argoAppName(projectName: string, envName: string, projectId?: string): string {
+  if (projectId) return assignedNamespace(projectName, envName, projectId);
   return `${slugify(projectName)}-${slugify(envName)}`.slice(0, 63);
 }
 
@@ -627,3 +632,38 @@ export async function restartNamedDeployment(namespace: string, name: string): P
   }
 }
 
+
+/** Immutable project and full branch identity avoid shared-preview collisions. */
+export function previewResourceName(projectId: string, branch: string): string {
+  return `preview-${createHash('sha256').update(projectId).digest('hex').slice(0, 16)}-${createHash('sha256').update(branch).digest('hex').slice(0, 16)}`;
+}
+
+export async function operateProjectWorkloads(namespace: string, appName: string, operation: 'restart' | 'scale' | 'terminate', replicas?: number): Promise<void> {
+  if (!namespace || ['default', 'platform', 'kube-system', 'preview'].includes(namespace)) throw new Error('Dedicated project namespace required');
+  const response: any = await appsApi.listNamespacedDeployment({ namespace });
+  const deployments = (response.body || response).items || [];
+  if (!deployments.length) throw new Error('No deployments found in project namespace');
+  if (operation === 'scale') {
+    const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
+    const response: any = await customApi.getNamespacedCustomObject({ group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd', plural: 'applications', name: appName });
+    const app = response.body || response;
+    // Keep Argo self-healing from immediately undoing the requested manual scale.
+    app.spec.ignoreDifferences = [...(app.spec.ignoreDifferences || []),
+      { group: 'apps', kind: 'Deployment', namespace, jsonPointers: ['/spec/replicas'] }];
+    app.spec.syncPolicy = app.spec.syncPolicy || {};
+    app.spec.syncPolicy.syncOptions = Array.from(new Set([...(app.spec.syncPolicy.syncOptions || []), 'RespectIgnoreDifferences=true']));
+    await customApi.replaceNamespacedCustomObject({ group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd', plural: 'applications', name: appName, body: app });
+  }
+  if (operation === 'terminate') {
+    const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
+    // Delete the reconciler first so it cannot recreate the terminated workloads.
+    await customApi.deleteNamespacedCustomObject({ group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd', plural: 'applications', name: appName });
+  }
+  for (const deployment of deployments) {
+    const name = deployment.metadata.name;
+    if (operation === 'restart') await restartNamedDeployment(namespace, name);
+    else if (operation === 'scale') {
+      await appsApi.patchNamespacedDeploymentScale({ name, namespace, body: { spec: { replicas } } } as any);
+    } else await appsApi.deleteNamespacedDeployment({ name, namespace });
+  }
+}

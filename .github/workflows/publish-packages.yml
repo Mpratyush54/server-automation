@@ -12,120 +12,218 @@ on:
       - '.github/workflows/publish-packages.yml'
   workflow_dispatch:
 
+# Deny by default; each job asks for what it needs.
+permissions: {}
+
+# Two overlapping runs would compute the same next version.
+concurrency:
+  group: sdk-release
+  cancel-in-progress: false
+
 jobs:
   version:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     outputs:
       new_tag: ${{ steps.tag_version.outputs.new_tag }}
       new_version: ${{ steps.tag_version.outputs.new_version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Bump version and push tag
+      # Only commits that touch the SDK directories count toward the bump, so an
+      # unrelated `feat!:` elsewhere in the monorepo cannot force a major release.
+      # Conventional Commits: `type!:` / `BREAKING CHANGE:` => major, `feat:` =>
+      # minor, anything else => patch. The tag itself is pushed by the `tag` job,
+      # only after every registry publish has succeeded.
+      - name: Compute next SDK version
         id: tag_version
-        uses: mathieudutour/github-tag-action@v6.2
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          default_bump: patch
+        env:
+          SDK_PATHS: sdk-node sdk-python sdk-react sdk-angular
           # Keep SDK tags off the product v* train (images + platformctl).
-          tag_prefix: sdk-v
+          TAG_PREFIX: sdk-v
+        run: |
+          set -euo pipefail
+          last_tag="$(git tag --merged HEAD --list "${TAG_PREFIX}[0-9]*" --sort=-v:refname | head -n1)"
+          if [ -z "$last_tag" ]; then
+            last_version="0.0.0"
+            range="HEAD"
+          else
+            last_version="${last_tag#"$TAG_PREFIX"}"
+            range="${last_tag}..HEAD"
+          fi
+          if ! [[ "$last_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Cannot parse version from tag '${last_tag}'"
+            exit 1
+          fi
+          major="${BASH_REMATCH[1]}"; minor="${BASH_REMATCH[2]}"; patch="${BASH_REMATCH[3]}"
+
+          # shellcheck disable=SC2086 # SDK_PATHS is a space-separated list
+          count="$(git rev-list --count "$range" -- $SDK_PATHS)"
+          if [ "$count" -eq 0 ]; then
+            echo "No commits touching ${SDK_PATHS} since ${last_tag:-the first commit}; nothing to release."
+            echo "new_tag=" >> "$GITHUB_OUTPUT"
+            echo "new_version=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # shellcheck disable=SC2086
+          subjects="$(git log --format='%s' "$range" -- $SDK_PATHS)"
+          # shellcheck disable=SC2086
+          bodies="$(git log --format='%B' "$range" -- $SDK_PATHS)"
+          if grep -Eq '^[A-Za-z]+(\([^)]*\))?!:' <<<"$subjects" \
+             || grep -Eq '^BREAKING[ -]CHANGE:' <<<"$bodies"; then
+            bump=major
+          elif grep -Eq '^feat(\([^)]*\))?:' <<<"$subjects"; then
+            bump=minor
+          else
+            bump=patch
+          fi
+          case "$bump" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          new_version="${major}.${minor}.${patch}"
+          new_tag="${TAG_PREFIX}${new_version}"
+          if git rev-parse -q --verify "refs/tags/${new_tag}" >/dev/null; then
+            echo "::error::Tag ${new_tag} already exists but is not an ancestor of HEAD"
+            exit 1
+          fi
+          echo "${count} SDK commit(s) since ${last_tag:-the first commit}: ${bump} bump -> ${new_version}"
+          echo "new_tag=${new_tag}" >> "$GITHUB_OUTPUT"
+          echo "new_version=${new_version}" >> "$GITHUB_OUTPUT"
 
   publish-npm:
     needs: version
     if: ${{ needs.version.outputs.new_tag != '' }}
     runs-on: ubuntu-latest
+    # Protected environment: create "release" in repo settings with required
+    # reviewers / branch restriction to master.
+    environment: release
     permissions:
       contents: read
       id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
           scope: '@mpratyush54'
           package-manager-cache: false
 
-      # Trusted Publisher OIDC needs npm >= 11.5.1. setup-node's registry-url
-      # writes _authToken=${NODE_AUTH_TOKEN}; an empty token blocks OIDC.
+      # Trusted Publisher OIDC needs npm >= 11.5.1 (pinned, not @latest).
+      # setup-node's registry-url writes _authToken=${NODE_AUTH_TOKEN}; an empty
+      # token blocks OIDC.
       - name: Prepare npm for OIDC trusted publishing
         run: |
-          npm install -g npm@latest
+          npm install -g npm@11.21.1
           npm --version
           if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
             sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
             echo "Stripped _authToken from $NPM_CONFIG_USERCONFIG"
-            cat "$NPM_CONFIG_USERCONFIG" || true
           fi
 
-      - name: Update Versions
+      # Idempotent: a version that is already on npm is skipped, so re-running a
+      # partially failed release only publishes what is missing.
+      - name: Publish npm SDKs
+        env:
+          VERSION: ${{ needs.version.outputs.new_version }}
         run: |
-          VERSION="${{ needs.version.outputs.new_version }}"
-          echo "Updating NPM packages to version $VERSION"
-          cd sdk-node && npm version $VERSION --no-git-tag-version && cd ..
-          cd sdk-react && npm version $VERSION --no-git-tag-version && cd ..
-          cd sdk-angular && npm version $VERSION --no-git-tag-version && cd ..
-
-      - name: Publish Node SDK
-        run: |
-          cd sdk-node
-          npm install
-          npm run build
-          npm publish --access public --provenance
-
-      - name: Publish React SDK
-        run: |
-          cd sdk-react
-          npm install
-          npm run build
-          npm publish --access public --provenance
-
-      - name: Publish Angular SDK
-        run: |
-          cd sdk-angular
-          npm install
-          npm run build
-          npm publish --access public --provenance
+          set -euo pipefail
+          for dir in sdk-node sdk-react sdk-angular; do
+            name="$(node -p "require('./${dir}/package.json').name")"
+            published="$(npm view "${name}@${VERSION}" version 2>/dev/null || true)"
+            if [ "$published" = "$VERSION" ]; then
+              echo "${name}@${VERSION} is already published; skipping."
+              continue
+            fi
+            echo "Publishing ${name}@${VERSION}"
+            (
+              cd "$dir"
+              npm version "$VERSION" --no-git-tag-version --allow-same-version
+              if [ -f package-lock.json ]; then
+                npm ci --no-audit --no-fund
+              else
+                echo "::warning::${dir} has no package-lock.json; using npm install"
+                npm install --no-audit --no-fund
+              fi
+              npm run build
+              npm publish --access public --provenance
+            )
+          done
 
   publish-pypi:
     needs: version
     if: ${{ needs.version.outputs.new_tag != '' }}
     runs-on: ubuntu-latest
+    # Protected environment: create "release" in repo settings with required
+    # reviewers / branch restriction to master.
+    environment: release
     permissions:
       contents: read
       id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel
+        run: python -m pip install build==1.6.1 setuptools==84.2.1 wheel==0.48.0
 
       - name: Update Version in setup.py
+        env:
+          VERSION: ${{ needs.version.outputs.new_version }}
         run: |
-          VERSION="${{ needs.version.outputs.new_version }}"
           echo "Updating Python package to version $VERSION"
           sed -i "s/version=\".*\"/version=\"$VERSION\"/" sdk-python/setup.py
 
       - name: Build Python SDK
-        run: |
-          cd sdk-python
-          python setup.py sdist bdist_wheel
+        working-directory: sdk-python
+        # --no-isolation: build with the pinned setuptools above instead of
+        # whatever is latest on PyPI.
+        run: python -m build --no-isolation
 
       - name: Publish package distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: sdk-python/dist/
+          # Idempotent re-runs: skip files already on PyPI.
+          skip-existing: true
+
+  tag:
+    # Runs only when every publish job succeeded, so a failed publish never
+    # leaves a tag behind that would make the next run skip that version.
+    needs: [version, publish-npm, publish-pypi]
+    if: ${{ needs.version.outputs.new_tag != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Push SDK tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.version.outputs.new_tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          gh api --method POST "repos/${REPO}/git/refs" \
+            -f ref="refs/tags/${TAG}" \
+            -f sha="${SHA}"
+          echo "Tagged ${SHA} as ${TAG}"

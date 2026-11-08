@@ -1,0 +1,22 @@
+# Build context: platform/api. Only package*.json, tsconfig.json, src/ and
+# openapi.{yaml,json} are needed by the Dockerfile.
+.git
+.env
+.env.*
+*.pem
+*.key
+node_modules
+dist
+coverage
+tests
+**/*.test.ts
+**/*.spec.ts
+*.tar
+*.tar.gz
+*.log
+*.tsbuildinfo
+storage
+uploads
+tmp
+Dockerfile
+.dockerignore

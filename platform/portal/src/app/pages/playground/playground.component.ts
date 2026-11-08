@@ -1,9 +1,10 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpContext, HttpHeaders } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
+import { SKIP_SESSION_AUTH } from '../../services/auth.interceptor';
 
 interface ApiParameter {
   name: string;
@@ -141,7 +142,7 @@ export class PlaygroundComponent implements OnInit {
         {
           method: 'GET',
           path: '/api/bootstrap/status',
-          description: 'Check connectivity status of central services like Prometheus, Loki, ArgoCD, and Infisical.',
+          description: 'Check connectivity status of central services like Prometheus, Loki, and ArgoCD.',
           parameters: []
         },
         {
@@ -286,20 +287,23 @@ export class PlaygroundComponent implements OnInit {
     if (this.authToken) {
       headers = headers.set('Authorization', `Bearer ${this.authToken}`);
     }
+    // Send exactly the token in the form (or none, to test unauthenticated
+    // calls): the session interceptor must not substitute the portal JWT.
+    const context = new HttpContext().set(SKIP_SESSION_AUTH, true);
 
     const startTime = Date.now();
     try {
       let reqObs;
       if (ep.method === 'GET') {
-        reqObs = this.http.get(url, { headers, observe: 'response' });
+        reqObs = this.http.get(url, { headers, context, observe: 'response' });
       } else if (ep.method === 'POST') {
-        reqObs = this.http.post(url, body, { headers, observe: 'response' });
+        reqObs = this.http.post(url, body, { headers, context, observe: 'response' });
       } else if (ep.method === 'PUT') {
-        reqObs = this.http.put(url, body, { headers, observe: 'response' });
+        reqObs = this.http.put(url, body, { headers, context, observe: 'response' });
       } else if (ep.method === 'DELETE') {
-        reqObs = this.http.delete(url, { headers, observe: 'response' });
+        reqObs = this.http.delete(url, { headers, context, observe: 'response' });
       } else {
-        reqObs = this.http.patch(url, body, { headers, observe: 'response' });
+        reqObs = this.http.patch(url, body, { headers, context, observe: 'response' });
       }
 
       const resp = await firstValueFrom(reqObs);

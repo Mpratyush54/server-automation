@@ -15,7 +15,6 @@ Idempotent via `/etc/platform/.bootstrap_state`. No git clone and no on-server i
 
 Full command list: [platformctl CLI](../getting-started/platformctl.md).
 
-For the legacy bash phases (reference only), see `platform-bootstrap/bootstrap-legacy.sh`.
 
 ## High-level phases
 
@@ -27,7 +26,7 @@ For the legacy bash phases (reference only), see `platform-bootstrap/bootstrap-l
 6. ingress-nginx, cert-manager  
 7. Postgres / Mongo / Redis (`databases`)  
 8. MinIO (`storage`)  
-9. ArgoCD, monitoring, oauth2-proxy, Portainer, Infisical  
+9. ArgoCD, monitoring, oauth2-proxy, Portainer  
 10. Pull GHCR images → deploy Platform API + Portal  
 11. Seed admin (`ADMIN_PASSWORD` required — printed at end / saved in `/etc/platform/.env`)
 

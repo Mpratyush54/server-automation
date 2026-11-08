@@ -12,7 +12,6 @@ __pycache__/
 *.pyc
 *.egg-info/
 build/
-package-lock.json
 .next/
 *.tsbuildinfo
 /renders/
@@ -23,3 +22,17 @@ platformctl/platformctl-linux-*
 token.json
 /platform/portal/public/docs-search.json
 
+# Never commit archives, keys or local agent state (see 2026-11 secret cleanup)
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.pem
+*.key
+tmp-*
+replacements.txt
+
+# Per-user / agent tooling state.
+.claude/settings.local.json
+.claude/worktrees/
+.central-memory/

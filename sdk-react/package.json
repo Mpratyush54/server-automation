@@ -16,7 +16,8 @@
   "homepage": "https://github.com/Mpratyush54/server-automation/tree/main/sdk-react#readme",
   "scripts": {
     "build": "tsc",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test": "npm run build && node --test tests/*.test.cjs"
   },
   "peerDependencies": {
     "react": ">=18.0.0",

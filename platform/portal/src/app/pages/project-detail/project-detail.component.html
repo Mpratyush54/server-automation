@@ -982,13 +982,13 @@ platform.captureConsole(); // forward all console.*</pre>
         <span style="color:#a78bfa; word-break:break-all; grid-column:2;">{{ provisionedCreds.connectionString }}</span>
       </div>
     </div>
-    <p style="color:var(--color-text-secondary); font-size:0.78rem; margin:12px 0 0 0;">These credentials have been automatically stored in Infisical for this project's environment variables.</p>
+    <p style="color:var(--color-text-secondary); font-size:0.78rem; margin:12px 0 0 0;">These credentials have been automatically stored in the platform's encrypted secrets store for this project's environment.</p>
   </div>
 
   <!-- Provision Form -->
   <div class="card" style="padding:24px; background: linear-gradient(135deg, rgba(99,102,241,0.05), rgba(139,92,246,0.05)); border-color:rgba(99,102,241,0.2);">
     <h2 style="margin:0 0 4px 0; border:0; padding:0; font-size:1.1rem;">🗄️ Provision New Database</h2>
-    <p style="color:var(--color-text-secondary); font-size:0.82rem; margin:4px 0 20px 0;">Creates an isolated PostgreSQL database with a unique user scoped to this project + environment. Credentials are auto-synced to Infisical.</p>
+    <p style="color:var(--color-text-secondary); font-size:0.82rem; margin:4px 0 20px 0;">Creates an isolated PostgreSQL database with a unique user scoped to this project + environment. Credentials are saved to the platform's encrypted secrets store.</p>
     <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
       <div class="form-group" style="margin:0; flex:1; min-width:180px;">
         <label>Environment</label>

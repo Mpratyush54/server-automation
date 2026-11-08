@@ -95,6 +95,19 @@ export const PERMISSIONS = {
 
 export type Permission = keyof typeof PERMISSIONS;
 
+export function isKnownPermission(p: unknown): p is Permission {
+  return typeof p === 'string' && Object.prototype.hasOwnProperty.call(PERMISSIONS, p);
+}
+
+/** Built-in role hierarchy (higher = more privilege). Used to stop privilege escalation on role grants. */
+export const ROLE_RANK: Record<string, number> = {
+  viewer: 1,
+  developer: 2,
+  tech_lead: 3,
+  devops: 4,
+  admin: 5,
+};
+
 export const ROLE_PRESETS: Record<string, Permission[]> = {
   admin: Object.keys(PERMISSIONS) as Permission[],
   devops: [

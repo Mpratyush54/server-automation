@@ -28,9 +28,12 @@ jest.mock('../../src/config/mongoose', () => ({ connectMongo: jest.fn().mockReso
 // Mock pg-module for database provisioning
 jest.mock('pg', () => ({
   Pool: jest.fn().mockImplementation(() => ({
+    end: jest.fn().mockResolvedValue(undefined),
     connect: jest.fn().mockResolvedValue({
       query: jest.fn().mockResolvedValue({ rows: [] }),
       release: jest.fn(),
+      escapeIdentifier: (v: string) => '"' + v.replace(/"/g, '""') + '"',
+      escapeLiteral: (v: string) => "'" + v.replace(/'/g, "''") + "'",
     }),
   })),
 }));
@@ -61,6 +64,7 @@ const REGID      = 'reg11111-1111-1111-1111-111111111111';
 const seedProject = {
   id: PROJ_ID, name: 'demoproj', stack: 'nodejs',
   isActive: true, deletedAt: null,
+  databaseResources: { development: { dbName: 'platform_demoproj_development', username: 'platform_demoproj_dev_user' } },
 };
 const seedEnv = {
   id: ENV_ID, name: 'development', namespace: 'demoproj-dev',
@@ -279,6 +283,17 @@ describe('SDK Register / Lifecycle', () => {
       expect(r.body).toHaveProperty('registrationId');
     });
 
+    it('ignores legacy infisicalProject / infisicalEnv fields', async () => {
+      serviceRegRepo.findOne.mockResolvedValueOnce(null);
+      serviceRegRepo.create.mockClear();
+      const r = await request(app).post('/api/sdk/register').set(SDK_AUTH)
+        .send({ ...regBody, infisicalProject: 'legacy-project', infisicalEnv: 'prod' });
+      expect(r.status).toBe(201);
+      const created = serviceRegRepo.create.mock.calls[0][0];
+      expect(created).not.toHaveProperty('infisicalProject');
+      expect(created).not.toHaveProperty('infisicalEnv');
+    });
+
     it('401 — missing Authorization header', async () => {
       const r = await request(app).post('/api/sdk/register').send(regBody);
       expect(r.status).toBe(401);
@@ -312,12 +327,81 @@ describe('SDK Register / Lifecycle', () => {
       expect(r.status).toBe(400);
     });
 
-    it('project lookup uses projectName (findOne where name)', async () => {
+    it('project lookup uses the SDK token project (findOne where id), never the body name', async () => {
       await request(app).post('/api/sdk/register').set(SDK_AUTH).send(regBody);
-      const findCall = projectRepo.findOne.mock.calls.find((c: any[]) =>
-        JSON.stringify(c[0]).includes('demoproj')
-      );
+      const findCall = projectRepo.findOne.mock.calls.find((c: any[]) => c[0]?.where?.id === PROJ_ID);
       expect(findCall).toBeDefined();
+      const byName = projectRepo.findOne.mock.calls.find((c: any[]) => c[0]?.where?.name !== undefined);
+      expect(byName).toBeUndefined();
+    });
+
+    // C2 regressions — SDK credentials are bound to exactly one project.
+    it('401 — legacy unverified sdk-{projectId}:{secret} token', async () => {
+      const r = await request(app)
+        .post('/api/sdk/register')
+        .set('Authorization', `Bearer sdk-${PROJ_ID}:anything`)
+        .send(regBody);
+      expect(r.status).toBe(401);
+    });
+
+    it('403 — cannot register against (or create) another project', async () => {
+      const r = await request(app).post('/api/sdk/register').set(SDK_AUTH)
+        .send({ ...regBody, projectName: 'someone-elses-project' });
+      expect(r.status).toBe(403);
+      expect(projectRepo.create).not.toHaveBeenCalled();
+      expect(projectRepo.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('SDK project binding (C2)', () => {
+    const OTHER = '99999999-9999-4999-8999-999999999999';
+
+    it('GET /sdk/config — 403 for a foreign projectId', async () => {
+      const r = await request(app).get(`/api/sdk/config?projectId=${OTHER}`).set(SDK_AUTH);
+      expect(r.status).toBe(403);
+    });
+
+    it('GET /sdk/db-credentials — 403 for a foreign projectId', async () => {
+      const r = await request(app).get(`/api/sdk/db-credentials?projectId=${OTHER}`).set(SDK_AUTH);
+      expect(r.status).toBe(403);
+    });
+
+    it('POST /sdk/heartbeat — 403 for a foreign projectId', async () => {
+      const r = await request(app).post('/api/sdk/heartbeat').set(SDK_AUTH).send({ projectId: OTHER });
+      expect(r.status).toBe(403);
+    });
+
+    it('POST /sdk/logs — 403 when any entry targets a foreign project', async () => {
+      const r = await request(app).post('/api/sdk/logs').set(SDK_AUTH)
+        .send({ logs: [{ projectId: 'demoproj', message: 'ok' }, { projectId: OTHER, message: 'x' }] });
+      expect(r.status).toBe(403);
+      expect(mockInsertMany).not.toHaveBeenCalled();
+    });
+
+    it('POST /sdk/api-metrics — 403 for a foreign projectId', async () => {
+      const r = await request(app).post('/api/sdk/api-metrics').set(SDK_AUTH)
+        .send({ projectId: OTHER, metrics: [{ route: '/', method: 'GET' }] });
+      expect(r.status).toBe(403);
+    });
+
+    it('POST /sdk/bug-report — 403 for a foreign projectId', async () => {
+      const r = await request(app).post('/api/sdk/bug-report').set(SDK_AUTH)
+        .send({ projectId: OTHER, description: 'x' });
+      expect(r.status).toBe(403);
+      expect(mockBugReportCreate).not.toHaveBeenCalled();
+    });
+
+    it('POST /sdk/bug-report — stored under the token project even when referenced by name', async () => {
+      const r = await request(app).post('/api/sdk/bug-report').set(SDK_AUTH)
+        .send({ projectId: 'demoproj', description: 'crash' });
+      expect(r.status).toBe(201);
+      expect(mockBugReportCreate).toHaveBeenCalledWith(expect.objectContaining({ projectId: PROJ_ID }));
+    });
+
+    it('SDK token cannot be used on human endpoints (POST /users/invite)', async () => {
+      const r = await request(app).post('/api/users/invite').set(SDK_AUTH)
+        .send({ email: 'x@y.io', role: 'admin', password: 'Password123!' });
+      expect(r.status).toBe(401);
     });
   });
 
@@ -556,7 +640,7 @@ describe('GET /api/metrics', () => {
       .get('/api/metrics')
       .query({ projectId: PROJ_ID })
       .set('Authorization', `Bearer ${T.developer}`);
-    expect([200, 400]).toContain(r.status);
+    expect(r.status).toBe(403);
   });
 
   it('401 — no token', async () => {
@@ -676,8 +760,7 @@ describe('Database Provisioning', () => {
       const r = await request(app)
         .get(`/api/projects/${PROJ_ID}/databases/backups`)
         .set('Authorization', `Bearer ${T.developer}`);
-      expect(r.status).toBe(200);
-      expect(Array.isArray(r.body)).toBe(true);
+      expect(r.status).toBe(403);
     });
 
     it('each backup has id, status, createdAt fields', async () => {
@@ -719,6 +802,7 @@ describe('Bootstrap API', () => {
       .get('/api/bootstrap/status')
       .set('Authorization', `Bearer ${T.developer}`);
     expect(r.status).toBe(200);
+    expect(JSON.stringify(r.body).toLowerCase()).not.toContain('infisical');
   });
 
   it('GET /api/bootstrap/nodes — 200 for devops', async () => {

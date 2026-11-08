@@ -124,13 +124,15 @@ describe('requirePermission middleware', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  it('should skip permission check for SDK tokens', async () => {
+  // C1 regression: SDK credentials used to bypass every RBAC permission check.
+  it('should reject SDK tokens on permission-gated endpoints', async () => {
     (req as AuthenticatedRequest).sdkToken = true;
     (req as AuthenticatedRequest).projectId = 'proj-1';
 
     const middleware = requirePermission('users.create');
     await middleware(req as Request, res as Response, next);
-    expect(next).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 
   it('should cache permissions and reuse on subsequent calls', async () => {

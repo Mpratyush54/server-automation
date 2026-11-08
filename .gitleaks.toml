@@ -1,0 +1,55 @@
+# gitleaks configuration (used by .github/workflows/security.yml).
+# Starts from the upstream default rules and only allowlists known,
+# non-secret placeholders. Keep allowlists narrow: prefer exact values or
+# rule-scoped test paths over broad path exclusions, and never allowlist a
+# value that was ever a real credential (rotate it instead).
+
+title = "Platform gitleaks config"
+
+[extend]
+useDefault = true
+
+# The default rules do not flag credentials embedded in database URLs
+# (e.g. the Postgres URL from audit finding SC-02).
+[[rules]]
+id = "database-url-credentials"
+description = "Credentials embedded in a database/broker connection URL"
+regex = '''\b(?:postgres(?:ql)?|mongodb(?:\+srv)?|rediss?|mysql|amqps?)://[^:@/\s'"`]+:([^@/\s'"`]{6,})@[^\s'"`]+'''
+secretGroup = 1
+keywords = ["postgres://", "postgresql://", "mongodb://", "mongodb+srv://", "redis://", "rediss://", "mysql://", "amqp://", "amqps://"]
+
+[[rules.allowlists]]
+description = "Variable references and obvious placeholders"
+regexTarget = "secret"
+regexes = [
+  '''^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$''',
+  '''^\$\{[^}]+\}$''',
+  '''^<[^>]+>$''',
+  '''^\{\{.*\}\}$''',
+  '''(?i)^(password|passwd|pass|secret|changeme|example|xxx+|\*+)$''',
+  '''(?i)^(generated|your|my|example|sample|dummy|fake)[-_]?(password|passwd|pass|secret)$''',
+]
+
+[[allowlists]]
+description = "Documentation placeholders"
+regexTarget = "secret"
+regexes = [
+  # Truncated example tokens such as "eyJhbGciOiJIUzI1NiIs..." or "plat_agent_...".
+  '''\.\.\.$''',
+  # Sample SECRETS_ENCRYPTION_KEY in docs/api-reference/configuration/secrets-encryption.md.
+  '''^a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2$''',
+  # base64("new-password-1234") / base64("new-jwt-secret") in docs/deployment/update-secrets.md.
+  '''^bmV3LXBhc3N3b3JkLTEyMzQ=$''',
+  '''^bmV3LWp3dC1zZWNyZXQ=$''',
+  # Prose in an early revision of .cursor/skills/platform-mcp/SKILL.md.
+  '''^validating/executing$''',
+]
+
+[[allowlists]]
+description = "Fixture credentials in unit/integration tests"
+targetRules = ["generic-api-key", "jwt", "database-url-credentials"]
+paths = [
+  '''^platform/api/tests/''',
+  '''^platform/mcp-server/tests/''',
+  '''^sdk-[a-z]+/tests/''',
+]

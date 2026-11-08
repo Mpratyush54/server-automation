@@ -10,6 +10,7 @@ import { catchError } from 'rxjs/operators';
 import { of, Subscription } from 'rxjs';
 import { prepareDocsHtml } from './docs-html.mjs';
 import { DocsSearchComponent } from './docs-search.component';
+import { sanitizeDocsHtml } from './docs-sanitize.mjs';
 
 interface DocPage {
   label: string;
@@ -204,7 +205,6 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
         { label: 'MinIO PVC not found', section: 'troubleshooting', page: 'minio-pvc-not-found' },
         { label: 'MongoDB validation', section: 'troubleshooting', page: 'mongodb-validation' },
         { label: 'DB WRONGPASS after rotate', section: 'troubleshooting', page: 'db-wrongpass-after-rotate' },
-        { label: 'Infisical DB missing', section: 'troubleshooting', page: 'infisical-db-missing' },
         // API & seed
         { label: 'API seed failure', section: 'troubleshooting', page: 'api-seed-failure' },
         { label: 'Angular @ symbol', section: 'troubleshooting', page: 'angular-template-at-symbol' },
@@ -227,6 +227,8 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     marked.use({ gfm: true, breaks: false });
     mermaid.initialize({
       startOnLoad: false,
+      // Explicit: diagram labels must never render HTML/script.
+      securityLevel: 'strict',
       theme: 'dark',
       darkMode: true,
       fontFamily: 'Inter, sans-serif',
@@ -632,8 +634,11 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
             html = this.enhanceAuthBadges(html);
             html = this.enhanceResponseSections(html);
             html = this.enhanceSectionHeadings(html);
-            html = this.transformMermaidBlocks(html);
-            this.content = this.sanitizer.bypassSecurityTrustHtml(html as string);
+            // Sanitize (and build mermaid containers from text) before
+            // trusting: Angular's own sanitizer would strip the ids/classes
+            // the docs layout relies on, so DOMPurify is the security boundary.
+            html = sanitizeDocsHtml(html as string);
+            this.content = this.sanitizer.bypassSecurityTrustHtml(html);
             this.isLoading = false;
             this.rendering = true;
             this.cdr.detectChanges();
@@ -710,24 +715,6 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
         /<p><strong>Error\s+`(\d+)`:<\/strong><\/p>/gi,
         '<div class="api-sub-header"><span class="response-badge error-badge">$1</span><span>Error Response</span></div>'
       );
-  }
-
-  private transformMermaidBlocks(html: string): string {
-    return html.replace(
-      /<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/gi,
-      (_m, code: string) => {
-        const decoded = code
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&quot;/g, '"')
-          .replace(/&#39;/g, "'")
-          .replace(/&#x27;/g, "'")
-          .replace(/&#x2F;/g, '/')
-          .trim();
-        return `<div class="mermaid">${decoded}</div>`;
-      }
-    );
   }
 
   scrollToHeading(event: Event, id: string) {

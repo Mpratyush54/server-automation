@@ -44,6 +44,21 @@ const DEVELOPER = {
   passwordHash: TEST_HASH,
 };
 
+const TECH_LEAD = {
+  id: '22222222-2222-2222-2222-222222222222',
+  email: 'lead@pratyushes.dev',
+  username: 'lead',
+  name: 'Tech Lead',
+  role: 'tech_lead',
+  roleId: null,
+  isActive: true,
+  passwordHash: TEST_HASH,
+};
+
+const RAW_AGENT_2 = 'plat_agent_99887766554433221100ffeeddccbbaa';
+const AGENT_PREFIX_2 = RAW_AGENT_2.slice(0, 20);
+const AGENT_HASH_2 = bcrypt.hashSync(RAW_AGENT_2, 4);
+
 const RAW_AGENT = 'plat_agent_aabbccddeeff00112233445566778899';
 const AGENT_PREFIX = RAW_AGENT.slice(0, 20);
 const AGENT_HASH = bcrypt.hashSync(RAW_AGENT, 4);
@@ -86,6 +101,7 @@ const mockApprovalRepo = {
   find: jest.fn(),
   save: jest.fn(),
   create: jest.fn(),
+  update: jest.fn(),
 };
 
 const mockRoleRepo = {
@@ -138,6 +154,7 @@ const JWT_SECRET = 'plat-super-secret-key';
 const sign = (user: Record<string, unknown>) => jwt.sign(user, JWT_SECRET, { expiresIn: '2h' });
 const adminJwt = sign({ id: ADMIN.id, email: ADMIN.email, name: ADMIN.name, role: 'admin' });
 const developerJwt = sign({ id: DEVELOPER.id, email: DEVELOPER.email, name: DEVELOPER.name, role: 'developer' });
+const techLeadJwt = sign({ id: TECH_LEAD.id, email: TECH_LEAD.email, name: TECH_LEAD.name, role: 'tech_lead' });
 
 let app: express.Express;
 
@@ -166,12 +183,16 @@ beforeEach(() => {
     const { email, id, username } = where || {};
     if (id === ADMIN.id || email === ADMIN.email || username === ADMIN.username) return Promise.resolve(ADMIN);
     if (id === DEVELOPER.id || email === DEVELOPER.email || username === DEVELOPER.username) return Promise.resolve(DEVELOPER);
+    if (id === TECH_LEAD.id) return Promise.resolve(TECH_LEAD);
     return Promise.resolve(null);
   });
 
   mockAgentTokenRepo.findOne.mockImplementation(({ where }: any) => {
     if (where?.tokenPrefix === AGENT_PREFIX || where?.id === agentRecord.id) {
       return Promise.resolve({ ...agentRecord });
+    }
+    if (where?.tokenPrefix === AGENT_PREFIX_2) {
+      return Promise.resolve({ ...agentRecord, id: 'a2222222-2222-2222-2222-222222222222', name: 'other-agent', tokenPrefix: AGENT_PREFIX_2, tokenHash: AGENT_HASH_2 });
     }
     return Promise.resolve(null);
   });
@@ -196,11 +217,24 @@ beforeEach(() => {
     approvals.set(id, saved);
     return Promise.resolve(saved);
   });
+  // Conditional UPDATE ... WHERE semantics (every criteria key must match), like TypeORM's repo.update.
+  mockApprovalRepo.update.mockImplementation((criteria: any, patch: any) => {
+    const row = approvals.get(criteria.id);
+    if (!row || Object.keys(criteria).some((k) => row[k] !== criteria[k])) return Promise.resolve({ affected: 0 });
+    approvals.set(row.id, { ...row, ...patch });
+    return Promise.resolve({ affected: 1 });
+  });
   mockApprovalRepo.findOne.mockImplementation(({ where }: any) => {
-    if (where?.id) return Promise.resolve(approvals.get(where.id) || null);
+    if (where?.id) {
+      const row = approvals.get(where.id);
+      return Promise.resolve(row ? { ...row } : null);
+    }
     if (where?.status === 'pending' && where?.command) {
       for (const a of approvals.values()) {
-        if (a.status === 'pending' && a.command === where.command) return Promise.resolve(a);
+        if (a.status !== 'pending' || a.command !== where.command) continue;
+        if ('requestedByAgentTokenId' in where && a.requestedByAgentTokenId !== where.requestedByAgentTokenId) continue;
+        if ('requestedByUserId' in where && a.requestedByUserId !== where.requestedByUserId) continue;
+        return Promise.resolve({ ...a });
       }
     }
     return Promise.resolve(null);
@@ -379,6 +413,125 @@ describe('Agent commands', () => {
       .send({ reason: 'too risky' });
     expect(rejected.status).toBe(200);
     expect(rejected.body.status).toBe('rejected');
+  });
+
+  it('denies the env/cat read-tier bypasses at validate and execute (H1)', async () => {
+    for (const command of ['env sh -c "id"', 'cat /var/run/secrets/kubernetes.io/serviceaccount/token', 'printenv JWT_SECRET']) {
+      const v = await request(app)
+        .post('/api/agent/commands/validate')
+        .set('Authorization', `Bearer ${RAW_AGENT}`)
+        .send({ command });
+      expect(v.status).toBe(200);
+      expect(v.body.allowed).toBe(false);
+      const e = await request(app)
+        .post('/api/agent/commands/execute')
+        .set('Authorization', `Bearer ${RAW_AGENT}`)
+        .send({ command, confirm: true, reason: 'x' });
+      expect(e.status).toBe(403);
+    }
+  });
+
+  it('requires human approval for reading secret values (H1)', async () => {
+    const e = await request(app)
+      .post('/api/agent/commands/execute')
+      .set('Authorization', `Bearer ${RAW_AGENT}`)
+      .send({ command: 'kubectl get secret db -o yaml', confirm: true, reason: 'debug' });
+    expect(e.status).toBe(403);
+    expect(e.body.error).toMatch(/approv/i);
+  });
+
+  it('forbids developer/tech_lead humans from executing commands (H2)', async () => {
+    for (const token of [developerJwt, techLeadJwt]) {
+      const r = await request(app)
+        .post('/api/agent/commands/execute')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ command: 'kubectl get pods' });
+      expect(r.status).toBe(403);
+    }
+    const dev = await request(app)
+      .post('/api/agent/commands/validate')
+      .set('Authorization', `Bearer ${developerJwt}`)
+      .send({ command: 'kubectl delete pod x' });
+    expect(dev.status).toBe(403);
+    expect(approvals.size).toBe(0);
+  });
+
+  it('forbids tech_lead from approving or rejecting (H2)', async () => {
+    const v = await request(app)
+      .post('/api/agent/commands/validate')
+      .set('Authorization', `Bearer ${RAW_AGENT}`)
+      .send({ command: 'kubectl delete pod z -n default' });
+    for (const action of ['approve', 'reject']) {
+      const r = await request(app)
+        .post(`/api/agent/commands/${v.body.approvalId}/${action}`)
+        .set('Authorization', `Bearer ${techLeadJwt}`)
+        .send({});
+      expect(r.status).toBe(403);
+    }
+    expect(approvals.get(v.body.approvalId).status).toBe('pending');
+  });
+
+  it('lets an admin human execute a read command', async () => {
+    const r = await request(app)
+      .post('/api/agent/commands/execute')
+      .set('Authorization', `Bearer ${adminJwt}`)
+      .send({ command: 'kubectl get pods' });
+    expect(r.status).toBe(200);
+  });
+
+  it('binds approvals to the requesting token and executes them once (L3)', async () => {
+    const command = 'kubectl delete pod once -n default';
+    const v = await request(app)
+      .post('/api/agent/commands/validate')
+      .set('Authorization', `Bearer ${RAW_AGENT}`)
+      .send({ command });
+    await request(app)
+      .post(`/api/agent/commands/${v.body.approvalId}/approve`)
+      .set('Authorization', `Bearer ${adminJwt}`)
+      .send({})
+      .expect(200);
+
+    const body = { command, confirm: true, reason: 'cleanup', approvalId: v.body.approvalId };
+    const stolen = await request(app)
+      .post('/api/agent/commands/execute')
+      .set('Authorization', `Bearer ${RAW_AGENT_2}`)
+      .send(body);
+    expect(stolen.status).toBe(403);
+    expect(approvals.get(v.body.approvalId).status).toBe('approved');
+
+    const [a, b] = await Promise.all([
+      request(app).post('/api/agent/commands/execute').set('Authorization', `Bearer ${RAW_AGENT}`).send(body),
+      request(app).post('/api/agent/commands/execute').set('Authorization', `Bearer ${RAW_AGENT}`).send(body),
+    ]);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses[0]).toBe(200);
+    expect([403, 409]).toContain(statuses[1]);
+    expect(approvals.get(v.body.approvalId).status).toBe('executed');
+
+    // Simulate the race window: a request that read the row while it was still 'approved'
+    // must lose the conditional claim instead of executing a second time.
+    const staleRow = { ...approvals.get(v.body.approvalId), status: 'approved' };
+    mockApprovalRepo.findOne.mockImplementationOnce(() => Promise.resolve(staleRow));
+    const raced = await request(app)
+      .post('/api/agent/commands/execute')
+      .set('Authorization', `Bearer ${RAW_AGENT}`)
+      .send(body);
+    expect(raced.status).toBe(409);
+
+    const again = await request(app)
+      .post('/api/agent/commands/execute')
+      .set('Authorization', `Bearer ${RAW_AGENT}`)
+      .send(body);
+    expect(again.status).toBe(403);
+  });
+
+  it("does not reuse another token's pending approval at validate", async () => {
+    const command = 'kubectl delete pod shared -n default';
+    const v1 = await request(app).post('/api/agent/commands/validate').set('Authorization', `Bearer ${RAW_AGENT}`).send({ command });
+    const v2 = await request(app).post('/api/agent/commands/validate').set('Authorization', `Bearer ${RAW_AGENT_2}`).send({ command });
+    expect(v1.body.approvalId).toBeTruthy();
+    expect(v2.body.approvalId).toBeTruthy();
+    expect(v2.body.approvalId).not.toBe(v1.body.approvalId);
   });
 
   it('denies banned commands at validate', async () => {

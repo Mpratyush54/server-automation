@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { getDb } from '../config/database';
 import { AgentCommandApproval } from '../entities/AgentCommandApproval';
 import { validateCommand } from '../lib/command-guard';
@@ -16,6 +16,43 @@ import { UserRole } from '../entities/User';
 const router = Router();
 const APPROVAL_TTL_MS = 60 * 60 * 1000; // 1 hour
 
+/** Roles allowed to execute guarded commands or approve/reject them as a human. */
+const COMMAND_OPERATOR_ROLES = [UserRole.ADMIN, UserRole.DEVOPS];
+/** Roles allowed to validate commands (and thereby open approval requests) as a human. */
+const COMMAND_VALIDATOR_ROLES = [UserRole.ADMIN, UserRole.DEVOPS, UserRole.TECH_LEAD];
+
+/**
+ * Human JWTs bypass agent scope checks in requireAgentScope, so gate them by role here.
+ * Agent tokens pass through (their scopes were already checked).
+ */
+function requireHumanRoleIfHuman(roles: UserRole[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.agentToken) return next();
+    if (!authReq.user) {
+      return res.status(401).json({ error: 'Unauthorized: Agent token or human JWT required' });
+    }
+    if (!roles.includes(authReq.user.role)) {
+      return res.status(403).json({ error: 'Forbidden: Insufficient role for agent commands', requiredAnyOf: roles });
+    }
+    return next();
+  };
+}
+
+/** An approval may only be used by the same agent token (or human) that requested it. */
+function approvalBelongsTo(approval: AgentCommandApproval, authReq: AuthenticatedRequest): boolean {
+  if (authReq.agentToken) {
+    return approval.requestedByAgentTokenId === authReq.agentToken.id;
+  }
+  return !approval.requestedByAgentTokenId && !!authReq.user && approval.requestedByUserId === authReq.user.id;
+}
+
+function requesterWhere(authReq: AuthenticatedRequest) {
+  return authReq.agentToken
+    ? { requestedByAgentTokenId: authReq.agentToken.id }
+    : { requestedByUserId: authReq.user?.id || '' };
+}
+
 function actorMeta(authReq: AuthenticatedRequest) {
   return {
     agentTokenId: authReq.agentToken?.id || null,
@@ -28,6 +65,7 @@ router.post(
   '/agent/commands/validate',
   expressAuthenticate,
   requireAgentScope('commands:validate'),
+  requireHumanRoleIfHuman(COMMAND_VALIDATOR_ROLES),
   async (req: Request, res: Response) => {
     const { command } = req.body || {};
     if (!command || typeof command !== 'string') {
@@ -47,6 +85,7 @@ router.post(
           where: {
             command: validation.normalizedCommand,
             status: 'pending',
+            ...requesterWhere(authReq),
           },
           order: { createdAt: 'DESC' },
         });
@@ -91,6 +130,7 @@ router.post(
   '/agent/commands/execute',
   expressAuthenticate,
   requireAgentScope('commands:execute'),
+  requireHumanRoleIfHuman(COMMAND_OPERATOR_ROLES),
   async (req: Request, res: Response) => {
     try {
       const authReq = req as AuthenticatedRequest;
@@ -147,22 +187,38 @@ router.post(
             error: 'approvalId command does not match the execute command',
           });
         }
+        if (!approvalBelongsTo(approval, authReq)) {
+          return res.status(403).json({
+            error: 'approvalId was requested by a different agent token or user',
+          });
+        }
         if (approval.approvalExpiresAt && approval.approvalExpiresAt.getTime() < Date.now()) {
-          approval.status = 'expired';
-          await approvalRepo.save(approval);
+          await approvalRepo.update({ id: approval.id, status: 'approved' }, { status: 'expired' });
           return res.status(403).json({ error: 'Approval has expired' });
         }
+
+        // Atomically claim the approval (approved -> executed) so concurrent requests execute it once.
+        const claimedAt = new Date();
+        const claim = await approvalRepo.update(
+          { id: approval.id, status: 'approved' },
+          {
+            status: 'executed',
+            executedAt: claimedAt,
+            reason: typeof reason === 'string' ? reason : approval.reason,
+          },
+        );
+        if (!claim || claim.affected !== 1) {
+          return res.status(409).json({ error: 'Approval was already used or changed state', approvalId: approval.id });
+        }
+        approval.status = 'executed';
+        approval.executedAt = claimedAt;
       }
 
       const dryRun = process.env.NODE_ENV === 'test' || process.env.AGENT_COMMAND_DRY_RUN === '1';
       const result = await executeValidatedCommand(validation.normalizedCommand, { dryRun });
 
       if (approval) {
-        approval.status = 'executed';
-        approval.executedAt = new Date();
-        approval.reason = typeof reason === 'string' ? reason : approval.reason;
-        approval.result = result as any;
-        await approvalRepo.save(approval);
+        await approvalRepo.update({ id: approval.id }, { result: result as any });
       } else if (validation.riskLevel !== 'read') {
         await approvalRepo.save(
           approvalRepo.create({
@@ -234,7 +290,7 @@ router.post(
   '/agent/commands/:id/approve',
   expressAuthenticate,
   requireHumanJwt,
-  expressRequireRole([UserRole.ADMIN, UserRole.DEVOPS, UserRole.TECH_LEAD]),
+  expressRequireRole(COMMAND_OPERATOR_ROLES),
   async (req: Request, res: Response) => {
     try {
       const authReq = req as AuthenticatedRequest;
@@ -246,10 +302,19 @@ router.post(
         return res.status(409).json({ error: `Cannot approve approval in status ${approval.status}` });
       }
 
-      approval.status = 'approved';
-      approval.approvedByUserId = authReq.user!.id;
-      approval.approvalExpiresAt = new Date(Date.now() + APPROVAL_TTL_MS);
-      const saved = await repo.save(approval);
+      // Conditional update: only one approver can move pending -> approved.
+      const claim = await repo.update(
+        { id: approval.id, status: 'pending' },
+        {
+          status: 'approved',
+          approvedByUserId: authReq.user!.id,
+          approvalExpiresAt: new Date(Date.now() + APPROVAL_TTL_MS),
+        },
+      );
+      if (!claim || claim.affected !== 1) {
+        return res.status(409).json({ error: 'Approval changed state concurrently' });
+      }
+      const saved = (await repo.findOne({ where: { id: approval.id } }))!;
 
       await logAudit({
         userId: authReq.user!.id,
@@ -272,7 +337,7 @@ router.post(
   '/agent/commands/:id/reject',
   expressAuthenticate,
   requireHumanJwt,
-  expressRequireRole([UserRole.ADMIN, UserRole.DEVOPS, UserRole.TECH_LEAD]),
+  expressRequireRole(COMMAND_OPERATOR_ROLES),
   async (req: Request, res: Response) => {
     try {
       const authReq = req as AuthenticatedRequest;
@@ -284,12 +349,18 @@ router.post(
         return res.status(409).json({ error: `Cannot reject approval in status ${approval.status}` });
       }
 
-      approval.status = 'rejected';
-      approval.rejectedByUserId = authReq.user!.id;
-      if (typeof req.body?.reason === 'string') {
-        approval.reason = req.body.reason;
+      const claim = await repo.update(
+        { id: approval.id, status: 'pending' },
+        {
+          status: 'rejected',
+          rejectedByUserId: authReq.user!.id,
+          ...(typeof req.body?.reason === 'string' ? { reason: req.body.reason } : {}),
+        },
+      );
+      if (!claim || claim.affected !== 1) {
+        return res.status(409).json({ error: 'Approval changed state concurrently' });
       }
-      const saved = await repo.save(approval);
+      const saved = (await repo.findOne({ where: { id: approval.id } }))!;
 
       await logAudit({
         userId: authReq.user!.id,

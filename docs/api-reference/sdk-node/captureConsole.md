@@ -21,7 +21,7 @@ client.captureConsole();
 ## Signature
 
 ```typescript
-captureConsole(logger: LoggerClient): void
+captureConsole(logger: LoggerClient): () => void   // returns restore()
 
 // Client method (returns this for chaining):
 client.captureConsole(): this
@@ -30,6 +30,11 @@ client.captureConsole(): this
 ---
 
 ## Behaviour
+
+Each captured `console.*` call is printed once and enqueued exactly once. The SDK's own console
+output (e.g. `platform.logger.info` echo, internal error messages) is never re-captured, so
+`captureConsole()` cannot recurse. Calling it twice is a no-op; call the returned function to restore
+the original console methods.
 
 | Console method | Platform log level |
 |---|---|

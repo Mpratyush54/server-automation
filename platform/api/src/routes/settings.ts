@@ -1,3 +1,5 @@
+import { requireProjectAccess } from '../lib/project-access';
+import { ProjectAccessRole } from '../entities/ProjectMember';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { SmtpConfig } from '../entities/SmtpConfig';
@@ -121,11 +123,17 @@ router.delete('/settings/storage/:id', expressAuthenticate, expressRequireRole([
 
 router.post('/projects/:projectId/databases/backup', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
   try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const { dbName, environment } = req.body;
     if (!dbName) return res.status(400).json({ error: 'dbName is required' });
     const ds = await getDb();
     const project = await ds.getRepository(Project).findOne({ where: { id: req.params.projectId } });
     if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    if (project.databaseResources?.[environment || 'production']?.dbName !== dbName) {
+      return res.status(400).json({ error: 'Database does not belong to this project environment; initialize its server-owned database identity first' });
+    }
 
     // Get active storage provider
     const storageRepo = ds.getRepository(StorageProvider);
@@ -138,13 +146,14 @@ router.post('/projects/:projectId/databases/backup', expressAuthenticate, expres
       dbName,
       environment: environment || 'production',
       providerType: (activeProvider?.providerType as any) || 'local',
+      providerId: activeProvider?.id || null,
       status: BackupStatus.IN_PROGRESS,
     });
     const savedBackup = await backupRepo.save(backup);
 
     // Trigger backup async
     (async () => {
-      const tmpFile = require('path').join(process.cwd(), 'tmp', `${dbName}_${Date.now()}.dump`);
+      const tmpFile = require('path').join(process.cwd(), 'tmp', `${savedBackup.id}.dump`);
       require('fs').mkdirSync(require('path').dirname(tmpFile), { recursive: true });
       try {
         const { dumpDatabase, computeFileChecksum } = await import('../lib/database-service');
@@ -152,14 +161,14 @@ router.post('/projects/:projectId/databases/backup', expressAuthenticate, expres
         if (!result.success) throw new Error(result.error || 'pg_dump failed');
 
         const checksum = await computeFileChecksum(tmpFile);
-        let fileId = `backups/${project.name}/${dbName}/${require('path').basename(tmpFile)}`;
+        let fileId = `backups/${project.id}/${savedBackup.id}.dump`;
 
-        if (activeProvider) {
-          const { createAdapter } = await import('../lib/storage-service');
-          const adapter = createAdapter(activeProvider.providerType, activeProvider.credentials || {}, activeProvider.bucketName || undefined, activeProvider.endpointUrl || undefined);
-          const uploadResult = await adapter.upload(tmpFile, fileId);
-          fileId = uploadResult.fileId;
-        }
+        const { createAdapter } = await import('../lib/storage-service');
+        const adapter = activeProvider
+          ? createAdapter(activeProvider.providerType, activeProvider.credentials || {}, activeProvider.bucketName || undefined, activeProvider.endpointUrl || undefined)
+          : createAdapter('local', {});
+        const uploadResult = await adapter.upload(tmpFile, fileId);
+        fileId = uploadResult.fileId;
 
         const bkpDs = await getDb();
         await bkpDs.getRepository(DbBackup).update(savedBackup.id, {
@@ -199,6 +208,8 @@ router.post('/projects/:projectId/databases/backup', expressAuthenticate, expres
 
 router.get('/projects/:projectId/databases/backups', expressAuthenticate, async (req: Request, res: Response) => {
   try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, ProjectAccessRole.VIEWER);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const { dbName } = req.query as Record<string, string>;
     const ds = await getDb();
     const { DbBackup } = await import('../entities/DbBackup');
@@ -213,6 +224,8 @@ router.get('/projects/:projectId/databases/backups', expressAuthenticate, async 
 
 router.post('/projects/:projectId/databases/backups/:backupId/restore', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
   try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const ds = await getDb();
     const { DbBackup, BackupStatus } = await import('../entities/DbBackup');
     const backup = await ds.getRepository(DbBackup).findOne({ where: { id: req.params.backupId, projectId: req.params.projectId } });
@@ -223,20 +236,25 @@ router.post('/projects/:projectId/databases/backups/:backupId/restore', expressA
 
     // Async restore
     (async () => {
-      const tmpFile = require('path').join(process.cwd(), 'tmp', `restore_${backup.dbName}_${Date.now()}.dump`);
+      const tmpFile = require('path').join(process.cwd(), 'tmp', `restore_${backup.id}_${Date.now()}.dump`);
       require('fs').mkdirSync(require('path').dirname(tmpFile), { recursive: true });
       try {
         const restoreDs = await getDb();
-        if (backup.fileId) {
-          const storageRepo = restoreDs.getRepository(StorageProvider);
-          const activeProvider = await storageRepo.findOne({ where: { isDefault: true } });
-          if (activeProvider) {
-            const { createAdapter } = await import('../lib/storage-service');
-            const adapter = createAdapter(activeProvider.providerType, activeProvider.credentials || {}, activeProvider.bucketName || undefined, activeProvider.endpointUrl || undefined);
-            await adapter.download(backup.fileId, tmpFile);
-          }
+        if (!backup.fileId) throw new Error('Backup has no stored dump');
+        const { createAdapter } = await import('../lib/storage-service');
+        let adapter;
+        if (backup.providerId) {
+          const provider = await restoreDs.getRepository(StorageProvider).findOne({ where: { id: backup.providerId } });
+          if (!provider) throw new Error('Original backup storage provider is unavailable');
+          adapter = createAdapter(provider.providerType, provider.credentials || {}, provider.bucketName || undefined, provider.endpointUrl || undefined);
+        } else if (backup.providerType === 'local') {
+          adapter = createAdapter('local', {});
+        } else {
+          throw new Error('Backup storage provider identity is missing; administrator migration required');
         }
-        const { restoreDatabase } = await import('../lib/database-service');
+        await adapter.download(backup.fileId, tmpFile);
+        const { restoreDatabase, computeFileChecksum } = await import('../lib/database-service');
+        if (!backup.checksum || await computeFileChecksum(tmpFile) !== backup.checksum) throw new Error('Backup checksum mismatch');
         const result = await restoreDatabase(backup.dbName, tmpFile);
         if (!result.success) throw new Error(result.error || 'pg_restore failed');
 
@@ -274,8 +292,6 @@ router.get('/settings/integrations', expressAuthenticate, expressRequireRole([Us
       gitlabGroup: row.gitlabGroup || '',
       clickupToken: maskSecret(row.clickupToken),
       clickupListId: row.clickupListId || '',
-      infisicalUrl: row.infisicalUrl || '',
-      infisicalToken: maskSecret(row.infisicalToken),
       webhookSecret: maskSecret(process.env.PLATFORM_WEBHOOK_SECRET),
       envFallback: {
         githubOAuth: Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET),
@@ -316,8 +332,6 @@ router.put('/settings/integrations', expressAuthenticate, expressRequireRole([Us
     if (b.gitlabGroup !== undefined) row.gitlabGroup = String(b.gitlabGroup || '').trim() || null;
     if (b.clickupToken) row.clickupToken = String(b.clickupToken);
     if (b.clickupListId !== undefined) row.clickupListId = String(b.clickupListId || '').trim() || null;
-    if (b.infisicalUrl !== undefined) row.infisicalUrl = String(b.infisicalUrl || '').replace(/\/$/, '') || null;
-    if (b.infisicalToken) row.infisicalToken = String(b.infisicalToken);
     await ds.getRepository(IntegrationSettings).save(row);
     applyIntegrationsToEnv(await resolveIntegrations());
     await logAudit({

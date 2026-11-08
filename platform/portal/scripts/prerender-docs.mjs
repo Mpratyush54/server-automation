@@ -2,7 +2,9 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { marked } from 'marked';
+import { JSDOM } from 'jsdom';
 import { prepareDocsHtml } from '../src/app/pages/docs/docs-html.mjs';
+import { sanitizeDocsHtml } from '../src/app/pages/docs/docs-sanitize.mjs';
 
 const portal = fileURLToPath(new URL('../', import.meta.url));
 const origin = 'https://platform.pratyushes.dev';
@@ -22,6 +24,7 @@ export async function prerenderDocs({ docsDir = join(portal, 'public/docs'), out
   const files = await markdownFiles(docsDir);
   const shell = sitemapOnly ? '' : await readFile(join(outputDir, 'index.html'), 'utf8');
   const pages = [];
+  const { window } = new JSDOM('');
   for (const file of files) {
     const path = file === 'index.md' ? '/docs' : `/docs/${file.slice(0, -3)}`;
     const canonical = origin + path;
@@ -31,7 +34,8 @@ export async function prerenderDocs({ docsDir = join(portal, 'public/docs'), out
     const heading = markdown.match(/^#\s+(.+)$/m)?.[1].replace(/[*`]/g, '').trim() || 'Documentation';
     const title = `${heading} | Platform Docs`;
     const description = `Read ${heading} in the Platform documentation. Guides and reference for the self-hosted Platform control plane.`;
-    const article = prepareDocsHtml(await marked.parse(markdown), `/docs/${file}`, origin);
+    // Same sanitizer as the SPA: this HTML is served before Angular boots.
+    const article = sanitizeDocsHtml(prepareDocsHtml(await marked.parse(markdown), `/docs/${file}`, origin), window);
     // This content is sent to every client. Angular replaces app-root with its
     // interactive view on startup; the document remains readable without JS.
     const content = `<style>

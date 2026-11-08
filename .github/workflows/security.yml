@@ -1,0 +1,175 @@
+name: Security and Tests
+
+on:
+  pull_request:
+    branches: [ "master" ]
+  push:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+# Deny by default; each job asks for what it needs.
+permissions: {}
+
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # list PR commits to scan
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          # Pin the scanner binary too (the action otherwise picks its own default).
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_ENABLE_COMMENTS: "false"
+
+  npm-audit:
+    name: npm audit (production deps)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      # Audits every tracked npm package. Packages without a committed lockfile
+      # are skipped with a warning until lockfiles land (npm audit needs one to
+      # know the resolved tree).
+      - name: Audit each package
+        run: |
+          set -uo pipefail
+          failed=0
+          while IFS= read -r manifest; do
+            dir="$(dirname "$manifest")"
+            if [ ! -f "$dir/package-lock.json" ]; then
+              echo "::warning file=${manifest}::No package-lock.json in ${dir}; npm audit skipped"
+              continue
+            fi
+            echo "::group::npm audit ${dir}"
+            if ! (cd "$dir" && npm audit --omit=dev --audit-level=high); then
+              # Known, tracked exception: Angular 19 advisories are only fixed in
+              # Angular 21 (issue #32). Remove this entry when #32 lands.
+              if [ "$dir" = "platform/portal" ]; then
+                echo "::warning file=${dir}/package-lock.json::Known Angular 19 advisories, fixed by the Angular 21 upgrade tracked in issue #32"
+              else
+                echo "::error file=${dir}/package-lock.json::High/critical production advisories in ${dir}"
+                failed=1
+              fi
+            fi
+            echo "::endgroup::"
+          done < <(git ls-files '*package.json' | grep -v '/node_modules/')
+          exit "$failed"
+
+  govulncheck:
+    name: govulncheck (platformctl)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: platformctl
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Same toolchain the module declares, so stdlib advisories reflect what
+      # the release would ship.
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: platformctl/go.mod
+          cache-dependency-path: platformctl/go.sum
+
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  go-test:
+    name: go test (platformctl)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: platformctl
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: platformctl/go.mod
+          cache-dependency-path: platformctl/go.sum
+
+      - name: Run tests
+        run: go test ./...
+
+  npm-test:
+    name: npm test (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [ "platform/api", "sdk-node" ]
+    defaults:
+      run:
+        working-directory: ${{ matrix.package }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Install dependencies
+        env:
+          PKG: ${{ matrix.package }}
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            echo "::warning::${PKG} has no package-lock.json; using npm install"
+            npm install --no-audit --no-fund
+          fi
+
+      # API integration tests import sdk-node's source, so they need its deps.
+      - name: Install sdk-node dependencies for API tests
+        if: matrix.package == 'platform/api'
+        working-directory: sdk-node
+        run: npm ci --no-audit --no-fund
+
+      - name: Run tests
+        run: npm test

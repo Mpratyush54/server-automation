@@ -4,6 +4,8 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
   testMatch: ['**/*.test.ts'],
+  // Sandbox host paths (/etc/platform, backups) for every test file.
+  setupFiles: ['<rootDir>/tests/setup-host-paths.ts'],
   transformIgnorePatterns: ['node_modules/(?!@kubernetes/client-node)/'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',

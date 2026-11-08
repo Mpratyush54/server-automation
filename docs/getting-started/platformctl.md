@@ -62,7 +62,6 @@ sudo platformctl install platform
 | `monitoring` | Grafana + Prometheus + Loki |
 | `oauth2-proxy` | OAuth2 proxy |
 | `portainer` | Portainer UI with Platform SSO |
-| `infisical` | Secret management |
 | `platform` | Platform API + portal |
 | `routing` | Ingress routes |
 | `auto-update` | GHCR image updater + CronJob |

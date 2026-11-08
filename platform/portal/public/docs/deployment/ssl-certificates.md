@@ -14,8 +14,7 @@ Internet ──► Ingress-NGINX ──► cert-manager (HTTP-01 challenge)
                 ├── https://argocd.platform.dev
                 ├── https://grafana.platform.dev
                 ├── https://portainer.platform.dev
-                ├── https://minio.platform.dev
-                └── https://infisical.platform.dev
+                └── https://minio.platform.dev
 ```
 
 All subdomains share a single wildcard-ish certificate stored in the `platform-tls` secret.
@@ -145,7 +144,6 @@ spec:
     - grafana.platform.dev
     - portainer.platform.dev
     - minio.platform.dev
-    - infisical.platform.dev
     secretName: platform-tls    # <-- cert stored here
   rules:
   - host: platform.dev

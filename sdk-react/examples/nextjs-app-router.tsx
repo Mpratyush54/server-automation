@@ -27,7 +27,7 @@ const config: PlatformConfig = {
 export function PlatformRoot({ children }: { children: ReactNode }) {
   return (
     <PlatformProvider config={config}>
-      <ErrorBoundary>{children}</ErrorBoundary>
+      <ErrorBoundary config={config}>{children}</ErrorBoundary>
       <BugReporterWidget config={config} />
     </PlatformProvider>
   );

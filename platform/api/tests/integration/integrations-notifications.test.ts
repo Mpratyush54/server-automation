@@ -157,6 +157,8 @@ import jwt from 'jsonwebtoken';
 import apiRouter from '../../src/routes/api';
 
 const JWT_SECRET = 'plat-super-secret-key';
+// The API never falls back to a default secret; tests must configure it.
+process.env.JWT_SECRET = JWT_SECRET;
 const adminToken = jwt.sign(
   { id: ADMIN.id, email: ADMIN.email, name: ADMIN.name, role: ADMIN.role },
   JWT_SECRET,
@@ -232,6 +234,8 @@ describe('integrations + notifications + rotate', () => {
     expect(get.body.githubClientId).toBe('gh-client');
     expect(get.body.githubClientSecret.set).toBe(true);
     expect(get.body.callbackUrls.github).toContain('/api/auth/github/callback');
+    expect(get.body).not.toHaveProperty('infisicalUrl');
+    expect(get.body).not.toHaveProperty('infisicalToken');
   });
 
   it('rejects developers from integrations and rotate', async () => {

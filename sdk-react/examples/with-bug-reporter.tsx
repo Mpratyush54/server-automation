@@ -27,7 +27,7 @@ function Boom() {
 export default function WithBugReporter() {
   return (
     <PlatformProvider config={config}>
-      <ErrorBoundary>
+      <ErrorBoundary config={config}>
         <h1>Bug reporter + error boundary</h1>
         <Boom />
         <p>Use the floating 🐛 button to submit a report.</p>

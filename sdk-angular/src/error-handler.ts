@@ -1,6 +1,7 @@
 import { Injectable, Inject, ErrorHandler, Injector } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpBackend, HttpClient } from '@angular/common/http';
 import { PLATFORM_CONFIG, PlatformConfig } from './platform-config';
+import { platformHeaders, redactSensitive } from './platform-http';
 
 @Injectable()
 export class PlatformErrorHandler implements ErrorHandler {
@@ -10,11 +11,12 @@ export class PlatformErrorHandler implements ErrorHandler {
   ) {}
 
   handleError(error: any): void {
-    const message = error?.message || String(error);
-    const stack = error?.stack || '';
-    const http = this.injector.get(HttpClient);
+    const message = redactSensitive(error?.message || String(error));
+    const stack = redactSensitive(error?.stack || '');
 
     try {
+      // HttpBackend bypasses app interceptors (no metrics loop, no foreign headers).
+      const http = new HttpClient(this.injector.get(HttpBackend));
       http.post(`${this.config.apiBase}/api/sdk/bug-report`, {
         projectId: this.config.projectId,
         environment: this.config.environment || 'production',
@@ -25,10 +27,10 @@ export class PlatformErrorHandler implements ErrorHandler {
         ],
         browserInfo: {
           userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'server',
-          url: typeof window !== 'undefined' ? window.location.href : '',
+          url: typeof window !== 'undefined' ? redactSensitive(window.location.href) : '',
         },
         appState: {},
-      }).subscribe({ error: () => {} });
+      }, { headers: platformHeaders(this.config) }).subscribe({ error: () => {} });
     } catch {}
 
     console.error('[Platform] Unhandled error:', error);

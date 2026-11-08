@@ -1,8 +1,14 @@
 import { AxiosInstance } from 'axios';
+import { runWithoutCapture } from './console-capture';
+
+/** Max log entries held in memory while the Platform API is unreachable (oldest dropped first). */
+export const MAX_LOG_BUFFER = 500;
+
+type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
 
 export class LoggerClient {
   private buffer: any[] = [];
-  private flushInterval: ReturnType<typeof setInterval>;
+  private flushInterval?: ReturnType<typeof setInterval>;
   private http?: AxiosInstance;
   private projectName?: string;
   private environmentName?: string;
@@ -10,10 +16,6 @@ export class LoggerClient {
   private branch?: string;
   private commitSha?: string;
   private hostname?: string;
-
-  constructor() {
-    this.flushInterval = setInterval(() => this.flush(), 5000);
-  }
 
   configure(
     http: AxiosInstance,
@@ -31,26 +33,39 @@ export class LoggerClient {
     this.branch = branch;
     this.commitSha = commitSha;
     this.hostname = hostname || 'localhost';
+    this.startFlushTimer();
+  }
+
+  // Started lazily (not at import time) and unref'd so it never keeps the process alive.
+  private startFlushTimer(): void {
+    if (this.flushInterval) return;
+    this.flushInterval = setInterval(() => this.flush(), 5000);
+    (this.flushInterval as any).unref?.();
   }
 
   info(message: string, metadata?: any): void {
-    console.log(`[INFO] ${message}`, metadata || '');
+    runWithoutCapture(() => console.log(`[INFO] ${message}`, metadata || ''));
     this.enqueue('INFO', message, metadata);
   }
 
   warn(message: string, metadata?: any): void {
-    console.warn(`[WARN] ${message}`, metadata || '');
+    runWithoutCapture(() => console.warn(`[WARN] ${message}`, metadata || ''));
     this.enqueue('WARN', message, metadata);
   }
 
   error(message: string, metadata?: any): void {
-    console.error(`[ERROR] ${message}`, metadata || '');
+    runWithoutCapture(() => console.error(`[ERROR] ${message}`, metadata || ''));
     this.enqueue('ERROR', message, metadata);
   }
 
   debug(message: string, metadata?: any): void {
-    console.debug(`[DEBUG] ${message}`, metadata || '');
+    runWithoutCapture(() => console.debug(`[DEBUG] ${message}`, metadata || ''));
     this.enqueue('DEBUG', message, metadata);
+  }
+
+  /** Enqueue an entry without echoing it to the console (used by captureConsole). */
+  record(level: LogLevel, message: string, metadata?: any): void {
+    this.enqueue(level, message, metadata);
   }
 
   private enqueue(level: string, message: string, metadata?: any): void {
@@ -67,6 +82,7 @@ export class LoggerClient {
       metadata,
       timestamp: new Date().toISOString(),
     });
+    if (this.buffer.length > MAX_LOG_BUFFER) this.buffer.splice(0, this.buffer.length - MAX_LOG_BUFFER);
     if (this.buffer.length >= 50) this.flush();
   }
 
@@ -76,13 +92,21 @@ export class LoggerClient {
     try {
       await this.http.post('/api/sdk/logs', { logs: batch });
     } catch (err: any) {
-      console.error('[platform] Log forward error (silent):', err.message);
+      runWithoutCapture(() => console.error('[platform] Log forward error (silent):', err.message));
+      // Re-queue, but never hold more than MAX_LOG_BUFFER entries (drop oldest).
       this.buffer.unshift(...batch);
+      if (this.buffer.length > MAX_LOG_BUFFER) this.buffer.splice(0, this.buffer.length - MAX_LOG_BUFFER);
     }
   }
 
+  /** Number of entries waiting to be forwarded. */
+  get pending(): number {
+    return this.buffer.length;
+  }
+
   stop(): void {
-    clearInterval(this.flushInterval);
+    if (this.flushInterval) clearInterval(this.flushInterval);
+    this.flushInterval = undefined;
     this.flush();
   }
 }
