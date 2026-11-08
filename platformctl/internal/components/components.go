@@ -121,6 +121,7 @@ func writeTemplatedManifest(name string, cfg *config.Config, dest string) error 
 		"{{OIDC_SECRET_GRAFANA}}", cfg.OIDCSecretGrafana,
 		"{{OIDC_SECRET_ARGOCD}}", cfg.OIDCSecretArgoCD,
 		"{{OIDC_SECRET_OAUTH2_PROXY}}", cfg.OIDCSecretOAuth2Proxy,
+		"{{OIDC_SECRET_MINIO}}", cfg.OIDCSecretMinio,
 	)
 	// Values files can carry client secrets: keep them private.
 	return os.WriteFile(dest, []byte(r.Replace(vals)), 0600)
@@ -1031,8 +1032,20 @@ spec:
     - argocd.__DOMAIN__
     - grafana.__DOMAIN__
     - portainer.__DOMAIN__
+    - minio.__DOMAIN__
     secretName: platform-tls
   rules:
+  # MinIO console on its own host: its SSO redirect is https://minio.DOMAIN/oauth_callback.
+  - host: minio.__DOMAIN__
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: minio-proxy
+            port:
+              number: 9090
   - host: __DOMAIN__
     http:
       paths:

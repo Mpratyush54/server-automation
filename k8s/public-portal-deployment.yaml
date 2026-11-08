@@ -19,15 +19,15 @@ spec:
       - name: public-portal
         image: ghcr.io/mpratyush54/platform-portal-public:latest
         ports:
-        - containerPort: 80
+        - containerPort: 8080
         livenessProbe:
           httpGet:
             path: /health
-            port: 80
+            port: 8080
         readinessProbe:
           httpGet:
             path: /health
-            port: 80
+            port: 8080
         resources:
           limits:
             cpu: 200m

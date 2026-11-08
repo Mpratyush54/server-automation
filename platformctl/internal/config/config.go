@@ -67,6 +67,7 @@ type Config struct {
 	OIDCSecretArgoCD      string
 	OIDCSecretPortainer   string
 	OIDCSecretOAuth2Proxy string
+	OIDCSecretMinio       string
 
 	// PasswordGenerated is set when admin password was auto-created this run.
 	PasswordGenerated bool
@@ -113,6 +114,7 @@ func Load() *Config {
 		OIDCSecretArgoCD:      os.Getenv("OIDC_SECRET_ARGOCD"),
 		OIDCSecretPortainer:   os.Getenv("OIDC_SECRET_PORTAINER"),
 		OIDCSecretOAuth2Proxy: os.Getenv("OIDC_SECRET_OAUTH2_PROXY"),
+		OIDCSecretMinio:       os.Getenv("OIDC_SECRET_MINIO"),
 	}
 	c.resolveProfile(explicit)
 	return c
@@ -449,7 +451,7 @@ func (c *Config) GenerateSecrets() {
 			c.PortainerPassword = generatePassword(20)
 		}
 	}
-	for _, s := range []*string{&c.OIDCSecretGrafana, &c.OIDCSecretArgoCD, &c.OIDCSecretPortainer, &c.OIDCSecretOAuth2Proxy} {
+	for _, s := range []*string{&c.OIDCSecretGrafana, &c.OIDCSecretArgoCD, &c.OIDCSecretPortainer, &c.OIDCSecretOAuth2Proxy, &c.OIDCSecretMinio} {
 		if *s == "" {
 			*s = generatePassword(40)
 		}
@@ -498,6 +500,7 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("OIDC_SECRET_ARGOCD=%s\n", c.OIDCSecretArgoCD))
 	b.WriteString(fmt.Sprintf("OIDC_SECRET_PORTAINER=%s\n", c.OIDCSecretPortainer))
 	b.WriteString(fmt.Sprintf("OIDC_SECRET_OAUTH2_PROXY=%s\n", c.OIDCSecretOAuth2Proxy))
+	b.WriteString(fmt.Sprintf("OIDC_SECRET_MINIO=%s\n", c.OIDCSecretMinio))
 	b.WriteString(fmt.Sprintf("PLATFORM_IMAGE_TAG=%s\n", c.ImageTag))
 	b.WriteString(fmt.Sprintf("AUTO_UPDATE=%t\n", c.AutoUpdate))
 	b.WriteString(fmt.Sprintf("PLATFORM_PROFILE=%s\n", c.profileName()))

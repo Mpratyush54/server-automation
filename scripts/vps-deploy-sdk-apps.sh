@@ -8,10 +8,10 @@ trap 'rm -rf "$TMP"' EXIT
 export TMP
 
 ROOT="${1:-/tmp/sdk-apps-src}"
-DOMAIN="${DOMAIN:-148.113.59.3.sslip.io}"
+export DOMAIN="${DOMAIN:?set DOMAIN, e.g. 1.2.3.4.sslip.io}"
 NODE_HOST="sdk-demo-apps-development.${DOMAIN}"
 NS="sdk-demo-apps-development"
-API="${PLATFORM_API_URL:-https://api.148.113.59.3.sslip.io}"
+API="${PLATFORM_API_URL:-https://api.${DOMAIN}}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@pratyushes.dev}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:?ADMIN_PASSWORD required}"
 
@@ -55,7 +55,7 @@ sudo docker save sdk-angular-web:local | sudo k3s ctr images import -
 
 echo "==> Apply manifests (bootstrap; matches examples/sdk-apps/k8s)"
 cp -a examples/sdk-apps/k8s/. "$TMP/"
-printf '%s' "$SDK_TOKEN" | python3 -c 'import sys,os; from pathlib import Path; t=(Path(os.environ["TMP"])/"all.yaml").read_text(); print(t.replace("REPLACE_ME",sys.stdin.read()))' | sudo k3s kubectl apply -f -
+printf '%s' "$SDK_TOKEN" | python3 -c 'import sys,os; from pathlib import Path; t=(Path(os.environ["TMP"])/"all.yaml").read_text(); print(t.replace("REPLACE_ME",sys.stdin.read()).replace("__DOMAIN__",os.environ["DOMAIN"]))' | sudo k3s kubectl apply -f -
 unset SDK_TOKEN
 
 echo "==> Wait for rollouts"

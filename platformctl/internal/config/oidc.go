@@ -63,6 +63,7 @@ func (c *Config) OIDCClients() []OIDCClient {
 		{ID: "argocd", Secret: c.OIDCSecretArgoCD, RedirectURIs: []string{"https://" + d + "/argocd/auth/callback"}},
 		{ID: "portainer", Secret: c.OIDCSecretPortainer, RedirectURIs: []string{"https://portainer." + d + "/"}},
 		{ID: "oauth2-proxy", Secret: c.OIDCSecretOAuth2Proxy, RedirectURIs: []string{"https://" + d + "/oauth2/callback"}},
+		{ID: "minio", Secret: c.OIDCSecretMinio, RedirectURIs: []string{"https://minio." + d + "/oauth_callback"}},
 	}
 }
 

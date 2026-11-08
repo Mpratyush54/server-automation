@@ -53,7 +53,7 @@ func TestSDKScriptKeepsTokenInMemoryAndCleansTemps(t *testing.T) {
 		t.Fatal("script bootstrap boundary missing")
 	}
 	// Stop after authentication and token creation; no Docker or cluster operations.
-	prefix := "ADMIN_PASSWORD=test-only\ncurl() { case \"$*\" in *auth/login*) printf '{\"token\":\"login-test\"}';; *projects/*/tokens*) printf '{\"token\":\"sdk-test-secret\"}';; *) printf '[{\"id\":\"project-test\",\"name\":\"sdk-demo-apps\"}]';; esac; }\n"
+	prefix := "ADMIN_PASSWORD=test-only\nDOMAIN=test.example.io\ncurl() { case \"$*\" in *auth/login*) printf '{\"token\":\"login-test\"}';; *projects/*/tokens*) printf '{\"token\":\"sdk-test-secret\"}';; *) printf '[{\"id\":\"project-test\",\"name\":\"sdk-demo-apps\"}]';; esac; }\n"
 	out, err := runJobShell(t, prefix+script[:end]+"\n[[ $SDK_TOKEN == sdk-test-secret ]]\nprintf 'PRIVATE_TMP=%s\\n' \"$TMP\"\n")
 	if err != nil {
 		t.Fatalf("%v %s", err, out)

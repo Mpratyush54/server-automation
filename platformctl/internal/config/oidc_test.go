@@ -24,7 +24,7 @@ func TestValidACMEEmail(t *testing.T) {
 
 func TestOIDCClientsJSON(t *testing.T) {
 	c := &Config{Domain: "p.example.io", OIDCSecretGrafana: "g", OIDCSecretArgoCD: "a",
-		OIDCSecretPortainer: "p", OIDCSecretOAuth2Proxy: "o"}
+		OIDCSecretPortainer: "p", OIDCSecretOAuth2Proxy: "o", OIDCSecretMinio: "m"}
 	var got []OIDCClient
 	if err := json.Unmarshal([]byte(c.OIDCClientsJSON()), &got); err != nil {
 		t.Fatal(err)
@@ -34,6 +34,7 @@ func TestOIDCClientsJSON(t *testing.T) {
 		"argocd":       "https://p.example.io/argocd/auth/callback",
 		"portainer":    "https://portainer.p.example.io/",
 		"oauth2-proxy": "https://p.example.io/oauth2/callback",
+		"minio":        "https://minio.p.example.io/oauth_callback",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d clients", len(got))
@@ -52,7 +53,7 @@ func TestGenerateSecretsCreatesDistinctOIDCSecrets(t *testing.T) {
 	c := &Config{Domain: "d.io", AdminEmail: "a@d.io"}
 	c.GenerateSecrets()
 	seen := map[string]bool{}
-	for _, s := range []string{c.OIDCSecretGrafana, c.OIDCSecretArgoCD, c.OIDCSecretPortainer, c.OIDCSecretOAuth2Proxy} {
+	for _, s := range []string{c.OIDCSecretGrafana, c.OIDCSecretArgoCD, c.OIDCSecretPortainer, c.OIDCSecretOAuth2Proxy, c.OIDCSecretMinio} {
 		if len(s) < 32 || seen[s] {
 			t.Fatalf("OIDC secrets must be long and distinct, got %q", s)
 		}
