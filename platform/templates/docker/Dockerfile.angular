@@ -1,12 +1,22 @@
-FROM node:20-alpine AS builder
+# syntax=docker/dockerfile:1
+FROM node:22.23.4-alpine3.24 AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+# Reproducible install when a lockfile is committed; fall back otherwise.
+RUN if [ -f package-lock.json ]; then \
+      npm ci --no-audit --no-fund; \
+    else \
+      echo "WARN: no package-lock.json, falling back to npm install" >&2; \
+      npm install --no-audit --no-fund; \
+    fi
 COPY . .
 RUN npm run build
 
-FROM nginx:alpine
+# Runtime: nginx as UID 101. Unprivileged nginx cannot bind :80, so the
+# app's nginx.conf must `listen 8080;`.
+FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
+USER 101
+EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]

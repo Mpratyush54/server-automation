@@ -1,14 +1,24 @@
-FROM node:20-alpine AS builder
+# syntax=docker/dockerfile:1
+FROM node:22.23.4-alpine3.24 AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+# Reproducible install when a lockfile is committed; fall back otherwise.
+RUN if [ -f package-lock.json ]; then \
+      npm ci --no-audit --no-fund; \
+    else \
+      echo "WARN: no package-lock.json, falling back to npm install" >&2; \
+      npm install --no-audit --no-fund; \
+    fi
 COPY . .
-RUN npm run build
+RUN npm run build && npm prune --omit=dev
 
-FROM node:20-alpine
+# Runtime: production dependencies only, built-in non-root "node" user.
+FROM node:22.23.4-alpine3.24
+ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
+USER 1000:1000
 EXPOSE 3000
 CMD ["node", "dist/main.js"]
