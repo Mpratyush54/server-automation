@@ -327,4 +327,4 @@ Platform also uses MongoDB (via Mongoose) for high-volume, ephemeral data:
 
 ## Synchronization
 
-TypeORM `synchronize: true` is enabled in development, which automatically creates/updates tables on application startup. In production, use migrations instead.
+The schema is managed by versioned TypeORM migrations in `platform/api/src/migrations` (`synchronize` is off everywhere). They are applied by `node dist/migrate.js`, which platformctl runs as the `platform-api-migrate` Job before each API rollout. See `platform/api/README.md`.

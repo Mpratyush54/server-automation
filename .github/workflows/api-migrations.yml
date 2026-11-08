@@ -1,0 +1,87 @@
+name: API migrations
+
+# Fails when an entity in platform/api/src/entities changes without a matching
+# migration in platform/api/src/migrations (issue #17).
+on:
+  pull_request:
+    branches: [ "master" ]
+    paths:
+      - "platform/api/**"
+      - ".github/workflows/api-migrations.yml"
+  push:
+    branches: [ "master" ]
+    paths:
+      - "platform/api/**"
+      - ".github/workflows/api-migrations.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: api-migrations-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  migrations:
+    name: Migrations apply cleanly and match entities
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: platform
+    defaults:
+      run:
+        working-directory: platform/api
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Apply all migrations to an empty database
+        run: npm run migration:run
+
+      - name: Re-run is a no-op
+        run: node dist/migrate.js
+
+      - name: Fail on drift between entities and migrations
+        run: |
+          if ! npm run --silent migration:check; then
+            echo "::error::Entities changed without a migration. Run 'npm run migration:generate -- src/migrations/<Name>' against a migrated database and commit the result (see platform/api/README.md)."
+            exit 1
+          fi
+
+      - name: Migration tests against Postgres
+        env:
+          MIGRATION_TEST_PG_HOST: 127.0.0.1
+          MIGRATION_TEST_PG_PORT: "5432"
+          MIGRATION_TEST_PG_USER: postgres
+          MIGRATION_TEST_PG_PASSWORD: postgres
+        run: npx jest --forceExit tests/integration/migrations.db.test.ts tests/unit/lib/migrations.test.ts

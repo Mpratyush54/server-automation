@@ -77,7 +77,7 @@ graph LR
     B --> E7
 ```
 
-- Singleton `DataSource` initialized in `config/database.ts` with `synchronize: true`
+- Singleton `DataSource` initialized in `config/database.ts`; schema managed by versioned migrations (`src/migrations`, applied by the `platform-api-migrate` Job), `synchronize` is off
 - Entity relations: `User → Role`, `Project → Environment → Deployment`, `Secret → SecretVersion`
 - Connection: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
 
