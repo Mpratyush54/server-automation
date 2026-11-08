@@ -8,11 +8,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from platform_sdk.db.redis import RedisManager
 
 
+@pytest.fixture(autouse=True)
+def _clean_redis_env(monkeypatch):
+    """Keep developer PLATFORM_REDIS_* variables from leaking into assertions."""
+    for name in list(os.environ):
+        if name.startswith("PLATFORM_REDIS_"):
+            monkeypatch.delenv(name, raising=False)
+
+
 class TestRedisManager:
     def test_init_with_config(self):
         config = {"host": "localhost", "port": 6379, "password": None}
         manager = RedisManager(config)
-        assert manager.config == {**config, "username": os.environ.get("PLATFORM_REDIS_USERNAME")}
+        assert manager.config == {**config, "username": None}
         assert manager.connected is False
 
     def test_init_without_config(self):
@@ -151,3 +159,48 @@ class TestRedisManager:
 
     def test_delete_when_not_connected(self):
         assert RedisManager().delete("key") is None
+
+    @patch('platform_sdk.db.redis.redis.Redis')
+    def test_bytes_keys_prefixed_once(self, mock_redis_class):
+        manager = RedisManager({"key_prefix": "project:"})
+        assert manager.prefixed(b"key") == b"project:key"
+        assert manager.prefixed(b"project:key") == b"project:key"
+
+    @patch.dict(os.environ, {"PLATFORM_REDIS_URL": "rediss://redis.internal:6380/0",
+                            "PLATFORM_REDIS_USERNAME": "project-user",
+                            "PLATFORM_REDIS_PASSWORD": "secret",
+                            "PLATFORM_REDIS_KEY_PREFIX": "project:"}, clear=True)
+    @patch('platform_sdk.db.redis.redis.Redis')
+    def test_tls_url_from_environment(self, mock_redis_class):
+        manager = RedisManager()
+        manager.connect()
+        mock_redis_class.from_url.assert_called_once_with(
+            "rediss://redis.internal:6380/0", password="secret",
+            username="project-user", decode_responses=True,
+        )
+        mock_redis_class.assert_not_called()
+        assert manager.connected is True
+        manager.set("k", "v")
+        mock_redis_class.from_url.return_value.set.assert_called_once_with("project:k", "v")
+
+    @patch.dict(os.environ, {"PLATFORM_REDIS_TLS": "true", "PLATFORM_REDIS_DB": "2",
+                            "PLATFORM_REDIS_USERNAME": "project-user"}, clear=True)
+    @patch('platform_sdk.db.redis.redis.Redis')
+    def test_tls_flag_and_db_from_environment(self, mock_redis_class):
+        RedisManager().connect()
+        mock_redis_class.assert_called_once_with(
+            host="localhost", port=6379, password=None, db=2, ssl=True,
+            username="project-user", decode_responses=True,
+        )
+
+    def test_url_tls_parsing_real_client(self):
+        # No server needed: redis-py builds an SSL connection pool from rediss:// lazily.
+        manager = RedisManager({"url": "rediss://redis.internal:6380/0",
+                                "username": "project-user", "password": "secret"})
+        with patch('platform_sdk.db.redis.redis.Redis.ping'):
+            manager.connect()
+        kwargs = manager.client.connection_pool.connection_kwargs
+        assert manager.client.connection_pool.connection_class.__name__ == "SSLConnection"
+        assert kwargs["username"] == "project-user"
+        assert kwargs["host"] == "redis.internal"
+        assert kwargs["port"] == 6380

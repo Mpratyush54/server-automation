@@ -59,6 +59,9 @@ class TestPlatformClientIntegration:
         client.init(project_name="project", platform_url="http://localhost:3000", databases=["redis"])
         assert client.initialized
         mock_redis.assert_not_called()
+        # Manager stays registered (helpers no-op) so client.db["redis"] never KeyErrors.
+        assert client.db["redis"].connected is False
+        assert client.db["redis"].get("key") is None
 
     @patch('platform_sdk.PlatformClient._start_heartbeat')
     @patch('platform_sdk.PlatformClient._request')

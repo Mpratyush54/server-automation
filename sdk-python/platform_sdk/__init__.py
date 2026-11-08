@@ -77,28 +77,32 @@ class PlatformClient:
 
         if "redis" in self.options["databases"]:
             from .db.redis import RedisManager
-            try:
-                credentials = self._request("GET", "/api/sdk/db-credentials", params={
-                    "projectId": self.options["project_name"],
-                    "dbTypes": "redis",
-                    "environment": self.options["environment_name"],
-                })
-                redis_credentials = (credentials or {}).get("redis")
-                redis_config = None
-                if redis_credentials:
-                    if redis_credentials.get("status") == "error":
-                        raise ValueError("Platform Redis credentials are unavailable")
-                    redis_config = {
-                        key: redis_credentials[key]
-                        for key in ("host", "port", "username", "password", "db")
-                        if key in redis_credentials
-                    }
-                    if "keyPrefix" in redis_credentials:
-                        redis_config["key_prefix"] = redis_credentials["keyPrefix"]
-                self._db_connections["redis"] = RedisManager(redis_config)
-                self._db_connections["redis"].connect()
-            except Exception as e:
-                logger.warning(f"Redis connection failed (non-blocking): {e}")
+            # Per-project ACL user + key prefix from the Platform; None -> PLATFORM_REDIS_* env.
+            credentials = self._request("GET", "/api/sdk/db-credentials", params={
+                "projectId": self.options["project_name"],
+                "dbTypes": "redis",
+                "environment": self.options["environment_name"],
+            })
+            redis_credentials = (credentials or {}).get("redis")
+            provisioning_error = isinstance(redis_credentials, dict) and redis_credentials.get("status") == "error"
+            redis_config = None
+            if isinstance(redis_credentials, dict) and not provisioning_error:
+                redis_config = {
+                    key: redis_credentials[key]
+                    for key in ("host", "port", "username", "password", "db", "url", "ssl")
+                    if key in redis_credentials
+                }
+                if "keyPrefix" in redis_credentials:
+                    redis_config["key_prefix"] = redis_credentials["keyPrefix"]
+            # Always registered so client.db["redis"] exists; helpers no-op while disconnected.
+            self._db_connections["redis"] = RedisManager(redis_config or None)
+            if provisioning_error:
+                logger.warning("Redis connection skipped: Platform Redis credentials are unavailable")
+            else:
+                try:
+                    self._db_connections["redis"].connect()
+                except Exception as e:
+                    logger.warning(f"Redis connection failed (non-blocking): {e}")
 
         self.initialized = True
 

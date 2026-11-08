@@ -60,7 +60,8 @@ registration, heartbeats, logs and config (an error is logged). Postgres has no 
 When `databases` includes `redis`, initialization fetches `/api/sdk/db-credentials` with the
 SDK token, project and environment. The returned ACL `username`, password and `keyPrefix`
 are used automatically. If the request is unavailable, the manager falls back to environment
-configuration. An explicit Redis provisioning error leaves Redis disconnected.
+configuration. An explicit Redis provisioning error leaves the manager registered at
+`client.db["redis"]` but disconnected (helpers return `None` / no-op).
 
 ```python
 # After client.init(..., databases=["redis"])
@@ -83,7 +84,9 @@ from `platform_sdk.db.redis`. Alternatively set `PLATFORM_REDIS_HOST`, `PLATFORM
 `PLATFORM_REDIS_PASSWORD`, `PLATFORM_REDIS_USERNAME` and `PLATFORM_REDIS_KEY_PREFIX`.
 Explicit `username` and `key_prefix` config values override their environment values.
 Without a username or prefix, existing default-user, unprefixed connections still work.
-Direct config accepts redis-py TLS options such as `ssl=True`; Redis URL parsing is not provided.
+For TLS, pass `url="rediss://host:port/db"` (or set `PLATFORM_REDIS_URL`), or set `ssl=True`
+(`PLATFORM_REDIS_TLS=true`). `PLATFORM_REDIS_DB` selects the database. Other redis-py keyword
+arguments in the config dict are passed through.
 
 Run [`examples/05_redis_acl.py`](./examples/05_redis_acl.py) with `PLATFORM_URL`,
 `PLATFORM_SDK_TOKEN` and `PROJECT_NAME` set (optionally `ENVIRONMENT_NAME`) to exercise
@@ -114,6 +117,7 @@ There is **no** built-in Flask/Django middleware yet — record metrics yourself
 | [`examples/02_with_databases.py`](./examples/02_with_databases.py) | Postgres / Mongo / Redis |
 | [`examples/03_flask_manual_metrics.py`](./examples/03_flask_manual_metrics.py) | Flask + timed requests |
 | [`examples/04_fastapi_manual_metrics.py`](./examples/04_fastapi_manual_metrics.py) | FastAPI + middleware timing |
+| [`examples/05_redis_acl.py`](./examples/05_redis_acl.py) | Project Redis ACL user + key prefix |
 
 Docs: [Python quickstart](../docs/getting-started/python-sdk-quickstart.md) · [API](../docs/api-reference/sdk-python/PlatformClient.md)
 
