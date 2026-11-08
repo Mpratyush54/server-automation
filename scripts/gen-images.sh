@@ -61,7 +61,7 @@ KUBE_VERSION="${K3S%%+*}" # v1.37.2+k3s1 -> v1.37.2
 # values <file>: copy a repo values file with installer placeholders filled in.
 values() {
   local src="$DATA/$1" dst="$WORK/$1"
-  sed -e "s/{{DOMAIN}}/$DOMAIN/g" -e 's/REPLACE_COOKIE_SECRET/0123456789abcdef/g' "$src" > "$dst"
+  sed -e "s/{{DOMAIN}}/$DOMAIN/g" -e "s|{{OIDC_INTERNAL}}|http://platform-api.platform.svc.cluster.local:3000/api/oauth|g" -e "s/{{[A-Z0-9_]*}}/placeholder/g" -e 's/REPLACE_COOKIE_SECRET/0123456789abcdef/g' "$src" > "$dst"
   printf '%s' "$dst"
 }
 
