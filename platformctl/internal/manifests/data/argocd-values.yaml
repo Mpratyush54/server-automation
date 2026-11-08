@@ -8,7 +8,7 @@ configs:
       name: Platform
       issuer: https://{{DOMAIN}}/api/oauth
       clientID: argocd
-      clientSecret: argocd-secret-placeholder
+      clientSecret: "{{OIDC_SECRET_ARGOCD}}"
       requestedScopes: ["openid", "profile", "email", "groups"]
   params:
     server.insecure: "true"

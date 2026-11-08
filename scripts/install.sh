@@ -11,6 +11,7 @@ if [ -z "${BASH_VERSION:-}" ]; then
   exit 1
 fi
 set -euo pipefail
+umask 077
 
 # GitHub API is case-sensitive; repo is lowercase "server-automation"
 REPO="${PLATFORMCTL_REPO:-Mpratyush54/server-automation}"
@@ -65,7 +66,17 @@ trap 'rm -rf "$tmp"' EXIT
 
 echo "Downloading $url ..."
 curl -fsSL "$url" -o "$tmp/$asset"
-tar -xzf "$tmp/$asset" -C "$tmp"
+curl -fsSL "https://github.com/${REPO}/releases/download/${tag_name}/checksums.txt" -o "$tmp/checksums.txt"
+# Select exactly this asset, then verify before parsing the archive.
+expected="$(awk -v asset="$asset" '$2 == asset {print $1}' "$tmp/checksums.txt")"
+[[ "$expected" =~ ^[a-fA-F0-9]{64}$ ]] || { echo "missing or invalid checksum for $asset" >&2; exit 1; }
+if command -v sha256sum >/dev/null 2>&1; then
+  actual="$(sha256sum "$tmp/$asset" | cut -d' ' -f1)"
+else
+  actual="$(shasum -a 256 "$tmp/$asset" | cut -d' ' -f1)"
+fi
+[[ "$actual" == "$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')" ]] || { echo "checksum mismatch for $asset" >&2; exit 1; }
+ tar -xzf "$tmp/$asset" -C "$tmp"
 
 if [[ ! -f "$tmp/platformctl" ]]; then
   echo "archive did not contain platformctl binary" >&2

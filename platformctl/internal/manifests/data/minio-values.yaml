@@ -10,7 +10,7 @@ extraEnvVars:
   - name: MINIO_IDENTITY_OPENID_CLIENT_ID
     value: minio
   - name: MINIO_IDENTITY_OPENID_CLIENT_SECRET
-    value: minio-secret-placeholder
+    value: "{{OIDC_SECRET_MINIO}}"
   - name: MINIO_IDENTITY_OPENID_DISPLAY_NAME
     value: Platform
 
@@ -23,7 +23,7 @@ console:
     - name: MINIO_IDENTITY_OPENID_CLIENT_ID
       value: minio
     - name: MINIO_IDENTITY_OPENID_CLIENT_SECRET
-      value: minio-secret-placeholder
+      value: "{{OIDC_SECRET_MINIO}}"
     - name: MINIO_IDENTITY_OPENID_DISPLAY_NAME
       value: Platform
     - name: MINIO_IDENTITY_OPENID_REDIRECT_URI

@@ -1,12 +1,19 @@
 config:
   clientID: "oauth2-proxy"
-  clientSecret: "placeholder"
+  clientSecret: "{{OIDC_SECRET_OAUTH2_PROXY}}"
   cookieSecret: "REPLACE_COOKIE_SECRET"
   emailDomains: ["*"]
   upstreams: ["static://202"]
   configFile: |
     provider = "oidc"
     oidc_issuer_url = "https://{{DOMAIN}}/api/oauth"
+    # No discovery over the public URL: browser login uses the public authorize
+    # endpoint, server-to-server calls stay in-cluster (works before TLS is valid).
+    skip_oidc_discovery = true
+    login_url = "https://{{DOMAIN}}/api/oauth/authorize"
+    redeem_url = "{{OIDC_INTERNAL}}/token"
+    oidc_jwks_url = "{{OIDC_INTERNAL}}/jwks"
+    profile_url = "{{OIDC_INTERNAL}}/userinfo"
     email_domains = [ "*" ]
     upstreams = [ "static://202" ]
     set_xauthrequest = true
@@ -18,7 +25,6 @@ config:
     pass_access_token = true
     pass_authorization_header = true
     set_authorization_header = true
-    ssl_insecure_skip_verify = true
     skip_provider_button = true
     cookie_refresh = "5m"
     cookie_expire = "24h"

@@ -6,3 +6,4 @@ kind: Kustomization
 resources:
   - api-image.yaml
   - portal-image.yaml
+  - api-rbac.yaml
