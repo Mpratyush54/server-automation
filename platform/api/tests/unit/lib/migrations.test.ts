@@ -123,6 +123,20 @@ describe('baseline idempotent DDL', () => {
     });
   });
 
+  it('accepts every statement of the wave-1 migration and makes it idempotent', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { BackgroundJobsAndOperations1794127020627 } = require('../../../src/migrations/1794127020627-BackgroundJobsAndOperations');
+    const sql: string[] = [];
+    const runner = { query: async (q: string) => { sql.push(q); } };
+    return new BackgroundJobsAndOperations1794127020627().up(runner as any).then(() => {
+      for (const t of ['background_jobs', 'operations', 'operation_steps', 'outbox_messages', 'webhook_deliveries', 'idempotency_keys']) {
+        expect(sql.some((q) => q.startsWith(`CREATE TABLE IF NOT EXISTS "${t}"`))).toBe(true);
+      }
+      expect(sql.filter((q) => /^CREATE TABLE /.test(q) && !/IF NOT EXISTS/.test(q))).toEqual([]);
+      expect(sql.filter((q) => /^CREATE (UNIQUE )?INDEX /.test(q) && !/IF NOT EXISTS/.test(q))).toEqual([]);
+    });
+  });
+
   it('refuses to revert the baseline unless explicitly allowed', async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { InitialSchema1762560000000 } = require('../../../src/migrations/1762560000000-InitialSchema');
