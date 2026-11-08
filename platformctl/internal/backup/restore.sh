@@ -40,10 +40,11 @@ postgres)
     work=$1
     # The bootstrap superuser already exists. Keep its current password until
     # all restores finish, then restore its original credentials last.
-    sed '''/^CREATE ROLE postgres;$/d; /^ALTER ROLE postgres /d''' "$work/globals.sql" | psql -U postgres -d template1 -v ON_ERROR_STOP=1
+    # This script is one single-quoted argument: embed single quotes as '\''.
+    sed '\''/^CREATE ROLE postgres;$/d; /^ALTER ROLE postgres /d'\'' "$work/globals.sql" | psql -U postgres -d template1 -v ON_ERROR_STOP=1
     tar -C "$work" -xf "$work/databases.tar"
     # Writers are stopped; drop leftover sessions so --clean can drop databases.
-    psql -U postgres -d template1 -v ON_ERROR_STOP=1 -Atc "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND datname IS NOT NULL AND datname <> '''template1'''" >/dev/null
+    psql -U postgres -d template1 -v ON_ERROR_STOP=1 -Atc "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND datname IS NOT NULL AND datname <> '\''template1'\''" >/dev/null
     for dump in "$work"/*.dump; do
       pg_restore -U postgres -d template1 --clean --if-exists --create --exit-on-error "$dump"
     done
@@ -52,8 +53,20 @@ postgres)
   ;;
 mongo)
   p=$(pod mongodb)
-  kubectl -n databases exec -i "$p" -- bash -ec "$PWHELPER"'
-    mongorestore --username root --password "$(pw MONGODB_ROOT_PASSWORD)" --authenticationDatabase admin --archive --gzip --drop' < "$src/mongo.archive.gz"
+  remote=$(kubectl -n databases exec "$p" -- mktemp -d)
+  trap 'kubectl -n databases exec "$p" -- rm -rf "$remote"' EXIT
+  kubectl -n databases cp "$src/mongo.archive.gz" "$p:$remote/mongo.archive.gz"
+  kubectl -n databases exec "$p" -- bash -ec "$PWHELPER"'
+    opts=(--username root --password "$(pw MONGODB_ROOT_PASSWORD)" --authenticationDatabase admin --gzip "--archive=$1/mongo.archive.gz")
+    # Data first, users and roles last. Replacing admin.system.users removes
+    # the user this session authenticated as: when that happened first, every
+    # later command failed ("requires authentication") and left the restore
+    # half done. As the final step it is one server-side merge, which also
+    # gives root its backed-up password. (Without --drop, existing users are
+    # not updated.)
+    mongorestore "${opts[@]}" --drop "--nsExclude=admin.system.*"
+    mongorestore "${opts[@]}" --drop "--nsInclude=admin.system.users" "--nsInclude=admin.system.roles"
+  ' -- "$remote"
   ;;
 minio)
   minio_source
