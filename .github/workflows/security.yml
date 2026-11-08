@@ -69,8 +69,14 @@ jobs:
             fi
             echo "::group::npm audit ${dir}"
             if ! (cd "$dir" && npm audit --omit=dev --audit-level=high); then
-              echo "::error file=${dir}/package-lock.json::High/critical production advisories in ${dir}"
-              failed=1
+              # Known, tracked exception: Angular 19 advisories are only fixed in
+              # Angular 21 (issue #32). Remove this entry when #32 lands.
+              if [ "$dir" = "platform/portal" ]; then
+                echo "::warning file=${dir}/package-lock.json::Known Angular 19 advisories, fixed by the Angular 21 upgrade tracked in issue #32"
+              else
+                echo "::error file=${dir}/package-lock.json::High/critical production advisories in ${dir}"
+                failed=1
+              fi
             fi
             echo "::endgroup::"
           done < <(git ls-files '*package.json' | grep -v '/node_modules/')
@@ -158,6 +164,12 @@ jobs:
             echo "::warning::${PKG} has no package-lock.json; using npm install"
             npm install --no-audit --no-fund
           fi
+
+      # API integration tests import sdk-node's source, so they need its deps.
+      - name: Install sdk-node dependencies for API tests
+        if: matrix.package == 'platform/api'
+        working-directory: sdk-node
+        run: npm ci --no-audit --no-fund
 
       - name: Run tests
         run: npm test

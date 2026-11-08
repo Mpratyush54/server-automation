@@ -47,7 +47,7 @@ regexes = [
 
 [[allowlists]]
 description = "Fixture credentials in unit/integration tests"
-targetRules = ["generic-api-key", "jwt"]
+targetRules = ["generic-api-key", "jwt", "database-url-credentials"]
 paths = [
   '''^platform/api/tests/''',
   '''^platform/mcp-server/tests/''',

@@ -8,6 +8,7 @@ import { expressAuthenticate, expressRequireRole, requireAgentScopeOrRole, logAu
 import { triggerPipeline } from '../lib/gitlab';
 import { getK8sNodes, getK8sNamespaces, getK8sPods, getPodLogs, deletePod, checkK8sConnection } from '../lib/k8s';
 import { v4 as uuidv4 } from 'uuid';
+import { withTimeout } from '../lib/with-timeout';
 
 const router = Router();
 
@@ -25,45 +26,50 @@ router.post('/bootstrap/init', expressAuthenticate, expressRequireRole([UserRole
   }
 });
 
+const PROBE_TIMEOUT_MS = Number(process.env.STATUS_PROBE_TIMEOUT_MS) || 2500;
+
 router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: Response) => {
-  // ── PostgreSQL ────────────────────────────────────────────────────────────
-  let pgStatus = 'offline';
-  try {
+  const probePostgres = async (): Promise<string> => {
     const ds = await getDb();
-    if (ds.isInitialized) { await ds.query('SELECT 1'); pgStatus = 'running'; }
-  } catch { pgStatus = 'offline'; }
+    if (!ds.isInitialized) return 'offline';
+    await ds.query('SELECT 1');
+    return 'running';
+  };
 
-  // ── MongoDB ───────────────────────────────────────────────────────────────
-  let mongoStatus = 'offline';
-  try {
+  const probeMongo = async (): Promise<string> => {
     const mg = require('mongoose');
-    if (mg.connection && mg.connection.readyState === 1) {
-      mongoStatus = 'running';
-    } else {
-      await connectMongo();
-      mongoStatus = mg.connection?.readyState === 1 ? 'running' : 'offline';
-    }
-  } catch { mongoStatus = 'offline'; }
+    if (mg.connection && mg.connection.readyState === 1) return 'running';
+    await connectMongo();
+    return mg.connection?.readyState === 1 ? 'running' : 'offline';
+  };
 
-  // ── Kubernetes / real pod counts ──────────────────────────────────────────
-  let k8sOk = false;
-  const podCounts: Record<string, number> = {};
-  try {
-    k8sOk = await checkK8sConnection();
-    if (k8sOk) {
-      const { CoreV1Api } = await import('@kubernetes/client-node');
-      const kc = new (await import('@kubernetes/client-node')).KubeConfig();
-      kc.loadFromDefault();
-      const coreApi = kc.makeApiClient(CoreV1Api);
-      const namespaces = ['platform', 'databases', 'monitoring', 'storage', 'argocd', 'portainer', 'cert-manager', 'ingress-nginx'];
-      for (const ns of namespaces) {
-        try {
-          const r = await coreApi.listNamespacedPod({ namespace: ns });
-          podCounts[ns] = r.items.filter(p => p.status?.phase === 'Running').length;
-        } catch { podCounts[ns] = 0; }
-      }
-    }
-  } catch { k8sOk = false; }
+  // Real pod counts per namespace, fetched in parallel.
+  const probeK8s = async (): Promise<{ ok: boolean; podCounts: Record<string, number> }> => {
+    const podCounts: Record<string, number> = {};
+    if (!(await checkK8sConnection())) return { ok: false, podCounts };
+    const k8s = await import('@kubernetes/client-node');
+    const kc = new k8s.KubeConfig();
+    kc.loadFromDefault();
+    const coreApi = kc.makeApiClient(k8s.CoreV1Api);
+    const namespaces = ['platform', 'databases', 'monitoring', 'storage', 'argocd', 'portainer', 'cert-manager', 'ingress-nginx'];
+    await Promise.all(namespaces.map(async (ns) => {
+      try {
+        const r = await coreApi.listNamespacedPod({ namespace: ns });
+        podCounts[ns] = r.items.filter(p => p.status?.phase === 'Running').length;
+      } catch { podCounts[ns] = 0; }
+    }));
+    return { ok: true, podCounts };
+  };
+
+  // All probes run concurrently and each is bounded, so the endpoint answers
+  // within ~PROBE_TIMEOUT_MS even when every dependency is down.
+  const [pgStatus, mongoStatus, k8s] = await Promise.all([
+    withTimeout(probePostgres(), PROBE_TIMEOUT_MS, 'offline'),
+    withTimeout(probeMongo(), PROBE_TIMEOUT_MS, 'offline'),
+    withTimeout(probeK8s(), PROBE_TIMEOUT_MS, { ok: false, podCounts: {} as Record<string, number> }),
+  ]);
+  const k8sOk = k8s.ok;
+  const podCounts = k8s.podCounts;
 
   // Helper: map pod count to status string
   const podStatus = (ns: string, min = 1) =>
