@@ -106,10 +106,6 @@ export async function listNamespaces(): Promise<NamespaceInfo[]> {
   return [];
 }
 
-export async function createNamespace(name: string, labels?: Record<string, string>): Promise<void> {
-  return;
-}
-
 export async function deleteNamespace(name: string): Promise<void> {
   return;
 }

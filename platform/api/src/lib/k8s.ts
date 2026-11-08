@@ -1,3 +1,4 @@
+import { ensureProjectNamespace } from './namespace-baseline';
 import { createHash } from 'crypto';
 import { assignedNamespace } from './project-namespace';
 import * as k8s from '@kubernetes/client-node';
@@ -176,27 +177,24 @@ export async function deployK8sPreview(
       : `registry.gitlab.com/platform/${projectName}:${imageTag}`;
 
   try {
-    // Ensure preview namespace exists
-    try {
-      await coreApi.createNamespace({
-        body: { metadata: { name: 'preview' } },
-      });
-    } catch {
-      // Namespace already exists — ignore
-    }
+    const namespace = previewNamespace(projectId);
+    await ensureProjectNamespace(projectId, { name: 'preview', namespace });
 
     // Create/patch Deployment
     const deployment: k8s.V1Deployment = {
-      metadata: { name: deploymentName, namespace: 'preview', labels: { app: deploymentName, branch: sanitized.slice(0, 63), project: projectSlug.slice(0, 63), 'platform-project-id': projectId } },
+      metadata: { name: deploymentName, namespace, labels: { app: deploymentName, branch: sanitized.slice(0, 63), project: projectSlug.slice(0, 63), 'platform-project-id': projectId } },
       spec: {
         replicas: 1,
         selector: { matchLabels: { app: deploymentName } },
         template: {
           metadata: { labels: { app: deploymentName } },
           spec: {
+            automountServiceAccountToken: false,
+            securityContext: { runAsNonRoot: true, seccompProfile: { type: 'RuntimeDefault' } },
             containers: [{
               name: 'web',
               image,
+              securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } },
               ports: [{ containerPort: 80 }],
             }],
           },
@@ -205,25 +203,25 @@ export async function deployK8sPreview(
     };
 
     try {
-      await appsApi.createNamespacedDeployment({ namespace: 'preview', body: deployment });
+      await appsApi.createNamespacedDeployment({ namespace, body: deployment });
     } catch {
-      await appsApi.replaceNamespacedDeployment({ name: deploymentName, namespace: 'preview', body: deployment });
+      await appsApi.replaceNamespacedDeployment({ name: deploymentName, namespace, body: deployment });
     }
 
     // Create/patch Service
     const svc: k8s.V1Service = {
-      metadata: { name: deploymentName, namespace: 'preview', labels: { 'platform-project-id': projectId } },
+      metadata: { name: deploymentName, namespace, labels: { 'platform-project-id': projectId } },
       spec: {
         selector: { app: deploymentName },
         ports: [{ port: 80, targetPort: 80 as any }],
       },
     };
     try {
-      await coreApi.createNamespacedService({ namespace: 'preview', body: svc });
+      await coreApi.createNamespacedService({ namespace, body: svc });
     } catch {
       // already exists — patch selector/ports
       try {
-        await coreApi.replaceNamespacedService({ name: deploymentName, namespace: 'preview', body: svc });
+        await coreApi.replaceNamespacedService({ name: deploymentName, namespace, body: svc });
       } catch {
         // ignore
       }
@@ -234,7 +232,7 @@ export async function deployK8sPreview(
     const ingress: k8s.V1Ingress = {
       metadata: {
         name: deploymentName,
-        namespace: 'preview',
+        namespace,
         labels: { 'platform-project-id': projectId },
         annotations: {
           'kubernetes.io/ingress.class': 'nginx',
@@ -257,10 +255,10 @@ export async function deployK8sPreview(
       },
     };
     try {
-      await networkApi.createNamespacedIngress({ namespace: 'preview', body: ingress });
+      await networkApi.createNamespacedIngress({ namespace, body: ingress });
     } catch {
       try {
-        await networkApi.replaceNamespacedIngress({ name: deploymentName, namespace: 'preview', body: ingress });
+        await networkApi.replaceNamespacedIngress({ name: deploymentName, namespace, body: ingress });
       } catch (e: any) {
         console.warn(`[k8s] preview ingress: ${e.message}`);
       }
@@ -277,18 +275,18 @@ export async function deployK8sPreview(
 // ──────────────────────────────────────────────────────────────────────────────
 // Terminate preview
 // ──────────────────────────────────────────────────────────────────────────────
-export async function terminateK8sPreview(branch: string, projectId?: string, storedName?: string): Promise<boolean> {
+export async function terminateK8sPreview(branch: string, projectId?: string, storedName?: string, namespace = 'preview'): Promise<boolean> {
   if (!projectId || !storedName) throw new Error('Recorded project preview identity required; legacy previews need administrator migration');
   const deploymentName = storedName;
   const ignoreMissing = (err: any) => { if (err.code !== 404 && err.statusCode !== 404) throw err; };
   try {
-    const response: any = await appsApi.readNamespacedDeployment({ name: deploymentName, namespace: 'preview' });
+    const response: any = await appsApi.readNamespacedDeployment({ name: deploymentName, namespace });
     const deployment = response.body || response;
     if (deployment.metadata?.labels?.['platform-project-id'] !== projectId) throw new Error('Preview ownership could not be verified');
-    await appsApi.deleteNamespacedDeployment({ name: deploymentName, namespace: 'preview' }).catch(ignoreMissing);
-    await coreApi.deleteNamespacedService({ name: deploymentName, namespace: 'preview' }).catch(ignoreMissing);
+    await appsApi.deleteNamespacedDeployment({ name: deploymentName, namespace }).catch(ignoreMissing);
+    await coreApi.deleteNamespacedService({ name: deploymentName, namespace }).catch(ignoreMissing);
     const networkApi = kc.makeApiClient(k8s.NetworkingV1Api);
-    await networkApi.deleteNamespacedIngress({ name: deploymentName, namespace: 'preview' }).catch(ignoreMissing);
+    await networkApi.deleteNamespacedIngress({ name: deploymentName, namespace }).catch(ignoreMissing);
     return true;
   } catch (err: any) {
     console.warn(`[k8s] terminateK8sPreview failed: ${err.message}`);
@@ -319,6 +317,8 @@ export function argoAppName(projectName: string, envName: string, projectId?: st
  * (including *.sslip.io — HTTP-01 works for individual FQDNs).
  */
 export async function ensureProjectIngress(opts: {
+  projectId: string;
+  environmentName: string;
   name: string;
   namespace: string;
   host: string;
@@ -334,11 +334,7 @@ export async function ensureProjectIngress(opts: {
   const ingressName = slugify(name).slice(0, 63);
   const networkApi = kc.makeApiClient(k8s.NetworkingV1Api);
 
-  try {
-    await coreApi.createNamespace({ body: { metadata: { name: namespace } } as any });
-  } catch {
-    // already exists
-  }
+  await ensureProjectNamespace(opts.projectId, { name: opts.environmentName, namespace });
 
   const ingress: k8s.V1Ingress = {
     metadata: {
@@ -399,6 +395,8 @@ export async function ensureProjectIngress(opts: {
 }
 
 export async function ensureAndSyncArgoApp(opts: {
+  projectId?: string;
+  environmentName?: string;
   appName: string;
   repoURL: string;
   path?: string;
@@ -420,6 +418,13 @@ export async function ensureAndSyncArgoApp(opts: {
   }
 
   try {
+    if (opts.projectId) await ensureProjectNamespace(opts.projectId, { name: opts.environmentName || 'development', namespace });
+    else {
+      const ns = await coreApi.readNamespace({ name: namespace });
+      const id = ns.metadata?.labels?.['platform.io/project'];
+      if (!id) throw new Error('Project namespace baseline required before syncing');
+      await ensureProjectNamespace(id, { name: ns.metadata!.labels!['platform.io/env'], namespace });
+    }
     const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
     let app: any = null;
 
@@ -475,7 +480,7 @@ export async function ensureAndSyncArgoApp(opts: {
         },
         syncPolicy: {
           automated: { prune: true, selfHeal: true },
-          syncOptions: ['CreateNamespace=true'],
+          syncOptions: [],
         },
       },
     };
@@ -666,4 +671,9 @@ export async function operateProjectWorkloads(namespace: string, appName: string
       await appsApi.patchNamespacedDeploymentScale({ name, namespace, body: { spec: { replicas } } } as any);
     } else await appsApi.deleteNamespacedDeployment({ name, namespace });
   }
+}
+
+/** Preview environments no longer share the legacy preview namespace. */
+export function previewNamespace(projectId: string): string {
+  return assignedNamespace('project', 'preview', projectId);
 }
