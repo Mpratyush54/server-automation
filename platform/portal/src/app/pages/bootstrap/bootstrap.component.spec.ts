@@ -1,21 +1,19 @@
 import { TestBed } from '@angular/core/testing';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideHttpClient } from '@angular/common/http';
+import { provideRouter } from '@angular/router';
 import { BootstrapComponent } from './bootstrap.component';
 import { ApiService } from '../../services/api.service';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 describe('BootstrapComponent', () => {
   let apiService: jasmine.SpyObj<ApiService>;
 
   beforeEach(async () => {
-    const spy = jasmine.createSpyObj('ApiService', ['bootstrapInit', 'getBootstrapStatus']);
+    const spy = jasmine.createSpyObj('ApiService', ['getBootstrapStatus']);
 
     await TestBed.configureTestingModule({
       imports: [BootstrapComponent],
       providers: [
-        provideHttpClient(),
-        provideHttpClientTesting(),
+        provideRouter([]),
         { provide: ApiService, useValue: spy },
       ],
     }).compileComponents();
@@ -25,44 +23,56 @@ describe('BootstrapComponent', () => {
 
   it('should create', () => {
     const fixture = TestBed.createComponent(BootstrapComponent);
+    fixture.detectChanges();
     expect(fixture.componentInstance).toBeTruthy();
   });
 
-  it('should initialize bootstrap', async () => {
-    apiService.bootstrapInit.and.returnValue(of({ success: true, token: 'abc' }));
-
+  it('should number install phases sequentially', () => {
     const fixture = TestBed.createComponent(BootstrapComponent);
-    fixture.componentInstance.initData = { hostname: 'node-1', components: 'api,worker' };
-
-    await fixture.componentInstance.init();
-
-    expect(fixture.componentInstance.result).toEqual({ success: true, token: 'abc' });
-    expect(fixture.componentInstance.loading).toBeFalse();
+    const phases = fixture.componentInstance.phases.map(p => p.phase);
+    expect(phases).toEqual(phases.map((_, i) => i));
   });
 
-  it('should check system status', async () => {
+  it('should map service status from the bootstrap status endpoint', async () => {
     apiService.getBootstrapStatus.and.returnValue(of({
-      services: { postgres: 'running', redis: 'running' },
+      services: { postgresql: 'running', redis: 'degraded' },
     }));
 
     const fixture = TestBed.createComponent(BootstrapComponent);
-    await fixture.componentInstance.checkStatus();
+    const component = fixture.componentInstance;
+    await component.loadStatus();
 
-    expect(fixture.componentInstance.statusServices.length).toBe(2);
+    const byLabel = (label: string) => component.statusServices.find(s => s.label === label);
+    expect(byLabel('PostgreSQL')?.status).toBe('running');
+    expect(byLabel('Redis')?.status).toBe('degraded');
+    expect(byLabel('MongoDB')?.status).toBe('unknown');
+    expect(component.loadingStatus).toBeFalse();
   });
 
-  it('should parse comma-separated components', async () => {
-    apiService.bootstrapInit.and.returnValue(of({}));
+  it('should mark integrations configured from the status response', async () => {
+    apiService.getBootstrapStatus.and.returnValue(of({
+      services: {},
+      integrations: { github: true, clickup: false },
+    }));
 
     const fixture = TestBed.createComponent(BootstrapComponent);
-    fixture.componentInstance.initData = { hostname: 'node-1', components: 'api, worker, scheduler' };
+    const component = fixture.componentInstance;
+    await component.loadStatus();
 
-    await fixture.componentInstance.init();
+    const byKey = (key: string) => component.integrations.find(i => i.key === key);
+    expect(byKey('github')?.configured).toBeTrue();
+    expect(byKey('clickup')?.configured).toBeFalse();
+    expect(byKey('gitlab')?.configured).toBeFalse();
+  });
 
-    expect(apiService.bootstrapInit).toHaveBeenCalledWith(
-      jasmine.objectContaining({
-        components: ['api', 'worker', 'scheduler'],
-      })
-    );
+  it('should stop loading when the status request fails', async () => {
+    apiService.getBootstrapStatus.and.returnValue(throwError(() => new Error('offline')));
+
+    const fixture = TestBed.createComponent(BootstrapComponent);
+    const component = fixture.componentInstance;
+    await component.loadStatus();
+
+    expect(component.statusServices).toEqual([]);
+    expect(component.loadingStatus).toBeFalse();
   });
 });
