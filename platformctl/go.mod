@@ -5,6 +5,7 @@ go 1.26.0
 toolchain go1.26.10
 
 require (
+	filippo.io/age v1.2.1
 	github.com/fatih/color v1.18.0
 	github.com/klauspost/compress v1.20.3
 	github.com/spf13/cobra v1.8.1

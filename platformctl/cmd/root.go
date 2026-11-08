@@ -155,6 +155,9 @@ var backupCmd = &cobra.Command{
 	Short: "Copy /etc/platform/.env and database secrets to a timestamped host backup",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
+		if backupAll {
+			return runFullBackup()
+		}
 		dir, err := components.BackupLocalState("", "")
 		if err != nil {
 			return err

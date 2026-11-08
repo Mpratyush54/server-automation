@@ -1,0 +1,53 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-backups
+  namespace: monitoring
+  labels:
+    release: kube-prometheus
+spec:
+  groups:
+    - name: platform.backups
+      rules:
+        - alert: PlatformBackupStatusMissing
+          expr: absent(platform_backup_last_success_timestamp_seconds{operation="backup"})
+          for: 26h
+          labels:
+            severity: critical
+          annotations:
+            summary: Platform backup status is missing
+        - alert: PlatformBackupFailed
+          expr: platform_backup_success{operation="backup"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Platform off-site backup failed
+        - alert: PlatformBackupStale
+          expr: time() - platform_backup_last_success_timestamp_seconds{operation="backup"} > 93600
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: No successful platform backup in 26 hours
+        - alert: PlatformRestoreTestFailed
+          expr: platform_backup_success{operation="restore-test"} == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Postgres backup restore test failed
+        - alert: PlatformRestoreTestStale
+          expr: time() - platform_backup_last_success_timestamp_seconds{operation="restore-test"} > 691200
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: No successful platform restore test in eight days
+        - alert: PlatformBackupCronJobFailed
+          expr: kube_job_status_failed{namespace="platform",job_name=~"platform-backup-.*"} > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Platform backup CronJob failed before status publication

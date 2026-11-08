@@ -1,0 +1,35 @@
+name: Weekly encrypted backup restore drill
+on:
+  schedule:
+    - cron: '30 4 * * 0'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: backup-restore-drill
+  cancel-in-progress: false
+jobs:
+  postgres:
+    # Configure this environment with a host, pinned SSH host key, SSH identity,
+    # and the age identity. The latter is streamed, never written on the server.
+    if: vars.BACKUP_DRILL_ENABLED == 'true'
+    environment: backup-drill
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Restore latest encrypted Postgres dump into scratch databases
+        env:
+          HOST: ${{ secrets.BACKUP_SSH_HOST }}
+          SSH_KEY: ${{ secrets.BACKUP_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.BACKUP_SSH_KNOWN_HOSTS }}
+          AGE_IDENTITY: ${{ secrets.BACKUP_AGE_IDENTITY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$HOST" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS" && test -n "$AGE_IDENTITY"
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$work/ssh-key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$work/known_hosts"
+          printf '%s\n' "$AGE_IDENTITY" | ssh -T -i "$work/ssh-key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$work/known_hosts" -- "$HOST" 'sudo -n /usr/local/bin/platformctl backup restore-test'

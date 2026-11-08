@@ -17,6 +17,19 @@ import { AuthService } from '../../services/auth.service';
     <p style="margin:0; color:var(--text-secondary); font-size:0.8rem;">Configure GitHub / GitLab login after install, linking tokens, SMTP, storage, and one-click secret rotation.</p>
   </div>
 
+  <div *ngIf="isDevOps" class="card" style="margin-bottom:20px; padding:16px;">
+    <h2>Disaster recovery backups</h2>
+    <button class="btn btn-sm" (click)="loadBackups()">Refresh backup status</button>
+    <p *ngIf="backupError">{{ backupError }}</p>
+    <p *ngFor="let item of backupStatus">
+      {{ item.operation === 'backup' ? 'Latest backup' : 'Latest restore test' }}:
+      <ng-container *ngIf="item.status; else noBackup">
+        {{ item.status.success ? 'Passed' : 'FAILED' }} — {{ item.status.finishedAt | date:'medium' }}
+        ({{ item.status.bytes | number }} bytes, {{ item.status.durationSeconds | number:'1.0-1' }} seconds)
+      </ng-container>
+      <ng-template #noBackup>No result reported</ng-template>
+    </p>
+  </div>
   <!-- Tab Navigation -->
   <div style="display:flex; gap:6px; margin-bottom:20px; border-bottom:1px solid var(--border-subtle); padding-bottom:8px; flex-wrap:wrap;">
     <button *ngIf="isDevOps" class="btn btn-sm" [class.btn-primary]="activeTab === 'login'" (click)="activeTab = 'login'">🔐 Login (GitHub / GitLab)</button>
@@ -337,6 +350,8 @@ import { AuthService } from '../../services/auth.service';
 })
 export class SettingsComponent implements OnInit {
   activeTab = 'login';
+  backupStatus: any[] = [];
+  backupError = '';
   smtpConfigs: any[] = [];
   storageProviders: any[] = [];
   testResults: Record<string, any> = {};
@@ -378,7 +393,7 @@ export class SettingsComponent implements OnInit {
 
     if (this.isDevOps) {
       this.activeTab = 'login';
-      await Promise.all([this.loadSmtp(), this.loadStorage(), this.loadIntegrations()]);
+      await Promise.all([this.loadSmtp(), this.loadStorage(), this.loadIntegrations(), this.loadBackups()]);
     } else {
       this.activeTab = 'integrations';
     }
@@ -386,6 +401,13 @@ export class SettingsComponent implements OnInit {
     this.apiBase = (window.location.origin.includes('4200')
       ? window.location.origin.replace('4200', '3000')
       : window.location.origin) + '/api';
+  }
+
+  async loadBackups() {
+    try {
+      this.backupStatus = (await firstValueFrom(this.api.getBackupStatus())).items;
+      this.backupError = '';
+    } catch { this.backupError = 'Backup status unavailable. Check the backup jobs and cluster access.'; }
   }
 
   async loadIntegrations() {

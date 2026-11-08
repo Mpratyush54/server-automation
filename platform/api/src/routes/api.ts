@@ -25,6 +25,7 @@ import versionRoutes from './version';
 import agentTokenRoutes from './agent-tokens';
 import agentCommandRoutes from './agent-commands';
 import notificationRoutes from './notifications';
+import backupRoutes from './backups';
 
 router.use('/', oidcRoutes); // before authRoutes: OIDC provider + GitHub/GitLab login (state cookie)
 router.use('/', authRoutes);
@@ -48,6 +49,7 @@ router.use('/', dbProvisionRoutes);
 router.use('/', agentTokenRoutes);
 router.use('/', agentCommandRoutes);
 router.use('/', notificationRoutes);
+router.use('/', backupRoutes);
 
 /** GET /api/openapi.json — OpenAPI 3 spec derived from openapi.yaml */
 router.get('/openapi.json', (_req, res) => {
