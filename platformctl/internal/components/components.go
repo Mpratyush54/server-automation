@@ -54,7 +54,6 @@ func All() []Component {
 		{"monitoring", "Grafana + Prometheus + Loki", InstallMonitoring},
 		{"oauth2-proxy", "OAuth2 authentication proxy", InstallOAuthProxy},
 		{"portainer", "Container management UI (subdomain + Platform SSO)", InstallPortainer},
-		{"infisical", "Secret management", InstallInfisical},
 		{"platform", "Platform API + Portal", InstallPlatform},
 		{"routing", "Ingress: ArgoCD /argocd, Grafana /grafana, Portainer subdomain+SSO", InstallRouting},
 		{"auto-update", "GHCR auto-update policy (Image Updater + CronJob)", InstallAutoUpdate},
@@ -78,7 +77,7 @@ func Namespace() error {
 	color.Cyan("\n  ■ Creating namespaces...")
 	nss := []string{
 		"platform", "databases", "monitoring", "storage",
-		"argocd", "portainer", "infisical", "cert-manager",
+		"argocd", "portainer", "cert-manager",
 		"ingress-nginx", "oauth2-proxy",
 	}
 	for _, ns := range nss {
@@ -337,6 +336,7 @@ json.dump(d,sys.stdout)
 		    -f %[1]s \
 		    --set crds.install=false \
 		    --set applicationSet.enabled=false \
+		    --set applicationSet.replicas=0 \
 		    --set notifications.enabled=false \
 		    --set dex.enabled=false \
 		    --wait --timeout 10m
@@ -422,10 +422,13 @@ func InstallMonitoring(cfg *config.Config) error {
 	err := shell.RunBash(fmt.Sprintf(`
 		set -uo pipefail
 		# Loki is independent of kube-prometheus-stack: install both concurrently.
+		# Loki must not claim the default datasource: Grafana refuses to start when
+		# two datasources are marked default (kube-prometheus's Prometheus already is).
 		helm upgrade --install loki %[3]s \
 			--namespace monitoring --create-namespace \
 			--set grafana.enabled=false \
 			--set prometheus.enabled=false \
+			--set loki.isDefault=false \
 			--wait --timeout 10m > /tmp/platformctl-loki.log 2>&1 &
 		loki_pid=$!
 		helm upgrade --install kube-prometheus %[4]s \
@@ -687,49 +690,6 @@ fi
 
 configure_sso "$BASE" "$TOKEN"
 `, domain, authBody, settingsBody))
-}
-
-func InstallInfisical(cfg *config.Config) error {
-	if doneOrSkip("infisical", "Infisical") {
-		return nil
-	}
-	color.Cyan("\n  ■ Installing Infisical...")
-	// Ensure Infisical DB exists
-	_ = shell.RunBash(fmt.Sprintf(`
-		kubectl exec -i -n databases postgresql-0 -- env PGPASSWORD=%s \
-		  psql -U postgres -c "SELECT 1 FROM pg_database WHERE datname='infisical'" | grep -q 1 || \
-		kubectl exec -i -n databases postgresql-0 -- env PGPASSWORD=%s \
-		  psql -U postgres -c "CREATE DATABASE infisical;"
-	`, cfg.PostgresPassword, cfg.PostgresPassword))
-
-	tmpFile := "/tmp/infisical.yaml"
-	if err := writeTemplatedManifest("infisical.yaml", cfg.Domain, tmpFile); err != nil {
-		color.Yellow("  ⚠ Infisical manifest missing (non-fatal): %v", err)
-		return nil
-	}
-	defer os.Remove(tmpFile)
-
-	// infisical.yaml is a plain Deployment + Service manifest. It used to be
-	// passed as Helm *values* to a chart repo that 404s, so `|| true` hid a
-	// no-op install. Apply it directly; don't block provision on readiness.
-	err := shell.RunBash(fmt.Sprintf(`
-		set -euo pipefail
-		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-		kubectl create namespace infisical --dry-run=client -o yaml | kubectl apply -f -
-		kubectl create secret generic infisical-secrets -n infisical \
-		  --from-literal=ENCRYPTION_KEY=%s \
-		  --from-literal=AUTH_SECRET=%s \
-		  --from-literal=DB_CONNECTION_URI="postgresql://postgres:%s@postgresql.databases:5432/infisical" \
-		  --from-literal=REDIS_URL="redis://:%s@redis-master.databases:6379" \
-		  --dry-run=client -o yaml | kubectl apply -f -
-		kubectl apply -f %s
-	`, cfg.InfisicalEncKey, cfg.InfisicalJWT, cfg.PostgresPassword, cfg.RedisPassword, tmpFile))
-	if err != nil {
-		color.Yellow("  ⚠ Infisical install failed (non-fatal): %v", err)
-		return nil
-	}
-	color.Green("  ✓ Infisical installed")
-	return state.MarkDone("infisical")
 }
 
 // pullPlatformImages pulls API + portal in parallel. With force=false images
@@ -1065,15 +1025,6 @@ metadata:
 spec:
   type: ExternalName
   externalName: portainer.portainer.svc.cluster.local
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: infisical-proxy
-  namespace: platform
-spec:
-  type: ExternalName
-  externalName: infisical.infisical.svc.cluster.local
 ---
 apiVersion: v1
 kind: Service

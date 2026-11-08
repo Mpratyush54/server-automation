@@ -14,7 +14,7 @@ import (
 func allOn() *config.Config {
 	return &config.Config{
 		InstallArgoCD: true, InstallMonitoring: true, InstallPortainer: true,
-		InstallInfisical: true, InstallCertManager: true, AutoUpdate: true,
+		InstallCertManager: true, AutoUpdate: true,
 	}
 }
 
@@ -52,8 +52,9 @@ func TestProvisionGraphCriticalDeps(t *testing.T) {
 	must := map[string][]string{
 		// Ingress-nginx's webhook rejects Ingress creates until it is ready.
 		"routing":   {"ingress-nginx", "platform"},
+		// OIDC discovery needs the platform Ingress that routing creates.
+		"oauth2-proxy": {"routing"},
 		"platform":  {"postgresql", "mongodb", "redis", "minio"},
-		"infisical": {"postgresql", "redis"},
 		// Image Updater + Argo Application need ArgoCD's CRDs.
 		"auto-update": {"argocd", "platform"},
 		"seed":        {"platform"},

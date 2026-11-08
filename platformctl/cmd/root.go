@@ -21,7 +21,8 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "platformctl",
+	Use:          "platformctl",
+	SilenceUsage: true, // a failing step should not dump the help text into its log
 	Short: "Platform server bootstrap and management tool",
 	Long:  `PlatformCTL provisions and manages a full Platform stack on a fresh Ubuntu server using pre-built GHCR images (no on-server compile).`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -194,7 +195,7 @@ func runInstall(name string) error {
 	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
 	comp := components.Find(name)
 	if comp == nil {
-		return fmt.Errorf("unknown component: %s\nAvailable: ingress-nginx, cert-manager, postgresql, mongodb, redis, minio, argocd, monitoring, oauth2-proxy, portainer, infisical, platform, routing, auto-update", name)
+		return fmt.Errorf("unknown component: %s\nAvailable: ingress-nginx, cert-manager, postgresql, mongodb, redis, minio, argocd, monitoring, oauth2-proxy, portainer, platform, routing, auto-update", name)
 	}
 	return comp.Install(cfg)
 }

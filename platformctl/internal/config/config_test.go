@@ -94,8 +94,6 @@ func TestGenerateSecretsAll(t *testing.T) {
 		{"WebhookSecret", c.WebhookSecret, 32},
 		{"ArgoCDPassword", c.ArgoCDPassword, 20},
 		{"GrafanaPassword", c.GrafanaPassword, 20},
-		{"InfisicalEncKey", c.InfisicalEncKey, 64},
-		{"InfisicalJWT", c.InfisicalJWT, 48},
 		{"PortainerPassword", c.PortainerPassword, 20},
 	}
 
@@ -315,10 +313,10 @@ func profileEnv(t *testing.T, dotenv string) {
 	})
 }
 
-type installSet struct{ argo, mon, port, inf, cert bool }
+type installSet struct{ argo, mon, port, cert bool }
 
 func installOf(c *Config) installSet {
-	return installSet{c.InstallArgoCD, c.InstallMonitoring, c.InstallPortainer, c.InstallInfisical, c.InstallCertManager}
+	return installSet{c.InstallArgoCD, c.InstallMonitoring, c.InstallPortainer, c.InstallCertManager}
 }
 
 func TestProfileDefaultIsFull(t *testing.T) {
@@ -327,17 +325,17 @@ func TestProfileDefaultIsFull(t *testing.T) {
 	if c.Profile != ProfileFull {
 		t.Fatalf("Profile = %q, want full", c.Profile)
 	}
-	if got := installOf(c); got != (installSet{true, true, true, true, true}) {
+	if got := installOf(c); got != (installSet{true, true, true, true}) {
 		t.Fatalf("full install set = %+v", got)
 	}
 }
 
 func TestProfilesFromEnv(t *testing.T) {
 	cases := map[string]installSet{
-		"minimal":  {false, false, false, false, true},
-		"standard": {true, true, true, false, true},
-		"full":     {true, true, true, true, true},
-		"Minimal":  {false, false, false, false, true},
+		"minimal":  {false, false, false, true},
+		"standard": {true, true, true, true}, // same as full since Infisical was removed
+		"full":     {true, true, true, true},
+		"Minimal":  {false, false, false, true},
 	}
 	for name, want := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -357,14 +355,14 @@ func TestProfileExplicitInstallOverrides(t *testing.T) {
 	t.Setenv("INSTALL_MONITORING", "true")
 	t.Setenv("INSTALL_CERTMANAGER", "false")
 	c := Load()
-	if got := installOf(c); got != (installSet{false, true, false, false, false}) {
+	if got := installOf(c); got != (installSet{false, true, false, false}) {
 		t.Fatalf("got %+v", got)
 	}
 	// ApplyProfile keeps explicit env overrides.
 	if err := c.ApplyProfile("full"); err != nil {
 		t.Fatal(err)
 	}
-	if got := installOf(c); got != (installSet{true, true, true, true, false}) {
+	if got := installOf(c); got != (installSet{true, true, true, false}) {
 		t.Fatalf("after ApplyProfile(full): %+v", got)
 	}
 }
@@ -375,7 +373,7 @@ func TestApplyProfileUnknown(t *testing.T) {
 	if err := c.ApplyProfile("huge"); err == nil {
 		t.Fatal("expected error for unknown profile")
 	}
-	if c.Profile != ProfileFull || !c.InstallInfisical {
+	if c.Profile != ProfileFull || !c.InstallMonitoring {
 		t.Fatal("failed ApplyProfile must not change config")
 	}
 }
@@ -384,14 +382,14 @@ func TestUnknownEnvProfileFallsBackToFull(t *testing.T) {
 	profileEnv(t, "")
 	t.Setenv("PLATFORM_PROFILE", "bogus")
 	c := Load()
-	if c.Profile != ProfileFull || !c.InstallInfisical {
+	if c.Profile != ProfileFull || !c.InstallMonitoring {
 		t.Fatalf("expected fallback to full, got %q %+v", c.Profile, installOf(c))
 	}
 }
 
 // A saved .env from a full install must not override a newly chosen profile.
 func TestSavedInstallDoesNotOverrideNewProfile(t *testing.T) {
-	saved := "PLATFORM_PROFILE=full\nINSTALL_ARGOCD=true\nINSTALL_MONITORING=true\nINSTALL_PORTAINER=true\nINSTALL_INFISICAL=true\nINSTALL_CERTMANAGER=true\n"
+	saved := "PLATFORM_PROFILE=full\nINSTALL_ARGOCD=true\nINSTALL_MONITORING=true\nINSTALL_PORTAINER=true\nINSTALL_CERTMANAGER=true\n"
 
 	t.Run("env profile", func(t *testing.T) {
 		profileEnv(t, saved)
@@ -400,7 +398,7 @@ func TestSavedInstallDoesNotOverrideNewProfile(t *testing.T) {
 		if c.Profile != ProfileMinimal {
 			t.Fatalf("Profile = %q", c.Profile)
 		}
-		if got := installOf(c); got != (installSet{false, false, false, false, true}) {
+		if got := installOf(c); got != (installSet{false, false, false, true}) {
 			t.Fatalf("got %+v", got)
 		}
 	})
@@ -411,7 +409,7 @@ func TestSavedInstallDoesNotOverrideNewProfile(t *testing.T) {
 		if err := c.ApplyProfile("standard"); err != nil {
 			t.Fatal(err)
 		}
-		if got := installOf(c); got != (installSet{true, true, true, false, true}) {
+		if got := installOf(c); got != (installSet{true, true, true, true}) {
 			t.Fatalf("got %+v", got)
 		}
 	})
@@ -420,12 +418,12 @@ func TestSavedInstallDoesNotOverrideNewProfile(t *testing.T) {
 // Without an explicit profile, the saved profile and saved per-component
 // choices are honoured (re-running provision keeps the previous selection).
 func TestSavedProfileAndChoicesHonoured(t *testing.T) {
-	profileEnv(t, "PLATFORM_PROFILE=standard\nINSTALL_MONITORING=false\nINSTALL_INFISICAL=false\n")
+	profileEnv(t, "PLATFORM_PROFILE=standard\nINSTALL_MONITORING=false\n")
 	c := Load()
 	if c.Profile != ProfileStandard {
 		t.Fatalf("Profile = %q", c.Profile)
 	}
-	if got := installOf(c); got != (installSet{true, false, true, false, true}) {
+	if got := installOf(c); got != (installSet{true, false, true, true}) {
 		t.Fatalf("got %+v", got)
 	}
 	// A second Load in the same process must not treat .env values as explicit.
@@ -461,7 +459,10 @@ func TestSaveEnvFilePersistsProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"PLATFORM_PROFILE=minimal\n", "INSTALL_INFISICAL=false\n", "INSTALL_CERTMANAGER=true\n"} {
+	if strings.Contains(string(data), "INFISICAL") {
+		t.Error("Infisical was removed; saved env must not contain INFISICAL keys")
+	}
+	for _, want := range []string{"PLATFORM_PROFILE=minimal\n", "INSTALL_CERTMANAGER=true\n"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("saved env missing %q", want)
 		}

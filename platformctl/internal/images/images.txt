@@ -9,7 +9,6 @@ docker.io/grafana/promtail:3.5.1
 ecr-public.aws.com/docker/library/redis:8.6.4-alpine
 ghcr.io/jkroepke/kube-webhook-certgen:1.11.1
 grafana/loki:2.6.1
-infisical/infisical:latest-postgres
 portainer/portainer-ce:2.45.3
 quay.io/argoproj/argocd:v3.6.1
 quay.io/argoprojlabs/argocd-image-updater:v1.4.0

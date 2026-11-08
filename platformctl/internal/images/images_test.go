@@ -94,7 +94,6 @@ func TestEmbeddedListSane(t *testing.T) {
 	if len(l) == 0 {
 		t.Fatal("embedded images.txt is empty")
 	}
-	hasInfisical := false
 	for _, img := range l {
 		if strings.ContainsAny(img, " \t#") {
 			t.Errorf("bad image ref %q", img)
@@ -102,12 +101,9 @@ func TestEmbeddedListSane(t *testing.T) {
 		if strings.Contains(img, "platform-api") || strings.Contains(img, "platform-portal") {
 			t.Errorf("%s must be passed as extra, not embedded", img)
 		}
-		if img == "infisical/infisical:latest-postgres" {
-			hasInfisical = true
+		if strings.Contains(img, "infisical") {
+			t.Errorf("Infisical was removed (in-house secrets); %s must not be pre-pulled", img)
 		}
-	}
-	if !hasInfisical {
-		t.Error("infisical image missing from images.txt")
 	}
 }
 

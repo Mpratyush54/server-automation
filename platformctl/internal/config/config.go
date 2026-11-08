@@ -35,7 +35,6 @@ type Config struct {
 	InstallArgoCD      bool
 	InstallMonitoring  bool
 	InstallPortainer   bool
-	InstallInfisical   bool
 	InstallCertManager bool
 	AutoUpdate         bool
 
@@ -56,8 +55,6 @@ type Config struct {
 	WebhookSecret     string
 	ArgoCDPassword    string
 	GrafanaPassword   string
-	InfisicalEncKey   string
-	InfisicalJWT      string
 	PortainerPassword string
 	LEEmail           string
 
@@ -260,7 +257,6 @@ func (c *Config) PromptInteractive() error {
 	askBool("Install ArgoCD (GitOps at /argocd)", &c.InstallArgoCD)
 	askBool("Install Monitoring (Grafana + Prometheus)", &c.InstallMonitoring)
 	askBool("Install Portainer (portainer.<domain>)", &c.InstallPortainer)
-	askBool("Install Infisical (secrets)", &c.InstallInfisical)
 	askBool("Install cert-manager (HTTPS / Let's Encrypt)", &c.InstallCertManager)
 	askBool("Enable image auto-update", &c.AutoUpdate)
 
@@ -419,12 +415,6 @@ func (c *Config) GenerateSecrets() {
 	if c.GrafanaPassword == "" {
 		c.GrafanaPassword = generatePassword(20)
 	}
-	if c.InfisicalEncKey == "" {
-		c.InfisicalEncKey = generatePassword(64)
-	}
-	if c.InfisicalJWT == "" {
-		c.InfisicalJWT = generatePassword(48)
-	}
 	if c.AdminPassword == "" {
 		c.AdminPassword = generatePassword(24)
 		c.PasswordGenerated = true
@@ -474,8 +464,6 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("PLATFORM_WEBHOOK_SECRET=%s\n", c.WebhookSecret))
 	b.WriteString(fmt.Sprintf("ARGOCD_PASSWORD=%s\n", c.ArgoCDPassword))
 	b.WriteString(fmt.Sprintf("GRAFANA_PASSWORD=%s\n", c.GrafanaPassword))
-	b.WriteString(fmt.Sprintf("INFISICAL_ENCRYPTION_KEY=%s\n", c.InfisicalEncKey))
-	b.WriteString(fmt.Sprintf("INFISICAL_JWT_SECRET=%s\n", c.InfisicalJWT))
 	b.WriteString(fmt.Sprintf("PORTAINER_ADMIN_PASSWORD=%s\n", c.PortainerPassword))
 	b.WriteString(fmt.Sprintf("PLATFORM_IMAGE_TAG=%s\n", c.ImageTag))
 	b.WriteString(fmt.Sprintf("AUTO_UPDATE=%t\n", c.AutoUpdate))
@@ -483,7 +471,6 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("INSTALL_ARGOCD=%t\n", c.InstallArgoCD))
 	b.WriteString(fmt.Sprintf("INSTALL_MONITORING=%t\n", c.InstallMonitoring))
 	b.WriteString(fmt.Sprintf("INSTALL_PORTAINER=%t\n", c.InstallPortainer))
-	b.WriteString(fmt.Sprintf("INSTALL_INFISICAL=%t\n", c.InstallInfisical))
 	b.WriteString(fmt.Sprintf("INSTALL_CERTMANAGER=%t\n", c.InstallCertManager))
 	return os.WriteFile(path, []byte(b.String()), 0600)
 }
@@ -512,8 +499,8 @@ func generatePassword(length int) string {
 // Install profiles. Explicit INSTALL_* environment variables always override
 // the profile's defaults.
 const (
-	ProfileMinimal  = "minimal"  // core only: no monitoring, Infisical, Portainer, ArgoCD
-	ProfileStandard = "standard" // everything except Infisical
+	ProfileMinimal  = "minimal"  // core only: no monitoring, Portainer, ArgoCD
+	ProfileStandard = "standard" // same components as full (Infisical was removed; kept for compatibility)
 	ProfileFull     = "full"     // everything (default; matches pre-profile behaviour)
 )
 
@@ -521,7 +508,7 @@ const (
 var Profiles = []string{ProfileMinimal, ProfileStandard, ProfileFull}
 
 // installKeys are the INSTALL_* variables a profile controls.
-var installKeys = []string{"INSTALL_ARGOCD", "INSTALL_MONITORING", "INSTALL_PORTAINER", "INSTALL_INFISICAL", "INSTALL_CERTMANAGER"}
+var installKeys = []string{"INSTALL_ARGOCD", "INSTALL_MONITORING", "INSTALL_PORTAINER", "INSTALL_CERTMANAGER"}
 
 // profileDefaults returns the Install* values for a profile, keyed by INSTALL_* name.
 func profileDefaults(name string) (map[string]bool, error) {
@@ -529,17 +516,17 @@ func profileDefaults(name string) (map[string]bool, error) {
 	case ProfileMinimal:
 		return map[string]bool{
 			"INSTALL_ARGOCD": false, "INSTALL_MONITORING": false, "INSTALL_PORTAINER": false,
-			"INSTALL_INFISICAL": false, "INSTALL_CERTMANAGER": true,
+			"INSTALL_CERTMANAGER": true,
 		}, nil
 	case ProfileStandard:
 		return map[string]bool{
 			"INSTALL_ARGOCD": true, "INSTALL_MONITORING": true, "INSTALL_PORTAINER": true,
-			"INSTALL_INFISICAL": false, "INSTALL_CERTMANAGER": true,
+			"INSTALL_CERTMANAGER": true,
 		}, nil
 	case "", ProfileFull:
 		return map[string]bool{
 			"INSTALL_ARGOCD": true, "INSTALL_MONITORING": true, "INSTALL_PORTAINER": true,
-			"INSTALL_INFISICAL": true, "INSTALL_CERTMANAGER": true,
+			"INSTALL_CERTMANAGER": true,
 		}, nil
 	}
 	return nil, fmt.Errorf("unknown profile %q (valid: %s)", name, strings.Join(Profiles, ", "))
@@ -625,7 +612,6 @@ func (c *Config) setInstall(defaults map[string]bool) {
 	c.InstallArgoCD = defaults["INSTALL_ARGOCD"]
 	c.InstallMonitoring = defaults["INSTALL_MONITORING"]
 	c.InstallPortainer = defaults["INSTALL_PORTAINER"]
-	c.InstallInfisical = defaults["INSTALL_INFISICAL"]
 	c.InstallCertManager = defaults["INSTALL_CERTMANAGER"]
 }
 

@@ -107,16 +107,16 @@ func provisionGraph(c *config.Config) []stepDef {
 		{name: "ingress-nginx", args: install("ingress-nginx"), fn: components.InstallIngressNginx},
 		{name: "cert-manager", skip: !c.InstallCertManager, args: install("cert-manager"), fn: components.InstallCertManager},
 		{name: "argocd", skip: !c.InstallArgoCD, args: install("argocd"), fn: components.InstallArgoCD},
-		{name: "oauth2-proxy", args: install("oauth2-proxy"), fn: components.InstallOAuthProxy},
 		{name: "portainer", skip: !c.InstallPortainer, args: install("portainer"), fn: components.InstallPortainer},
 		{name: "platform", deps: []string{"postgresql", "mongodb", "redis", "minio"},
 			args: install("platform"), fn: components.InstallPlatform},
-		{name: "infisical", deps: []string{"postgresql", "redis"}, skip: !c.InstallInfisical,
-			args: install("infisical"), fn: components.InstallInfisical},
 		{name: "routing", deps: []string{
 			"ingress-nginx", "cert-manager", "platform", "argocd", "monitoring",
-			"oauth2-proxy", "portainer", "infisical", "minio",
+			"portainer", "minio",
 		}, args: install("routing"), fn: components.InstallRouting},
+		// oauth2-proxy discovers OIDC at https://DOMAIN/api/oauth, which only exists
+		// once routing has created the platform Ingress, so it runs after routing.
+		{name: "oauth2-proxy", deps: []string{"routing"}, args: install("oauth2-proxy"), fn: components.InstallOAuthProxy},
 		{name: "auto-update", deps: []string{"argocd", "platform"}, skip: !c.AutoUpdate,
 			args: install("auto-update"), fn: components.InstallAutoUpdate},
 		{name: "seed", deps: []string{"platform"}, args: []string{"seed"}, fn: components.SeedAdmin, warnOnly: true},
@@ -293,7 +293,9 @@ func runGraph(steps []stepDef, parallel int) error {
 			Deps: s.deps,
 			Skip: s.skip,
 			Run: func(ctx context.Context) error {
-				_ = state.MarkInProgress(s.name)
+				// Components record their own progress under their own state keys
+				// (e.g. "ingress", not "ingress-nginx"); writing the graph node name
+				// here left stale "in_progress" entries that never cleared.
 				var err error
 				if parallel == 1 {
 					err = s.fn(cfg)
