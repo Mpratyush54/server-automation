@@ -58,7 +58,7 @@ platform.logger.warn('slow query');
 platform.logger.error('failed', { err: String(e) });
 ```
 
-Optional: `platform.captureConsole()` forwards `console.*` — avoid combining with transports that also write to console (recursion). Prefer `platform.logger` in APIs.
+Optional: `platform.captureConsole()` forwards `console.*` (each line once; safe with `platform.logger`). Avoid combining it with transports that also write to console (duplicate entries). Prefer `platform.logger` in APIs.
 
 Winston / Pino:
 
@@ -79,7 +79,7 @@ await platform.init({
   gitPath: 'k8s',
   gitRevision: 'main',
   gitops: true,
-  domain: '148.113.59.3.sslip.io',
+  domain: 'example.com',
   serviceName: 'my-api',
   servicePort: 80,
   databases: ['postgres', 'mongo', 'redis'],

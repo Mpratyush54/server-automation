@@ -3,17 +3,21 @@
 # DB ensure + Argo + ingress happen when node-api SDK register runs.
 set -euo pipefail
 umask 077
+
+ROOT="${1:-/tmp/sdk-apps-src}"
+export DOMAIN="${PROJECT_DOMAIN:-${DOMAIN:-}}"
+: "${DOMAIN:?Set PROJECT_DOMAIN, e.g. example.com (DOMAIN remains an alias)}"
+NODE_HOST="sdk-demo-apps-development.${DOMAIN}"
+NS="sdk-demo-apps-development"
+export PLATFORM_URL="${PLATFORM_URL:-${PLATFORM_API_URL:-}}"
+: "${PLATFORM_URL:?Set PLATFORM_URL to the API origin}"
+API="${PLATFORM_URL%/}"
+ADMIN_EMAIL="${ADMIN_EMAIL:?ADMIN_EMAIL required}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:?ADMIN_PASSWORD required}"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 export TMP
-
-ROOT="${1:-/tmp/sdk-apps-src}"
-export DOMAIN="${DOMAIN:?set DOMAIN, e.g. 1.2.3.4.sslip.io}"
-NODE_HOST="sdk-demo-apps-development.${DOMAIN}"
-NS="sdk-demo-apps-development"
-API="${PLATFORM_API_URL:-https://api.${DOMAIN}}"
-ADMIN_EMAIL="${ADMIN_EMAIL:-admin@pratyushes.dev}"
-ADMIN_PASSWORD="${ADMIN_PASSWORD:?ADMIN_PASSWORD required}"
 
 echo "==> Login"
 LOGIN=$(curl -sk -X POST "$API/api/auth/login" \
@@ -55,7 +59,7 @@ sudo docker save sdk-angular-web:local | sudo k3s ctr images import -
 
 echo "==> Apply manifests (bootstrap; matches examples/sdk-apps/k8s)"
 cp -a examples/sdk-apps/k8s/. "$TMP/"
-printf '%s' "$SDK_TOKEN" | python3 -c 'import sys,os; from pathlib import Path; t=(Path(os.environ["TMP"])/"all.yaml").read_text(); print(t.replace("REPLACE_ME",sys.stdin.read()).replace("__DOMAIN__",os.environ["DOMAIN"]))' | sudo k3s kubectl apply -f -
+printf '%s' "$SDK_TOKEN" | python3 -c 'import sys,os; from pathlib import Path; t=(Path(os.environ["TMP"])/"all.yaml").read_text(); print(t.replace("REPLACE_ME",sys.stdin.read()).replace("__DOMAIN__",os.environ["DOMAIN"]).replace("https://api."+os.environ["DOMAIN"],os.environ["PLATFORM_URL"].rstrip("/")))' | sudo k3s kubectl apply -f -
 unset SDK_TOKEN
 
 echo "==> Wait for rollouts"

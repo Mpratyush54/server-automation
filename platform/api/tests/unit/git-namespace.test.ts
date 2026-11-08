@@ -32,8 +32,8 @@ describe('project-namespace', () => {
   });
 
   it('builds host from domain', () => {
-    expect(assignedEnvHost('demo', 'staging', '148.113.59.3.sslip.io')).toBe(
-      'demo-staging.148.113.59.3.sslip.io',
+    expect(assignedEnvHost('demo', 'staging', '203.0.113.10.sslip.io')).toBe(
+      'demo-staging.203.0.113.10.sslip.io',
     );
   });
 });

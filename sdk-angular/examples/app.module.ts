@@ -14,7 +14,7 @@ import { AppComponent } from './app.component';
     BrowserModule,
     HttpClientModule,
     PlatformModule.forRoot({
-      apiBase: 'https://api.148.113.59.3.sslip.io',
+      apiBase: 'https://platform.example.com',
       token: 'sdk_live_REPLACE_ME',
       projectId: 'REPLACE_WITH_PROJECT_ID',
       environment: 'development',

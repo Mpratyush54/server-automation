@@ -6,6 +6,8 @@
  *
  * Requires: gh CLI authenticated (repo create + push), network to the Platform API.
  */
+import config from '../examples/sdk-apps/node-api/src/config.cjs';
+const { platformUrl: API, projectDomain: PROJECT_DOMAIN, adminEmail: EMAIL, adminPassword: PASSWORD } = config.readE2EConfig();
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -17,10 +19,6 @@ const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const { PlatformClient } = require(path.join(__dirname, '..', 'sdk-node', 'dist', 'index.js'));
 
-const API = (process.env.PLATFORM_API_URL || 'https://api.148.113.59.3.sslip.io').replace(/\/$/, '');
-const EMAIL = process.env.ADMIN_EMAIL || 'admin@pratyushes.dev';
-const PASSWORD = process.env.ADMIN_PASSWORD || '';
-const GH_OWNER = process.env.GH_OWNER || 'Mpratyush54';
 const KEEP_REPO = process.env.KEEP_REPO === '1';
 const stamp = Date.now();
 const PROJECT_NAME = process.env.PROJECT_NAME || `sdk-gitops-${stamp}`;
@@ -32,6 +30,7 @@ const results = [];
 const ok = (n, d = '') => { results.push({ n, pass: true, d }); console.log(`  ✓ ${n}${d ? ` — ${d}` : ''}`); };
 const fail = (n, d = '') => { results.push({ n, pass: false, d }); console.error(`  ✗ ${n}${d ? ` — ${d}` : ''}`); };
 const sh = (cmd, opts = {}) => execSync(cmd, { stdio: 'pipe', encoding: 'utf8', ...opts }).trim();
+const GH_OWNER = process.env.GH_OWNER || sh('gh api user --jq .login');
 
 async function api(method, urlPath, { token, sdkToken, body } = {}) {
   const headers = { 'Content-Type': 'application/json' };
@@ -157,7 +156,7 @@ async function main() {
       name: PROJECT_NAME,
       stack: 'nodejs',
       description: 'SDK creates GitHub repo + ArgoCD pull',
-      domain: '148.113.59.3.sslip.io',
+      domain: PROJECT_DOMAIN,
       repositoryUrl: repoMeta.cloneUrl,
     },
   });
@@ -194,7 +193,7 @@ async function main() {
       repositoryUrl: repoMeta.cloneUrl,
       gitPath: GIT_PATH,
       gitRevision: GIT_REV,
-      domain: '148.113.59.3.sslip.io',
+      domain: PROJECT_DOMAIN,
       gitops: true,
       namespace: destNs,
     });
@@ -215,7 +214,7 @@ async function main() {
         repositoryUrl: repoMeta.cloneUrl,
         gitPath: GIT_PATH,
         gitRevision: GIT_REV,
-        domain: '148.113.59.3.sslip.io',
+        domain: PROJECT_DOMAIN,
         gitops: true,
         namespace: destNs,
       },

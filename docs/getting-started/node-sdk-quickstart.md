@@ -79,7 +79,7 @@ await platform.init({
   gitPath: 'k8s',
   gitRevision: 'main',
   gitops: true,
-  domain: '148.113.59.3.sslip.io',
+  domain: 'example.com',
   serviceName: 'my-api',
   servicePort: 80,
   databases: ['postgres', 'mongo', 'redis'],
