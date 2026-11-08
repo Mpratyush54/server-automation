@@ -4,7 +4,9 @@ import { getDb } from '../config/database';
 import { Deployment, DeploymentStatus } from '../entities/Deployment';
 import { Environment, EnvironmentName } from '../entities/Environment';
 import { Project } from '../entities/Project';
-import { argoAppName, deployK8sPreview, ensureAndSyncArgoApp, ensureProjectIngress } from './k8s';
+import { argoAppName, deployK8sPreview, ensureAndSyncArgoApp, ensureProjectIngress, previewNamespace } from './k8s';
+import { reportNamespaceBaseline } from './namespace-backfill';
+import { ensureProjectNamespace } from './namespace-baseline';
 import { defineOperation } from './operations';
 
 export const DEPLOY_OPERATION = 'deployment.deploy';
@@ -52,6 +54,8 @@ const POLL_ATTEMPTS = 36;
 export const deployOperation = defineOperation<DeployState>({
   type: DEPLOY_OPERATION,
   resume: 'continue',
+  // A rollout interrupted twice (API killed mid-step) is failed, never left pending (#19).
+  maxAttempts: 2,
   summarize: (s) => ({ deploymentId: s.deploymentId, appName: s.appName ?? null, namespace: s.destNs ?? null }),
   async onFailed(ctx, error) {
     try {
@@ -87,6 +91,18 @@ export const deployOperation = defineOperation<DeployState>({
           const newer = await repo.findOne({ where: { environmentId: dep.environmentId, createdAt: MoreThan(dep.createdAt) } });
           if (newer) throw new Error(`superseded by deployment ${newer.id}`);
         }
+        // Namespace isolation baseline (#22): labels, PSA, NetworkPolicies, quota, LimitRange.
+        const target = env.name === EnvironmentName.PREVIEW ? { name: 'preview', namespace: previewNamespace(project.id) } : env;
+        await ensureProjectNamespace(project.id, target);
+        const baselineReport = await reportNamespaceBaseline(project.id, target);
+        const namespaceWarnings = baselineReport.warnings.flatMap((w) => w.warnings.map((message) => `${w.pod}: ${message}`));
+        if (baselineReport.desired.namespace.metadata.labels['pod-security.kubernetes.io/enforce'] !== 'restricted') {
+          namespaceWarnings.unshift('PSA restricted is in warn/audit mode; enforcement awaits administrator migration.');
+        }
+        dep.metadata = { ...(dep.metadata || {}), namespaceWarnings };
+        for (const warning of namespaceWarnings) console.warn(`[deploy:${dep.id}] ${warning}`);
+        if (namespaceWarnings.length) ctx.setOutput({ namespaceWarnings: namespaceWarnings.length });
+
         dep.status = DeploymentStatus.BUILDING;
         await repo.save(dep);
         dep.status = DeploymentStatus.DEPLOYING;
@@ -111,6 +127,7 @@ export const deployOperation = defineOperation<DeployState>({
         const revision = dep.commitSha && dep.commitSha !== 'unknown' ? dep.commitSha : (dep.branch || 'main');
 
         const argo = await ensureAndSyncArgoApp({
+          projectId: project.id, environmentName: String(env.name),
           appName,
           repoURL: project.repositoryUrl,
           path: gitPath,
@@ -136,7 +153,10 @@ export const deployOperation = defineOperation<DeployState>({
 
         const host = env.domain || `${appName}.${project.domain || process.env.DOMAIN || 'sslip.io'}`;
         ctx.state.host = host;
-        await ensureProjectIngress({ name: appName, namespace: destNs, host, serviceName, servicePort: 80 });
+        await ensureProjectIngress({
+          projectId: project.id, environmentName: String(env.name),
+          name: appName, namespace: destNs, host, serviceName, servicePort: 80,
+        });
         ctx.setOutput({ appName, namespace: destNs, revision, host });
       },
     },

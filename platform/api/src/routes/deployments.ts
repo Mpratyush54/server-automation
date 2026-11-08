@@ -1,3 +1,4 @@
+import { previewNamespace } from '../lib/k8s';
 import { requireProjectAccess } from '../lib/project-access';
 import { ProjectAccessRole } from '../entities/ProjectMember';
 import { Router, Request, Response } from 'express';
@@ -82,7 +83,7 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
         const previewUrl = generatePreviewUrl(body.branch || 'preview', projectSlug, project.domain || process.env.DOMAIN || 'sslip.io', project.id);
         env = previewRepo.create({
           name: EnvironmentName.PREVIEW,
-          namespace: 'preview',
+          namespace: previewNamespace(project.id),
           domain: previewUrl,
           projectId: project.id,
         });
@@ -92,6 +93,10 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
       }
     }
 
+    if (env.name === EnvironmentName.PREVIEW && env.namespace === 'preview') {
+      env.namespace = previewNamespace(project.id);
+      await ds.getRepository(Environment).save(env);
+    }
     if (env.name !== EnvironmentName.PREVIEW) await assertDedicatedNamespace(env);
 
     const clickupTaskId = body.branch ? extractTaskId(body.branch) : null;
@@ -114,6 +119,7 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
         clickupTaskId,
         previewUrl: env.name === EnvironmentName.PREVIEW ? `https://${env.domain}` : null,
         metadata: {
+          previewNamespace: env.name === EnvironmentName.PREVIEW ? previewNamespace(project.id) : undefined,
           previewResourceName: env.name === EnvironmentName.PREVIEW ? previewResourceName(project.id, body.branch || 'main') : undefined,
           gitPath: body.gitPath || undefined,
           pullFromGit: body.pullFromGit !== false,
@@ -313,7 +319,7 @@ router.post('/deployments/:id/terminate', expressAuthenticate, expressRequireRol
 async function controlDeployment(dep: Deployment, operation: 'restart' | 'scale' | 'terminate', replicas?: number): Promise<void> {
   if (dep.metadata?.previewResourceName) {
     if (operation !== 'terminate') throw new Error('Preview restart and scale are not supported');
-    if (!await terminateK8sPreview(dep.branch, dep.projectId, String(dep.metadata.previewResourceName))) throw new Error('Preview termination failed');
+    if (!await terminateK8sPreview(dep.branch, dep.projectId, String(dep.metadata.previewResourceName), (dep.metadata as any)?.previewNamespace || 'preview')) throw new Error('Preview termination failed');
     return;
   }
   const ds = await getDb();
@@ -321,7 +327,7 @@ async function controlDeployment(dep: Deployment, operation: 'restart' | 'scale'
   if (!env) throw new Error('Deployment environment not found');
   if (env.name === EnvironmentName.PREVIEW) {
     if (operation !== 'terminate') throw new Error('Preview restart and scale are not supported');
-    if (!await terminateK8sPreview(dep.branch, dep.projectId, dep.metadata?.previewResourceName as string | undefined)) throw new Error('Preview termination failed');
+    if (!await terminateK8sPreview(dep.branch, dep.projectId, dep.metadata?.previewResourceName as string | undefined, (dep.metadata as any)?.previewNamespace || 'preview')) throw new Error('Preview termination failed');
     return;
   }
   await assertDedicatedNamespace(env);

@@ -68,6 +68,11 @@ export interface OperationDefinition<S extends Record<string, unknown> = Record<
   summarize?(state: S): Record<string, unknown> | null;
   /** Called after a failed operation was compensated (or could not be). */
   onFailed?(ctx: StepContext<S>, error: string): Promise<void>;
+  /**
+   * Give up (fail + compensate) when a step was already started this many times and the
+   * runner died each time, so a step that crashes the API is not resumed forever (#19).
+   */
+  maxAttempts?: number;
 }
 
 const registry = new Map<string, OperationDefinition<any>>();
@@ -334,6 +339,15 @@ async function runOperationInner(id: string, opts: RunOptions): Promise<RunResul
           rec.currentStep = i + 1;
           await persist(store, rec, fence);
           continue;
+        }
+        if (resumed && def.maxAttempts && sr.attempts >= def.maxAttempts) {
+          failed = `${step.name}: gave up after ${sr.attempts} interrupted attempt(s)`;
+          sr.status = 'failed';
+          sr.error = failed;
+          sr.finishedAt = new Date();
+          rec.state = state;
+          await persist(store, rec, fence);
+          break;
         }
         sr.status = 'running';
         sr.attempts += 1;

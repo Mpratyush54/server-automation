@@ -1,3 +1,4 @@
+import { ensureProjectNamespace } from '../lib/namespace-baseline';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { connectMongo } from '../config/mongoose';
@@ -294,6 +295,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
     // Auto-create / refresh ArgoCD Application from SDK register (GitHub → ArgoCD)
     if (useGitops) {
       try {
+        await ensureProjectNamespace(project.id, env);
         const customApi = new k8s.KubeConfig();
         try { customApi.loadFromCluster(); } catch { try { customApi.loadFromDefault(); } catch {} }
         const apiClient = customApi.makeApiClient(k8s.CustomObjectsApi);
@@ -322,7 +324,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
             },
             syncPolicy: {
               automated: { prune: true, selfHeal: true },
-              syncOptions: ['CreateNamespace=true'],
+              syncOptions: [],
             },
           },
         };
@@ -360,6 +362,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
           const serviceName = body.serviceName || body.ingressServiceName || 'sdk-node-api';
           const servicePort = Number(body.servicePort || body.ingressServicePort || 80);
           const ingress = await ensureProjectIngress({
+            projectId: project.id, environmentName: String(env.name),
             name: appName,
             namespace: destNamespace,
             host,
@@ -399,7 +402,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       const deployName = `${project.name}-${body.serviceName || 'app'}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
       // Client-supplied images are not accepted: an SDK token must not choose what runs in the cluster.
       const image = `${project.name}:latest`;
-      try { await coreV1.createNamespace({ body: { metadata: { name: ns } } as any }); } catch {}
+      await ensureProjectNamespace(project.id, env);
 
       // Deployment
       const deployment = {
@@ -410,9 +413,12 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
           template: {
             metadata: { labels: { app: deployName, project: project.name } },
             spec: {
+              automountServiceAccountToken: false,
+              securityContext: { runAsNonRoot: true, seccompProfile: { type: 'RuntimeDefault' } },
               containers: [{
                 name: 'app',
                 image,
+                securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } },
                 ports: [{ containerPort: 3001 }],
               }],
             },

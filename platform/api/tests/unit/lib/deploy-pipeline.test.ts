@@ -62,7 +62,7 @@ describe('deploy pipeline recovery', () => {
     expect(await deployJobHandler.isComplete!({ targetId: 'missing' } as any)).toBe(true);
   });
 
-  it('fails orphaned POST /deploy rollouts that have no job row', async () => {
+  it('fails orphaned POST /deploy rollouts that have no job row or operation', async () => {
     deployments.set('d1', { id: 'd1', status: DeploymentStatus.BUILDING, metadata: { pullFromGit: true }, orphan: true });
     deployments.set('d2', { id: 'd2', status: DeploymentStatus.BUILDING, metadata: { pullFromGit: true } });
     expect(await failOrphanedDeployments()).toBe(1);
@@ -70,6 +70,8 @@ describe('deploy pipeline recovery', () => {
     expect(deployments.get('d2').status).toBe(DeploymentStatus.BUILDING);
     const sql = orphanQuery.wheres.join(' ');
     expect(sql).toContain('NOT EXISTS (SELECT 1 FROM background_jobs');
+    // Deploys run as operations (#23): a deployment with a deploy operation is not an orphan.
+    expect(sql).toContain('NOT EXISTS (SELECT 1 FROM operations o');
     expect(sql).toContain(`'pullFromGit'`);
   });
 });

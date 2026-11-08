@@ -1,3 +1,4 @@
+import { namespaceBaselineStatus } from '../lib/namespace-baseline';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { Project, StackType } from '../entities/Project';
@@ -130,7 +131,8 @@ router.get('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
-    return res.json(project);
+    const namespaceBaselines = await Promise.all((project.environments || []).map(env => namespaceBaselineStatus(project.id, env)));
+    return res.json({ ...project, namespaceBaselines });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }

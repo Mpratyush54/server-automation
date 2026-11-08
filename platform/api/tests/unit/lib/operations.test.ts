@@ -73,6 +73,12 @@ defineOperation({
 });
 
 defineOperation({
+  type: 'test.max-attempts',
+  maxAttempts: 2,
+  steps: [step('a'), step('b'), step('c')],
+});
+
+defineOperation({
   type: 'test.sensitive',
   sensitive: true,
   steps: [step('only', { compensate: false })],
@@ -186,6 +192,27 @@ describe('resume after an interruption', () => {
     expect(op.status).toBe('succeeded');
     expect(op.attempts).toBe(2);
     expect(op.result).toEqual({ done: ['a', 'b', 'c'], undone: [] });
+  });
+
+  it('gives up (compensates and fails) once a step was interrupted maxAttempts times', async () => {
+    const id = await crashedAt('test.max-attempts', 1);
+    // Second interrupted attempt of step b.
+    const cur = (await store.get(id))!;
+    cur.steps[1].attempts = 2;
+    await store.save(cur, 'm:dead-runner');
+    await runOperation(id);
+    const op = (await store.get(id))!;
+    expect(calls).toEqual(['undo:a']);
+    expect(op.steps[1].status).toBe('failed');
+    expect(op.error).toContain('gave up after 2 interrupted attempt(s)');
+    expect(['failed', 'compensated']).toContain(op.status);
+  });
+
+  it('still resumes a step interrupted fewer than maxAttempts times', async () => {
+    const id = await crashedAt('test.max-attempts', 1);
+    await runOperation(id);
+    expect(calls).toEqual(['run:b:2:resumed', 'run:c:1:resumed']);
+    expect((await store.get(id))!.status).toBe('succeeded');
   });
 
   it('does not resume an operation whose lock is still held by a live runner', async () => {
