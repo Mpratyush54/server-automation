@@ -51,7 +51,7 @@ async function runDecayCheck() {
 
     for (const dep of staleDeployments) {
       try {
-        await terminateK8sPreview(dep.branch);
+        if (!await terminateK8sPreview(dep.branch, dep.projectId, dep.metadata?.previewResourceName as string | undefined)) throw new Error('Preview termination failed');
         dep.status = 'expired' as any;
         dep.terminatedAt = new Date();
         dep.metadata = { ...(dep.metadata as any), decayReason: '72h-ttl-expired' };

@@ -32,6 +32,9 @@ export class DbBackup {
   @Column({ type: 'enum', enum: StorageProviderType, name: 'provider_type' })
   providerType: StorageProviderType;
 
+  @Column({ type: 'uuid', name: 'provider_id', nullable: true })
+  providerId: string | null;
+
   @Column({ type: 'varchar', length: 500, name: 'file_id', nullable: true })
   fileId: string | null;
 

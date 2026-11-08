@@ -49,6 +49,9 @@ export class Project {
   @OneToMany(() => Deployment, (dep) => dep.project)
   deployments: Deployment[];
 
+  @Column({ type: 'jsonb', nullable: true, name: 'database_resources' })
+  databaseResources: Record<string, { dbName: string; username: string }> | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

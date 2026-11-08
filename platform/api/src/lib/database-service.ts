@@ -28,30 +28,22 @@ export interface DbProvisionResult {
   port: number;
 }
 
-export async function provisionPostgresDb(projectName: string, environment: string): Promise<DbProvisionResult> {
-  const safeProjectName = sanitizeDbName(projectName);
-  const safeEnv = sanitizeDbName(environment);
-  const dbName = `plat_${safeProjectName}_${safeEnv}`;
-  const username = `plat_${safeProjectName}_${safeEnv}_user`;
+export async function provisionPostgresDb(projectName: string, environment: string, projectId?: string): Promise<DbProvisionResult> {
+  if (!projectId) throw new Error('Immutable project ID is required for provisioning');
+  const id = crypto.createHash('sha256').update(projectId).digest('hex').slice(0, 20);
+  const envId = crypto.createHash('sha256').update(environment).digest('hex').slice(0, 12);
+  const dbName = `plat_${id}_${envId}`;
+  const username = `${dbName}_user`;
   const password = generateSecurePassword(32);
 
   const client = await adminPool.connect();
   try {
-    // Create user if not exists
-    await client.query(`DO $$ BEGIN
-      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${username}') THEN
-        CREATE ROLE "${username}" WITH LOGIN PASSWORD '${password}';
-      END IF;
-    END $$;`);
-
-    // Create database if not exists
-    const dbExists = await client.query(`SELECT 1 FROM pg_database WHERE datname = '${dbName}'`);
-    if (dbExists.rows.length === 0) {
-      await client.query(`CREATE DATABASE "${dbName}" OWNER "${username}"`);
-    }
-
-    // Grant all privileges
-    await client.query(`GRANT ALL PRIVILEGES ON DATABASE "${dbName}" TO "${username}"`);
+    const role = await client.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [username]);
+    if (!role.rows.length) await client.query(`CREATE ROLE ${client.escapeIdentifier(username)} WITH LOGIN PASSWORD ${client.escapeLiteral(password)}`);
+    else throw new Error('Database role already exists; use project credential resolution');
+    const dbExists = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
+    if (!dbExists.rows.length) await client.query(`CREATE DATABASE ${client.escapeIdentifier(dbName)} OWNER ${client.escapeIdentifier(username)}`);
+    await client.query(`GRANT ALL PRIVILEGES ON DATABASE ${client.escapeIdentifier(dbName)} TO ${client.escapeIdentifier(username)}`);
 
     return {
       dbName,
@@ -69,9 +61,9 @@ export async function dropProjectDb(dbName: string, username: string): Promise<v
   const client = await adminPool.connect();
   try {
     // Terminate active connections
-    await client.query(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${dbName}' AND pid <> pg_backend_pid()`);
-    await client.query(`DROP DATABASE IF EXISTS "${dbName}"`);
-    await client.query(`DROP ROLE IF EXISTS "${username}"`);
+    await client.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()', [dbName]);
+    await client.query(`DROP DATABASE IF EXISTS ${client.escapeIdentifier(dbName)}`);
+    await client.query(`DROP ROLE IF EXISTS ${client.escapeIdentifier(username)}`);
   } finally {
     client.release();
   }
@@ -125,15 +117,13 @@ export async function restoreDatabase(
     const user = process.env.POSTGRES_USER || 'postgres';
     const password = process.env.POSTGRES_PASSWORD || 'postgres';
 
-    // Terminate connections and drop/recreate the database
     try {
-      const client = await adminPool.connect();
-      await client.query(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${dbName}' AND pid <> pg_backend_pid()`);
-      await client.query(`DROP DATABASE IF EXISTS "${dbName}"`);
-      await client.query(`CREATE DATABASE "${dbName}"`);
-      client.release();
+      await fs.promises.access(backupFilePath, fs.constants.R_OK);
+      if (!(await fs.promises.stat(backupFilePath)).isFile() || !(await fs.promises.stat(backupFilePath)).size) {
+        throw new Error('Backup is empty or not a regular file');
+      }
     } catch (err: any) {
-      resolve({ success: false, error: `Failed to reset database: ${err.message}` });
+      resolve({ success: false, error: `Backup is not readable: ${err.message}` });
       return;
     }
 
@@ -143,6 +133,7 @@ export async function restoreDatabase(
       '-p', port,
       '-U', user,
       '-d', dbName,
+      '--clean', '--if-exists', '--single-transaction', '--exit-on-error',
       '--no-owner',
       '--no-privileges',
       backupFilePath
@@ -151,7 +142,7 @@ export async function restoreDatabase(
     let stderr = '';
     pgrestore.stderr.on('data', (d) => { stderr += d.toString(); });
     pgrestore.on('close', (code) => {
-      if (code !== 0 && stderr && !stderr.includes('already exists')) {
+      if (code !== 0) {
         resolve({ success: false, error: stderr });
       } else {
         resolve({ success: true });

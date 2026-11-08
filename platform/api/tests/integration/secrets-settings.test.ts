@@ -181,6 +181,7 @@ jest.mock('../../src/schemas/BugReport',  () => {
       create: jest.fn().mockResolvedValue({ _id: 'b1' }),
       find: jest.fn().mockReturnValue(chain),
       countDocuments: jest.fn().mockResolvedValue(1),
+      findById: jest.fn().mockResolvedValue({ projectId: PROJ_ID }),
       findByIdAndDelete: jest.fn().mockResolvedValue({ _id: 'b1' }),
     },
   };
@@ -439,8 +440,7 @@ describe('Alerts API', () => {
         .get('/api/alerts')
         .query({ projectId: PROJ_ID })
         .set('Authorization', `Bearer ${T.developer}`);
-      expect(r.status).toBe(200);
-      expect(Array.isArray(r.body)).toBe(true);
+      expect(r.status).toBe(403);
     });
   });
 
@@ -464,7 +464,7 @@ describe('Alerts API', () => {
         .post('/api/alerts')
         .set('Authorization', `Bearer ${T.tech_lead}`)
         .send(valid);
-      expect(r.status).toBe(201);
+      expect(r.status).toBe(403);
     });
 
     it('403 — developer cannot create alert', async () => {
@@ -531,7 +531,7 @@ describe('Alerts API', () => {
         .post('/api/alerts/evaluate')
         .set('Authorization', `Bearer ${T.developer}`)
         .send({ projectId: PROJ_ID });
-      expect([200, 400]).toContain(r.status);
+      expect(r.status).toBe(403);
     });
   });
 });
@@ -773,7 +773,7 @@ describe('Audit Logs', () => {
         .get('/api/logs/search')
         .query({ projectId: PROJ_ID, level: 'INFO' })
         .set('Authorization', `Bearer ${T.developer}`);
-      expect([200, 400]).toContain(r.status);
+      expect(r.status).toBe(403);
     });
 
     it('401 — no token', async () => {
@@ -793,7 +793,7 @@ describe('Bug Reports Management', () => {
         .get('/api/bug-reports')
         .query({ projectId: PROJ_ID })
         .set('Authorization', `Bearer ${T.developer}`);
-      expect(r.status).toBe(200);
+      expect(r.status).toBe(403);
     });
   });
 
@@ -809,7 +809,7 @@ describe('Bug Reports Management', () => {
       const r = await request(app)
         .delete('/api/bug-reports/b1')
         .set('Authorization', `Bearer ${T.tech_lead}`);
-      expect([200, 204, 404]).toContain(r.status);
+      expect(r.status).toBe(403);
     });
 
     it('403 — developer cannot delete bug report', async () => {

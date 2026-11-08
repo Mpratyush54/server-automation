@@ -22,6 +22,7 @@ jest.mock('../../src/lib/k8s', () => ({
   updateArgoCDApp:    jest.fn().mockResolvedValue(true),
   patchNamespacedCustomObject: jest.fn().mockResolvedValue({}),
   patchDeploymentReplicas:     jest.fn().mockResolvedValue({}),
+  operateProjectWorkloads: jest.fn().mockResolvedValue(undefined),
   restartDeployment:           jest.fn().mockResolvedValue({}),
 }));
 jest.mock('../../src/lib/lokilog', () => ({ forwardToLoki: jest.fn().mockResolvedValue(true) }));
@@ -484,8 +485,7 @@ describe('Project SDK Tokens', () => {
       const r = await request(app)
         .get(`/api/projects/${PROJ_ID}/tokens`)
         .set('Authorization', `Bearer ${T.developer}`);
-      expect(r.status).toBe(200);
-      expect(Array.isArray(r.body)).toBe(true);
+      expect(r.status).toBe(403);
     });
 
     it('token value in list is MASKED — not full 32-char suffix', async () => {
@@ -713,7 +713,8 @@ describe('Deployments API', () => {
       const r = await request(app)
         .post(`/api/deployments/${DEPLOY_ID}/restart`)
         .set('Authorization', `Bearer ${T.devops}`);
-      expect([200, 400, 404]).toContain(r.status);
+      expect(r.status).toBe(200);
+      expect(require('../../src/lib/k8s').operateProjectWorkloads).toHaveBeenCalledWith(seedEnv.namespace, seedEnv.namespace, 'restart', undefined);
     });
 
     it('403 — developer cannot restart pods', async () => {
@@ -737,7 +738,8 @@ describe('Deployments API', () => {
         .patch(`/api/deployments/${DEPLOY_ID}/scale`)
         .set('Authorization', `Bearer ${T.devops}`)
         .send({ replicas: 3 });
-      expect([200, 400, 404]).toContain(r.status);
+      expect(r.status).toBe(200);
+      expect(require('../../src/lib/k8s').operateProjectWorkloads).toHaveBeenCalledWith(seedEnv.namespace, seedEnv.namespace, 'scale', 3);
     });
 
     it('403 — tech_lead cannot scale', async () => {
@@ -762,7 +764,8 @@ describe('Deployments API', () => {
       const r = await request(app)
         .post(`/api/deployments/${DEPLOY_ID}/terminate`)
         .set('Authorization', `Bearer ${T.developer}`);
-      expect([200, 400, 404]).toContain(r.status);
+      expect(r.status).toBe(200);
+      expect(require('../../src/lib/k8s').operateProjectWorkloads).toHaveBeenCalledWith(seedEnv.namespace, seedEnv.namespace, 'terminate', undefined);
     });
 
     it('403 — viewer cannot terminate', async () => {

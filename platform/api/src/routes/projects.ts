@@ -88,8 +88,8 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
     for (const name of envNames) {
       const env = envRepo.create({
         name: name as any,
-        namespace: assignedNamespace(saved.name, name),
-        domain: assignedEnvHost(saved.name, name, baseDomain),
+        namespace: assignedNamespace(saved.name, name, saved.id),
+        domain: assignedEnvHost(saved.name, name, baseDomain, saved.id),
         projectId: saved.id,
       });
       await envRepo.save(env);
@@ -138,12 +138,8 @@ router.get('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
 
 router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Response) => {
   try {
-    const user = (req as AuthenticatedRequest).user;
     const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.id, ProjectAccessRole.DEVOPS);
-    const allowedByPlatform =
-      !!user &&
-      (isGlobalProjectAdmin(user) || user.role === UserRole.TECH_LEAD);
-    if (!access.ok && !allowedByPlatform) {
+    if (!access.ok) {
       const denied = access as { ok: false; status: number; error: string };
       return res.status(denied.status).json({ error: denied.error });
     }
@@ -178,8 +174,8 @@ router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
       const envs = await envRepo.find({ where: { projectId: updated.id } });
       for (const env of envs) {
         // Re-assert server namespace + host (never accept client namespace)
-        env.namespace = assignedNamespace(updated.name, env.name);
-        env.domain = assignedEnvHost(updated.name, env.name, updated.domain);
+        env.namespace = env.namespace || assignedNamespace(updated.name, env.name, updated.id);
+        env.domain = `${env.namespace}.${updated.domain}`;
         await envRepo.save(env);
       }
     }
@@ -201,6 +197,8 @@ router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
 
 router.delete('/projects/:id', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
   try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.id, ProjectAccessRole.OWNER);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const ds = await getDb();
     const repo = ds.getRepository(Project);
 
@@ -229,6 +227,8 @@ router.delete('/projects/:id', expressAuthenticate, expressRequireRole([UserRole
 
 router.get('/projects/:projectId/tokens', expressAuthenticate, async (req: Request, res: Response) => {
   try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const ds = await getDb();
     const tokens = await ds.getRepository(SdkCredential).find({
       where: { projectId: req.params.projectId },
@@ -250,6 +250,8 @@ router.get('/projects/:projectId/tokens', expressAuthenticate, async (req: Reque
 
 router.post('/projects/:projectId/tokens', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
   try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: 'Token name is required' });
 
@@ -292,6 +294,8 @@ router.post('/projects/:projectId/tokens', expressAuthenticate, expressRequireRo
 
 router.delete('/projects/:projectId/tokens/:tokenId', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
   try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const ds = await getDb();
     const token = await ds.getRepository(SdkCredential).findOne({
       where: { id: req.params.tokenId, projectId: req.params.projectId }
@@ -316,6 +320,8 @@ router.delete('/projects/:projectId/tokens/:tokenId', expressAuthenticate, expre
 
 router.get('/projects/:projectId/argocd-status', expressAuthenticate, async (req: Request, res: Response) => {
   try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, ProjectAccessRole.VIEWER);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const ds = await getDb();
     const project = await ds.getRepository(Project).findOne({
       where: { id: req.params.projectId },
@@ -324,7 +330,9 @@ router.get('/projects/:projectId/argocd-status', expressAuthenticate, async (req
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     const envHint = String(req.query.env || 'development');
-    const appName = argoAppName(project.name, envHint);
+    const env = project.environments?.find(e => String(e.name) === envHint);
+    if (!env) return res.status(404).json({ error: 'Environment not found' });
+    const appName = env.namespace || argoAppName(project.name, envHint, project.id);
 
     const kc = new k8s.KubeConfig();
     try {
@@ -370,6 +378,8 @@ router.get('/projects/:projectId/argocd-status', expressAuthenticate, async (req
 /** List branches (+ tip SHAs) from the project's GitHub/GitLab repository. */
 router.get('/projects/:projectId/git/branches', expressAuthenticate, async (req: Request, res: Response) => {
   try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, ProjectAccessRole.VIEWER);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const ds = await getDb();
     const project = await ds.getRepository(Project).findOne({ where: { id: req.params.projectId } });
     if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -389,6 +399,8 @@ router.get('/projects/:projectId/git/branches', expressAuthenticate, async (req:
 /** List recent commits for a branch from the project's Git repository. */
 router.get('/projects/:projectId/git/commits', expressAuthenticate, async (req: Request, res: Response) => {
   try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, ProjectAccessRole.VIEWER);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const ds = await getDb();
     const project = await ds.getRepository(Project).findOne({ where: { id: req.params.projectId } });
     if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -411,6 +423,8 @@ router.get('/projects/:projectId/git/commits', expressAuthenticate, async (req: 
 /** List GitHub/GitLab releases so the UI can offer one-click update. */
 router.get('/projects/:projectId/git/releases', expressAuthenticate, async (req: Request, res: Response) => {
   try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, ProjectAccessRole.VIEWER);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const ds = await getDb();
     const project = await ds.getRepository(Project).findOne({
       where: { id: req.params.projectId },

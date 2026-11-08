@@ -2,12 +2,12 @@ import { getDb } from '../config/database';
 import { Secret } from '../entities/Secret';
 import { encryptValue, decryptValue } from './secrets-encryption';
 import {
-  provisionPostgresDb,
-  sanitizeDbName,
   generateSecurePassword,
   DbProvisionResult,
 } from './database-service';
 import { Pool } from 'pg';
+import { Project } from '../entities/Project';
+import { createHash } from 'crypto';
 
 const MASTER_KEY = () =>
   process.env.SECRETS_ENCRYPTION_KEY ||
@@ -73,95 +73,38 @@ export async function ensurePostgresForProject(
     const host = process.env.POSTGRES_HOST || 'localhost';
     const port = parseInt(process.env.POSTGRES_PORT || '5432', 10);
 
-    if (existing.POSTGRES_DB && existing.POSTGRES_USER && existing.POSTGRES_PASSWORD) {
-      // Verify DB still exists / is reachable; recreate role password binding if needed
-      const admin = new Pool({
-        host,
-        port,
-        user: process.env.POSTGRES_USER || 'postgres',
-        password: process.env.POSTGRES_PASSWORD || 'postgres',
-        database: 'postgres',
-        max: 2,
-      });
+    const ds = await getDb();
+    const repo = ds.getRepository(Project);
+    const project = await repo.findOne({ where: { id: projectId } });
+    if (!project) throw new Error('Project not found');
+    let identity = project.databaseResources && Object.prototype.hasOwnProperty.call(project.databaseResources, environment) ? project.databaseResources[environment] : undefined;
+    if (!identity) {
+      if (existing.POSTGRES_DB || existing.POSTGRES_USER) {
+        throw new Error('Legacy database identity requires administrator migration to projects.database_resources');
+      }
+      const id = createHash('sha256').update(projectId).digest('hex').slice(0, 20);
+      const env = createHash('sha256').update(environment).digest('hex').slice(0, 12);
+      identity = { dbName: `plat_${id}_${env}`, username: `plat_${id}_${env}_user` };
+      project.databaseResources = { ...(project.databaseResources || {}), [environment]: identity };
+      await repo.save(project);
+    }
+    const { dbName, username } = identity;
+    if (username === (process.env.POSTGRES_USER || 'postgres') || dbName === (process.env.POSTGRES_DB || 'plat_platform')) {
+      throw new Error('Platform database credentials cannot be used by a project');
+    }
+    const password = existing.POSTGRES_PASSWORD || generateSecurePassword(32);
+    const admin = new Pool({ host, port, user: process.env.POSTGRES_USER || 'postgres',
+      password: process.env.POSTGRES_PASSWORD || 'postgres', database: 'postgres', max: 2 });
+    try {
       const client = await admin.connect();
       try {
-        const dbName = existing.POSTGRES_DB;
-        const username = existing.POSTGRES_USER;
-        const password = existing.POSTGRES_PASSWORD;
-        const dbExists = await client.query(`SELECT 1 FROM pg_database WHERE datname = $1`, [dbName]);
-        if (dbExists.rows.length === 0) {
-          await client.query(`CREATE DATABASE "${dbName}" OWNER "${username}"`).catch(async () => {
-            // owner may be missing — recreate role
-            await client.query(`DO $$ BEGIN
-              IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${username}') THEN
-                CREATE ROLE "${username}" WITH LOGIN PASSWORD '${password}';
-              ELSE
-                ALTER ROLE "${username}" WITH LOGIN PASSWORD '${password}';
-              END IF;
-            END $$;`);
-            await client.query(`CREATE DATABASE "${dbName}" OWNER "${username}"`);
-          });
-        } else {
-          // Keep password in sync so stored secret always works
-          await client.query(`DO $$ BEGIN
-            IF EXISTS (SELECT FROM pg_roles WHERE rolname = '${username}') THEN
-              ALTER ROLE "${username}" WITH LOGIN PASSWORD '${password}';
-            ELSE
-              CREATE ROLE "${username}" WITH LOGIN PASSWORD '${password}';
-            END IF;
-          END $$;`);
-          await client.query(`GRANT ALL PRIVILEGES ON DATABASE "${dbName}" TO "${username}"`).catch(() => {});
-        }
-      } finally {
-        client.release();
-        await admin.end().catch(() => {});
-      }
-
-      return {
-        status: 'ready',
-        creds: {
-          dbName: existing.POSTGRES_DB,
-          username: existing.POSTGRES_USER,
-          password: existing.POSTGRES_PASSWORD,
-          host: existing.POSTGRES_HOST || host,
-          port: parseInt(existing.POSTGRES_PORT || String(port), 10),
-        },
-      };
-    }
-
-    // Fresh provision — if role already exists without our secret, rotate password
-    const safeProjectName = sanitizeDbName(projectName);
-    const safeEnv = sanitizeDbName(environment);
-    const dbName = `plat_${safeProjectName}_${safeEnv}`;
-    const username = `plat_${safeProjectName}_${safeEnv}_user`;
-    const password = generateSecurePassword(32);
-
-    const admin = new Pool({
-      host,
-      port,
-      user: process.env.POSTGRES_USER || 'postgres',
-      password: process.env.POSTGRES_PASSWORD || 'postgres',
-      database: 'postgres',
-      max: 2,
-    });
-    const client = await admin.connect();
-    try {
-      await client.query(`DO $$ BEGIN
-        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${username}') THEN
-          CREATE ROLE "${username}" WITH LOGIN PASSWORD '${password}';
-        ELSE
-          ALTER ROLE "${username}" WITH LOGIN PASSWORD '${password}';
-        END IF;
-      END $$;`);
-      const dbExists = await client.query(`SELECT 1 FROM pg_database WHERE datname = $1`, [dbName]);
-      if (dbExists.rows.length === 0) {
-        await client.query(`CREATE DATABASE "${dbName}" OWNER "${username}"`);
-      }
-      await client.query(`GRANT ALL PRIVILEGES ON DATABASE "${dbName}" TO "${username}"`);
-    } finally {
-      client.release();
-      await admin.end().catch(() => {});
-    }
+        const role = await client.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [username]);
+        await client.query(`${role.rows.length ? 'ALTER' : 'CREATE'} ROLE ${client.escapeIdentifier(username)} WITH LOGIN PASSWORD ${client.escapeLiteral(password)}`);
+        const db = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
+        if (!db.rows.length) await client.query(`CREATE DATABASE ${client.escapeIdentifier(dbName)} OWNER ${client.escapeIdentifier(username)}`);
+        await client.query(`GRANT ALL PRIVILEGES ON DATABASE ${client.escapeIdentifier(dbName)} TO ${client.escapeIdentifier(username)}`);
+      } finally { client.release(); }
+    } finally { await admin.end(); }
 
     const creds: DbProvisionResult = { dbName, username, password, host, port };
     await upsertSecret(projectId, environment, 'POSTGRES_HOST', host);
@@ -172,18 +115,7 @@ export async function ensurePostgresForProject(
 
     return { status: 'ready', creds };
   } catch (e: any) {
-    // Fallback to original provision helper if ensure path fails mid-way
-    try {
-      const creds = await provisionPostgresDb(projectName, environment);
-      await upsertSecret(projectId, environment, 'POSTGRES_HOST', creds.host);
-      await upsertSecret(projectId, environment, 'POSTGRES_PORT', String(creds.port));
-      await upsertSecret(projectId, environment, 'POSTGRES_USER', creds.username);
-      await upsertSecret(projectId, environment, 'POSTGRES_PASSWORD', creds.password);
-      await upsertSecret(projectId, environment, 'POSTGRES_DB', creds.dbName);
-      return { status: 'ready', creds };
-    } catch (e2: any) {
-      return { status: 'error', error: e2.message || e.message };
-    }
+    return { status: 'error', error: e.message || 'Postgres provisioning failed' };
   }
 }
 
@@ -192,68 +124,13 @@ export async function ensureMongoForProject(
   projectName: string,
   environment: string,
 ): Promise<{ status: 'ready' | 'error'; uri?: string; error?: string }> {
-  try {
-    const existing = await readSecrets(projectId, environment);
-    if (existing.MONGO_URI) {
-      return { status: 'ready', uri: existing.MONGO_URI };
-    }
-
-    const base =
-      process.env.MONGODB_URI ||
-      process.env.MONGO_URI ||
-      'mongodb://localhost:27017/plat_platform';
-    const safe = sanitizeDbName(`${projectName}_${environment}`);
-    const dbName = `plat_${safe}`;
-    let uri = `mongodb://localhost:27017/${dbName}`;
-    try {
-      const u = new URL(base);
-      u.pathname = `/${dbName}`;
-      uri = u.toString();
-    } catch {
-      const uriBase = base.split('/').slice(0, 3).join('/') || 'mongodb://localhost:27017';
-      uri = `${uriBase}/${dbName}`;
-    }
-
-    // Touch the DB so it exists (best-effort) via mongoose connection
-    try {
-      const mongoose = await import('mongoose');
-      const conn = await mongoose.createConnection(uri).asPromise();
-      await conn.collection('_platform_init').insertOne({ ok: true, at: new Date() });
-      await conn.close();
-    } catch (touchErr: any) {
-      console.warn('[project-db-ensure] mongo touch:', touchErr.message);
-    }
-
-    await upsertSecret(projectId, environment, 'MONGO_URI', uri);
-    return { status: 'ready', uri };
-  } catch (e: any) {
-    return { status: 'error', error: e.message };
-  }
+  return { status: 'error', error: 'Isolated MongoDB users are not configured; project credentials are unavailable' };
 }
 
 export async function ensureRedisForProject(
-  projectId: string,
-  projectName: string,
-  environment: string,
+  projectId: string, projectName: string, environment: string,
 ): Promise<{ status: 'ready' | 'error'; error?: string }> {
-  try {
-    const existing = await readSecrets(projectId, environment);
-    const host = existing.REDIS_HOST || process.env.REDIS_HOST || 'localhost';
-    const port = existing.REDIS_PORT || process.env.REDIS_PORT || '6379';
-    const password = existing.REDIS_PASSWORD || process.env.REDIS_PASSWORD || '';
-    const prefix =
-      existing.REDIS_KEY_PREFIX ||
-      `plat:${sanitizeDbName(projectName)}:${sanitizeDbName(environment)}:`;
-
-    await upsertSecret(projectId, environment, 'REDIS_HOST', host);
-    await upsertSecret(projectId, environment, 'REDIS_PORT', String(port));
-    if (password) await upsertSecret(projectId, environment, 'REDIS_PASSWORD', password);
-    await upsertSecret(projectId, environment, 'REDIS_KEY_PREFIX', prefix);
-
-    return { status: 'ready' };
-  } catch (e: any) {
-    return { status: 'error', error: e.message };
-  }
+  return { status: 'error', error: 'Isolated Redis ACL users are not configured; project credentials are unavailable' };
 }
 
 export async function ensureProjectDatabases(
@@ -297,37 +174,12 @@ export async function resolveProjectDbCredentials(
   dbTypes: string[],
 ): Promise<Record<string, any>> {
   const types = dbTypes.length ? dbTypes : ['postgres', 'mongo', 'redis'];
-  await ensureProjectDatabases(projectId, projectName, environment, types);
-  const secrets = await readSecrets(projectId, environment);
-  const result: Record<string, any> = {};
-
-  if (types.includes('postgres')) {
-    result.postgres = {
-      host: secrets.POSTGRES_HOST || process.env.POSTGRES_HOST || 'localhost',
-      port: parseInt(secrets.POSTGRES_PORT || process.env.POSTGRES_PORT || '5432', 10),
-      user: secrets.POSTGRES_USER || process.env.POSTGRES_USER || 'plat',
-      password: secrets.POSTGRES_PASSWORD || process.env.POSTGRES_PASSWORD || 'plat',
-      database: secrets.POSTGRES_DB || process.env.POSTGRES_DB || 'plat_platform',
-      poolSize: 10,
-    };
-  }
-  if (types.includes('mongo')) {
-    result.mongo = {
-      uri:
-        secrets.MONGO_URI ||
-        process.env.MONGODB_URI ||
-        process.env.MONGO_URI ||
-        'mongodb://localhost:27017/plat_platform',
-      poolSize: 5,
-    };
-  }
-  if (types.includes('redis')) {
-    result.redis = {
-      host: secrets.REDIS_HOST || process.env.REDIS_HOST || 'localhost',
-      port: parseInt(secrets.REDIS_PORT || process.env.REDIS_PORT || '6379', 10),
-      password: secrets.REDIS_PASSWORD || process.env.REDIS_PASSWORD || '',
-      keyPrefix: secrets.REDIS_KEY_PREFIX || '',
-    };
-  }
-  return result;
+  if (types.includes('mongo')) throw new Error('Isolated MongoDB users are not configured; project credentials are unavailable');
+  if (types.includes('redis')) throw new Error('Isolated Redis ACL users are not configured; project credentials are unavailable');
+  if (types.some(type => type !== 'postgres')) throw new Error('Unsupported database type');
+  const result = await ensurePostgresForProject(projectId, projectName, environment);
+  if (result.status !== 'ready' || !result.creds) throw new Error(result.error || 'Project database credentials are unavailable');
+  const creds = result.creds;
+  return { postgres: { host: creds.host, port: creds.port, user: creds.username,
+    password: creds.password, database: creds.dbName, poolSize: 10 } };
 }

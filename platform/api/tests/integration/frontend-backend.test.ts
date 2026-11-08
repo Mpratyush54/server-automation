@@ -119,15 +119,12 @@ jest.mock('../../src/lib/lokilog', () => ({
   forwardToLoki: jest.fn().mockResolvedValue(true),
 }));
 
-// Mock Database provisioning execution
-jest.mock('../../src/lib/database-service', () => ({
-  provisionPostgresDb: jest.fn().mockResolvedValue({
-    dbName: 'plat_testproject_development',
-    username: 'plat_testproject_development_user',
-    password: 'securepassword123',
-    host: 'localhost',
-    port: 5432
-  }),
+// Route delegates provisioning and credential persistence to the isolated helper.
+jest.mock('../../src/lib/project-db-ensure', () => ({
+  ensurePostgresForProject: jest.fn().mockResolvedValue({ status: 'ready', creds: {
+    dbName: 'plat_project_id_environment', username: 'plat_project_id_environment_user',
+    password: 'test-password', host: 'localhost', port: 5432,
+  } }),
 }));
 
 import express from 'express';
@@ -201,8 +198,8 @@ describe('Frontend & Backend Integration Tests', () => {
         .send({ environment: 'development' });
 
       expect(res.status).toBe(201);
-      expect(res.body.dbName).toBe('plat_testproject_development');
-      expect(res.body.username).toBe('plat_testproject_development_user');
+      expect(res.body.dbName).toBe('plat_project_id_environment');
+      expect(res.body.username).toBe('plat_project_id_environment_user');
       expect(res.body.password).toBeDefined();
       expect(res.body.host).toBe('localhost');
       expect(res.body.port).toBe(5432);

@@ -37,3 +37,11 @@ describe('project-namespace', () => {
     );
   });
 });
+
+describe('immutable namespace identities', () => {
+  it('separates names which normalize identically, including long names', () => {
+    expect(assignedNamespace('alpha.beta', 'production', 'id-a')).not.toBe(assignedNamespace('alpha-beta', 'production', 'id-b'));
+    expect(assignedNamespace('a'.repeat(100), 'production', 'id-a')).not.toBe(assignedNamespace('a'.repeat(100), 'production', 'id-b'));
+    expect(assignedNamespace('a'.repeat(100), 'production', 'id-a').length).toBeLessThanOrEqual(63);
+  });
+});

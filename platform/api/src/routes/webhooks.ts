@@ -2,35 +2,33 @@ import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { Project } from '../entities/Project';
 import { Deployment, DeploymentStatus } from '../entities/Deployment';
-import { expressAuthenticate, AuthenticatedRequest } from '../middleware/auth';
 import { triggerPipeline } from '../lib/gitlab';
 import { postComment, formatPreviewComment, extractTaskId } from '../lib/clickup';
 import { generatePreviewUrl } from '../lib/preview';
-import { deployK8sPreview, terminateK8sPreview } from '../lib/k8s';
+import { deployK8sPreview, terminateK8sPreview, previewResourceName } from '../lib/k8s';
 import * as crypto from 'crypto';
 
-const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || '';
-
-function verifyGitHubSignature(payload: string, signature: string | undefined): boolean {
-  if (!GITHUB_WEBHOOK_SECRET || !signature) return false;
-  const expected = 'sha256=' + crypto.createHmac('sha256', GITHUB_WEBHOOK_SECRET).update(payload).digest('hex');
+function verifyGitHubSignature(payload: unknown, signature: string | undefined): boolean {
+  const secret = process.env.GITHUB_WEBHOOK_SECRET;
+  if (!secret || !Buffer.isBuffer(payload) || !signature || !/^sha256=[a-f0-9]{64}$/.test(signature)) return false;
+  const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
 }
 
-const GITLAB_WEBHOOK_SECRET = process.env.GITLAB_WEBHOOK_SECRET || '';
-
 function verifyGitLabToken(token: string | undefined): boolean {
-  const secret = process.env.GITLAB_WEBHOOK_SECRET || process.env.GITLAB_WEBHOOK_TOKEN || '';
-  if (!secret) return true;
-  return token === secret;
+  const secret = process.env.GITLAB_WEBHOOK_SECRET || process.env.GITLAB_WEBHOOK_TOKEN;
+  if (!secret || typeof token !== 'string') return false;
+  const expected = Buffer.from(secret);
+  const supplied = Buffer.from(token);
+  return expected.length === supplied.length && crypto.timingSafeEqual(expected, supplied);
 }
 
 const router = Router();
 
-router.post('/webhooks/github', expressAuthenticate, async (req: Request, res: Response) => {
+router.post('/webhooks/github', async (req: Request, res: Response) => {
   try {
     const signature = req.headers['x-hub-signature-256'] as string | undefined;
-    const rawBody = (req as any).rawBody || JSON.stringify(req.body);
+    const rawBody = (req as any).rawBody;
 
     if (!verifyGitHubSignature(rawBody, signature)) {
       return res.status(401).json({ error: 'Invalid signature' });
@@ -87,7 +85,7 @@ router.post('/webhooks/github', expressAuthenticate, async (req: Request, res: R
 
       // Deploy preview environment via K8s
       try {
-        await deployK8sPreview(project.name, branch, `${project.name}:${branch}`);
+        if (!await deployK8sPreview(project.name, branch, `${project.name}:${branch}`, project.id)) throw new Error('Preview deployment failed');
         deployment.status = DeploymentStatus.DEPLOYED;
         deployment.deployedAt = new Date();
         await ds.getRepository(Deployment).save(deployment);
@@ -114,13 +112,13 @@ router.post('/webhooks/github', expressAuthenticate, async (req: Request, res: R
 
       if (action === 'closed' && !pr.merged) {
         const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
-        const previewUrl = generatePreviewUrl(branch, projectSlug);
-        await terminateK8sPreview(branch);
+        const previewUrl = generatePreviewUrl(branch, projectSlug, undefined, project.id);
         const deployment = await ds.getRepository(Deployment).findOne({
           where: { projectId: project.id, branch, previewUrl },
           order: { createdAt: 'DESC' },
         });
         if (deployment) {
+          if (!await terminateK8sPreview(branch, project.id, deployment.metadata?.previewResourceName as string | undefined)) throw new Error('Preview termination failed');
           deployment.status = DeploymentStatus.TERMINATED;
           deployment.terminatedAt = new Date();
           await ds.getRepository(Deployment).save(deployment);
@@ -131,7 +129,7 @@ router.post('/webhooks/github', expressAuthenticate, async (req: Request, res: R
       if (action === 'opened' || action === 'synchronize') {
         const commitSha = pr.head?.sha || 'unknown';
         const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
-        const previewUrl = generatePreviewUrl(branch, projectSlug);
+        const previewUrl = generatePreviewUrl(branch, projectSlug, undefined, project.id);
         const deployment = ds.getRepository(Deployment).create({
           projectId: project.id,
           branch,
@@ -140,14 +138,14 @@ router.post('/webhooks/github', expressAuthenticate, async (req: Request, res: R
           imageTag: `${project.name}:${branch}`,
           status: DeploymentStatus.BUILDING,
           previewUrl,
-          metadata: { prNumber: pr.number, prTitle: pr.title },
+          metadata: { previewResourceName: previewResourceName(project.id, branch), prNumber: pr.number, prTitle: pr.title },
         });
         await ds.getRepository(Deployment).save(deployment);
         await triggerPipeline(project.id, branch);
 
         // Deploy preview environment via K8s
         try {
-          await deployK8sPreview(project.name, branch, `${project.name}:${branch}`);
+          if (!await deployK8sPreview(project.name, branch, `${project.name}:${branch}`, project.id)) throw new Error('Preview deployment failed');
           deployment.status = DeploymentStatus.DEPLOYED;
           deployment.deployedAt = new Date();
           await ds.getRepository(Deployment).save(deployment);
@@ -167,7 +165,7 @@ router.post('/webhooks/github', expressAuthenticate, async (req: Request, res: R
   }
 });
 
-router.post('/webhooks/gitlab', expressAuthenticate, async (req: Request, res: Response) => {
+router.post('/webhooks/gitlab', async (req: Request, res: Response) => {
   try {
     const token = req.headers['x-gitlab-token'] as string | undefined;
     if (!verifyGitLabToken(token)) {
@@ -202,7 +200,7 @@ router.post('/webhooks/gitlab', expressAuthenticate, async (req: Request, res: R
       }
 
       const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
-      const previewUrl = generatePreviewUrl(branch, projectSlug);
+      const previewUrl = generatePreviewUrl(branch, projectSlug, undefined, project.id);
       const deployment = ds.getRepository(Deployment).create({
         projectId: project.id,
         branch,
@@ -224,7 +222,7 @@ router.post('/webhooks/gitlab', expressAuthenticate, async (req: Request, res: R
 
       // Deploy preview environment via K8s
       try {
-        await deployK8sPreview(project.name, branch, `${project.name}:${branch}`);
+        if (!await deployK8sPreview(project.name, branch, `${project.name}:${branch}`, project.id)) throw new Error('Preview deployment failed');
         deployment.status = DeploymentStatus.DEPLOYED;
         deployment.deployedAt = new Date();
         await ds.getRepository(Deployment).save(deployment);
@@ -251,13 +249,13 @@ router.post('/webhooks/gitlab', expressAuthenticate, async (req: Request, res: R
 
       if (action === 'close' || action === 'merge') {
         const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
-        const previewUrl = generatePreviewUrl(branch, projectSlug);
-        await terminateK8sPreview(branch);
+        const previewUrl = generatePreviewUrl(branch, projectSlug, undefined, project.id);
         const deployment = await ds.getRepository(Deployment).findOne({
           where: { projectId: project.id, branch, previewUrl },
           order: { createdAt: 'DESC' },
         });
         if (deployment) {
+          if (!await terminateK8sPreview(branch, project.id, deployment.metadata?.previewResourceName as string | undefined)) throw new Error('Preview termination failed');
           deployment.status = action === 'merge' ? DeploymentStatus.DEPLOYED : DeploymentStatus.TERMINATED;
           deployment.terminatedAt = new Date();
           await ds.getRepository(Deployment).save(deployment);
@@ -268,7 +266,7 @@ router.post('/webhooks/gitlab', expressAuthenticate, async (req: Request, res: R
       if (action === 'open' || action === 'update') {
         const commitSha = mr.last_commit?.id || 'unknown';
         const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
-        const previewUrl = generatePreviewUrl(branch, projectSlug);
+        const previewUrl = generatePreviewUrl(branch, projectSlug, undefined, project.id);
         const deployment = ds.getRepository(Deployment).create({
           projectId: project.id,
           branch,
@@ -277,14 +275,14 @@ router.post('/webhooks/gitlab', expressAuthenticate, async (req: Request, res: R
           imageTag: `${project.name}:${branch}`,
           status: DeploymentStatus.BUILDING,
           previewUrl,
-          metadata: { mrNumber: mr.iid, mrTitle: mr.title },
+          metadata: { previewResourceName: previewResourceName(project.id, branch), mrNumber: mr.iid, mrTitle: mr.title },
         });
         await ds.getRepository(Deployment).save(deployment);
         await triggerPipeline(project.id, branch);
 
         // Deploy preview environment via K8s
         try {
-          await deployK8sPreview(project.name, branch, `${project.name}:${branch}`);
+          if (!await deployK8sPreview(project.name, branch, `${project.name}:${branch}`, project.id)) throw new Error('Preview deployment failed');
           deployment.status = DeploymentStatus.DEPLOYED;
           deployment.deployedAt = new Date();
           await ds.getRepository(Deployment).save(deployment);

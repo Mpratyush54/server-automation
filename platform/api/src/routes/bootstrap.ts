@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { connectMongo } from '../config/mongoose';
@@ -201,6 +202,17 @@ router.delete('/bootstrap/pods/:namespace/:podName', expressAuthenticate, expres
 
 router.post('/integrations/clickup/webhook', async (req: Request, res: Response) => {
   try {
+    const secret = process.env.CLICKUP_WEBHOOK_SECRET;
+    const signature = req.get('x-signature');
+    const raw = (req as any).rawBody;
+    if (!secret || !Buffer.isBuffer(raw) || !signature || !/^[a-f0-9]{64}$/.test(signature)) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+    const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');
+    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
     const { task_id, status } = req.body;
     if (status === 'In Review') {
       const ds = await getDb();
