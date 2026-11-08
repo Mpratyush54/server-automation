@@ -109,7 +109,11 @@ The profile also sets the Platform API replica count: `1` on `minimal`, `2` othe
 
 Releases include `platform-bundle-<version>-<arch>.tar.zst` and a `.sha256` file:
 k3s airgap images, all pinned Helm charts (`platformctl charts --json`) and the platform
-container images. `--bundle <path|auto>` verifies the checksum and extracts it before k3s is
+container images. The bundle is larger than GitHub's 2 GiB per-asset limit, so a release
+carries it as `.tar.zst.part00`, `.part01`, …; `--bundle auto` downloads and reassembles the
+parts and checks the result against the `.sha256`. To fetch it manually, download every part
+and the `.sha256`, then `cat platform-bundle-<version>-<arch>.tar.zst.part* >
+platform-bundle-<version>-<arch>.tar.zst` and `sha256sum -c` before `--bundle <path>`. `--bundle <path|auto>` verifies the checksum and extracts it before k3s is
 installed — images into `/var/lib/rancher/k3s/agent/images/`, charts into
 `/var/lib/platform/charts/` — so provisioning needs little or no network for images and charts.
 
