@@ -189,10 +189,40 @@ describe('secret-rotate', () => {
 
   it('refuses ALTER USER when neither host files nor pending secret can be written', async () => {
     upsertSecretData.mockRejectedValue(new Error('forbidden'));
-    process.env.PLATFORM_ENV_FILE = '/proc/platformctl-nope.env';
-    process.env.PLATFORM_CRED_DIR = '/proc/platformctl-nope-creds';
+    // Make every host-file write fail (EACCES) on any OS, instead of relying on /proc
+    // being unwritable (it is just a normal path on Windows).
+    const envFile = process.env.PLATFORM_ENV_FILE!;
+    const credDir = process.env.PLATFORM_CRED_DIR!;
+    const denied = (target: unknown) => {
+      const t = path.resolve(String(target));
+      return t === path.resolve(envFile) || t.startsWith(path.resolve(path.dirname(envFile)) + path.sep) || t.startsWith(path.resolve(credDir));
+    };
+    const eacces = () => Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+    const realWrite = fs.writeFileSync;
+    const realMkdir = fs.mkdirSync;
+    const realRename = fs.renameSync;
+    const writeSpy = jest.spyOn(fs, 'writeFileSync').mockImplementation(((file: any, ...rest: any[]) => {
+      if (denied(file)) throw eacces();
+      return (realWrite as any)(file, ...rest);
+    }) as any);
+    const mkdirSpy = jest.spyOn(fs, 'mkdirSync').mockImplementation(((dir: any, ...rest: any[]) => {
+      if (denied(dir)) throw eacces();
+      return (realMkdir as any)(dir, ...rest);
+    }) as any);
+    const renameSpy = jest.spyOn(fs, 'renameSync').mockImplementation(((from: any, to: any) => {
+      if (denied(to)) throw eacces();
+      return (realRename as any)(from, to);
+    }) as any);
 
-    const result = await rotatePlatformSecrets({ actorUserId: 'admin-1' });
+    let result: { results: any[]; values: Record<string, string> };
+    try {
+      result = await rotatePlatformSecrets({ actorUserId: 'admin-1' });
+      expect(writeSpy.mock.calls.some(([f]) => denied(f)) || mkdirSpy.mock.calls.some(([d]) => denied(d))).toBe(true);
+    } finally {
+      writeSpy.mockRestore();
+      mkdirSpy.mockRestore();
+      renameSpy.mockRestore();
+    }
 
     expect(result.values).not.toHaveProperty('POSTGRES_PASSWORD');
     expect(result.results.some((r) => /refused ALTER USER/.test(r.detail))).toBe(true);
