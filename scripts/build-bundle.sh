@@ -113,12 +113,23 @@ done < <(jq -r '.charts[] | [.name, (.repo // ""), (.repoUrl // ""), .chart, .ve
 # --- platform images -------------------------------------------------------
 mapfile -t IMAGES < <(sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$IMAGES_TXT" | grep -v '^$' | sort -u)
 [[ ${#IMAGES[@]} -gt 0 ]] || die "no images listed in $IMAGES_TXT"
+available=()
 for img in "${IMAGES[@]}"; do
   log "docker pull --platform linux/$ARCH $img"
-  docker pull --quiet --platform "linux/$ARCH" "$img" >/dev/null
-  got_arch="$(docker image inspect --format '{{.Architecture}}' "$img")"
-  [[ "$got_arch" == "$ARCH" ]] || die "$img resolved to $got_arch, want $ARCH"
+  got_arch=""
+  if docker pull --quiet --platform "linux/$ARCH" "$img" >/dev/null; then
+    got_arch="$(docker image inspect --format '{{.Architecture}}' "$img" 2>/dev/null || true)"
+  fi
+  if [[ "$got_arch" == "$ARCH" ]]; then
+    available+=("$img")
+  elif [[ "${ALLOW_MISSING_ARCH:-}" == 1 ]]; then
+    # Stack builds: such an image is pulled at install time instead.
+    log "WARN: $img has no linux/$ARCH image; leaving it out"
+  else
+    die "$img resolved to '${got_arch:-nothing}', want $ARCH"
+  fi
 done
+IMAGES=("${available[@]}")
 IMAGE_GROUPS="${IMAGE_GROUPS:-1}"
 [[ "$IMAGE_GROUPS" =~ ^[1-9][0-9]?$ ]] || die "IMAGE_GROUPS must be 1-99"
 if [[ "$IMAGE_GROUPS" == 1 ]]; then

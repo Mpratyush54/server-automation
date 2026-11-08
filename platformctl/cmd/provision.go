@@ -33,9 +33,10 @@ import (
 // Children skip the provision lock (the parent holds it).
 const childEnv = "PLATFORMCTL_CHILD"
 
-// defaultParallel is how many cluster steps run at once. 4 keeps a minimum-spec
-// box (4 cores / 8 GB) responsive while overlapping image pulls and pod starts.
-const defaultParallel = 4
+// defaultParallel is how many cluster steps run at once. With images preloaded
+// from the platform stack the steps are mostly waiting on pod starts, so 6
+// stays responsive on a minimum-spec box (4 cores / 8 GB).
+const defaultParallel = 6
 
 var (
 	parallelFlag int
@@ -201,9 +202,20 @@ func runProvision() error {
 	// artifact) downloads while the prerequisites install. It must land
 	// before k3s starts, which imports the image tarballs at start-up.
 	stackDone := startStackDownload()
-	if err := hostStep("prereqs", apt.InstallPrereqs); err != nil {
-		return err
-	}
+	// Prerequisites (apt) are only needed by the cluster steps, not by helm or
+	// k3s: install them in the background too, and wait before the cluster steps.
+	prereqsDone := make(chan error, 1)
+	go func() {
+		_ = state.MarkInProgress("prereqs")
+		track := state.Track("prereqs (background)")
+		err := apt.InstallPrereqs()
+		if err != nil {
+			track("failed")
+		} else {
+			track("ok")
+		}
+		prereqsDone <- err
+	}()
 	// Offline bundle must land before k3s starts: k3s imports airgap image
 	// tarballs from its images dir at start-up, and cached charts make the
 	// prefetch below a no-op.
@@ -216,7 +228,10 @@ func runProvision() error {
 		return err
 	}
 
-	// Chart tarballs download while k3s installs; helm then installs from disk.
+	waitForStack(stackDone)
+
+	// Charts missing from the stack (or without one) download while k3s
+	// installs; with the stack this is a no-op.
 	prefetchDone := make(chan map[string]error, 1)
 	go func() {
 		done := state.Track("chart-prefetch (background)")
@@ -229,17 +244,21 @@ func runProvision() error {
 		prefetchDone <- errs
 	}()
 
-	waitForStack(stackDone)
-
 	if !cfg.SkipK8s {
 		if err := hostStep("k3s", func() error { return k3s.Install(cfg.Domain, cfg.GitHubToken) }); err != nil {
 			return err
 		}
 	}
+	// Load the stack's images into containerd in parallel before any workload
+	// starts. Not fatal: pods pull missing images from their registries.
+	importImagesFromStack()
 
 	// ── Wave 1: cluster basics.
 	if err := hostStep("namespaces", components.Namespace); err != nil {
 		return err
+	}
+	if err := <-prereqsDone; err != nil {
+		return fail("prereqs", err)
 	}
 	startBackgroundPrePull()
 
@@ -265,7 +284,7 @@ func runProvision() error {
 }
 
 // stackParallel is how many stack files download at once.
-const stackParallel = 6
+const stackParallel = 8
 
 // startStackDownload installs the platform stack in the background unless an
 // offline bundle was given, PLATFORM_STACK=off, it is already installed, or
@@ -302,6 +321,24 @@ func startStackDownload() <-chan error {
 func waitForStack(done <-chan error) {
 	if err := <-done; err != nil {
 		color.Yellow("  ⚠ platform stack unavailable (%v); images and charts will be downloaded individually", err)
+	}
+}
+
+// importParallel is how many image tarballs load into containerd at once.
+const importParallel = 4
+
+func importImagesFromStack() {
+	track := state.Track("image-import (stack)")
+	n, err := stack.ImportImages(stack.DefaultPaths, importParallel)
+	switch {
+	case err != nil:
+		track("partial")
+		color.Yellow("  ⚠ %v; missing images will be pulled from their registries", err)
+	case n > 0:
+		track("ok")
+		color.Green("  ✓ Imported %d image archive(s) from the platform stack", n)
+	default:
+		track("none")
 	}
 }
 

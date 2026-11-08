@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ocifetch"
 )
@@ -74,8 +76,8 @@ func TestInstallPlacesEveryFileAndRecordsTheDigest(t *testing.T) {
 	}
 	want := map[string]string{
 		filepath.Join(p.K3sImages, "k3s-airgap-images-amd64.tar.zst"): "airgap",
-		filepath.Join(p.K3sImages, "platform-images-amd64-1.tar.zst"): "images-1",
-		filepath.Join(p.K3sImages, "platform-images-amd64-2.tar.zst"): "images-2",
+		filepath.Join(p.ImagesDir(), "platform-images-amd64-1.tar.zst"): "images-1",
+		filepath.Join(p.ImagesDir(), "platform-images-amd64-2.tar.zst"): "images-2",
 		filepath.Join(p.Charts, "redis-28.3.12.tgz"):                  "redis-chart",
 		p.K3sBinary(): "k3s-binary",
 		p.K3sScript(): "#!/bin/sh\n",
@@ -109,8 +111,51 @@ func TestInstallFailsOnACorruptFile(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "digest mismatch") {
 		t.Fatalf("expected a digest mismatch, got %v", err)
 	}
-	if _, statErr := os.Stat(filepath.Join(p.K3sImages, "platform-images-amd64-2.tar.zst")); !os.IsNotExist(statErr) {
-		t.Fatal("a corrupt image tarball must never reach the k3s images directory")
+	if _, statErr := os.Stat(filepath.Join(p.ImagesDir(), "platform-images-amd64-2.tar.zst")); !os.IsNotExist(statErr) {
+		t.Fatal("a corrupt image tarball must never be staged for import")
+	}
+}
+
+// Platform images must not sit in k3s' images dir (k3s imports those one by
+// one before reporting ready); they are imported in parallel afterwards.
+func TestImportImagesLoadsInParallelAndRemovesTarballs(t *testing.T) {
+	p := testPaths(t)
+	if err := os.MkdirAll(p.ImagesDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 5; i++ {
+		_ = os.WriteFile(filepath.Join(p.ImagesDir(), fmt.Sprintf("platform-images-amd64-%d.tar.zst", i)), []byte("x"), 0o644)
+	}
+	orig := importFn
+	t.Cleanup(func() { importFn = orig })
+	var mu sync.Mutex
+	running, peak := 0, 0
+	importFn = func(path string) error {
+		mu.Lock()
+		running++
+		if running > peak {
+			peak = running
+		}
+		mu.Unlock()
+		time.Sleep(30 * time.Millisecond)
+		mu.Lock()
+		running--
+		mu.Unlock()
+		if strings.HasSuffix(path, "-3.tar.zst") {
+			return fmt.Errorf("ctr: boom")
+		}
+		return nil
+	}
+	n, err := ImportImages(p, 3)
+	if n != 4 || err == nil || !strings.Contains(err.Error(), "platform-images-amd64-3.tar.zst") {
+		t.Fatalf("expected 4 imported and one reported failure, got n=%d err=%v", n, err)
+	}
+	if peak < 2 || peak > 3 {
+		t.Fatalf("imports must run in parallel, bounded by 3 (peak %d)", peak)
+	}
+	left, _ := filepath.Glob(filepath.Join(p.ImagesDir(), "*"))
+	if len(left) != 1 || !strings.HasSuffix(left[0], "-3.tar.zst") {
+		t.Fatalf("only the failed tarball should remain, got %v", left)
 	}
 }
 

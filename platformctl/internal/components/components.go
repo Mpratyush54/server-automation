@@ -213,7 +213,10 @@ func InstallRedis(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing Redis...")
-	err := helmValues("redis", "redis", "databases", map[string]any{"auth": map[string]string{"password": cfg.RedisPassword}}, "--set", "master.persistence.size=5Gi", "--wait", "--timeout", "10m")
+	err := helmValues("redis", "redis", "databases", map[string]any{"auth": map[string]string{"password": cfg.RedisPassword}}, "--set", "master.persistence.size=5Gi",
+		// Single server: one read replica. The chart default (3, started one at a
+		// time) added ~1.5 minutes to every install for no redundancy.
+		"--set", "replica.replicaCount=1", "--wait", "--timeout", "10m")
 	if err != nil {
 		return err
 	}
@@ -393,6 +396,9 @@ func InstallMonitoring(cfg *config.Config) error {
 	err = shell.RunBash(fmt.Sprintf(`
 		set -uo pipefail
 		# Loki is independent of kube-prometheus-stack: install both concurrently.
+		# No --wait: nothing later needs the monitoring pods ready (routing only
+		# creates the Grafana Ingress), so Grafana and Prometheus finish starting
+		# while the rest of the platform installs. Waiting cost ~2 minutes.
 		# Loki must not claim the default datasource: Grafana refuses to start when
 		# two datasources are marked default (the kube-prometheus datasource already is).
 		helm upgrade --install loki %[3]s \
@@ -400,7 +406,7 @@ func InstallMonitoring(cfg *config.Config) error {
 			--set grafana.enabled=false \
 			--set prometheus.enabled=false \
 			--set loki.isDefault=false \
-			--wait --timeout 10m > /tmp/platformctl-loki.log 2>&1 &
+			--timeout 10m > /tmp/platformctl-loki.log 2>&1 &
 		loki_pid=$!
 		helm upgrade --install kube-prometheus %[4]s \
 			--namespace monitoring --create-namespace \
@@ -408,7 +414,7 @@ func InstallMonitoring(cfg *config.Config) error {
 			-f %[2]s \
 			--set grafana.assertNoLeakedSecrets=false \
 			--set prometheus.prometheusSpec.retention=30d \
-			--wait --timeout 10m
+			--timeout 10m
 		rc=$?
 		wait "$loki_pid" || { echo "WARN: loki install failed (non-fatal):"; tail -20 /tmp/platformctl-loki.log; }
 		exit $rc

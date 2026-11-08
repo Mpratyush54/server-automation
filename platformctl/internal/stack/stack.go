@@ -13,12 +13,16 @@ package stack
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ocifetch"
 )
@@ -48,6 +52,9 @@ var DefaultPaths = Paths{
 	Staging:   "/var/lib/platform/stack",
 	Record:    "/var/lib/platform/stack/installed.json",
 }
+
+// ImagesDir holds the platform image tarballs until ImportImages loads them.
+func (p Paths) ImagesDir() string { return filepath.Join(p.Staging, "images") }
 
 // K3sBinary and K3sScript are where the stack stages k3s for the k3s step.
 func (p Paths) K3sBinary() string { return filepath.Join(p.Staging, "k3s") }
@@ -89,8 +96,14 @@ func destination(p Paths, name string) (string, os.FileMode) {
 		return filepath.Join(p.Staging, "stack.json"), 0o644
 	case strings.HasPrefix(name, "chart-") && strings.HasSuffix(name, ".tgz"):
 		return filepath.Join(p.Charts, strings.TrimPrefix(name, "chart-")), 0o644
-	case strings.HasSuffix(name, ".tar.zst") || strings.HasSuffix(name, ".tar"):
+	case strings.HasPrefix(name, "k3s-airgap-images-"):
+		// k3s's own images (pause, coredns, ...): imported by k3s at start-up.
 		return filepath.Join(p.K3sImages, name), 0o644
+	case strings.HasSuffix(name, ".tar.zst") || strings.HasSuffix(name, ".tar"):
+		// Platform images: imported in parallel once k3s runs (ImportImages).
+		// In K3sImages, k3s would import them one by one before reporting
+		// ready, which took ~1.5 minutes for 2 GB.
+		return filepath.Join(p.ImagesDir(), name), 0o644
 	}
 	return "", 0
 }
@@ -107,7 +120,7 @@ func Install(client *ocifetch.Client, tag string, p Paths, parallel int) (Result
 	if len(a.Files) == 0 {
 		return Result{}, fmt.Errorf("%s:%s has no files", Repo, tag)
 	}
-	for _, d := range []string{p.K3sImages, p.Charts, p.Staging} {
+	for _, d := range []string{p.K3sImages, p.Charts, p.Staging, p.ImagesDir()} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return Result{}, err
 		}
@@ -177,4 +190,72 @@ func (p Paths) Staged() bool {
 		}
 	}
 	return true
+}
+
+// importFn loads one image tarball into containerd; swapped in tests.
+var importFn = importTarball
+
+// ImportImages loads the staged platform image tarballs into k3s' containerd,
+// `parallel` at a time, and deletes each tarball once imported. Call it after
+// k3s is running and before workloads start, so no pod pulls from a registry.
+func ImportImages(p Paths, parallel int) (int, error) {
+	files, _ := filepath.Glob(filepath.Join(p.ImagesDir(), "*.tar*"))
+	if len(files) == 0 {
+		return 0, nil
+	}
+	if parallel < 1 {
+		parallel = 1
+	}
+	var (
+		wg   sync.WaitGroup
+		mu   sync.Mutex
+		errs []string
+		sem  = make(chan struct{}, parallel)
+	)
+	for _, f := range files {
+		wg.Add(1)
+		go func(f string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if err := importFn(f); err != nil {
+				mu.Lock()
+				errs = append(errs, fmt.Sprintf("%s: %v", filepath.Base(f), err))
+				mu.Unlock()
+				return
+			}
+			_ = os.Remove(f)
+		}(f)
+	}
+	wg.Wait()
+	if len(errs) > 0 {
+		sort.Strings(errs)
+		return len(files) - len(errs), fmt.Errorf("image import failed: %s", strings.Join(errs, "; "))
+	}
+	return len(files), nil
+}
+
+// importTarball streams a (zstd-compressed) `docker save` tarball into
+// `k3s ctr -n k8s.io images import -`, the namespace the kubelet uses.
+func importTarball(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	var r io.Reader = f
+	if strings.HasSuffix(path, ".zst") {
+		dec, err := zstd.NewReader(f)
+		if err != nil {
+			return err
+		}
+		defer dec.Close()
+		r = dec
+	}
+	cmd := exec.Command("k3s", "ctr", "-n", "k8s.io", "images", "import", "-")
+	cmd.Stdin = r
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }

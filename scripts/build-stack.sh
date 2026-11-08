@@ -18,7 +18,7 @@
 #   CHANNEL       also tag <channel>-<arch> (e.g. stable) after pushing
 #   STACK_REPO    default ghcr.io/mpratyush54/platform-stack
 #   OUT_DIR       where the layer files are written (default <repo>/dist/stack-<arch>)
-#   IMAGE_GROUPS  image tarballs to split into (default 4)
+#   IMAGE_GROUPS  image tarballs to split into (default 8)
 # Requires: everything build-bundle.sh needs, plus oras when PUSH=1.
 # Downloads from github.com send $GITHUB_TOKEN when set.
 set -euo pipefail
@@ -39,7 +39,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 # 1. Images, charts and k3s airgap images (shared with the offline bundle).
-STAGE_ONLY="$WORK/stage" IMAGE_GROUPS="${IMAGE_GROUPS:-4}" "$ROOT/scripts/build-bundle.sh" "stack-$STACK_VERSION" "$ARCH"
+ALLOW_MISSING_ARCH=1 STAGE_ONLY="$WORK/stage" IMAGE_GROUPS="${IMAGE_GROUPS:-8}" "$ROOT/scripts/build-bundle.sh" "stack-$STACK_VERSION" "$ARCH"
 manifest="$WORK/stage/manifest.json"
 k3s_version="$(jq -er .k3s "$manifest")"
 
