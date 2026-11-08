@@ -3,41 +3,50 @@ import { Router, CanActivateFn } from '@angular/router';
 import { isPublicMarketingHost } from './public-domain.guard';
 import { AuthService } from '../services/auth.service';
 
-export const authGuard: CanActivateFn = () => {
+/**
+ * Session tokens are never accepted from the URL. After GitHub/GitLab login the API redirects to
+ * `/dashboard?code=<one-time code>`, which is swapped for a session over POST /api/auth/exchange.
+ * Roles always come from the API profile (/api/users/me), not from client-decoded JWT claims.
+ */
+export const authGuard: CanActivateFn = async (_route, state) => {
   const router = inject(Router);
   const auth = inject(AuthService);
 
   // Public marketing site never serves the authenticated app.
   if (isPublicMarketingHost()) {
-    router.navigate(['/']);
-    return false;
+    return router.createUrlTree(['/']);
   }
 
   const urlParams = new URLSearchParams(window.location.search);
-  const tokenFromUrl = urlParams.get('token');
-
-  if (tokenFromUrl) {
-    if (!auth.decodeToken(tokenFromUrl)?.id) {
-      router.navigate(['/login']);
-      return false;
-    }
-    localStorage.setItem('plat_auth_token', tokenFromUrl);
-    try {
-      const decoded = auth.decodeToken(tokenFromUrl);
-      if (decoded) {
-        localStorage.setItem('plat_user_profile', JSON.stringify(decoded));
-      }
-    } catch (e) {
-      console.error('Failed to decode token from URL', e);
-    }
-    router.navigateByUrl(window.location.pathname);
-    return auth.isAuthenticated();
+  const loginCode = urlParams.get('code');
+  if (urlParams.has('token') || loginCode) {
+    // Strip credentials from the address bar / history before anything else runs.
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete('token');
+    clean.searchParams.delete('code');
+    window.history.replaceState(window.history.state, '', clean.pathname + clean.search + clean.hash);
   }
 
-  if (auth.isAuthenticated()) {
-    return true;
+  if (loginCode) {
+    auth.clearSession();
+    const ok = await auth.exchangeLoginCode(loginCode);
+    if (!ok) {
+      return router.createUrlTree(['/login'], { queryParams: { error: 'Sign-in link expired. Please sign in again.' } });
+    }
+    const target = (state?.url || window.location.pathname).split('?')[0];
+    return router.parseUrl(target || '/dashboard');
   }
-  router.navigate(['/login']);
-  return false;
+
+  if (!auth.isAuthenticated()) {
+    return router.createUrlTree(['/login']);
+  }
+
+  if (!auth.profileVerified) {
+    const ok = await auth.loadProfile();
+    if (!ok && !auth.isAuthenticated()) {
+      return router.createUrlTree(['/login']);
+    }
+  }
+  return true;
 };
 export default authGuard;
