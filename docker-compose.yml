@@ -68,7 +68,7 @@ services:
       - promdata:/prometheus
 
   grafana:
-    image: grafana/grafana:12.4.14
+    image: grafana/grafana:13.3.0
     ports:
       - "127.0.0.1:3001:3000"
     environment:
