@@ -27,17 +27,55 @@ cd SERVER-automation
 
 ### 2. Start the databases with Docker Compose
 
-The repo ships a fully-configured `docker-compose.yml` at the root:
+The repo ships a `docker-compose.yml` at the root for **local development only**.
+Every port is bound to `127.0.0.1`, every datastore requires a password, and there
+are no default secrets: compose refuses to start until they are set in a
+git-ignored `.env` file next to `docker-compose.yml`. Generate one with random
+values (hex keeps them URL-safe for the Mongo connection string):
+
+```bash
+cat > .env <<EOF
+POSTGRES_PASSWORD=$(openssl rand -hex 24)
+MONGO_PASSWORD=$(openssl rand -hex 24)
+REDIS_PASSWORD=$(openssl rand -hex 24)
+MINIO_ROOT_PASSWORD=$(openssl rand -hex 24)
+GRAFANA_ADMIN_PASSWORD=$(openssl rand -hex 24)
+JWT_SECRET=$(openssl rand -hex 32)
+ADMIN_PASSWORD=$(openssl rand -base64 18)
+EOF
+chmod 600 .env
+```
+
+All variables are required even if you only start some services, because compose
+validates the whole file. Then start the databases:
 
 ```bash
 docker compose up -d postgres mongodb redis
 ```
 
-| Service | Port | Credentials |
+| Service | Port (localhost only) | Credentials |
 |---|---|---|
-| PostgreSQL 16 | 5432 | `platform` / `platform` / db `platform` |
-| MongoDB 7 | 27017 | no auth (local dev only) |
-| Redis 7 | 6379 | no password (local dev only) |
+| PostgreSQL 16 | 5432 | user `platform`, password `POSTGRES_PASSWORD`, db `platform` |
+| MongoDB 7 | 27017 | root user `platform`, password `MONGO_PASSWORD` (`authSource=admin`) |
+| Redis 7 | 6379 | password `REDIS_PASSWORD` |
+
+When you run the API on your host (step 4) against these containers, give it the
+same credentials in `platform/api/.env` (git-ignored):
+
+```bash
+POSTGRES_HOST=localhost
+POSTGRES_USER=platform
+POSTGRES_PASSWORD=<POSTGRES_PASSWORD from .env>
+POSTGRES_DB=platform
+MONGODB_URI=mongodb://platform:<MONGO_PASSWORD>@localhost:27017/platform?authSource=admin
+REDIS_HOST=localhost
+REDIS_PASSWORD=<REDIS_PASSWORD from .env>
+JWT_SECRET=<JWT_SECRET from .env>
+ADMIN_PASSWORD=<ADMIN_PASSWORD from .env>
+```
+
+`docker compose up -d api portal` builds and runs the API (port 3000) and portal
+(port 4200, nginx on 8080 inside the container) with these values wired in.
 
 Optional extras — start these if you want to test the observability paths:
 
@@ -53,9 +91,9 @@ docker compose ps
 
 ### 3. Environment file (optional)
 
-The API reads defaults that match `docker-compose.yml` — you can skip this step for
-the golden path. If you're customising ports or pointing at real services, copy the
-template:
+The compose datastores require passwords, so the API needs the
+`platform/api/.env` values shown in step 2. If you're customising ports or pointing
+at real services, start from the template:
 
 ```bash
 cp platform/api/.env.example platform/api/.env
@@ -97,7 +135,7 @@ On first API startup the tables auto-sync and the demo users are seeded.
 Open <http://localhost:4200> and sign in with email **and password**.
 
 Local/demo seed (`init-demo`) creates accounts with password from `ADMIN_PASSWORD`
-(default for docker-compose: **`Admin@123`**):
+(with docker compose: the `ADMIN_PASSWORD` you put in `.env`):
 
 | Email | Role | Password |
 |---|---|---|

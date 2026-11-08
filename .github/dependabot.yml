@@ -1,0 +1,66 @@
+version: 2
+
+updates:
+  - package-ecosystem: "npm"
+    directories:
+      - "/"
+      - "/platform/api"
+      - "/platform/portal"
+      - "/platform/mcp-server"
+      - "/sdk-node"
+      - "/sdk-react"
+      - "/sdk-angular"
+      - "/examples/sdk-apps/node-api"
+      - "/examples/sdk-apps/react-web"
+      - "/examples/sdk-apps/angular-web"
+      - "/demo-app/backend"
+      - "/demo-app/frontend"
+    schedule:
+      interval: "weekly"
+    # Let new releases age a few days before proposing them (supply-chain hygiene).
+    cooldown:
+      default-days: 5
+    open-pull-requests-limit: 10
+    groups:
+      npm-minor-and-patch:
+        update-types: [ "minor", "patch" ]
+
+  - package-ecosystem: "gomod"
+    directory: "/platformctl"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 5
+    groups:
+      go-minor-and-patch:
+        update-types: [ "minor", "patch" ]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 5
+    groups:
+      github-actions:
+        patterns: [ "*" ]
+
+  - package-ecosystem: "docker"
+    directories:
+      - "/platform/api"
+      - "/platform/portal"
+      - "/examples/sdk-apps/node-api"
+      - "/examples/sdk-apps/react-web"
+      - "/examples/sdk-apps/angular-web"
+      - "/platform/templates/docker"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 5
+
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 5

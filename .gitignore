@@ -12,7 +12,6 @@ __pycache__/
 *.pyc
 *.egg-info/
 build/
-package-lock.json
 .next/
 *.tsbuildinfo
 /renders/
@@ -23,3 +22,14 @@ platformctl/platformctl-linux-*
 token.json
 /platform/portal/public/docs-search.json
 
+# Local artifacts and key material that must never be committed.
+*.tar
+*.pem
+*.key
+tmp-*
+replacements.txt
+
+# Per-user / agent tooling state.
+.claude/settings.local.json
+.claude/worktrees/
+.central-memory/
