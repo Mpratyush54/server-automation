@@ -141,4 +141,9 @@ jq -n \
 log "packaging $OUT_DIR/$BUNDLE"
 tar -C "$STAGE" -cf - SHA256SUMS manifest.json k3s images charts | zstd -q -T0 -3 -o "$OUT_DIR/$BUNDLE" -f
 (cd "$OUT_DIR" && sha256sum "$BUNDLE" >"$BUNDLE.sha256")
-log "done: $OUT_DIR/$BUNDLE ($(du -h "$OUT_DIR/$BUNDLE" | cut -f1))"
+# GitHub release assets must be smaller than 2 GiB; the bundle is larger.
+# Releases publish .part00, .part01, ... (the .sha256 covers the whole
+# bundle); `platformctl` reassembles them, or: cat <bundle>.part* > <bundle>.
+rm -f "$OUT_DIR/$BUNDLE".part*
+(cd "$OUT_DIR" && split -b 1900M -d -a 2 "$BUNDLE" "$BUNDLE.part")
+log "done: $OUT_DIR/$BUNDLE ($(du -h "$OUT_DIR/$BUNDLE" | cut -f1), $(ls "$OUT_DIR/$BUNDLE".part* | wc -l) part(s))"

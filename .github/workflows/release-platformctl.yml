@@ -117,7 +117,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: platform-bundle-${{ matrix.arch }}
-          path: dist/platform-bundle-*
+          path: |
+            dist/platform-bundle-*.tar.zst
+            dist/platform-bundle-*.tar.zst.sha256
           retention-days: 7
 
       - name: Upload to GitHub release
@@ -134,8 +136,11 @@ jobs:
           done
           gh release view "$TAG" >/dev/null
           f="dist/platform-bundle-${TAG}-${ARCH}.tar.zst"
+          # The bundle exceeds GitHub's 2 GiB asset limit: publish its parts
+          # (platformctl reassembles them) and the checksum of the whole file.
+          ls -l "$f".part*
           for i in 1 2 3; do
-            if gh release upload "$TAG" "$f" "$f.sha256" --clobber; then exit 0; fi
+            if gh release upload "$TAG" "$f".part* "$f.sha256" --clobber; then exit 0; fi
             echo "upload failed (attempt $i/3); retrying in 15s"
             sleep 15
           done

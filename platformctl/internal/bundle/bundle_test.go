@@ -268,6 +268,60 @@ func TestFetch(t *testing.T) {
 	}
 }
 
+// Bundles over GitHub's 2 GiB asset limit are published as .partNN files
+// (v1.3.0-rc.1's 2.1 GB bundle failed to upload). Fetch reassembles them.
+func TestFetchSplitBundle(t *testing.T) {
+	src := buildBundle(t, t.TempDir(), goodEntries())
+	data, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	name := "platform-bundle-v1.0.0-amd64.tar.zst"
+	third := len(data) / 3
+	parts := [][]byte{data[:third], data[third : 2*third], data[2*third:]}
+	dropMiddle := false
+	var served []string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		base := strings.TrimPrefix(r.URL.Path, "/v1.0.0/")
+		served = append(served, base)
+		if base == name+".sha256" {
+			fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(sum[:]), name)
+			return
+		}
+		for i, p := range parts {
+			if base == PartName(name, i) && !(dropMiddle && i == 1) {
+				_, _ = w.Write(p)
+				return
+			}
+		}
+		http.NotFound(w, r) // including the unsplit file: only parts are published
+	}))
+	defer srv.Close()
+	old := ReleaseBaseURL
+	ReleaseBaseURL = srv.URL
+	defer func() { ReleaseBaseURL = old }()
+
+	p, err := Fetch(context.Background(), "v1.0.0", "amd64", t.TempDir())
+	if err != nil {
+		t.Fatalf("fetch split bundle: %v (requests %q)", err, served)
+	}
+	got, _ := os.ReadFile(p)
+	if !bytes.Equal(got, data) {
+		t.Fatal("reassembled bundle differs from the original")
+	}
+	if err := InstallWithOptions(p, testOpts(t)); err != nil {
+		t.Fatalf("install reassembled bundle: %v", err)
+	}
+
+	// A missing middle part must not produce a "valid" truncated bundle.
+	dropMiddle = true
+	if _, err := Fetch(context.Background(), "v1.0.0", "amd64", t.TempDir()); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("expected a checksum mismatch for a missing part, got %v", err)
+	}
+}
+
 func TestURL(t *testing.T) {
 	want := "https://github.com/Mpratyush54/server-automation/releases/download/v1.0.0/platform-bundle-v1.0.0-arm64.tar.zst"
 	if got := URL("v1.0.0", "arm64"); got != want {
