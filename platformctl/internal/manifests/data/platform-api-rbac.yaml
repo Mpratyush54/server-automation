@@ -51,6 +51,10 @@ metadata:
   namespace: platform
 rules:
 - apiGroups: [""]
+  resources: ["configmaps"]
+  resourceNames: ["platform-backup-backup", "platform-backup-restore-test"]
+  verbs: ["get"]
+- apiGroups: [""]
   resources: ["secrets"]
   resourceNames: ["platform-env","platform-rotate-pending"]
   verbs: ["get", "update"]

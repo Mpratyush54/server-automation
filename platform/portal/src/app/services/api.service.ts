@@ -8,6 +8,8 @@ export class ApiService {
 
   constructor(private http: HttpClient) {}
 
+  getBackupStatus(): Observable<any> { return this.http.get(`${this.base}/settings/backups`); }
+
   // Projects
   getProjects(): Observable<any> { return this.http.get(`${this.base}/projects`); }
   getProject(id: string): Observable<any> { return this.http.get(`${this.base}/projects/${id}`); }
