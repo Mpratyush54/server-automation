@@ -67,7 +67,8 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import apiRouter from '../../src/routes/api';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'plat-super-secret-key';
+// The API never falls back to a default secret (getJwtSecret); tests must configure it.
+const JWT_SECRET = (process.env.JWT_SECRET = process.env.JWT_SECRET || 'oauth-login-test-jwt-secret-0123456789');
 
 interface GhFixture {
   id: number;
