@@ -122,7 +122,20 @@ export class ApiService {
   getAuthProviders(): Observable<any> { return this.http.get(`${this.base}/auth/providers`); }
   getIntegrations(): Observable<any> { return this.http.get(`${this.base}/settings/integrations`); }
   saveIntegrations(data: any): Observable<any> { return this.http.put(`${this.base}/settings/integrations`, data); }
-  rotateSecrets(confirm: string): Observable<any> { return this.http.post(`${this.base}/settings/rotate-secrets`, { confirm }); }
+  rotateSecrets(confirm: string, idempotencyKey?: string): Observable<any> {
+    const headers: Record<string, string> = idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {};
+    return this.http.post(`${this.base}/settings/rotate-secrets`, { confirm }, { headers });
+  }
+
+  // Multi-step operations (deploys, secret rotation, DB provisioning)
+  getOperation(id: string): Observable<any> { return this.http.get(`${this.base}/operations/${id}`); }
+  listOperations(params: { projectId?: string; type?: string; limit?: number } = {}): Observable<any> {
+    const q: Record<string, string> = {};
+    if (params.projectId) q['projectId'] = params.projectId;
+    if (params.type) q['type'] = params.type;
+    if (params.limit) q['limit'] = String(params.limit);
+    return this.http.get(`${this.base}/operations`, { params: q });
+  }
 
   getNotifications(unread = false): Observable<any> {
     return this.http.get(`${this.base}/notifications`, { params: unread ? { unread: 'true' } : {} });

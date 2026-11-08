@@ -26,6 +26,7 @@ import agentTokenRoutes from './agent-tokens';
 import agentCommandRoutes from './agent-commands';
 import notificationRoutes from './notifications';
 import healthRoutes from './health';
+import operationRoutes from './operations';
 
 router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB + Redis)
 router.use('/', oidcRoutes); // before authRoutes: OIDC provider + GitHub/GitLab login (state cookie)
@@ -50,6 +51,7 @@ router.use('/', dbProvisionRoutes);
 router.use('/', agentTokenRoutes);
 router.use('/', agentCommandRoutes);
 router.use('/', notificationRoutes);
+router.use('/', operationRoutes);
 
 /** GET /api/openapi.json — OpenAPI 3 spec derived from openapi.yaml */
 router.get('/openapi.json', (_req, res) => {

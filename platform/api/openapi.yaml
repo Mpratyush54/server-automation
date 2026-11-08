@@ -176,9 +176,15 @@ paths:
                 confirm:
                   type: string
                   example: ROTATE
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
-          description: New values (shown once)
+          description: New values (shown once), per-credential results and the operationId of the step log
+        '409':
+          description: Another rotation is in progress (operationId of the holder), or the same Idempotency-Key is still running
+        '422':
+          description: Idempotency-Key reused with a different body
   /agent-tokens/me:
     get:
       tags: [AgentTokens]
@@ -347,8 +353,70 @@ paths:
       responses:
         '200':
           description: Projects
+  /deploy:
+    post:
+      tags: [Deployments]
+      summary: Start a deploy (one per project environment at a time); progress via GET /operations/{operationId}
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId]
+              properties:
+                projectId: { type: string, format: uuid }
+                environmentId: { type: string, format: uuid }
+                version: { type: string }
+                branch: { type: string }
+                commitSha: { type: string }
+      responses:
+        '201':
+          description: Deployment created (includes operationId)
+        '409':
+          description: Another deploy/rollback/restart/terminate holds lock:project:<id>:deploy:<env> (operationId of the holder)
+        '422':
+          description: Idempotency-Key reused with a different body
+  /operations/{id}:
+    get:
+      tags: [Operations]
+      summary: Progress of a multi-step operation (deploy, secret rotation, DB provisioning)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Status, current step, per-step status/attempts/errors and a non-secret summary
+        '404':
+          description: Not found (or not visible to the caller)
+  /operations:
+    get:
+      tags: [Operations]
+      summary: Recent operations (projectId required unless admin/devops)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: query, schema: { type: string, format: uuid } }
+        - { name: type, in: query, schema: { type: string, example: platform.secret-rotation } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses:
+        '200':
+          description: Operations, newest first
 components:
   parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Retries with the same key (same user, route and body) replay the stored response for 24 h without re-executing.
+      schema:
+        type: string
+        maxLength: 255
     IdPath:
       name: id
       in: path

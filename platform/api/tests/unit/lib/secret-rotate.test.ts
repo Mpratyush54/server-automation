@@ -49,7 +49,10 @@ jest.mock('../../../src/lib/k8s', () => ({
   readSecretData: (...args: any[]) => readSecretData(...args),
 }));
 
-const saveUser = jest.fn().mockImplementation((u: any) => Promise.resolve(u));
+const saveUser = jest.fn().mockImplementation((u: any) => {
+  (globalThis as any).__rotateOrder?.push('saveUser');
+  return Promise.resolve(u);
+});
 const saveNotification = jest.fn().mockImplementation((n: any) => Promise.resolve(n));
 const reconnectPostgres = jest.fn().mockResolvedValue({});
 
@@ -123,12 +126,16 @@ describe('secret-rotate', () => {
     expect(saveUser).toHaveBeenCalled();
     expect(result.results.some((r) => r.key === 'ADMIN_PASSWORD' && r.ok)).toBe(true);
 
+    // Admin hashes are written before ALTER USER changes the password the DB pool uses.
+    // (Notifications now go through the outbox after the steps commit, so later getDb
+    // calls are expected.)
     const order: string[] = (globalThis as any).__rotateOrder;
-    const lastGetDb = order.lastIndexOf('getDb');
+    const lastSaveUser = order.lastIndexOf('saveUser');
     const firstPg = order.indexOf('pgConnect');
-    expect(lastGetDb).toBeGreaterThanOrEqual(0);
+    expect(lastSaveUser).toBeGreaterThanOrEqual(0);
     expect(firstPg).toBeGreaterThanOrEqual(0);
-    expect(lastGetDb).toBeLessThan(firstPg);
+    expect(lastSaveUser).toBeLessThan(firstPg);
+    expect(saveNotification).toHaveBeenCalledWith(expect.objectContaining({ title: 'Platform secrets rotated' }));
 
     const pgSecret = patchSecretData.mock.calls.find(([ns, name]) => ns === 'databases' && name === 'postgresql');
     expect(pgSecret).toBeTruthy();
@@ -269,5 +276,84 @@ describe('secret-rotate', () => {
     expect(result.results.some((r) => /refused ALTER USER/.test(r.detail))).toBe(true);
     const order: string[] = (globalThis as any).__rotateOrder;
     expect(order).not.toContain('pgConnect');
+  });
+
+  it('records a step log and refuses a concurrent rotation with LockBusyError', async () => {
+    const { acquireLock } = await import('../../../src/lib/locks');
+    const { getOperation } = await import('../../../src/lib/operations');
+    const held = await acquireLock('lock:platform:secret-rotation', { holder: 'op-running' });
+    await expect(rotatePlatformSecrets({ actorUserId: 'admin-1' })).rejects.toMatchObject({ name: 'LockBusyError', holder: 'op-running' });
+    await held!.release();
+
+    const result: any = await rotatePlatformSecrets({ actorUserId: 'admin-1' });
+    expect(result.status).toBe('succeeded');
+    const op = await getOperation(result.operationId);
+    expect(op!.steps.map((s) => s.name)).toEqual([
+      'admin-password', 'write-ahead', 'redis-password', 'postgres-password',
+      'patch-secrets', 'argocd-password', 'finalize', 'restart-api',
+    ]);
+    expect(op!.steps.every((s) => s.status === 'succeeded')).toBe(true);
+    // credentials never stay in the step log
+    expect(JSON.stringify(op)).not.toContain(result.values.POSTGRES_PASSWORD);
+    expect(op!.state).toEqual({});
+  });
+
+  describe('resume after the API was killed mid-rotation', () => {
+    const NEW_PG = 'new-pg-password';
+    const NEW_REDIS = 'new-redis-password';
+
+    async function crashedRotation(atStep: string) {
+      const ops = await import('../../../src/lib/operations');
+      const { SECRET_ROTATION_OPERATION, SECRET_ROTATION_LOCK_KEY } = await import('../../../src/lib/secret-rotate');
+      const store = await ops.resolveOperationStore();
+      const rec = await ops.createOperation(SECRET_ROTATION_OPERATION, {
+        lockKey: SECRET_ROTATION_LOCK_KEY,
+        state: {
+          actorUserId: 'admin-1', admin: 'new-admin', webhook: 'new-webhook', postgres: NEW_PG,
+          redisPassword: NEW_REDIS, argocd: 'new-argocd', previousPostgres: 'old-pg', previousRedis: 'old-redis',
+          adminOk: true, redisOk: true, pgOk: false, results: [], values: { ADMIN_PASSWORD: 'new-admin' },
+        } as any,
+      });
+      await store.claim(rec.id, 'm:killed-pod');
+      const cur = (await store.get(rec.id))!;
+      const idx = cur.steps.findIndex((s) => s.name === atStep);
+      cur.status = 'running';
+      cur.currentStep = idx;
+      for (let i = 0; i < idx; i++) cur.steps[i].status = 'succeeded';
+      cur.steps[idx].status = 'running';
+      cur.steps[idx].attempts = 1;
+      await store.save(cur, 'm:killed-pod');
+      return { id: rec.id, ops };
+    }
+
+    it('re-checks the in-flight ALTER USER, then patches secrets, clears pending and restarts', async () => {
+      const { id, ops } = await crashedRotation('postgres-password');
+      const { resumed } = await ops.resumeOperations();
+      expect(resumed).toContain(id);
+      await ops.waitForActiveRuns();
+      const op = (await ops.getOperation(id))!;
+      expect(op.status).toBe('succeeded');
+      expect(op.attempts).toBe(2);
+      const pgStep = op.steps.find((s) => s.name === 'postgres-password')!;
+      expect(pgStep.attempts).toBe(2);
+      expect(JSON.stringify(pgStep.output)).toContain('already rotated before the interruption');
+      const pgSecret = patchSecretData.mock.calls.find(([ns, name]) => ns === 'databases' && name === 'postgresql');
+      expect(pgSecret[2]['postgres-password']).toBe(NEW_PG);
+      const envPatch = patchSecretData.mock.calls.find(([ns, name]) => ns === 'platform' && name === 'platform-env');
+      expect(envPatch[2]).toMatchObject({ POSTGRES_PASSWORD: NEW_PG, REDIS_PASSWORD: NEW_REDIS });
+      expect(deleteSecret).toHaveBeenCalledWith('platform', 'platform-rotate-pending');
+      expect(restartNamedDeployment).toHaveBeenCalledWith('platform', 'platform-api');
+      expect(reconnectPostgres).toHaveBeenCalledWith(NEW_PG);
+      expect(op.state).toEqual({});
+    });
+
+    it('does not restart the API again when it died during the restart step', async () => {
+      const { id, ops } = await crashedRotation('restart-api');
+      await ops.runOperation(id);
+      const op = (await ops.getOperation(id))!;
+      expect(op.status).toBe('succeeded');
+      expect(op.steps.find((s) => s.name === 'restart-api')!.status).toBe('skipped');
+      expect(restartNamedDeployment).not.toHaveBeenCalled();
+    });
   });
 });

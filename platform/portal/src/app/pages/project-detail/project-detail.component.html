@@ -166,6 +166,8 @@
       style="width:100%;">
       {{ deployInProgress ? 'Pulling from GitHub…' : 'Pull from GitHub & Deploy' }}
     </button>
+    <app-operation-progress *ngIf="deployOperationId" [operationId]="deployOperationId" title="Deploy"
+      (finished)="loadDeployments()"></app-operation-progress>
   </div>
 
   <div class="card" style="flex:2;">

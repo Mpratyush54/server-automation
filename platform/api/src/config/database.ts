@@ -25,6 +25,11 @@ import { AgentCommandApproval } from '../entities/AgentCommandApproval';
 import { IntegrationSettings } from '../entities/IntegrationSettings';
 import { Notification } from '../entities/Notification';
 import { BackgroundJob } from '../entities/BackgroundJob';
+import { Operation } from '../entities/Operation';
+import { OperationStep } from '../entities/OperationStep';
+import { OutboxMessage } from '../entities/OutboxMessage';
+import { WebhookDelivery } from '../entities/WebhookDelivery';
+import { IdempotencyKey } from '../entities/IdempotencyKey';
 
 export const MIGRATIONS_TABLE = 'migrations';
 
@@ -41,7 +46,9 @@ export const AppDataSource = new DataSource({
   username: process.env.POSTGRES_USER || 'plat',
   password: process.env.POSTGRES_PASSWORD || 'plat',
   database: process.env.POSTGRES_DB || 'plat_platform',
-  entities: [Project, Environment, Deployment, ServiceRegistration, ProjectConfig, File, Alert, DbConnection, User, Role, AuditLog, ClickupTaskLink, SdkCredential, DbBackup, SmtpConfig, StorageProvider, Secret, SecretVersion, ProjectMember, AgentToken, AgentCommandApproval, IntegrationSettings, Notification, BackgroundJob],
+  entities: [Project, Environment, Deployment, ServiceRegistration, ProjectConfig, File, Alert, DbConnection, User, Role, AuditLog, ClickupTaskLink, SdkCredential, DbBackup, SmtpConfig, StorageProvider, Secret, SecretVersion, ProjectMember, AgentToken, AgentCommandApproval, IntegrationSettings, Notification, BackgroundJob,
+    // Coordination (#23): operations step log, outbox, webhook dedupe, idempotency.
+    Operation, OperationStep, OutboxMessage, WebhookDelivery, IdempotencyKey],
   // Schema changes ship as reviewed, versioned migrations (src/migrations),
   // applied once per release by `node dist/migrate.js` (the platform-api-migrate
   // Job) before the API rolls. Never auto-sync: it silently drops columns and

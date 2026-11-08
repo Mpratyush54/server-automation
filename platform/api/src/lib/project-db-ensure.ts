@@ -93,6 +93,92 @@ async function readSecrets(projectId: string, environment: string): Promise<Reco
   }
 }
 
+export interface PostgresIdentity {
+  dbName: string;
+  username: string;
+  password: string;
+  host: string;
+  port: number;
+}
+
+function adminPool(): Pool {
+  return new Pool({
+    host: process.env.POSTGRES_HOST || 'localhost',
+    port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
+    user: process.env.POSTGRES_USER || 'postgres',
+    password: process.env.POSTGRES_PASSWORD || 'postgres',
+    database: 'postgres',
+    max: 2,
+  });
+}
+
+/**
+ * Resolve the stable, id-based database identity for a project environment (recording it on
+ * the project the first time) and the password to use (the stored one, or a new one).
+ */
+export async function resolvePostgresIdentity(projectId: string, environment: string): Promise<PostgresIdentity> {
+  const existing = await readSecrets(projectId, environment);
+  const host = process.env.POSTGRES_HOST || 'localhost';
+  const port = parseInt(process.env.POSTGRES_PORT || '5432', 10);
+
+  const ds = await getDb();
+  const repo = ds.getRepository(Project);
+  const project = await repo.findOne({ where: { id: projectId } });
+  if (!project) throw new Error('Project not found');
+  let identity = project.databaseResources && Object.prototype.hasOwnProperty.call(project.databaseResources, environment) ? project.databaseResources[environment] : undefined;
+  if (!identity) {
+    if (existing.POSTGRES_DB || existing.POSTGRES_USER) {
+      throw new Error('Legacy database identity requires administrator migration to projects.database_resources');
+    }
+    const { id, env } = projectDbIdentity(projectId, environment);
+    identity = { dbName: `plat_${id}_${env}`, username: `plat_${id}_${env}_user` };
+    project.databaseResources = { ...(project.databaseResources || {}), [environment]: identity };
+    await repo.save(project);
+  }
+  const { dbName, username } = identity;
+  if (username === (process.env.POSTGRES_USER || 'postgres') || dbName === (process.env.POSTGRES_DB || 'plat_platform')) {
+    throw new Error('Platform database credentials cannot be used by a project');
+  }
+  const password = existing.POSTGRES_PASSWORD || generateSecurePassword(32);
+  return { dbName, username, password, host, port };
+}
+
+/**
+ * CREATE (or ALTER) the login role, CREATE the database if missing, GRANT. Idempotent.
+ * Reports which objects this call created, so a failed provisioning can drop only those.
+ */
+export async function applyPostgresRoleAndDatabase(identity: PostgresIdentity): Promise<{ createdRole: boolean; createdDatabase: boolean }> {
+  const { dbName, username, password } = identity;
+  const admin = adminPool();
+  try {
+    const client = await admin.connect();
+    try {
+      const role = await client.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [username]);
+      await client.query(`${role.rows.length ? 'ALTER' : 'CREATE'} ROLE ${client.escapeIdentifier(username)} WITH LOGIN PASSWORD ${client.escapeLiteral(password)}`);
+      const db = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
+      if (!db.rows.length) await client.query(`CREATE DATABASE ${client.escapeIdentifier(dbName)} OWNER ${client.escapeIdentifier(username)}`);
+      await client.query(`GRANT ALL PRIVILEGES ON DATABASE ${client.escapeIdentifier(dbName)} TO ${client.escapeIdentifier(username)}`);
+      return { createdRole: !role.rows.length, createdDatabase: !db.rows.length };
+    } finally { client.release(); }
+  } finally { await admin.end(); }
+}
+
+/** Compensation for applyPostgresRoleAndDatabase: drop only what that call created. */
+export async function dropPostgresRoleAndDatabase(
+  identity: Pick<PostgresIdentity, 'dbName' | 'username'>,
+  created: { createdRole?: boolean; createdDatabase?: boolean },
+): Promise<void> {
+  if (!created.createdRole && !created.createdDatabase) return;
+  const admin = adminPool();
+  try {
+    const client = await admin.connect();
+    try {
+      if (created.createdDatabase) await client.query(`DROP DATABASE IF EXISTS ${client.escapeIdentifier(identity.dbName)}`);
+      if (created.createdRole) await client.query(`DROP ROLE IF EXISTS ${client.escapeIdentifier(identity.username)}`);
+    } finally { client.release(); }
+  } finally { await admin.end(); }
+}
+
 /** Ensure Postgres role+DB exist; persist credentials for SDK getDbCredentials. Idempotent. */
 export async function ensurePostgresForProject(
   projectId: string,
@@ -100,49 +186,10 @@ export async function ensurePostgresForProject(
   environment: string,
 ): Promise<{ status: 'ready' | 'error'; creds?: DbProvisionResult; error?: string }> {
   try {
-    const existing = await readSecrets(projectId, environment);
-    const host = process.env.POSTGRES_HOST || 'localhost';
-    const port = parseInt(process.env.POSTGRES_PORT || '5432', 10);
-
-    const ds = await getDb();
-    const repo = ds.getRepository(Project);
-    const project = await repo.findOne({ where: { id: projectId } });
-    if (!project) throw new Error('Project not found');
-    let identity = project.databaseResources && Object.prototype.hasOwnProperty.call(project.databaseResources, environment) ? project.databaseResources[environment] : undefined;
-    if (!identity) {
-      if (existing.POSTGRES_DB || existing.POSTGRES_USER) {
-        throw new Error('Legacy database identity requires administrator migration to projects.database_resources');
-      }
-      const { id, env } = projectDbIdentity(projectId, environment);
-      identity = { dbName: `plat_${id}_${env}`, username: `plat_${id}_${env}_user` };
-      project.databaseResources = { ...(project.databaseResources || {}), [environment]: identity };
-      await repo.save(project);
-    }
-    const { dbName, username } = identity;
-    if (username === (process.env.POSTGRES_USER || 'postgres') || dbName === (process.env.POSTGRES_DB || 'plat_platform')) {
-      throw new Error('Platform database credentials cannot be used by a project');
-    }
-    const password = existing.POSTGRES_PASSWORD || generateSecurePassword(32);
-    const admin = new Pool({ host, port, user: process.env.POSTGRES_USER || 'postgres',
-      password: process.env.POSTGRES_PASSWORD || 'postgres', database: 'postgres', max: 2 });
-    try {
-      const client = await admin.connect();
-      try {
-        const role = await client.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [username]);
-        await client.query(`${role.rows.length ? 'ALTER' : 'CREATE'} ROLE ${client.escapeIdentifier(username)} WITH LOGIN PASSWORD ${client.escapeLiteral(password)}`);
-        const db = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
-        if (!db.rows.length) await client.query(`CREATE DATABASE ${client.escapeIdentifier(dbName)} OWNER ${client.escapeIdentifier(username)}`);
-        await client.query(`GRANT ALL PRIVILEGES ON DATABASE ${client.escapeIdentifier(dbName)} TO ${client.escapeIdentifier(username)}`);
-      } finally { client.release(); }
-    } finally { await admin.end(); }
-
-    const creds: DbProvisionResult = { dbName, username, password, host, port };
-    await upsertSecret(projectId, environment, 'POSTGRES_HOST', host);
-    await upsertSecret(projectId, environment, 'POSTGRES_PORT', String(port));
-    await upsertSecret(projectId, environment, 'POSTGRES_USER', username);
-    await upsertSecret(projectId, environment, 'POSTGRES_PASSWORD', password);
-    await upsertSecret(projectId, environment, 'POSTGRES_DB', dbName);
-
+    const identity = await resolvePostgresIdentity(projectId, environment);
+    await applyPostgresRoleAndDatabase(identity);
+    const creds: DbProvisionResult = { ...identity };
+    await persistPostgresCreds(projectId, environment, creds);
     return { status: 'ready', creds };
   } catch (e: any) {
     return { status: 'error', error: e.message || 'Postgres provisioning failed' };

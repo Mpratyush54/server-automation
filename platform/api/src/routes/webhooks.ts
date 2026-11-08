@@ -7,6 +7,25 @@ import { postComment, formatPreviewComment, extractTaskId } from '../lib/clickup
 import { generatePreviewUrl } from '../lib/preview';
 import { deployK8sPreview, terminateK8sPreview, previewResourceName } from '../lib/k8s';
 import * as crypto from 'crypto';
+import { claimWebhookDelivery, releaseWebhookDelivery, webhookDeliveryId, WebhookProvider } from '../lib/webhook-dedupe';
+
+/**
+ * Skip provider retries of a delivery that was already processed (issue #23).
+ * Returns true when the request was answered as a duplicate. A delivery whose processing
+ * ends in an error response is forgotten again so the provider's retry is processed.
+ */
+async function answeredAsDuplicate(provider: WebhookProvider, req: Request, res: Response, event: string | undefined): Promise<boolean> {
+  const deliveryId = webhookDeliveryId(provider, req);
+  if (!deliveryId) return false;
+  if (!(await claimWebhookDelivery(provider, deliveryId, event))) {
+    res.status(200).json({ success: true, duplicate: true, message: 'Duplicate delivery ignored' });
+    return true;
+  }
+  res.on('finish', () => {
+    if (res.statusCode >= 400) void releaseWebhookDelivery(provider, deliveryId);
+  });
+  return false;
+}
 
 function verifyGitHubSignature(payload: unknown, signature: string | undefined): boolean {
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
@@ -36,6 +55,7 @@ router.post('/webhooks/github', async (req: Request, res: Response) => {
 
     const event = req.headers['x-github-event'] as string;
     const payload = req.body;
+    if (await answeredAsDuplicate('github', req, res, event)) return;
 
     if (event === 'push') {
       const branch = (payload.ref || '').replace('refs/heads/', '');
@@ -174,6 +194,7 @@ router.post('/webhooks/gitlab', async (req: Request, res: Response) => {
 
     const event = req.headers['x-gitlab-event'] as string;
     const payload = req.body;
+    if (await answeredAsDuplicate('gitlab', req, res, event)) return;
 
     if (event === 'Push Hook') {
       const branch = (payload.ref || '').replace('refs/heads/', '');

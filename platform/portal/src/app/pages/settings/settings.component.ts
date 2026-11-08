@@ -4,11 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
+import { OperationProgressComponent } from '../../shared/operation-progress.component';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, OperationProgressComponent],
   template: `
 <div>
   <!-- Page Header -->
@@ -320,6 +321,7 @@ import { AuthService } from '../../services/auth.service';
       </div>
       <button class="btn btn-primary" (click)="rotateSecrets()" [disabled]="rotating || rotateConfirm !== 'ROTATE'">Rotate all secrets</button>
       <div *ngIf="rotateError" style="margin-top:10px; color:var(--accent-danger); font-size:0.8rem;">{{ rotateError }}</div>
+      <app-operation-progress *ngIf="rotationOperationId" [operationId]="rotationOperationId" title="Secret rotation"></app-operation-progress>
       <div *ngIf="rotateValues" style="margin-top:16px;">
         <h3 style="font-size:0.9rem;">New values (copy now)</h3>
         <pre style="background:rgba(0,0,0,0.25); padding:12px; border-radius:8px; font-size:0.75rem; overflow:auto;">{{ rotateValues | json }}</pre>
@@ -369,11 +371,21 @@ export class SettingsComponent implements OnInit {
   rotateError = '';
   rotateValues: Record<string, string> | null = null;
   rotateResults: any[] = [];
+  /** Latest secret-rotation operation (live step progress, also after an API restart). */
+  rotationOperationId: string | null = null;
 
   constructor(private api: ApiService, private auth: AuthService) {}
 
+  async loadLatestRotation() {
+    try {
+      const ops = await firstValueFrom(this.api.listOperations({ type: 'platform.secret-rotation', limit: 1 }));
+      this.rotationOperationId = (ops as any[])?.[0]?.id || this.rotationOperationId;
+    } catch {}
+  }
+
   async ngOnInit() {
     this.isDevOps = this.auth.isDevOps() || this.auth.isAdmin();
+    if (this.isDevOps) void this.loadLatestRotation();
     this.isTechLeadOrDevOps = this.auth.isTechLeadOrDevOps();
 
     if (this.isDevOps) {
@@ -529,14 +541,24 @@ export class SettingsComponent implements OnInit {
       return;
     }
     this.rotating = true;
+    // Show step progress while the rotation request is running.
+    const poll = setInterval(() => void this.loadLatestRotation(), 1500);
+    // A retried request with the same key is replayed instead of rotating twice.
+    const idempotencyKey = (globalThis.crypto as any)?.randomUUID?.() || `rotate-${Date.now()}-${Math.random()}`;
     try {
-      const res = await firstValueFrom(this.api.rotateSecrets('ROTATE'));
+      const res = await firstValueFrom(this.api.rotateSecrets('ROTATE', idempotencyKey));
       this.rotateValues = res.values || null;
       this.rotateResults = res.results || [];
+      if (res.operationId) this.rotationOperationId = res.operationId;
       this.rotateConfirm = '';
     } catch (err: any) {
-      this.rotateError = err.error?.error || err.message || 'Rotation failed';
+      this.rotateError = err.status === 409
+        ? 'Another secret rotation is already in progress.'
+        : err.error?.error || err.message || 'Rotation failed';
+      // The API may have restarted mid-rotation: show the (resumed) operation.
+      void this.loadLatestRotation();
     } finally {
+      clearInterval(poll);
       this.rotating = false;
     }
   }

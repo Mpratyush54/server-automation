@@ -5,10 +5,12 @@ import { getDb } from '../config/database';
 import { Project } from '../entities/Project';
 import { UserRole } from '../entities/User';
 import { expressAuthenticate, expressRequireRole, logAudit, AuthenticatedRequest } from '../middleware/auth';
+import { LockBusyError, lockBusyBody } from '../lib/locks';
+import { idempotency } from '../middleware/idempotency';
 
 const router = Router();
 
-router.post('/projects/:projectId/databases/provision', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+router.post('/projects/:projectId/databases/provision', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), idempotency('POST /projects/:projectId/databases/provision'), async (req: Request, res: Response) => {
   try {
     const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, ProjectAccessRole.DEVOPS);
     if (access.ok === false) return res.status(access.status).json({ error: access.error });
@@ -18,9 +20,14 @@ router.post('/projects/:projectId/databases/provision', expressAuthenticate, exp
     const project = await ds.getRepository(Project).findOne({ where: { id: req.params.projectId } });
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
-    const { ensurePostgresForProject } = await import('../lib/project-db-ensure');
-    const result = await ensurePostgresForProject(project.id, project.name, String(environment));
-    if (result.status !== 'ready' || !result.creds) throw new Error(result.error || 'Provisioning failed');
+    // Step-logged provisioning under lock:project:<id>:db-provision:<env> (issue #23).
+    const { provisionProjectPostgres } = await import('../lib/db-provision-op');
+    const result = await provisionProjectPostgres({
+      projectId: project.id,
+      environment: String(environment),
+      actorUserId: (req as AuthenticatedRequest).user?.id,
+    });
+    if (!result.creds) throw new Error(result.error || 'Provisioning failed');
     const creds = result.creds;
 
     await logAudit({
@@ -28,7 +35,7 @@ router.post('/projects/:projectId/databases/provision', expressAuthenticate, exp
       action: 'database.provisioned',
       targetType: 'Project',
       targetId: project.id,
-      metadata: { dbName: creds.dbName, environment },
+      metadata: { dbName: creds.dbName, environment, operationId: result.operationId },
       ip: req.ip,
     });
 
@@ -39,9 +46,11 @@ router.post('/projects/:projectId/databases/provision', expressAuthenticate, exp
       host: creds.host,
       port: creds.port,
       connectionString: `postgresql://${creds.username}:${creds.password}@${creds.host}:${creds.port}/${creds.dbName}`,
+      operationId: result.operationId,
       message: 'Database provisioned. Save these credentials — the password will not be shown again.',
     });
   } catch (err: any) {
+    if (err instanceof LockBusyError) return res.status(409).json(lockBusyBody(err));
     return res.status(400).json({ error: err.message });
   }
 });

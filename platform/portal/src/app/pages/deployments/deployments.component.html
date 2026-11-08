@@ -8,6 +8,7 @@
   <div class="form-group"><label>Version</label><input [(ngModel)]="deployDto.version" placeholder="1.0.0"></div>
   <div class="form-group"><label>Branch</label><input [(ngModel)]="deployDto.branch" value="main"></div>
   <button class="btn btn-primary" (click)="deploy()" [disabled]="!deployDto.projectId || !deployDto.version">Deploy</button>
+  <app-operation-progress *ngIf="lastOperationId" [operationId]="lastOperationId" title="Deploy"></app-operation-progress>
 </div>
 
 <div class="card">

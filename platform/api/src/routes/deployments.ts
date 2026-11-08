@@ -11,7 +11,30 @@ import { triggerPipeline } from '../lib/gitlab';
 import { extractTaskId } from '../lib/clickup';
 import { generatePreviewUrl } from '../lib/preview';
 import { operateProjectWorkloads, terminateK8sPreview, previewResourceName } from '../lib/k8s';
-import { enqueueDeployment, markFailed } from '../lib/deploy-pipeline';
+import { acquireLock, getLockHolder, LockBusyError, LockHandle, lockBusyBody, projectLockKey } from '../lib/locks';
+import { createOperation, newOperationId, runOperation } from '../lib/operations';
+import { DEPLOY_OPERATION } from '../lib/deploy-op';
+import { idempotency } from '../middleware/idempotency';
+
+/**
+ * One mutating deployment operation per project environment at a time (issue #23):
+ * deploy, rollback, restart, scale and terminate share `lock:project:<id>:deploy:<envId>`.
+ */
+function deployLockKey(projectId: string, environmentId: string | null | undefined): string {
+  return projectLockKey(projectId, 'deploy', environmentId || 'none');
+}
+
+async function lockDeployTarget(projectId: string, environmentId: string | null | undefined, holder: string, ttlMs = 60_000): Promise<LockHandle> {
+  const key = deployLockKey(projectId, environmentId);
+  const lock = await acquireLock(key, { holder, ttlMs });
+  if (!lock) throw new LockBusyError(key, await getLockHolder(key));
+  return lock;
+}
+
+function sendError(res: Response, err: any) {
+  if (err instanceof LockBusyError) return res.status(409).json(lockBusyBody(err));
+  return res.status(400).json({ error: err.message });
+}
 
 const router = Router();
 
@@ -30,7 +53,7 @@ router.get('/deployments/:projectId', expressAuthenticate, async (req: Request, 
   }
 });
 
-router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD, UserRole.DEVELOPER]), async (req: Request, res: Response) => {
+router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD, UserRole.DEVELOPER]), idempotency('POST /deploy'), async (req: Request, res: Response) => {
   try {
     const body = req.body;
     const ds = await getDb();
@@ -73,51 +96,67 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
 
     const clickupTaskId = body.branch ? extractTaskId(body.branch) : null;
 
-    const deployment = ds.getRepository(Deployment).create({
-      projectId: body.projectId,
-      environmentId: env.id,
-      version: body.version || '1.0.0',
-      branch: body.branch || 'main',
-      commitSha: body.commitSha || 'unknown',
-      imageTag: body.imageTag || 'latest',
-      status: DeploymentStatus.PENDING,
-      deployedById: (req as AuthenticatedRequest).user?.id,
-      clickupTaskId,
-      previewUrl: env.name === EnvironmentName.PREVIEW ? `https://${env.domain}` : null,
-      metadata: {
-        previewResourceName: env.name === EnvironmentName.PREVIEW ? previewResourceName(project.id, body.branch || 'main') : undefined,
-        gitPath: body.gitPath || undefined,
-        pullFromGit: body.pullFromGit !== false,
-        domain: project.domain || undefined,
-      },
-    });
-    const saved = await ds.getRepository(Deployment).save(deployment);
-
-    await logAudit({
-      userId: (req as AuthenticatedRequest).user?.id,
-      action: 'deployment.created',
-      targetType: 'Deployment',
-      targetId: saved.id,
-      metadata: { projectId: body.projectId, environmentId: env.id, version: body.version },
-      ip: req.ip,
-    });
-
-    // Durable rollout: persisted as a background job and started on this
-    // replica; the leader resumes or fails it if this process dies mid-way.
+    // Concurrent deploys of the same project environment: the second one gets 409.
+    const operationId = newOperationId();
+    const lockKey = deployLockKey(project.id, env.id);
+    const lock = await lockDeployTarget(project.id, env.id, operationId);
+    let handedOff = false;
     try {
-      await enqueueDeployment(saved.id);
-    } catch (enqueueErr: any) {
-      await markFailed(saved.id, `Could not schedule deployment: ${enqueueErr.message}`).catch(() => {});
-      return res.status(500).json({ error: 'Could not schedule deployment' });
-    }
+      const deployment = ds.getRepository(Deployment).create({
+        projectId: body.projectId,
+        environmentId: env.id,
+        version: body.version || '1.0.0',
+        branch: body.branch || 'main',
+        commitSha: body.commitSha || 'unknown',
+        imageTag: body.imageTag || 'latest',
+        status: DeploymentStatus.PENDING,
+        deployedById: (req as AuthenticatedRequest).user?.id,
+        clickupTaskId,
+        previewUrl: env.name === EnvironmentName.PREVIEW ? `https://${env.domain}` : null,
+        metadata: {
+          previewResourceName: env.name === EnvironmentName.PREVIEW ? previewResourceName(project.id, body.branch || 'main') : undefined,
+          gitPath: body.gitPath || undefined,
+          pullFromGit: body.pullFromGit !== false,
+          domain: project.domain || undefined,
+        },
+      });
+      const saved = await ds.getRepository(Deployment).save(deployment);
 
-    return res.status(201).json(saved);
+      await logAudit({
+        userId: (req as AuthenticatedRequest).user?.id,
+        action: 'deployment.created',
+        targetType: 'Deployment',
+        targetId: saved.id,
+        metadata: { projectId: body.projectId, environmentId: env.id, version: body.version },
+        ip: req.ip,
+      });
+
+      // Step-logged background deploy (lib/deploy-op.ts); the runner owns and releases the lock.
+      await createOperation(DEPLOY_OPERATION, {
+        id: operationId,
+        projectId: project.id,
+        lockKey,
+        input: { deploymentId: saved.id, environmentId: env.id, gitPath: body.gitPath || undefined },
+        state: { deploymentId: saved.id },
+        createdById: (req as AuthenticatedRequest).user?.id ?? null,
+      });
+      handedOff = true;
+      setImmediate(() => {
+        runOperation(operationId, { lock }).catch((err) => {
+          console.error('[deploy-bg] Background deploy error:', err?.message || err);
+        });
+      });
+
+      return res.status(201).json({ ...saved, operationId });
+    } finally {
+      if (!handedOff) await lock.release();
+    }
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sendError(res, err);
   }
 });
 
-router.post('/rollback', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
+router.post('/rollback', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD]), idempotency('POST /rollback'), async (req: Request, res: Response) => {
   try {
     const body = req.body;
     if (!body?.deploymentId) {
@@ -135,43 +174,49 @@ router.post('/rollback', expressAuthenticate, expressRequireRole([UserRole.DEVOP
     if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const env = await ds.getRepository(Environment).findOne({ where: { id: current.environmentId, projectId: current.projectId } });
     if (!env) return res.status(404).json({ error: 'Deployment environment not found' });
-    current.status = DeploymentStatus.ROLLED_BACK;
-    current.terminatedAt = new Date();
-    await repo.save(current);
 
-    const rollback = repo.create({
-      projectId: current.projectId,
-      environmentId: current.environmentId,
-      version: body.previousVersion || current.version,
-      branch: current.branch,
-      commitSha: current.commitSha,
-      imageTag: current.imageTag,
-      status: DeploymentStatus.DEPLOYED,
-      deployedById: (req as AuthenticatedRequest).user?.id,
-      metadata: { ...(current.metadata || {}), rollbackFrom: current.id },
-      deployedAt: new Date(),
-    });
-    const saved = await repo.save(rollback);
+    const lock = await lockDeployTarget(current.projectId, current.environmentId, `rollback:${newOperationId()}`);
+    try {
+      current.status = DeploymentStatus.ROLLED_BACK;
+      current.terminatedAt = new Date();
+      await repo.save(current);
 
-    // Call GitLab Pipeline trigger simulating roll back
-    await triggerPipeline(current.projectId, current.branch);
+      const rollback = repo.create({
+        projectId: current.projectId,
+        environmentId: current.environmentId,
+        version: body.previousVersion || current.version,
+        branch: current.branch,
+        commitSha: current.commitSha,
+        imageTag: current.imageTag,
+        status: DeploymentStatus.DEPLOYED,
+        deployedById: (req as AuthenticatedRequest).user?.id,
+        metadata: { ...(current.metadata || {}), rollbackFrom: current.id },
+        deployedAt: new Date(),
+      });
+      const saved = await repo.save(rollback);
 
-    await logAudit({
-      userId: (req as AuthenticatedRequest).user?.id,
-      action: 'deployment.rolled_back',
-      targetType: 'Deployment',
-      targetId: current.id,
-      metadata: { rollbackDeploymentId: saved.id, previousVersion: body.previousVersion },
-      ip: req.ip,
-    });
+      // Call GitLab Pipeline trigger simulating roll back
+      await triggerPipeline(current.projectId, current.branch);
 
-    return res.status(201).json({ rolledBack: current, newDeployment: saved });
+      await logAudit({
+        userId: (req as AuthenticatedRequest).user?.id,
+        action: 'deployment.rolled_back',
+        targetType: 'Deployment',
+        targetId: current.id,
+        metadata: { rollbackDeploymentId: saved.id, previousVersion: body.previousVersion },
+        ip: req.ip,
+      });
+
+      return res.status(201).json({ rolledBack: current, newDeployment: saved });
+    } finally {
+      await lock.release();
+    }
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sendError(res, err);
   }
 });
 
-router.post('/deployments/:id/restart', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+router.post('/deployments/:id/restart', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), idempotency('POST /deployments/:id/restart'), async (req: Request, res: Response) => {
   try {
     const ds = await getDb();
     const repo = ds.getRepository(Deployment);
@@ -180,18 +225,23 @@ router.post('/deployments/:id/restart', expressAuthenticate, expressRequireRole(
     const access = await requireProjectAccess(req as AuthenticatedRequest, deployment.projectId, ProjectAccessRole.DEVOPS);
     if (access.ok === false) return res.status(access.status).json({ error: access.error });
 
-    await controlDeployment(deployment, 'restart');
-    deployment.status = DeploymentStatus.DEPLOYED;
-    deployment.deployedAt = new Date();
-    await repo.save(deployment);
+    const lock = await lockDeployTarget(deployment.projectId, deployment.environmentId, `restart:${newOperationId()}`);
+    try {
+      await controlDeployment(deployment, 'restart');
+      deployment.status = DeploymentStatus.DEPLOYED;
+      deployment.deployedAt = new Date();
+      await repo.save(deployment);
 
-    return res.json({ message: 'Restart triggered', deployment });
+      return res.json({ message: 'Restart triggered', deployment });
+    } finally {
+      await lock.release();
+    }
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sendError(res, err);
   }
 });
 
-router.patch('/deployments/:id/scale', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+router.patch('/deployments/:id/scale', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), idempotency('PATCH /deployments/:id/scale'), async (req: Request, res: Response) => {
   try {
     const body = req.body;
     const ds = await getDb();
@@ -202,26 +252,32 @@ router.patch('/deployments/:id/scale', expressAuthenticate, expressRequireRole([
     if (access.ok === false) return res.status(access.status).json({ error: access.error });
 
     if (!Number.isInteger(body.replicas) || body.replicas < 0 || body.replicas > 1000) return res.status(400).json({ error: 'replicas must be an integer between 0 and 1000' });
-    await controlDeployment(dep, 'scale', body.replicas);
-    dep.metadata = { ...(dep.metadata || {}), replicas: body.replicas };
-    await repo.save(dep);
 
-    await logAudit({
-      userId: (req as AuthenticatedRequest).user?.id,
-      action: 'deployment.scaled',
-      targetType: 'Deployment',
-      targetId: dep.id,
-      metadata: { replicas: body.replicas },
-      ip: req.ip,
-    });
+    const lock = await lockDeployTarget(dep.projectId, dep.environmentId, `scale:${newOperationId()}`);
+    try {
+      await controlDeployment(dep, 'scale', body.replicas);
+      dep.metadata = { ...(dep.metadata || {}), replicas: body.replicas };
+      await repo.save(dep);
 
-    return res.json(dep);
+      await logAudit({
+        userId: (req as AuthenticatedRequest).user?.id,
+        action: 'deployment.scaled',
+        targetType: 'Deployment',
+        targetId: dep.id,
+        metadata: { replicas: body.replicas },
+        ip: req.ip,
+      });
+
+      return res.json(dep);
+    } finally {
+      await lock.release();
+    }
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sendError(res, err);
   }
 });
 
-router.post('/deployments/:id/terminate', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD, UserRole.DEVELOPER]), async (req: Request, res: Response) => {
+router.post('/deployments/:id/terminate', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD, UserRole.DEVELOPER]), idempotency('POST /deployments/:id/terminate'), async (req: Request, res: Response) => {
   try {
     const ds = await getDb();
     const repo = ds.getRepository(Deployment);
@@ -230,22 +286,27 @@ router.post('/deployments/:id/terminate', expressAuthenticate, expressRequireRol
     const access = await requireProjectAccess(req as AuthenticatedRequest, dep.projectId, ProjectAccessRole.DEVELOPER);
     if (access.ok === false) return res.status(access.status).json({ error: access.error });
 
-    await controlDeployment(dep, 'terminate');
-    dep.status = DeploymentStatus.TERMINATED;
-    dep.terminatedAt = new Date();
-    await repo.save(dep);
+    const lock = await lockDeployTarget(dep.projectId, dep.environmentId, `terminate:${newOperationId()}`);
+    try {
+      await controlDeployment(dep, 'terminate');
+      dep.status = DeploymentStatus.TERMINATED;
+      dep.terminatedAt = new Date();
+      await repo.save(dep);
 
-    await logAudit({
-      userId: (req as AuthenticatedRequest).user?.id,
-      action: 'deployment.terminated',
-      targetType: 'Deployment',
-      targetId: dep.id,
-      ip: req.ip,
-    });
+      await logAudit({
+        userId: (req as AuthenticatedRequest).user?.id,
+        action: 'deployment.terminated',
+        targetType: 'Deployment',
+        targetId: dep.id,
+        ip: req.ip,
+      });
 
-    return res.json(dep);
+      return res.json(dep);
+    } finally {
+      await lock.release();
+    }
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sendError(res, err);
   }
 });
 

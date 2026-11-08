@@ -172,6 +172,15 @@ async function bootstrap() {
     // Leader-elected periodic jobs (preview decay, deploy recovery, cleanup)
     startBackgroundWork();
 
+    // Leader-only worker: resume interrupted operations, dispatch the outbox (issue #23).
+    try {
+      await import('./lib/operation-types');
+      const { startOperationWorker } = await import('./lib/operation-worker');
+      startOperationWorker();
+    } catch (opErr: any) {
+      console.warn(`[server] Operation worker not started: ${opErr.message}`);
+    }
+
     try {
       const { hydrateIntegrationsEnv } = await import('./lib/integrations');
       await hydrateIntegrationsEnv();

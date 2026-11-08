@@ -5,11 +5,12 @@ import { firstValueFrom } from 'rxjs';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
+import { OperationProgressComponent } from '../../shared/operation-progress.component';
 
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [CommonModule, FormsModule, RouterModule, OperationProgressComponent],
   templateUrl: './project-detail.component.html',
   styleUrl: './project-detail.component.css'
 })
@@ -54,6 +55,8 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   // Form DTOs — empty until loaded from project's GitHub/GitLab repo
   deployDto = { version: '', branch: '', environmentId: '', commitSha: '', imageTag: 'latest', gitPath: 'k8s' };
   deployInProgress = false;
+  /** Operation id of the last deploy started here (GET /api/operations/:id progress). */
+  deployOperationId: string | null = null;
   gitBranches: { name: string; sha: string }[] = [];
   gitCommits: { sha: string; message: string; author: string; date: string }[] = [];
   gitReleases: any[] = [];
@@ -408,7 +411,8 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
         gitPath: this.deployDto.gitPath || 'k8s',
         pullFromGit: true,
       };
-      await firstValueFrom(this.api.deploy(payload));
+      const started: any = await firstValueFrom(this.api.deploy(payload));
+      this.deployOperationId = started?.operationId || null;
       await this.loadDeployments();
       this.activeTab = 'deployments';
     } catch (err: any) {
