@@ -1,5 +1,5 @@
 import { Component, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
@@ -8,7 +8,7 @@ import { AuthService } from '../../services/auth.service';
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [FormsModule],
   template: `
 <div>
   <div class="card" style="background:linear-gradient(135deg, rgba(91,110,245,0.05), rgba(45,212,160,0.02)); border-color:var(--border-subtle); margin-bottom:20px;">
@@ -16,16 +16,24 @@ import { AuthService } from '../../services/auth.service';
     <p style="margin:0; color:var(--text-secondary); font-size:0.8rem;">Your account, linked GitHub / GitLab identities, and password.</p>
   </div>
 
-  <div *ngIf="error" class="card" style="margin-bottom:16px; color:var(--accent-danger);">{{ error }}</div>
-  <div *ngIf="success" class="card" style="margin-bottom:16px; color:var(--accent-success);">{{ success }}</div>
+  @if (error) {
+    <div class="card" style="margin-bottom:16px; color:var(--accent-danger);">{{ error }}</div>
+  }
+  @if (success) {
+    <div class="card" style="margin-bottom:16px; color:var(--accent-success);">{{ success }}</div>
+  }
 
   <div class="grid-2" style="align-items:start;">
     <div class="card" style="padding:20px;">
       <h2>Account</h2>
       <div style="display:flex; gap:14px; align-items:center; margin-bottom:16px;">
         <div style="width:56px; height:56px; border-radius:50%; overflow:hidden; background:#111; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-subtle);">
-          <img *ngIf="me.avatarUrl" [src]="me.avatarUrl" alt="" style="width:100%; height:100%; object-fit:cover;">
-          <span *ngIf="!me.avatarUrl" style="font-weight:700;">{{ initials }}</span>
+          @if (me.avatarUrl) {
+            <img [src]="me.avatarUrl" alt="" style="width:100%; height:100%; object-fit:cover;">
+          }
+          @if (!me.avatarUrl) {
+            <span style="font-weight:700;">{{ initials }}</span>
+          }
         </div>
         <div>
           <div style="font-weight:700; color:#fff;">{{ me.name || '—' }}</div>
@@ -70,10 +78,12 @@ import { AuthService } from '../../services/auth.service';
 
       <div class="card" style="padding:20px;">
         <h2>Password</h2>
-        <div class="form-group" *ngIf="me.hasPassword">
-          <label>Current password</label>
-          <input type="password" [(ngModel)]="currentPassword" style="width:100%;" autocomplete="current-password">
-        </div>
+        @if (me.hasPassword) {
+          <div class="form-group">
+            <label>Current password</label>
+            <input type="password" [(ngModel)]="currentPassword" style="width:100%;" autocomplete="current-password">
+          </div>
+        }
         <div class="form-group">
           <label>New password</label>
           <input type="password" [(ngModel)]="newPassword" style="width:100%;" autocomplete="new-password">
@@ -83,7 +93,7 @@ import { AuthService } from '../../services/auth.service';
     </div>
   </div>
 </div>
-  `
+`
 })
 export class ProfileComponent implements OnInit {
   me: any = { name: '', email: '', username: '', role: '', avatarUrl: '', githubId: null, gitlabId: null, hasPassword: false };

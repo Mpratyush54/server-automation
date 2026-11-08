@@ -1,5 +1,4 @@
 import { Component, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../services/api.service';
 
@@ -12,27 +11,37 @@ const TERMINAL = new Set(['succeeded', 'failed', 'compensated']);
 @Component({
   selector: 'app-operation-progress',
   standalone: true,
-  imports: [CommonModule],
+  imports: [],
   template: `
-    <div *ngIf="op" class="op-progress" [attr.data-status]="op.status">
-      <div class="op-head">
-        <span class="badge" [class.badge-active]="op.status === 'succeeded'"
-              [class.badge-pending]="op.status === 'running' || op.status === 'pending' || op.status === 'compensating'"
-              [class.badge-failed]="op.status === 'failed' || op.status === 'compensated'">{{ op.status }}</span>
-        <span class="op-title">{{ title || op.type }}</span>
-        <span class="op-meta">{{ op.progress }}%<span *ngIf="op.attempts > 1"> · resumed after restart</span></span>
+    @if (op) {
+      <div class="op-progress" [attr.data-status]="op.status">
+        <div class="op-head">
+          <span class="badge" [class.badge-active]="op.status === 'succeeded'"
+                [class.badge-pending]="op.status === 'running' || op.status === 'pending' || op.status === 'compensating'"
+                [class.badge-failed]="op.status === 'failed' || op.status === 'compensated'">{{ op.status }}</span>
+          <span class="op-title">{{ title || op.type }}</span>
+          <span class="op-meta">{{ op.progress }}%@if (op.attempts > 1) {<span> · resumed after restart</span>}</span>
+        </div>
+        <div class="op-bar"><div class="op-bar-fill" [style.width.%]="op.progress"></div></div>
+        <ol class="op-steps">
+          @for (s of op.steps; track s.name) {
+            <li [attr.data-step-status]="s.status">
+              <span class="op-dot">{{ icon(s.status) }}</span>
+              <span class="op-step-name">{{ s.name }}</span>
+              @if (s.error) {
+                <span class="op-step-error">{{ s.error }}</span>
+              }
+            </li>
+          }
+        </ol>
+        @if (op.error && op.status !== 'succeeded') {
+          <div class="op-error">{{ op.error }}</div>
+        }
       </div>
-      <div class="op-bar"><div class="op-bar-fill" [style.width.%]="op.progress"></div></div>
-      <ol class="op-steps">
-        <li *ngFor="let s of op.steps" [attr.data-step-status]="s.status">
-          <span class="op-dot">{{ icon(s.status) }}</span>
-          <span class="op-step-name">{{ s.name }}</span>
-          <span class="op-step-error" *ngIf="s.error">{{ s.error }}</span>
-        </li>
-      </ol>
-      <div class="op-error" *ngIf="op.error && op.status !== 'succeeded'">{{ op.error }}</div>
-    </div>
-    <div *ngIf="loadError" class="op-error">{{ loadError }}</div>
+    }
+    @if (loadError) {
+      <div class="op-error">{{ loadError }}</div>
+    }
   `,
   styles: [`
     .op-progress { margin-top: 12px; padding: 12px; border: 1px solid var(--border-subtle, #333); border-radius: 8px; font-size: 0.78rem; }

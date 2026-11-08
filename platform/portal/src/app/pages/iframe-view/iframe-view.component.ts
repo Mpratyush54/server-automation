@@ -2,17 +2,19 @@ import { Component, DestroyRef, OnInit, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
-import { CommonModule } from '@angular/common';
+
 
 @Component({
   selector: 'app-iframe-view',
   standalone: true,
-  imports: [CommonModule],
+  imports: [],
   template: `
     <div style="width: 100%; height: calc(100vh - 100px); background: #0D0F14; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-subtle);">
-      <iframe *ngIf="safeUrl" [src]="safeUrl" style="width: 100%; height: 100%; border: none;"></iframe>
+      @if (safeUrl) {
+        <iframe [src]="safeUrl" style="width: 100%; height: 100%; border: none;"></iframe>
+      }
     </div>
-  `
+    `
 })
 export class IframeViewComponent implements OnInit {
   safeUrl?: SafeResourceUrl;

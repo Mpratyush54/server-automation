@@ -5,144 +5,167 @@
       <path d="M2.5 5h15M2.5 10h15M2.5 15h15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
     </svg>
     <span>Documentation</span>
-  </button><button type="button" class="docs-mobile-search" (click)="docsSearch.openSearch()" aria-haspopup="dialog" aria-label="Search documentation">Search <span aria-hidden="true">⌕</span></button></div>
-  <app-docs-search #docsSearch (resultSelected)="mobileNavOpen = false" />
+    </button><button type="button" class="docs-mobile-search" (click)="docsSearch.openSearch()" aria-haspopup="dialog" aria-label="Search documentation">Search <span aria-hidden="true">⌕</span></button></div>
+    <app-docs-search #docsSearch (resultSelected)="mobileNavOpen = false" />
 
-  <div class="docs-layout">
-    <!-- Sidebar -->
-    <aside class="docs-sidebar" [class.open]="mobileNavOpen">
-      <div class="docs-sidebar-header">
-        <a routerLink="/docs" class="docs-logo" (click)="mobileNavOpen = false">
-          <img src="logo-dark-icon.png" alt="" width="28" height="28" class="docs-logo-img" />
-          Platform Docs
-        </a>
-        <button class="docs-close-sidebar" (click)="mobileNavOpen = false">&times;</button>
-      </div>
-
-      <!-- Search -->
-      <button type="button" class="docs-search docs-search-trigger" (click)="docsSearch.openSearch()" aria-haspopup="dialog" aria-label="Search documentation">
-        <svg class="docs-search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.5"/>
-          <path d="M9.5 9.5L13 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-        <span>Search documentation</span><kbd>Ctrl K</kbd>
-      </button>
-
-      <!-- Navigation -->
-      <nav class="docs-nav">
-        <div *ngFor="let section of docSections" class="docs-nav-group">
-          <div class="docs-nav-group-label">
-            {{ section.label }}
-            <span class="docs-page-count">({{ section.pages.length }})</span>
-          </div>
-          <a
-            *ngFor="let page of section.pages"
-            class="docs-nav-link"
-            [class.active]="isActive(page)"
-            [routerLink]="docUrl(page)" (click)="mobileNavOpen = false"
-          >{{ page.label }}</a>
-        </div>
-      </nav>
-    </aside>
-
-    <!-- Content + TOC -->
-    <main class="docs-content">
-      <div class="docs-content-inner">
-        <!-- Breadcrumb + mobile agent actions -->
-        <div class="docs-breadcrumb-row" *ngIf="currentSection || !isLoading">
-          <div class="docs-breadcrumb">
-            <a routerLink="/docs">Docs</a>
-            <span class="docs-breadcrumb-sep">/</span>
-            <span class="docs-breadcrumb-current">
-              {{ getBreadcrumbTitle() }}
-            </span>
-          </div>
-          <div class="docs-agent-mobile" *ngIf="!isLoading && content && rawMarkdown">
-            <button type="button" class="docs-agent-btn docs-agent-btn-primary" (click)="copyAgentPrompt()">
-              {{ agentCopyFeedback === 'prompt' ? 'Copied' : 'Copy for agent' }}
-            </button>
-          </div>
+    <div class="docs-layout">
+      <!-- Sidebar -->
+      <aside class="docs-sidebar" [class.open]="mobileNavOpen">
+        <div class="docs-sidebar-header">
+          <a routerLink="/docs" class="docs-logo" (click)="mobileNavOpen = false">
+            <img src="logo-dark-icon.png" alt="" width="28" height="28" class="docs-logo-img" />
+            Platform Docs
+          </a>
+          <button class="docs-close-sidebar" (click)="mobileNavOpen = false">&times;</button>
         </div>
 
-        <!-- Loading -->
-        <div *ngIf="isLoading" class="docs-loading">
-          <div class="docs-loading-spinner"></div>
-          <span>Loading documentation...</span>
-        </div>
+        <!-- Search -->
+        <button type="button" class="docs-search docs-search-trigger" (click)="docsSearch.openSearch()" aria-haspopup="dialog" aria-label="Search documentation">
+          <svg class="docs-search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M9.5 9.5L13 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <span>Search documentation</span><kbd>Ctrl K</kbd>
+        </button>
 
-        <!-- Markdown content -->
-        <div *ngIf="!isLoading && content" class="docs-markdown" [innerHTML]="content"></div>
-
-        <!-- 404 -->
-        <div *ngIf="!isLoading && !content" class="docs-not-found">
-          <div class="docs-not-found-icon">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
-              <path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-          </div>
-          <h3>Page Not Found</h3>
-          <p>The documentation page you're looking for doesn't exist or hasn't been written yet.</p>
-          <a routerLink="/docs" class="docs-back-link">&larr; Back to Docs Home</a>
-        </div>
-
-        <!-- Footer nav -->
-        <div *ngIf="!isLoading && content" class="docs-page-nav">
-          <div class="docs-page-nav-row">
-            <a *ngIf="prevPage" class="docs-nav-item docs-nav-prev" [routerLink]="docUrl(prevPage)">
-              <span class="docs-nav-arrow">&larr;</span>
-              <span class="docs-nav-text">
-                <span class="docs-nav-label">Previous</span>
-                <span class="docs-nav-title">{{ prevPage.label }}</span>
-              </span>
-            </a>
-            <a *ngIf="nextPage" class="docs-nav-item docs-nav-next" [routerLink]="docUrl(nextPage)">
-              <span class="docs-nav-text">
-                <span class="docs-nav-label">Next</span>
-                <span class="docs-nav-title">{{ nextPage.label }}</span>
-              </span>
-              <span class="docs-nav-arrow">&rarr;</span>
-            </a>
-          </div>
-        </div>
-      </div>
-
-      <!-- Right rail: agent actions + TOC -->
-      <aside class="docs-toc" *ngIf="!isLoading && content">
-        <div class="docs-agent-card" *ngIf="rawMarkdown">
-          <div class="docs-toc-header">For AI agents</div>
-          <p class="docs-agent-blurb">Copy this page into Cursor, Claude, ChatGPT, or any agent — no need to scrape the HTML.</p>
-          <button type="button" class="docs-agent-btn docs-agent-btn-primary" (click)="copyAgentPrompt()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
-            {{ agentCopyFeedback === 'prompt' ? 'Copied for agent' : 'Copy page for agent' }}
-          </button>
-          <button type="button" class="docs-agent-btn" (click)="copyPageMarkdown()">
-            {{ agentCopyFeedback === 'page' ? 'Copied Markdown' : 'Copy Markdown' }}
-          </button>
-          <button type="button" class="docs-agent-btn" (click)="copyMarkdownUrl()">
-            {{ agentCopyFeedback === 'url' ? 'URL copied' : 'Copy Markdown URL' }}
-          </button>
-          <div class="docs-agent-links">
-            <a [href]="markdownAbsoluteUrl" target="_blank" rel="noopener">View as Markdown</a>
-            <a [href]="llmsTxtUrl" target="_blank" rel="noopener">llms.txt</a>
-          </div>
-        </div>
-
-        <ng-container *ngIf="tocItems.length > 0">
-          <div class="docs-toc-header" [class.docs-toc-header-spaced]="!!rawMarkdown">On this page</div>
-          <nav class="docs-toc-nav">
-            <a
-              *ngFor="let item of tocItems"
-              class="docs-toc-link"
-              [class.toc-h2]="item.level === 'h2'"
-              [class.toc-h3]="item.level === 'h3'"
-              [class.toc-active]="item.id === activeTocId"
-              [attr.href]="headingUrl(item.id)"
-              (click)="scrollToHeading($event, item.id)"
-            >{{ item.text }}</a>
-          </nav>
-        </ng-container>
+        <!-- Navigation -->
+        <nav class="docs-nav">
+          @for (section of docSections; track section) {
+            <div class="docs-nav-group">
+              <div class="docs-nav-group-label">
+                {{ section.label }}
+                <span class="docs-page-count">({{ section.pages.length }})</span>
+              </div>
+              @for (page of section.pages; track page) {
+                <a
+                  class="docs-nav-link"
+                  [class.active]="isActive(page)"
+                  [routerLink]="docUrl(page)" (click)="mobileNavOpen = false"
+                >{{ page.label }}</a>
+              }
+            </div>
+          }
+        </nav>
       </aside>
-    </main>
+
+      <!-- Content + TOC -->
+      <main class="docs-content">
+        <div class="docs-content-inner">
+          <!-- Breadcrumb + mobile agent actions -->
+          @if (currentSection || !isLoading) {
+            <div class="docs-breadcrumb-row">
+              <div class="docs-breadcrumb">
+                <a routerLink="/docs">Docs</a>
+                <span class="docs-breadcrumb-sep">/</span>
+                <span class="docs-breadcrumb-current">
+                  {{ getBreadcrumbTitle() }}
+                </span>
+              </div>
+              @if (!isLoading && content && rawMarkdown) {
+                <div class="docs-agent-mobile">
+                  <button type="button" class="docs-agent-btn docs-agent-btn-primary" (click)="copyAgentPrompt()">
+                    {{ agentCopyFeedback === 'prompt' ? 'Copied' : 'Copy for agent' }}
+                  </button>
+                </div>
+              }
+            </div>
+          }
+
+          <!-- Loading -->
+          @if (isLoading) {
+            <div class="docs-loading">
+              <div class="docs-loading-spinner"></div>
+              <span>Loading documentation...</span>
+            </div>
+          }
+
+          <!-- Markdown content -->
+          @if (!isLoading && content) {
+            <div class="docs-markdown" [innerHTML]="content"></div>
+          }
+
+          <!-- 404 -->
+          @if (!isLoading && !content) {
+            <div class="docs-not-found">
+              <div class="docs-not-found-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <h3>Page Not Found</h3>
+              <p>The documentation page you're looking for doesn't exist or hasn't been written yet.</p>
+              <a routerLink="/docs" class="docs-back-link">&larr; Back to Docs Home</a>
+            </div>
+          }
+
+          <!-- Footer nav -->
+          @if (!isLoading && content) {
+            <div class="docs-page-nav">
+              <div class="docs-page-nav-row">
+                @if (prevPage) {
+                  <a class="docs-nav-item docs-nav-prev" [routerLink]="docUrl(prevPage)">
+                    <span class="docs-nav-arrow">&larr;</span>
+                    <span class="docs-nav-text">
+                      <span class="docs-nav-label">Previous</span>
+                      <span class="docs-nav-title">{{ prevPage.label }}</span>
+                    </span>
+                  </a>
+                }
+                @if (nextPage) {
+                  <a class="docs-nav-item docs-nav-next" [routerLink]="docUrl(nextPage)">
+                    <span class="docs-nav-text">
+                      <span class="docs-nav-label">Next</span>
+                      <span class="docs-nav-title">{{ nextPage.label }}</span>
+                    </span>
+                    <span class="docs-nav-arrow">&rarr;</span>
+                  </a>
+                }
+              </div>
+            </div>
+          }
+        </div>
+
+        <!-- Right rail: agent actions + TOC -->
+        @if (!isLoading && content) {
+          <aside class="docs-toc">
+            @if (rawMarkdown) {
+              <div class="docs-agent-card">
+                <div class="docs-toc-header">For AI agents</div>
+                <p class="docs-agent-blurb">Copy this page into Cursor, Claude, ChatGPT, or any agent — no need to scrape the HTML.</p>
+                <button type="button" class="docs-agent-btn docs-agent-btn-primary" (click)="copyAgentPrompt()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                  {{ agentCopyFeedback === 'prompt' ? 'Copied for agent' : 'Copy page for agent' }}
+                </button>
+                <button type="button" class="docs-agent-btn" (click)="copyPageMarkdown()">
+                  {{ agentCopyFeedback === 'page' ? 'Copied Markdown' : 'Copy Markdown' }}
+                </button>
+                <button type="button" class="docs-agent-btn" (click)="copyMarkdownUrl()">
+                  {{ agentCopyFeedback === 'url' ? 'URL copied' : 'Copy Markdown URL' }}
+                </button>
+                <div class="docs-agent-links">
+                  <a [href]="markdownAbsoluteUrl" target="_blank" rel="noopener">View as Markdown</a>
+                  <a [href]="llmsTxtUrl" target="_blank" rel="noopener">llms.txt</a>
+                </div>
+              </div>
+            }
+            @if (tocItems.length > 0) {
+              <div class="docs-toc-header" [class.docs-toc-header-spaced]="!!rawMarkdown">On this page</div>
+              <nav class="docs-toc-nav">
+                @for (item of tocItems; track item) {
+                  <a
+                    class="docs-toc-link"
+                    [class.toc-h2]="item.level === 'h2'"
+                    [class.toc-h3]="item.level === 'h3'"
+                    [class.toc-active]="item.id === activeTocId"
+                    [attr.href]="headingUrl(item.id)"
+                    (click)="scrollToHeading($event, item.id)"
+                  >{{ item.text }}</a>
+                }
+              </nav>
+            }
+          </aside>
+        }
+      </main>
+    </div>
   </div>
-</div>
