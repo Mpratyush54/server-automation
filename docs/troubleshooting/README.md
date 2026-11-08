@@ -11,6 +11,7 @@ something not covered, open an issue: <https://github.com/Mpratyush54/SERVER-aut
 - [sslip-io-dns.md](sslip-io-dns.md) — `*.sslip.io` name won't resolve inside the cluster
 - [k3s-port-conflict.md](k3s-port-conflict.md) — k3s fails to start, port 6443/80/443 in use
 - [dockerhub-rate-limit.md](dockerhub-rate-limit.md) — `toomanyrequests` on image pulls
+- [github-releases-outage.md](github-releases-outage.md) — installing while GitHub Releases returns 502/504 (GHCR fallback)
 - [disk-pressure.md](disk-pressure.md) — pods evicted, node `DiskPressure=True`
 - [image-pull-backoff.md](image-pull-backoff.md) — `ImagePullBackOff` on `platform-api` / `platform-portal`
 - [helm-name-reuse.md](helm-name-reuse.md) — `cannot re-use a name that is still in use`

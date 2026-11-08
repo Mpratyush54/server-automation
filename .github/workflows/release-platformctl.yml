@@ -44,6 +44,32 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Copy of the release on GHCR: install.sh falls back to it when GitHub
+      # Releases is unavailable. oras comes from the Go module proxy, not from
+      # GitHub Releases.
+      - name: Mirror platformctl to GHCR
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          go install oras.land/oras/cmd/oras@v1.2.3
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          echo "$GITHUB_TOKEN" | oras login ghcr.io -u "$ACTOR" --password-stdin
+          version="${TAG#v}"
+          ref="ghcr.io/mpratyush54/platformctl"
+          cd platformctl/dist
+          files=(checksums.txt "platformctl_${version}_linux_amd64.tar.gz" "platformctl_${version}_linux_arm64.tar.gz")
+          ls -l "${files[@]}"
+          oras push "$ref:$version" --artifact-type application/vnd.platform.platformctl.v1 "${files[@]}"
+          # Pre-releases (vX.Y.Z-rc.N) never move "latest", matching GitHub's releases/latest.
+          if [[ "$version" != *-* ]]; then oras tag "$ref:$version" latest; fi
+          gh api --method PUT "/user/packages/container/platformctl/visibility" -f visibility=public \
+            || echo "::warning::set ghcr.io/mpratyush54/platformctl public in its Package settings"
+
   # Offline bundle (issue #12): k3s airgap images + chart tarballs + platform
   # images. Independent of goreleaser; waits for the release GoReleaser creates
   # and attaches platform-bundle-<tag>-<arch>.tar.zst (+ .sha256).
@@ -82,6 +108,8 @@ jobs:
           helm version
 
       - name: Build bundle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/build-bundle.sh "$TAG" "${{ matrix.arch }}"
 
       - name: Upload workflow artifact

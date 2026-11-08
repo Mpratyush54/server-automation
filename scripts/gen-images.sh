@@ -55,6 +55,11 @@ print("k3s|" + d["k3s"])
 }
 
 parse_charts "$WORK/charts.json" | tr -d '\r' > "$WORK/charts.lst"
+if command -v jq >/dev/null 2>&1; then
+  CHART_MIRROR="$(jq -r '.chartMirror' "$WORK/charts.json")"
+else
+  CHART_MIRROR="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["chartMirror"])' "$WORK/charts.json")"
+fi
 K3S="$(awk -F'|' '$1=="k3s"{print $2}' "$WORK/charts.lst")"
 KUBE_VERSION="${K3S%%+*}" # v1.37.2+k3s1 -> v1.37.2
 
@@ -123,12 +128,20 @@ while IFS='|' read -r name repo_url chart version; do
   fi
   # --skip-tests: `helm test` pods never run during install.
   # shellcheck disable=SC2046 # chart_args output is intentionally word-split
-  if ! "$HELM" template "$name" "${src[@]}" --version "$version" \
+  render() {
+    "$HELM" template "$name" "$@" --version "$version" \
       --namespace "$name" --kube-version "$KUBE_VERSION" --skip-tests \
-      $(chart_args "$name") > "$WORK/$name.yaml" 2> "$WORK/$name.err"; then
-    echo "gen-images: helm template $name failed:" >&2
+      $(chart_args "$name") > "$WORK/$name.yaml" 2> "$WORK/$name.err"
+  }
+  if ! render "${src[@]}"; then
+    # Upstream unavailable (e.g. a GitHub Releases outage): use the GHCR mirror.
+    echo "gen-images: $name: upstream failed, trying $CHART_MIRROR" >&2
     cat "$WORK/$name.err" >&2
-    exit 1
+    if ! render "$CHART_MIRROR/${chart##*/}"; then
+      echo "gen-images: helm template $name failed (upstream and mirror):" >&2
+      cat "$WORK/$name.err" >&2
+      exit 1
+    fi
   fi
   n_before=$(wc -l < "$WORK/images.raw")
   extract_images < "$WORK/$name.yaml" >> "$WORK/images.raw"

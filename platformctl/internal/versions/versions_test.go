@@ -38,3 +38,18 @@ func TestReposExcludeOCI(t *testing.T) {
 		t.Fatalf("missing expected repos: %v", r)
 	}
 }
+
+func TestEveryChartHasAMirrorReference(t *testing.T) {
+	for _, c := range All() {
+		want := ChartMirror + "/" + c.BaseName() + " --version " + c.Version
+		if got := c.MirrorPullArgs(); got != want || strings.Contains(c.BaseName(), "/") {
+			t.Errorf("%s: mirror ref %q, want %q", c.Name, got, want)
+		}
+	}
+	if Get("postgresql").BaseName() != "postgresql" || Get("argo-cd").BaseName() != "argo-cd" {
+		t.Fatal("BaseName must strip OCI registry paths")
+	}
+	if MirrorTag("v1.37.2+k3s1") != "v1.37.2-k3s1" {
+		t.Fatal("MirrorTag must replace '+' (not valid in OCI tags)")
+	}
+}
