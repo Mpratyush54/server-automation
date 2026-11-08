@@ -156,8 +156,14 @@ func TestInstallPlatformMigratesBeforeRollingAPI(t *testing.T) {
 	if err := InstallPlatform(cfg); err != nil {
 		t.Fatal(err)
 	}
-	template, dump, migrate, deploy := -1, -1, -1, -1
+	template, dump, migrate, deploy, creds, rbac := -1, -1, -1, -1, -1, -1
 	for i, c := range calls() {
+		if creds < 0 && strings.Contains(c.Input, "platform-credentials") && strings.Contains(c.Input, "Secret") {
+			creds = i // #20: credentials Secret the migrate Job reads (envFrom)
+		}
+		if rbac < 0 && strings.Contains(c.Input, "platform-namespace-baseline") {
+			rbac = i
+		}
 		joined := strings.Join(c.Args, " ")
 		if strings.Contains(joined, cfg.PostgresPassword) {
 			t.Fatal("Postgres password in tool arguments")
@@ -178,5 +184,8 @@ func TestInstallPlatformMigratesBeforeRollingAPI(t *testing.T) {
 	}
 	if !(template < dump && dump < migrate && migrate < deploy) {
 		t.Fatalf("wrong order: template=%d dump=%d migrate=%d deploy=%d", template, dump, migrate, deploy)
+	}
+	if creds < 0 || rbac < 0 || !(creds < migrate && rbac < migrate) {
+		t.Fatalf("credentials Secret (%d) and API RBAC (%d) must be applied before the migrate Job (%d)", creds, rbac, migrate)
 	}
 }

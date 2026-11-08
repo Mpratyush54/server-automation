@@ -728,6 +728,49 @@ spec:
 EOF`
 }
 
+// apiRolloutPatch is a strategic-merge patch carrying the #18 rollout settings
+// of the InstallPlatform manifest (replicas, surge-only strategy, drain grace,
+// preStop, readiness on /api/health/ready, liveness on /api/health). `update`
+// applies it after the new image is rolled, so an existing install converges
+// to the same Deployment as a fresh provision. Never before: an image older
+// than this release has no /api/health/ready and would never become ready.
+func apiRolloutPatch(replicas int) string {
+	probe := func(path string, initial, period int) map[string]any {
+		return map[string]any{
+			"httpGet":             map[string]any{"path": path, "port": 3000},
+			"initialDelaySeconds": initial, "periodSeconds": period,
+			"timeoutSeconds": 3, "failureThreshold": 3,
+		}
+	}
+	patch := map[string]any{"spec": map[string]any{
+		"replicas": replicas,
+		"strategy": map[string]any{"type": "RollingUpdate", "rollingUpdate": map[string]any{"maxUnavailable": 0, "maxSurge": 1}},
+		"template": map[string]any{"spec": map[string]any{
+			"terminationGracePeriodSeconds": 45,
+			"containers": []any{map[string]any{
+				"name":           "api",
+				"lifecycle":      map[string]any{"preStop": map[string]any{"exec": map[string]any{"command": []string{"sleep", "10"}}}},
+				"readinessProbe": probe("/api/health/ready", 5, 5),
+				"livenessProbe":  probe("/api/health", 30, 20),
+			}},
+		}},
+	}}
+	b, _ := json.Marshal(patch)
+	return string(b)
+}
+
+// reconcileAPIRollout applies apiRolloutPatch and the matching PDB to the live
+// platform-api Deployment and waits for the rollout.
+func reconcileAPIRollout(cfg *config.Config) error {
+	replicas := apiReplicas(cfg)
+	return shell.RunBash(`set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+kubectl -n platform patch deployment platform-api --type strategic -p ` + shellQuote(apiRolloutPatch(replicas)) + ` >/dev/null
+` + apiPDBScript(replicas) + `
+kubectl -n platform rollout status deployment/platform-api --timeout=300s
+`)
+}
+
 // deploymentReadyCheck succeeds when every desired replica of the deployment is ready.
 func deploymentReadyCheck(ns, name string) string {
 	return fmt.Sprintf(`k3s kubectl get deployment -n %s %s -o jsonpath='{.status.readyReplicas} {.spec.replicas}' 2>/dev/null | awk '$1 != "" && $1 == $2 { ok = 1 } END { exit !ok }'`, ns, name)
@@ -1352,15 +1395,21 @@ func CheckHealth() error {
 }
 
 // UpdateImages resolves moving GHCR tags before changing the pod template.
+// Order (after PrepareUpdate moved host state into Secrets, #20): migration Job
+// template + database backup, then the digest script runs the migrate Job and
+// only then sets the new images (#17); finally the #18 rollout settings and PDB
+// are reconciled on the new image.
 func UpdateImages(cfg *config.Config) error {
 	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
 	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
-	// Job template + database backup first; the script runs the migrate Job (#17).
 	backup, err := prepareAPIMigrations(cfg)
 	if err != nil {
 		return err
 	}
-	return shell.RunBashEnv("export KUBECONFIG=\"${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}\"\nAPI="+shellQuote(apiImg)+"\nPORTAL="+shellQuote(portalImg)+"\n"+digestUpdateScript, map[string]string{"REGISTRY_USERNAME": "platformctl", "REGISTRY_PASSWORD": cfg.GitHubToken, "MIGRATE_BACKUP": backup})
+	if err := shell.RunBashEnv("export KUBECONFIG=\"${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}\"\nAPI="+shellQuote(apiImg)+"\nPORTAL="+shellQuote(portalImg)+"\n"+digestUpdateScript, map[string]string{"REGISTRY_USERNAME": "platformctl", "REGISTRY_PASSWORD": cfg.GitHubToken, "MIGRATE_BACKUP": backup}); err != nil {
+		return err
+	}
+	return reconcileAPIRollout(cfg)
 }
 
 // InstallAutoUpdate installs a digest-aware updater for only two deployments.
