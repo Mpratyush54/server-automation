@@ -13,7 +13,11 @@ export class RedisManager {
     this.config = {
       host: config.host || process.env.PLATFORM_REDIS_HOST || 'localhost',
       port: config.port || parseInt(process.env.PLATFORM_REDIS_PORT || '6379', 10),
+      // Platform db-credentials return a per-project ACL user confined to keyPrefix.
+      username: config.username || process.env.PLATFORM_REDIS_USERNAME || undefined,
       password: config.password || process.env.PLATFORM_REDIS_PASSWORD || undefined,
+      keyPrefix: config.keyPrefix || process.env.PLATFORM_REDIS_KEY_PREFIX || undefined,
+      db: config.db ?? (process.env.PLATFORM_REDIS_DB ? parseInt(process.env.PLATFORM_REDIS_DB, 10) : undefined),
     };
   }
 
@@ -23,6 +27,11 @@ export class RedisManager {
     // Dispose any client left over from a previous (failed) attempt before creating a new one.
     this.disposeClient();
     const client = new Redis({ ...this.config, lazyConnect: true });
+    // Without a listener ioredis re-emits connection failures as "Unhandled error event".
+    client.on('error', (err: Error) => {
+      if (this.client === client) this.connected = false;
+      console.error('[platform] Redis error:', err.message);
+    });
     this.client = client;
     try {
       await client.connect();

@@ -19,6 +19,10 @@ export class MongoManager {
     // Dispose any connection left over from a previous attempt before creating a new one.
     await this.disposeConnection();
     const pending = mongoose.createConnection(this.uri);
+    pending.on('error', (err: Error) => {
+      if (this.conn === pending) this.connected = false;
+      console.error('[platform] MongoDB error:', err.message);
+    });
     try {
       this.conn = await pending.asPromise();
       this.connected = true;

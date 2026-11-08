@@ -36,6 +36,9 @@ export class PostgresManager {
     // Dispose any pool left over from a previous (failed) attempt before creating a new one.
     await this.disposePool();
     const pool = new Pool(this.config);
+    pool.on('error', (err: Error) => {
+      console.error('[platform] PostgreSQL error:', err.message);
+    });
     this.pool = pool;
     try {
       await pool.query('SELECT 1');

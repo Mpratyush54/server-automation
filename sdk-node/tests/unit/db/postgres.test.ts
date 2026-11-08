@@ -2,7 +2,7 @@ jest.mock('pg', () => {
   const mockQuery = jest.fn().mockResolvedValue({ rows: [{ result: 1 }] });
   const mockConnect = jest.fn().mockResolvedValue({ release: jest.fn() });
   const mockEnd = jest.fn().mockResolvedValue(undefined);
-  const MockPool = jest.fn(() => ({ query: mockQuery, connect: mockConnect, end: mockEnd }));
+  const MockPool = jest.fn(() => ({ query: mockQuery, connect: mockConnect, end: mockEnd, on: jest.fn() }));
   return { Pool: MockPool };
 });
 
@@ -46,6 +46,7 @@ describe('PostgresManager', () => {
         query: jest.fn().mockRejectedValue(new Error('Connection refused')),
         connect: jest.fn(),
         end: jest.fn(),
+        on: jest.fn(),
       });
 
       const manager = new PostgresManager({ password: 'test' });
@@ -72,6 +73,7 @@ describe('PostgresManager', () => {
         query: jest.fn().mockRejectedValue(new Error('Connection refused')),
         connect: jest.fn(),
         end: failedEnd,
+        on: jest.fn(),
       });
       const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       const manager = new PostgresManager({ password: 'test' });
@@ -123,5 +125,17 @@ describe('PostgresManager', () => {
     it('should handle disconnect when not connected', async () => {
       await expect(pgManager.disconnect()).resolves.not.toThrow();
     });
+  });
+});
+
+describe('PostgresManager error handling', () => {
+  it('attaches an error listener to the pool (idle-client errors must not crash the app)', async () => {
+    const { Pool } = require('pg');
+    const on = jest.fn();
+    Pool.mockReturnValueOnce({ query: jest.fn().mockResolvedValue({ rows: [] }), connect: jest.fn(), end: jest.fn(), on });
+    const m = new PostgresManager({ host: 'h', user: 'u', password: 'p', database: 'd' });
+    await m.connect();
+    expect(on).toHaveBeenCalledWith('error', expect.any(Function));
+    await m.disconnect();
   });
 });
