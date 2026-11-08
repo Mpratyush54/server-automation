@@ -10,8 +10,11 @@ import { getDb } from './config/database';
 import { connectMongo } from './config/mongoose';
 import { User } from './entities/User';
 import apiRouter from './routes/api';
-import { startPreviewDecayScheduler } from './lib/preview-decay';
+import { startBackgroundWork, stopBackgroundWork } from './lib/background';
 import { configuredAdminEmail, ensureAdminUser } from './lib/seed-admin';
+import { createLimiterStore } from './lib/rate-limit-store';
+import { closeRedis } from './lib/redis';
+import { drainingConnectionClose, installGracefulShutdown } from './lib/shutdown';
 
 /** Paths called cross-origin by browser SDKs (bearer SDK token, no cookies). */
 const SDK_PUBLIC_PATH = /^\/api\/(sdk\/|logs\/ingest$)/;
@@ -63,6 +66,7 @@ export function buildApp(): express.Express {
   // Middleware
   // Portal and API share a site behind the ingress; 'same-site' keeps sibling subdomains working.
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'same-site' } }));
+  app.use(drainingConnectionClose);
   app.use(cors(corsDelegate));
 
   // Brute-force protection on credential endpoints
@@ -72,6 +76,7 @@ export function buildApp(): express.Express {
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     message: { error: 'Too many attempts. Please try again later.' },
+    store: createLimiterStore('credential'), // shared across replicas (Redis)
   });
   app.use(
     [
@@ -90,6 +95,7 @@ export function buildApp(): express.Express {
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     message: { error: 'Too many credential requests. Please try again later.' },
+    store: createLimiterStore('issue'),
   });
   app.post(['/api/projects/:projectId/tokens', '/api/agent-tokens'], issueLimiter);
 
@@ -121,6 +127,18 @@ async function bootstrap() {
     // Initialize PostgreSQL
     const ds = await getDb();
     console.log(`[server] PostgreSQL connected to database: ${ds.options.database}`);
+    // The schema is owned by versioned migrations (node dist/migrate.js, run as
+    // a Job before rollout). Never serve against a schema this build does not
+    // know: the rollout then fails readiness and the old ReplicaSet keeps serving.
+    if (await ds.showMigrations()) {
+      if (process.env.DB_MIGRATE_ON_BOOT === 'true') {
+        const { runPendingMigrations } = await import('./lib/migrations');
+        const applied = await runPendingMigrations(ds);
+        console.log(`[server] Applied migrations: ${applied.join(', ')}`);
+      } else {
+        throw new Error('database has pending migrations; run `node dist/migrate.js` (or `npm run migration:run`) first');
+      }
+    }
     try {
       const { recoverRedisAuth } = await import('./lib/credential-recover');
       const redisHeal = await recoverRedisAuth();
@@ -151,8 +169,14 @@ async function bootstrap() {
       console.warn(`[server] MongoDB connection failed (non-blocking): ${mongoErr.message}`);
     }
 
-    // Start preview environment decay scheduler (72h TTL)
-    startPreviewDecayScheduler();
+    // Operation definitions (deploy, secret rotation, DB provisioning) must be
+    // registered before the leader's operation-resume job runs (issue #23).
+    await import('./lib/operation-types');
+
+    // Leader-elected periodic jobs on the platform-api-leader Lease (#19):
+    // preview decay, deploy recovery, token cleanup, and the operation worker
+    // (resume, outbox, cleanup; #23).
+    startBackgroundWork();
 
     try {
       const { hydrateIntegrationsEnv } = await import('./lib/integrations');
@@ -162,11 +186,34 @@ async function bootstrap() {
       console.warn(`[server] Integration hydrate skipped: ${integErr.message}`);
     }
 
+    // OIDC signing key from the platform-oidc-signing-key Secret (same key on
+    // every replica and across restarts). Never throws.
+    const { initOidcSigningKey } = await import('./lib/oidc-keys');
+    const oidcKey = await initOidcSigningKey();
+    console.log(`[server] OIDC signing key ready (kid ${oidcKey.kid}, source ${oidcKey.source})`);
+
     const app = buildApp();
     const port = process.env.PORT || 3000;
+    // Parse openapi.yaml once now, not on the first GET /api/openapi.json.
+    try {
+      const { loadOpenApiJson } = await import('./lib/openapi-spec');
+      loadOpenApiJson();
+    } catch (specErr: any) {
+      console.warn(`[server] OpenAPI spec not preloaded: ${specErr.message}`);
+    }
 
-    app.listen(port, () => {
+    const server = app.listen(port, () => {
       console.log(`[server] Platform Express backend running on http://localhost:${port}`);
+    });
+    installGracefulShutdown(server, {
+      // Release the leader Lease first and wait for it: if the process exits
+      // before the release lands, peers wait for the lease to expire (#19).
+      preDrain: [{ name: 'released leadership', run: stopBackgroundWork }],
+      closers: [
+        { name: 'redis', close: closeRedis },
+        { name: 'postgres', close: () => (ds.isInitialized ? ds.destroy() : undefined) },
+        { name: 'mongodb', close: () => import('mongoose').then((m) => m.default.disconnect()) },
+      ],
     });
   } catch (err: any) {
     console.error('[server] Bootstrapping failed:', err.message);

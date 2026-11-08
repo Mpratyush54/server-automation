@@ -2,6 +2,7 @@ import { Client } from 'pg';
 import Redis from 'ioredis';
 import { reconnectPostgres } from '../config/database';
 import { deleteSecret, patchSecretData, readSecretData, upsertSecretData } from './k8s';
+import { PLATFORM_CREDENTIALS_SECRET } from './config-store';
 
 export const ROTATE_PENDING_NS = 'platform';
 export const ROTATE_PENDING_SECRET = 'platform-rotate-pending';
@@ -86,12 +87,16 @@ export async function clearRotatePending(): Promise<void> {
 
 async function collectPostgresCandidates(): Promise<Array<{ password: string; source: string }>> {
   const pending = await readSecret(ROTATE_PENDING_NS, ROTATE_PENDING_SECRET);
+  const credSecret = await readSecret(ROTATE_PENDING_NS, PLATFORM_CREDENTIALS_SECRET);
   const envSecret = await readSecret('platform', 'platform-env');
   const pgSecret = await readSecret('databases', 'postgresql');
   const labeled = [
     { password: process.env.POSTGRES_PASSWORD || '', source: 'env' },
     { password: pending.POSTGRES_PASSWORD_NEW || '', source: 'pending-new' },
     { password: pending.POSTGRES_PASSWORD_OLD || '', source: 'pending-old' },
+    { password: credSecret.POSTGRES_PASSWORD || '', source: 'platform-credentials' },
+    { password: credSecret.POSTGRES_PASSWORD_NEXT || '', source: 'platform-credentials-next' },
+    { password: credSecret.POSTGRES_PASSWORD_PREV || '', source: 'platform-credentials-prev' },
     { password: envSecret.POSTGRES_PASSWORD || '', source: 'platform-env' },
     { password: pgSecret['postgres-password'] || '', source: 'postgresql-secret' },
     { password: pgSecret.password || '', source: 'postgresql-secret-password' },
@@ -108,12 +113,16 @@ async function collectPostgresCandidates(): Promise<Array<{ password: string; so
 
 async function collectRedisCandidates(): Promise<Array<{ password: string; source: string }>> {
   const pending = await readSecret(ROTATE_PENDING_NS, ROTATE_PENDING_SECRET);
+  const credSecret = await readSecret(ROTATE_PENDING_NS, PLATFORM_CREDENTIALS_SECRET);
   const envSecret = await readSecret('platform', 'platform-env');
   const redisSecret = await readSecret('databases', 'redis');
   const labeled = [
     { password: process.env.REDIS_PASSWORD || '', source: 'env' },
     { password: pending.REDIS_PASSWORD_NEW || '', source: 'pending-new' },
     { password: pending.REDIS_PASSWORD_OLD || '', source: 'pending-old' },
+    { password: credSecret.REDIS_PASSWORD || '', source: 'platform-credentials' },
+    { password: credSecret.REDIS_PASSWORD_NEXT || '', source: 'platform-credentials-next' },
+    { password: credSecret.REDIS_PASSWORD_PREV || '', source: 'platform-credentials-prev' },
     { password: envSecret.REDIS_PASSWORD || '', source: 'platform-env' },
     { password: redisSecret['redis-password'] || '', source: 'redis-secret' },
   ];
@@ -130,9 +139,9 @@ async function collectRedisCandidates(): Promise<Array<{ password: string; sourc
 async function syncPostgresSecrets(password: string): Promise<void> {
   process.env.POSTGRES_PASSWORD = password;
   try {
-    await patchSecretData('platform', 'platform-env', { POSTGRES_PASSWORD: password });
+    await upsertSecretData(ROTATE_PENDING_NS, PLATFORM_CREDENTIALS_SECRET, { POSTGRES_PASSWORD: password });
   } catch (err: any) {
-    console.warn(`[credential-recover] platform-env postgres sync failed: ${err?.message || err}`);
+    console.warn(`[credential-recover] platform-credentials postgres sync failed: ${err?.message || err}`);
   }
   try {
     await patchSecretData('databases', 'postgresql', {
@@ -147,9 +156,9 @@ async function syncPostgresSecrets(password: string): Promise<void> {
 async function syncRedisSecrets(password: string): Promise<void> {
   process.env.REDIS_PASSWORD = password;
   try {
-    await patchSecretData('platform', 'platform-env', { REDIS_PASSWORD: password });
+    await upsertSecretData(ROTATE_PENDING_NS, PLATFORM_CREDENTIALS_SECRET, { REDIS_PASSWORD: password });
   } catch (err: any) {
-    console.warn(`[credential-recover] platform-env redis sync failed: ${err?.message || err}`);
+    console.warn(`[credential-recover] platform-credentials redis sync failed: ${err?.message || err}`);
   }
   try {
     await patchSecretData('databases', 'redis', { 'redis-password': password });
@@ -160,7 +169,7 @@ async function syncRedisSecrets(password: string): Promise<void> {
 
 /**
  * If the API cannot authenticate to Postgres, try every password copy we
- * still have (env, rotate-pending, platform-env, Bitnami postgresql secret),
+ * still have (env, rotate-pending, platform-credentials, platform-env, Bitnami postgresql secret),
  * reconnect TypeORM, and write the working password back to the live secrets.
  * Does not ALTER USER — the working password is the source of truth.
  */

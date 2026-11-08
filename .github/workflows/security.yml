@@ -69,14 +69,8 @@ jobs:
             fi
             echo "::group::npm audit ${dir}"
             if ! (cd "$dir" && npm audit --omit=dev --audit-level=high); then
-              # Known, tracked exception: Angular 19 advisories are only fixed in
-              # Angular 21 (issue #32). Remove this entry when #32 lands.
-              if [ "$dir" = "platform/portal" ]; then
-                echo "::warning file=${dir}/package-lock.json::Known Angular 19 advisories, fixed by the Angular 21 upgrade tracked in issue #32"
-              else
-                echo "::error file=${dir}/package-lock.json::High/critical production advisories in ${dir}"
-                failed=1
-              fi
+              echo "::error file=${dir}/package-lock.json::High/critical production advisories in ${dir}"
+              failed=1
             fi
             echo "::endgroup::"
           done < <(git ls-files '*package.json' | grep -v '/node_modules/')

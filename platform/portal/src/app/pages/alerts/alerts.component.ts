@@ -1,5 +1,5 @@
 import { Component, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
@@ -7,7 +7,7 @@ import { ApiService } from '../../services/api.service';
 @Component({
   selector: 'app-alerts',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [FormsModule],
   templateUrl: './alerts.component.html',
   styleUrl: './alerts.component.css'
 })

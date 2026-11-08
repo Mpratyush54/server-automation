@@ -12,12 +12,14 @@
   <table>
     <thead><tr><th>Project</th><th>Metric</th><th>Condition</th><th>Threshold</th><th>Enabled</th><th></th></tr></thead>
     <tbody>
-      <tr *ngFor="let a of alerts">
+      @for (a of alerts; track a) {
+<tr>
         <td>{{ a.projectId }}</td><td>{{ a.config?.metric }}</td>
         <td>{{ a.config?.operator }}</td><td>{{ a.config?.threshold }}</td>
         <td>{{ a.isEnabled ? 'Yes' : 'No' }}</td>
         <td><button class="btn btn-danger btn-sm" (click)="deleteAlert(a.id)">Delete</button></td>
       </tr>
+}
     </tbody>
   </table>
 </div>

@@ -17,6 +17,8 @@ import {
 } from '../lib/integrations';
 import { notifyUser } from '../lib/notify';
 import { rotatePlatformSecrets } from '../lib/secret-rotate';
+import { LockBusyError, lockBusyBody } from '../lib/locks';
+import { idempotency } from '../middleware/idempotency';
 
 function apiPublicBase(req: Request): string {
   const fromEnv = (process.env.API_PUBLIC_URL || process.env.API_URL || '').replace(/\/+$/, '');
@@ -145,7 +147,7 @@ router.post('/projects/:projectId/databases/backup', expressAuthenticate, expres
       projectId: project.id,
       dbName,
       environment: environment || 'production',
-      providerType: (activeProvider?.providerType as any) || 'local',
+      providerType: (activeProvider?.providerType as any) || (await import('../lib/storage-service')).defaultBackupProviderType(),
       providerId: activeProvider?.id || null,
       status: BackupStatus.IN_PROGRESS,
     });
@@ -163,10 +165,10 @@ router.post('/projects/:projectId/databases/backup', expressAuthenticate, expres
         const checksum = await computeFileChecksum(tmpFile);
         let fileId = `backups/${project.id}/${savedBackup.id}.dump`;
 
-        const { createAdapter } = await import('../lib/storage-service');
+        const { createAdapter, createDefaultBackupAdapter } = await import('../lib/storage-service');
         const adapter = activeProvider
           ? createAdapter(activeProvider.providerType, activeProvider.credentials || {}, activeProvider.bucketName || undefined, activeProvider.endpointUrl || undefined)
-          : createAdapter('local', {});
+          : createDefaultBackupAdapter();
         const uploadResult = await adapter.upload(tmpFile, fileId);
         fileId = uploadResult.fileId;
 
@@ -241,7 +243,7 @@ router.post('/projects/:projectId/databases/backups/:backupId/restore', expressA
       try {
         const restoreDs = await getDb();
         if (!backup.fileId) throw new Error('Backup has no stored dump');
-        const { createAdapter } = await import('../lib/storage-service');
+        const { createAdapter, createDefaultBackupAdapter, defaultBackupProviderType } = await import('../lib/storage-service');
         let adapter;
         if (backup.providerId) {
           const provider = await restoreDs.getRepository(StorageProvider).findOne({ where: { id: backup.providerId } });
@@ -249,6 +251,9 @@ router.post('/projects/:projectId/databases/backups/:backupId/restore', expressA
           adapter = createAdapter(provider.providerType, provider.credentials || {}, provider.bucketName || undefined, provider.endpointUrl || undefined);
         } else if (backup.providerType === 'local') {
           adapter = createAdapter('local', {});
+        } else if (backup.providerType === defaultBackupProviderType()) {
+          // No provider row: the built-in default target (bundled MinIO / BACKUP_S3_*).
+          adapter = createDefaultBackupAdapter();
         } else {
           throw new Error('Backup storage provider identity is missing; administrator migration required');
         }
@@ -357,7 +362,7 @@ router.put('/settings/integrations', expressAuthenticate, expressRequireRole([Us
   }
 });
 
-router.post('/settings/rotate-secrets', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+router.post('/settings/rotate-secrets', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), idempotency('POST /settings/rotate-secrets'), async (req: Request, res: Response) => {
   try {
     const confirm = String(req.body?.confirm || '');
     if (confirm !== 'ROTATE') {
@@ -368,6 +373,8 @@ router.post('/settings/rotate-secrets', expressAuthenticate, expressRequireRole(
     });
     return res.json(result);
   } catch (err: any) {
+    // Another rotation holds lock:platform:secret-rotation.
+    if (err instanceof LockBusyError) return res.status(409).json(lockBusyBody(err));
     return res.status(400).json({ error: err.message });
   }
 });

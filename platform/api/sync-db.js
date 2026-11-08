@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { AppDataSource } = require('./dist/config/database');
 const { User } = require('./dist/entities/User');
+const { runPendingMigrations } = require('./dist/lib/migrations');
 
 const DEMO_EMAILS = [
   'admin@pratyushes.dev',
@@ -14,9 +15,10 @@ const DEMO_EMAILS = [
 
 async function main() {
   try {
-    console.log('Initializing database and synchronizing schema...');
+    console.log('Initializing database and applying migrations...');
     await AppDataSource.initialize();
-    console.log('Database connected and schema synchronized successfully!');
+    const applied = await runPendingMigrations(AppDataSource);
+    console.log(`Database connected; applied ${applied.length} migration(s).`);
 
     const userRepo = AppDataSource.getRepository(User);
     const email = (process.env.ADMIN_EMAIL || 'admin@pratyushes.dev').trim().toLowerCase();

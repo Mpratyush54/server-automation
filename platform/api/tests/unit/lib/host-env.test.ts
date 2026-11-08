@@ -17,8 +17,8 @@ describe('host-env persist', () => {
     delete process.env.PLATFORM_CRED_DIR;
   });
 
-  it('writes credential files and upserts .env without dropping other keys', () => {
-    const result = persistPlatformEnv({
+  it('writes credential files and upserts .env without dropping other keys (FileStore outside the cluster)', async () => {
+    const result = await persistPlatformEnv({
       POSTGRES_PASSWORD: 'new-pg',
       POSTGRES_PASSWORD_PREV: 'old',
       POSTGRES_PASSWORD_NEXT: 'new-pg',

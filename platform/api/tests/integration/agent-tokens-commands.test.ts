@@ -149,6 +149,11 @@ import express from 'express';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import apiRouter from '../../src/routes/api';
+import { loadOpenApiJson } from '../../src/lib/openapi-spec';
+
+// Same as server.ts at boot: build the spec once while the module loads (like the app
+// imports above), so the request test measures the cached response, not the YAML parse.
+loadOpenApiJson();
 
 const JWT_SECRET = 'plat-super-secret-key';
 const sign = (user: Record<string, unknown>) => jwt.sign(user, JWT_SECRET, { expiresIn: '2h' });

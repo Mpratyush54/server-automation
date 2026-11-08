@@ -5,26 +5,34 @@
   </div>
   <div class="flex items-center gap-3 text-xs text-[#a1a1aa]">
     <span class="flex items-center gap-1.5"><div class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div> Live Sync</span>
-    <span *ngIf="platformVersion" class="flex items-center gap-1.5 border-l border-[#333] pl-3">
-      <a *ngIf="releasesUrl" [href]="releasesUrl" target="_blank" class="hover:text-white transition-colors">v{{ platformVersion }}</a>
-      <span *ngIf="!releasesUrl">v{{ platformVersion }}</span>
-    </span>
+    @if (platformVersion) {
+      <span class="flex items-center gap-1.5 border-l border-[#333] pl-3">
+        @if (releasesUrl) {
+          <a [href]="releasesUrl" target="_blank" class="hover:text-white transition-colors">v{{ platformVersion }}</a>
+        }
+        @if (!releasesUrl) {
+          <span>v{{ platformVersion }}</span>
+        }
+      </span>
+    }
   </div>
 </div>
 
-<div *ngIf="updateAvailable && latestRelease" class="card mb-6 p-4" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.35);">
-  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
-    <div>
-      <div style="font-weight:700;color:#34d399;">Platform update available from GitHub</div>
-      <div style="font-size:0.85rem;color:#a1a1aa;margin-top:4px;">
-        Running <code>v{{ platformVersion }}</code> → latest <code>{{ latestRelease.tag }}</code>
+@if (updateAvailable && latestRelease) {
+  <div class="card mb-6 p-4" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.35);">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div style="font-weight:700;color:#34d399;">Platform update available from GitHub</div>
+        <div style="font-size:0.85rem;color:#a1a1aa;margin-top:4px;">
+          Running <code>v{{ platformVersion }}</code> → latest <code>{{ latestRelease.tag }}</code>
+        </div>
       </div>
+      <a [href]="releasesUrl || 'https://github.com/Mpratyush54/SERVER-automation/releases'" target="_blank" class="btn btn-sm btn-primary">
+        View release &amp; update
+      </a>
     </div>
-    <a [href]="releasesUrl || 'https://github.com/Mpratyush54/SERVER-automation/releases'" target="_blank" class="btn btn-sm btn-primary">
-      View release &amp; update
-    </a>
   </div>
-</div>
+}
 
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
   <div class="card p-5 relative overflow-hidden group">
@@ -35,7 +43,7 @@
       <div class="h-full bg-blue-500 rounded-full" [style.width.%]="stats.podsProgress"></div>
     </div>
   </div>
-  
+
   <div class="card p-5 relative overflow-hidden group">
     <div class="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl group-hover:bg-purple-500/20 transition-all duration-500"></div>
     <div class="text-sm font-medium text-[#a1a1aa] mb-1">Active Projects</div>
@@ -63,31 +71,35 @@
       <a routerLink="/projects" class="text-sm text-blue-500 hover:text-blue-400 transition-colors">View All &rarr;</a>
     </div>
     <div class="divide-y divide-[#222]">
-      <div *ngFor="let p of projectsList" class="p-5 hover:bg-[#111] transition-colors cursor-pointer group flex justify-between items-center" [routerLink]="['/projects', p.id]">
-        <div class="flex items-center gap-4">
-          <div class="w-10 h-10 rounded-md bg-[#222] border border-[#333] flex items-center justify-center text-lg shadow-sm group-hover:border-blue-500/50 transition-colors">
-            {{ p.name.charAt(0).toUpperCase() }}
-          </div>
-          <div>
-            <h4 class="font-medium text-white mb-0.5 group-hover:text-blue-400 transition-colors">{{ p.name }}</h4>
-            <div class="text-xs text-[#a1a1aa] flex items-center gap-2">
-              <span class="font-mono bg-[#222] px-1 rounded text-[#ededed]">{{ p.stack }}</span>
-              <span>•</span>
-              <span>Updated {{ p.createdAt | date:'shortDate' }}</span>
+      @for (p of projectsList; track p) {
+        <div class="p-5 hover:bg-[#111] transition-colors cursor-pointer group flex justify-between items-center" [routerLink]="['/projects', p.id]">
+          <div class="flex items-center gap-4">
+            <div class="w-10 h-10 rounded-md bg-[#222] border border-[#333] flex items-center justify-center text-lg shadow-sm group-hover:border-blue-500/50 transition-colors">
+              {{ p.name.charAt(0).toUpperCase() }}
+            </div>
+            <div>
+              <h4 class="font-medium text-white mb-0.5 group-hover:text-blue-400 transition-colors">{{ p.name }}</h4>
+              <div class="text-xs text-[#a1a1aa] flex items-center gap-2">
+                <span class="font-mono bg-[#222] px-1 rounded text-[#ededed]">{{ p.stack }}</span>
+                <span>•</span>
+                <span>Updated {{ p.createdAt | date:'shortDate' }}</span>
+              </div>
             </div>
           </div>
+          <span class="badge badge-active">Active</span>
         </div>
-        <span class="badge badge-active">Active</span>
-      </div>
-      
-      <div *ngIf="projectsList.length === 0" class="p-12 text-center">
-        <div class="w-12 h-12 rounded-full bg-[#111] border border-[#333] flex items-center justify-center mx-auto mb-4 text-[#666]">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+      }
+
+      @if (projectsList.length === 0) {
+        <div class="p-12 text-center">
+          <div class="w-12 h-12 rounded-full bg-[#111] border border-[#333] flex items-center justify-center mx-auto mb-4 text-[#666]">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+          </div>
+          <h4 class="font-medium text-white mb-2">No Projects</h4>
+          <p class="text-sm text-[#a1a1aa] mb-4">Get started by creating a new project.</p>
+          <button class="btn btn-primary btn-sm">Create Project</button>
         </div>
-        <h4 class="font-medium text-white mb-2">No Projects</h4>
-        <p class="text-sm text-[#a1a1aa] mb-4">Get started by creating a new project.</p>
-        <button class="btn btn-primary btn-sm">Create Project</button>
-      </div>
+      }
     </div>
   </div>
 
@@ -106,28 +118,32 @@
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let d of recentDeployments" class="hover:bg-[#111] transition-colors border-b border-[#222] last:border-0">
-          <td class="py-3 px-4">
-            <div class="font-medium text-sm text-white">{{ d.projectName }}</div>
-          </td>
-          <td class="py-3 px-4">
-            <code class="text-xs bg-[#222] border border-[#333] px-1.5 py-0.5 rounded text-[#ededed] font-mono">{{ d.version }}</code>
-          </td>
-          <td class="py-3 px-4">
-            <span class="badge" 
-                  [class.badge-active]="d.status === 'active' || d.status === 'success'" 
-                  [class.badge-pending]="d.status === 'pending' || d.status === 'building'" 
-                  [class.badge-failed]="d.status === 'failed'">
-              {{ d.status }}
-            </span>
-          </td>
-          <td class="py-3 px-4 text-right text-xs text-[#a1a1aa]">
-            {{ d.createdAt | date:'shortTime' }}
-          </td>
-        </tr>
-        <tr *ngIf="recentDeployments.length === 0">
-          <td colspan="4" class="py-12 text-center text-sm text-[#a1a1aa]">No recent deployments.</td>
-        </tr>
+        @for (d of recentDeployments; track d) {
+          <tr class="hover:bg-[#111] transition-colors border-b border-[#222] last:border-0">
+            <td class="py-3 px-4">
+              <div class="font-medium text-sm text-white">{{ d.projectName }}</div>
+            </td>
+            <td class="py-3 px-4">
+              <code class="text-xs bg-[#222] border border-[#333] px-1.5 py-0.5 rounded text-[#ededed] font-mono">{{ d.version }}</code>
+            </td>
+            <td class="py-3 px-4">
+              <span class="badge"
+                [class.badge-active]="d.status === 'active' || d.status === 'success'"
+                [class.badge-pending]="d.status === 'pending' || d.status === 'building'"
+                [class.badge-failed]="d.status === 'failed'">
+                {{ d.status }}
+              </span>
+            </td>
+            <td class="py-3 px-4 text-right text-xs text-[#a1a1aa]">
+              {{ d.createdAt | date:'shortTime' }}
+            </td>
+          </tr>
+        }
+        @if (recentDeployments.length === 0) {
+          <tr>
+            <td colspan="4" class="py-12 text-center text-sm text-[#a1a1aa]">No recent deployments.</td>
+          </tr>
+        }
       </tbody>
     </table>
   </div>
@@ -141,17 +157,17 @@
     </h3>
     <div class="flex gap-2 items-center">
       <button class="px-2 py-1 text-xs border rounded"
-              [class.bg-[#222]]="telemetryWindow === '1h'"
-              [class.border-[#333]]="true"
-              [class.text-[#ededed]]="telemetryWindow === '1h'"
-              [class.text-[#a1a1aa]]="telemetryWindow !== '1h'"
-              (click)="setTelemetryWindow('1h')">1h</button>
+        [class.bg-[#222]]="telemetryWindow === '1h'"
+        [class.border-[#333]]="true"
+        [class.text-[#ededed]]="telemetryWindow === '1h'"
+        [class.text-[#a1a1aa]]="telemetryWindow !== '1h'"
+      (click)="setTelemetryWindow('1h')">1h</button>
       <button class="px-2 py-1 text-xs border rounded"
-              [class.bg-[#222]]="telemetryWindow === '24h'"
-              [class.border-[#333]]="true"
-              [class.text-[#ededed]]="telemetryWindow === '24h'"
-              [class.text-[#a1a1aa]]="telemetryWindow !== '24h'"
-              (click)="setTelemetryWindow('24h')">24h</button>
+        [class.bg-[#222]]="telemetryWindow === '24h'"
+        [class.border-[#333]]="true"
+        [class.text-[#ededed]]="telemetryWindow === '24h'"
+        [class.text-[#a1a1aa]]="telemetryWindow !== '24h'"
+      (click)="setTelemetryWindow('24h')">24h</button>
       <a [href]="grafanaFullUrl" target="_blank" class="px-2 py-1 text-xs text-blue-400 hover:text-blue-300">Open Grafana →</a>
     </div>
   </div>
@@ -175,17 +191,25 @@
   <div class="relative w-full h-[280px] bg-[#000] flex items-center justify-center">
     <div class="absolute inset-0 bg-[linear-gradient(to_right,#333_1px,transparent_1px),linear-gradient(to_bottom,#333_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-20"></div>
 
-    <div *ngIf="telemetryLoading" class="z-10 text-sm text-[#a1a1aa]">Loading telemetry…</div>
-    <div *ngIf="!telemetryLoading && telemetryError" class="z-10 text-sm text-red-400">{{ telemetryError }}</div>
-    <div *ngIf="!telemetryLoading && !telemetryError && telemetry.heartbeats === 0" class="z-10 text-center px-6">
-      <div class="text-white font-medium mb-2">No SDK heartbeats yet</div>
-      <p class="text-sm text-[#a1a1aa] max-w-md">
-        Start a service with the Platform SDK (or open a project → Metrics). Cluster Grafana charts need a separate Grafana login.
-      </p>
-    </div>
+    @if (telemetryLoading) {
+      <div class="z-10 text-sm text-[#a1a1aa]">Loading telemetry…</div>
+    }
+    @if (!telemetryLoading && telemetryError) {
+      <div class="z-10 text-sm text-red-400">{{ telemetryError }}</div>
+    }
+    @if (!telemetryLoading && !telemetryError && telemetry.heartbeats === 0) {
+      <div class="z-10 text-center px-6">
+        <div class="text-white font-medium mb-2">No SDK heartbeats yet</div>
+        <p class="text-sm text-[#a1a1aa] max-w-md">
+          Start a service with the Platform SDK (or open a project → Metrics). Cluster Grafana charts need a separate Grafana login.
+        </p>
+      </div>
+    }
 
-    <svg *ngIf="!telemetryLoading && telemetry.sparkPath" viewBox="0 0 600 120" class="z-10 relative w-full h-full px-4 py-6" preserveAspectRatio="none">
-      <path [attr.d]="telemetry.sparkPath" fill="none" stroke="#0070F3" stroke-width="2" vector-effect="non-scaling-stroke"/>
-    </svg>
+    @if (!telemetryLoading && telemetry.sparkPath) {
+      <svg viewBox="0 0 600 120" class="z-10 relative w-full h-full px-4 py-6" preserveAspectRatio="none">
+        <path [attr.d]="telemetry.sparkPath" fill="none" stroke="#0070F3" stroke-width="2" vector-effect="non-scaling-stroke"/>
+      </svg>
+    }
   </div>
 </div>

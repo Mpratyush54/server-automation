@@ -1,4 +1,4 @@
-import { CommonModule, DOCUMENT } from '@angular/common';
+
 import { HttpClient } from '@angular/common/http';
 import {
   ChangeDetectorRef,
@@ -10,6 +10,7 @@ import {
   Output,
   ViewChild,
   inject,
+  DOCUMENT
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -26,7 +27,7 @@ import {
 @Component({
   selector: 'app-docs-search',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [FormsModule],
   templateUrl: './docs-search.component.html',
   styleUrl: './docs-search.component.css',
 })

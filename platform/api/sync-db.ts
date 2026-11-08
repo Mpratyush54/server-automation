@@ -2,13 +2,15 @@ import 'dotenv/config';
 import 'reflect-metadata';
 import { getDb } from './src/config/database';
 import { User } from './src/entities/User';
+import { runPendingMigrations } from './src/lib/migrations';
 import { configuredAdminEmail, ensureAdminUser } from './src/lib/seed-admin';
 
 async function main() {
   try {
-    console.log('Initializing database and synchronizing schema...');
+    console.log('Initializing database and applying migrations...');
     const ds = await getDb();
-    console.log('Database connected and schema synchronized successfully!');
+    const applied = await runPendingMigrations(ds);
+    console.log(`Database connected; applied ${applied.length} migration(s).`);
 
     const userRepo = ds.getRepository(User);
     const seeded = await ensureAdminUser(userRepo);

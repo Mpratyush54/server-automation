@@ -43,6 +43,9 @@ release:
   github:
     owner: Mpratyush54
     name: SERVER-automation
+  # Tags with a pre-release suffix (v1.3.0-rc.1) are published as GitHub
+  # pre-releases and never become "Latest" (install.sh / update targets).
+  prerelease: auto
   extra_files:
     - glob: ./install.sh
   header: |

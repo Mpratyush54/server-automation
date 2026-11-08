@@ -187,5 +187,22 @@ describe('ApiService', () => {
       expect(req.request.body).toEqual({ confirm: 'ROTATE' });
       req.flush({ values: {}, results: [] });
     });
+
+    it('should send an Idempotency-Key with rotate when given', () => {
+      service.rotateSecrets('ROTATE', 'key-1').subscribe();
+      const req = httpMock.expectOne('/api/settings/rotate-secrets');
+      expect(req.request.headers.get('Idempotency-Key')).toBe('key-1');
+      req.flush({ values: {}, results: [] });
+    });
+
+    it('should get an operation and list operations', () => {
+      service.getOperation('op-1').subscribe();
+      httpMock.expectOne('/api/operations/op-1').flush({ id: 'op-1' });
+      service.listOperations({ type: 'platform.secret-rotation', limit: 1 }).subscribe();
+      const req = httpMock.expectOne((r) => r.url === '/api/operations');
+      expect(req.request.params.get('type')).toBe('platform.secret-rotation');
+      expect(req.request.params.get('limit')).toBe('1');
+      req.flush([]);
+    });
   });
 });

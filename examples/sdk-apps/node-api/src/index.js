@@ -4,15 +4,16 @@
  * On init: GitOps register + ensure/init project DBs via SDK.
  *
  * Env:
- *   PLATFORM_URL          default https://api.148.113.59.3.sslip.io
+ *   PLATFORM_URL          required (API origin, without /api)
  *   PLATFORM_SDK_TOKEN    required (project SDK token)
  *   PROJECT_NAME          default sdk-demo-apps
  *   ENVIRONMENT_NAME      default development
  *   REPOSITORY_URL        GitOps source repo
  *   GIT_PATH              default examples/sdk-apps/k8s
- *   PROJECT_DOMAIN        default 148.113.59.3.sslip.io
+ *   PROJECT_DOMAIN        required (project base domain)
  *   PORT                  default 4100
  */
+const { platformUrl: PLATFORM_URL, projectDomain: PROJECT_DOMAIN } = require('./config.cjs').readConfig();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -21,12 +22,11 @@ let mod;
 try {
   mod = require('@mpratyush54/sdk-node');
 } catch {
-  mod = require(path.join(__dirname, '../../../sdk-node/dist/index.js'));
+  mod = require(path.join(__dirname, '../../../../sdk-node/dist/index.js'));
 }
 const platform = mod.default || (mod.PlatformClient ? new mod.PlatformClient() : mod);
 
 const PORT = Number(process.env.PORT || 4100);
-const PLATFORM_URL = (process.env.PLATFORM_URL || 'https://api.148.113.59.3.sslip.io').replace(/\/$/, '');
 const PROJECT_NAME = process.env.PROJECT_NAME || 'sdk-demo-apps';
 const ENVIRONMENT_NAME = process.env.ENVIRONMENT_NAME || 'development';
 const SDK_TOKEN = process.env.PLATFORM_SDK_TOKEN || process.env.SDK_TOKEN || '';
@@ -34,7 +34,6 @@ const REPOSITORY_URL =
   process.env.REPOSITORY_URL ||
   'https://github.com/Mpratyush54/SERVER-automation.git';
 const GIT_PATH = process.env.GIT_PATH || 'examples/sdk-apps/k8s';
-const PROJECT_DOMAIN = process.env.PROJECT_DOMAIN || '148.113.59.3.sslip.io';
 
 async function main() {
   if (!SDK_TOKEN) {

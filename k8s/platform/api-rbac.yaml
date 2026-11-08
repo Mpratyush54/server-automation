@@ -1,3 +1,69 @@
+# Admission guards for the platform API's namespace-baseline rights (#22).
+# ValidatingAdmissionPolicy is GA since Kubernetes 1.30 and runs in the API
+# server: no webhook pod, controller or extra CNI. RBAC cannot filter by
+# namespace label, so these policies confine the API's cluster-scoped
+# namespace/rolebinding verbs to dedicated, labeled project namespaces.
+# The reserved list mirrors reservedNamespaces in platform/api/src/lib/namespace-baseline.ts.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: platform-baseline-bindings
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["rbac.authorization.k8s.io"]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["rolebindings"]
+  matchConditions:
+  - name: platform-api-only
+    expression: "request.userInfo.username == 'system:serviceaccount:platform:platform-api'"
+  validations:
+  - expression: "namespaceObject != null && has(namespaceObject.metadata.labels) && 'platform.io/project' in namespaceObject.metadata.labels && 'platform.io/env' in namespaceObject.metadata.labels && !(namespaceObject.metadata.name in ['default', 'platform', 'databases', 'preview', 'ingress-nginx', 'argocd', 'cert-manager', 'monitoring', 'oauth2-proxy', 'portainer', 'storage']) && !namespaceObject.metadata.name.startsWith('kube-')"
+    message: "Baseline bindings require a dedicated project namespace"
+  - expression: "object.metadata.name == 'platform-namespace-baseline' && object.roleRef.apiGroup == 'rbac.authorization.k8s.io' && object.roleRef.kind == 'ClusterRole' && object.roleRef.name == 'platform-namespace-baseline' && has(object.subjects) && size(object.subjects) == 1 && object.subjects[0].kind == 'ServiceAccount' && object.subjects[0].name == 'platform-api' && object.subjects[0].namespace == 'platform'"
+    message: "Only the platform baseline binding may be bootstrapped"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: platform-baseline-bindings
+spec:
+  policyName: platform-baseline-bindings
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: platform-project-namespaces
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["namespaces"]
+  matchConditions:
+  - name: platform-api-only
+    expression: "request.userInfo.username == 'system:serviceaccount:platform:platform-api'"
+  validations:
+  - expression: "!(object.metadata.name in ['default', 'platform', 'databases', 'preview', 'ingress-nginx', 'argocd', 'cert-manager', 'monitoring', 'oauth2-proxy', 'portainer', 'storage']) && !object.metadata.name.startsWith('kube-')"
+    message: "The platform API may only manage dedicated project namespaces"
+  - expression: "has(object.metadata.labels) && 'platform.io/project' in object.metadata.labels && 'platform.io/env' in object.metadata.labels"
+    message: "Project namespaces must carry platform.io/project and platform.io/env labels"
+  - expression: "request.operation != 'UPDATE' || !has(oldObject.metadata.labels) || !('platform.io/project' in oldObject.metadata.labels) || (has(object.metadata.labels) && 'platform.io/project' in object.metadata.labels && object.metadata.labels['platform.io/project'] == oldObject.metadata.labels['platform.io/project'])"
+    message: "Project namespace ownership cannot be reassigned"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: platform-project-namespaces
+spec:
+  policyName: platform-project-namespaces
+  validationActions: [Deny]
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -11,7 +77,7 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["namespaces"]
-  verbs: ["list", "create"]
+  verbs: ["get", "list", "create", "update"]
 - apiGroups: [""]
   resources: ["nodes"]
   verbs: ["list"]
@@ -30,6 +96,17 @@ rules:
 - apiGroups: ["networking.k8s.io"]
   resources: ["ingresses"]
   verbs: ["get", "create", "update"]
+# Namespace baseline (#22): get/update label project namespaces (guarded by
+# platform-project-namespaces); rolebinding create/update + bind on the single
+# baseline ClusterRole bootstrap per-namespace rights (guarded by
+# platform-baseline-bindings). No delete/patch/escalate and no cluster-wide bindings.
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["rolebindings"]
+  verbs: ["get", "create", "update"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["clusterroles"]
+  resourceNames: ["platform-namespace-baseline"]
+  verbs: ["bind"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -51,8 +128,20 @@ metadata:
   namespace: platform
 rules:
 - apiGroups: [""]
+  resources: ["configmaps"]
+  resourceNames: ["platform-backup-backup", "platform-backup-restore-test"]
+  verbs: ["get"]
+- apiGroups: [""]
   resources: ["secrets"]
   resourceNames: ["platform-env","platform-rotate-pending"]
+  verbs: ["get", "update"]
+# The API's own configuration Secrets (issue #20): read at boot, updated on
+# secret rotation and OIDC signing-key rotation (KubeSecretStore does
+# read + replace with resourceVersion, so no patch). Creation (first boot
+# without the installer) uses the namespace-wide create rule below.
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["platform-credentials","platform-oidc-signing-key"]
   verbs: ["get", "update"]
 - apiGroups: [""]
   resources: ["secrets"]
@@ -65,6 +154,15 @@ rules:
 - apiGroups: [""]
   resources: ["secrets"]
   verbs: ["create"]
+# Leader election (exactly-once background jobs). create cannot be limited by
+# resourceName; get/update are limited to the one Lease, in this namespace only.
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["create"]
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  resourceNames: ["platform-api-leader"]
+  verbs: ["get", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -132,3 +230,18 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: platform-api
+---
+# Deliberately has no ClusterRoleBinding: granted per project namespace only,
+# via the RoleBinding the API bootstraps there. Verbs are exactly what
+# ensureProjectNamespace (read/create/replace) and status/backfill (list) use.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-namespace-baseline
+rules:
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
+  verbs: ["get", "list", "create", "update"]
+- apiGroups: [""]
+  resources: ["resourcequotas", "limitranges"]
+  verbs: ["get", "list", "create", "update"]

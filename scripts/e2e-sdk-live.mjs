@@ -6,11 +6,14 @@
  *   node scripts/e2e-sdk-live.mjs
  *
  * Env (optional overrides):
- *   PLATFORM_API_URL   default https://api.148.113.59.3.sslip.io
+ *   PLATFORM_URL       required API origin (PLATFORM_API_URL remains an alias)
+ *   PROJECT_DOMAIN     required project base domain
  *   ADMIN_EMAIL
  *   ADMIN_PASSWORD
  *   PROJECT_NAME       default sdk-e2e-<timestamp>
  */
+import config from '../examples/sdk-apps/node-api/src/config.cjs';
+const { platformUrl: API, projectDomain: PROJECT_DOMAIN, adminEmail: EMAIL, adminPassword: PASSWORD } = config.readE2EConfig();
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -19,9 +22,6 @@ const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const { PlatformClient } = require(path.join(__dirname, '..', 'sdk-node', 'dist', 'index.js'));
 
-const API = (process.env.PLATFORM_API_URL || 'https://api.148.113.59.3.sslip.io').replace(/\/$/, '');
-const EMAIL = process.env.ADMIN_EMAIL || 'admin@pratyushes.dev';
-const PASSWORD = process.env.ADMIN_PASSWORD || '';
 const PROJECT_NAME = process.env.PROJECT_NAME || `sdk-e2e-${Date.now()}`;
 
 const results = [];
@@ -97,7 +97,7 @@ async function main() {
         name: PROJECT_NAME,
         stack: 'nodejs',
         description: 'SDK live E2E',
-        domain: '148.113.59.3.sslip.io',
+        domain: PROJECT_DOMAIN,
         repositoryUrl: 'https://github.com/Mpratyush54/server-automation',
       },
     });
@@ -286,7 +286,7 @@ async function main() {
   console.log(`passed=${passed} failed=${failed}`);
   console.log(`projectId=${projectId}`);
   console.log(`sdkToken=${sdkToken.slice(0, 24)}…`);
-  console.log(`portal=https://148.113.59.3.sslip.io/projects (login ${EMAIL})`);
+  console.log(`project domain=${PROJECT_DOMAIN}; API=${API} (login ${EMAIL})`);
   if (failed > 0) process.exit(1);
   console.log('\nE2E OK\n');
 }

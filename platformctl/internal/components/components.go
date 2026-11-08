@@ -3,7 +3,6 @@ package components
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -233,7 +232,7 @@ func InstallMinIO(cfg *config.Config) error {
 	}
 	defer os.Remove(tmpFile)
 
-	err = helmValues("minio", "minio", "storage", map[string]any{"auth": map[string]string{"rootUser": cfg.MinioAccessKey, "rootPassword": cfg.MinioSecretKey}}, "-f", tmpFile, "--set", "persistence.size=50Gi", "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser", "--set", `defaultBuckets=platform-backups\,platform-logs`, "--wait", "--timeout", "10m")
+	err = helmValues("minio", "minio", "storage", map[string]any{"auth": map[string]string{"rootUser": cfg.MinioAccessKey, "rootPassword": cfg.MinioSecretKey}}, "-f", tmpFile, "--set", "persistence.size=50Gi", "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser", "--set", `defaultBuckets=platform-backups\,platform-logs\,platform-uploads`, "--wait", "--timeout", "10m")
 	if err != nil {
 		return err
 	}
@@ -700,6 +699,83 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// apiReplicas is the platform-api replica count (at least 1).
+func apiReplicas(cfg *config.Config) int {
+	if cfg.APIReplicas < 1 {
+		return 1
+	}
+	return cfg.APIReplicas
+}
+
+// apiPDBScript applies a PodDisruptionBudget (minAvailable: 1) when the API runs
+// more than one replica so node drains keep one pod serving. With a single
+// replica a PDB would block drains forever, so any old one is removed.
+func apiPDBScript(replicas int) string {
+	if replicas < 2 {
+		return "kubectl delete pdb platform-api -n platform --ignore-not-found"
+	}
+	return `kubectl apply -n platform -f - <<'EOF'
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: platform-api
+  namespace: platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: platform-api
+EOF`
+}
+
+// apiRolloutPatch is a strategic-merge patch carrying the #18 rollout settings
+// of the InstallPlatform manifest (replicas, surge-only strategy, drain grace,
+// preStop, readiness on /api/health/ready, liveness on /api/health). `update`
+// applies it after the new image is rolled, so an existing install converges
+// to the same Deployment as a fresh provision. Never before: an image older
+// than this release has no /api/health/ready and would never become ready.
+func apiRolloutPatch(replicas int) string {
+	probe := func(path string, initial, period int) map[string]any {
+		return map[string]any{
+			"httpGet":             map[string]any{"path": path, "port": 3000},
+			"initialDelaySeconds": initial, "periodSeconds": period,
+			"timeoutSeconds": 3, "failureThreshold": 3,
+		}
+	}
+	patch := map[string]any{"spec": map[string]any{
+		"replicas": replicas,
+		"strategy": map[string]any{"type": "RollingUpdate", "rollingUpdate": map[string]any{"maxUnavailable": 0, "maxSurge": 1}},
+		"template": map[string]any{"spec": map[string]any{
+			"terminationGracePeriodSeconds": 45,
+			"containers": []any{map[string]any{
+				"name":           "api",
+				"lifecycle":      map[string]any{"preStop": map[string]any{"exec": map[string]any{"command": []string{"sleep", "10"}}}},
+				"readinessProbe": probe("/api/health/ready", 5, 5),
+				"livenessProbe":  probe("/api/health", 30, 20),
+			}},
+		}},
+	}}
+	b, _ := json.Marshal(patch)
+	return string(b)
+}
+
+// reconcileAPIRollout applies apiRolloutPatch and the matching PDB to the live
+// platform-api Deployment and waits for the rollout.
+func reconcileAPIRollout(cfg *config.Config) error {
+	replicas := apiReplicas(cfg)
+	return shell.RunBash(`set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+kubectl -n platform patch deployment platform-api --type strategic -p ` + shellQuote(apiRolloutPatch(replicas)) + ` >/dev/null
+` + apiPDBScript(replicas) + `
+kubectl -n platform rollout status deployment/platform-api --timeout=300s
+`)
+}
+
+// deploymentReadyCheck succeeds when every desired replica of the deployment is ready.
+func deploymentReadyCheck(ns, name string) string {
+	return fmt.Sprintf(`k3s kubectl get deployment -n %s %s -o jsonpath='{.status.readyReplicas} {.spec.replicas}' 2>/dev/null | awk '$1 != "" && $1 == $2 { ok = 1 } END { exit !ok }'`, ns, name)
+}
+
 func InstallPlatform(cfg *config.Config) error {
 	// Always reconcile security settings on existing installations as well.
 	color.Cyan("\n  ■ Deploying Platform API + Portal...")
@@ -711,37 +787,37 @@ func InstallPlatform(cfg *config.Config) error {
 	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
 	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
 
+	// Credentials (incl. ones the API rotated at runtime) → platform-credentials,
+	// OIDC signing key → platform-oidc-signing-key; /etc/platform becomes a
+	// root-only break-glass copy. Must run before platform-env is applied so a
+	// rotated webhook secret is adopted rather than overwritten.
+	if err := MigrateHostState(cfg); err != nil {
+		return err
+	}
 	if err := applySecret("platform", "platform-env", map[string]string{
 		"NODE_ENV": "production", "PORT": "3000", "JWT_SECRET": cfg.JWTSecret,
 		"SECRETS_ENCRYPTION_KEY": cfg.SecretsEncryptionKey, "PLATFORM_WEBHOOK_SECRET": cfg.WebhookSecret,
-		"POSTGRES_HOST": "postgresql.databases", "POSTGRES_PORT": "5432", "POSTGRES_DB": "platform", "POSTGRES_USER": "postgres", "POSTGRES_PASSWORD": cfg.PostgresPassword,
-		"MONGODB_URI": "mongodb://root:" + url.QueryEscape(cfg.MongoPassword) + "@mongodb.databases:27017/platform?authSource=admin",
-		"REDIS_HOST":  "redis-master.databases", "REDIS_PORT": "6379", "REDIS_PASSWORD": cfg.RedisPassword,
-		"MINIO_ENDPOINT": "http://minio.storage:9000", "MINIO_ACCESS_KEY": cfg.MinioAccessKey, "MINIO_SECRET_KEY": cfg.MinioSecretKey,
-		"PLATFORM_NAME": cfg.PlatformName, "DOMAIN": cfg.Domain, "ADMIN_EMAIL": cfg.AdminEmail, "ADMIN_PASSWORD": cfg.AdminPassword,
+		"POSTGRES_HOST": "postgresql.databases", "POSTGRES_PORT": "5432", "POSTGRES_DB": "platform", "POSTGRES_USER": "postgres",
+		"REDIS_HOST": "redis-master.databases", "REDIS_PORT": "6379",
+		"MINIO_ENDPOINT": "http://minio.storage:9000",
+		"UPLOADS_BUCKET": "platform-uploads", "BACKUP_BUCKET": "platform-backups",
+		"PLATFORM_NAME": cfg.PlatformName, "DOMAIN": cfg.Domain, "ADMIN_EMAIL": cfg.AdminEmail,
 		"OIDC_ISSUER": cfg.OIDCIssuer(), "OIDC_CLIENTS": cfg.OIDCClientsJSON(),
 		"CORS_ORIGINS": "https://" + cfg.Domain,
 	}); err != nil {
 		return err
 	}
-	rbac := readManifest("platform-api-rbac.yaml")
-	if rbac == "" {
-		return fmt.Errorf("platform-api RBAC manifest missing")
+	if err := applyAPIRBAC(); err != nil {
+		return err
 	}
-	if _, err := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, rbac); err != nil {
+	// Backup + platform-api-migrate Job before the API Deployment changes (#17).
+	if err := RunAPIMigrations(cfg, apiImg); err != nil {
 		return err
 	}
 	err := shell.RunBash(fmt.Sprintf(`
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 kubectl delete clusterrolebinding platform-api-admin-binding --ignore-not-found
-# Rotation atomically renames files, requiring write access to the parent.
-mkdir -p /etc/platform
-chgrp 1000 /etc/platform
-chmod 0770 /etc/platform
-if [ -f /etc/platform/.env ]; then chown 1000:1000 /etc/platform/.env; chmod 0600 /etc/platform/.env; fi
-install -d -m 0700 -o 1000 -g 1000 /etc/platform/credentials
-find /etc/platform/credentials -maxdepth 1 -type f -exec chown 1000:1000 {} +
 kubectl apply -n platform -f - <<'EOF'
 apiVersion: apps/v1
 kind: Deployment
@@ -751,7 +827,14 @@ metadata:
   labels:
     app: platform-api
 spec:
-  replicas: 1
+  replicas: %[3]d
+  # Zero-downtime rollouts: start a new pod and wait for readiness before
+  # removing an old one.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: platform-api
@@ -761,6 +844,8 @@ spec:
         app: platform-api
     spec:
       serviceAccountName: platform-api
+      # preStop sleep (10s) + in-process drain (SHUTDOWN_TIMEOUT_MS, 25s) + margin.
+      terminationGracePeriodSeconds: 45
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -769,7 +854,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: api
-        image: %s
+        image: %[1]s
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -777,24 +862,37 @@ spec:
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
+        # Config and keys come from Secrets only (no node mounts): the pod can
+        # be rescheduled to any node. platform-credentials wins on duplicates.
         envFrom:
         - secretRef:
             name: platform-env
-        volumeMounts:
-        - name: platform-etc
-          mountPath: /etc/platform
+        - secretRef:
+            name: platform-credentials
+        lifecycle:
+          preStop:
+            # Keep serving while the endpoint is removed from Services/ingress;
+            # SIGTERM then drains in-flight requests (server.ts).
+            exec:
+              command: ["sleep", "10"]
         readinessProbe:
+          # PostgreSQL reachable + not draining (Redis outages must not empty the Service).
           httpGet:
-            path: /api/health
+            path: /api/health/ready
             port: 3000
-          initialDelaySeconds: 15
-          periodSeconds: 10
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
         livenessProbe:
+          # Process only; dependency outages must not restart the API.
           httpGet:
             path: /api/health
             port: 3000
           initialDelaySeconds: 30
           periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 3
         resources:
           requests:
             memory: "256Mi"
@@ -802,11 +900,6 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "1000m"
-      volumes:
-      - name: platform-etc
-        hostPath:
-          path: /etc/platform
-          type: Directory
 ---
 apiVersion: v1
 kind: Service
@@ -858,7 +951,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: portal
-        image: %s
+        image: %[2]s
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -889,12 +982,16 @@ spec:
 
 EOF
 
+%[4]s
 kubectl wait --for=condition=Available deployment/platform-api -n platform --timeout=300s
 kubectl wait --for=condition=Available deployment/platform-portal -n platform --timeout=180s
-`, strconv.Quote(apiImg), strconv.Quote(portalImg),
+`, strconv.Quote(apiImg), strconv.Quote(portalImg), apiReplicas(cfg), apiPDBScript(apiReplicas(cfg)),
 	))
 	if err != nil {
 		return err
+	}
+	if err := stripCredentialKeysFromEnvSecret(); err != nil {
+		color.Yellow("  ⚠ %v", err)
 	}
 	// Ingress/routing is applied once by InstallRouting (runs after platform).
 	color.Green("  ✓ Platform deployed")
@@ -1275,7 +1372,7 @@ func CheckHealth() error {
 	}
 	checks := []check{
 		{"K3s nodes", "k3s kubectl get nodes --no-headers 2>/dev/null | grep -q Ready"},
-		{"Platform API", "k3s kubectl get deployment -n platform platform-api --no-headers 2>/dev/null | grep -q '1/1'"},
+		{"Platform API", deploymentReadyCheck("platform", "platform-api")},
 		{"Platform Portal", "k3s kubectl get deployment -n platform platform-portal --no-headers 2>/dev/null | grep -q '1/1'"},
 		{"Ingress NGINX", "k3s kubectl get deployment -n ingress-nginx ingress-nginx-controller --no-headers 2>/dev/null | grep -q '1/1'"},
 		{"ArgoCD", "k3s kubectl get deployment -n argocd argocd-server --no-headers 2>/dev/null | grep -q '1/1'"},
@@ -1297,11 +1394,34 @@ func CheckHealth() error {
 	return nil
 }
 
+// imagePresentLocally reports whether containerd already has the image (e.g.
+// imported from an offline bundle). Swapped in tests.
+var imagePresentLocally = func(image string) bool {
+	return shell.RunSilent("k3s", "crictl", "inspecti", image) == nil
+}
+
 // UpdateImages resolves moving GHCR tags before changing the pod template.
+// Order (after PrepareUpdate moved host state into Secrets, #20): migration Job
+// template + database backup, then the digest script runs the migrate Job and
+// only then sets the new images (#17); finally the #18 rollout settings and PDB
+// are reconciled on the new image.
 func UpdateImages(cfg *config.Config) error {
 	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
 	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
-	return shell.RunBashEnv("export KUBECONFIG=\"${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}\"\nAPI="+shellQuote(apiImg)+"\nPORTAL="+shellQuote(portalImg)+"\n"+digestUpdateScript, map[string]string{"REGISTRY_USERNAME": "platformctl", "REGISTRY_PASSWORD": cfg.GitHubToken})
+	backup, err := prepareAPIMigrations(cfg)
+	if err != nil {
+		return err
+	}
+	env := map[string]string{"REGISTRY_USERNAME": "platformctl", "REGISTRY_PASSWORD": cfg.GitHubToken, "MIGRATE_BACKUP": backup}
+	// Offline/bundle installs have no registry to resolve digests from. Allow
+	// the already-imported images only when both are present on the node.
+	if imagePresentLocally(apiImg) && imagePresentLocally(portalImg) {
+		env["ALLOW_LOCAL_IMAGES"] = "true"
+	}
+	if err := shell.RunBashEnv("export KUBECONFIG=\"${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}\"\nAPI="+shellQuote(apiImg)+"\nPORTAL="+shellQuote(portalImg)+"\n"+digestUpdateScript, env); err != nil {
+		return err
+	}
+	return reconcileAPIRollout(cfg)
 }
 
 // InstallAutoUpdate installs a digest-aware updater for only two deployments.

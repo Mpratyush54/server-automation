@@ -1,3 +1,4 @@
+jest.mock('../../../src/lib/namespace-baseline', () => ({ ensureProjectNamespace: jest.fn().mockResolvedValue({}) }));
 const mockApi: any = {
   readNamespacedDeployment: jest.fn(),
   getNamespacedCustomObject: jest.fn(), replaceNamespacedCustomObject: jest.fn(),
@@ -39,6 +40,10 @@ it('gives identical branches in different projects distinct preview workload nam
   await deployK8sPreview('alpha-beta', 'feature/test', 'nginx:alpine', 'id-b');
   const names = mockApi.createNamespacedDeployment.mock.calls.map((call: any) => call[0].body.metadata.name);
   expect(names[0]).not.toBe(names[1]);
+  const namespaces = mockApi.createNamespacedDeployment.mock.calls.map((call: any) => call[0].namespace);
+  expect(namespaces[0]).not.toBe(namespaces[1]);
+  expect(namespaces[0]).not.toBe('preview');
+  expect(mockApi.createNamespacedDeployment.mock.calls[0][0].body.spec.template.spec.securityContext.runAsNonRoot).toBe(true);
   expect(previewResourceName('id-a', 'feature/a.b')).not.toBe(previewResourceName('id-a', 'feature/a-b'));
 });
 it('uses the stored preview name, including for existing infrastructure', async () => {

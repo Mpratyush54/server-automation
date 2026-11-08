@@ -1,6 +1,6 @@
 # Database Schema
 
-Platform uses PostgreSQL as its primary database with TypeORM for entity management and schema synchronization.
+Platform uses PostgreSQL as its primary database with TypeORM for entity management; the schema is owned by versioned migrations.
 
 ## Entity Relationship Diagram
 
@@ -298,6 +298,12 @@ erDiagram
 | StorageProvider | `storage_providers` | endpoint, bucket, accessKey, encryptedSecretKey |
 | ClickupTaskLink | `clickup_task_links` | deploymentId, taskId, listId, spaceId |
 | SdkCredential | `sdk_credentials` | projectId, token (hashed), status |
+| BackgroundJob | `background_jobs` | type, targetId, status, step, attempts, maxAttempts, lockedBy, lockedUntil |
+| Operation | `operations` | type, projectId, lockKey, lockFence, status, currentStep, inputHash, attempts |
+| OperationStep | `operation_steps` | operationId, index, name, status, attempts, output, error |
+| OutboxMessage | `outbox_messages` | operationId, kind, payload, status, attempts, availableAt |
+| WebhookDelivery | `webhook_deliveries` | provider, deliveryId (unique together), event |
+| IdempotencyKey | `idempotency_keys` | userId, route, requestHash, state, expiresAt |
 
 ## MongoDB Collections
 
@@ -327,4 +333,4 @@ Platform also uses MongoDB (via Mongoose) for high-volume, ephemeral data:
 
 ## Synchronization
 
-TypeORM `synchronize: true` is enabled in development, which automatically creates/updates tables on application startup. In production, use migrations instead.
+The schema is managed by versioned TypeORM migrations in `platform/api/src/migrations` (`synchronize` is off everywhere). They are applied by `node dist/migrate.js`, which platformctl runs as the `platform-api-migrate` Job before each API rollout. See `platform/api/README.md`. Every new table or column ships as a new migration (for example `BackgroundJobsAndOperations` adds the background job, operation, outbox, webhook-delivery and idempotency tables); `npm run migration:check` fails CI on any drift.

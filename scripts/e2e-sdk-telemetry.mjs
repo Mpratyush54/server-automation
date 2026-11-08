@@ -3,11 +3,12 @@
  * then verify Telemetry (heartbeats + API latency) via the platform API.
  *
  * Usage:
- *   $env:NODE_TLS_REJECT_UNAUTHORIZED='0'
  *   $env:ADMIN_PASSWORD='…'
  *   node scripts/e2e-sdk-telemetry.mjs
  */
 import { spawn } from 'child_process';
+import config from '../examples/sdk-apps/node-api/src/config.cjs';
+const { platformUrl: API, projectDomain: PROJECT_DOMAIN, adminEmail: ADMIN_EMAIL, adminPassword: ADMIN_PASSWORD } = config.readE2EConfig();
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -18,9 +19,6 @@ const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
 
-const API = (process.env.PLATFORM_API_URL || 'https://api.148.113.59.3.sslip.io').replace(/\/$/, '');
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@pratyushes.dev';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const PROJECT_NAME = process.env.PROJECT_NAME || `sdk-telemetry-${Date.now()}`;
 const NODE_PORT = Number(process.env.NODE_PORT || 4100);
 
@@ -28,8 +26,6 @@ if (!ADMIN_PASSWORD) {
   console.error('ADMIN_PASSWORD required');
   process.exit(1);
 }
-
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 async function api(method, urlPath, body, token) {
   const res = await fetch(`${API}${urlPath}`, {
@@ -66,7 +62,7 @@ async function main() {
       name: PROJECT_NAME,
       stack: 'nodejs',
       repositoryUrl: 'https://github.com/Mpratyush54/SERVER-automation.git',
-      domain: '148.113.59.3.sslip.io',
+      domain: PROJECT_DOMAIN,
     }, token);
   } catch (e) {
     // may already exist
@@ -112,7 +108,7 @@ async function main() {
       PROJECT_NAME,
       ENVIRONMENT_NAME: 'development',
       PORT: String(NODE_PORT),
-      NODE_TLS_REJECT_UNAUTHORIZED: '0',
+      PROJECT_DOMAIN,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

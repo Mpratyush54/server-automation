@@ -2,12 +2,13 @@ import express, { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
 import { getDb } from '../config/database';
-import { User } from '../entities/User';
-import { expressAuthenticate, requireHumanJwt, AuthenticatedRequest } from '../middleware/auth';
+import { User, UserRole } from '../entities/User';
+import { expressAuthenticate, expressRequireRole, requireHumanJwt, logAudit, AuthenticatedRequest } from '../middleware/auth';
 import { findOidcClient, isRegisteredRedirectUri, verifyClientSecret, OidcClient } from '../lib/oidc-clients';
-import { getOidcSigningKey } from '../lib/oidc-keys';
+import { getOidcSigningKey, getOidcVerificationKeys, rotateOidcSigningKey } from '../lib/oidc-keys';
 import { getOidcIssuer } from '../lib/oidc-issuer';
-import { OneTimeCodeStore, verifyPkceS256 } from '../lib/oidc-codes';
+import { createCodeStore, verifyPkceS256 } from '../lib/oidc-codes';
+import { StateStoreUnavailableError } from '../lib/redis';
 import {
   buildAuthorizeUrl,
   completeOAuthCallback,
@@ -41,7 +42,8 @@ interface AuthCodeSession {
   authTime: number;
 }
 
-export const oidcAuthCodes = new OneTimeCodeStore<AuthCodeSession>(AUTH_CODE_TTL_MS);
+/** Authorization codes live in Redis (shared by all replicas; GETDEL = single use). */
+export const oidcAuthCodes = createCodeStore<AuthCodeSession>('oidc-code', AUTH_CODE_TTL_MS);
 
 function requestProto(req: Request): string {
   return (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
@@ -136,20 +138,13 @@ router.get('/oauth/.well-known/openid-configuration', (_req: Request, res: Respo
 
 router.get('/oauth/jwks', (_req: Request, res: Response) => {
   try {
-    const key = getOidcSigningKey();
-    const jwk = crypto.createPublicKey(key.publicKey).export({ format: 'jwk' }) as any;
-    return res.json({
-      keys: [
-        {
-          kid: key.kid,
-          use: 'sig',
-          alg: 'RS256',
-          kty: 'RSA',
-          n: jwk.n,
-          e: jwk.e,
-        },
-      ],
+    // Current key first; the key retired by the last rotation stays published
+    // so tokens it signed keep verifying until they expire.
+    const keys = getOidcVerificationKeys().map((key) => {
+      const jwk = crypto.createPublicKey(key.publicKey).export({ format: 'jwk' }) as any;
+      return { kid: key.kid, use: 'sig', alg: 'RS256', kty: 'RSA', n: jwk.n, e: jwk.e };
     });
+    return res.json({ keys });
   } catch (err: any) {
     console.error('[oidc] jwks unavailable:', err.message);
     return res.status(500).json({ error: 'OIDC signing key is not available' });
@@ -203,21 +198,30 @@ router.get('/oauth/clients/:id', (req: Request, res: Response) => {
  * Auth: human session JWT in the Authorization header (never in the URL).
  * Returns { redirect: "<registered redirect_uri>?code=...&state=..." }.
  */
-router.post('/oauth/authorize', expressAuthenticate, requireHumanJwt, (req: Request, res: Response) => {
+router.post('/oauth/authorize', expressAuthenticate, requireHumanJwt, async (req: Request, res: Response) => {
   const authReq = req as AuthenticatedRequest;
   const body = (req.body || {}) as Record<string, unknown>;
   const v = validateAuthorizeParams(body);
   if (!v.ok) return oauthError(res, v.status!, v.error!, v.description!);
 
-  const code = oidcAuthCodes.issue({
-    userId: authReq.user!.id,
-    clientId: v.client!.id,
-    redirectUri: v.redirectUri!,
-    scope: str(body.scope) || 'openid',
-    nonce: str(body.nonce) || null,
-    codeChallenge: str(body.code_challenge) || null,
-    authTime: Math.floor(Date.now() / 1000),
-  });
+  let code: string;
+  try {
+    code = await oidcAuthCodes.issue({
+      userId: authReq.user!.id,
+      clientId: v.client!.id,
+      redirectUri: v.redirectUri!,
+      scope: str(body.scope) || 'openid',
+      nonce: str(body.nonce) || null,
+      codeChallenge: str(body.code_challenge) || null,
+      authTime: Math.floor(Date.now() / 1000),
+    });
+  } catch (err) {
+    // Fail closed: without the shared store the code could not be redeemed on another replica.
+    if (err instanceof StateStoreUnavailableError) {
+      return oauthError(res, 503, 'temporarily_unavailable', 'Authorization is temporarily unavailable');
+    }
+    return oauthError(res, 500, 'server_error', 'Could not issue an authorization code');
+  }
   return res.json({ redirect: appendParams(v.redirectUri!, { code, state: str(body.state) }) });
 });
 
@@ -269,7 +273,15 @@ router.post('/oauth/token', express.urlencoded({ extended: false }), async (req:
     }
 
     // Single use: the code is removed whether or not the rest of the checks pass.
-    const session = oidcAuthCodes.consume(body.code);
+    let session: AuthCodeSession | null;
+    try {
+      session = await oidcAuthCodes.consume(body.code);
+    } catch (err) {
+      if (err instanceof StateStoreUnavailableError) {
+        return oauthError(res, 503, 'temporarily_unavailable', 'Token exchange is temporarily unavailable');
+      }
+      throw err;
+    }
     if (!session) {
       return oauthError(res, 400, 'invalid_grant', 'Invalid or expired authorization code');
     }
@@ -344,9 +356,17 @@ router.get('/oauth/userinfo', async (req: Request, res: Response) => {
     const token = authHeader.slice(7);
 
     let decoded: any;
-    try {
-      decoded = jwt.verify(token, getOidcSigningKey().publicKey, { algorithms: ['RS256'], issuer: getOidcIssuer() });
-    } catch {
+    const kid = (jwt.decode(token, { complete: true }) as any)?.header?.kid;
+    const candidates = getOidcVerificationKeys().filter((k) => !kid || k.kid === kid);
+    for (const key of candidates) {
+      try {
+        decoded = jwt.verify(token, key.publicKey, { algorithms: ['RS256'], issuer: getOidcIssuer() });
+        break;
+      } catch {
+        /* try the next key */
+      }
+    }
+    if (!decoded) {
       return res.status(401).json({ error: 'invalid_token' });
     }
 
@@ -421,7 +441,32 @@ router.post('/auth/exchange', async (req: Request, res: Response) => {
     const { passwordHash: _ph, ...safe } = result.user as any;
     return res.json({ token: result.token, user: safe });
   } catch (err: any) {
+    if (err instanceof StateStoreUnavailableError) {
+      return res.status(503).json({ error: 'Sign-in is temporarily unavailable. Try again in a moment.' });
+    }
     return res.status(500).json({ error: 'Login code exchange failed' });
+  }
+});
+
+/**
+ * Rotate the OIDC signing key (admin, human JWT). The new key is written to
+ * the platform-oidc-signing-key Secret with the old one kept as `previous`
+ * (still in JWKS), then the API is restarted so every replica loads it.
+ */
+router.post('/oauth/signing-key/rotate', expressAuthenticate, requireHumanJwt, expressRequireRole([UserRole.ADMIN]), async (req: Request, res: Response) => {
+  try {
+    const key = await rotateOidcSigningKey();
+    const authReq = req as AuthenticatedRequest;
+    await logAudit({ userId: authReq.user?.id, action: 'oidc.signing_key.rotate', targetType: 'oidc', targetId: key.kid, ip: req.ip });
+    try {
+      const { restartNamedDeployment } = await import('../lib/k8s');
+      await restartNamedDeployment('platform', 'platform-api');
+    } catch (err: any) {
+      console.warn(`[oidc] rotated signing key; API restart failed: ${err?.message || err}`);
+    }
+    return res.json({ kid: key.kid, previousKidRetained: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'rotation failed' });
   }
 });
 

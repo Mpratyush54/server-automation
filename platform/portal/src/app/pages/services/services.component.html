@@ -13,13 +13,17 @@
   <table>
     <thead><tr><th>Service</th><th>Project</th><th>Version</th><th>DB Types</th><th>Last Heartbeat</th><th>Status</th></tr></thead>
     <tbody>
-      <tr *ngFor="let s of registrations">
-        <td>{{ s.serviceName }}</td><td>{{ s.projectId }}</td><td>{{ s.version }}</td>
-        <td>{{ s.dbTypes?.join(', ') || '-' }}</td>
-        <td>{{ s.lastHeartbeat ? (s.lastHeartbeat | date:'short') : 'never' }}</td>
-        <td><span class="badge" [class.badge-active]="s.isActive" [class.badge-failed]="!s.isActive">{{ s.isActive ? 'Active' : 'Inactive' }}</span></td>
-      </tr>
-      <tr *ngIf="registrations.length === 0"><td colspan="6">No services registered yet</td></tr>
+      @for (s of registrations; track s) {
+        <tr>
+          <td>{{ s.serviceName }}</td><td>{{ s.projectId }}</td><td>{{ s.version }}</td>
+          <td>{{ s.dbTypes?.join(', ') || '-' }}</td>
+          <td>{{ s.lastHeartbeat ? (s.lastHeartbeat | date:'short') : 'never' }}</td>
+          <td><span class="badge" [class.badge-active]="s.isActive" [class.badge-failed]="!s.isActive">{{ s.isActive ? 'Active' : 'Inactive' }}</span></td>
+        </tr>
+      }
+      @if (registrations.length === 0) {
+        <tr><td colspan="6">No services registered yet</td></tr>
+      }
     </tbody>
   </table>
 </div>

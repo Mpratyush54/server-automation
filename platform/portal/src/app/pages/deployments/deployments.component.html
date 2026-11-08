@@ -8,6 +8,9 @@
   <div class="form-group"><label>Version</label><input [(ngModel)]="deployDto.version" placeholder="1.0.0"></div>
   <div class="form-group"><label>Branch</label><input [(ngModel)]="deployDto.branch" value="main"></div>
   <button class="btn btn-primary" (click)="deploy()" [disabled]="!deployDto.projectId || !deployDto.version">Deploy</button>
+  @if (lastOperationId) {
+    <app-operation-progress [operationId]="lastOperationId" title="Deploy"></app-operation-progress>
+  }
 </div>
 
 <div class="card">
@@ -19,11 +22,13 @@
 <table>
   <thead><tr><th>Project</th><th>Version</th><th>Branch</th><th>Status</th><th>Date</th><th></th></tr></thead>
   <tbody>
-    <tr *ngFor="let d of deployments">
-      <td>{{ d.projectId }}</td><td>{{ d.version }}</td><td>{{ d.branch }}</td>
-      <td><span class="badge" [class.badge-active]="d.status==='active'" [class.badge-pending]="d.status==='pending'" [class.badge-failed]="d.status==='failed'">{{ d.status }}</span></td>
-      <td>{{ d.createdAt | date:'short' }}</td>
-      <td><button class="btn btn-sm btn-success" (click)="restart(d.id)">Restart</button></td>
-    </tr>
+    @for (d of deployments; track d) {
+      <tr>
+        <td>{{ d.projectId }}</td><td>{{ d.version }}</td><td>{{ d.branch }}</td>
+        <td><span class="badge" [class.badge-active]="d.status==='active'" [class.badge-pending]="d.status==='pending'" [class.badge-failed]="d.status==='failed'">{{ d.status }}</span></td>
+        <td>{{ d.createdAt | date:'short' }}</td>
+        <td><button class="btn btn-sm btn-success" (click)="restart(d.id)">Restart</button></td>
+      </tr>
+    }
   </tbody>
 </table>

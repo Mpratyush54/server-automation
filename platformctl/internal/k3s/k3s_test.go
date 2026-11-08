@@ -19,7 +19,7 @@ func TestRegistriesYAML(t *testing.T) {
 
 func TestServerConfigAndResolvConf(t *testing.T) {
 	y := ServerConfigYAML()
-	for _, want := range []string{"- traefik", "resolv-conf: " + ResolvConfPath} {
+	for _, want := range []string{"- traefik", "resolv-conf: " + ResolvConfPath, "secrets-encryption: true"} {
 		if !strings.Contains(y, want) {
 			t.Errorf("config.yaml missing %q:\n%s", want, y)
 		}

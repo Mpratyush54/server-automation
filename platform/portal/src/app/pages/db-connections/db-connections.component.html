@@ -11,12 +11,14 @@
   <table>
     <thead><tr><th>Project</th><th>Type</th><th>Pool Size</th><th>Status</th><th>Last Heartbeat</th><th></th></tr></thead>
     <tbody>
-      <tr *ngFor="let c of connections">
-        <td>{{ c.projectId }}</td><td>{{ c.dbType }}</td><td>{{ c.poolSize }}</td>
-        <td><span class="badge" [class.badge-active]="c.status==='connected'" [class.badge-failed]="c.status==='error'">{{ c.status }}</span></td>
-        <td>{{ c.lastHeartbeat ? (c.lastHeartbeat | date:'short') : 'never' }}</td>
-        <td><button class="btn btn-danger btn-sm" (click)="delete(c.id)">Delete</button></td>
-      </tr>
+      @for (c of connections; track c) {
+        <tr>
+          <td>{{ c.projectId }}</td><td>{{ c.dbType }}</td><td>{{ c.poolSize }}</td>
+          <td><span class="badge" [class.badge-active]="c.status==='connected'" [class.badge-failed]="c.status==='error'">{{ c.status }}</span></td>
+          <td>{{ c.lastHeartbeat ? (c.lastHeartbeat | date:'short') : 'never' }}</td>
+          <td><button class="btn btn-danger btn-sm" (click)="delete(c.id)">Delete</button></td>
+        </tr>
+      }
     </tbody>
   </table>
 </div>

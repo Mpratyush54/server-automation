@@ -81,18 +81,24 @@ func BackupLocalState(backupRoot, envFile string) (string, error) {
 			return "", err
 		}
 	}
-	readme := "Platform credential backup. Restore .env from env; Kubernetes secrets are YAML dumps.\nCreated by platformctl backup/recover.\n"
+	readme := "Platform credential backup. Restore .env from env; Kubernetes secrets are YAML dumps\n(platform-credentials and platform-oidc-signing-key are what the API reads).\nCreated by platformctl backup/recover.\n"
 	if err := config.WriteFileSync(filepath.Join(dir, "README"), readme, 0600); err != nil {
 		return "", err
 	}
 	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
-	_ = shell.RunBash(fmt.Sprintf(`
+	// The directory goes through the environment, never into the script text: a
+	// Windows path (C:\Users\...) spliced into bash loses its backslashes and
+	// becomes a relative directory under the working directory.
+	_ = shell.RunBashEnv(`
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-mkdir -p %s
-kubectl -n platform get secret platform-env -o yaml > %s/platform-env.secret.yaml 2>/dev/null || true
-kubectl -n databases get secret postgresql -o yaml > %s/postgresql.secret.yaml 2>/dev/null || true
-kubectl -n databases get secret redis -o yaml > %s/redis.secret.yaml 2>/dev/null || true
-kubectl -n platform get secret platform-rotate-pending -o yaml > %s/rotate-pending.secret.yaml 2>/dev/null || true
-`, dir, dir, dir, dir, dir))
+mkdir -p "$BACKUP_DIR"
+umask 077
+kubectl -n platform get secret platform-env -o yaml > "$BACKUP_DIR/platform-env.secret.yaml" 2>/dev/null || true
+kubectl -n platform get secret platform-credentials -o yaml > "$BACKUP_DIR/platform-credentials.secret.yaml" 2>/dev/null || true
+kubectl -n platform get secret platform-oidc-signing-key -o yaml > "$BACKUP_DIR/platform-oidc-signing-key.secret.yaml" 2>/dev/null || true
+kubectl -n databases get secret postgresql -o yaml > "$BACKUP_DIR/postgresql.secret.yaml" 2>/dev/null || true
+kubectl -n databases get secret redis -o yaml > "$BACKUP_DIR/redis.secret.yaml" 2>/dev/null || true
+kubectl -n platform get secret platform-rotate-pending -o yaml > "$BACKUP_DIR/rotate-pending.secret.yaml" 2>/dev/null || true
+`, map[string]string{"BACKUP_DIR": dir})
 	return dir, nil
 }

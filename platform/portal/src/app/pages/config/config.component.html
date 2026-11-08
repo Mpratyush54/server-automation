@@ -4,19 +4,23 @@
   <button class="btn btn-primary" (click)="load()" [disabled]="!projectId">Load Config</button>
 </div>
 
-<div class="card" *ngIf="configEntries.length">
-  <h2>Config Values</h2>
-  <table>
-    <thead><tr><th>Key</th><th>Value</th><th>Secret</th></tr></thead>
-    <tbody>
-      <tr *ngFor="let c of configEntries">
-        <td><code>{{ c.key }}</code></td>
-        <td>{{ c.isSecret ? '••••••••' : c.value }}</td>
-        <td>{{ c.isSecret ? 'Yes' : 'No' }}</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
+@if (configEntries.length) {
+  <div class="card">
+    <h2>Config Values</h2>
+    <table>
+      <thead><tr><th>Key</th><th>Value</th><th>Secret</th></tr></thead>
+      <tbody>
+        @for (c of configEntries; track c) {
+          <tr>
+            <td><code>{{ c.key }}</code></td>
+            <td>{{ c.isSecret ? '••••••••' : c.value }}</td>
+            <td>{{ c.isSecret ? 'Yes' : 'No' }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
 
 <div class="card">
   <h2>Set Config</h2>

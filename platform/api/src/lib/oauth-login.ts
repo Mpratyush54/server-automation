@@ -5,7 +5,8 @@ import { getDb } from '../config/database';
 import { User, UserRole } from '../entities/User';
 import { resolveIntegrations } from './integrations';
 import { notifyUser } from './notify';
-import { OneTimeCodeStore } from './oidc-codes';
+import { createCodeStore } from './oidc-codes';
+import { StateStoreUnavailableError } from './redis';
 import { getJwtSecret } from '../config/security-env';
 
 /** Browser-binding cookie for the GitHub/GitLab login `state` (login-CSRF protection). */
@@ -16,15 +17,12 @@ export const LOGIN_EXCHANGE_TTL_MS = 60 * 1000;
 
 type Provider = 'github' | 'gitlab';
 
-const oauthStates = new Map<string, { provider: Provider; createdAt: number }>();
-const loginExchangeCodes = new OneTimeCodeStore<{ userId: string }>(LOGIN_EXCHANGE_TTL_MS);
+// Shared across replicas (Redis; SET NX PX + GETDEL). The `state` value is the store key.
+const oauthStates = createCodeStore<{ provider: Provider; createdAt: number }>('oauth-state', OAUTH_STATE_TTL_MS);
+const loginExchangeCodes = createCodeStore<{ userId: string }>('login-code', LOGIN_EXCHANGE_TTL_MS);
 
-function purgeStates() {
-  const cutoff = Date.now() - OAUTH_STATE_TTL_MS;
-  for (const [k, v] of oauthStates) {
-    if (v.createdAt < cutoff) oauthStates.delete(k);
-  }
-}
+/** Shown when the session store (Redis) is unreachable: login fails closed. */
+export const LOGIN_UNAVAILABLE_MESSAGE = 'Sign-in is temporarily unavailable. Try again in a moment.';
 
 function configuredDomain(): string {
   return String(process.env.DOMAIN || '').trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
@@ -59,8 +57,8 @@ function csvEnv(name: string): string[] {
  * Issue a single-use, 60-second exchange code for the user and return the portal URL carrying it.
  * The session JWT itself never appears in a URL.
  */
-export function issuePortalRedirect(userId: string, reqHost: string | undefined, proto: string): string {
-  const code = loginExchangeCodes.issue({ userId });
+export async function issuePortalRedirect(userId: string, reqHost: string | undefined, proto: string): Promise<string> {
+  const code = await loginExchangeCodes.issue({ userId });
   return `${portalBase(reqHost, proto)}/dashboard?code=${encodeURIComponent(code)}`;
 }
 
@@ -77,9 +75,12 @@ export function signSessionToken(user: Pick<User, 'id' | 'email' | 'name' | 'rol
   );
 }
 
-/** Redeem a login exchange code. Returns null when unknown, expired, reused, or the user is inactive. */
+/**
+ * Redeem a login exchange code. Returns null when unknown, expired, reused, or the user is inactive.
+ * Throws StateStoreUnavailableError when the session store is down (caller answers 503).
+ */
 export async function exchangeLoginCode(code: unknown): Promise<{ token: string; user: User } | null> {
-  const entry = loginExchangeCodes.consume(code);
+  const entry = await loginExchangeCodes.consume(code);
   if (!entry) return null;
   const ds = await getDb();
   const user = await ds.getRepository(User).findOne({ where: { id: entry.userId } });
@@ -141,9 +142,16 @@ export async function buildAuthorizeUrl(
     return { ok: false, url: '', status: 400, state: '', error: 'GitLab login is not configured. Add a GitLab OAuth application under Settings → Login.' };
   }
 
-  purgeStates();
-  const state = crypto.randomBytes(16).toString('hex');
-  oauthStates.set(state, { provider, createdAt: Date.now() });
+  let state: string;
+  try {
+    state = await oauthStates.issue({ provider, createdAt: Date.now() });
+  } catch (err) {
+    if (err instanceof StateStoreUnavailableError) {
+      console.warn(`[oauth-login] ${err.message}`);
+      return { ok: false, url: '', status: 503, state: '', error: LOGIN_UNAVAILABLE_MESSAGE };
+    }
+    throw err;
+  }
 
   if (provider === 'github') {
     const url = new URL('https://github.com/login/oauth/authorize');
@@ -275,8 +283,13 @@ export async function completeOAuthCallback(params: {
   if (!code) return { redirect: loginFailedRedirect(reqHost, proto, 'Missing OAuth code') };
   const invalidState = { redirect: loginFailedRedirect(reqHost, proto, 'Invalid OAuth state. Try signing in again.') };
   if (!state || !browserState || !safeEqual(state, browserState)) return invalidState;
-  const st = oauthStates.get(state);
-  oauthStates.delete(state);
+  let st: { provider: Provider; createdAt: number } | null;
+  try {
+    st = await oauthStates.consume(state); // single use, across replicas
+  } catch (err) {
+    if (err instanceof StateStoreUnavailableError) return { redirect: loginFailedRedirect(reqHost, proto, LOGIN_UNAVAILABLE_MESSAGE) };
+    throw err;
+  }
   if (!st || st.provider !== provider || Date.now() - st.createdAt > OAUTH_STATE_TTL_MS) return invalidState;
 
   const cfg = await resolveIntegrations();
@@ -337,5 +350,10 @@ export async function completeOAuthCallback(params: {
     kind: 'auth',
     link: '/profile',
   });
-  return { redirect: issuePortalRedirect(user.id, reqHost, proto) };
+  try {
+    return { redirect: await issuePortalRedirect(user.id, reqHost, proto) };
+  } catch (err) {
+    if (err instanceof StateStoreUnavailableError) return { redirect: loginFailedRedirect(reqHost, proto, LOGIN_UNAVAILABLE_MESSAGE) };
+    throw err;
+  }
 }

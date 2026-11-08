@@ -3,6 +3,7 @@ package components
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -17,8 +18,21 @@ curl() {
  printf 'HTTP/1.1 200 OK\r\nDocker-Content-Digest: %s\r\n' "$DIGEST"
 }
 jq() { cat >/dev/null; printf test-token; }
+MIG_FILE="$(mktemp)"
+sleep() { :; }
+sha256sum() { cat >/dev/null; echo "0123456789abcdef0123456789abcdef  -"; }
 kubectl() {
+ if [[ "$*" == "-n platform get configmap "* ]]; then printf 'kind: Job\nmetadata:\n  name: __NAME__\n'; return; fi
+ if [[ "$*" == "-n platform get job "* ]]; then
+  if [[ "$*" == *"{.status.succeeded}/{.status.failed}"* ]]; then
+   if [[ "${FAIL_MIGRATION:-0}" == 1 ]]; then printf '/1'; else printf '1/'; fi
+  fi
+  return 0
+ fi
+ if [[ "$*" == "-n platform delete "* || "$*" == "-n platform logs "* ]]; then return 0; fi
+ if [[ "$*" == "apply -f -" ]]; then cat >/dev/null; echo applied >> "$MIG_FILE"; return 0; fi
  if [[ "$1 $2" == "set image" ]]; then
+  [[ -s "$MIG_FILE" ]] || { echo "API rolled before migrations" >&2; return 96; }
   [[ "$DIGEST" != invalid ]] || { echo "mutated with invalid digest" >&2; return 99; }
   local deployment="$5" image="$6"
   [[ "$image" == *@sha256:* ]] || return 98
@@ -37,7 +51,13 @@ func runJobShell(t *testing.T, script string) (string, error) {
 	if err != nil {
 		t.Skip("bash unavailable")
 	}
-	out, err := exec.Command(bash, "-c", script).CombinedOutput()
+	// Run from a file: long multi-copy scripts passed via argv get mangled by
+	// the Windows (MSYS) command-line round trip.
+	path := filepath.Join(t.TempDir(), "job.sh")
+	if err := os.WriteFile(path, []byte(script), 0600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(bash, filepath.ToSlash(path)).CombinedOutput()
 	return string(out), err
 }
 func TestDigestUpdateOnlyRollsForChangedDigest(t *testing.T) {
@@ -48,13 +68,49 @@ func TestDigestUpdateOnlyRollsForChangedDigest(t *testing.T) {
 	}
 }
 func TestDigestUpdateRejectsInvalidDigestAndRolloutFailure(t *testing.T) {
-	for _, setup := range []string{"DIGEST=invalid", "FAIL_ROLLOUT=1"} {
+	for _, setup := range []string{"DIGEST=invalid", "FAIL_ROLLOUT=1", "FAIL_MIGRATION=1"} {
 		script := digestTestTools + "\n" + setup + "\nAPI=ghcr.io/test/platform-api:latest\nPORTAL=ghcr.io/test/platform-portal:latest\n" + digestUpdateScript
 		if out, err := runJobShell(t, script); err == nil {
 			t.Fatalf("job ignored %s: %s", setup, out)
 		}
 	}
 }
+// Offline/bundle installs: no registry digest, but the images are already on
+// the node. With ALLOW_LOCAL_IMAGES the tag is used as-is (migrations still run
+// first); without it the update must refuse, so online auto-update stays pinned.
+func TestDigestUpdateFallsBackToLocalImagesOnlyWhenAllowed(t *testing.T) {
+	wrap := `
+eval "$(declare -f kubectl | sed '1s/^kubectl/orig_kubectl/')"
+SET_FILE="$(mktemp)"
+kubectl() {
+ if [[ "$1 $2" == "set image" ]]; then
+  [[ -s "$MIG_FILE" ]] || { echo "API rolled before migrations" >&2; return 96; }
+  echo "$6" >> "$SET_FILE"; return 0
+ fi
+ orig_kubectl "$@"
+}
+API=ghcr.io/test/platform-api:offline
+PORTAL=ghcr.io/test/platform-portal:offline
+`
+	check := `
+grep -qx 'api=ghcr.io/test/platform-api:offline' "$SET_FILE" || { cat "$SET_FILE"; exit 80; }
+grep -qx 'portal=ghcr.io/test/platform-portal:offline' "$SET_FILE" || exit 81
+`
+	for name, setup := range map[string]string{
+		"registry has no digest": "DIGEST=invalid",
+		"registry unreachable":   "curl() { return 6; }",
+	} {
+		allowed := digestTestTools + "\n" + setup + "\nALLOW_LOCAL_IMAGES=true\n" + wrap + digestUpdateScript + check
+		if out, err := runJobShell(t, allowed); err != nil {
+			t.Fatalf("%s with ALLOW_LOCAL_IMAGES: %v %s", name, err, out)
+		}
+		strict := digestTestTools + "\n" + setup + "\n" + wrap + digestUpdateScript
+		if out, err := runJobShell(t, strict); err == nil {
+			t.Fatalf("%s without ALLOW_LOCAL_IMAGES must refuse: %s", name, out)
+		}
+	}
+}
+
 func TestRecoveryAdminSQLAlwaysAuthenticatesAndPropagatesFailure(t *testing.T) {
 	start := strings.Index(recoverScript, "kubectl -n databases exec -i \"$PG_POD\" -- bash -lc 'cat > /tmp/platformctl-recover-admin.sql'")
 	if start < 0 {

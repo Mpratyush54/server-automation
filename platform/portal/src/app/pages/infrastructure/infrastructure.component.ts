@@ -206,7 +206,7 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
     try {
       const res: any = await firstValueFrom(this.api.getBootstrapToken());
       this.joinToken = res.token;
-      this.joinCommand = `curl https://platform.platform.dev/bootstrap/get | bash -s -- --token ${this.joinToken} --master 104.21.32.14`;
+      this.joinCommand = `curl ${window.location.origin}/bootstrap/get | bash -s -- --token ${this.joinToken} --master <server-ip>`;
     } catch (err: any) {
       alert('Failed to generate join token: ' + (err.error?.error || err.message));
     } finally {

@@ -66,9 +66,15 @@ func TestBackupLocalStateCopiesEnv(t *testing.T) {
 	if err := os.WriteFile(envFile, []byte("POSTGRES_PASSWORD=saved\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	before := cwdEntries(t)
 	dir, err := BackupLocalState(filepath.Join(root, "backups"), envFile)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Regression: the backup dir used to be spliced into a bash script, so on
+	// Windows the secret dumps landed in a stray "C:Users..." dir under the cwd.
+	if after := cwdEntries(t); strings.Join(after, ",") != strings.Join(before, ",") {
+		t.Fatalf("BackupLocalState wrote outside its backup root: before %v after %v", before, after)
 	}
 	copied, err := os.ReadFile(filepath.Join(dir, "env"))
 	if err != nil {
@@ -77,4 +83,17 @@ func TestBackupLocalStateCopiesEnv(t *testing.T) {
 	if !strings.Contains(string(copied), "POSTGRES_PASSWORD=saved") {
 		t.Fatalf("backup missing env: %s", copied)
 	}
+}
+
+func cwdEntries(t *testing.T) []string {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return names
 }

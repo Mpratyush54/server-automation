@@ -60,7 +60,7 @@ graph TB
     <div class="dashboard-card-icon">🗄️</div>
     <h4>PostgreSQL 16</h4>
   </div>
-  <p><strong>Primary data store</strong> — Users, projects, secrets, roles, deployments, and audit logs. Synchronized via TypeORM with <code>synchronize: true</code>. Persistent volume.</p>
+  <p><strong>Primary data store</strong> — Users, projects, secrets, roles, deployments, and audit logs. Schema managed by versioned TypeORM migrations, applied by a Job before each API rollout. Persistent volume.</p>
 </div>
 
 <div class="dashboard-card">
@@ -258,7 +258,7 @@ Tokens are signed with `JWT_SECRET` (default: `plat-super-secret-key`). Expiry: 
 
 ### <span class="decision-badge">#4</span> Dual-Database Strategy
 
-**PostgreSQL** (TypeORM) handles ACID-compliant relational data — users, projects, secrets, deployments, roles, audit logs. **MongoDB** (Mongoose) handles high-volume write throughput for time-series data — logs, API metrics, raw metrics, bug reports, SDK events. PostgreSQL is synchronized via `synchronize: true`; MongoDB connects non-blocking.
+**PostgreSQL** (TypeORM) handles ACID-compliant relational data — users, projects, secrets, deployments, roles, audit logs. **MongoDB** (Mongoose) handles high-volume write throughput for time-series data — logs, API metrics, raw metrics, bug reports, SDK events. PostgreSQL schema changes ship as versioned TypeORM migrations; MongoDB connects non-blocking.
 
 ### <span class="decision-badge">#5</span> In-Memory Permission Cache over Redis
 
