@@ -11,14 +11,20 @@ End-to-end proof that the SDK owns DevOps + DBs + telemetry on the cluster.
 
 You only need to **build/import images** (and bootstrap the same manifests once until they are on `main` for Argo).
 
-## Live hosts (VPS)
+## Hosts
+
+`k8s/all.yaml` uses the placeholder `__DOMAIN__` for every Ingress host and URL; the deploy
+script substitutes your platform's `DOMAIN` (e.g. `sed "s/__DOMAIN__/$DOMAIN/g" k8s/all.yaml | kubectl apply -f -`).
 
 | App | URL |
 |-----|-----|
-| Node API + SDK | https://sdk-demo-apps-development.148.113.59.3.sslip.io/health |
-| DB check | https://sdk-demo-apps-development.148.113.59.3.sslip.io/api/db-check |
-| React | https://sdk-react.148.113.59.3.sslip.io |
-| Angular | https://sdk-angular.148.113.59.3.sslip.io |
+| Node API + SDK | https://sdk-demo-apps-development.__DOMAIN__/health |
+| DB check | https://sdk-demo-apps-development.__DOMAIN__/api/db-check |
+| React | https://sdk-react.__DOMAIN__ |
+| Angular | https://sdk-angular.__DOMAIN__ |
+
+The React and Angular images run unprivileged nginx (UID 101) on port **8080**; their
+containers and Services target 8080 (the Services still expose port 80 to the Ingress).
 
 Portal project: **sdk-demo-apps** → Metrics / API Latency.
 
