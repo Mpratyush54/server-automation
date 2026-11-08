@@ -73,6 +73,52 @@ sudo sed -i '/^platform=/d' /etc/platform/.bootstrap_state
 sudo platformctl install platform
 ```
 
+## Install speed, logs and timings
+
+`provision` installs cluster components in parallel, respecting dependencies (databases before the Platform API, ingress before routing):
+
+```bash
+sudo platformctl provision --auto              # default: 4 steps at a time
+sudo platformctl provision --auto --parallel 2 # gentler on small servers
+sudo platformctl provision --auto --parallel 1 # serial, live output (old behaviour)
+```
+
+- Per-step logs: `/var/log/platformctl/<step>.log` (the last lines are printed if a step fails)
+- Background image pre-pull log: `/var/log/platformctl/prepull.log`
+- Timing summary: printed at the end and saved to `/var/log/platformctl/timings.txt`
+
+Docker is **not** installed on the server; k3s uses its own containerd. For private GHCR images set `GITHUB_TOKEN` before provisioning; it is written to `/etc/rancher/k3s/registries.yaml`.
+
+## Install profiles
+
+Set `PLATFORM_PROFILE` (or pass `--profile`) to `minimal`, `standard` or `full` (default):
+
+- `minimal` — core only; no monitoring, Infisical, Portainer or ArgoCD.
+- `standard` — everything except Infisical.
+- `full` — everything.
+
+Explicit `INSTALL_*` variables override the profile. The profile is saved as
+`PLATFORM_PROFILE` in `/etc/platform/.env`; choosing a new profile explicitly ignores the
+`INSTALL_*` values saved by an earlier run.
+
+## Offline bundle
+
+Releases include `platform-bundle-<version>-<arch>.tar.zst` and a `.sha256` file:
+k3s airgap images, all pinned Helm charts (`platformctl charts --json`) and the platform
+container images. `--bundle <path|auto>` verifies the checksum and extracts it before k3s is
+installed — images into `/var/lib/rancher/k3s/agent/images/`, charts into
+`/var/lib/platform/charts/` — so provisioning needs little or no network for images and charts.
+
+```bash
+sudo platformctl provision --bundle auto
+```
+
+To build a bundle locally (needs curl, jq, helm 3, docker, zstd):
+
+```bash
+scripts/build-bundle.sh v1.0.0 amd64   # writes dist/platform-bundle-v1.0.0-amd64.tar.zst
+```
+
 ## Day-2 operations
 
 **Update images after a release:**

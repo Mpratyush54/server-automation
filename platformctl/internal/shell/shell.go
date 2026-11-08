@@ -41,8 +41,15 @@ func Exists(cmd string) bool {
 	return err == nil
 }
 
-func RunBash(script string) error {
+func RunBash(script string) error { return RunBashEnv(script, nil) }
+
+// RunBashEnv passes runtime secrets separately from shell source.
+func RunBashEnv(script string, values map[string]string) error {
 	c := exec.Command("bash", "-c", script)
+	c.Env = os.Environ()
+	for key, value := range values {
+		c.Env = append(c.Env, key+"="+value)
+	}
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
 	c.Stdin = os.Stdin

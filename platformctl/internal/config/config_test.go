@@ -94,8 +94,6 @@ func TestGenerateSecretsAll(t *testing.T) {
 		{"WebhookSecret", c.WebhookSecret, 32},
 		{"ArgoCDPassword", c.ArgoCDPassword, 20},
 		{"GrafanaPassword", c.GrafanaPassword, 20},
-		{"InfisicalEncKey", c.InfisicalEncKey, 64},
-		{"InfisicalJWT", c.InfisicalJWT, 48},
 		{"PortainerPassword", c.PortainerPassword, 20},
 	}
 
@@ -112,14 +110,14 @@ func TestGenerateSecretsAll(t *testing.T) {
 func TestGenerateSecretsPreservesExisting(t *testing.T) {
 	c := &Config{
 		PostgresPassword: "my-custom-password",
-		JWTSecret:        "my-jwt-secret",
+		JWTSecret:        "my-existing-jwt-secret-with-at-least-32-characters",
 	}
 	c.GenerateSecrets()
 
 	if c.PostgresPassword != "my-custom-password" {
 		t.Errorf("existing PostgresPassword was overwritten to %s", c.PostgresPassword)
 	}
-	if c.JWTSecret != "my-jwt-secret" {
+	if c.JWTSecret != "my-existing-jwt-secret-with-at-least-32-characters" {
 		t.Errorf("existing JWTSecret was overwritten to %s", c.JWTSecret)
 	}
 	if c.MongoPassword == "" {
@@ -285,5 +283,195 @@ func TestGetEnvBool(t *testing.T) {
 			t.Errorf("getEnvBool(%q, %v) = %v, want %v", tt.val, tt.def, result, tt.expected)
 		}
 		os.Unsetenv("TEST_GETENVBOOL")
+	}
+}
+
+// profileEnv points Load at a temp .env with the given content and clears
+// profile-related variables, restoring everything afterwards.
+func profileEnv(t *testing.T, dotenv string) {
+	t.Helper()
+	for _, k := range append([]string{"PLATFORM_PROFILE"}, installKeys...) {
+		if v, ok := os.LookupEnv(k); ok {
+			t.Setenv(k, v) // registers restore
+			os.Unsetenv(k)
+		}
+	}
+	oldPath, oldLoaded := envFilePath, dotenvLoaded
+	dotenvLoaded = map[string]string{}
+	envFilePath = filepath.Join(t.TempDir(), "missing.env")
+	if dotenv != "" {
+		envFilePath = filepath.Join(t.TempDir(), ".env")
+		if err := os.WriteFile(envFilePath, []byte(dotenv), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		for k := range dotenvLoaded {
+			os.Unsetenv(k)
+		}
+		envFilePath, dotenvLoaded = oldPath, oldLoaded
+	})
+}
+
+type installSet struct{ argo, mon, port, cert bool }
+
+func installOf(c *Config) installSet {
+	return installSet{c.InstallArgoCD, c.InstallMonitoring, c.InstallPortainer, c.InstallCertManager}
+}
+
+func TestProfileDefaultIsFull(t *testing.T) {
+	profileEnv(t, "")
+	c := Load()
+	if c.Profile != ProfileFull {
+		t.Fatalf("Profile = %q, want full", c.Profile)
+	}
+	if got := installOf(c); got != (installSet{true, true, true, true}) {
+		t.Fatalf("full install set = %+v", got)
+	}
+}
+
+func TestProfilesFromEnv(t *testing.T) {
+	cases := map[string]installSet{
+		"minimal":  {false, false, false, true},
+		"standard": {true, true, true, true}, // same as full since Infisical was removed
+		"full":     {true, true, true, true},
+		"Minimal":  {false, false, false, true},
+	}
+	for name, want := range cases {
+		t.Run(name, func(t *testing.T) {
+			profileEnv(t, "")
+			t.Setenv("PLATFORM_PROFILE", name)
+			c := Load()
+			if got := installOf(c); got != want {
+				t.Fatalf("%s: got %+v want %+v", name, got, want)
+			}
+		})
+	}
+}
+
+func TestProfileExplicitInstallOverrides(t *testing.T) {
+	profileEnv(t, "")
+	t.Setenv("PLATFORM_PROFILE", "minimal")
+	t.Setenv("INSTALL_MONITORING", "true")
+	t.Setenv("INSTALL_CERTMANAGER", "false")
+	c := Load()
+	if got := installOf(c); got != (installSet{false, true, false, false}) {
+		t.Fatalf("got %+v", got)
+	}
+	// ApplyProfile keeps explicit env overrides.
+	if err := c.ApplyProfile("full"); err != nil {
+		t.Fatal(err)
+	}
+	if got := installOf(c); got != (installSet{true, true, true, false}) {
+		t.Fatalf("after ApplyProfile(full): %+v", got)
+	}
+}
+
+func TestApplyProfileUnknown(t *testing.T) {
+	profileEnv(t, "")
+	c := Load()
+	if err := c.ApplyProfile("huge"); err == nil {
+		t.Fatal("expected error for unknown profile")
+	}
+	if c.Profile != ProfileFull || !c.InstallMonitoring {
+		t.Fatal("failed ApplyProfile must not change config")
+	}
+}
+
+func TestUnknownEnvProfileFallsBackToFull(t *testing.T) {
+	profileEnv(t, "")
+	t.Setenv("PLATFORM_PROFILE", "bogus")
+	c := Load()
+	if c.Profile != ProfileFull || !c.InstallMonitoring {
+		t.Fatalf("expected fallback to full, got %q %+v", c.Profile, installOf(c))
+	}
+}
+
+// A saved .env from a full install must not override a newly chosen profile.
+func TestSavedInstallDoesNotOverrideNewProfile(t *testing.T) {
+	saved := "PLATFORM_PROFILE=full\nINSTALL_ARGOCD=true\nINSTALL_MONITORING=true\nINSTALL_PORTAINER=true\nINSTALL_CERTMANAGER=true\n"
+
+	t.Run("env profile", func(t *testing.T) {
+		profileEnv(t, saved)
+		t.Setenv("PLATFORM_PROFILE", "minimal")
+		c := Load()
+		if c.Profile != ProfileMinimal {
+			t.Fatalf("Profile = %q", c.Profile)
+		}
+		if got := installOf(c); got != (installSet{false, false, false, true}) {
+			t.Fatalf("got %+v", got)
+		}
+	})
+
+	t.Run("ApplyProfile", func(t *testing.T) {
+		profileEnv(t, saved)
+		c := Load()
+		if err := c.ApplyProfile("standard"); err != nil {
+			t.Fatal(err)
+		}
+		if got := installOf(c); got != (installSet{true, true, true, true}) {
+			t.Fatalf("got %+v", got)
+		}
+	})
+}
+
+// Without an explicit profile, the saved profile and saved per-component
+// choices are honoured (re-running provision keeps the previous selection).
+func TestSavedProfileAndChoicesHonoured(t *testing.T) {
+	profileEnv(t, "PLATFORM_PROFILE=standard\nINSTALL_MONITORING=false\n")
+	c := Load()
+	if c.Profile != ProfileStandard {
+		t.Fatalf("Profile = %q", c.Profile)
+	}
+	if got := installOf(c); got != (installSet{true, false, true, true}) {
+		t.Fatalf("got %+v", got)
+	}
+	// A second Load in the same process must not treat .env values as explicit.
+	c2 := Load()
+	if err := c2.ApplyProfile("full"); err != nil {
+		t.Fatal(err)
+	}
+	if !c2.InstallMonitoring {
+		t.Fatal(".env INSTALL_MONITORING leaked as an explicit override")
+	}
+}
+
+// Legacy .env (no PLATFORM_PROFILE) keeps its INSTALL_* values.
+func TestLegacyEnvWithoutProfile(t *testing.T) {
+	profileEnv(t, "INSTALL_PORTAINER=false\n")
+	c := Load()
+	if c.Profile != ProfileFull || c.InstallPortainer || !c.InstallArgoCD {
+		t.Fatalf("got %q %+v", c.Profile, installOf(c))
+	}
+}
+
+func TestSaveEnvFilePersistsProfile(t *testing.T) {
+	profileEnv(t, "")
+	c := Load()
+	if err := c.ApplyProfile("minimal"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := c.SaveEnvFile(path); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "INFISICAL") {
+		t.Error("Infisical was removed; saved env must not contain INFISICAL keys")
+	}
+	for _, want := range []string{"PLATFORM_PROFILE=minimal\n", "INSTALL_CERTMANAGER=true\n"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("saved env missing %q", want)
+		}
+	}
+
+	// Round trip: loading the saved file reproduces the selection.
+	profileEnv(t, string(data))
+	c2 := Load()
+	if c2.Profile != ProfileMinimal || installOf(c2) != installOf(c) {
+		t.Fatalf("round trip: %q %+v", c2.Profile, installOf(c2))
 	}
 }

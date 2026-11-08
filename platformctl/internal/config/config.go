@@ -3,6 +3,7 @@ package config
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"os"
@@ -26,6 +27,7 @@ type Config struct {
 	NonInteractive bool
 	SkipK8s        bool
 	SkipPreflight  bool
+	ResetPortainer bool
 
 	ImageRegistry string
 	ImageTag      string
@@ -35,23 +37,37 @@ type Config struct {
 	InstallArgoCD      bool
 	InstallMonitoring  bool
 	InstallPortainer   bool
-	InstallInfisical   bool
 	InstallCertManager bool
 	AutoUpdate         bool
 
-	PostgresPassword  string
-	MongoPassword     string
-	RedisPassword     string
-	MinioAccessKey    string
-	MinioSecretKey    string
-	JWTSecret         string
-	WebhookSecret     string
-	ArgoCDPassword    string
-	GrafanaPassword   string
-	InfisicalEncKey   string
-	InfisicalJWT      string
-	PortainerPassword string
-	LEEmail           string
+	// Profile is the install profile (minimal|standard|full) that set the
+	// Install* defaults. See ApplyProfile.
+	Profile string
+	// explicitInstall holds INSTALL_* values set in the real process
+	// environment (not loaded from /etc/platform/.env); they always win over
+	// the profile.
+	explicitInstall map[string]bool
+
+	PostgresPassword     string
+	MongoPassword        string
+	RedisPassword        string
+	MinioAccessKey       string
+	MinioSecretKey       string
+	JWTSecret            string
+	SecretsEncryptionKey string
+	WebhookSecret        string
+	ArgoCDPassword       string
+	GrafanaPassword      string
+	PortainerPassword    string
+	LEEmail              string
+
+	// Per-client secrets for the platform's built-in OIDC provider. The API
+	// receives them via OIDC_CLIENTS; each SSO client gets its own.
+	OIDCSecretGrafana     string
+	OIDCSecretArgoCD      string
+	OIDCSecretPortainer   string
+	OIDCSecretOAuth2Proxy string
+	OIDCSecretMinio       string
 
 	// PasswordGenerated is set when admin password was auto-created this run.
 	PasswordGenerated bool
@@ -62,41 +78,56 @@ func Load() *Config {
 	if tagDefault == "" {
 		tagDefault = "latest"
 	}
+	// Capture what the operator set explicitly before the saved .env is merged
+	// into the environment, so profile resolution can tell them apart.
+	explicit := explicitEnv()
 	// Prefer values already written by a prior provision.
-	_ = loadDotEnv("/etc/platform/.env")
+	_ = loadDotEnv(envFilePath)
 
 	c := &Config{
-		PlatformName:       getEnv("PLATFORM_NAME", "Platform"),
-		ImageRegistry:      getEnv("PLATFORM_IMAGE_REGISTRY", "ghcr.io/mpratyush54"),
-		ImageTag:           getEnv("PLATFORM_IMAGE_TAG", tagDefault),
-		RepoURL:            getEnv("PLATFORM_REPO_URL", "https://github.com/Mpratyush54/SERVER-automation"),
-		GitHubToken:        getEnv("GITHUB_TOKEN", ""),
-		Domain:             firstNonEmpty(os.Getenv("DOMAIN"), os.Getenv("PLATFORM_DOMAIN")),
-		AdminEmail:         os.Getenv("ADMIN_EMAIL"), // empty → prompt will ask
-		AdminPassword:      getEnv("ADMIN_PASSWORD", ""),
-		NonInteractive:     os.Getenv("NON_INTERACTIVE") == "true" || os.Getenv("PLATFORMCTL_AUTO") == "true",
-		SkipK8s:            os.Getenv("SKIP_K8S") == "true",
-		SkipPreflight:      os.Getenv("SKIP_PREFLIGHT") == "true",
-		InstallArgoCD:      getEnvBool("INSTALL_ARGOCD", true),
-		InstallMonitoring:  getEnvBool("INSTALL_MONITORING", true),
-		InstallPortainer:   getEnvBool("INSTALL_PORTAINER", true),
-		InstallInfisical:   getEnvBool("INSTALL_INFISICAL", true),
-		InstallCertManager: getEnvBool("INSTALL_CERTMANAGER", true),
-		AutoUpdate:         getEnvBool("AUTO_UPDATE", true),
-		MinioAccessKey:     getEnv("MINIO_ACCESS_KEY", "platformadmin"),
-		PostgresPassword:   os.Getenv("POSTGRES_PASSWORD"),
-		MongoPassword:      os.Getenv("MONGO_PASSWORD"),
-		RedisPassword:      os.Getenv("REDIS_PASSWORD"),
-		MinioSecretKey:     os.Getenv("MINIO_SECRET_KEY"),
-		JWTSecret:          os.Getenv("JWT_SECRET"),
-		WebhookSecret:      os.Getenv("PLATFORM_WEBHOOK_SECRET"),
-		ArgoCDPassword:     os.Getenv("ARGOCD_PASSWORD"),
-		GrafanaPassword:    os.Getenv("GRAFANA_PASSWORD"),
-		PortainerPassword:  firstNonEmpty(os.Getenv("PORTAINER_ADMIN_PASSWORD"), os.Getenv("PORTAINER_PASSWORD")),
-		LEEmail:            firstNonEmpty(os.Getenv("LE_EMAIL"), os.Getenv("ADMIN_EMAIL")),
+		PlatformName:         getEnv("PLATFORM_NAME", "Platform"),
+		ImageRegistry:        getEnv("PLATFORM_IMAGE_REGISTRY", "ghcr.io/mpratyush54"),
+		ImageTag:             getEnv("PLATFORM_IMAGE_TAG", tagDefault),
+		RepoURL:              getEnv("PLATFORM_REPO_URL", "https://github.com/Mpratyush54/SERVER-automation"),
+		GitHubToken:          getEnv("GITHUB_TOKEN", ""),
+		Domain:               firstNonEmpty(os.Getenv("DOMAIN"), os.Getenv("PLATFORM_DOMAIN")),
+		AdminEmail:           os.Getenv("ADMIN_EMAIL"), // empty → prompt will ask
+		AdminPassword:        getEnv("ADMIN_PASSWORD", ""),
+		NonInteractive:       os.Getenv("NON_INTERACTIVE") == "true" || os.Getenv("PLATFORMCTL_AUTO") == "true",
+		SkipK8s:              os.Getenv("SKIP_K8S") == "true",
+		SkipPreflight:        os.Getenv("SKIP_PREFLIGHT") == "true",
+		AutoUpdate:           getEnvBool("AUTO_UPDATE", true),
+		MinioAccessKey:       getEnv("MINIO_ACCESS_KEY", "platformadmin"),
+		PostgresPassword:     os.Getenv("POSTGRES_PASSWORD"),
+		MongoPassword:        os.Getenv("MONGO_PASSWORD"),
+		RedisPassword:        os.Getenv("REDIS_PASSWORD"),
+		MinioSecretKey:       os.Getenv("MINIO_SECRET_KEY"),
+		JWTSecret:            os.Getenv("JWT_SECRET"),
+		SecretsEncryptionKey: os.Getenv("SECRETS_ENCRYPTION_KEY"),
+		WebhookSecret:        os.Getenv("PLATFORM_WEBHOOK_SECRET"),
+		ArgoCDPassword:       os.Getenv("ARGOCD_PASSWORD"),
+		GrafanaPassword:      os.Getenv("GRAFANA_PASSWORD"),
+		PortainerPassword:    firstNonEmpty(os.Getenv("PORTAINER_ADMIN_PASSWORD"), os.Getenv("PORTAINER_PASSWORD")),
+		LEEmail:              firstNonEmpty(os.Getenv("LE_EMAIL"), os.Getenv("ADMIN_EMAIL")),
+
+		OIDCSecretGrafana:     os.Getenv("OIDC_SECRET_GRAFANA"),
+		OIDCSecretArgoCD:      os.Getenv("OIDC_SECRET_ARGOCD"),
+		OIDCSecretPortainer:   os.Getenv("OIDC_SECRET_PORTAINER"),
+		OIDCSecretOAuth2Proxy: os.Getenv("OIDC_SECRET_OAUTH2_PROXY"),
+		OIDCSecretMinio:       os.Getenv("OIDC_SECRET_MINIO"),
 	}
+	c.resolveProfile(explicit)
 	return c
 }
+
+// envFilePath is the saved configuration merged into the environment by Load.
+// Tests override it.
+var envFilePath = "/etc/platform/.env"
+
+// dotenvLoaded records KEY → value pairs that loadDotEnv injected into the
+// process environment, so later Load calls do not mistake them for values
+// the operator set explicitly.
+var dotenvLoaded = map[string]string{}
 
 // loadDotEnv loads KEY=VALUE pairs into the process environment without
 // overwriting variables that are already set.
@@ -118,6 +149,7 @@ func loadDotEnv(path string) error {
 		val := strings.TrimSpace(line[idx+1:])
 		if os.Getenv(key) == "" {
 			_ = os.Setenv(key, val)
+			dotenvLoaded[key] = val
 		}
 	}
 	return nil
@@ -243,7 +275,6 @@ func (c *Config) PromptInteractive() error {
 	askBool("Install ArgoCD (GitOps at /argocd)", &c.InstallArgoCD)
 	askBool("Install Monitoring (Grafana + Prometheus)", &c.InstallMonitoring)
 	askBool("Install Portainer (portainer.<domain>)", &c.InstallPortainer)
-	askBool("Install Infisical (secrets)", &c.InstallInfisical)
 	askBool("Install cert-manager (HTTPS / Let's Encrypt)", &c.InstallCertManager)
 	askBool("Enable image auto-update", &c.AutoUpdate)
 
@@ -378,6 +409,13 @@ func askBool(prompt string, target *bool) {
 }
 
 func (c *Config) GenerateSecrets() {
+	if c.SecretsEncryptionKey == "" {
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			panic(err)
+		}
+		c.SecretsEncryptionKey = hex.EncodeToString(key)
+	}
 	if c.PostgresPassword == "" {
 		c.PostgresPassword = generatePassword(24)
 	}
@@ -390,7 +428,7 @@ func (c *Config) GenerateSecrets() {
 	if c.MinioSecretKey == "" {
 		c.MinioSecretKey = generatePassword(32)
 	}
-	if c.JWTSecret == "" {
+	if len(c.JWTSecret) < 32 {
 		c.JWTSecret = generatePassword(48)
 	}
 	if c.WebhookSecret == "" {
@@ -402,12 +440,6 @@ func (c *Config) GenerateSecrets() {
 	if c.GrafanaPassword == "" {
 		c.GrafanaPassword = generatePassword(20)
 	}
-	if c.InfisicalEncKey == "" {
-		c.InfisicalEncKey = generatePassword(64)
-	}
-	if c.InfisicalJWT == "" {
-		c.InfisicalJWT = generatePassword(48)
-	}
 	if c.AdminPassword == "" {
 		c.AdminPassword = generatePassword(24)
 		c.PasswordGenerated = true
@@ -417,6 +449,11 @@ func (c *Config) GenerateSecrets() {
 			c.PortainerPassword = c.AdminPassword
 		} else {
 			c.PortainerPassword = generatePassword(20)
+		}
+	}
+	for _, s := range []*string{&c.OIDCSecretGrafana, &c.OIDCSecretArgoCD, &c.OIDCSecretPortainer, &c.OIDCSecretOAuth2Proxy, &c.OIDCSecretMinio} {
+		if *s == "" {
+			*s = generatePassword(40)
 		}
 	}
 	if c.LEEmail == "" {
@@ -454,18 +491,22 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("MINIO_ACCESS_KEY=%s\n", c.MinioAccessKey))
 	b.WriteString(fmt.Sprintf("MINIO_SECRET_KEY=%s\n", c.MinioSecretKey))
 	b.WriteString(fmt.Sprintf("JWT_SECRET=%s\n", c.JWTSecret))
+	b.WriteString(fmt.Sprintf("SECRETS_ENCRYPTION_KEY=%s\n", c.SecretsEncryptionKey))
 	b.WriteString(fmt.Sprintf("PLATFORM_WEBHOOK_SECRET=%s\n", c.WebhookSecret))
 	b.WriteString(fmt.Sprintf("ARGOCD_PASSWORD=%s\n", c.ArgoCDPassword))
 	b.WriteString(fmt.Sprintf("GRAFANA_PASSWORD=%s\n", c.GrafanaPassword))
-	b.WriteString(fmt.Sprintf("INFISICAL_ENCRYPTION_KEY=%s\n", c.InfisicalEncKey))
-	b.WriteString(fmt.Sprintf("INFISICAL_JWT_SECRET=%s\n", c.InfisicalJWT))
 	b.WriteString(fmt.Sprintf("PORTAINER_ADMIN_PASSWORD=%s\n", c.PortainerPassword))
+	b.WriteString(fmt.Sprintf("OIDC_SECRET_GRAFANA=%s\n", c.OIDCSecretGrafana))
+	b.WriteString(fmt.Sprintf("OIDC_SECRET_ARGOCD=%s\n", c.OIDCSecretArgoCD))
+	b.WriteString(fmt.Sprintf("OIDC_SECRET_PORTAINER=%s\n", c.OIDCSecretPortainer))
+	b.WriteString(fmt.Sprintf("OIDC_SECRET_OAUTH2_PROXY=%s\n", c.OIDCSecretOAuth2Proxy))
+	b.WriteString(fmt.Sprintf("OIDC_SECRET_MINIO=%s\n", c.OIDCSecretMinio))
 	b.WriteString(fmt.Sprintf("PLATFORM_IMAGE_TAG=%s\n", c.ImageTag))
 	b.WriteString(fmt.Sprintf("AUTO_UPDATE=%t\n", c.AutoUpdate))
+	b.WriteString(fmt.Sprintf("PLATFORM_PROFILE=%s\n", c.profileName()))
 	b.WriteString(fmt.Sprintf("INSTALL_ARGOCD=%t\n", c.InstallArgoCD))
 	b.WriteString(fmt.Sprintf("INSTALL_MONITORING=%t\n", c.InstallMonitoring))
 	b.WriteString(fmt.Sprintf("INSTALL_PORTAINER=%t\n", c.InstallPortainer))
-	b.WriteString(fmt.Sprintf("INSTALL_INFISICAL=%t\n", c.InstallInfisical))
 	b.WriteString(fmt.Sprintf("INSTALL_CERTMANAGER=%t\n", c.InstallCertManager))
 	return os.WriteFile(path, []byte(b.String()), 0600)
 }
@@ -489,4 +530,142 @@ func generatePassword(length int) string {
 	b := make([]byte, length)
 	rand.Read(b)
 	return base64.RawURLEncoding.EncodeToString(b)[:length]
+}
+
+// Install profiles. Explicit INSTALL_* environment variables always override
+// the profile's defaults.
+const (
+	ProfileMinimal  = "minimal"  // core only: no monitoring, Portainer, ArgoCD
+	ProfileStandard = "standard" // same components as full (Infisical was removed; kept for compatibility)
+	ProfileFull     = "full"     // everything (default; matches pre-profile behaviour)
+)
+
+// Profiles lists the valid profile names.
+var Profiles = []string{ProfileMinimal, ProfileStandard, ProfileFull}
+
+// installKeys are the INSTALL_* variables a profile controls.
+var installKeys = []string{"INSTALL_ARGOCD", "INSTALL_MONITORING", "INSTALL_PORTAINER", "INSTALL_CERTMANAGER"}
+
+// profileDefaults returns the Install* values for a profile, keyed by INSTALL_* name.
+func profileDefaults(name string) (map[string]bool, error) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case ProfileMinimal:
+		return map[string]bool{
+			"INSTALL_ARGOCD": false, "INSTALL_MONITORING": false, "INSTALL_PORTAINER": false,
+			"INSTALL_CERTMANAGER": true,
+		}, nil
+	case ProfileStandard:
+		return map[string]bool{
+			"INSTALL_ARGOCD": true, "INSTALL_MONITORING": true, "INSTALL_PORTAINER": true,
+			"INSTALL_CERTMANAGER": true,
+		}, nil
+	case "", ProfileFull:
+		return map[string]bool{
+			"INSTALL_ARGOCD": true, "INSTALL_MONITORING": true, "INSTALL_PORTAINER": true,
+			"INSTALL_CERTMANAGER": true,
+		}, nil
+	}
+	return nil, fmt.Errorf("unknown profile %q (valid: %s)", name, strings.Join(Profiles, ", "))
+}
+
+// explicitEnv returns PLATFORM_PROFILE and INSTALL_* values present in the
+// process environment that were not injected by an earlier loadDotEnv.
+func explicitEnv() map[string]string {
+	out := map[string]string{}
+	for _, k := range append([]string{"PLATFORM_PROFILE"}, installKeys...) {
+		v := os.Getenv(k)
+		if v == "" {
+			continue
+		}
+		if loaded, ok := dotenvLoaded[k]; ok && loaded == v {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// resolveProfile sets Profile and the Install* fields during Load.
+//
+// Precedence (highest first):
+//  1. INSTALL_* set explicitly in the process environment.
+//  2. INSTALL_* saved in /etc/platform/.env — only when the profile was NOT
+//     chosen explicitly this run (the saved values are the operator's earlier
+//     per-component choices for the saved profile). When PLATFORM_PROFILE is
+//     set explicitly, saved INSTALL_* values are ignored so a newly chosen
+//     profile is not silently overridden by a previous SaveEnvFile.
+//  3. The profile's defaults (explicit PLATFORM_PROFILE, else the saved one,
+//     else "full").
+func (c *Config) resolveProfile(explicit map[string]string) {
+	c.explicitInstall = map[string]bool{}
+	for _, k := range installKeys {
+		if v, ok := explicit[k]; ok {
+			c.explicitInstall[k] = parseBool(v)
+		}
+	}
+
+	name, profileExplicit := explicit["PLATFORM_PROFILE"]
+	if !profileExplicit {
+		name = os.Getenv("PLATFORM_PROFILE") // from .env, if any
+	}
+	defaults, err := profileDefaults(name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "platformctl: %v; using %q\n", err, ProfileFull)
+		name = ProfileFull
+		defaults, _ = profileDefaults(name)
+	}
+	c.Profile = normalizeProfile(name)
+
+	if !profileExplicit {
+		// Saved per-component choices from a previous run refine the saved profile.
+		for _, k := range installKeys {
+			if v, ok := dotenvLoaded[k]; ok && os.Getenv(k) == v {
+				defaults[k] = parseBool(v)
+			}
+		}
+	}
+	c.setInstall(defaults)
+}
+
+// ApplyProfile switches to the named profile (minimal|standard|full), e.g.
+// from a --profile flag. It resets every Install* field to the profile's
+// defaults, discarding values loaded from /etc/platform/.env, then re-applies
+// INSTALL_* variables set explicitly in the process environment.
+func (c *Config) ApplyProfile(name string) error {
+	defaults, err := profileDefaults(name)
+	if err != nil {
+		return err
+	}
+	c.Profile = normalizeProfile(name)
+	c.setInstall(defaults)
+	return nil
+}
+
+func (c *Config) setInstall(defaults map[string]bool) {
+	for k, v := range c.explicitInstall {
+		defaults[k] = v
+	}
+	c.InstallArgoCD = defaults["INSTALL_ARGOCD"]
+	c.InstallMonitoring = defaults["INSTALL_MONITORING"]
+	c.InstallPortainer = defaults["INSTALL_PORTAINER"]
+	c.InstallCertManager = defaults["INSTALL_CERTMANAGER"]
+}
+
+func (c *Config) profileName() string {
+	if c.Profile == "" {
+		return ProfileFull
+	}
+	return c.Profile
+}
+
+func normalizeProfile(name string) string {
+	n := strings.ToLower(strings.TrimSpace(name))
+	if n == "" {
+		return ProfileFull
+	}
+	return n
+}
+
+func parseBool(v string) bool {
+	return v == "y" || v == "yes" || v == "true" || v == "1"
 }

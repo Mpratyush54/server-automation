@@ -14,11 +14,12 @@ grafana:
       name: Platform
       allow_sign_up: true
       client_id: grafana
-      client_secret: grafana-secret-placeholder
+      client_secret: "{{OIDC_SECRET_GRAFANA}}"
       scopes: openid profile email groups
       auth_url: https://{{DOMAIN}}/api/oauth/authorize
-      token_url: https://{{DOMAIN}}/api/oauth/token
-      api_url: https://{{DOMAIN}}/api/oauth/userinfo
+      # Server-to-server calls go in-cluster so SSO works before/without a public cert.
+      token_url: {{OIDC_INTERNAL}}/token
+      api_url: {{OIDC_INTERNAL}}/userinfo
       role_attribute_path: "contains(groups[*], 'Admin') && 'Admin' || contains(groups[*], 'DevOps') && 'Admin' || contains(groups[*], 'Tech Lead') && 'Editor' || 'Viewer'"
   ingress:
     enabled: false

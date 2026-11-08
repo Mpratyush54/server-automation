@@ -15,9 +15,18 @@ spec:
       labels:
         app: platform-portal
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: portal
           image: ghcr.io/mpratyush54/platform-portal:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           imagePullPolicy: Always
           ports:
-            - containerPort: 80
+            - containerPort: 8080

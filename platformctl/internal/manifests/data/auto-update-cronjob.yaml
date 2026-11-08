@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-auto-update
+  namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-auto-update
+  namespace: platform
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  resourceNames: ["platform-api", "platform-portal"]
+  verbs: ["get", "list", "patch", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-auto-update
+  namespace: platform
+subjects:
+- kind: ServiceAccount
+  name: platform-auto-update
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-auto-update
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: platform-auto-update
+  namespace: platform
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: platform-auto-update
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+          - name: tmp
+            emptyDir: {}
+          containers:
+          - name: update
+            image: alpine/k8s:1.37.2@sha256:dcb7185e112a453aa72f426754849a97357727ef8f40168fb208c8cf59952042
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: ["ALL"]
+            volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            env:
+            - name: HOME
+              value: /tmp
+            - name: API
+              value: "{{API_IMAGE}}"
+            - name: PORTAL
+              value: "{{PORTAL_IMAGE}}"
+            - name: REGISTRY_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: platform-update-registry
+                  key: username
+                  optional: true
+            - name: REGISTRY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: platform-update-registry
+                  key: password
+                  optional: true
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              resolve_image() {
+                local image="$1" repo tag token digest
+                repo="${image%:*}"; tag="${image##*:}"
+                local registry path headers challenge realm service
+                local -a auth=() credentials=()
+                registry="${repo%%/*}"; path="${repo#*/}"
+                if [[ -n "${REGISTRY_PASSWORD:-}" ]]; then credentials=(-u "${REGISTRY_USERNAME:?REGISTRY_USERNAME required}:$REGISTRY_PASSWORD"); fi
+                headers="$(curl -sSI -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" "https://$registry/v2/$path/manifests/$tag")"
+                challenge="$(printf "%s\n" "$headers" | tr -d "\r" | grep -i '^www-authenticate: Bearer ' || true)"
+                if [[ -n "$challenge" ]]; then
+                  realm="$(printf "%s" "$challenge" | sed -n 's/.*realm="\([^"]*\)".*/\1/p')"
+                  service="$(printf "%s" "$challenge" | sed -n 's/.*service="\([^"]*\)".*/\1/p')"
+                  [[ "$realm" == https://* ]] || { echo "Registry must use HTTPS token authentication" >&2; return 1; }
+                  token="$(curl -fsS "${credentials[@]}" --get "$realm" --data-urlencode "service=$service" --data-urlencode "scope=repository:$path:pull" | jq -er '.token // .access_token')"
+                  auth=(-H "Authorization: Bearer $token")
+                fi
+                digest="$(curl -fsSI "${auth[@]}" -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" "https://$registry/v2/$path/manifests/$tag" | tr -d "\r" | awk 'tolower($1)=="docker-content-digest:" {print $2}')"
+                [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "Invalid registry digest for $image" >&2; return 1; }
+                printf "%s@%s" "$repo" "$digest"
+              }
+              API="$(resolve_image "$API")"
+              PORTAL="$(resolve_image "$PORTAL")"
+              kubectl set image -n platform deploy/platform-api api="$API"
+              kubectl set image -n platform deploy/platform-portal portal="$PORTAL"
+              kubectl rollout status -n platform deploy/platform-api --timeout=300s
+              kubectl rollout status -n platform deploy/platform-portal --timeout=180s
+              echo "auto-update applied $API $PORTAL"

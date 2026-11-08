@@ -1,9 +1,13 @@
 package components
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/fatih/color"
 
@@ -11,7 +15,12 @@ import (
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/manifests"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
 )
+
+// chart returns the pinned chart reference for `helm upgrade --install` /
+// `helm template` (a cached local tarball when available).
+func chart(name string) string { return versions.Get(name).Ref() }
 
 // helmLockHelper clears stuck Helm release secrets (pending-install/upgrade/rollback)
 // so re-provision can continue after an interrupted helm --wait.
@@ -48,7 +57,6 @@ func All() []Component {
 		{"monitoring", "Grafana + Prometheus + Loki", InstallMonitoring},
 		{"oauth2-proxy", "OAuth2 authentication proxy", InstallOAuthProxy},
 		{"portainer", "Container management UI (subdomain + Platform SSO)", InstallPortainer},
-		{"infisical", "Secret management", InstallInfisical},
 		{"platform", "Platform API + Portal", InstallPlatform},
 		{"routing", "Ingress: ArgoCD /argocd, Grafana /grafana, Portainer subdomain+SSO", InstallRouting},
 		{"auto-update", "GHCR auto-update policy (Image Updater + CronJob)", InstallAutoUpdate},
@@ -72,7 +80,7 @@ func Namespace() error {
 	color.Cyan("\n  ■ Creating namespaces...")
 	nss := []string{
 		"platform", "databases", "monitoring", "storage",
-		"argocd", "portainer", "infisical", "cert-manager",
+		"argocd", "portainer", "cert-manager",
 		"ingress-nginx", "oauth2-proxy",
 	}
 	for _, ns := range nss {
@@ -94,15 +102,29 @@ func readManifest(name string) string {
 	return string(data)
 }
 
-func writeTemplatedManifest(name, domain, dest string) error {
+// internalOIDC is the in-cluster base URL SSO clients use for server-to-server
+// OIDC calls (token, userinfo, jwks), so SSO never depends on the public TLS
+// certificate. Only the browser-facing authorize URL uses the public domain.
+const internalOIDC = "http://platform-api.platform.svc.cluster.local:3000/api/oauth"
+
+func writeTemplatedManifest(name string, cfg *config.Config, dest string) error {
 	vals := readManifest(name)
 	if vals == "" {
 		return fmt.Errorf("%s manifest not found", name)
 	}
-	vals = strings.ReplaceAll(vals, "{{DOMAIN}}", domain)
-	vals = strings.ReplaceAll(vals, "{{BASEHREF}}", "/argocd")
-	vals = strings.ReplaceAll(vals, "{{ARGOCD_URL}}", "https://"+domain+"/argocd")
-	return os.WriteFile(dest, []byte(vals), 0644)
+	domain := cfg.Domain
+	r := strings.NewReplacer(
+		"{{DOMAIN}}", domain,
+		"{{BASEHREF}}", "/argocd",
+		"{{ARGOCD_URL}}", "https://"+domain+"/argocd",
+		"{{OIDC_INTERNAL}}", internalOIDC,
+		"{{OIDC_SECRET_GRAFANA}}", cfg.OIDCSecretGrafana,
+		"{{OIDC_SECRET_ARGOCD}}", cfg.OIDCSecretArgoCD,
+		"{{OIDC_SECRET_OAUTH2_PROXY}}", cfg.OIDCSecretOAuth2Proxy,
+		"{{OIDC_SECRET_MINIO}}", cfg.OIDCSecretMinio,
+	)
+	// Values files can carry client secrets: keep them private.
+	return os.WriteFile(dest, []byte(r.Replace(vals)), 0600)
 }
 
 func doneOrSkip(step, label string) bool {
@@ -124,7 +146,7 @@ func InstallIngressNginx(cfg *config.Config) error {
 	// {app}.{ip}.sslip.io are not force-HTTPS'd with the default fake cert
 	// before their own Let's Encrypt Ingress exists.
 	err := shell.RunBash(`
-		helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+		helm upgrade --install ingress-nginx ` + chart("ingress-nginx") + ` \
 			--namespace ingress-nginx --create-namespace \
 			--set controller.service.type=LoadBalancer \
 			--set controller.publishService.enabled=true \
@@ -147,35 +169,15 @@ func InstallCertManager(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing cert-manager...")
-	email := cfg.LEEmail
-	if email == "" {
-		email = cfg.AdminEmail
-	}
-	cmds := []string{
-		`helm upgrade --install cert-manager jetstack/cert-manager \
+	if err := shell.RunBash(`helm upgrade --install cert-manager ` + chart("cert-manager") + ` \
 			--namespace cert-manager --create-namespace \
-			--set installCRDs=true --wait --timeout 5m`,
-		fmt.Sprintf(`kubectl apply -f - <<EOF
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt-prod
-spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: %s
-    privateKeySecretRef:
-      name: letsencrypt-prod
-    solvers:
-    - http01:
-        ingress:
-          class: nginx
-EOF`, email),
+			--set installCRDs=true --wait --timeout 5m`); err != nil {
+		return err
 	}
-	for _, c := range cmds {
-		if err := shell.RunBash(c); err != nil {
-			return err
-		}
+	// Let's Encrypt + internal-CA fallback issuers; an unusable contact email
+	// is dropped instead of breaking ACME registration.
+	if err := EnsureIssuers(cfg); err != nil {
+		return err
 	}
 	color.Green("  ✓ cert-manager installed")
 	return state.MarkDone("cert-manager")
@@ -186,14 +188,7 @@ func InstallPostgreSQL(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing PostgreSQL...")
-	err := shell.RunBash(fmt.Sprintf(`
-		helm upgrade --install postgresql bitnami/postgresql \
-			--namespace databases --create-namespace \
-			--set auth.postgresPassword=%s \
-			--set auth.database=platform \
-			--set primary.persistence.size=10Gi \
-			--wait --timeout 10m
-	`, cfg.PostgresPassword))
+	err := helmValues("postgresql", "postgresql", "databases", map[string]any{"auth": map[string]string{"postgresPassword": cfg.PostgresPassword, "database": "platform"}}, "--set", "primary.persistence.size=10Gi", "--wait", "--timeout", "10m")
 	if err != nil {
 		return err
 	}
@@ -206,13 +201,7 @@ func InstallMongoDB(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing MongoDB...")
-	err := shell.RunBash(fmt.Sprintf(`
-		helm upgrade --install mongodb bitnami/mongodb \
-			--namespace databases --create-namespace \
-			--set auth.rootPassword=%s \
-			--set persistence.size=10Gi \
-			--wait --timeout 10m
-	`, cfg.MongoPassword))
+	err := helmValues("mongodb", "mongodb", "databases", map[string]any{"auth": map[string]string{"rootPassword": cfg.MongoPassword}}, "--set", "persistence.size=10Gi", "--wait", "--timeout", "10m")
 	if err != nil {
 		return err
 	}
@@ -225,13 +214,7 @@ func InstallRedis(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing Redis...")
-	err := shell.RunBash(fmt.Sprintf(`
-		helm upgrade --install redis bitnami/redis \
-			--namespace databases --create-namespace \
-			--set auth.password=%s \
-			--set master.persistence.size=5Gi \
-			--wait --timeout 10m
-	`, cfg.RedisPassword))
+	err := helmValues("redis", "redis", "databases", map[string]any{"auth": map[string]string{"password": cfg.RedisPassword}}, "--set", "master.persistence.size=5Gi", "--wait", "--timeout", "10m")
 	if err != nil {
 		return err
 	}
@@ -244,24 +227,13 @@ func InstallMinIO(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing MinIO...")
-	tmpFile := "/tmp/minio-values.yaml"
-	if err := writeTemplatedManifest("minio-values.yaml", cfg.Domain, tmpFile); err != nil {
+	tmpFile, err := temporaryManifest("minio-values.yaml", cfg)
+	if err != nil {
 		return err
 	}
 	defer os.Remove(tmpFile)
 
-	err := shell.RunBash(fmt.Sprintf(`
-		helm upgrade --install minio bitnami/minio \
-			--namespace storage --create-namespace \
-			-f %s \
-			--set auth.rootUser=%s \
-			--set auth.rootPassword=%s \
-			--set persistence.size=50Gi \
-			--set image.repository=bitnamilegacy/minio \
-			--set console.image.repository=bitnamilegacy/minio-object-browser \
-			--set defaultBuckets="platform-backups\,platform-logs" \
-			--wait --timeout 10m
-	`, tmpFile, cfg.MinioAccessKey, cfg.MinioSecretKey))
+	err = helmValues("minio", "minio", "storage", map[string]any{"auth": map[string]string{"rootUser": cfg.MinioAccessKey, "rootPassword": cfg.MinioSecretKey}}, "-f", tmpFile, "--set", "persistence.size=50Gi", "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser", "--set", `defaultBuckets=platform-backups\,platform-logs`, "--wait", "--timeout", "10m")
 	if err != nil {
 		return err
 	}
@@ -277,17 +249,16 @@ func InstallArgoCD(cfg *config.Config) error {
 	}
 	_ = state.MarkInProgress("argocd")
 	color.Cyan("\n  ■ Installing ArgoCD (path /argocd)...")
-	tmpFile := "/tmp/argocd-values.yaml"
-	if err := writeTemplatedManifest("argocd-values.yaml", cfg.Domain, tmpFile); err != nil {
+	tmpFile, err := temporaryManifest("argocd-values.yaml", cfg)
+	if err != nil {
 		return err
 	}
 	defer os.Remove(tmpFile)
 
-	err := shell.RunBash(fmt.Sprintf(`
+	err = shell.RunBash(fmt.Sprintf(`
 		set -euo pipefail
 		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-		helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
-		helm repo update argo >/dev/null 2>&1 || true
+		ARGO_CHART="%[2]s"
 
 		reset_argocd() {
 		  echo "Resetting ArgoCD for clean Helm install..."
@@ -317,25 +288,22 @@ json.dump(d,sys.stdout)
 		}
 
 		apply_argocd_crds() {
-		  local chart_dir
-		  chart_dir=$(mktemp -d)
-		  helm pull argo/argo-cd --untar -d "$chart_dir"
-		  for crd in crd-application.yaml crd-appproject.yaml; do
-		    helm template argocd "$chart_dir/argo-cd" \
-		      --set crds.install=true \
-		      --show-only "templates/crds/${crd}" \
-		      | kubectl apply --server-side --force-conflicts -f -
-		  done
-		  rm -rf "$chart_dir"
+		  # One render of the pinned (usually cached) chart for both CRDs.
+		  helm template argocd $ARGO_CHART \
+		    --set crds.install=true \
+		    --show-only templates/crds/crd-application.yaml \
+		    --show-only templates/crds/crd-appproject.yaml \
+		    | kubectl apply --server-side --force-conflicts -f -
 		}
 
 		helm_install_argocd() {
-		  helm upgrade --install argocd argo/argo-cd \
+		  helm upgrade --install argocd $ARGO_CHART \
 		    --namespace argocd \
 		    --create-namespace \
-		    -f %s \
+		    -f %[1]s \
 		    --set crds.install=false \
 		    --set applicationSet.enabled=false \
+		    --set applicationSet.replicas=0 \
 		    --set notifications.enabled=false \
 		    --set dex.enabled=false \
 		    --wait --timeout 10m
@@ -354,6 +322,10 @@ json.dump(d,sys.stdout)
 		    apply_argocd_crds
 		    helm_install_argocd
 		  fi
+		elif ! kubectl get ns argocd >/dev/null 2>&1 || [[ -z "$(kubectl -n argocd get all -o name 2>/dev/null)" ]]; then
+		  # Fresh server (or empty namespace): nothing to reset.
+		  apply_argocd_crds
+		  helm_install_argocd
 		else
 		  reset_argocd
 		  apply_argocd_crds
@@ -367,7 +339,7 @@ json.dump(d,sys.stdout)
 		  helm_install_argocd
 		fi
 		argocd_healthy
-	`, tmpFile))
+	`, tmpFile, chart("argo-cd")))
 	if err != nil {
 		return err
 	}
@@ -408,26 +380,40 @@ func InstallMonitoring(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing monitoring stack...")
-	tmpFile := "/tmp/grafana-values.yaml"
-	if err := writeTemplatedManifest("grafana-values.yaml", cfg.Domain, tmpFile); err != nil {
+	tmpFile, err := temporaryManifest("grafana-values.yaml", cfg)
+	if err != nil {
 		return err
 	}
 	defer os.Remove(tmpFile)
 
-	err := shell.RunBash(fmt.Sprintf(`
-		helm upgrade --install kube-prometheus prometheus-community/kube-prometheus-stack \
+	secretFile, cleanup, err := privateJSON(map[string]any{"grafana": map[string]string{"adminPassword": cfg.GrafanaPassword}})
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	err = shell.RunBash(fmt.Sprintf(`
+		set -uo pipefail
+		# Loki is independent of kube-prometheus-stack: install both concurrently.
+		# Loki must not claim the default datasource: Grafana refuses to start when
+		# two datasources are marked default (the kube-prometheus datasource already is).
+		helm upgrade --install loki %[3]s \
 			--namespace monitoring --create-namespace \
-			-f %s \
-			--set grafana.adminPassword=%s \
+			--set grafana.enabled=false \
+			--set prometheus.enabled=false \
+			--set loki.isDefault=false \
+			--wait --timeout 10m > /tmp/platformctl-loki.log 2>&1 &
+		loki_pid=$!
+		helm upgrade --install kube-prometheus %[4]s \
+			--namespace monitoring --create-namespace \
+			-f %[1]s \
+			-f %[2]s \
 			--set grafana.assertNoLeakedSecrets=false \
 			--set prometheus.prometheusSpec.retention=30d \
 			--wait --timeout 10m
-		helm upgrade --install loki grafana/loki-stack \
-			--namespace monitoring \
-			--set grafana.enabled=false \
-			--set prometheus.enabled=false \
-			--wait --timeout 10m || true
-	`, tmpFile, cfg.GrafanaPassword))
+		rc=$?
+		wait "$loki_pid" || { echo "WARN: loki install failed (non-fatal):"; tail -20 /tmp/platformctl-loki.log; }
+		exit $rc
+	`, tmpFile, shellQuote(secretFile), chart("loki-stack"), chart("kube-prometheus-stack")))
 	if err != nil {
 		return err
 	}
@@ -441,8 +427,8 @@ func InstallOAuthProxy(cfg *config.Config) error {
 	}
 	_ = state.MarkInProgress("oauth2-proxy")
 	color.Cyan("\n  ■ Installing oauth2-proxy...")
-	tmpFile := "/tmp/oauth2-values.yaml"
-	if err := writeTemplatedManifest("oauth2-proxy-values.yaml", cfg.Domain, tmpFile); err != nil {
+	tmpFile, err := temporaryManifest("oauth2-proxy-values.yaml", cfg)
+	if err != nil {
 		color.Yellow("  ⚠ oauth2-proxy values missing — skipping")
 		return nil
 	}
@@ -467,25 +453,23 @@ func InstallOAuthProxy(cfg *config.Config) error {
 	_ = os.WriteFile(tmpFile, []byte(strings.ReplaceAll(string(data), "REPLACE_COOKIE_SECRET", cookie)), 0644)
 	defer os.Remove(tmpFile)
 
-	err := shell.RunBash(fmt.Sprintf(`
+	err = shell.RunBash(fmt.Sprintf(`
 		set -euo pipefail
 		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 		%s
-		helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests 2>/dev/null || true
-		helm repo update oauth2-proxy >/dev/null 2>&1 || true
 		clear_helm_lock oauth2-proxy oauth2-proxy
-		if ! helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
+		if ! helm upgrade --install oauth2-proxy %[3]s \
 			--namespace oauth2-proxy --create-namespace \
-			-f %s \
+			-f %[2]s \
 			--wait --timeout 5m; then
 		  echo "oauth2-proxy upgrade failed — clearing lock and retrying"
 		  clear_helm_lock oauth2-proxy oauth2-proxy
-		  helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
+		  helm upgrade --install oauth2-proxy %[3]s \
 			--namespace oauth2-proxy --create-namespace \
-			-f %s \
+			-f %[2]s \
 			--wait --timeout 5m
 		fi
-	`, helmLockHelper, tmpFile, tmpFile))
+	`, helmLockHelper, tmpFile, chart("oauth2-proxy")))
 	if err != nil {
 		color.Yellow("  ⚠ oauth2-proxy install failed (non-fatal): %v", err)
 		return nil
@@ -495,6 +479,20 @@ func InstallOAuthProxy(cfg *config.Config) error {
 }
 
 func InstallPortainer(cfg *config.Config) error {
+	if cfg.ResetPortainer {
+		if err := shell.Run("kubectl", "-n", "portainer", "delete", "deployment", "portainer", "--ignore-not-found", "--wait=true"); err != nil {
+			return err
+		}
+		if err := shell.Run("kubectl", "-n", "portainer", "delete", "pvc", "portainer", "--ignore-not-found", "--wait=true"); err != nil {
+			return err
+		}
+		if err := state.Clear("portainer"); err != nil {
+			return err
+		}
+		if err := state.Clear("portainer-sso"); err != nil {
+			return err
+		}
+	}
 	if doneOrSkip("portainer", "Portainer") {
 		return nil
 	}
@@ -514,76 +512,72 @@ func InstallPortainer(cfg *config.Config) error {
 	if cfg.Domain == "" {
 		return fmt.Errorf("DOMAIN is empty — required for Portainer SSO redirect URI")
 	}
-	tmpFile := "/tmp/portainer-values.yaml"
-	_ = writeTemplatedManifest("portainer-values.yaml", cfg.Domain, tmpFile)
+	tmpFile, err := temporaryManifest("portainer-values.yaml", cfg)
+	if err != nil {
+		return err
+	}
 	defer os.Remove(tmpFile)
 
+	if err := shell.RunBash(`set -euo pipefail; kubectl create namespace portainer --dry-run=client -o yaml | kubectl apply -f -`); err != nil {
+		return err
+	}
+	if err := applySecret("portainer", "portainer-admin-password", map[string]string{"password": pass}); err != nil {
+		return err
+	}
 	if err := shell.RunBash(fmt.Sprintf(`
 		set -euo pipefail
 		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-		%s
+		%[1]s
 		kubectl create namespace portainer --dry-run=client -o yaml | kubectl apply -f -
-		kubectl -n portainer create secret generic portainer-admin-password \
-		  --from-literal=password=%s \
-		  --dry-run=client -o yaml | kubectl apply -f -
 		clear_helm_lock portainer portainer
 		helm_install_portainer() {
-		  helm upgrade --install portainer portainer/portainer \
+		  helm upgrade --install portainer %[3]s \
 			--namespace portainer --create-namespace \
-			-f %s \
+			-f %[2]s \
 			--set service.type=ClusterIP \
 			--set ingress.enabled=false \
 			--set adminPassword.existingSecret=portainer-admin-password \
 			--set 'feature.flags[0]=--no-setup-token' \
 			--wait --timeout 5m
 		}
-		if ! helm_install_portainer; then
-		  echo "Portainer Helm failed — resetting and retrying"
-		  clear_helm_lock portainer portainer
-		  helm uninstall portainer -n portainer --wait --timeout 2m 2>/dev/null || true
-		  kubectl delete namespace portainer --wait=true --timeout=120s 2>/dev/null || true
-		  kubectl create namespace portainer
-		  kubectl -n portainer create secret generic portainer-admin-password \
-		    --from-literal=password=%s \
-		    --dry-run=client -o yaml | kubectl apply -f -
-		  helm_install_portainer
-		fi
+		helm_install_portainer
 		kubectl rollout status deploy/portainer -n portainer --timeout=180s
-	`, helmLockHelper, shellQuote(pass), tmpFile, shellQuote(pass))); err != nil {
+	`, helmLockHelper, tmpFile, chart("portainer"))); err != nil {
 		return err
 	}
 
 	if err := ensurePortainerAdminAndSSO(cfg, pass); err != nil {
-		// Non-fatal: Portainer UI still works with admin password; SSO can be re-applied later.
-		color.Yellow("  ⚠ Portainer SSO seed failed (non-fatal): %v", err)
-		color.Yellow("    Admin login still works; re-run: sudo platformctl install portainer")
+		return err
+	} else {
+		// Lets InstallRouting skip a second SSO pass when this one succeeded.
+		_ = state.MarkDone("portainer-sso")
 	}
 	color.Green("  ✓ Portainer installed (https://portainer.%s — Platform SSO)", cfg.Domain)
 	_ = state.MarkDone("portainer")
 	return nil
 }
 
-// ensurePortainerAdminAndSSO logs in (resetting the PVC once if admin seed failed)
+// ensurePortainerAdminAndSSO logs in without modifying persistent storage
 // and configures Platform OAuth so the SSO button always appears.
 func ensurePortainerAdminAndSSO(cfg *config.Config, pass string) error {
-	oauthSecret := cfg.WebhookSecret
-	if oauthSecret == "" {
-		oauthSecret = cfg.JWTSecret
-	}
-	if len(oauthSecret) < 8 {
-		oauthSecret = "portainer-oauth-secret"
-	}
+	// Portainer's own client secret (registered with the API via OIDC_CLIENTS).
+	oauthSecret := cfg.OIDCSecretPortainer
 	domain := cfg.Domain
-	authBody := shellQuote(fmt.Sprintf(`{"username":"admin","password":%q}`, pass))
-	settingsBody := shellQuote(fmt.Sprintf(`{
+	authFile, authCleanup, err := privateJSON(map[string]string{"username": "admin", "password": pass})
+	if err != nil {
+		return err
+	}
+	defer authCleanup()
+	authBody := shellQuote("@" + authFile)
+	settingsJSON := fmt.Sprintf(`{
   "AuthenticationMethod": 3,
   "OAuthSettings": {
     "ClientID": "portainer",
     "ClientSecret": %q,
-    "AccessTokenURI": "https://%s/api/oauth/token",
-    "AuthorizationURI": "https://%s/api/oauth/authorize",
-    "ResourceURI": "https://%s/api/oauth/userinfo",
-    "RedirectURI": "https://portainer.%s/",
+    "AccessTokenURI": "%[2]s/token",
+    "AuthorizationURI": "https://%[3]s/api/oauth/authorize",
+    "ResourceURI": "%[2]s/userinfo",
+    "RedirectURI": "https://portainer.%[3]s/",
     "UserIdentifier": "email",
     "Scopes": "openid profile email groups",
     "OAuthAutoCreateUsers": true,
@@ -592,7 +586,13 @@ func ensurePortainerAdminAndSSO(cfg *config.Config, pass string) error {
     "LogoutURI": "",
     "AuthStyle": 1
   }
-}`, oauthSecret, domain, domain, domain, domain))
+}`, oauthSecret, internalOIDC, domain)
+	settingsFile, settingsCleanup, err := privateFile([]byte(settingsJSON))
+	if err != nil {
+		return err
+	}
+	defer settingsCleanup()
+	settingsBody := shellQuote("@" + settingsFile)
 
 	return shell.RunBash(fmt.Sprintf(`
 set -euo pipefail
@@ -646,93 +646,51 @@ wait_ready "$BASE" || { echo "Portainer API not ready at $BASE" >&2; exit 1; }
 
 TOKEN="$(login "$BASE")"
 if [[ -z "$TOKEN" ]]; then
-  echo "Admin login failed — resetting Portainer volume so admin can be re-seeded"
-  kubectl -n portainer delete deploy portainer --ignore-not-found --wait=true --timeout=60s
-  kubectl -n portainer delete pvc portainer --ignore-not-found --wait=true --timeout=60s
-  sleep 3
-  helm upgrade --install portainer portainer/portainer \
-    --namespace portainer --create-namespace \
-    -f /tmp/portainer-values.yaml \
-    --set service.type=ClusterIP \
-    --set ingress.enabled=false \
-    --set adminPassword.existingSecret=portainer-admin-password \
-    --set 'feature.flags[0]=--no-setup-token' \
-    --wait --timeout 5m
-  kubectl rollout status deploy/portainer -n portainer --timeout=180s
-  BASE="$(portainer_base)"
-  wait_ready "$BASE" || { echo "Portainer API not ready after reset" >&2; exit 1; }
-  TOKEN="$(login "$BASE")"
-  if [[ -z "$TOKEN" ]]; then
-    echo "Portainer admin login still failing after PVC reset" >&2
-    exit 1
-  fi
+  echo "Portainer admin login failed. Check credentials/connectivity; to wipe Portainer data explicitly run: platformctl install portainer --reset" >&2
+  exit 1
 fi
 
 configure_sso "$BASE" "$TOKEN"
 `, domain, authBody, settingsBody))
 }
 
-func InstallInfisical(cfg *config.Config) error {
-	if doneOrSkip("infisical", "Infisical") {
-		return nil
-	}
-	color.Cyan("\n  ■ Installing Infisical...")
-	// Ensure Infisical DB exists
-	_ = shell.RunBash(fmt.Sprintf(`
-		kubectl exec -i -n databases postgresql-0 -- env PGPASSWORD=%s \
-		  psql -U postgres -c "SELECT 1 FROM pg_database WHERE datname='infisical'" | grep -q 1 || \
-		kubectl exec -i -n databases postgresql-0 -- env PGPASSWORD=%s \
-		  psql -U postgres -c "CREATE DATABASE infisical;"
-	`, cfg.PostgresPassword, cfg.PostgresPassword))
-
-	tmpFile := "/tmp/infisical.yaml"
-	_ = writeTemplatedManifest("infisical.yaml", cfg.Domain, tmpFile)
-	defer os.Remove(tmpFile)
-
-	err := shell.RunBash(fmt.Sprintf(`
-		helm repo add infisical https://dl.cloudsmith.io/public/infisical/helm/helm/charts 2>/dev/null || true
-		helm repo update >/dev/null 2>&1 || true
-		kubectl create secret generic infisical-secrets -n infisical \
-		  --from-literal=ENCRYPTION_KEY=%s \
-		  --from-literal=AUTH_SECRET=%s \
-		  --from-literal=DB_CONNECTION_URI="postgresql://postgres:%s@postgresql.databases:5432/infisical" \
-		  --from-literal=REDIS_URL="redis://:%s@redis-master.databases:6379" \
-		  --dry-run=client -o yaml | kubectl apply -f - || true
-		helm upgrade --install infisical infisical/infisical \
-			--namespace infisical --create-namespace \
-			-f %s \
-			--wait --timeout 10m || true
-	`, cfg.InfisicalEncKey, cfg.InfisicalJWT, cfg.PostgresPassword, cfg.RedisPassword, tmpFile))
-	if err != nil {
-		color.Yellow("  ⚠ Infisical install failed (non-fatal): %v", err)
-		return nil
-	}
-	color.Green("  ✓ Infisical installed")
-	return state.MarkDone("infisical")
-}
-
-func pullPlatformImages(cfg *config.Config) error {
+// pullPlatformImages pulls API + portal in parallel. With force=false images
+// already in containerd are skipped (provision); force=true re-pulls so a moved
+// tag such as :latest is refreshed (update).
+func pullPlatformImages(cfg *config.Config, force bool) error {
 	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
 	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
 	color.Cyan("  ■ Pulling pre-built images from registry...")
 	color.Cyan("    %s", apiImg)
 	color.Cyan("    %s", portalImg)
 
-	if cfg.GitHubToken != "" && strings.Contains(cfg.ImageRegistry, "ghcr.io") {
-		_ = shell.RunBash(fmt.Sprintf(
-			`echo %s | docker login ghcr.io -u oauth2 --password-stdin 2>/dev/null || true`,
-			shellQuote(cfg.GitHubToken)))
+	// GHCR credentials (if any) come from /etc/rancher/k3s/registries.yaml,
+	// written before k3s starts — that is what containerd/crictl read.
+	imgs := []string{apiImg, portalImg}
+	errs := make([]error, len(imgs))
+	var wg sync.WaitGroup
+	for i, img := range imgs {
+		wg.Add(1)
+		go func(i int, img string) {
+			defer wg.Done()
+			skip := ""
+			if !force {
+				skip = fmt.Sprintf("k3s crictl inspecti %s >/dev/null 2>&1 && exit 0", shellQuote(img))
+			}
+			errs[i] = shell.RunBash(fmt.Sprintf(`
+				%[2]s
+				for i in 1 2 3; do
+				  k3s crictl pull %[1]s && exit 0
+				  sleep 5
+				done
+				exit 1
+			`, shellQuote(img), skip))
+		}(i, img)
 	}
-
-	for _, img := range []string{apiImg, portalImg} {
-		if err := shell.RunBash(fmt.Sprintf(`
-			for i in 1 2 3; do
-			  k3s crictl pull %s && exit 0
-			  sleep 5
-			done
-			exit 1
-		`, img)); err != nil {
-			return fmt.Errorf("failed to pull %s: %w (is the package public on GHCR?)", img, err)
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			return fmt.Errorf("failed to pull %s: %w (is the package public on GHCR, or GITHUB_TOKEN set?)", imgs[i], err)
 		}
 	}
 	return nil
@@ -743,45 +701,47 @@ func shellQuote(s string) string {
 }
 
 func InstallPlatform(cfg *config.Config) error {
-	if doneOrSkip("platform", "Platform") {
-		return nil
-	}
+	// Always reconcile security settings on existing installations as well.
 	color.Cyan("\n  ■ Deploying Platform API + Portal...")
 
-	if err := pullPlatformImages(cfg); err != nil {
+	if err := pullPlatformImages(cfg, false); err != nil {
 		return err
 	}
 
 	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
 	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
 
+	if err := applySecret("platform", "platform-env", map[string]string{
+		"NODE_ENV": "production", "PORT": "3000", "JWT_SECRET": cfg.JWTSecret,
+		"SECRETS_ENCRYPTION_KEY": cfg.SecretsEncryptionKey, "PLATFORM_WEBHOOK_SECRET": cfg.WebhookSecret,
+		"POSTGRES_HOST": "postgresql.databases", "POSTGRES_PORT": "5432", "POSTGRES_DB": "platform", "POSTGRES_USER": "postgres", "POSTGRES_PASSWORD": cfg.PostgresPassword,
+		"MONGODB_URI": "mongodb://root:" + url.QueryEscape(cfg.MongoPassword) + "@mongodb.databases:27017/platform?authSource=admin",
+		"REDIS_HOST":  "redis-master.databases", "REDIS_PORT": "6379", "REDIS_PASSWORD": cfg.RedisPassword,
+		"MINIO_ENDPOINT": "http://minio.storage:9000", "MINIO_ACCESS_KEY": cfg.MinioAccessKey, "MINIO_SECRET_KEY": cfg.MinioSecretKey,
+		"PLATFORM_NAME": cfg.PlatformName, "DOMAIN": cfg.Domain, "ADMIN_EMAIL": cfg.AdminEmail, "ADMIN_PASSWORD": cfg.AdminPassword,
+		"OIDC_ISSUER": cfg.OIDCIssuer(), "OIDC_CLIENTS": cfg.OIDCClientsJSON(),
+		"CORS_ORIGINS": "https://" + cfg.Domain,
+	}); err != nil {
+		return err
+	}
+	rbac := readManifest("platform-api-rbac.yaml")
+	if rbac == "" {
+		return fmt.Errorf("platform-api RBAC manifest missing")
+	}
+	if _, err := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, rbac); err != nil {
+		return err
+	}
 	err := shell.RunBash(fmt.Sprintf(`
+set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-
-kubectl create secret generic platform-env \
-  --namespace platform \
-  --from-literal=NODE_ENV=production \
-  --from-literal=PORT=3000 \
-  --from-literal=JWT_SECRET=%s \
-  --from-literal=PLATFORM_WEBHOOK_SECRET=%s \
-  --from-literal=POSTGRES_HOST=postgresql.databases \
-  --from-literal=POSTGRES_PORT=5432 \
-  --from-literal=POSTGRES_DB=platform \
-  --from-literal=POSTGRES_USER=postgres \
-  --from-literal=POSTGRES_PASSWORD=%s \
-  --from-literal=MONGODB_URI="mongodb://root:%s@mongodb.databases:27017/platform?authSource=admin" \
-  --from-literal=REDIS_HOST=redis-master.databases \
-  --from-literal=REDIS_PORT=6379 \
-  --from-literal=REDIS_PASSWORD=%s \
-  --from-literal=MINIO_ENDPOINT=http://minio.storage:9000 \
-  --from-literal=MINIO_ACCESS_KEY=%s \
-  --from-literal=MINIO_SECRET_KEY=%s \
-  --from-literal=PLATFORM_NAME=%s \
-  --from-literal=DOMAIN=%s \
-  --from-literal=ADMIN_EMAIL=%s \
-  --from-literal=ADMIN_PASSWORD=%s \
-  --dry-run=client -o yaml | kubectl apply -f -
-
+kubectl delete clusterrolebinding platform-api-admin-binding --ignore-not-found
+# Rotation atomically renames files, requiring write access to the parent.
+mkdir -p /etc/platform
+chgrp 1000 /etc/platform
+chmod 0770 /etc/platform
+if [ -f /etc/platform/.env ]; then chown 1000:1000 /etc/platform/.env; chmod 0600 /etc/platform/.env; fi
+install -d -m 0700 -o 1000 -g 1000 /etc/platform/credentials
+find /etc/platform/credentials -maxdepth 1 -type f -exec chown 1000:1000 {} +
 kubectl apply -n platform -f - <<'EOF'
 apiVersion: apps/v1
 kind: Deployment
@@ -800,9 +760,20 @@ spec:
       labels:
         app: platform-api
     spec:
+      serviceAccountName: platform-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: api
         image: %s
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
@@ -835,7 +806,7 @@ spec:
       - name: platform-etc
         hostPath:
           path: /etc/platform
-          type: DirectoryOrCreate
+          type: Directory
 ---
 apiVersion: v1
 kind: Service
@@ -880,12 +851,21 @@ spec:
       labels:
         app: platform-portal
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: portal
         image: %s
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
         imagePullPolicy: IfNotPresent
         ports:
-        - containerPort: 80
+        - containerPort: 8080
         resources:
           requests:
             memory: "64Mi"
@@ -905,44 +885,18 @@ spec:
   ports:
   - name: http
     port: 80
-    targetPort: 80
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: platform-api-admin-binding
-subjects:
-- kind: ServiceAccount
-  name: default
-  namespace: platform
-roleRef:
-  kind: ClusterRole
-  name: cluster-admin
-  apiGroup: rbac.authorization.k8s.io
+    targetPort: 8080
+
 EOF
 
-kubectl wait --for=condition=Available deployment/platform-api -n platform --timeout=300s || true
-kubectl wait --for=condition=Available deployment/platform-portal -n platform --timeout=180s || true
-`,
-		shellQuote(cfg.JWTSecret),
-		shellQuote(cfg.WebhookSecret),
-		shellQuote(cfg.PostgresPassword),
-		cfg.MongoPassword,
-		shellQuote(cfg.RedisPassword),
-		shellQuote(cfg.MinioAccessKey),
-		shellQuote(cfg.MinioSecretKey),
-		shellQuote(cfg.PlatformName),
-		shellQuote(cfg.Domain),
-		shellQuote(cfg.AdminEmail),
-		shellQuote(cfg.AdminPassword),
-		apiImg, portalImg,
+kubectl wait --for=condition=Available deployment/platform-api -n platform --timeout=300s
+kubectl wait --for=condition=Available deployment/platform-portal -n platform --timeout=180s
+`, strconv.Quote(apiImg), strconv.Quote(portalImg),
 	))
 	if err != nil {
 		return err
 	}
-	if err := ApplyServiceRouting(cfg); err != nil {
-		return err
-	}
+	// Ingress/routing is applied once by InstallRouting (runs after platform).
 	color.Green("  ✓ Platform deployed")
 	return state.MarkDone("platform")
 }
@@ -960,28 +914,30 @@ func InstallRouting(cfg *config.Config) error {
 		return err
 	}
 	// Light subpath patch only — never wipe/reinstall ArgoCD during routing.
-	_ = patchArgoCDSubpath(cfg)
-	// Grafana embedding + subpath
-	_ = shell.RunBash(fmt.Sprintf(`
-		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-		helm upgrade kube-prometheus prometheus-community/kube-prometheus-stack \
-			--namespace monitoring --reuse-values \
-			--set grafana.grafana\.ini.server.root_url=https://%s/grafana \
-			--set grafana.grafana\.ini.server.serve_from_sub_path=true \
-			--set grafana.grafana\.ini.security.allow_embedding=true \
-			--set grafana.grafana\.ini.security.cookie_samesite=none \
-			--set grafana.grafana\.ini.security.cookie_secure=true \
-			--timeout 5m 2>/dev/null || true
-	`, cfg.Domain))
-	// Portainer SSO (non-fatal)
+	if cfg.InstallArgoCD {
+		_ = patchArgoCDSubpath(cfg)
+	}
+	// Grafana subpath/embedding settings are already in grafana-values.yaml at
+	// install time — no second kube-prometheus-stack upgrade is needed.
+
+	// Portainer SSO only if the install-time pass did not succeed (non-fatal).
 	pass := cfg.PortainerPassword
 	if pass == "" {
 		pass = cfg.AdminPassword
 	}
-	if pass != "" && len(pass) >= 12 {
+	if cfg.InstallPortainer && !state.IsDone("portainer-sso") && len(pass) >= 12 {
 		if err := ensurePortainerAdminAndSSO(cfg, pass); err != nil {
 			color.Yellow("  ⚠ Portainer SSO refresh: %v", err)
+		} else {
+			_ = state.MarkDone("portainer-sso")
 		}
+	}
+	// A valid certificate (Let's Encrypt, or the internal CA as fallback) plus
+	// SSO client trust. Failure here is reported, not fatal: `platformctl
+	// repair` re-runs it, and the internal-endpoint SSO wiring keeps Grafana,
+	// Portainer and oauth2-proxy working regardless.
+	if err := EnsureTLS(cfg); err != nil {
+		color.Yellow("  ⚠ TLS not ready: %v — run `sudo platformctl repair`", err)
 	}
 	color.Green("  ✓ Routing applied")
 	return state.MarkDone("routing")
@@ -1004,14 +960,10 @@ export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 
 # Grafana/Portainer iframes need X-Frame-Options stripped; ArgoCD needs base-href fix.
 # ingress-nginx 1.12+ blocks snippet annotations unless explicitly allowed.
-helm upgrade ingress-nginx ingress-nginx/ingress-nginx \
-  --namespace ingress-nginx \
-  --reuse-values \
-  --set controller.allowSnippetAnnotations=true \
-  --set controller.config.annotations-risk-level=Critical \
-  --timeout 5m >/dev/null || \
+# InstallIngressNginx already sets both at install; this cheap idempotent patch
+# only covers clusters installed by older platformctl versions (no helm upgrade).
 kubectl -n ingress-nginx patch configmap ingress-nginx-controller --type merge \
-  -p '{"data":{"allow-snippet-annotations":"true","annotations-risk-level":"Critical"}}' || true
+  -p '{"data":{"allow-snippet-annotations":"true","annotations-risk-level":"Critical"}}' >/dev/null || true
 
 kubectl apply -n platform -f - <<'EOF'
 apiVersion: v1
@@ -1044,15 +996,6 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: infisical-proxy
-  namespace: platform
-spec:
-  type: ExternalName
-  externalName: infisical.infisical.svc.cluster.local
----
-apiVersion: v1
-kind: Service
-metadata:
   name: minio-proxy
   namespace: platform
 spec:
@@ -1076,7 +1019,7 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: __ISSUER__
     nginx.ingress.kubernetes.io/configuration-snippet: |
       proxy_hide_header X-Frame-Options;
       proxy_hide_header Content-Security-Policy;
@@ -1089,8 +1032,20 @@ spec:
     - argocd.__DOMAIN__
     - grafana.__DOMAIN__
     - portainer.__DOMAIN__
+    - minio.__DOMAIN__
     secretName: platform-tls
   rules:
+  # MinIO console on its own host: its SSO redirect is https://minio.DOMAIN/oauth_callback.
+  - host: minio.__DOMAIN__
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: minio-proxy
+            port:
+              number: 9090
   - host: __DOMAIN__
     http:
       paths:
@@ -1183,7 +1138,6 @@ metadata:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/backend-protocol: HTTP
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
-    cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/configuration-snippet: |
       proxy_set_header Accept-Encoding "";
       sub_filter '<base href="/">' '<base href="/argocd/">';
@@ -1219,7 +1173,6 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/permanent-redirect: https://portainer.__DOMAIN__/
-    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   ingressClassName: nginx
   tls:
@@ -1241,6 +1194,8 @@ EOF
 
 kubectl delete ingress argocd-ingress portainer-ingress -n platform --ignore-not-found
 `, "__DOMAIN__", d)
+	// Only the main Ingress requests the certificate; the others reuse platform-tls.
+	script = strings.ReplaceAll(script, "__ISSUER__", ActiveIssuer())
 	return shell.RunBash(script)
 }
 
@@ -1251,8 +1206,12 @@ func SeedAdmin(cfg *config.Config) error {
 	if email == "" {
 		email = "admin@pratyushes.dev"
 	}
-	pass := cfg.AdminPassword
-	err := shell.RunBash(fmt.Sprintf(`
+	authFile, cleanup, err := privateJSON(map[string]string{"email": email, "password": cfg.AdminPassword})
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	err = shell.RunBash(fmt.Sprintf(`
 		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 		API_IP="$(kubectl get svc -n platform platform-api -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)"
 		URL="http://${API_IP:-platform-api.platform.svc.cluster.local}:3000"
@@ -1270,7 +1229,7 @@ func SeedAdmin(cfg *config.Config) error {
 		  exit 0
 		fi
 		echo "Seed login OK"
-	`, shellQuote(fmt.Sprintf(`{"email":%q,"password":%q}`, email, pass))))
+	`, shellQuote("@"+authFile)))
 	if err != nil {
 		return fmt.Errorf("seed admin failed: %w", err)
 	}
@@ -1338,179 +1297,44 @@ func CheckHealth() error {
 	return nil
 }
 
-// UpdateImages pulls the configured GHCR tags and rolls the Platform deployments.
+// UpdateImages resolves moving GHCR tags before changing the pod template.
 func UpdateImages(cfg *config.Config) error {
-	color.Cyan("\n  ■ Updating Platform images (%s)...", cfg.ImageTag)
 	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
 	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
-
-	if err := pullPlatformImages(cfg); err != nil {
-		return err
-	}
-	err := shell.RunBash(fmt.Sprintf(`
-		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-		kubectl set image -n platform deploy/platform-api api=%s
-		kubectl set image -n platform deploy/platform-portal portal=%s
-		kubectl patch deploy platform-api -n platform -p '{"spec":{"template":{"spec":{"containers":[{"name":"api","imagePullPolicy":"Always"}]}}}}' || true
-		kubectl patch deploy platform-portal -n platform -p '{"spec":{"template":{"spec":{"containers":[{"name":"portal","imagePullPolicy":"Always"}]}}}}' || true
-		# Force new pods even when the tag string (e.g. :latest) did not change
-		kubectl rollout restart -n platform deploy/platform-api deploy/platform-portal
-		kubectl rollout status -n platform deploy/platform-api --timeout=300s
-		kubectl rollout status -n platform deploy/platform-portal --timeout=180s
-	`, apiImg, portalImg))
-	if err != nil {
-		return err
-	}
-	color.Green("  ✓ Images updated to %s / %s", apiImg, portalImg)
-	return nil
+	return shell.RunBashEnv("export KUBECONFIG=\"${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}\"\nAPI="+shellQuote(apiImg)+"\nPORTAL="+shellQuote(portalImg)+"\n"+digestUpdateScript, map[string]string{"REGISTRY_USERNAME": "platformctl", "REGISTRY_PASSWORD": cfg.GitHubToken})
 }
 
-// InstallAutoUpdate installs Argo CD Image Updater + a CronJob so every env
-// keeps platform-api / platform-portal on the newest published GHCR tags.
+// InstallAutoUpdate installs a digest-aware updater for only two deployments.
 func InstallAutoUpdate(cfg *config.Config) error {
 	if !cfg.AutoUpdate {
-		color.Yellow("  ○ AUTO_UPDATE=false — skipping auto-update policy")
 		return nil
 	}
-	if doneOrSkip("auto-update", "auto-update") {
-		return nil
+	manifest := readManifest("auto-update-cronjob.yaml")
+	if manifest == "" {
+		return fmt.Errorf("auto-update manifest missing")
 	}
-	color.Cyan("\n  ■ Configuring auto-update policy (GHCR → all envs)...")
-
-	apiImg := fmt.Sprintf("%s/platform-api", cfg.ImageRegistry)
-	portalImg := fmt.Sprintf("%s/platform-portal", cfg.ImageRegistry)
-	tag := cfg.ImageTag
-	if tag == "" {
-		tag = "latest"
+	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
+	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
+	if cfg.GitHubToken != "" {
+		if err := applySecret("platform", "platform-update-registry", map[string]string{"username": "platformctl", "password": cfg.GitHubToken}); err != nil {
+			return err
+		}
 	}
-
-	script := fmt.Sprintf(`
-export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-
-# Argo CD Image Updater (watches GHCR, writes new tags into the Application)
-helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
-helm repo update >/dev/null 2>&1 || true
-helm upgrade --install argocd-image-updater argo/argocd-image-updater \
-  --namespace argocd --create-namespace \
-  --set config.registries[0].name=ghcr \
-  --set config.registries[0].api_url=https://ghcr.io \
-  --set config.registries[0].prefix=ghcr.io \
-  --set config.registries[0].insecure=false \
-  --wait --timeout 5m || true
-
-# Ensure Deployments always pull when the tag moves (e.g. :latest digest change)
-kubectl patch deploy platform-api -n platform --type=merge -p '{"spec":{"template":{"spec":{"containers":[{"name":"api","imagePullPolicy":"Always"}]}}}}' || true
-kubectl patch deploy platform-portal -n platform --type=merge -p '{"spec":{"template":{"spec":{"containers":[{"name":"portal","imagePullPolicy":"Always"}]}}}}' || true
-
-# CronJob fallback: every 15 minutes pull + roll to the configured tag.
-# Works even if Image Updater / Argo Application sync is unavailable.
-# Escape $ so the OUTER bash (platformctl) does not expand $API/$PORTAL to empty
-# when writing the CronJob; the INNER job shell still expands them at runtime.
-kubectl apply -f - <<EOF
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: platform-auto-update
-  namespace: platform
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: platform-auto-update
-  namespace: platform
-rules:
-  - apiGroups: ["apps"]
-    resources: ["deployments"]
-    verbs: ["get", "list", "patch", "update"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: platform-auto-update
-  namespace: platform
-subjects:
-  - kind: ServiceAccount
-    name: platform-auto-update
-    namespace: platform
-roleRef:
-  kind: Role
-  name: platform-auto-update
-  apiGroup: rbac.authorization.k8s.io
----
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: platform-auto-update
-  namespace: platform
-spec:
-  schedule: "*/15 * * * *"
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 1
-  failedJobsHistoryLimit: 2
-  suspend: false
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          serviceAccountName: platform-auto-update
-          restartPolicy: OnFailure
-          containers:
-            - name: update
-              image: bitnami/kubectl:latest
-              imagePullPolicy: IfNotPresent
-              command:
-                - /bin/bash
-                - -c
-                - |
-                  set -euo pipefail
-                  API="%s:%s"
-                  PORTAL="%s:%s"
-                  test -n "\$API" && test -n "\$PORTAL"
-                  kubectl set image -n platform deploy/platform-api api="\$API"
-                  kubectl set image -n platform deploy/platform-portal portal="\$PORTAL"
-                  # :latest tag string often unchanged after GHCR push — force pull new digests
-                  kubectl patch deploy platform-api -n platform --type=merge -p '{"spec":{"template":{"spec":{"containers":[{"name":"api","imagePullPolicy":"Always"}]}}}}' || true
-                  kubectl patch deploy platform-portal -n platform --type=merge -p '{"spec":{"template":{"spec":{"containers":[{"name":"portal","imagePullPolicy":"Always"}]}}}}' || true
-                  kubectl rollout restart -n platform deploy/platform-api deploy/platform-portal
-                  kubectl rollout status -n platform deploy/platform-api --timeout=180s || true
-                  kubectl rollout status -n platform deploy/platform-portal --timeout=180s || true
-                  echo "auto-update applied \$API \$PORTAL"
-EOF
-
-# Argo Application with Image Updater annotations (optional GitOps path)
-kubectl apply -f - <<EOF
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: platform
-  namespace: argocd
-  annotations:
-    argocd-image-updater.argoproj.io/image-list: platform-api=%s,platform-portal=%s
-    argocd-image-updater.argoproj.io/platform-api.update-strategy: newest-build
-    argocd-image-updater.argoproj.io/platform-portal.update-strategy: newest-build
-    argocd-image-updater.argoproj.io/platform-api.force-update: "true"
-    argocd-image-updater.argoproj.io/platform-portal.force-update: "true"
-    argocd-image-updater.argoproj.io/write-back-method: argocd
-spec:
-  project: default
-  source:
-    repoURL: %s
-    targetRevision: HEAD
-    path: k8s/platform
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: platform
-  syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
-EOF
-`, apiImg, tag, portalImg, tag, apiImg, portalImg, cfg.RepoURL)
-
-	if err := shell.RunBash(script); err != nil {
-		color.Yellow("  ⚠ auto-update setup had errors (non-fatal): %v", err)
-		return nil
+	apiJSON, _ := json.Marshal(apiImg)
+	portalJSON, _ := json.Marshal(portalImg)
+	manifest = strings.ReplaceAll(manifest, "\"{{API_IMAGE}}\"", string(apiJSON))
+	manifest = strings.ReplaceAll(manifest, "\"{{PORTAL_IMAGE}}\"", string(portalJSON))
+	// Retire the old tag-based GitOps updater so it cannot undo digest pins.
+	if err := shell.RunBash(`set -euo pipefail
+if [[ -n "$(kubectl get crd applications.argoproj.io --ignore-not-found -o name)" ]]; then
+ if [[ -n "$(kubectl -n argocd get application platform --ignore-not-found -o name)" ]]; then
+  kubectl -n argocd patch application platform --type=merge -p '{"metadata":{"annotations":{"argocd-image-updater.argoproj.io/image-list":null}},"spec":{"syncPolicy":{"automated":null}}}'
+ fi
+fi`); err != nil {
+		return err
 	}
-	color.Green("  ✓ Auto-update enabled (Image Updater + CronJob */15)")
+	if _, err := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, manifest); err != nil {
+		return err
+	}
 	return state.MarkDone("auto-update")
 }

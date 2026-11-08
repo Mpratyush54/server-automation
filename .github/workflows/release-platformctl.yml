@@ -23,8 +23,17 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version-file: platformctl/go.mod
           cache-dependency-path: platformctl/go.sum
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.22.1
+
+      # Fail if the committed image list does not match the pinned charts.
+      - name: Check image list
+        run: scripts/gen-images.sh --check
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
@@ -34,3 +43,72 @@ jobs:
           workdir: platformctl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Offline bundle (issue #12): k3s airgap images + chart tarballs + platform
+  # images. Independent of goreleaser; waits for the release GoReleaser creates
+  # and attaches platform-bundle-<tag>-<arch>.tar.zst (+ .sha256).
+  # arm64 runs on the amd64 runner: `docker pull --platform linux/arm64` only
+  # fetches layers, so no QEMU is needed.
+  bundle:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    env:
+      HELM_VERSION: v3.22.1
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: platformctl/go.mod
+          cache-dependency-path: platformctl/go.sum
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Install helm, zstd and jq
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd jq
+          curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" | tar -xz -C /tmp
+          sudo install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
+          helm version
+
+      - name: Build bundle
+        run: bash scripts/build-bundle.sh "$TAG" "${{ matrix.arch }}"
+
+      - name: Upload workflow artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-bundle-${{ matrix.arch }}
+          path: dist/platform-bundle-*
+          retention-days: 7
+
+      - name: Upload to GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          # The goreleaser job creates the release; wait up to 30 min for it.
+          for i in $(seq 1 60); do
+            if gh release view "$TAG" >/dev/null 2>&1; then break; fi
+            echo "release $TAG not found yet (attempt $i/60); waiting 30s"
+            sleep 30
+          done
+          gh release view "$TAG" >/dev/null
+          f="dist/platform-bundle-${TAG}-${ARCH}.tar.zst"
+          for i in 1 2 3; do
+            if gh release upload "$TAG" "$f" "$f.sha256" --clobber; then exit 0; fi
+            echo "upload failed (attempt $i/3); retrying in 15s"
+            sleep 15
+          done
+          exit 1

@@ -15,12 +15,31 @@ spec:
       labels:
         app: platform-api
     spec:
+      serviceAccountName: platform-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: api
           image: ghcr.io/mpratyush54/platform-api:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
+          volumeMounts:
+            - name: platform-etc
+              mountPath: /etc/platform
           envFrom:
             - secretRef:
                 name: platform-env
+      volumes:
+        - name: platform-etc
+          hostPath:
+            path: /etc/platform
+            type: Directory
