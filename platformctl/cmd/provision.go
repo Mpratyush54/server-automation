@@ -21,8 +21,10 @@ import (
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/helm"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/k3s"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ocifetch"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/preflight"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/runner"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/stack"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
 )
@@ -195,6 +197,10 @@ func runProvision() error {
 	}
 
 	// ── Wave 0: host. Docker is no longer installed: k3s ships containerd.
+	// The platform stack (every third-party image, chart and k3s in one GHCR
+	// artifact) downloads while the prerequisites install. It must land
+	// before k3s starts, which imports the image tarballs at start-up.
+	stackDone := startStackDownload()
 	if err := hostStep("prereqs", apt.InstallPrereqs); err != nil {
 		return err
 	}
@@ -222,6 +228,8 @@ func runProvision() error {
 		}
 		prefetchDone <- errs
 	}()
+
+	waitForStack(stackDone)
 
 	if !cfg.SkipK8s {
 		if err := hostStep("k3s", func() error { return k3s.Install(cfg.Domain, cfg.GitHubToken) }); err != nil {
@@ -254,6 +262,54 @@ func runProvision() error {
 	printTimings(started)
 	components.ProvisionComplete(cfg)
 	return nil
+}
+
+// stackParallel is how many stack files download at once.
+const stackParallel = 6
+
+// startStackDownload installs the platform stack in the background unless an
+// offline bundle was given, PLATFORM_STACK=off, it is already installed, or
+// k3s is already running (its images directory is only read at start-up).
+// The channel or version comes from PLATFORM_STACK (default "stable").
+func startStackDownload() <-chan error {
+	done := make(chan error, 1)
+	tag := stack.Tag(os.Getenv("PLATFORM_STACK"), runtime.GOARCH)
+	if bundleFlag != "" || tag == "" || state.IsDone("platform-stack") || k3s.IsInstalled() {
+		done <- nil
+		close(done)
+		return done
+	}
+	color.Cyan("  ■ Downloading the platform stack %s:%s in the background...", stack.Repo, tag)
+	go func() {
+		track := state.Track("platform-stack (parallel with prereqs)")
+		res, err := stack.Install(ocifetch.New("ghcr.io"), tag, stack.DefaultPaths, stackParallel)
+		if err != nil {
+			track("failed, using normal pulls")
+			done <- err
+			return
+		}
+		track("ok")
+		_ = state.MarkDone("platform-stack")
+		color.Green("  ✓ Platform stack %s (%s, %d files, %.1f GB in %.0fs)",
+			res.Version, shortDigest(res.Digest), res.Files, float64(res.Bytes)/1e9, res.Seconds)
+		done <- nil
+	}()
+	return done
+}
+
+// waitForStack blocks until the stack download finished. A failed download is
+// not fatal: images and charts are then pulled as before.
+func waitForStack(done <-chan error) {
+	if err := <-done; err != nil {
+		color.Yellow("  ⚠ platform stack unavailable (%v); images and charts will be downloaded individually", err)
+	}
+}
+
+func shortDigest(d string) string {
+	if len(d) > 19 {
+		return d[:19]
+	}
+	return d
 }
 
 func printResumeHint() {

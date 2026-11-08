@@ -21,6 +21,9 @@
 #   PLATFORMCTL   prebuilt platformctl binary used for `charts --json`
 #   CHARTS_JSON   path to a pre-generated `charts --json` file
 #   ZSTD_LEVEL    compression level for the image tarball (default 10)
+#   IMAGE_GROUPS  split the images into N tarballs (default 1), so they can be
+#                 downloaded and imported in parallel (scripts/build-stack.sh)
+#   STAGE_ONLY    copy the staged files to this directory instead of packaging
 set -euo pipefail
 
 die() { echo "build-bundle: error: $*" >&2; exit 1; }
@@ -116,9 +119,23 @@ for img in "${IMAGES[@]}"; do
   got_arch="$(docker image inspect --format '{{.Architecture}}' "$img")"
   [[ "$got_arch" == "$ARCH" ]] || die "$img resolved to $got_arch, want $ARCH"
 done
-IMG_FILE="platform-images-${ARCH}.tar.zst"
-log "docker save ${#IMAGES[@]} images -> $IMG_FILE"
-docker save "${IMAGES[@]}" | zstd -q -f -T0 "-$ZSTD_LEVEL" -o "$STAGE/images/$IMG_FILE"
+IMAGE_GROUPS="${IMAGE_GROUPS:-1}"
+[[ "$IMAGE_GROUPS" =~ ^[1-9][0-9]?$ ]] || die "IMAGE_GROUPS must be 1-99"
+if [[ "$IMAGE_GROUPS" == 1 ]]; then
+  IMG_FILE="platform-images-${ARCH}.tar.zst"
+  log "docker save ${#IMAGES[@]} images -> $IMG_FILE"
+  docker save "${IMAGES[@]}" | zstd -q -f -T0 "-$ZSTD_LEVEL" -o "$STAGE/images/$IMG_FILE"
+else
+  # Round-robin over the sorted list keeps the groups similar in size.
+  for ((g = 0; g < IMAGE_GROUPS; g++)); do
+    group=()
+    for ((i = g; i < ${#IMAGES[@]}; i += IMAGE_GROUPS)); do group+=("${IMAGES[$i]}"); done
+    [[ ${#group[@]} -gt 0 ]] || continue
+    IMG_FILE="platform-images-${ARCH}-$((g + 1)).tar.zst"
+    log "docker save ${#group[@]} images -> $IMG_FILE"
+    docker save "${group[@]}" | zstd -q -f -T0 "-$ZSTD_LEVEL" -o "$STAGE/images/$IMG_FILE"
+  done
+fi
 
 # --- manifest + checksums --------------------------------------------------
 (cd "$STAGE" && find k3s images charts -type f | LC_ALL=C sort) >"$WORK/files.txt"
@@ -135,6 +152,13 @@ jq -n \
     images: ($images | split("\n") | map(select(length > 0))),
     files: ($files | split("\n") | map(select(length > 0)))}' >"$STAGE/manifest.json"
 (cd "$STAGE" && xargs -d '\n' sha256sum <"$WORK/files.txt" >SHA256SUMS)
+
+if [[ -n "${STAGE_ONLY:-}" ]]; then
+  mkdir -p "$STAGE_ONLY"
+  cp -R "$STAGE"/. "$STAGE_ONLY"/
+  log "staged in $STAGE_ONLY"
+  exit 0
+fi
 
 # --- package ---------------------------------------------------------------
 # Contents are already compressed; a low level keeps packaging fast.

@@ -1,0 +1,81 @@
+name: publish platform stack
+
+# Builds ghcr.io/mpratyush54/platform-stack:<YYYY.MM.DD-run>-<arch>: every
+# third-party image, chart and k3s in one artifact (scripts/build-stack.sh).
+# Versioned independently of platformctl. Servers install the `stable` channel
+# by default (PLATFORM_STACK); a push to master publishes `edge`; run this
+# workflow by hand to publish (and promote) `stable`.
+on:
+  push:
+    branches: [master, feat/platform-stack] # TEMP: feature branch publishes `dev` for VM timing; remove before merge
+    paths:
+      - platformctl/internal/versions/**
+      - platformctl/internal/images/images.txt
+      - platformctl/internal/manifests/data/*-values.yaml
+      - scripts/build-stack.sh
+      - scripts/build-bundle.sh
+      - .github/workflows/publish-stack.yml
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Channel tag to move to the new stack (stable = what servers install)"
+        default: stable
+        type: choice
+        options: [stable, edge]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-stack
+  cancel-in-progress: false
+
+jobs:
+  stack:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || (github.ref == 'refs/heads/master' && 'edge' || 'dev') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: platformctl/go.mod
+          cache-dependency-path: platformctl/go.sum
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Install helm, oras, zstd and jq (not from GitHub Releases)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq zstd jq
+          curl -fsSL --retry 5 https://get.helm.sh/helm-v3.22.1-linux-amd64.tar.gz | tar -xz -C /tmp
+          sudo install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
+          go install oras.land/oras/cmd/oras@v1.2.3
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Log in to GHCR
+        run: echo "$GITHUB_TOKEN" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push the stack
+        run: |
+          version="$(date -u +%Y.%m.%d)-${{ github.run_number }}"
+          echo "stack version $version, channel $CHANNEL"
+          PUSH=1 bash scripts/build-stack.sh "$version" "${{ matrix.arch }}"
+          echo "### platform-stack $version-${{ matrix.arch }} → $CHANNEL" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify anonymous pull
+        run: |
+          oras logout ghcr.io || true
+          oras manifest fetch "ghcr.io/mpratyush54/platform-stack:$CHANNEL-${{ matrix.arch }}" >/dev/null \
+            || { echo "::error::platform-stack is not publicly pullable (set the package public in its settings)"; exit 1; }

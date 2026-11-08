@@ -2,6 +2,8 @@ package k3s
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -76,5 +78,37 @@ func TestInstallK3sFallsBackToMirror(t *testing.T) {
 	}
 	if k3sMirrorFile("amd64") != "k3s" || k3sMirrorFile("arm64") != "k3s-arm64" {
 		t.Fatal("mirror file names must match the k3s release assets")
+	}
+}
+
+func TestInstallK3sPrefersTheStagedStack(t *testing.T) {
+	origUp, origMirror, origStack, origPaths := installUpstream, installFromMirror, installFromStack, stackPaths
+	t.Cleanup(func() { installUpstream, installFromMirror, installFromStack, stackPaths = origUp, origMirror, origStack, origPaths })
+	dir := t.TempDir()
+	stackPaths.Staging = dir
+	calls := []string{}
+	installUpstream = func() error { calls = append(calls, "upstream"); return nil }
+	installFromMirror = func() error { calls = append(calls, "mirror"); return nil }
+	installFromStack = func() error { calls = append(calls, "stack"); return nil }
+
+	// Nothing staged: the normal download.
+	if err := installK3s(); err != nil || strings.Join(calls, ",") != "upstream" {
+		t.Fatalf("without a stack: calls=%v err=%v", calls, err)
+	}
+	// Staged: no download at all.
+	for _, f := range []string{"k3s", "k3s-install.sh"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	calls = nil
+	if err := installK3s(); err != nil || strings.Join(calls, ",") != "stack" {
+		t.Fatalf("with a staged stack: calls=%v err=%v", calls, err)
+	}
+	// A failing staged install falls back to the download.
+	calls = nil
+	installFromStack = func() error { calls = append(calls, "stack"); return errors.New("bad binary") }
+	if err := installK3s(); err != nil || strings.Join(calls, ",") != "stack,upstream" {
+		t.Fatalf("staged failure must fall back: calls=%v err=%v", calls, err)
 	}
 }
