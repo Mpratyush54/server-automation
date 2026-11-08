@@ -9,14 +9,18 @@
   <button class="btn btn-primary" (click)="search()" [disabled]="!query.projectId">Search</button>
 </div>
 
-<div class="card" *ngIf="logs.length">
-  <h2>Results ({{ total }})</h2>
-  <div *ngFor="let l of logs" style="padding:8px 0;border-bottom:1px solid #e2e8f0;font-size:13px;">
-    <div style="display:flex;gap:8px;align-items:center;">
-      <span style="color:#64748b;">{{ l.timestamp | date:'medium' }}</span>
-      <span class="badge" [style.background]="l.level==='error'?'#f8d7da':'#e2e8f0'" [style.color]="l.level==='error'?'#721c24':'#475569'">{{ l.level }}</span>
-      <span style="font-weight:500;">{{ l.serviceName }}</span>
-    </div>
-    <div style="margin-top:4px;">{{ l.message }}</div>
+@if (logs.length) {
+  <div class="card">
+    <h2>Results ({{ total }})</h2>
+    @for (l of logs; track l) {
+      <div style="padding:8px 0;border-bottom:1px solid #e2e8f0;font-size:13px;">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span style="color:#64748b;">{{ l.timestamp | date:'medium' }}</span>
+          <span class="badge" [style.background]="l.level==='error'?'#f8d7da':'#e2e8f0'" [style.color]="l.level==='error'?'#721c24':'#475569'">{{ l.level }}</span>
+          <span style="font-weight:500;">{{ l.serviceName }}</span>
+        </div>
+        <div style="margin-top:4px;">{{ l.message }}</div>
+      </div>
+    }
   </div>
-</div>
+}

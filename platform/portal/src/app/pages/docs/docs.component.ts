@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, ViewEncapsulation, HostListener, ElementRef, AfterViewChecked, ChangeDetectorRef, inject, DOCUMENT } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { HttpClient, HttpClientModule } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { DomSanitizer, Meta, SafeHtml, Title } from '@angular/platform-browser';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
@@ -27,7 +27,7 @@ interface DocSection {
 @Component({
   selector: 'app-docs',
   standalone: true,
-  imports: [CommonModule, RouterModule, HttpClientModule, DocsSearchComponent],
+  imports: [RouterModule, DocsSearchComponent],
   encapsulation: ViewEncapsulation.None,
   templateUrl: './docs.component.html',
   styleUrl: './docs.component.css',
@@ -229,6 +229,11 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
       startOnLoad: false,
       // Explicit: diagram labels must never render HTML/script.
       securityLevel: 'strict',
+      // Mermaid 12 defaults to the ELK layout and the "neo" look; pin the
+      // previous dagre layout and classic look so existing docs diagrams
+      // render as before.
+      layout: 'dagre',
+      look: 'classic',
       theme: 'dark',
       darkMode: true,
       fontFamily: 'Inter, sans-serif',

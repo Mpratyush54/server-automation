@@ -1,6 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { CommonModule } from '@angular/common';
+
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
@@ -19,41 +19,45 @@ const FORWARDED_PARAMS = ['client_id', 'redirect_uri', 'response_type', 'scope',
 @Component({
   selector: 'app-oauth-authorize',
   standalone: true,
-  imports: [CommonModule],
+  imports: [],
   template: `
     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background: #0D0F14; color: #fff; font-family: sans-serif; padding: 16px; box-sizing: border-box;">
       <div style="text-align: center; padding: 40px; background: #14171F; border: 1px solid #1C2030; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); max-width: 420px; width: 100%; box-sizing: border-box;">
         <span style="font-size: 3rem; margin-bottom: 20px; display: inline-block;">⚡</span>
         <h2 style="margin: 0 0 10px 0; font-size: 1.5rem; color: #fff;">Single sign-on</h2>
-
-        <ng-container [ngSwitch]="status">
-          <div *ngSwitchCase="'loading'">
-            <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 24px;">Checking the application…</p>
-            <div class="spinner"></div>
-          </div>
-
-          <div *ngSwitchCase="'consent'">
-            <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 8px; line-height: 1.5;">
-              <strong style="color: #fff;">{{ clientName }}</strong> wants to sign you in with your Platform account.
-            </p>
-            <p style="color: #64748b; font-size: 0.8rem; margin-bottom: 8px; line-height: 1.5;">
-              It will receive your name, email and role. You will be sent back to:
-            </p>
-            <p data-testid="redirect-host" style="color: #cbd5e1; font-size: 0.8rem; margin-bottom: 24px; word-break: break-all;">{{ redirectHost }}</p>
-            <div style="display: flex; gap: 12px; justify-content: center;">
-              <button type="button" class="btn-secondary" (click)="deny()" [disabled]="busy">Cancel</button>
-              <button type="button" class="btn-primary" (click)="allow()" [disabled]="busy">Allow</button>
+    
+        @switch (status) {
+          @case ('loading') {
+            <div>
+              <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 24px;">Checking the application…</p>
+              <div class="spinner"></div>
             </div>
-          </div>
-
-          <div *ngSwitchCase="'error'">
-            <p data-testid="oauth-error" style="color: #f87171; font-size: 0.9rem; margin-bottom: 24px; line-height: 1.5;">{{ errorMessage }}</p>
-            <button type="button" class="btn-secondary" (click)="goHome()">Back to Platform</button>
-          </div>
-        </ng-container>
+          }
+          @case ('consent') {
+            <div>
+              <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 8px; line-height: 1.5;">
+                <strong style="color: #fff;">{{ clientName }}</strong> wants to sign you in with your Platform account.
+              </p>
+              <p style="color: #64748b; font-size: 0.8rem; margin-bottom: 8px; line-height: 1.5;">
+                It will receive your name, email and role. You will be sent back to:
+              </p>
+              <p data-testid="redirect-host" style="color: #cbd5e1; font-size: 0.8rem; margin-bottom: 24px; word-break: break-all;">{{ redirectHost }}</p>
+              <div style="display: flex; gap: 12px; justify-content: center;">
+                <button type="button" class="btn-secondary" (click)="deny()" [disabled]="busy">Cancel</button>
+                <button type="button" class="btn-primary" (click)="allow()" [disabled]="busy">Allow</button>
+              </div>
+            </div>
+          }
+          @case ('error') {
+            <div>
+              <p data-testid="oauth-error" style="color: #f87171; font-size: 0.9rem; margin-bottom: 24px; line-height: 1.5;">{{ errorMessage }}</p>
+              <button type="button" class="btn-secondary" (click)="goHome()">Back to Platform</button>
+            </div>
+          }
+        }
       </div>
     </div>
-  `,
+    `,
   styles: [`
     .spinner {
       border: 3px solid rgba(91, 110, 245, 0.1);

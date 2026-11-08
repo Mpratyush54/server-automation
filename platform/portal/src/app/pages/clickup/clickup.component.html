@@ -6,7 +6,7 @@
 <div class="grid-2">
   <div class="card">
     <h2>Connection & Configuration</h2>
-    
+
     <div style="margin-bottom:20px;">
       <div style="font-size:0.8rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;margin-bottom:6px;">Webhook Receiver Endpoint</div>
       <div style="font-family:monospace;background:rgba(0,0,0,0.3);padding:12px;border-radius:10px;border:1px solid var(--border-glass);color:var(--primary);font-size:0.9rem;">
@@ -33,28 +33,27 @@
   </div>
 
   <!-- Simulated Webhook Trigger for DevOps -->
-  <div class="card" *ngIf="isDevOps">
-    <h2>Webhook Tester</h2>
-    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;margin-bottom:20px;">Simulate outgoing ClickUp webhook events locally to verify triggers</p>
-
-    <div class="form-group">
-      <label>ClickUp Task ID</label>
-      <input [(ngModel)]="simulatedTask.task_id" placeholder="CU-842">
+  @if (isDevOps) {
+    <div class="card">
+      <h2>Webhook Tester</h2>
+      <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;margin-bottom:20px;">Simulate outgoing ClickUp webhook events locally to verify triggers</p>
+      <div class="form-group">
+        <label>ClickUp Task ID</label>
+        <input [(ngModel)]="simulatedTask.task_id" placeholder="CU-842">
+      </div>
+      <div class="form-group">
+        <label>New Status</label>
+        <select [(ngModel)]="simulatedTask.status">
+          <option value="In Review">In Review (Triggers Pipeline)</option>
+          <option value="Open">Open</option>
+          <option value="Closed">Closed</option>
+        </select>
+      </div>
+      <button class="btn btn-primary w-full" (click)="triggerWebhook()" style="display:flex;width:100%;justify-content:center;box-sizing:border-box;margin-top:12px;">
+        Send Simulated Webhook
+      </button>
     </div>
-
-    <div class="form-group">
-      <label>New Status</label>
-      <select [(ngModel)]="simulatedTask.status">
-        <option value="In Review">In Review (Triggers Pipeline)</option>
-        <option value="Open">Open</option>
-        <option value="Closed">Closed</option>
-      </select>
-    </div>
-
-    <button class="btn btn-primary w-full" (click)="triggerWebhook()" style="display:flex;width:100%;justify-content:center;box-sizing:border-box;margin-top:12px;">
-      Send Simulated Webhook
-    </button>
-  </div>
+  }
 </div>
 
 <div class="card" style="padding:0;overflow:hidden;">
@@ -70,30 +69,34 @@
       </tr>
     </thead>
     <tbody>
-      <tr *ngFor="let link of linkedTasks">
-        <td>
-          <span class="badge badge-pending" style="font-size:0.75rem;">
-            CU-{{ link.taskId }}
-          </span>
-        </td>
-        <td style="font-weight:600;color:#fff;">{{ link.projectName }}</td>
-        <td><span style="font-family:monospace;font-size:0.85rem;">{{ link.branch }}</span></td>
-        <td>
+      @for (link of linkedTasks; track link) {
+        <tr>
+          <td>
+            <span class="badge badge-pending" style="font-size:0.75rem;">
+              CU-{{ link.taskId }}
+            </span>
+          </td>
+          <td style="font-weight:600;color:#fff;">{{ link.projectName }}</td>
+          <td><span style="font-family:monospace;font-size:0.85rem;">{{ link.branch }}</span></td>
+          <td>
           <span class="badge" [ngClass]="{
             'badge-active': link.status === 'deployed',
             'badge-pending': link.status === 'pending' || link.status === 'building',
             'badge-failed': link.status === 'failed' || link.status === 'terminated'
           }" style="font-size:0.7rem;">
-            {{ link.status | uppercase }}
-          </span>
-        </td>
-        <td>{{ link.deployedAt | date:'medium' }}</td>
-      </tr>
-      <tr *ngIf="linkedTasks.length === 0">
-        <td colspan="5" style="text-align:center;color:var(--color-text-muted);padding:32px;">
-          No ClickUp task associations found. Try pushing a branch with a task prefix (e.g. feature/CU-842-auth-fix).
-        </td>
-      </tr>
+              {{ link.status | uppercase }}
+            </span>
+          </td>
+          <td>{{ link.deployedAt | date:'medium' }}</td>
+        </tr>
+      }
+      @if (linkedTasks.length === 0) {
+        <tr>
+          <td colspan="5" style="text-align:center;color:var(--color-text-muted);padding:32px;">
+            No ClickUp task associations found. Try pushing a branch with a task prefix (e.g. feature/CU-842-auth-fix).
+          </td>
+        </tr>
+      }
     </tbody>
   </table>
 </div>

@@ -17,45 +17,53 @@
       </tr>
     </thead>
     <tbody>
-      <tr *ngFor="let p of previews">
-        <td style="font-weight:600;color:#fff;">{{ p.projectName }}</td>
-        <td>
-          <span style="font-family: monospace; background: rgba(255,255,255,0.05); padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; border: 1px solid var(--border-glass);">
-            {{ p.branch }}
-          </span>
-        </td>
-        <td>
-          <a [href]="p.previewUrl" target="_blank" style="display:inline-flex;align-items:center;gap:6px;">
-            {{ p.previewUrl }}
-            <svg style="width:14px;height:14px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-          </a>
-        </td>
-        <td>
-          <span *ngIf="p.clickupTaskId" class="badge badge-pending" style="font-size:0.7rem;">
-            CU-{{ p.clickupTaskId }}
-          </span>
-          <span *ngIf="!p.clickupTaskId" style="color:var(--color-text-muted);">—</span>
-        </td>
-        <td>{{ p.deployedAt | date:'medium' }}</td>
-        <td>
+      @for (p of previews; track p) {
+        <tr>
+          <td style="font-weight:600;color:#fff;">{{ p.projectName }}</td>
+          <td>
+            <span style="font-family: monospace; background: rgba(255,255,255,0.05); padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; border: 1px solid var(--border-glass);">
+              {{ p.branch }}
+            </span>
+          </td>
+          <td>
+            <a [href]="p.previewUrl" target="_blank" style="display:inline-flex;align-items:center;gap:6px;">
+              {{ p.previewUrl }}
+              <svg style="width:14px;height:14px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+          </td>
+          <td>
+            @if (p.clickupTaskId) {
+              <span class="badge badge-pending" style="font-size:0.7rem;">
+                CU-{{ p.clickupTaskId }}
+              </span>
+            }
+            @if (!p.clickupTaskId) {
+              <span style="color:var(--color-text-muted);">—</span>
+            }
+          </td>
+          <td>{{ p.deployedAt | date:'medium' }}</td>
+          <td>
           <span class="badge" [ngClass]="{
             'badge-active': p.remainingTime !== 'Expired' && !p.remainingTime.startsWith('0'),
             'badge-failed': p.remainingTime === 'Expired'
           }" style="font-size:0.7rem;">
-            {{ p.remainingTime }}
-          </span>
-        </td>
-        <td style="text-align:right;">
-          <button class="btn btn-danger btn-sm" (click)="terminate(p.id)">Terminate</button>
-        </td>
-      </tr>
-      <tr *ngIf="previews.length === 0">
-        <td colspan="7" style="text-align:center;color:var(--color-text-muted);padding:32px;">
-          No active preview environments running on Kubernetes namespace.
-        </td>
-      </tr>
+              {{ p.remainingTime }}
+            </span>
+          </td>
+          <td style="text-align:right;">
+            <button class="btn btn-danger btn-sm" (click)="terminate(p.id)">Terminate</button>
+          </td>
+        </tr>
+      }
+      @if (previews.length === 0) {
+        <tr>
+          <td colspan="7" style="text-align:center;color:var(--color-text-muted);padding:32px;">
+            No active preview environments running on Kubernetes namespace.
+          </td>
+        </tr>
+      }
     </tbody>
   </table>
 </div>

@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { HttpClient } from '@angular/common/http';
 import {
   ChangeDetectorRef,
@@ -27,7 +27,7 @@ import {
 @Component({
   selector: 'app-docs-search',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [FormsModule],
   templateUrl: './docs-search.component.html',
   styleUrl: './docs-search.component.css',
 })

@@ -1,102 +1,136 @@
 <aside class="fixed left-0 top-0 h-screen bg-black border-r border-[#333] transition-all duration-300 z-40 flex flex-col"
-       [class.w-64]="!isCollapsed" 
-       [class.w-16]="isCollapsed">
-  
+  [class.w-64]="!isCollapsed"
+  [class.w-16]="isCollapsed">
+
   <div class="h-16 flex items-center justify-between px-4 border-b border-[#333]">
-    <div class="flex items-center gap-2 overflow-hidden whitespace-nowrap" *ngIf="!isCollapsed">
-      <img src="logo-dark-icon.png" alt="platform" class="w-8 h-8 rounded object-cover flex-shrink-0" />
-      <span class="font-semibold text-white tracking-tight">Platform</span>
-    </div>
-    <div class="flex items-center justify-center" *ngIf="isCollapsed">
-      <img src="logo-dark-icon.png" alt="platform" class="w-8 h-8 rounded object-cover" />
-    </div>
+    @if (!isCollapsed) {
+      <div class="flex items-center gap-2 overflow-hidden whitespace-nowrap">
+        <img src="logo-dark-icon.png" alt="platform" class="w-8 h-8 rounded object-cover flex-shrink-0" />
+        <span class="font-semibold text-white tracking-tight">Platform</span>
+      </div>
+    }
+    @if (isCollapsed) {
+      <div class="flex items-center justify-center">
+        <img src="logo-dark-icon.png" alt="platform" class="w-8 h-8 rounded object-cover" />
+      </div>
+    }
   </div>
 
   <div class="flex-1 overflow-y-auto py-4 flex flex-col gap-1" [class.px-3]="!isCollapsed" [class.px-2]="isCollapsed">
     <a routerLink="/dashboard" routerLinkActive="bg-[#111] text-white border-[#333]" [routerLinkActiveOptions]="{exact: true}"
-       class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
-       [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
+      class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
+      [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
       <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
-      <span *ngIf="!isCollapsed" class="font-medium text-sm whitespace-nowrap">Dashboard</span>
-    </a>
-    
-    <a routerLink="/projects" routerLinkActive="bg-[#111] text-white border-[#333]"
-       class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
-       [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
-      <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-      <span *ngIf="!isCollapsed" class="font-medium text-sm whitespace-nowrap">Projects</span>
+      @if (!isCollapsed) {
+        <span class="font-medium text-sm whitespace-nowrap">Dashboard</span>
+      }
     </a>
 
-    <a routerLink="/infrastructure" *ngIf="isDevOps" routerLinkActive="bg-[#111] text-white border-[#333]"
-       class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
-       [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
-      <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
-      <span *ngIf="!isCollapsed" class="font-medium text-sm whitespace-nowrap">Infrastructure</span>
+    <a routerLink="/projects" routerLinkActive="bg-[#111] text-white border-[#333]"
+      class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
+      [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
+      <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+      @if (!isCollapsed) {
+        <span class="font-medium text-sm whitespace-nowrap">Projects</span>
+      }
     </a>
-    
+
+    @if (isDevOps) {
+      <a routerLink="/infrastructure" routerLinkActive="bg-[#111] text-white border-[#333]"
+        class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
+        [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
+        <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+        @if (!isCollapsed) {
+          <span class="font-medium text-sm whitespace-nowrap">Infrastructure</span>
+        }
+      </a>
+    }
+
     <!-- Full-page navigation (not iframe) — nginx serves Argo CD at /argocd/ -->
     <a href="/argocd/"
-       class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
-       [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
+      class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
+      [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
       <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
-      <span *ngIf="!isCollapsed" class="font-medium text-sm whitespace-nowrap">ArgoCD</span>
+      @if (!isCollapsed) {
+        <span class="font-medium text-sm whitespace-nowrap">ArgoCD</span>
+      }
     </a>
 
     <a routerLink="/grafana" routerLinkActive="bg-[#111] text-white border-[#333]"
-       class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
-       [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
+      class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
+      [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
       <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l2-6 4 12 2-6h4"></path></svg>
-      <span *ngIf="!isCollapsed" class="font-medium text-sm whitespace-nowrap">Grafana</span>
+      @if (!isCollapsed) {
+        <span class="font-medium text-sm whitespace-nowrap">Grafana</span>
+      }
     </a>
 
     <!-- Portainer must be on its own host — /api and static assets collide with the portal. -->
     <a [href]="portainerUrl"
-       class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
-       [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
+      class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
+      [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
       <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-      <span *ngIf="!isCollapsed" class="font-medium text-sm whitespace-nowrap">Portainer</span>
+      @if (!isCollapsed) {
+        <span class="font-medium text-sm whitespace-nowrap">Portainer</span>
+      }
     </a>
 
-    <a routerLink="/users" *ngIf="canManageUsers" routerLinkActive="bg-[#111] text-white border-[#333]"
-       class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
-       [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
-      <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-      <span *ngIf="!isCollapsed" class="font-medium text-sm whitespace-nowrap">Users</span>
-    </a>
+    @if (canManageUsers) {
+      <a routerLink="/users" routerLinkActive="bg-[#111] text-white border-[#333]"
+        class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
+        [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
+        <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        @if (!isCollapsed) {
+          <span class="font-medium text-sm whitespace-nowrap">Users</span>
+        }
+      </a>
+    }
 
     <a routerLink="/settings" routerLinkActive="bg-[#111] text-white border-[#333]"
-       class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
-       [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
+      class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
+      [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
       <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-      <span *ngIf="!isCollapsed" class="font-medium text-sm whitespace-nowrap">Settings</span>
+      @if (!isCollapsed) {
+        <span class="font-medium text-sm whitespace-nowrap">Settings</span>
+      }
     </a>
 
     <a routerLink="/alerts" routerLinkActive="bg-[#111] text-white border-[#333]"
-       class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
-       [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
+      class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
+      [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
       <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-      <span *ngIf="!isCollapsed" class="font-medium text-sm whitespace-nowrap">Alerts</span>
+      @if (!isCollapsed) {
+        <span class="font-medium text-sm whitespace-nowrap">Alerts</span>
+      }
     </a>
 
     <a routerLink="/profile" routerLinkActive="bg-[#111] text-white border-[#333]"
-       class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
-       [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
+      class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
+      [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
       <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-      <span *ngIf="!isCollapsed" class="font-medium text-sm whitespace-nowrap">Profile</span>
+      @if (!isCollapsed) {
+        <span class="font-medium text-sm whitespace-nowrap">Profile</span>
+      }
     </a>
 
     <a href="https://platform.pratyushes.dev/docs" target="_blank" rel="noopener"
-       class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
-       [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
+      class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
+      [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">
       <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
-      <span *ngIf="!isCollapsed" class="font-medium text-sm whitespace-nowrap">Docs</span>
+      @if (!isCollapsed) {
+        <span class="font-medium text-sm whitespace-nowrap">Docs</span>
+      }
     </a>
   </div>
 
   <div class="p-3 border-t border-[#333]">
     <button (click)="toggleCollapse.emit()" class="w-full flex items-center justify-center p-2 text-[#a1a1aa] hover:text-white hover:bg-[#111] rounded-md transition-colors mb-2">
-      <svg *ngIf="!isCollapsed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
-      <svg *ngIf="isCollapsed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      @if (!isCollapsed) {
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+      }
+      @if (isCollapsed) {
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      }
     </button>
     <button (click)="logout()" class="w-full flex items-center justify-center p-2 text-[#a1a1aa] hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>

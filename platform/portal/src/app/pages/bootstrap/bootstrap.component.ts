@@ -1,5 +1,5 @@
 import { Component, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -19,7 +19,7 @@ interface IntegrationItem {
 @Component({
   selector: 'app-bootstrap',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink],
   template: `
 <div>
   <!-- Header -->
@@ -37,193 +37,201 @@ interface IntegrationItem {
   </div>
 
   <!-- ─── QUICK START TAB ─────────────────────────────────────────────────── -->
-  <div *ngIf="tab === 'start'">
-
-    <!-- One-liner command -->
-    <div class="card" style="padding:24px;background:rgba(0,0,0,0.35);border-color:rgba(99,102,241,0.3);margin-bottom:20px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <h2 style="margin:0;border:0;padding:0;font-size:1rem;color:#c4b5fd;">⚡ One-Command Install</h2>
-        <span style="font-size:0.72rem;color:var(--color-text-muted);background:rgba(16,185,129,0.1);color:#34d399;padding:3px 10px;border-radius:12px;font-weight:600;">Ubuntu 22.04+</span>
-      </div>
-      <div style="position:relative;">
-        <pre style="background:#0b0f19;padding:18px 20px;border-radius:10px;font-size:0.84rem;color:#34d399;margin:0;overflow-x:auto;border:1px solid rgba(52,211,153,0.15);">curl -fsSL https://raw.githubusercontent.com/Mpratyush54/SERVER-automation/master/platform-bootstrap/bootstrap.sh -o bootstrap.sh
-chmod +x bootstrap.sh
-sudo ./bootstrap.sh</pre>
-        <button class="btn btn-sm" (click)="copyInstallCmd()" style="position:absolute;top:10px;right:10px;font-size:0.72rem;">
-          {{ copied ? '✓ Copied' : '📋 Copy' }}
-        </button>
-      </div>
-      <p style="color:var(--color-text-secondary);font-size:0.8rem;margin:12px 0 0 0;">The script is fully interactive — it will walk you through every configuration step, including integrations.</p>
-    </div>
-
-    <!-- Phase cards -->
-    <h2 style="font-size:1rem;margin:0 0 16px;color:#94a3b8;letter-spacing:0.05em;text-transform:uppercase;">What Gets Installed</h2>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:24px;">
-      <div *ngFor="let phase of phases" class="card" style="padding:16px;margin:0;">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-          <span style="font-size:1.3rem;">{{ phase.icon }}</span>
-          <div>
-            <div style="font-weight:700;font-size:0.88rem;color:#f1f5f9;">{{ phase.name }}</div>
-            <div style="font-size:0.7rem;color:#6366f1;font-weight:600;text-transform:uppercase;">Phase {{ phase.phase }}</div>
-          </div>
+  @if (tab === 'start') {
+    <div>
+      <!-- One-liner command -->
+      <div class="card" style="padding:24px;background:rgba(0,0,0,0.35);border-color:rgba(99,102,241,0.3);margin-bottom:20px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h2 style="margin:0;border:0;padding:0;font-size:1rem;color:#c4b5fd;">⚡ One-Command Install</h2>
+          <span style="font-size:0.72rem;color:var(--color-text-muted);background:rgba(16,185,129,0.1);color:#34d399;padding:3px 10px;border-radius:12px;font-weight:600;">Ubuntu 22.04+</span>
         </div>
-        <p style="margin:0;font-size:0.78rem;color:var(--color-text-secondary);line-height:1.5;">{{ phase.desc }}</p>
+        <div style="position:relative;">
+          <pre style="background:#0b0f19;padding:18px 20px;border-radius:10px;font-size:0.84rem;color:#34d399;margin:0;overflow-x:auto;border:1px solid rgba(52,211,153,0.15);">curl -fsSL https://raw.githubusercontent.com/Mpratyush54/SERVER-automation/master/platform-bootstrap/bootstrap.sh -o bootstrap.sh
+            chmod +x bootstrap.sh
+          sudo ./bootstrap.sh</pre>
+          <button class="btn btn-sm" (click)="copyInstallCmd()" style="position:absolute;top:10px;right:10px;font-size:0.72rem;">
+            {{ copied ? '✓ Copied' : '📋 Copy' }}
+          </button>
+        </div>
+        <p style="color:var(--color-text-secondary);font-size:0.8rem;margin:12px 0 0 0;">The script is fully interactive — it will walk you through every configuration step, including integrations.</p>
+      </div>
+      <!-- Phase cards -->
+      <h2 style="font-size:1rem;margin:0 0 16px;color:#94a3b8;letter-spacing:0.05em;text-transform:uppercase;">What Gets Installed</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:24px;">
+        @for (phase of phases; track phase) {
+          <div class="card" style="padding:16px;margin:0;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+              <span style="font-size:1.3rem;">{{ phase.icon }}</span>
+              <div>
+                <div style="font-weight:700;font-size:0.88rem;color:#f1f5f9;">{{ phase.name }}</div>
+                <div style="font-size:0.7rem;color:#6366f1;font-weight:600;text-transform:uppercase;">Phase {{ phase.phase }}</div>
+              </div>
+            </div>
+            <p style="margin:0;font-size:0.78rem;color:var(--color-text-secondary);line-height:1.5;">{{ phase.desc }}</p>
+          </div>
+        }
+      </div>
+      <!-- Requirements -->
+      <div class="card" style="padding:20px;background:rgba(245,158,11,0.04);border-color:rgba(245,158,11,0.2);">
+        <h2 style="margin:0 0 12px;border:0;padding:0;font-size:0.95rem;color:#f59e0b;">📋 Server Requirements</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.82rem;">
+          <div style="color:var(--color-text-secondary);">Operating System</div><div style="color:#f1f5f9;font-weight:600;">Ubuntu 22.04 LTS</div>
+          <div style="color:var(--color-text-secondary);">CPU (minimum)</div><div style="color:#f1f5f9;font-weight:600;">4 cores</div>
+          <div style="color:var(--color-text-secondary);">RAM (minimum)</div><div style="color:#f1f5f9;font-weight:600;">8 GB</div>
+          <div style="color:var(--color-text-secondary);">Disk (minimum)</div><div style="color:#f1f5f9;font-weight:600;">80 GB SSD</div>
+          <div style="color:var(--color-text-secondary);">Ports required</div><div style="color:#f1f5f9;font-weight:600;">80, 443 (inbound)</div>
+          <div style="color:var(--color-text-secondary);">Privileges</div><div style="color:#f1f5f9;font-weight:600;">root / sudo</div>
+        </div>
       </div>
     </div>
-
-    <!-- Requirements -->
-    <div class="card" style="padding:20px;background:rgba(245,158,11,0.04);border-color:rgba(245,158,11,0.2);">
-      <h2 style="margin:0 0 12px;border:0;padding:0;font-size:0.95rem;color:#f59e0b;">📋 Server Requirements</h2>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.82rem;">
-        <div style="color:var(--color-text-secondary);">Operating System</div><div style="color:#f1f5f9;font-weight:600;">Ubuntu 22.04 LTS</div>
-        <div style="color:var(--color-text-secondary);">CPU (minimum)</div><div style="color:#f1f5f9;font-weight:600;">4 cores</div>
-        <div style="color:var(--color-text-secondary);">RAM (minimum)</div><div style="color:#f1f5f9;font-weight:600;">8 GB</div>
-        <div style="color:var(--color-text-secondary);">Disk (minimum)</div><div style="color:#f1f5f9;font-weight:600;">80 GB SSD</div>
-        <div style="color:var(--color-text-secondary);">Ports required</div><div style="color:#f1f5f9;font-weight:600;">80, 443 (inbound)</div>
-        <div style="color:var(--color-text-secondary);">Privileges</div><div style="color:#f1f5f9;font-weight:600;">root / sudo</div>
-      </div>
-    </div>
-  </div>
+  }
 
   <!-- ─── INTEGRATIONS TAB ────────────────────────────────────────────────── -->
-  <div *ngIf="tab === 'integrations'">
-    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:0 0 20px 0;">
-      These integrations are configured during bootstrap or can be updated any time via
-      <a routerLink="/settings" style="color:var(--primary);text-decoration:none;">⚙️ Settings</a>.
-      The bootstrap script's <strong>Phase 2 menu</strong> walks through each one interactively.
-    </p>
-
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
-      <div *ngFor="let item of integrations" class="card" style="padding:20px;margin:0;"
-        [style.border-color]="item.configured ? 'rgba(16,185,129,0.3)' : 'var(--border-glass)'">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-size:1.8rem;line-height:1;">{{ item.icon }}</span>
-            <div>
-              <div style="font-weight:700;font-size:0.95rem;color:#f1f5f9;">{{ item.label }}</div>
-              <div style="font-size:0.72rem;color:var(--color-text-muted);margin-top:2px;">{{ item.description }}</div>
+  @if (tab === 'integrations') {
+    <div>
+      <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:0 0 20px 0;">
+        These integrations are configured during bootstrap or can be updated any time via
+        <a routerLink="/settings" style="color:var(--primary);text-decoration:none;">⚙️ Settings</a>.
+        The bootstrap script's <strong>Phase 2 menu</strong> walks through each one interactively.
+      </p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
+        @for (item of integrations; track item) {
+          <div class="card" style="padding:20px;margin:0;"
+            [style.border-color]="item.configured ? 'rgba(16,185,129,0.3)' : 'var(--border-glass)'">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:1.8rem;line-height:1;">{{ item.icon }}</span>
+                <div>
+                  <div style="font-weight:700;font-size:0.95rem;color:#f1f5f9;">{{ item.label }}</div>
+                  <div style="font-size:0.72rem;color:var(--color-text-muted);margin-top:2px;">{{ item.description }}</div>
+                </div>
+              </div>
+              <span [style.background]="item.configured ? 'rgba(16,185,129,0.15)' : 'rgba(100,116,139,0.15)'"
+                [style.color]="item.configured ? '#10b981' : '#64748b'"
+                style="font-size:0.68rem;font-weight:700;padding:3px 8px;border-radius:10px;white-space:nowrap;flex-shrink:0;">
+                {{ item.configured ? '✓ Active' : '○ Not set' }}
+              </span>
+            </div>
+            @if (item.webhookPath) {
+              <div style="background:#0b0f19;border-radius:6px;padding:8px 12px;margin-bottom:10px;">
+                <div style="font-size:0.68rem;color:var(--color-text-muted);margin-bottom:2px;">Webhook URL</div>
+                <code style="font-size:0.73rem;color:#60a5fa;word-break:break-all;">{{ platformUrl }}{{ item.webhookPath }}</code>
+              </div>
+            }
+            <div style="font-size:0.72rem;color:var(--color-text-muted);margin-bottom:10px;">
+              <strong style="color:#94a3b8;">Required env vars: </strong>
+              @for (v of item.envVars; track v; let last = $last) {
+                <span>
+                  <code style="background:rgba(255,255,255,0.05);padding:1px 5px;border-radius:3px;color:#a78bfa;">{{ v }}</code>{{ !last ? ' ' : '' }}
+                </span>
+              }
+            </div>
+            <div style="display:flex;gap:8px;">
+              <a [href]="item.docsUrl" target="_blank" class="btn btn-sm" style="font-size:0.73rem;">Docs ↗</a>
+              <a routerLink="/settings" class="btn btn-sm" style="font-size:0.73rem;">Configure →</a>
             </div>
           </div>
-          <span [style.background]="item.configured ? 'rgba(16,185,129,0.15)' : 'rgba(100,116,139,0.15)'"
-            [style.color]="item.configured ? '#10b981' : '#64748b'"
-            style="font-size:0.68rem;font-weight:700;padding:3px 8px;border-radius:10px;white-space:nowrap;flex-shrink:0;">
-            {{ item.configured ? '✓ Active' : '○ Not set' }}
-          </span>
-        </div>
-
-        <div *ngIf="item.webhookPath" style="background:#0b0f19;border-radius:6px;padding:8px 12px;margin-bottom:10px;">
-          <div style="font-size:0.68rem;color:var(--color-text-muted);margin-bottom:2px;">Webhook URL</div>
-          <code style="font-size:0.73rem;color:#60a5fa;word-break:break-all;">{{ platformUrl }}{{ item.webhookPath }}</code>
-        </div>
-
-        <div style="font-size:0.72rem;color:var(--color-text-muted);margin-bottom:10px;">
-          <strong style="color:#94a3b8;">Required env vars: </strong>
-          <span *ngFor="let v of item.envVars; let last = last">
-            <code style="background:rgba(255,255,255,0.05);padding:1px 5px;border-radius:3px;color:#a78bfa;">{{ v }}</code>{{ !last ? ' ' : '' }}
-          </span>
-        </div>
-
-        <div style="display:flex;gap:8px;">
-          <a [href]="item.docsUrl" target="_blank" class="btn btn-sm" style="font-size:0.73rem;">Docs ↗</a>
-          <a routerLink="/settings" class="btn btn-sm" style="font-size:0.73rem;">Configure →</a>
-        </div>
+        }
+      </div>
+      <!-- Bootstrap phase 2 reminder -->
+      <div class="card" style="margin-top:20px;padding:20px;background:rgba(99,102,241,0.05);border-color:rgba(99,102,241,0.2);">
+        <h2 style="margin:0 0 8px;border:0;padding:0;font-size:0.95rem;color:#818cf8;">🔧 Bootstrap Phase 2 — Integrations Menu</h2>
+        <p style="color:var(--color-text-secondary);font-size:0.82rem;margin:0 0 12px 0;">When you run the bootstrap script, Phase 2 displays an interactive menu to configure each integration. The script accepts or skips each one, then writes all tokens to <code style="background:rgba(255,255,255,0.05);padding:1px 5px;border-radius:3px;">/etc/platform/.env</code> and injects them into the Kubernetes secret automatically.</p>
+        <pre style="background:#0b0f19;border-radius:8px;padding:14px;font-size:0.75rem;color:#94a3b8;margin:0;overflow-x:auto;">── GitHub Integration ──
+          ▶ Configure GitHub integration? [y/n, default: y]: y
+          ▶ GitHub Personal Access Token: ghp_xxxx...
+          ▶ GitHub Organization: my-org
+          ✔ GitHub configured (webhook: https://platform.mycompany.com/api/webhooks/github)
+          ── ClickUp Integration ──
+          ▶ Configure ClickUp integration? [y/n, default: y]: y
+          ▶ ClickUp API Token: pk_xxxx...
+          ▶ ClickUp Team ID: 1234567
+          ✔ ClickUp configured
+          ── SMTP / Email Notifications ──
+          ▶ Configure SMTP? [y/n, default: y]: y
+          Provider options: 1) Custom SMTP  2) AWS SES  3) SendGrid  4) Mailgun
+          ▶ Choose provider [1-4]: 3
+          ▶ SendGrid API Key: SG.xxxx...
+        ✔ SMTP configured</pre>
       </div>
     </div>
-
-    <!-- Bootstrap phase 2 reminder -->
-    <div class="card" style="margin-top:20px;padding:20px;background:rgba(99,102,241,0.05);border-color:rgba(99,102,241,0.2);">
-      <h2 style="margin:0 0 8px;border:0;padding:0;font-size:0.95rem;color:#818cf8;">🔧 Bootstrap Phase 2 — Integrations Menu</h2>
-      <p style="color:var(--color-text-secondary);font-size:0.82rem;margin:0 0 12px 0;">When you run the bootstrap script, Phase 2 displays an interactive menu to configure each integration. The script accepts or skips each one, then writes all tokens to <code style="background:rgba(255,255,255,0.05);padding:1px 5px;border-radius:3px;">/etc/platform/.env</code> and injects them into the Kubernetes secret automatically.</p>
-      <pre style="background:#0b0f19;border-radius:8px;padding:14px;font-size:0.75rem;color:#94a3b8;margin:0;overflow-x:auto;">── GitHub Integration ──
-▶ Configure GitHub integration? [y/n, default: y]: y
-▶ GitHub Personal Access Token: ghp_xxxx...
-▶ GitHub Organization: my-org
-✔ GitHub configured (webhook: https://platform.mycompany.com/api/webhooks/github)
-
-── ClickUp Integration ──
-▶ Configure ClickUp integration? [y/n, default: y]: y
-▶ ClickUp API Token: pk_xxxx...
-▶ ClickUp Team ID: 1234567
-✔ ClickUp configured
-
-── SMTP / Email Notifications ──
-▶ Configure SMTP? [y/n, default: y]: y
-  Provider options: 1) Custom SMTP  2) AWS SES  3) SendGrid  4) Mailgun
-▶ Choose provider [1-4]: 3
-▶ SendGrid API Key: SG.xxxx...
-✔ SMTP configured</pre>
-    </div>
-  </div>
+  }
 
   <!-- ─── STATUS TAB ──────────────────────────────────────────────────────── -->
-  <div *ngIf="tab === 'status'">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-      <h2 style="margin:0;border:0;padding:0;font-size:1.05rem;">💚 Infrastructure Health</h2>
-      <button class="btn btn-sm" (click)="loadStatus()" [disabled]="loadingStatus">
-        {{ loadingStatus ? 'Refreshing...' : '🔄 Refresh' }}
-      </button>
-    </div>
-
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;">
-      <div *ngFor="let s of statusServices" class="card" style="padding:16px;margin:0;"
-        [style.border-color]="s.status === 'running' ? 'rgba(16,185,129,0.3)' : s.status === 'degraded' ? 'rgba(245,158,11,0.3)' : 'rgba(239,68,68,0.3)'">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <div style="font-weight:700;font-size:0.88rem;color:#f1f5f9;">{{ s.label }}</div>
-            <div style="font-size:0.72rem;color:var(--color-text-muted);margin-top:2px;">{{ s.detail || s.namespace }}</div>
-          </div>
-          <div style="text-align:right;">
-            <div [style.color]="s.status === 'running' ? '#10b981' : s.status === 'degraded' ? '#f59e0b' : '#ef4444'"
-              style="font-size:1.2rem;font-weight:900;">
-              {{ s.status === 'running' ? '●' : s.status === 'degraded' ? '◑' : '○' }}
-            </div>
-            <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;"
-              [style.color]="s.status === 'running' ? '#10b981' : s.status === 'degraded' ? '#f59e0b' : '#ef4444'">
-              {{ s.status }}
-            </div>
-          </div>
-        </div>
-        <div *ngIf="s.pods" style="margin-top:8px;">
-          <div style="font-size:0.72rem;color:var(--color-text-muted);">{{ s.pods }} pods running</div>
-        </div>
+  @if (tab === 'status') {
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <h2 style="margin:0;border:0;padding:0;font-size:1.05rem;">💚 Infrastructure Health</h2>
+        <button class="btn btn-sm" (click)="loadStatus()" [disabled]="loadingStatus">
+          {{ loadingStatus ? 'Refreshing...' : '🔄 Refresh' }}
+        </button>
       </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;">
+        @for (s of statusServices; track s) {
+          <div class="card" style="padding:16px;margin:0;"
+            [style.border-color]="s.status === 'running' ? 'rgba(16,185,129,0.3)' : s.status === 'degraded' ? 'rgba(245,158,11,0.3)' : 'rgba(239,68,68,0.3)'">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <div style="font-weight:700;font-size:0.88rem;color:#f1f5f9;">{{ s.label }}</div>
+                <div style="font-size:0.72rem;color:var(--color-text-muted);margin-top:2px;">{{ s.detail || s.namespace }}</div>
+              </div>
+              <div style="text-align:right;">
+                <div [style.color]="s.status === 'running' ? '#10b981' : s.status === 'degraded' ? '#f59e0b' : '#ef4444'"
+                  style="font-size:1.2rem;font-weight:900;">
+                  {{ s.status === 'running' ? '●' : s.status === 'degraded' ? '◑' : '○' }}
+                </div>
+                <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;"
+                  [style.color]="s.status === 'running' ? '#10b981' : s.status === 'degraded' ? '#f59e0b' : '#ef4444'">
+                  {{ s.status }}
+                </div>
+              </div>
+            </div>
+            @if (s.pods) {
+              <div style="margin-top:8px;">
+                <div style="font-size:0.72rem;color:var(--color-text-muted);">{{ s.pods }} pods running</div>
+              </div>
+            }
+          </div>
+        }
+      </div>
+      @if (statusServices.length === 0 && !loadingStatus) {
+        <div style="text-align:center;padding:60px 20px;color:var(--color-text-muted);">
+          Click Refresh to check infrastructure health.
+        </div>
+      }
     </div>
-
-    <div *ngIf="statusServices.length === 0 && !loadingStatus" style="text-align:center;padding:60px 20px;color:var(--color-text-muted);">
-      Click Refresh to check infrastructure health.
-    </div>
-  </div>
+  }
 
   <!-- ─── SCRIPT TAB ──────────────────────────────────────────────────────── -->
-  <div *ngIf="tab === 'script'">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-      <h2 style="margin:0;border:0;padding:0;font-size:1.05rem;">📜 bootstrap.sh — Full Script</h2>
-      <div style="display:flex;gap:8px;">
-        <button class="btn btn-sm" (click)="downloadScript()">⬇️ Download</button>
-        <button class="btn btn-sm" (click)="copyScript()">{{ scriptCopied ? '✓ Copied' : '📋 Copy' }}</button>
+  @if (tab === 'script') {
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h2 style="margin:0;border:0;padding:0;font-size:1.05rem;">📜 bootstrap.sh — Full Script</h2>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm" (click)="downloadScript()">⬇️ Download</button>
+          <button class="btn btn-sm" (click)="copyScript()">{{ scriptCopied ? '✓ Copied' : '📋 Copy' }}</button>
+        </div>
       </div>
-    </div>
-    <p style="color:var(--color-text-secondary);font-size:0.82rem;margin:0 0 16px 0;">
-      The script is fully self-contained. It tracks completed steps in <code style="background:rgba(255,255,255,0.05);padding:1px 5px;border-radius:3px;">/etc/platform/.bootstrap_state</code>
-      and is safe to re-run — completed phases are skipped automatically.
-    </p>
-
-    <!-- Key options -->
-    <div class="card" style="padding:20px;margin-bottom:16px;background:rgba(15,23,42,0.6);">
-      <h3 style="margin:0 0 12px;border:0;padding:0;font-size:0.9rem;color:#94a3b8;">Environment Variables (options)</h3>
-      <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 20px;font-size:0.8rem;">
-        <code style="color:#a78bfa;">NON_INTERACTIVE=true</code><span style="color:var(--color-text-secondary);">Skip all prompts (CI/CD mode), use .env file</span>
-        <code style="color:#a78bfa;">SKIP_K8S=true</code><span style="color:var(--color-text-secondary);">Use existing Kubernetes cluster</span>
-        <code style="color:#a78bfa;">PLATFORM_DOMAIN=platform.dev</code><span style="color:var(--color-text-secondary);">Pre-fill domain (skips prompt)</span>
-        <code style="color:#a78bfa;">PLATFORM_IMAGE_TAG=v2.1.0</code><span style="color:var(--color-text-secondary);">Specific image version to deploy</span>
-        <code style="color:#a78bfa;">PLATFORM_REPO_URL=ghcr.io/…</code><span style="color:var(--color-text-secondary);">Container registry URL</span>
+      <p style="color:var(--color-text-secondary);font-size:0.82rem;margin:0 0 16px 0;">
+        The script is fully self-contained. It tracks completed steps in <code style="background:rgba(255,255,255,0.05);padding:1px 5px;border-radius:3px;">/etc/platform/.bootstrap_state</code>
+        and is safe to re-run — completed phases are skipped automatically.
+      </p>
+      <!-- Key options -->
+      <div class="card" style="padding:20px;margin-bottom:16px;background:rgba(15,23,42,0.6);">
+        <h3 style="margin:0 0 12px;border:0;padding:0;font-size:0.9rem;color:#94a3b8;">Environment Variables (options)</h3>
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 20px;font-size:0.8rem;">
+          <code style="color:#a78bfa;">NON_INTERACTIVE=true</code><span style="color:var(--color-text-secondary);">Skip all prompts (CI/CD mode), use .env file</span>
+          <code style="color:#a78bfa;">SKIP_K8S=true</code><span style="color:var(--color-text-secondary);">Use existing Kubernetes cluster</span>
+          <code style="color:#a78bfa;">PLATFORM_DOMAIN=platform.dev</code><span style="color:var(--color-text-secondary);">Pre-fill domain (skips prompt)</span>
+          <code style="color:#a78bfa;">PLATFORM_IMAGE_TAG=v2.1.0</code><span style="color:var(--color-text-secondary);">Specific image version to deploy</span>
+          <code style="color:#a78bfa;">PLATFORM_REPO_URL=ghcr.io/…</code><span style="color:var(--color-text-secondary);">Container registry URL</span>
+        </div>
       </div>
+      <pre style="background:#0b0f19;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:20px;font-size:0.75rem;color:#94a3b8;overflow-x:auto;max-height:600px;line-height:1.6;">{{ scriptContent }}</pre>
     </div>
-
-    <pre style="background:#0b0f19;border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:20px;font-size:0.75rem;color:#94a3b8;overflow-x:auto;max-height:600px;line-height:1.6;">{{ scriptContent }}</pre>
-  </div>
+  }
 </div>
-  `
+`
 })
 export class BootstrapComponent implements OnInit {
   tab = 'start';
