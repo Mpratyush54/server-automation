@@ -56,13 +56,15 @@ cd platform/api
 npx jest --forceExit tests/unit/project-db-ensure.test.ts
 
 # Telemetry E2E (local node-api → live API)
-$env:NODE_TLS_REJECT_UNAUTHORIZED='0'
+# Lab install with a private/self-signed CA: trust it instead of disabling TLS checks
+$env:NODE_EXTRA_CA_CERTS='C:\certs\platform-ca.pem'
 $env:ADMIN_PASSWORD='…'
 node scripts/e2e-sdk-telemetry.mjs
 ```
 
 ## Notes
 
-- Do not call `captureConsole()` in the Node demo (log recursion).
+- `captureConsole()` is safe to use (it no longer recurses through the SDK logger).
+- Never set `NODE_TLS_REJECT_UNAUTHORIZED=0`; use `NODE_EXTRA_CA_CERTS` to trust a lab CA. In Kubernetes, mount the CA from a ConfigMap and point `NODE_EXTRA_CA_CERTS` at it.
 - Keep `platform-auto-update` suspended while using `local-*` / `:local` image tags.
 - Push `examples/sdk-apps/k8s` to `main` so Argo self-heals without re-applying manifests.

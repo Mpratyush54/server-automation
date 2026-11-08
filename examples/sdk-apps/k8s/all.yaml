@@ -52,8 +52,6 @@ spec:
               value: "https://github.com/Mpratyush54/SERVER-automation.git"
             - name: GIT_PATH
               value: "examples/sdk-apps/k8s"
-            - name: NODE_TLS_REJECT_UNAUTHORIZED
-              value: "0"
             - name: PLATFORM_SDK_TOKEN
               valueFrom:
                 secretKeyRef:
