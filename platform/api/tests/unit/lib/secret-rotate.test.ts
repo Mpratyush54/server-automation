@@ -339,8 +339,12 @@ describe('secret-rotate', () => {
       expect(JSON.stringify(pgStep.output)).toContain('already rotated before the interruption');
       const pgSecret = patchSecretData.mock.calls.find(([ns, name]) => ns === 'databases' && name === 'postgresql');
       expect(pgSecret[2]['postgres-password']).toBe(NEW_PG);
+      // #20: platform-env keeps only non-credential config; the resumed postgres step writes
+      // the new password to the credentials store (FileStore under tests).
       const envPatch = patchSecretData.mock.calls.find(([ns, name]) => ns === 'platform' && name === 'platform-env');
-      expect(envPatch[2]).toMatchObject({ POSTGRES_PASSWORD: NEW_PG, REDIS_PASSWORD: NEW_REDIS });
+      expect(envPatch[2]).toEqual({ PLATFORM_WEBHOOK_SECRET: 'new-webhook' });
+      expect(fs.readFileSync(path.join(process.env.PLATFORM_CRED_DIR!, 'postgres'), 'utf8').trim()).toBe(NEW_PG);
+      expect(JSON.stringify(pgStep.output)).toContain('platform-credentials:POSTGRES_PASSWORD');
       expect(deleteSecret).toHaveBeenCalledWith('platform', 'platform-rotate-pending');
       expect(restartNamedDeployment).toHaveBeenCalledWith('platform', 'platform-api');
       expect(reconnectPostgres).toHaveBeenCalledWith(NEW_PG);
