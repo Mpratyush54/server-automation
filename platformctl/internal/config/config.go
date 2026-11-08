@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/fatih/color"
@@ -48,6 +49,12 @@ type Config struct {
 	// the profile.
 	explicitInstall map[string]bool
 
+	// APIReplicas is the platform-api Deployment replica count. Defaults from the
+	// profile (minimal: 1, otherwise 2); API_REPLICAS overrides it.
+	APIReplicas int
+	// explicitAPIReplicas is API_REPLICAS from the real process environment (0 = unset).
+	explicitAPIReplicas int
+
 	PostgresPassword     string
 	MongoPassword        string
 	RedisPassword        string
@@ -81,6 +88,7 @@ func Load() *Config {
 	// Capture what the operator set explicitly before the saved .env is merged
 	// into the environment, so profile resolution can tell them apart.
 	explicit := explicitEnv()
+	explicitReplicas := explicitAPIReplicasEnv()
 	// Prefer values already written by a prior provision.
 	_ = loadDotEnv(envFilePath)
 
@@ -117,6 +125,8 @@ func Load() *Config {
 		OIDCSecretMinio:       os.Getenv("OIDC_SECRET_MINIO"),
 	}
 	c.resolveProfile(explicit)
+	_, profileExplicit := explicit["PLATFORM_PROFILE"]
+	c.resolveAPIReplicas(explicitReplicas, profileExplicit)
 	return c
 }
 
@@ -504,6 +514,9 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("PLATFORM_IMAGE_TAG=%s\n", c.ImageTag))
 	b.WriteString(fmt.Sprintf("AUTO_UPDATE=%t\n", c.AutoUpdate))
 	b.WriteString(fmt.Sprintf("PLATFORM_PROFILE=%s\n", c.profileName()))
+	if c.APIReplicas > 0 {
+		b.WriteString(fmt.Sprintf("API_REPLICAS=%d\n", c.APIReplicas))
+	}
 	b.WriteString(fmt.Sprintf("INSTALL_ARGOCD=%t\n", c.InstallArgoCD))
 	b.WriteString(fmt.Sprintf("INSTALL_MONITORING=%t\n", c.InstallMonitoring))
 	b.WriteString(fmt.Sprintf("INSTALL_PORTAINER=%t\n", c.InstallPortainer))
@@ -638,7 +651,69 @@ func (c *Config) ApplyProfile(name string) error {
 	}
 	c.Profile = normalizeProfile(name)
 	c.setInstall(defaults)
+	c.APIReplicas = profileAPIReplicas(c.Profile)
+	if c.explicitAPIReplicas > 0 {
+		c.APIReplicas = c.explicitAPIReplicas
+	}
 	return nil
+}
+
+// MaxAPIReplicas bounds API_REPLICAS.
+const MaxAPIReplicas = 10
+
+// profileAPIReplicas is the platform-api replica count for a profile: one on
+// minimal (very small servers), two elsewhere for zero-downtime rollouts.
+func profileAPIReplicas(profile string) int {
+	if normalizeProfile(profile) == ProfileMinimal {
+		return 1
+	}
+	return 2
+}
+
+// parseAPIReplicas returns n for a valid API_REPLICAS value, else 0.
+func parseAPIReplicas(v string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 1 || n > MaxAPIReplicas {
+		return 0
+	}
+	return n
+}
+
+// explicitAPIReplicasEnv returns API_REPLICAS when set in the real process
+// environment (not injected from /etc/platform/.env by an earlier Load).
+func explicitAPIReplicasEnv() int {
+	v := os.Getenv("API_REPLICAS")
+	if v == "" {
+		return 0
+	}
+	if loaded, ok := dotenvLoaded["API_REPLICAS"]; ok && loaded == v {
+		return 0
+	}
+	n := parseAPIReplicas(v)
+	if n == 0 {
+		fmt.Fprintf(os.Stderr, "platformctl: ignoring API_REPLICAS=%q (want 1-%d)\n", v, MaxAPIReplicas)
+	}
+	return n
+}
+
+// resolveAPIReplicas mirrors resolveProfile's precedence: explicit env, then the
+// saved value (unless a profile was chosen explicitly this run), then the
+// profile default.
+func (c *Config) resolveAPIReplicas(explicit int, profileExplicit bool) {
+	c.explicitAPIReplicas = explicit
+	if explicit > 0 {
+		c.APIReplicas = explicit
+		return
+	}
+	if !profileExplicit {
+		if saved, ok := dotenvLoaded["API_REPLICAS"]; ok && os.Getenv("API_REPLICAS") == saved {
+			if n := parseAPIReplicas(saved); n > 0 {
+				c.APIReplicas = n
+				return
+			}
+		}
+	}
+	c.APIReplicas = profileAPIReplicas(c.Profile)
 }
 
 func (c *Config) setInstall(defaults map[string]bool) {

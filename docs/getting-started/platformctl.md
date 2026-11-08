@@ -101,6 +101,10 @@ Explicit `INSTALL_*` variables override the profile. The profile is saved as
 `PLATFORM_PROFILE` in `/etc/platform/.env`; choosing a new profile explicitly ignores the
 `INSTALL_*` values saved by an earlier run.
 
+The profile also sets the Platform API replica count: `1` on `minimal`, `2` otherwise
+(rolling updates with `maxUnavailable: 0` and a PodDisruptionBudget). Override it with
+`API_REPLICAS=<1-10>`; see [Scaling](../deployment/scaling.md#api-replicas-shared-state-and-zero-downtime-deploys).
+
 ## Offline bundle
 
 Releases include `platform-bundle-<version>-<arch>.tar.zst` and a `.sha256` file:

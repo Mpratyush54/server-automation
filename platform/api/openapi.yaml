@@ -32,6 +32,33 @@ paths:
                   status:
                     type: string
                     example: ok
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness check (PostgreSQL + Redis, not draining)
+      security: []
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+                  checks:
+                    type: object
+                    properties:
+                      db:
+                        type: string
+                        example: ok
+                      redis:
+                        type: string
+                        example: ok
+        '503':
+          description: Not ready or draining
   /openapi.json:
     get:
       tags: [Health]

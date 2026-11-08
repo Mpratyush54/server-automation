@@ -7,7 +7,8 @@ import { expressAuthenticate, requireHumanJwt, AuthenticatedRequest } from '../m
 import { findOidcClient, isRegisteredRedirectUri, verifyClientSecret, OidcClient } from '../lib/oidc-clients';
 import { getOidcSigningKey } from '../lib/oidc-keys';
 import { getOidcIssuer } from '../lib/oidc-issuer';
-import { OneTimeCodeStore, verifyPkceS256 } from '../lib/oidc-codes';
+import { createCodeStore, verifyPkceS256 } from '../lib/oidc-codes';
+import { StateStoreUnavailableError } from '../lib/redis';
 import {
   buildAuthorizeUrl,
   completeOAuthCallback,
@@ -41,7 +42,8 @@ interface AuthCodeSession {
   authTime: number;
 }
 
-export const oidcAuthCodes = new OneTimeCodeStore<AuthCodeSession>(AUTH_CODE_TTL_MS);
+/** Authorization codes live in Redis (shared by all replicas; GETDEL = single use). */
+export const oidcAuthCodes = createCodeStore<AuthCodeSession>('oidc-code', AUTH_CODE_TTL_MS);
 
 function requestProto(req: Request): string {
   return (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
@@ -203,21 +205,30 @@ router.get('/oauth/clients/:id', (req: Request, res: Response) => {
  * Auth: human session JWT in the Authorization header (never in the URL).
  * Returns { redirect: "<registered redirect_uri>?code=...&state=..." }.
  */
-router.post('/oauth/authorize', expressAuthenticate, requireHumanJwt, (req: Request, res: Response) => {
+router.post('/oauth/authorize', expressAuthenticate, requireHumanJwt, async (req: Request, res: Response) => {
   const authReq = req as AuthenticatedRequest;
   const body = (req.body || {}) as Record<string, unknown>;
   const v = validateAuthorizeParams(body);
   if (!v.ok) return oauthError(res, v.status!, v.error!, v.description!);
 
-  const code = oidcAuthCodes.issue({
-    userId: authReq.user!.id,
-    clientId: v.client!.id,
-    redirectUri: v.redirectUri!,
-    scope: str(body.scope) || 'openid',
-    nonce: str(body.nonce) || null,
-    codeChallenge: str(body.code_challenge) || null,
-    authTime: Math.floor(Date.now() / 1000),
-  });
+  let code: string;
+  try {
+    code = await oidcAuthCodes.issue({
+      userId: authReq.user!.id,
+      clientId: v.client!.id,
+      redirectUri: v.redirectUri!,
+      scope: str(body.scope) || 'openid',
+      nonce: str(body.nonce) || null,
+      codeChallenge: str(body.code_challenge) || null,
+      authTime: Math.floor(Date.now() / 1000),
+    });
+  } catch (err) {
+    // Fail closed: without the shared store the code could not be redeemed on another replica.
+    if (err instanceof StateStoreUnavailableError) {
+      return oauthError(res, 503, 'temporarily_unavailable', 'Authorization is temporarily unavailable');
+    }
+    return oauthError(res, 500, 'server_error', 'Could not issue an authorization code');
+  }
   return res.json({ redirect: appendParams(v.redirectUri!, { code, state: str(body.state) }) });
 });
 
@@ -269,7 +280,15 @@ router.post('/oauth/token', express.urlencoded({ extended: false }), async (req:
     }
 
     // Single use: the code is removed whether or not the rest of the checks pass.
-    const session = oidcAuthCodes.consume(body.code);
+    let session: AuthCodeSession | null;
+    try {
+      session = await oidcAuthCodes.consume(body.code);
+    } catch (err) {
+      if (err instanceof StateStoreUnavailableError) {
+        return oauthError(res, 503, 'temporarily_unavailable', 'Token exchange is temporarily unavailable');
+      }
+      throw err;
+    }
     if (!session) {
       return oauthError(res, 400, 'invalid_grant', 'Invalid or expired authorization code');
     }
@@ -421,6 +440,9 @@ router.post('/auth/exchange', async (req: Request, res: Response) => {
     const { passwordHash: _ph, ...safe } = result.user as any;
     return res.json({ token: result.token, user: safe });
   } catch (err: any) {
+    if (err instanceof StateStoreUnavailableError) {
+      return res.status(503).json({ error: 'Sign-in is temporarily unavailable. Try again in a moment.' });
+    }
     return res.status(500).json({ error: 'Login code exchange failed' });
   }
 });

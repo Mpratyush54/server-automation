@@ -25,7 +25,9 @@ import versionRoutes from './version';
 import agentTokenRoutes from './agent-tokens';
 import agentCommandRoutes from './agent-commands';
 import notificationRoutes from './notifications';
+import healthRoutes from './health';
 
+router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB + Redis)
 router.use('/', oidcRoutes); // before authRoutes: OIDC provider + GitHub/GitLab login (state cookie)
 router.use('/', authRoutes);
 router.use('/', versionRoutes);

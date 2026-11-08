@@ -12,6 +12,9 @@ import { User } from './entities/User';
 import apiRouter from './routes/api';
 import { startPreviewDecayScheduler } from './lib/preview-decay';
 import { configuredAdminEmail, ensureAdminUser } from './lib/seed-admin';
+import { createLimiterStore } from './lib/rate-limit-store';
+import { closeRedis } from './lib/redis';
+import { drainingConnectionClose, installGracefulShutdown } from './lib/shutdown';
 
 /** Paths called cross-origin by browser SDKs (bearer SDK token, no cookies). */
 const SDK_PUBLIC_PATH = /^\/api\/(sdk\/|logs\/ingest$)/;
@@ -63,6 +66,7 @@ export function buildApp(): express.Express {
   // Middleware
   // Portal and API share a site behind the ingress; 'same-site' keeps sibling subdomains working.
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'same-site' } }));
+  app.use(drainingConnectionClose);
   app.use(cors(corsDelegate));
 
   // Brute-force protection on credential endpoints
@@ -72,6 +76,7 @@ export function buildApp(): express.Express {
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     message: { error: 'Too many attempts. Please try again later.' },
+    store: createLimiterStore('credential'), // shared across replicas (Redis)
   });
   app.use(
     [
@@ -90,6 +95,7 @@ export function buildApp(): express.Express {
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     message: { error: 'Too many credential requests. Please try again later.' },
+    store: createLimiterStore('issue'),
   });
   app.post(['/api/projects/:projectId/tokens', '/api/agent-tokens'], issueLimiter);
 
@@ -165,8 +171,15 @@ async function bootstrap() {
     const app = buildApp();
     const port = process.env.PORT || 3000;
 
-    app.listen(port, () => {
+    const server = app.listen(port, () => {
       console.log(`[server] Platform Express backend running on http://localhost:${port}`);
+    });
+    installGracefulShutdown(server, {
+      closers: [
+        { name: 'redis', close: closeRedis },
+        { name: 'postgres', close: () => (ds.isInitialized ? ds.destroy() : undefined) },
+        { name: 'mongodb', close: () => import('mongoose').then((m) => m.default.disconnect()) },
+      ],
     });
   } catch (err: any) {
     console.error('[server] Bootstrapping failed:', err.message);

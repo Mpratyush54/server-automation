@@ -27,6 +27,13 @@
 | `PLATFORM_REDIS_PORT` | `6379` | Redis port | |
 | `PLATFORM_REDIS_PASSWORD` | — | Redis password | |
 | `PLATFORM_REDIS_DB` | `0` | Redis database index | |
+| **Shared API state (Redis)** | | | |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `redis-master.databases.svc.cluster.local` / `6379` / `0` | Redis for login state, one-time codes, rate limits and permission-cache invalidation | |
+| `REDIS_PASSWORD` | — | Platform Redis password; the API derives and creates its own ACL user (`plat-api`, keys `plat:api:*`) from it | ✓ |
+| `REDIS_API_USERNAME` / `REDIS_API_PASSWORD` | — | Use an externally managed ACL user instead | |
+| `REDIS_OP_TIMEOUT_MS` | `2000` | Deadline for one state-store operation before it counts as unavailable | |
+| `PLATFORM_STATE_STORE` | `redis` | `memory` = per-process state for single-process local development only | |
+| `SHUTDOWN_TIMEOUT_MS` | `25000` | Graceful-shutdown drain deadline after SIGTERM | |
 | **Secrets Encryption** | | | |
 | `SECRETS_ENCRYPTION_KEY` | — | 32-byte master key for AES-256-GCM (base64 or hex) | ✓ |
 | **JWT** | | | |
@@ -79,6 +86,7 @@
 | `PLATFORM_IMAGE_TAG` | `latest` | Docker image tag to deploy | |
 | `PLATFORM_REPO_URL` | — | Container registry URL | |
 | **Component Toggles** | | | |
+| `API_REPLICAS` | `2` (`1` on `minimal`) | Platform API replica count (1–10); a PodDisruptionBudget is added when ≥ 2 | |
 | `INSTALL_ARGOCD` | `y` | Install ArgoCD | |
 | `INSTALL_MONITORING` | `y` | Install Grafana + Prometheus + Loki | |
 | `INSTALL_PORTAINER` | `y` | Install Portainer | |

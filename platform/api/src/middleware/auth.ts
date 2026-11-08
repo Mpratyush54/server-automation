@@ -10,6 +10,7 @@ import { SdkCredential } from '../entities/SdkCredential';
 import { Project } from '../entities/Project';
 import { Permission, ROLE_PRESETS } from '../config/permissions';
 import { getJwtSecret } from '../config/security-env';
+import { PermissionInvalidationBus, permissionPubSubEnabled } from '../lib/perm-invalidation';
 
 /** Only stored, revocable SDK credentials are accepted (see POST /projects/:id/tokens). */
 export const SDK_TOKEN_PREFIXES = ['sdk_live_', 'sdk_test_'];
@@ -42,11 +43,31 @@ export interface AuthenticatedRequest extends Request {
   humanJwt?: boolean;
 }
 
-// Simple in-memory permission cache: userId → { permissions, expiresAt }
+// Short-lived per-process permission cache: userId → { permissions, expiresAt }. Not shared
+// state: invalidations reach every replica over Redis pub/sub (lib/perm-invalidation.ts).
 const permCache = new Map<string, { permissions: Set<string>; expiresAt: number }>();
 
+function dropLocalPermissions(userId?: string) {
+  if (userId) permCache.delete(userId);
+  else permCache.clear();
+}
+
+export const permissionInvalidationBus = new PermissionInvalidationBus(dropLocalPermissions);
+
+/**
+ * Whether the local cache may be used. With Redis (multi-replica) only while the invalidation
+ * subscription is live; otherwise fail open to the database so a missed invalidation can never
+ * keep a revoked permission alive.
+ */
+function permissionCacheUsable(): boolean {
+  if (!permissionPubSubEnabled()) return true;
+  void permissionInvalidationBus.start();
+  return permissionInvalidationBus.isReady();
+}
+
 export async function getUserPermissions(user: { id: string; role: UserRole; roleId: string | null }): Promise<Set<string>> {
-  const cached = permCache.get(user.id);
+  const useCache = permissionCacheUsable();
+  const cached = useCache ? permCache.get(user.id) : undefined;
   if (cached && cached.expiresAt > Date.now()) {
     return cached.permissions;
   }
@@ -70,16 +91,14 @@ export async function getUserPermissions(user: { id: string; role: UserRole; rol
     } catch {}
   }
 
-  permCache.set(user.id, { permissions: perms, expiresAt: Date.now() + PERMISSION_CACHE_TTL_MS });
+  if (useCache) permCache.set(user.id, { permissions: perms, expiresAt: Date.now() + PERMISSION_CACHE_TTL_MS });
   return perms;
 }
 
+/** Invalidate locally and on every other replica (best-effort pub/sub; TTL bounds staleness). */
 export function clearPermissionCache(userId?: string) {
-  if (userId) {
-    permCache.delete(userId);
-  } else {
-    permCache.clear();
-  }
+  dropLocalPermissions(userId);
+  if (permissionPubSubEnabled()) void permissionInvalidationBus.publish(userId);
 }
 
 async function authenticateAgentToken(rawToken: string, req: AuthenticatedRequest, res: Response, next: NextFunction) {

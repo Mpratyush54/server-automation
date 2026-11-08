@@ -290,7 +290,7 @@ func TestGetEnvBool(t *testing.T) {
 // profile-related variables, restoring everything afterwards.
 func profileEnv(t *testing.T, dotenv string) {
 	t.Helper()
-	for _, k := range append([]string{"PLATFORM_PROFILE"}, installKeys...) {
+	for _, k := range append([]string{"PLATFORM_PROFILE", "API_REPLICAS"}, installKeys...) {
 		if v, ok := os.LookupEnv(k); ok {
 			t.Setenv(k, v) // registers restore
 			os.Unsetenv(k)
@@ -473,5 +473,86 @@ func TestSaveEnvFilePersistsProfile(t *testing.T) {
 	c2 := Load()
 	if c2.Profile != ProfileMinimal || installOf(c2) != installOf(c) {
 		t.Fatalf("round trip: %q %+v", c2.Profile, installOf(c2))
+	}
+}
+
+func TestAPIReplicasFromProfile(t *testing.T) {
+	cases := map[string]int{"": 2, "full": 2, "standard": 2, "minimal": 1}
+	for profile, want := range cases {
+		t.Run(profile, func(t *testing.T) {
+			profileEnv(t, "")
+			if profile != "" {
+				t.Setenv("PLATFORM_PROFILE", profile)
+			}
+			if c := Load(); c.APIReplicas != want {
+				t.Fatalf("APIReplicas = %d, want %d", c.APIReplicas, want)
+			}
+		})
+	}
+}
+
+func TestAPIReplicasExplicitOverride(t *testing.T) {
+	profileEnv(t, "")
+	t.Setenv("PLATFORM_PROFILE", "full")
+	t.Setenv("API_REPLICAS", "1")
+	c := Load()
+	if c.APIReplicas != 1 {
+		t.Fatalf("APIReplicas = %d, want 1", c.APIReplicas)
+	}
+	if err := c.ApplyProfile("standard"); err != nil {
+		t.Fatal(err)
+	}
+	if c.APIReplicas != 1 {
+		t.Fatalf("explicit API_REPLICAS must survive ApplyProfile, got %d", c.APIReplicas)
+	}
+}
+
+func TestAPIReplicasInvalidFallsBackToProfile(t *testing.T) {
+	for _, v := range []string{"0", "-1", "abc", "99"} {
+		profileEnv(t, "")
+		t.Setenv("API_REPLICAS", v)
+		if c := Load(); c.APIReplicas != 2 {
+			t.Fatalf("API_REPLICAS=%q: got %d, want profile default 2", v, c.APIReplicas)
+		}
+	}
+}
+
+func TestAPIReplicasSavedAndProfileSwitch(t *testing.T) {
+	t.Run("saved value is reused", func(t *testing.T) {
+		profileEnv(t, "PLATFORM_PROFILE=full\nAPI_REPLICAS=3\n")
+		if c := Load(); c.APIReplicas != 3 {
+			t.Fatalf("got %d, want saved 3", c.APIReplicas)
+		}
+	})
+	t.Run("explicit new profile ignores saved value", func(t *testing.T) {
+		profileEnv(t, "PLATFORM_PROFILE=full\nAPI_REPLICAS=2\n")
+		t.Setenv("PLATFORM_PROFILE", "minimal")
+		if c := Load(); c.APIReplicas != 1 {
+			t.Fatalf("got %d, want minimal default 1", c.APIReplicas)
+		}
+	})
+	t.Run("ApplyProfile resets to profile default", func(t *testing.T) {
+		profileEnv(t, "PLATFORM_PROFILE=full\nAPI_REPLICAS=2\n")
+		c := Load()
+		if err := c.ApplyProfile("minimal"); err != nil {
+			t.Fatal(err)
+		}
+		if c.APIReplicas != 1 {
+			t.Fatalf("got %d, want 1", c.APIReplicas)
+		}
+	})
+}
+
+func TestSaveEnvFileWritesAPIReplicas(t *testing.T) {
+	profileEnv(t, "")
+	c := Load()
+	c.APIReplicas = 1
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := c.SaveEnvFile(path); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "API_REPLICAS=1\n") {
+		t.Fatalf("API_REPLICAS not saved:\n%s", data)
 	}
 }
