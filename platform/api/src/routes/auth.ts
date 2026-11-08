@@ -3,18 +3,85 @@ import { getDb } from '../config/database';
 import { User, UserRole } from '../entities/User';
 import { Role } from '../entities/Role';
 import { expressAuthenticate, expressRequireRole, requirePermission, logAudit, clearPermissionCache, getUserPermissions, AuthenticatedRequest } from '../middleware/auth';
-import { Permission } from '../config/permissions';
+import { Permission, ROLE_RANK, isKnownPermission } from '../config/permissions';
+import { getJwtSecret } from '../config/security-env';
 import jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
 import bcrypt from 'bcryptjs';
-import { ensureAdminUser } from '../lib/seed-admin';
 import { resolveIntegrations, publicAuthProviders } from '../lib/integrations';
 import { buildAuthorizeUrl, completeOAuthCallback, loginFailedRedirect } from '../lib/oauth-login';
 
+// Only used by the built-in OIDC provider handlers below (being moved to their own module).
+// server.ts refuses to start when JWT_SECRET is missing or a known default, so this fallback
+// is never used in a running server. New code must call getJwtSecret().
 const JWT_SECRET = process.env.JWT_SECRET || 'plat-super-secret-key';
 const router = Router();
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+type GrantError = { status: number; error: string };
+
+/**
+ * Privilege-escalation guard for every endpoint that sets a user's role / custom role.
+ * - role must be one of the built-in roles
+ * - a caller may never grant a role above their own; only admins grant admin
+ * - only admins may modify admin accounts
+ * - a custom role (roleId) may only be granted if all its permissions are held by the caller
+ */
+async function checkRoleGrant(
+  actor: AuthenticatedRequest['user'],
+  opts: { role?: unknown; roleId?: unknown; target?: User | null },
+): Promise<GrantError | null> {
+  if (!actor) return { status: 401, error: 'Unauthorized: Not authenticated' };
+  const actorIsAdmin = actor.role === UserRole.ADMIN;
+
+  if (opts.role !== undefined) {
+    if (typeof opts.role !== 'string' || !(Object.values(UserRole) as string[]).includes(opts.role)) {
+      return { status: 400, error: `Invalid role. Allowed: ${Object.values(UserRole).join(', ')}` };
+    }
+    if (!actorIsAdmin && (opts.role === UserRole.ADMIN || (ROLE_RANK[opts.role] ?? 99) > (ROLE_RANK[actor.role] ?? 0))) {
+      return { status: 403, error: 'Forbidden: you cannot grant a role higher than your own' };
+    }
+  }
+
+  if (opts.target && opts.target.role === UserRole.ADMIN && !actorIsAdmin) {
+    return { status: 403, error: 'Forbidden: only admins may modify admin accounts' };
+  }
+
+  if (opts.roleId !== undefined && opts.roleId !== null && opts.roleId !== '') {
+    if (typeof opts.roleId !== 'string' || !UUID_RE.test(opts.roleId)) {
+      return { status: 400, error: 'Invalid roleId' };
+    }
+    const ds = await getDb();
+    const role = await ds.getRepository(Role).findOne({ where: { id: opts.roleId } });
+    if (!role) return { status: 400, error: 'Role not found' };
+    if (!actorIsAdmin) {
+      const actorPerms = await getUserPermissions(actor);
+      const extra = (role.permissions || []).filter((p) => !actorPerms.has(p));
+      if (extra.length > 0) {
+        return { status: 403, error: 'Forbidden: that role grants permissions you do not hold' };
+      }
+    }
+  }
+  return null;
+}
+
+/** Custom role definitions: permissions must be known, and non-admins cannot exceed their own. */
+async function checkRolePermissions(actor: AuthenticatedRequest['user'], permissions: unknown): Promise<GrantError | null> {
+  if (permissions === undefined) return null;
+  if (!actor) return { status: 401, error: 'Unauthorized: Not authenticated' };
+  if (!Array.isArray(permissions) || !permissions.every(isKnownPermission)) {
+    return { status: 400, error: 'permissions must be an array of known permission names' };
+  }
+  if (actor.role !== UserRole.ADMIN) {
+    const actorPerms = await getUserPermissions(actor);
+    if (permissions.some((p) => !actorPerms.has(p))) {
+      return { status: 403, error: 'Forbidden: a role cannot include permissions you do not hold' };
+    }
+  }
+  return null;
+}
 
 // Generate RS256 Keypair for OIDC/SSO dynamically on startup
 let oauthPrivateKey: string = '';
@@ -91,7 +158,7 @@ router.post('/auth/login', async (req: Request, res: Response) => {
 
     const token = jwt.sign(
       { id: user.id, email: user.email, name: user.name, role: user.role },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: '24h' }
     );
     const { passwordHash: _, ...safeUser } = user as any;
@@ -156,23 +223,8 @@ router.get('/auth/gitlab/callback', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/users/init-demo', async (req: Request, res: Response) => {
-  try {
-    const ds = await getDb();
-    const repo = ds.getRepository(User);
-    const { user, created, removedDemo } = await ensureAdminUser(repo);
-    const { passwordHash: _, ...safe } = user as any;
-    return res.json({
-      message: created
-        ? `Created admin ${user.email}`
-        : `Admin ${user.email} already exists`,
-      removedDemo,
-      users: [{ ...safe, hasPassword: !!user.passwordHash }],
-    });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
-});
+// GET /users/init-demo was removed: it was unauthenticated, re-promoted/reactivated the
+// admin and leaked its id. The admin is seeded at startup (server.ts → ensureAdminUser).
 
 /**
  * POST /api/auth/set-password
@@ -237,11 +289,9 @@ router.post('/users', expressAuthenticate, expressRequireRole([UserRole.ADMIN, U
     if (!body.password || String(body.password).length < 8) {
       return res.status(400).json({ error: 'password is required (min 8 characters) so the user can log in' });
     }
-    const allowedRoles = Object.values(UserRole);
     const role = (body.role as UserRole) || UserRole.DEVELOPER;
-    if (!allowedRoles.includes(role)) {
-      return res.status(400).json({ error: `Invalid role. Allowed: ${allowedRoles.join(', ')}` });
-    }
+    const grantErr = await checkRoleGrant((req as AuthenticatedRequest).user, { role });
+    if (grantErr) return res.status(grantErr.status).json({ error: grantErr.error });
 
     const existingByEmail = await repo.findOne({ where: { email: body.email } });
     if (existingByEmail) {
@@ -291,13 +341,13 @@ router.put('/users/:id', expressAuthenticate, expressRequireRole([UserRole.ADMIN
     const user = await repo.findOne({ where: { id: req.params.id } });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
+    const grantErr = await checkRoleGrant((req as AuthenticatedRequest).user, { role: body.role, target: user });
+    if (grantErr) return res.status(grantErr.status).json({ error: grantErr.error });
+
     if (body.name !== undefined) user.name = body.name;
     if (body.email !== undefined) user.email = body.email;
     if (body.username !== undefined) user.username = body.username;
     if (body.role !== undefined) {
-      if (!Object.values(UserRole).includes(body.role)) {
-        return res.status(400).json({ error: `Invalid role. Allowed: ${Object.values(UserRole).join(', ')}` });
-      }
       user.role = body.role as UserRole;
     }
     if (body.gitlabId !== undefined) user.gitlabId = body.gitlabId;
@@ -340,6 +390,8 @@ router.delete('/users/:id', expressAuthenticate, expressRequireRole([UserRole.AD
     if ((req as AuthenticatedRequest).user?.id === user.id) {
       return res.status(400).json({ error: 'You cannot delete your own account' });
     }
+    const grantErr = await checkRoleGrant((req as AuthenticatedRequest).user, { target: user });
+    if (grantErr) return res.status(grantErr.status).json({ error: grantErr.error });
 
     await repo.remove(user);
 
@@ -423,6 +475,8 @@ router.post('/users/invite', expressAuthenticate, requirePermission('users.creat
     }
 
     const userRole = (role as UserRole) || UserRole.DEVELOPER;
+    const grantErr = await checkRoleGrant((req as AuthenticatedRequest).user, { role: userRole, roleId });
+    if (grantErr) return res.status(grantErr.status).json({ error: grantErr.error });
     const passwordHash = await bcrypt.hash(String(password), 10);
 
     const user = repo.create({
@@ -462,6 +516,9 @@ router.patch('/users/:id/role', expressAuthenticate, requirePermission('users.as
     const user = await repo.findOne({ where: { id } });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
+    const grantErr = await checkRoleGrant((req as AuthenticatedRequest).user, { role, roleId, target: user });
+    if (grantErr) return res.status(grantErr.status).json({ error: grantErr.error });
+
     if (role !== undefined) user.role = role as UserRole;
     if (roleId !== undefined) user.roleId = roleId || null;
 
@@ -477,7 +534,8 @@ router.patch('/users/:id/role', expressAuthenticate, requirePermission('users.as
       ip: req.ip,
     });
 
-    return res.json(saved);
+    const { passwordHash: _ph, ...safeSaved } = saved as any;
+    return res.json({ ...safeSaved, hasPassword: !!saved.passwordHash });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
@@ -529,6 +587,8 @@ router.post('/roles', expressAuthenticate, requirePermission('users.create'), as
   try {
     const { name, description, permissions } = req.body;
     if (!name) return res.status(400).json({ error: 'Role name is required' });
+    const permErr = await checkRolePermissions((req as AuthenticatedRequest).user, permissions);
+    if (permErr) return res.status(permErr.status).json({ error: permErr.error });
 
     const ds = await getDb();
     const repo = ds.getRepository(Role);
@@ -571,6 +631,14 @@ router.put('/roles/:id', expressAuthenticate, requirePermission('users.update'),
     }
 
     const { name, description, permissions, isActive } = req.body;
+    const actor = (req as AuthenticatedRequest).user;
+    const permErr = await checkRolePermissions(actor, permissions);
+    if (permErr) return res.status(permErr.status).json({ error: permErr.error });
+    // Editing a role that already grants more than the caller holds is also escalation-adjacent.
+    if (actor && actor.role !== UserRole.ADMIN) {
+      const existingErr = await checkRolePermissions(actor, role.permissions || []);
+      if (existingErr) return res.status(existingErr.status).json({ error: existingErr.error });
+    }
     if (name !== undefined) role.name = name;
     if (description !== undefined) role.description = description;
     if (permissions !== undefined) role.permissions = permissions;

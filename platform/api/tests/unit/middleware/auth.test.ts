@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { AuthenticatedRequest } from '../../../src/middleware/auth';
 
 jest.mock('../../../src/config/database', () => ({
   getDb: jest.fn(),
@@ -8,48 +7,40 @@ jest.mock('../../../src/config/database', () => ({
 
 const { getDb } = require('../../../src/config/database');
 
-// Inline the middleware functions to avoid complex mocking
-const JWT_SECRET = 'plat-super-secret-key';
+import {
+  AuthenticatedRequest,
+  expressAuthenticate,
+  expressRequireRole,
+  sdkTokenAuth,
+  sdkOrUserAuthenticate,
+  sdkProjectMatches,
+} from '../../../src/middleware/auth';
+import { UserRole } from '../../../src/entities/User';
 
-function authenticate(req: Request, res: Response, next: NextFunction) {
-  const auth = req.headers.authorization;
-  if (!auth?.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized: Missing token' });
-  }
-  const token = auth.substring(7);
+const JWT_SECRET = 'unit-test-jwt-secret-0123456789abcdef';
+const PROJECT_ID = '11111111-2222-3333-4444-555555555555';
+const SDK_TOKEN = 'sdk_live_0123456789abcdef0123456789abcdef';
 
-  if (token.startsWith('sdk-')) {
-    (req as AuthenticatedRequest).sdkToken = true;
-    (req as AuthenticatedRequest).projectId = token.split(':')[0] || 'unknown';
-    return next();
-  }
+const users: Record<string, any> = {
+  'user-1': { id: 'user-1', role: 'devops', roleId: null, name: 'Test', email: 'test@test.com', isActive: true },
+};
+const credentials: any[] = [{ id: 'c1', token: SDK_TOKEN, projectId: PROJECT_ID, status: 'active' }];
+const projects: Record<string, any> = { [PROJECT_ID]: { id: PROJECT_ID, name: 'demo' } };
 
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
-    (req as AuthenticatedRequest).user = {
-      id: decoded.id,
-      role: decoded.role,
-      roleId: decoded.roleId || null,
-      name: decoded.name,
-      email: decoded.email,
+function repoFor(entity: any) {
+  const name = typeof entity === 'string' ? entity : entity?.name;
+  if (name === 'User') return { findOne: jest.fn(async ({ where }: any) => users[where.id] || null) };
+  if (name === 'SdkCredential') {
+    return {
+      findOne: jest.fn(async ({ where }: any) =>
+        credentials.find((c) => c.token === where.token && c.status === where.status) || null),
     };
-    next();
-  } catch (err: any) {
-    return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
   }
+  if (name === 'Project') return { findOne: jest.fn(async ({ where }: any) => projects[where.id] || null) };
+  return { findOne: jest.fn().mockResolvedValue(null) };
 }
 
-function requireRole(roles: string[]) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const user = (req as AuthenticatedRequest).user;
-    if (!user || !roles.includes(user.role)) {
-      return res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
-    }
-    next();
-  };
-}
-
-describe('Auth Middleware', () => {
+describe('Auth Middleware (real implementation)', () => {
   let req: Partial<Request>;
   let res: Partial<Response>;
   let next: NextFunction;
@@ -62,78 +53,137 @@ describe('Auth Middleware', () => {
     };
     next = jest.fn();
     process.env.JWT_SECRET = JWT_SECRET;
+    getDb.mockResolvedValue({ getRepository: jest.fn(repoFor) });
   });
 
   describe('expressAuthenticate', () => {
-    it('should return 401 when no Authorization header', () => {
-      authenticate(req as Request, res as Response, next);
+    it('returns 401 when no Authorization header', async () => {
+      await expressAuthenticate(req as Request, res as Response, next);
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith({ error: 'Unauthorized: Missing token' });
     });
 
-    it('should return 401 when Authorization does not start with Bearer', () => {
+    it('returns 401 when Authorization does not start with Bearer', async () => {
       req.headers = { authorization: 'Basic abc123' };
-      authenticate(req as Request, res as Response, next);
+      await expressAuthenticate(req as Request, res as Response, next);
       expect(res.status).toHaveBeenCalledWith(401);
     });
 
-    it('should handle SDK tokens', () => {
+    // C1 regression: any "sdk-" prefixed string used to authenticate without verification.
+    it('rejects unverified "sdk-{id}:{secret}" bearer strings', async () => {
       req.headers = { authorization: 'Bearer sdk-project-id:secret' };
-      authenticate(req as Request, res as Response, next);
-      expect(next).toHaveBeenCalled();
-      expect((req as AuthenticatedRequest).sdkToken).toBe(true);
+      await expressAuthenticate(req as Request, res as Response, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect((req as AuthenticatedRequest).sdkToken).toBeUndefined();
     });
 
-    it('should verify JWT token and set user on request', () => {
-      const payload = { id: 'user-1', role: 'devops', name: 'Test', email: 'test@test.com' };
-      const token = jwt.sign(payload, JWT_SECRET);
+    it('does not accept even a valid stored SDK credential on human endpoints', async () => {
+      req.headers = { authorization: `Bearer ${SDK_TOKEN}` };
+      await expressAuthenticate(req as Request, res as Response, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it('verifies a JWT and loads the user from the DB', async () => {
+      const token = jwt.sign({ id: 'user-1', role: 'admin' }, JWT_SECRET);
       req.headers = { authorization: `Bearer ${token}` };
-
-      authenticate(req as Request, res as Response, next);
-
+      await expressAuthenticate(req as Request, res as Response, next);
       expect(next).toHaveBeenCalled();
+      // role comes from the DB row, not the token claims
       expect((req as AuthenticatedRequest).user).toEqual({
-        id: 'user-1',
-        role: 'devops',
-        roleId: null,
-        name: 'Test',
-        email: 'test@test.com',
+        id: 'user-1', role: 'devops', roleId: null, name: 'Test', email: 'test@test.com',
       });
+      expect((req as AuthenticatedRequest).humanJwt).toBe(true);
     });
 
-    it('should return 401 when JWT is invalid', () => {
+    it('rejects a JWT signed with the old published default secret', async () => {
+      const token = jwt.sign({ id: 'user-1' }, 'plat-super-secret-key');
+      req.headers = { authorization: `Bearer ${token}` };
+      await expressAuthenticate(req as Request, res as Response, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it('returns 401 when JWT is invalid', async () => {
       req.headers = { authorization: 'Bearer invalid-token' };
-      authenticate(req as Request, res as Response, next);
+      await expressAuthenticate(req as Request, res as Response, next);
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it('returns 401 when JWT_SECRET is not configured', async () => {
+      const token = jwt.sign({ id: 'user-1' }, JWT_SECRET);
+      delete process.env.JWT_SECRET;
+      req.headers = { authorization: `Bearer ${token}` };
+      await expressAuthenticate(req as Request, res as Response, next);
+      expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(401);
     });
   });
 
+  describe('sdkTokenAuth (C2)', () => {
+    it('rejects the legacy unverified sdk-{projectId}:{secret} format', async () => {
+      req.headers = { authorization: `Bearer sdk-${PROJECT_ID}:anything` };
+      await sdkTokenAuth(req as Request, res as Response, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it('rejects unknown sdk_live_ tokens', async () => {
+      req.headers = { authorization: 'Bearer sdk_live_doesnotexist000000000000' };
+      await sdkTokenAuth(req as Request, res as Response, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it('accepts a stored active credential and binds the request to its project', async () => {
+      req.headers = { authorization: `Bearer ${SDK_TOKEN}` };
+      await sdkTokenAuth(req as Request, res as Response, next);
+      expect(next).toHaveBeenCalled();
+      const a = req as AuthenticatedRequest;
+      expect(a.sdkToken).toBe(true);
+      expect(a.projectId).toBe(PROJECT_ID);
+      expect(a.sdkProjectName).toBe('demo');
+    });
+
+    it('sdkOrUserAuthenticate routes sdk_live_ to sdkTokenAuth and others to JWT', async () => {
+      req.headers = { authorization: `Bearer ${SDK_TOKEN}` };
+      await sdkOrUserAuthenticate(req as Request, res as Response, next);
+      expect((req as AuthenticatedRequest).sdkToken).toBe(true);
+
+      const req2: Partial<Request> = { headers: { authorization: 'Bearer sdk-x:y' } };
+      const next2 = jest.fn();
+      await sdkOrUserAuthenticate(req2 as Request, res as Response, next2);
+      expect(next2).not.toHaveBeenCalled();
+    });
+
+    it('sdkProjectMatches only accepts the bound project (id or name)', () => {
+      const a = { sdkToken: true, projectId: PROJECT_ID, sdkProjectName: 'demo' } as AuthenticatedRequest;
+      expect(sdkProjectMatches(a, PROJECT_ID)).toBe(true);
+      expect(sdkProjectMatches(a, 'demo')).toBe(true);
+      expect(sdkProjectMatches(a, undefined)).toBe(true);
+      expect(sdkProjectMatches(a, 'other')).toBe(false);
+      expect(sdkProjectMatches(a, ['demo'])).toBe(false);
+      expect(sdkProjectMatches({} as AuthenticatedRequest, PROJECT_ID)).toBe(false);
+    });
+  });
+
   describe('expressRequireRole', () => {
-    it('should call next when user has required role', () => {
-      (req as AuthenticatedRequest).user = { id: '1', role: 'devops' as any, roleId: null, name: 'Test', email: 't@t.com' };
-      const middleware = requireRole(['devops']);
-      middleware(req as Request, res as Response, next);
+    it('calls next when user has required role', () => {
+      (req as AuthenticatedRequest).user = { id: '1', role: UserRole.DEVOPS, roleId: null, name: 'Test', email: 't@t.com' };
+      expressRequireRole([UserRole.DEVOPS])(req as Request, res as Response, next);
       expect(next).toHaveBeenCalled();
     });
 
-    it('should return 403 when user does not have required role', () => {
-      (req as AuthenticatedRequest).user = { id: '1', role: 'developer' as any, roleId: null, name: 'Test', email: 't@t.com' };
-      const middleware = requireRole(['devops']);
-      middleware(req as Request, res as Response, next);
+    it('returns 403 when user does not have required role', () => {
+      (req as AuthenticatedRequest).user = { id: '1', role: UserRole.DEVELOPER, roleId: null, name: 'Test', email: 't@t.com' };
+      expressRequireRole([UserRole.DEVOPS])(req as Request, res as Response, next);
       expect(res.status).toHaveBeenCalledWith(403);
     });
 
-    it('should return 403 when no user on request', () => {
-      const middleware = requireRole(['devops']);
-      middleware(req as Request, res as Response, next);
-      expect(res.status).toHaveBeenCalledWith(403);
-    });
-
-    it('should allow multiple roles', () => {
-      (req as AuthenticatedRequest).user = { id: '1', role: 'tech_lead' as any, roleId: null, name: 'Test', email: 't@t.com' };
-      const middleware = requireRole(['devops', 'tech_lead']);
-      middleware(req as Request, res as Response, next);
-      expect(next).toHaveBeenCalled();
+    it('returns 401 when no user on request', () => {
+      expressRequireRole([UserRole.DEVOPS])(req as Request, res as Response, next);
+      expect(res.status).toHaveBeenCalledWith(401);
     });
   });
 });

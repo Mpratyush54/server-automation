@@ -473,6 +473,118 @@ describe('Users API', () => {
       expect(r.status).toBe(403);
     });
   });
+
+  // C1 regressions — role allowlist + no privilege escalation.
+  describe('role grant guard (C1)', () => {
+    beforeEach(() => {
+      mockUserRepo.findOne.mockImplementation(({ where }: any) => {
+        const { id } = where || {};
+        if (id) return Promise.resolve(Object.values(USERS).find(u => u.id === id) ?? null);
+        return Promise.resolve(null);
+      });
+      mockUserRepo.create.mockImplementation((d: any) => ({ id: 'new-user-id', ...d }));
+      mockUserRepo.save.mockImplementation((u: any) => Promise.resolve(u));
+    });
+
+    it('401 — Bearer sdk-x:y on POST /users/invite (unverified SDK string)', async () => {
+      const r = await request(app)
+        .post('/api/users/invite')
+        .set('Authorization', 'Bearer sdk-x:y')
+        .send({ email: 'evil@x.io', name: 'Evil', password: 'InvitePass123', role: 'admin' });
+      expect(r.status).toBe(401);
+      expect(mockUserRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('401 — stored SDK credential on POST /users/invite', async () => {
+      const r = await request(app)
+        .post('/api/users/invite')
+        .set('Authorization', 'Bearer sdk_live_abc123def456abc123def456abc12345')
+        .send({ email: 'evil@x.io', name: 'Evil', password: 'InvitePass123', role: 'admin' });
+      expect(r.status).toBe(401);
+    });
+
+    it('403 — devops cannot invite an admin', async () => {
+      const r = await request(app)
+        .post('/api/users/invite')
+        .set('Authorization', `Bearer ${T.devops}`)
+        .send({ email: 'a@x.io', name: 'A', password: 'InvitePass123', role: 'admin' });
+      expect(r.status).toBe(403);
+      expect(mockUserRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('400 — unknown role on invite', async () => {
+      const r = await request(app)
+        .post('/api/users/invite')
+        .set('Authorization', `Bearer ${T.devops}`)
+        .send({ email: 'a@x.io', name: 'A', password: 'InvitePass123', role: 'superuser' });
+      expect(r.status).toBe(400);
+    });
+
+    it('403 — devops cannot invite with a custom role holding permissions devops lacks', async () => {
+      mockRoleRepo.findOne.mockResolvedValue({
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'god', permissions: ['users.assign-role', 'settings.rotate-secrets'],
+      });
+      const r = await request(app)
+        .post('/api/users/invite')
+        .set('Authorization', `Bearer ${T.devops}`)
+        .send({ email: 'a@x.io', name: 'A', password: 'InvitePass123', role: 'developer', roleId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
+      expect(r.status).toBe(403);
+    });
+
+    it('201 — admin may invite an admin', async () => {
+      const r = await request(app)
+        .post('/api/users/invite')
+        .set('Authorization', `Bearer ${T.admin}`)
+        .send({ email: 'a2@x.io', name: 'A2', password: 'InvitePass123', role: 'admin' });
+      expect(r.status).toBe(201);
+    });
+
+    it('403 — devops cannot promote a user to admin via PUT /users/:id', async () => {
+      const r = await request(app)
+        .put(`/api/users/${USERS.developer.id}`)
+        .set('Authorization', `Bearer ${T.devops}`)
+        .send({ role: 'admin' });
+      expect(r.status).toBe(403);
+    });
+
+    it('403 — devops cannot modify an admin account via PUT /users/:id', async () => {
+      const r = await request(app)
+        .put(`/api/users/${USERS.admin.id}`)
+        .set('Authorization', `Bearer ${T.devops}`)
+        .send({ email: 'attacker@x.io' });
+      expect(r.status).toBe(403);
+    });
+
+    it('403 — devops cannot create an admin via POST /users', async () => {
+      const r = await request(app)
+        .post('/api/users')
+        .set('Authorization', `Bearer ${T.devops}`)
+        .send({ email: 'a3@x.io', name: 'A3', password: 'InvitePass123', role: 'admin' });
+      expect(r.status).toBe(403);
+    });
+
+    it('400 — admin PATCH /users/:id/role with an unknown role', async () => {
+      const r = await request(app)
+        .patch(`/api/users/${USERS.developer.id}/role`)
+        .set('Authorization', `Bearer ${T.admin}`)
+        .send({ role: 'root' });
+      expect(r.status).toBe(400);
+    });
+
+    it('400 — custom role with unknown permission names', async () => {
+      const r = await request(app)
+        .post('/api/roles')
+        .set('Authorization', `Bearer ${T.devops}`)
+        .send({ name: 'weird', permissions: ['not.a.permission'] });
+      expect(r.status).toBe(400);
+    });
+  });
+
+  // M2 regression — unauthenticated admin re-seed endpoint removed.
+  it('GET /api/users/init-demo is gone (404)', async () => {
+    const r = await request(app).get('/api/users/init-demo');
+    expect(r.status).toBe(404);
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════
