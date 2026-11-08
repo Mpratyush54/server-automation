@@ -731,6 +731,10 @@ func InstallPlatform(cfg *config.Config) error {
 	if _, err := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, rbac); err != nil {
 		return err
 	}
+	// Backup + platform-api-migrate Job before the API Deployment changes (#17).
+	if err := RunAPIMigrations(cfg, apiImg); err != nil {
+		return err
+	}
 	err := shell.RunBash(fmt.Sprintf(`
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
@@ -1301,7 +1305,12 @@ func CheckHealth() error {
 func UpdateImages(cfg *config.Config) error {
 	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
 	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
-	return shell.RunBashEnv("export KUBECONFIG=\"${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}\"\nAPI="+shellQuote(apiImg)+"\nPORTAL="+shellQuote(portalImg)+"\n"+digestUpdateScript, map[string]string{"REGISTRY_USERNAME": "platformctl", "REGISTRY_PASSWORD": cfg.GitHubToken})
+	// Job template + database backup first; the script runs the migrate Job (#17).
+	backup, err := prepareAPIMigrations(cfg)
+	if err != nil {
+		return err
+	}
+	return shell.RunBashEnv("export KUBECONFIG=\"${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}\"\nAPI="+shellQuote(apiImg)+"\nPORTAL="+shellQuote(portalImg)+"\n"+digestUpdateScript, map[string]string{"REGISTRY_USERNAME": "platformctl", "REGISTRY_PASSWORD": cfg.GitHubToken, "MIGRATE_BACKUP": backup})
 }
 
 // InstallAutoUpdate installs a digest-aware updater for only two deployments.

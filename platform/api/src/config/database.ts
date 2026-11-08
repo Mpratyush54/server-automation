@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import path from 'path';
 import { DataSource } from 'typeorm';
 import { Project } from '../entities/Project';
 import { Environment } from '../entities/Environment';
@@ -24,6 +25,14 @@ import { AgentCommandApproval } from '../entities/AgentCommandApproval';
 import { IntegrationSettings } from '../entities/IntegrationSettings';
 import { Notification } from '../entities/Notification';
 
+export const MIGRATIONS_TABLE = 'migrations';
+
+/** src/migrations/*.ts under ts-node/jest, dist/migrations/*.js in the image. */
+export function migrationsGlob(baseDir: string = path.join(__dirname, '..', 'migrations')): string {
+  const ext = __filename.endsWith('.ts') ? 'ts' : 'js';
+  return `${baseDir.replace(/\\/g, '/')}/*.${ext}`;
+}
+
 export const AppDataSource = new DataSource({
   type: 'postgres',
   host: process.env.POSTGRES_HOST || 'localhost',
@@ -32,7 +41,14 @@ export const AppDataSource = new DataSource({
   password: process.env.POSTGRES_PASSWORD || 'plat',
   database: process.env.POSTGRES_DB || 'plat_platform',
   entities: [Project, Environment, Deployment, ServiceRegistration, ProjectConfig, File, Alert, DbConnection, User, Role, AuditLog, ClickupTaskLink, SdkCredential, DbBackup, SmtpConfig, StorageProvider, Secret, SecretVersion, ProjectMember, AgentToken, AgentCommandApproval, IntegrationSettings, Notification],
-  synchronize: true,
+  // Schema changes ship as reviewed, versioned migrations (src/migrations),
+  // applied once per release by `node dist/migrate.js` (the platform-api-migrate
+  // Job) before the API rolls. Never auto-sync: it silently drops columns and
+  // races between replicas.
+  synchronize: false,
+  migrationsRun: false,
+  migrations: [migrationsGlob()],
+  migrationsTableName: MIGRATIONS_TABLE,
   logging: false,
 });
 

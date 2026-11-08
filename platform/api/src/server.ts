@@ -121,6 +121,18 @@ async function bootstrap() {
     // Initialize PostgreSQL
     const ds = await getDb();
     console.log(`[server] PostgreSQL connected to database: ${ds.options.database}`);
+    // The schema is owned by versioned migrations (node dist/migrate.js, run as
+    // a Job before rollout). Never serve against a schema this build does not
+    // know: the rollout then fails readiness and the old ReplicaSet keeps serving.
+    if (await ds.showMigrations()) {
+      if (process.env.DB_MIGRATE_ON_BOOT === 'true') {
+        const { runPendingMigrations } = await import('./lib/migrations');
+        const applied = await runPendingMigrations(ds);
+        console.log(`[server] Applied migrations: ${applied.join(', ')}`);
+      } else {
+        throw new Error('database has pending migrations; run `node dist/migrate.js` (or `npm run migration:run`) first');
+      }
+    }
     try {
       const { recoverRedisAuth } = await import('./lib/credential-recover');
       const redisHeal = await recoverRedisAuth();

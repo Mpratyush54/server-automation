@@ -14,6 +14,17 @@ rules:
   resources: ["deployments"]
   resourceNames: ["platform-api", "platform-portal"]
   verbs: ["get", "list", "patch", "watch"]
+# Runs the platform-api-migrate Job before rolling the API (issue #17).
+- apiGroups: [""]
+  resources: ["configmaps"]
+  resourceNames: ["platform-api-migrate-template"]
+  verbs: ["get"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "watch", "create", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -110,6 +121,33 @@ spec:
               }
               API="$(resolve_image "$API")"
               PORTAL="$(resolve_image "$PORTAL")"
+              run_api_migrations() {
+                local image="$1" name template state i
+                name="platform-api-migrate-$(printf '%s' "$image" | sha256sum | cut -c1-12)"
+                if [[ "$(kubectl -n platform get job "$name" -o jsonpath='{.status.succeeded}' 2>/dev/null || true)" == "1" ]]; then
+                  echo "migrations already applied for $image ($name)"
+                  return 0
+                fi
+                template="$(kubectl -n platform get configmap platform-api-migrate-template -o jsonpath='{.data.template}')"
+                [[ -n "$template" ]] || { echo "migration Job template missing; run: sudo platformctl update" >&2; return 1; }
+                kubectl -n platform delete job "$name" --ignore-not-found --wait=true >/dev/null
+                printf '%s\n' "$template" | sed -e "s|__NAME__|$name|g" -e "s|__IMAGE__|$image|g" -e "s|__BACKUP__|${MIGRATE_BACKUP:-none}|g" | kubectl apply -f - >/dev/null
+                echo "running database migrations: job/$name"
+                for ((i = 0; i < 240; i++)); do
+                  state="$(kubectl -n platform get job "$name" -o jsonpath='{.status.succeeded}/{.status.failed}' 2>/dev/null || true)"
+                  case "$state" in
+                    1/*) echo "migrations applied (job/$name)"; return 0 ;;
+                    */[1-9]*)
+                      kubectl -n platform logs "job/$name" --tail=50 >&2 || true
+                      echo "migration job/$name failed; API rollout stopped, the running version keeps serving" >&2
+                      return 1 ;;
+                  esac
+                  sleep 5
+                done
+                echo "timed out waiting for migration job/$name" >&2
+                return 1
+              }
+              run_api_migrations "$API"
               kubectl set image -n platform deploy/platform-api api="$API"
               kubectl set image -n platform deploy/platform-portal portal="$PORTAL"
               kubectl rollout status -n platform deploy/platform-api --timeout=300s

@@ -74,6 +74,23 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
 
+  # Applies pending schema migrations once, then exits; the API waits for it.
+  api-migrate:
+    build:
+      context: ./platform/api
+      dockerfile: Dockerfile
+    command: ["node", "dist/migrate.js"]
+    restart: "no"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: platform
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
     build:
       context: ./platform/api
@@ -97,6 +114,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      api-migrate:
+        condition: service_completed_successfully
       mongodb:
         condition: service_started
       redis:

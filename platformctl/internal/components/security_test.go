@@ -97,6 +97,7 @@ func fakeTools(t *testing.T) func() []toolCall {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("PLATFORMCTL_FAKE_TOOLS", "1")
 	t.Setenv("PLATFORMCTL_TOOL_LOG", log)
+	t.Setenv("PLATFORMCTL_BACKUP_ROOT", filepath.Join(dir, "backups"))
 	state.SetPath(filepath.Join(dir, "state"))
 	t.Cleanup(func() { state.SetPath(state.DefaultPath) })
 	return func() []toolCall {

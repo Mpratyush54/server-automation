@@ -1,5 +1,8 @@
 package components
 
+// digestUpdateScript is shared by `platformctl update` and the auto-update
+// CronJob: it resolves tags to digests, runs the platform-api-migrate Job for
+// the new API image (issue #17) and only then rolls the Deployments.
 const digestUpdateScript = `set -euo pipefail
 resolve_image() {
   local image="$1" repo tag token digest
@@ -23,6 +26,7 @@ resolve_image() {
 }
 API="$(resolve_image "$API")"
 PORTAL="$(resolve_image "$PORTAL")"
+` + migrateJobScript + `run_api_migrations "$API"
 kubectl set image -n platform deploy/platform-api api="$API"
 kubectl set image -n platform deploy/platform-portal portal="$PORTAL"
 kubectl rollout status -n platform deploy/platform-api --timeout=300s
