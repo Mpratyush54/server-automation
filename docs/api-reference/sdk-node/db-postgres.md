@@ -28,7 +28,7 @@ const pg = new PostgresManager(config?: PostgresConfig);
 | `host` | `PLATFORM_PG_HOST` | `localhost` |
 | `port` | `PLATFORM_PG_PORT` | `5432` |
 | `user` | `PLATFORM_PG_USER` | `platform` |
-| `password` | `PLATFORM_PG_PASSWORD` | `platform` |
+| `password` | `PLATFORM_PG_PASSWORD` | none (required) |
 | `database` | `PLATFORM_PG_DB` | `platform` |
 | `poolSize` | — | `10` |
 
@@ -42,7 +42,9 @@ const pg = new PostgresManager(config?: PostgresConfig);
 await pg.connect(): Promise<void>
 ```
 
-Creates the `pg.Pool` and runs `SELECT 1` to verify the connection. On failure, schedules automatic reconnection with exponential backoff (1 s, 2 s, 4 s, 8 s, 16 s — up to 5 retries).
+Throws immediately if no password was provided by the Platform (`db-credentials`) or `PLATFORM_PG_PASSWORD` — there is no default password.
+
+Creates the `pg.Pool` and runs `SELECT 1` to verify the connection. A pool from a previous failed attempt is closed first, and `disconnect()` cancels any pending retry. On failure, schedules automatic reconnection with exponential backoff (1 s, 2 s, 4 s, 8 s, 16 s — up to 5 retries).
 
 ### `query(text, params?)`
 

@@ -5,6 +5,8 @@ export class PostgresManager {
   private connected = false;
   private retryCount = 0;
   private maxRetries = 5;
+  private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private stopped = false;
   private config: any;
 
   constructor(config: any = {}) {
@@ -12,7 +14,8 @@ export class PostgresManager {
       host: config.host || process.env.PLATFORM_PG_HOST || 'localhost',
       port: config.port || parseInt(process.env.PLATFORM_PG_PORT || '5432', 10),
       user: config.user || process.env.PLATFORM_PG_USER || 'platform',
-      password: config.password || process.env.PLATFORM_PG_PASSWORD || 'platform',
+      // No default password: credentials must come from the Platform or the environment.
+      password: config.password || process.env.PLATFORM_PG_PASSWORD || undefined,
       database: config.database || process.env.PLATFORM_PG_DB || 'platform',
       max: config.poolSize || 10,
       idleTimeoutMillis: 30000,
@@ -21,15 +24,28 @@ export class PostgresManager {
   }
 
   async connect(): Promise<void> {
+    if (!this.config.password) {
+      // Fail closed instead of silently trying a well-known password.
+      throw new Error(
+        '[platform] PostgreSQL credentials missing: no password from Platform db-credentials ' +
+        'and PLATFORM_PG_PASSWORD is not set'
+      );
+    }
+    this.stopped = false;
+    this.clearReconnectTimer();
+    // Dispose any pool left over from a previous (failed) attempt before creating a new one.
+    await this.disposePool();
+    const pool = new Pool(this.config);
+    this.pool = pool;
     try {
-      this.pool = new Pool(this.config);
-      await this.pool.query('SELECT 1');
+      await pool.query('SELECT 1');
       this.connected = true;
       this.retryCount = 0;
       console.log('[platform] PostgreSQL connected');
     } catch (err: any) {
       console.error('[platform] PostgreSQL connection failed:', err.message);
       this.connected = false;
+      await this.disposePool();
       this.scheduleReconnect();
     }
   }
@@ -44,16 +60,36 @@ export class PostgresManager {
     return this.pool.connect();
   }
 
+  private async disposePool(): Promise<void> {
+    const old = this.pool;
+    this.pool = null;
+    if (old) {
+      try { await old.end(); } catch {}
+    }
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
+  }
+
   private scheduleReconnect(): void {
-    if (this.retryCount >= this.maxRetries) return;
+    if (this.stopped || this.retryCount >= this.maxRetries) return;
     const delay = Math.min(1000 * Math.pow(2, this.retryCount), 30000);
     this.retryCount++;
-    setTimeout(() => this.connect(), delay);
+    this.clearReconnectTimer();
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+      this.connect().catch(() => {});
+    }, delay);
+    (this.reconnectTimer as any).unref?.();
   }
 
   async disconnect(): Promise<void> {
+    this.stopped = true;
+    this.clearReconnectTimer();
     if (this.pool) {
-      await this.pool.end();
+      await this.disposePool();
       this.connected = false;
       console.log('[platform] PostgreSQL disconnected');
     }

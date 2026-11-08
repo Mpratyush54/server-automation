@@ -12,10 +12,12 @@ cd sdk-node && npm install && npm run build
 node examples/01-express-basic.js
 ```
 
-For TLS lab hosts you may need:
+For lab hosts with a self-signed / private CA certificate, trust that CA instead of disabling TLS verification:
 
 ```bash
-export NODE_TLS_REJECT_UNAUTHORIZED=0
+export NODE_EXTRA_CA_CERTS=/path/to/platform-ca.pem
 ```
+
+Never set `NODE_TLS_REJECT_UNAUTHORIZED=0`: it disables certificate checks for the whole process and exposes your SDK token to man-in-the-middle attacks.
 
 See also the full demo stack under [`../../examples/sdk-apps`](../../examples/sdk-apps).

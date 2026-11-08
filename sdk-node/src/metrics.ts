@@ -55,20 +55,21 @@ export interface ApiMetricEntry {
 
 export class MetricsClient {
   private buffer: ApiMetricEntry[] = [];
-  private flushInterval: ReturnType<typeof setInterval>;
+  private flushInterval?: ReturnType<typeof setInterval>;
   private http?: AxiosInstance;
   private projectId?: string;
   private environment?: string;
   private sdkVersion = '1.0.0';
 
-  constructor() {
-    this.flushInterval = setInterval(() => this.flush(), 5000);
-  }
-
   configure(http: AxiosInstance, projectId: string, environment: string) {
     this.http = http;
     this.projectId = projectId;
     this.environment = environment;
+    // Started lazily (not at import time) and unref'd so it never keeps the process alive.
+    if (!this.flushInterval) {
+      this.flushInterval = setInterval(() => this.flush(), 5000);
+      (this.flushInterval as any).unref?.();
+    }
   }
 
   // Express middleware — zero latency, attaches to res.on('finish')
@@ -119,7 +120,8 @@ export class MetricsClient {
   }
 
   stop(): void {
-    clearInterval(this.flushInterval);
+    if (this.flushInterval) clearInterval(this.flushInterval);
+    this.flushInterval = undefined;
     this.flush();
   }
 }
