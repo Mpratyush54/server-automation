@@ -8,6 +8,7 @@ import { argoAppName, deployK8sPreview, ensureAndSyncArgoApp, ensureProjectIngre
 import { reportNamespaceBaseline } from './namespace-backfill';
 import { ensureProjectNamespace } from './namespace-baseline';
 import { defineOperation } from './operations';
+import { loadKubeConfig } from './kube-config';
 
 export const DEPLOY_OPERATION = 'deployment.deploy';
 
@@ -35,7 +36,7 @@ async function load(deploymentId: string) {
 
 function kubeConfig(): k8s.KubeConfig {
   const kc = new k8s.KubeConfig();
-  try { kc.loadFromCluster(); } catch { try { kc.loadFromDefault(); } catch {} }
+  loadKubeConfig(kc);
   return kc;
 }
 

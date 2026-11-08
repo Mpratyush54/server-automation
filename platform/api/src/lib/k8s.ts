@@ -4,19 +4,12 @@ import { assignedNamespace } from './project-namespace';
 import * as k8s from '@kubernetes/client-node';
 import { PassThrough } from 'stream';
 import { deploymentRestartAnnotationsPatch, deploymentRestartJsonPatch } from './deployment-restart-patch';
+import { loadKubeConfig } from './kube-config';
 
 // ── Kubernetes client (in-cluster when running in a pod, local kubeconfig otherwise) ──
 function makeKubeConfig(): k8s.KubeConfig {
   const kc = new k8s.KubeConfig();
-  try {
-    kc.loadFromCluster();          // works inside a K8s pod with a mounted ServiceAccount
-  } catch {
-    try {
-      kc.loadFromDefault();        // falls back to ~/.kube/config for local dev
-    } catch {
-      // no config available – callers will hit their own error handling
-    }
-  }
+  loadKubeConfig(kc); // in-cluster ServiceAccount, else KUBECONFIG / ~/.kube/config
   return kc;
 }
 

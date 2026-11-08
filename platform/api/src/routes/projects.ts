@@ -20,6 +20,7 @@ import {
 import { In } from 'typeorm';
 import * as k8s from '@kubernetes/client-node';
 import { v4 as uuidv4 } from 'uuid';
+import { loadKubeConfig } from '../lib/kube-config';
 
 const router = Router();
 
@@ -338,7 +339,7 @@ router.get('/projects/:projectId/argocd-status', expressAuthenticate, async (req
 
     const kc = new k8s.KubeConfig();
     try {
-      try { kc.loadFromCluster(); } catch { kc.loadFromDefault(); }
+      loadKubeConfig(kc);
       const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
 
       const appResponse: any = await customApi.getNamespacedCustomObject({

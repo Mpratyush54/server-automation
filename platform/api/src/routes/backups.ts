@@ -3,11 +3,12 @@ import * as k8s from '@kubernetes/client-node';
 import { expressAuthenticate, expressRequireRole } from '../middleware/auth';
 import { UserRole } from '../entities/User';
 import { parseBackupStatus, backupMetrics } from '../lib/backup-status';
+import { loadKubeConfig } from '../lib/kube-config';
 
 const router = Router();
 async function statuses() {
   const kc = new k8s.KubeConfig();
-  try { kc.loadFromCluster(); } catch { kc.loadFromDefault(); }
+  loadKubeConfig(kc);
   const client = kc.makeApiClient(k8s.CoreV1Api);
   return Promise.all(['backup', 'restore-test'].map(async operation => {
     try {

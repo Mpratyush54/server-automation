@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import { setLeaderGauge } from './job-metrics';
+import { loadKubeConfig } from './kube-config';
 
 /**
  * Leader election on a coordination.k8s.io/v1 Lease.
@@ -320,7 +321,7 @@ export function getLeadership(): Leadership {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const k8s = require('@kubernetes/client-node');
   const kc = new k8s.KubeConfig();
-  try { kc.loadFromCluster(); } catch { kc.loadFromDefault(); }
+  loadKubeConfig(kc);
   instance = new LeaderElector({
     api: kc.makeApiClient(k8s.CoordinationV1Api),
     namespace: process.env.LEADER_LEASE_NAMESPACE || podNamespace(),

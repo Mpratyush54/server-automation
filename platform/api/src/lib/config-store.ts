@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { platformCredDir, platformEnvFile, upsertDotEnvFile, writeFileAtomic } from './host-env';
+import { loadKubeConfig } from './kube-config';
 
 /**
  * Where the API keeps configuration it changes at runtime (rotated passwords,
@@ -258,11 +259,7 @@ async function defaultSecretApi(): Promise<SecretApi> {
   if (!secretApi) {
     const k8s = await import('@kubernetes/client-node');
     const kc = new k8s.KubeConfig();
-    try {
-      kc.loadFromCluster();
-    } catch {
-      kc.loadFromDefault();
-    }
+    loadKubeConfig(kc);
     secretApi = kc.makeApiClient(k8s.CoreV1Api) as unknown as SecretApi;
   }
   return secretApi;

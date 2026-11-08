@@ -24,6 +24,7 @@ import { resolveProjectRef } from '../lib/project-resolve';
 import { ensureProjectIngress } from '../lib/k8s';
 import { gitUrlsMatch, normalizeGitUrl } from '../lib/git-url';
 import { assignedNamespace, assignedEnvHost, projectSlug as makeProjectSlug } from '../lib/project-namespace';
+import { loadKubeConfig } from '../lib/kube-config';
 
 const router = Router();
 
@@ -297,7 +298,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       try {
         await ensureProjectNamespace(project.id, env);
         const customApi = new k8s.KubeConfig();
-        try { customApi.loadFromCluster(); } catch { try { customApi.loadFromDefault(); } catch {} }
+        loadKubeConfig(customApi);
         const apiClient = customApi.makeApiClient(k8s.CustomObjectsApi);
         const appName = destNamespace.slice(0, 63);
         const application = {
@@ -393,7 +394,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
     const serviceName = body.serviceName || project.name;
     try {
       const kc = new k8s.KubeConfig();
-      try { kc.loadFromCluster(); } catch { try { kc.loadFromDefault(); } catch {} }
+      loadKubeConfig(kc);
       const appsV1 = kc.makeApiClient(k8s.AppsV1Api);
       const coreV1 = kc.makeApiClient(k8s.CoreV1Api);
       const networkV1 = kc.makeApiClient(k8s.NetworkingV1Api);
