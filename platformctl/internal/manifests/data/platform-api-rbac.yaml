@@ -1,0 +1,134 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-api
+  namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-api
+rules:
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["list", "create"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["list"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["list", "delete"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["list", "create", "update", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["create", "update", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-api
+subjects:
+- kind: ServiceAccount
+  name: platform-api
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: platform-api
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-api
+  namespace: platform
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["platform-env","platform-rotate-pending"]
+  verbs: ["get", "update"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["platform-rotate-pending"]
+  verbs: ["delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  resourceNames: ["platform-api"]
+  verbs: ["patch"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-api
+  namespace: platform
+subjects:
+- kind: ServiceAccount
+  name: platform-api
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-api
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-api
+  namespace: databases
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["postgresql","redis"]
+  verbs: ["get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-api
+  namespace: databases
+subjects:
+- kind: ServiceAccount
+  name: platform-api
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-api
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-api
+  namespace: argocd
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["argocd-secret","argocd-initial-admin-secret"]
+  verbs: ["get", "update"]
+- apiGroups: ["argoproj.io"]
+  resources: ["applications"]
+  verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-api
+  namespace: argocd
+subjects:
+- kind: ServiceAccount
+  name: platform-api
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-api

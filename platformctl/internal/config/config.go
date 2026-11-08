@@ -3,6 +3,7 @@ package config
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"os"
@@ -26,6 +27,7 @@ type Config struct {
 	NonInteractive bool
 	SkipK8s        bool
 	SkipPreflight  bool
+	ResetPortainer bool
 
 	ImageRegistry string
 	ImageTag      string
@@ -47,19 +49,20 @@ type Config struct {
 	// the profile.
 	explicitInstall map[string]bool
 
-	PostgresPassword  string
-	MongoPassword     string
-	RedisPassword     string
-	MinioAccessKey    string
-	MinioSecretKey    string
-	JWTSecret         string
-	WebhookSecret     string
-	ArgoCDPassword    string
-	GrafanaPassword   string
-	InfisicalEncKey   string
-	InfisicalJWT      string
-	PortainerPassword string
-	LEEmail           string
+	PostgresPassword     string
+	MongoPassword        string
+	RedisPassword        string
+	MinioAccessKey       string
+	MinioSecretKey       string
+	JWTSecret            string
+	SecretsEncryptionKey string
+	WebhookSecret        string
+	ArgoCDPassword       string
+	GrafanaPassword      string
+	InfisicalEncKey      string
+	InfisicalJWT         string
+	PortainerPassword    string
+	LEEmail              string
 
 	// PasswordGenerated is set when admin password was auto-created this run.
 	PasswordGenerated bool
@@ -77,29 +80,32 @@ func Load() *Config {
 	_ = loadDotEnv(envFilePath)
 
 	c := &Config{
-		PlatformName:      getEnv("PLATFORM_NAME", "Platform"),
-		ImageRegistry:     getEnv("PLATFORM_IMAGE_REGISTRY", "ghcr.io/mpratyush54"),
-		ImageTag:          getEnv("PLATFORM_IMAGE_TAG", tagDefault),
-		RepoURL:           getEnv("PLATFORM_REPO_URL", "https://github.com/Mpratyush54/SERVER-automation"),
-		GitHubToken:       getEnv("GITHUB_TOKEN", ""),
-		Domain:            firstNonEmpty(os.Getenv("DOMAIN"), os.Getenv("PLATFORM_DOMAIN")),
-		AdminEmail:        os.Getenv("ADMIN_EMAIL"), // empty → prompt will ask
-		AdminPassword:     getEnv("ADMIN_PASSWORD", ""),
-		NonInteractive:    os.Getenv("NON_INTERACTIVE") == "true" || os.Getenv("PLATFORMCTL_AUTO") == "true",
-		SkipK8s:           os.Getenv("SKIP_K8S") == "true",
-		SkipPreflight:     os.Getenv("SKIP_PREFLIGHT") == "true",
-		AutoUpdate:        getEnvBool("AUTO_UPDATE", true),
-		MinioAccessKey:    getEnv("MINIO_ACCESS_KEY", "platformadmin"),
-		PostgresPassword:  os.Getenv("POSTGRES_PASSWORD"),
-		MongoPassword:     os.Getenv("MONGO_PASSWORD"),
-		RedisPassword:     os.Getenv("REDIS_PASSWORD"),
-		MinioSecretKey:    os.Getenv("MINIO_SECRET_KEY"),
-		JWTSecret:         os.Getenv("JWT_SECRET"),
-		WebhookSecret:     os.Getenv("PLATFORM_WEBHOOK_SECRET"),
-		ArgoCDPassword:    os.Getenv("ARGOCD_PASSWORD"),
-		GrafanaPassword:   os.Getenv("GRAFANA_PASSWORD"),
-		PortainerPassword: firstNonEmpty(os.Getenv("PORTAINER_ADMIN_PASSWORD"), os.Getenv("PORTAINER_PASSWORD")),
-		LEEmail:           firstNonEmpty(os.Getenv("LE_EMAIL"), os.Getenv("ADMIN_EMAIL")),
+		PlatformName:         getEnv("PLATFORM_NAME", "Platform"),
+		ImageRegistry:        getEnv("PLATFORM_IMAGE_REGISTRY", "ghcr.io/mpratyush54"),
+		ImageTag:             getEnv("PLATFORM_IMAGE_TAG", tagDefault),
+		RepoURL:              getEnv("PLATFORM_REPO_URL", "https://github.com/Mpratyush54/SERVER-automation"),
+		GitHubToken:          getEnv("GITHUB_TOKEN", ""),
+		Domain:               firstNonEmpty(os.Getenv("DOMAIN"), os.Getenv("PLATFORM_DOMAIN")),
+		AdminEmail:           os.Getenv("ADMIN_EMAIL"), // empty → prompt will ask
+		AdminPassword:        getEnv("ADMIN_PASSWORD", ""),
+		NonInteractive:       os.Getenv("NON_INTERACTIVE") == "true" || os.Getenv("PLATFORMCTL_AUTO") == "true",
+		SkipK8s:              os.Getenv("SKIP_K8S") == "true",
+		SkipPreflight:        os.Getenv("SKIP_PREFLIGHT") == "true",
+		AutoUpdate:           getEnvBool("AUTO_UPDATE", true),
+		MinioAccessKey:       getEnv("MINIO_ACCESS_KEY", "platformadmin"),
+		PostgresPassword:     os.Getenv("POSTGRES_PASSWORD"),
+		MongoPassword:        os.Getenv("MONGO_PASSWORD"),
+		RedisPassword:        os.Getenv("REDIS_PASSWORD"),
+		MinioSecretKey:       os.Getenv("MINIO_SECRET_KEY"),
+		JWTSecret:            os.Getenv("JWT_SECRET"),
+		InfisicalEncKey:      os.Getenv("INFISICAL_ENCRYPTION_KEY"),
+		InfisicalJWT:         os.Getenv("INFISICAL_JWT_SECRET"),
+		SecretsEncryptionKey: os.Getenv("SECRETS_ENCRYPTION_KEY"),
+		WebhookSecret:        os.Getenv("PLATFORM_WEBHOOK_SECRET"),
+		ArgoCDPassword:       os.Getenv("ARGOCD_PASSWORD"),
+		GrafanaPassword:      os.Getenv("GRAFANA_PASSWORD"),
+		PortainerPassword:    firstNonEmpty(os.Getenv("PORTAINER_ADMIN_PASSWORD"), os.Getenv("PORTAINER_PASSWORD")),
+		LEEmail:              firstNonEmpty(os.Getenv("LE_EMAIL"), os.Getenv("ADMIN_EMAIL")),
 	}
 	c.resolveProfile(explicit)
 	return c
@@ -395,6 +401,13 @@ func askBool(prompt string, target *bool) {
 }
 
 func (c *Config) GenerateSecrets() {
+	if c.SecretsEncryptionKey == "" {
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			panic(err)
+		}
+		c.SecretsEncryptionKey = hex.EncodeToString(key)
+	}
 	if c.PostgresPassword == "" {
 		c.PostgresPassword = generatePassword(24)
 	}
@@ -407,7 +420,7 @@ func (c *Config) GenerateSecrets() {
 	if c.MinioSecretKey == "" {
 		c.MinioSecretKey = generatePassword(32)
 	}
-	if c.JWTSecret == "" {
+	if len(c.JWTSecret) < 32 {
 		c.JWTSecret = generatePassword(48)
 	}
 	if c.WebhookSecret == "" {
@@ -471,6 +484,7 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("MINIO_ACCESS_KEY=%s\n", c.MinioAccessKey))
 	b.WriteString(fmt.Sprintf("MINIO_SECRET_KEY=%s\n", c.MinioSecretKey))
 	b.WriteString(fmt.Sprintf("JWT_SECRET=%s\n", c.JWTSecret))
+	b.WriteString(fmt.Sprintf("SECRETS_ENCRYPTION_KEY=%s\n", c.SecretsEncryptionKey))
 	b.WriteString(fmt.Sprintf("PLATFORM_WEBHOOK_SECRET=%s\n", c.WebhookSecret))
 	b.WriteString(fmt.Sprintf("ARGOCD_PASSWORD=%s\n", c.ArgoCDPassword))
 	b.WriteString(fmt.Sprintf("GRAFANA_PASSWORD=%s\n", c.GrafanaPassword))

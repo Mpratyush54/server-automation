@@ -112,14 +112,14 @@ func TestGenerateSecretsAll(t *testing.T) {
 func TestGenerateSecretsPreservesExisting(t *testing.T) {
 	c := &Config{
 		PostgresPassword: "my-custom-password",
-		JWTSecret:        "my-jwt-secret",
+		JWTSecret:        "my-existing-jwt-secret-with-at-least-32-characters",
 	}
 	c.GenerateSecrets()
 
 	if c.PostgresPassword != "my-custom-password" {
 		t.Errorf("existing PostgresPassword was overwritten to %s", c.PostgresPassword)
 	}
-	if c.JWTSecret != "my-jwt-secret" {
+	if c.JWTSecret != "my-existing-jwt-secret-with-at-least-32-characters" {
 		t.Errorf("existing JWTSecret was overwritten to %s", c.JWTSecret)
 	}
 	if c.MongoPassword == "" {
