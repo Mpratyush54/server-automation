@@ -55,6 +55,18 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           df -h /
 
+      # build-bundle.sh needs the classic image store: with the containerd
+      # store, `docker save` of a --platform pull exports incomplete images.
+      - name: Use Docker's classic image store
+        run: |
+          set -euo pipefail
+          cfg=/etc/docker/daemon.json
+          [ -s "$cfg" ] || echo '{}' | sudo tee "$cfg" >/dev/null
+          sudo jq '.features = ((.features // {}) + {"containerd-snapshotter": false})' "$cfg" | sudo tee "$cfg.new" >/dev/null
+          sudo mv "$cfg.new" "$cfg"
+          sudo systemctl restart docker
+          docker info --format '{{.Driver}} {{.DriverStatus}}'
+
       - name: Install helm, oras, zstd and jq (not from GitHub Releases)
         run: |
           set -euo pipefail

@@ -113,21 +113,16 @@ done < <(jq -r '.charts[] | [.name, (.repo // ""), (.repoUrl // ""), .chart, .ve
 # --- platform images -------------------------------------------------------
 mapfile -t IMAGES < <(sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$IMAGES_TXT" | grep -v '^$' | sort -u)
 [[ ${#IMAGES[@]} -gt 0 ]] || die "no images listed in $IMAGES_TXT"
-# With Docker's containerd image store an image can hold several platforms;
-# inspect and save must then name the platform, or they look for the build
-# host's (amd64) and an arm64 pull appears missing. Older Docker lacks the
-# flag, so fall back to the plain commands.
-docker_inspect_arch() {
-  docker image inspect --platform "linux/$ARCH" --format '{{.Architecture}}' "$1" 2>/dev/null \
-    || docker image inspect --format '{{.Architecture}}' "$1" 2>/dev/null || true
-}
-docker_save() {
-  if docker image save --help 2>/dev/null | grep -q -- '--platform'; then
-    docker save --platform "linux/$ARCH" "$@"
-  else
-    docker save "$@"
-  fi
-}
+# Requires Docker's classic image store. With the containerd image store a
+# `--platform` pull of a multi-platform image keeps the index, so inspect and
+# save see the build host's platform: arm64 images look missing and `docker
+# save` exports incomplete images ("content digest ... not found" on import).
+# The workflows switch the store off (see publish-stack.yml); refuse otherwise.
+if docker info --format '{{range .DriverStatus}}{{index . 0}}={{index . 1}};{{end}}' 2>/dev/null | grep -q 'driver-type=io.containerd.snapshotter'; then
+  die "Docker uses the containerd image store; disable it (daemon.json features.containerd-snapshotter=false) and restart Docker"
+fi
+docker_inspect_arch() { docker image inspect --format '{{.Architecture}}' "$1" 2>/dev/null || true; }
+docker_save() { docker save "$@"; }
 available=()
 for img in "${IMAGES[@]}"; do
   log "docker pull --platform linux/$ARCH $img"
