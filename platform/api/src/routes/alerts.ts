@@ -1,3 +1,6 @@
+import { requireProjectAccess, listAccessibleProjectIds } from '../lib/project-access';
+import { ProjectAccessRole } from '../entities/ProjectMember';
+import { In } from 'typeorm';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { Alert } from '../entities/Alert';
@@ -10,7 +13,12 @@ router.get('/alerts', expressAuthenticate, async (req: Request, res: Response) =
   try {
     const { projectId } = req.query as Record<string, string>;
     const ds = await getDb();
-    const filter = projectId ? { projectId } : {};
+    const ids = await listAccessibleProjectIds((req as AuthenticatedRequest).user, (req as AuthenticatedRequest).agentToken);
+    if (projectId) {
+      const access = await requireProjectAccess(req as AuthenticatedRequest, String(projectId), ProjectAccessRole.VIEWER);
+      if (access.ok === false) return res.status(access.status).json({ error: access.error });
+    }
+    const filter = projectId ? { projectId: String(projectId) } : ids === null ? {} : { projectId: In(ids) };
     const alerts = await ds.getRepository(Alert).find({ where: filter });
     return res.json(alerts);
   } catch (err: any) {
@@ -27,6 +35,8 @@ router.post('/alerts', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
     const ds = await getDb();
     const repo = ds.getRepository(Alert);
 
+    const access = await requireProjectAccess(req as AuthenticatedRequest, String(body.projectId || ''), ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const alert = repo.create({
       projectId: body.projectId,
       type: body.type || body.config?.metric || 'cpu_high',
@@ -48,6 +58,9 @@ router.put('/alerts/:id', expressAuthenticate, expressRequireRole([UserRole.DEVO
     const repo = ds.getRepository(Alert);
     const alert = await repo.findOne({ where: { id: req.params.id } });
     if (!alert) return res.status(404).json({ error: 'Alert not found' });
+    const access = await requireProjectAccess(req as AuthenticatedRequest, alert.projectId, ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
+
 
     if (body.enabled !== undefined) alert.isEnabled = body.enabled;
     if (body.config !== undefined) alert.config = body.config;
@@ -66,6 +79,9 @@ router.delete('/alerts/:id', expressAuthenticate, expressRequireRole([UserRole.D
     const repo = ds.getRepository(Alert);
     const alert = await repo.findOne({ where: { id: req.params.id } });
     if (!alert) return res.status(404).json({ error: 'Alert not found' });
+    const access = await requireProjectAccess(req as AuthenticatedRequest, alert.projectId, ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
+
     await repo.remove(alert);
     return res.json({ success: true });
   } catch (err: any) {
@@ -76,6 +92,9 @@ router.delete('/alerts/:id', expressAuthenticate, expressRequireRole([UserRole.D
 router.post('/alerts/evaluate', expressAuthenticate, async (req: Request, res: Response) => {
   try {
     const { projectId, metrics } = req.body;
+    const access = await requireProjectAccess(req as AuthenticatedRequest, String(projectId || ''), ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
+
     const ds = await getDb();
     const repo = ds.getRepository(Alert);
     const rules = await repo.find({ where: { projectId, isEnabled: true } });

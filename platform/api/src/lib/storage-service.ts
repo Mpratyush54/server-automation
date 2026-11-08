@@ -19,23 +19,30 @@ export class LocalAdapter implements StorageAdapter {
   private basePath: string;
 
   constructor(basePath?: string) {
-    this.basePath = basePath || path.join(process.cwd(), 'storage');
+    this.basePath = path.resolve(basePath || process.env.BACKUP_DIR || path.join(process.cwd(), 'backups'));
     if (!fs.existsSync(this.basePath)) fs.mkdirSync(this.basePath, { recursive: true });
   }
 
+  private resolve(fileId: string): string {
+    const resolved = path.resolve(this.basePath, fileId);
+    const relative = path.relative(this.basePath, resolved);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Invalid backup path');
+    return resolved;
+  }
+
   async upload(filePath: string, remoteName: string): Promise<UploadResult> {
-    const dest = path.join(this.basePath, remoteName);
+    const dest = this.resolve(remoteName);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.copyFileSync(filePath, dest);
     return { fileId: remoteName };
   }
 
   async download(fileId: string, destPath: string): Promise<void> {
-    fs.copyFileSync(path.join(this.basePath, fileId), destPath);
+    fs.copyFileSync(this.resolve(fileId), destPath);
   }
 
   async delete(fileId: string): Promise<void> {
-    const p = path.join(this.basePath, fileId);
+    const p = this.resolve(fileId);
     if (fs.existsSync(p)) fs.unlinkSync(p);
   }
 
@@ -209,6 +216,7 @@ export function createAdapter(
     case 'google_drive': return new GoogleDriveAdapter(credentials);
     case 's3': return new S3Adapter({ ...credentials, endpoint: endpointUrl || '' }, bucketName || 'plat-backups');
     case 'minio': return new S3Adapter({ ...credentials, endpoint: endpointUrl || 'http://minio:9000' }, bucketName || 'plat-backups');
-    default: return new LocalAdapter();
+    case 'local': return new LocalAdapter(credentials.basePath);
+    default: throw new Error('Unsupported storage provider');
   }
 }

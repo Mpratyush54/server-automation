@@ -3,11 +3,15 @@ const originalFetch = global.fetch;
 describe('GitLab Library', () => {
   afterEach(() => {
     global.fetch = originalFetch;
+    delete process.env.GITLAB_URL;
+    delete process.env.GITLAB_API_URL;
+    delete process.env.GITLAB_TOKEN;
   });
 
   describe('triggerPipeline', () => {
     it('should call GitLab API to trigger pipeline', async () => {
       process.env.GITLAB_TOKEN = 'test-token';
+      process.env.GITLAB_URL = 'https://gitlab.example.com';
       process.env.GITLAB_API_URL = 'https://gitlab.example.com/api/v4';
       const mockFetch = jest.fn().mockResolvedValue({ ok: true });
       global.fetch = mockFetch;
@@ -23,6 +27,7 @@ describe('GitLab Library', () => {
 
     it('should handle errors silently', async () => {
       process.env.GITLAB_TOKEN = 'test-token';
+      process.env.GITLAB_URL = 'https://gitlab.example.com';
       process.env.GITLAB_API_URL = 'https://gitlab.example.com/api/v4';
       global.fetch = jest.fn().mockRejectedValue(new Error('Network error'));
 
@@ -34,6 +39,7 @@ describe('GitLab Library', () => {
   describe('getGitlabUser', () => {
     it('should fetch user data from GitLab', async () => {
       process.env.GITLAB_TOKEN = 'test-token';
+      process.env.GITLAB_URL = 'https://gitlab.example.com';
       process.env.GITLAB_API_URL = 'https://gitlab.example.com/api/v4';
       const userData = { id: 1, name: 'John Doe' };
       const mockFetch = jest.fn().mockResolvedValue({
@@ -50,6 +56,7 @@ describe('GitLab Library', () => {
 
     it('should return null when user not found', async () => {
       process.env.GITLAB_TOKEN = 'test-token';
+      process.env.GITLAB_URL = 'https://gitlab.example.com';
       process.env.GITLAB_API_URL = 'https://gitlab.example.com/api/v4';
       global.fetch = jest.fn().mockResolvedValue({ ok: false });
 
@@ -61,6 +68,7 @@ describe('GitLab Library', () => {
 
     it('should return null on network error', async () => {
       process.env.GITLAB_TOKEN = 'test-token';
+      process.env.GITLAB_URL = 'https://gitlab.example.com';
       process.env.GITLAB_API_URL = 'https://gitlab.example.com/api/v4';
       global.fetch = jest.fn().mockRejectedValue(new Error('Network error'));
 
@@ -70,4 +78,19 @@ describe('GitLab Library', () => {
       expect(result).toBeNull();
     });
   });
+});
+
+it('never sends a GitLab token to an API override on another origin', async () => {
+  process.env.GITLAB_URL = 'https://gitlab.example.com';
+  process.env.GITLAB_API_URL = 'https://attacker.test/api/v4';
+  process.env.GITLAB_TOKEN = 'test-token';
+  global.fetch = jest.fn();
+  const { getGitlabUser, triggerPipeline } = await import('../../../src/lib/gitlab');
+  expect(await getGitlabUser('123')).toBeNull();
+  await triggerPipeline('project', 'main');
+  expect(global.fetch).not.toHaveBeenCalled();
+  global.fetch = originalFetch;
+  delete process.env.GITLAB_URL;
+  delete process.env.GITLAB_API_URL;
+  delete process.env.GITLAB_TOKEN;
 });

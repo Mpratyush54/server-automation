@@ -1,3 +1,6 @@
+import { requireProjectAccess, listAccessibleProjectIds } from '../lib/project-access';
+import { ProjectAccessRole } from '../entities/ProjectMember';
+import { In } from 'typeorm';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { DbConnection, DbConnectionStatus, DbType } from '../entities/DbConnection';
@@ -10,7 +13,12 @@ router.get('/db-connections', expressAuthenticate, async (req: Request, res: Res
   try {
     const { projectId } = req.query as Record<string, string>;
     const ds = await getDb();
-    const filter = projectId ? { projectId } : {};
+    const ids = await listAccessibleProjectIds((req as AuthenticatedRequest).user, (req as AuthenticatedRequest).agentToken);
+    if (projectId) {
+      const access = await requireProjectAccess(req as AuthenticatedRequest, String(projectId), ProjectAccessRole.VIEWER);
+      if (access.ok === false) return res.status(access.status).json({ error: access.error });
+    }
+    const filter = projectId ? { projectId: String(projectId) } : ids === null ? {} : { projectId: In(ids) };
     const connections = await ds.getRepository(DbConnection).find({ where: filter });
     return res.json(connections);
   } catch (err: any) {
@@ -24,6 +32,8 @@ router.post('/db-connections', expressAuthenticate, expressRequireRole([UserRole
     const ds = await getDb();
     const repo = ds.getRepository(DbConnection);
 
+    const access = await requireProjectAccess(req as AuthenticatedRequest, String(body.projectId || ''), ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const conn = repo.create({
       projectId: body.projectId,
       dbType: body.dbType as DbType,
@@ -44,6 +54,9 @@ router.post('/db-connections/:id/test', expressAuthenticate, async (req: Request
     const repo = ds.getRepository(DbConnection);
     const conn = await repo.findOne({ where: { id: req.params.id } });
     if (!conn) return res.status(404).json({ error: 'DB Connection not found' });
+    const access = await requireProjectAccess(req as AuthenticatedRequest, conn.projectId, ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
+
 
     conn.status = DbConnectionStatus.CONNECTED;
     conn.lastHeartbeat = new Date();
@@ -60,6 +73,9 @@ router.delete('/db-connections/:id', expressAuthenticate, expressRequireRole([Us
     const repo = ds.getRepository(DbConnection);
     const conn = await repo.findOne({ where: { id: req.params.id } });
     if (!conn) return res.status(404).json({ error: 'DB Connection not found' });
+    const access = await requireProjectAccess(req as AuthenticatedRequest, conn.projectId, ProjectAccessRole.DEVOPS);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
+
     await repo.remove(conn);
     return res.json({ success: true });
   } catch (err: any) {

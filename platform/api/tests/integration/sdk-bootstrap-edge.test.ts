@@ -28,9 +28,12 @@ jest.mock('../../src/config/mongoose', () => ({ connectMongo: jest.fn().mockReso
 // Mock pg-module for database provisioning
 jest.mock('pg', () => ({
   Pool: jest.fn().mockImplementation(() => ({
+    end: jest.fn().mockResolvedValue(undefined),
     connect: jest.fn().mockResolvedValue({
       query: jest.fn().mockResolvedValue({ rows: [] }),
       release: jest.fn(),
+      escapeIdentifier: (v: string) => '"' + v.replace(/"/g, '""') + '"',
+      escapeLiteral: (v: string) => "'" + v.replace(/'/g, "''") + "'",
     }),
   })),
 }));
@@ -61,6 +64,7 @@ const REGID      = 'reg11111-1111-1111-1111-111111111111';
 const seedProject = {
   id: PROJ_ID, name: 'demoproj', stack: 'nodejs',
   isActive: true, deletedAt: null,
+  databaseResources: { development: { dbName: 'platform_demoproj_development', username: 'platform_demoproj_dev_user' } },
 };
 const seedEnv = {
   id: ENV_ID, name: 'development', namespace: 'demoproj-dev',
@@ -625,7 +629,7 @@ describe('GET /api/metrics', () => {
       .get('/api/metrics')
       .query({ projectId: PROJ_ID })
       .set('Authorization', `Bearer ${T.developer}`);
-    expect([200, 400]).toContain(r.status);
+    expect(r.status).toBe(403);
   });
 
   it('401 — no token', async () => {
@@ -745,8 +749,7 @@ describe('Database Provisioning', () => {
       const r = await request(app)
         .get(`/api/projects/${PROJ_ID}/databases/backups`)
         .set('Authorization', `Bearer ${T.developer}`);
-      expect(r.status).toBe(200);
-      expect(Array.isArray(r.body)).toBe(true);
+      expect(r.status).toBe(403);
     });
 
     it('each backup has id, status, createdAt fields', async () => {
