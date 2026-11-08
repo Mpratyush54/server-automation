@@ -10,7 +10,11 @@ config)
   for f in "$src"/*.json; do
     [ -f "$f" ] || continue
     [ "${f##*/}" != backup-config.json ] || continue
-    jq 'del(.metadata) | .items |= map(select(.type != "kubernetes.io/service-account-token" and .type != "helm.sh/release.v1") | del(.metadata.uid,.metadata.resourceVersion,.metadata.creationTimestamp,.metadata.managedFields,.metadata.ownerReferences,.metadata.generation,.status) | if .kind == "Secret" then del(.metadata.annotations."kubectl.kubernetes.io/last-applied-configuration") else . end)' "$f"       | kubectl apply --server-side --force-conflicts -f -
+    doc=$(jq 'del(.metadata) | .items |= map(select(.type != "kubernetes.io/service-account-token" and .type != "helm.sh/release.v1") | del(.metadata.uid,.metadata.resourceVersion,.metadata.creationTimestamp,.metadata.managedFields,.metadata.ownerReferences,.metadata.generation,.status) | if .kind == "Secret" then del(.metadata.annotations."kubectl.kubernetes.io/last-applied-configuration") else . end)' "$f")
+    # A namespace whose Secrets are all filtered out leaves an empty list, and
+    # `kubectl apply` rejects that ("no objects passed to apply").
+    [ "$(printf '%s' "$doc" | jq '.items | length')" -gt 0 ] || continue
+    printf '%s' "$doc" | kubectl apply --server-side --force-conflicts -f -
   done
   install -d -m 700 /etc/platform
   install -m 600 "$src/env" /etc/platform/.env
@@ -99,7 +103,13 @@ redis)
   # using the installed Redis version, or old AOF data would override the RDB.
   kubectl -n databases exec "$helper" -- bash -ec '
     rm -rf /data/appendonlydir /data/appendonly.aof
-    redis-server --dir /data --dbfilename dump.rdb --appendonly no --save "" --port 0 --unixsocket /tmp/restore.sock --daemonize yes
+    redis-server --dir /data --dbfilename dump.rdb --appendonly no --save "" --port 0 --unixsocket /tmp/restore.sock --logfile /tmp/restore.log --daemonize yes
+    # --daemonize returns before the RDB is loaded and the socket is open.
+    for i in $(seq 1 60); do
+      [ "$(redis-cli -s /tmp/restore.sock PING 2>/dev/null)" = PONG ] && break
+      [ "$i" = 60 ] && { echo "redis-server did not start:" >&2; tail -20 /tmp/restore.log >&2; exit 1; }
+      sleep 1
+    done
     redis-cli -s /tmp/restore.sock CONFIG SET appendonly yes
     for i in $(seq 1 180); do
       info=$(redis-cli -s /tmp/restore.sock INFO persistence)
