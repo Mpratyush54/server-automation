@@ -58,6 +58,13 @@ type Config struct {
 	PortainerPassword string
 	LEEmail           string
 
+	// Per-client secrets for the platform's built-in OIDC provider. The API
+	// receives them via OIDC_CLIENTS; each SSO client gets its own.
+	OIDCSecretGrafana     string
+	OIDCSecretArgoCD      string
+	OIDCSecretPortainer   string
+	OIDCSecretOAuth2Proxy string
+
 	// PasswordGenerated is set when admin password was auto-created this run.
 	PasswordGenerated bool
 }
@@ -97,6 +104,11 @@ func Load() *Config {
 		GrafanaPassword:   os.Getenv("GRAFANA_PASSWORD"),
 		PortainerPassword: firstNonEmpty(os.Getenv("PORTAINER_ADMIN_PASSWORD"), os.Getenv("PORTAINER_PASSWORD")),
 		LEEmail:           firstNonEmpty(os.Getenv("LE_EMAIL"), os.Getenv("ADMIN_EMAIL")),
+
+		OIDCSecretGrafana:     os.Getenv("OIDC_SECRET_GRAFANA"),
+		OIDCSecretArgoCD:      os.Getenv("OIDC_SECRET_ARGOCD"),
+		OIDCSecretPortainer:   os.Getenv("OIDC_SECRET_PORTAINER"),
+		OIDCSecretOAuth2Proxy: os.Getenv("OIDC_SECRET_OAUTH2_PROXY"),
 	}
 	c.resolveProfile(explicit)
 	return c
@@ -426,6 +438,11 @@ func (c *Config) GenerateSecrets() {
 			c.PortainerPassword = generatePassword(20)
 		}
 	}
+	for _, s := range []*string{&c.OIDCSecretGrafana, &c.OIDCSecretArgoCD, &c.OIDCSecretPortainer, &c.OIDCSecretOAuth2Proxy} {
+		if *s == "" {
+			*s = generatePassword(40)
+		}
+	}
 	if c.LEEmail == "" {
 		c.LEEmail = c.AdminEmail
 	}
@@ -465,6 +482,10 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("ARGOCD_PASSWORD=%s\n", c.ArgoCDPassword))
 	b.WriteString(fmt.Sprintf("GRAFANA_PASSWORD=%s\n", c.GrafanaPassword))
 	b.WriteString(fmt.Sprintf("PORTAINER_ADMIN_PASSWORD=%s\n", c.PortainerPassword))
+	b.WriteString(fmt.Sprintf("OIDC_SECRET_GRAFANA=%s\n", c.OIDCSecretGrafana))
+	b.WriteString(fmt.Sprintf("OIDC_SECRET_ARGOCD=%s\n", c.OIDCSecretArgoCD))
+	b.WriteString(fmt.Sprintf("OIDC_SECRET_PORTAINER=%s\n", c.OIDCSecretPortainer))
+	b.WriteString(fmt.Sprintf("OIDC_SECRET_OAUTH2_PROXY=%s\n", c.OIDCSecretOAuth2Proxy))
 	b.WriteString(fmt.Sprintf("PLATFORM_IMAGE_TAG=%s\n", c.ImageTag))
 	b.WriteString(fmt.Sprintf("AUTO_UPDATE=%t\n", c.AutoUpdate))
 	b.WriteString(fmt.Sprintf("PLATFORM_PROFILE=%s\n", c.profileName()))

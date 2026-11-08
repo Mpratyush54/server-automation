@@ -119,6 +119,37 @@ After recover:
 	},
 }
 
+var repairCmd = &cobra.Command{
+	Use:   "repair",
+	Short: "Self-heal TLS and SSO: fix Let's Encrypt issues (or fall back to the internal CA) and re-apply OIDC wiring",
+	Long: `Safe to run any time; every step is idempotent.
+
+  1. Ensures per-client OIDC secrets exist (saved to /etc/platform/.env).
+  2. Re-applies the API's OIDC issuer and client registry, and the SSO
+     settings of Grafana, ArgoCD, oauth2-proxy and Portainer.
+  3. Ensures a valid TLS certificate: Let's Encrypt when possible, otherwise
+     the platform's internal CA, and makes ArgoCD trust it.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		unlock, err := state.AcquireLock("repair")
+		if err != nil {
+			return err
+		}
+		defer unlock()
+		os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
+		cfg.GenerateSecrets() // only fills values that are missing
+		if err := cfg.SaveEnvFile("/etc/platform/.env"); err != nil {
+			return fmt.Errorf("save /etc/platform/.env: %w", err)
+		}
+		ssoErr := components.RepairSSO(cfg)
+		tlsErr := components.EnsureTLS(cfg)
+		if ssoErr != nil || tlsErr != nil {
+			return fmt.Errorf("repair finished with problems: sso=%v tls=%v", ssoErr, tlsErr)
+		}
+		color.Green("\n  ✓ Repair complete")
+		return nil
+	},
+}
+
 var backupCmd = &cobra.Command{
 	Use:   "backup",
 	Short: "Copy /etc/platform/.env and database secrets to a timestamped host backup",
@@ -169,6 +200,7 @@ func init() {
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(recoverCmd)
 	rootCmd.AddCommand(backupCmd)
+	rootCmd.AddCommand(repairCmd)
 	rootCmd.AddCommand(versionCmd)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default /etc/platform/.env)")

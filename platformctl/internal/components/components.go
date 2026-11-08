@@ -99,15 +99,28 @@ func readManifest(name string) string {
 	return string(data)
 }
 
-func writeTemplatedManifest(name, domain, dest string) error {
+// internalOIDC is the in-cluster base URL SSO clients use for server-to-server
+// OIDC calls (token, userinfo, jwks), so SSO never depends on the public TLS
+// certificate. Only the browser-facing authorize URL uses the public domain.
+const internalOIDC = "http://platform-api.platform.svc.cluster.local:3000/api/oauth"
+
+func writeTemplatedManifest(name string, cfg *config.Config, dest string) error {
 	vals := readManifest(name)
 	if vals == "" {
 		return fmt.Errorf("%s manifest not found", name)
 	}
-	vals = strings.ReplaceAll(vals, "{{DOMAIN}}", domain)
-	vals = strings.ReplaceAll(vals, "{{BASEHREF}}", "/argocd")
-	vals = strings.ReplaceAll(vals, "{{ARGOCD_URL}}", "https://"+domain+"/argocd")
-	return os.WriteFile(dest, []byte(vals), 0644)
+	domain := cfg.Domain
+	r := strings.NewReplacer(
+		"{{DOMAIN}}", domain,
+		"{{BASEHREF}}", "/argocd",
+		"{{ARGOCD_URL}}", "https://"+domain+"/argocd",
+		"{{OIDC_INTERNAL}}", internalOIDC,
+		"{{OIDC_SECRET_GRAFANA}}", cfg.OIDCSecretGrafana,
+		"{{OIDC_SECRET_ARGOCD}}", cfg.OIDCSecretArgoCD,
+		"{{OIDC_SECRET_OAUTH2_PROXY}}", cfg.OIDCSecretOAuth2Proxy,
+	)
+	// Values files can carry client secrets: keep them private.
+	return os.WriteFile(dest, []byte(r.Replace(vals)), 0600)
 }
 
 func doneOrSkip(step, label string) bool {
@@ -152,35 +165,15 @@ func InstallCertManager(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing cert-manager...")
-	email := cfg.LEEmail
-	if email == "" {
-		email = cfg.AdminEmail
-	}
-	cmds := []string{
-		`helm upgrade --install cert-manager ` + chart("cert-manager") + ` \
+	if err := shell.RunBash(`helm upgrade --install cert-manager ` + chart("cert-manager") + ` \
 			--namespace cert-manager --create-namespace \
-			--set installCRDs=true --wait --timeout 5m`,
-		fmt.Sprintf(`kubectl apply -f - <<EOF
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt-prod
-spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: %s
-    privateKeySecretRef:
-      name: letsencrypt-prod
-    solvers:
-    - http01:
-        ingress:
-          class: nginx
-EOF`, email),
+			--set installCRDs=true --wait --timeout 5m`); err != nil {
+		return err
 	}
-	for _, c := range cmds {
-		if err := shell.RunBash(c); err != nil {
-			return err
-		}
+	// Let's Encrypt + internal-CA fallback issuers; an unusable contact email
+	// is dropped instead of breaking ACME registration.
+	if err := EnsureIssuers(cfg); err != nil {
+		return err
 	}
 	color.Green("  ✓ cert-manager installed")
 	return state.MarkDone("cert-manager")
@@ -250,7 +243,7 @@ func InstallMinIO(cfg *config.Config) error {
 	}
 	color.Cyan("\n  ■ Installing MinIO...")
 	tmpFile := "/tmp/minio-values.yaml"
-	if err := writeTemplatedManifest("minio-values.yaml", cfg.Domain, tmpFile); err != nil {
+	if err := writeTemplatedManifest("minio-values.yaml", cfg, tmpFile); err != nil {
 		return err
 	}
 	defer os.Remove(tmpFile)
@@ -283,7 +276,7 @@ func InstallArgoCD(cfg *config.Config) error {
 	_ = state.MarkInProgress("argocd")
 	color.Cyan("\n  ■ Installing ArgoCD (path /argocd)...")
 	tmpFile := "/tmp/argocd-values.yaml"
-	if err := writeTemplatedManifest("argocd-values.yaml", cfg.Domain, tmpFile); err != nil {
+	if err := writeTemplatedManifest("argocd-values.yaml", cfg, tmpFile); err != nil {
 		return err
 	}
 	defer os.Remove(tmpFile)
@@ -414,7 +407,7 @@ func InstallMonitoring(cfg *config.Config) error {
 	}
 	color.Cyan("\n  ■ Installing monitoring stack...")
 	tmpFile := "/tmp/grafana-values.yaml"
-	if err := writeTemplatedManifest("grafana-values.yaml", cfg.Domain, tmpFile); err != nil {
+	if err := writeTemplatedManifest("grafana-values.yaml", cfg, tmpFile); err != nil {
 		return err
 	}
 	defer os.Remove(tmpFile)
@@ -456,7 +449,7 @@ func InstallOAuthProxy(cfg *config.Config) error {
 	_ = state.MarkInProgress("oauth2-proxy")
 	color.Cyan("\n  ■ Installing oauth2-proxy...")
 	tmpFile := "/tmp/oauth2-values.yaml"
-	if err := writeTemplatedManifest("oauth2-proxy-values.yaml", cfg.Domain, tmpFile); err != nil {
+	if err := writeTemplatedManifest("oauth2-proxy-values.yaml", cfg, tmpFile); err != nil {
 		color.Yellow("  ⚠ oauth2-proxy values missing — skipping")
 		return nil
 	}
@@ -527,7 +520,7 @@ func InstallPortainer(cfg *config.Config) error {
 		return fmt.Errorf("DOMAIN is empty — required for Portainer SSO redirect URI")
 	}
 	tmpFile := "/tmp/portainer-values.yaml"
-	_ = writeTemplatedManifest("portainer-values.yaml", cfg.Domain, tmpFile)
+	_ = writeTemplatedManifest("portainer-values.yaml", cfg, tmpFile)
 	defer os.Remove(tmpFile)
 
 	if err := shell.RunBash(fmt.Sprintf(`
@@ -581,18 +574,13 @@ func InstallPortainer(cfg *config.Config) error {
 // ensurePortainerAdminAndSSO logs in (resetting the PVC once if admin seed failed)
 // and configures Platform OAuth so the SSO button always appears.
 func ensurePortainerAdminAndSSO(cfg *config.Config, pass string) error {
-	oauthSecret := cfg.WebhookSecret
-	if oauthSecret == "" {
-		oauthSecret = cfg.JWTSecret
-	}
-	if len(oauthSecret) < 8 {
-		oauthSecret = "portainer-oauth-secret"
-	}
+	// Portainer's own client secret (registered with the API via OIDC_CLIENTS).
+	oauthSecret := cfg.OIDCSecretPortainer
 	domain := cfg.Domain
 	// The PVC-reset path below re-runs helm with these values; when called from
 	// InstallRouting the file written by InstallPortainer is already gone.
 	if !shell.FileExists("/tmp/portainer-values.yaml") {
-		_ = writeTemplatedManifest("portainer-values.yaml", domain, "/tmp/portainer-values.yaml")
+		_ = writeTemplatedManifest("portainer-values.yaml", cfg, "/tmp/portainer-values.yaml")
 	}
 	authBody := shellQuote(fmt.Sprintf(`{"username":"admin","password":%q}`, pass))
 	settingsBody := shellQuote(fmt.Sprintf(`{
@@ -600,10 +588,10 @@ func ensurePortainerAdminAndSSO(cfg *config.Config, pass string) error {
   "OAuthSettings": {
     "ClientID": "portainer",
     "ClientSecret": %q,
-    "AccessTokenURI": "https://%s/api/oauth/token",
-    "AuthorizationURI": "https://%s/api/oauth/authorize",
-    "ResourceURI": "https://%s/api/oauth/userinfo",
-    "RedirectURI": "https://portainer.%s/",
+    "AccessTokenURI": "%[2]s/token",
+    "AuthorizationURI": "https://%[3]s/api/oauth/authorize",
+    "ResourceURI": "%[2]s/userinfo",
+    "RedirectURI": "https://portainer.%[3]s/",
     "UserIdentifier": "email",
     "Scopes": "openid profile email groups",
     "OAuthAutoCreateUsers": true,
@@ -612,7 +600,7 @@ func ensurePortainerAdminAndSSO(cfg *config.Config, pass string) error {
     "LogoutURI": "",
     "AuthStyle": 1
   }
-}`, oauthSecret, domain, domain, domain, domain))
+}`, oauthSecret, internalOIDC, domain))
 
 	return shell.RunBash(fmt.Sprintf(`
 set -euo pipefail
@@ -776,6 +764,8 @@ kubectl create secret generic platform-env \
   --from-literal=DOMAIN=%s \
   --from-literal=ADMIN_EMAIL=%s \
   --from-literal=ADMIN_PASSWORD=%s \
+  --from-literal=OIDC_ISSUER=%s \
+  --from-literal=OIDC_CLIENTS=%s \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl apply -n platform -f - <<'EOF'
@@ -931,6 +921,8 @@ kubectl wait --for=condition=Available deployment/platform-portal -n platform --
 		shellQuote(cfg.Domain),
 		shellQuote(cfg.AdminEmail),
 		shellQuote(cfg.AdminPassword),
+		shellQuote(cfg.OIDCIssuer()),
+		shellQuote(cfg.OIDCClientsJSON()),
 		apiImg, portalImg,
 	))
 	if err != nil {
@@ -971,6 +963,13 @@ func InstallRouting(cfg *config.Config) error {
 		} else {
 			_ = state.MarkDone("portainer-sso")
 		}
+	}
+	// A valid certificate (Let's Encrypt, or the internal CA as fallback) plus
+	// SSO client trust. Failure here is reported, not fatal: `platformctl
+	// repair` re-runs it, and the internal-endpoint SSO wiring keeps Grafana,
+	// Portainer and oauth2-proxy working regardless.
+	if err := EnsureTLS(cfg); err != nil {
+		color.Yellow("  ⚠ TLS not ready: %v — run `sudo platformctl repair`", err)
 	}
 	color.Green("  ✓ Routing applied")
 	return state.MarkDone("routing")
@@ -1052,7 +1051,7 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: __ISSUER__
     nginx.ingress.kubernetes.io/configuration-snippet: |
       proxy_hide_header X-Frame-Options;
       proxy_hide_header Content-Security-Policy;
@@ -1159,7 +1158,6 @@ metadata:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/backend-protocol: HTTP
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
-    cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/configuration-snippet: |
       proxy_set_header Accept-Encoding "";
       sub_filter '<base href="/">' '<base href="/argocd/">';
@@ -1195,7 +1193,6 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/permanent-redirect: https://portainer.__DOMAIN__/
-    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   ingressClassName: nginx
   tls:
@@ -1217,6 +1214,8 @@ EOF
 
 kubectl delete ingress argocd-ingress portainer-ingress -n platform --ignore-not-found
 `, "__DOMAIN__", d)
+	// Only the main Ingress requests the certificate; the others reuse platform-tls.
+	script = strings.ReplaceAll(script, "__ISSUER__", ActiveIssuer())
 	return shell.RunBash(script)
 }
 
