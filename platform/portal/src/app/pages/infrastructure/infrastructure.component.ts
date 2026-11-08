@@ -30,7 +30,6 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
       loki: 'offline',
       prometheus: 'offline',
       grafana: 'offline',
-      infisical: 'offline',
       argocd: 'offline'
     }
   };

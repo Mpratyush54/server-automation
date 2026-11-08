@@ -292,8 +292,6 @@ router.get('/settings/integrations', expressAuthenticate, expressRequireRole([Us
       gitlabGroup: row.gitlabGroup || '',
       clickupToken: maskSecret(row.clickupToken),
       clickupListId: row.clickupListId || '',
-      infisicalUrl: row.infisicalUrl || '',
-      infisicalToken: maskSecret(row.infisicalToken),
       webhookSecret: maskSecret(process.env.PLATFORM_WEBHOOK_SECRET),
       envFallback: {
         githubOAuth: Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET),
@@ -334,8 +332,6 @@ router.put('/settings/integrations', expressAuthenticate, expressRequireRole([Us
     if (b.gitlabGroup !== undefined) row.gitlabGroup = String(b.gitlabGroup || '').trim() || null;
     if (b.clickupToken) row.clickupToken = String(b.clickupToken);
     if (b.clickupListId !== undefined) row.clickupListId = String(b.clickupListId || '').trim() || null;
-    if (b.infisicalUrl !== undefined) row.infisicalUrl = String(b.infisicalUrl || '').replace(/\/$/, '') || null;
-    if (b.infisicalToken) row.infisicalToken = String(b.infisicalToken);
     await ds.getRepository(IntegrationSettings).save(row);
     applyIntegrationsToEnv(await resolveIntegrations());
     await logAudit({

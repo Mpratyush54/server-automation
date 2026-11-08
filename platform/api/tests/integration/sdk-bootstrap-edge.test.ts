@@ -283,6 +283,17 @@ describe('SDK Register / Lifecycle', () => {
       expect(r.body).toHaveProperty('registrationId');
     });
 
+    it('ignores legacy infisicalProject / infisicalEnv fields', async () => {
+      serviceRegRepo.findOne.mockResolvedValueOnce(null);
+      serviceRegRepo.create.mockClear();
+      const r = await request(app).post('/api/sdk/register').set(SDK_AUTH)
+        .send({ ...regBody, infisicalProject: 'legacy-project', infisicalEnv: 'prod' });
+      expect(r.status).toBe(201);
+      const created = serviceRegRepo.create.mock.calls[0][0];
+      expect(created).not.toHaveProperty('infisicalProject');
+      expect(created).not.toHaveProperty('infisicalEnv');
+    });
+
     it('401 — missing Authorization header', async () => {
       const r = await request(app).post('/api/sdk/register').send(regBody);
       expect(r.status).toBe(401);
@@ -791,6 +802,7 @@ describe('Bootstrap API', () => {
       .get('/api/bootstrap/status')
       .set('Authorization', `Bearer ${T.developer}`);
     expect(r.status).toBe(200);
+    expect(JSON.stringify(r.body).toLowerCase()).not.toContain('infisical');
   });
 
   it('GET /api/bootstrap/nodes — 200 for devops', async () => {

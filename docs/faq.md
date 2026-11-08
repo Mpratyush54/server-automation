@@ -21,7 +21,7 @@ k3s automatically.
 Passwordless email-based JWT. Users enter their email and get a token — no password
 prompt anywhere in the flow. In production you can add OIDC/SSO from Settings →
 Authentication, and the Platform ships oauth2-proxy on-cluster so services that
-don't ship SSO in their OSS build (Portainer, MinIO, Infisical) can still sit
+don't ship SSO in their OSS build (Portainer, MinIO) can still sit
 behind the same single sign-on.
 
 ---
@@ -82,12 +82,11 @@ prompt or via the `EXT_S3_*` env vars.
 
 ---
 
-**Q: Do I need Infisical?**
+**Q: Where are secrets stored? Do I need an external secret manager?**
 
-No — Platform's own secrets engine (AES-256-GCM with versioning, rollback and
-audit trail) covers everything Infisical does for a single-cluster setup. Infisical
-is installed by the bootstrap as an *optional* integration for teams already using
-it. If you're new, skip it.
+No external secret manager is needed. Secrets are stored in the platform's built-in
+encrypted secrets store (AES-256-GCM with versioning, rollback and audit trail).
+Manage them from the Secrets page in the portal or through the secrets API.
 
 ---
 

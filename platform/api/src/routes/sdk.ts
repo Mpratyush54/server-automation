@@ -9,7 +9,6 @@ import { ProjectConfig } from '../entities/ProjectConfig';
 import { Secret } from '../entities/Secret';
 import { sdkTokenAuth, expressAuthenticate, sdkProjectMatches, AuthenticatedRequest } from '../middleware/auth';
 import { requireProjectAccess } from '../lib/project-access';
-import { fetchSecrets } from '../lib/infisical';
 import { decryptValue } from '../lib/secrets-encryption';
 import { forwardToLoki } from '../lib/lokilog';
 import { LogModel } from '../schemas/Log';
@@ -202,8 +201,6 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       registration.version = body.version ?? registration.version;
       registration.branch = body.branch ?? registration.branch;
       registration.commitSha = body.commitSha ?? registration.commitSha;
-      registration.infisicalProject = body.infisicalProject ?? registration.infisicalProject;
-      registration.infisicalEnv = body.infisicalEnv ?? registration.infisicalEnv;
       registration.envKeys = body.envKeys ?? registration.envKeys;
       registration.dbTypes = body.dbTypes ?? registration.dbTypes;
       registration.metadata = body.metadata ?? registration.metadata;
@@ -219,8 +216,6 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
         version: body.version || '1.0.0',
         branch: body.branch || 'main',
         commitSha: body.commitSha || 'unknown',
-        infisicalProject: body.infisicalProject || 'default',
-        infisicalEnv: body.infisicalEnv || 'dev',
         envKeys: body.envKeys || [],
         dbTypes: body.dbTypes || [],
         status: 'online',

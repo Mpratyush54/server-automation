@@ -89,7 +89,6 @@
   <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/grafana-subpath-redirect</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/helm-name-reuse</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/image-pull-backoff</loc></url>
-  <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/infisical-db-missing</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/ingress-ownership</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/k3s-port-conflict</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/minio-pvc-not-found</loc></url>

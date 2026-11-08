@@ -142,7 +142,7 @@ export class PlaygroundComponent implements OnInit {
         {
           method: 'GET',
           path: '/api/bootstrap/status',
-          description: 'Check connectivity status of central services like Prometheus, Loki, ArgoCD, and Infisical.',
+          description: 'Check connectivity status of central services like Prometheus, Loki, and ArgoCD.',
           parameters: []
         },
         {

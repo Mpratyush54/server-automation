@@ -11,7 +11,6 @@ The relevant secrets in the cluster:
 | Secret | Namespace | Purpose |
 |---|---|---|
 | `platform-env` | `platform` | Platform API environment variables |
-| `infisical-secrets` | `infisical` | Infisical database + encryption keys |
 | `argocd-secret` | `argocd` | ArgoCD admin password |
 | `platform-tls` | `platform` | Let's Encrypt TLS certificate |
 

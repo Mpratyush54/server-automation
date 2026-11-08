@@ -240,7 +240,7 @@ export class BootstrapComponent implements OnInit {
 #
 # This script installs: Docker, k3s, Helm, ingress-nginx, cert-manager,
 # PostgreSQL, MongoDB, Redis, MinIO, ArgoCD, Grafana+Prometheus+Loki,
-# Portainer, Infisical, and finally Platform itself.
+# Portainer, and finally Platform itself.
 # It also walks you through configuring GitHub, GitLab, ClickUp, and SMTP.
 #
 # Re-run safely — completed steps are tracked in /etc/platform/.bootstrap_state
@@ -266,11 +266,10 @@ sudo ./bootstrap.sh`;
     { phase: 11, icon: '🐙', name: 'ArgoCD',              desc: 'GitOps CD — auto-sync from Git on every push' },
     { phase: 12, icon: '📊', name: 'Grafana + Prometheus + Loki', desc: 'Full observability stack with Loki datasource auto-configured' },
     { phase: 13, icon: '🐳', name: 'Portainer',           desc: 'Visual container management UI with ingress' },
-    { phase: 14, icon: '🔐', name: 'Infisical',           desc: 'Self-hosted secret management, synced to project environments' },
-    { phase: 15, icon: '🚀', name: 'Platform',       desc: 'API + Portal deployed with all env vars pre-wired from config' },
-    { phase: 16, icon: '♾️', name: 'ArgoCD GitOps App',   desc: 'Auto-sync application created pointing at your Git repo' },
-    { phase: 17, icon: '🌱', name: 'First-run Seed',      desc: 'Admin user created + MinIO registered as default backup storage' },
-    { phase: 18, icon: '💚', name: 'Health Check',        desc: 'Verifies all pods are running and prints final summary' },
+    { phase: 14, icon: '🚀', name: 'Platform',       desc: 'API + Portal deployed with all env vars pre-wired from config' },
+    { phase: 15, icon: '♾️', name: 'ArgoCD GitOps App',   desc: 'Auto-sync application created pointing at your Git repo' },
+    { phase: 16, icon: '🌱', name: 'First-run Seed',      desc: 'Admin user created + MinIO registered as default backup storage' },
+    { phase: 17, icon: '💚', name: 'Health Check',        desc: 'Verifies all pods are running and prints final summary' },
   ];
 
   integrations: IntegrationItem[] = [
@@ -322,15 +321,6 @@ sudo ./bootstrap.sh`;
       envVars: ['ARGOCD_URL', 'ARGOCD_TOKEN'],
     },
     {
-      key: 'infisical',
-      label: 'Infisical',
-      icon: '🔐',
-      description: 'Secrets synced to project environments on deploy',
-      docsUrl: 'https://infisical.com/docs',
-      configured: false,
-      envVars: ['INFISICAL_URL', 'INFISICAL_TOKEN'],
-    },
-    {
       key: 'minio',
       label: 'MinIO / S3',
       icon: '📦',
@@ -377,7 +367,6 @@ sudo ./bootstrap.sh`;
         { label: 'Prometheus',    namespace: 'monitoring',     status: services['prometheus']    || 'unknown', detail: 'Metrics collection' },
         { label: 'Loki',          namespace: 'monitoring',     status: services['loki']          || 'unknown', detail: 'Log aggregation' },
         { label: 'Portainer',     namespace: 'portainer',      status: services['portainer']     || 'unknown', detail: 'Container management' },
-        { label: 'Infisical',     namespace: 'infisical',      status: services['infisical']     || 'unknown', detail: 'Secret management' },
         { label: 'ingress-nginx', namespace: 'ingress-nginx',  status: services['ingress-nginx'] || 'unknown', detail: 'HTTP routing' },
         { label: 'cert-manager',  namespace: 'cert-manager',   status: services['cert-manager']  || 'unknown', detail: 'TLS certificates' },
       ];

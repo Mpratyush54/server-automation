@@ -205,7 +205,6 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
         { label: 'MinIO PVC not found', section: 'troubleshooting', page: 'minio-pvc-not-found' },
         { label: 'MongoDB validation', section: 'troubleshooting', page: 'mongodb-validation' },
         { label: 'DB WRONGPASS after rotate', section: 'troubleshooting', page: 'db-wrongpass-after-rotate' },
-        { label: 'Infisical DB missing', section: 'troubleshooting', page: 'infisical-db-missing' },
         // API & seed
         { label: 'API seed failure', section: 'troubleshooting', page: 'api-seed-failure' },
         { label: 'Angular @ symbol', section: 'troubleshooting', page: 'angular-template-at-symbol' },

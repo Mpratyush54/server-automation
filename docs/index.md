@@ -24,7 +24,7 @@ applications on Kubernetes (k3s).
 Platform is a self-hosted PaaS control center that brings together:
 
 - **Deployment automation** — Preview environments on every Git push, staging/production on `main`
-- **Secrets management** — AES-256-GCM encrypted secrets with versioning, rollback and audit trails; usable without Infisical
+- **Secrets management** — AES-256-GCM encrypted secrets with versioning, rollback and audit trails, built into the platform (Secrets page / API)
 - **Database provisioning** — One-click PostgreSQL, MongoDB and Redis instances with automated backups
 - **Observability** — Real-time metrics (p50/p95/p99), Loki log aggregation, Grafana dashboards
 - **Multi-SDK support** — Node.js, Python, React and Angular SDKs with auto-registration, metrics and bug reporting

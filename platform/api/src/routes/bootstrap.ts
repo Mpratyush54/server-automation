@@ -55,7 +55,7 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
       const kc = new (await import('@kubernetes/client-node')).KubeConfig();
       kc.loadFromDefault();
       const coreApi = kc.makeApiClient(CoreV1Api);
-      const namespaces = ['platform', 'databases', 'monitoring', 'storage', 'argocd', 'portainer', 'infisical', 'cert-manager', 'ingress-nginx'];
+      const namespaces = ['platform', 'databases', 'monitoring', 'storage', 'argocd', 'portainer', 'cert-manager', 'ingress-nginx'];
       for (const ns of namespaces) {
         try {
           const r = await coreApi.listNamespacedPod({ namespace: ns });
@@ -73,14 +73,12 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
   let githubOk = !!(process.env.GITHUB_TOKEN);
   let gitlabOk = !!(process.env.GITLAB_TOKEN);
   let clickupOk = !!(process.env.CLICKUP_API_TOKEN);
-  let infisicalOk = !!(process.env.INFISICAL_URL || process.env.INFISICAL_TOKEN);
   try {
     const { resolveIntegrations } = await import('../lib/integrations');
     const cfg = await resolveIntegrations();
     githubOk = Boolean(cfg.githubToken);
     gitlabOk = Boolean(cfg.gitlabToken);
     clickupOk = Boolean(cfg.clickupToken);
-    infisicalOk = Boolean(cfg.infisicalUrl || cfg.infisicalToken);
   } catch { /* env fallback already applied */ }
 
   const integrations = {
@@ -89,7 +87,6 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
     clickup:   clickupOk,
     smtp:      !!(process.env.SMTP_PROVIDER || process.env.SMTP_HOST || process.env.SENDGRID_API_KEY),
     argocd:    !!(process.env.ARGOCD_URL || process.env.ARGOCD_TOKEN || k8sOk),
-    infisical: infisicalOk,
     minio:     !!(process.env.MINIO_ENDPOINT || process.env.MINIO_ACCESS_KEY),
     grafana:   !!(process.env.GRAFANA_URL || podStatus('monitoring') === 'running'),
   };
@@ -107,7 +104,6 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
     'prometheus':     podStatus('monitoring'),
     'loki':           podStatus('monitoring'),
     'portainer':      podStatus('portainer'),
-    'infisical':      podStatus('infisical'),
     'cert-manager':   podStatus('cert-manager'),
     'ingress-nginx':  podStatus('ingress-nginx'),
   };

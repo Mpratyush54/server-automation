@@ -234,6 +234,8 @@ describe('integrations + notifications + rotate', () => {
     expect(get.body.githubClientId).toBe('gh-client');
     expect(get.body.githubClientSecret.set).toBe(true);
     expect(get.body.callbackUrls.github).toContain('/api/auth/github/callback');
+    expect(get.body).not.toHaveProperty('infisicalUrl');
+    expect(get.body).not.toHaveProperty('infisicalToken');
   });
 
   it('rejects developers from integrations and rotate', async () => {

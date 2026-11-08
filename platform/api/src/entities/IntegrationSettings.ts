@@ -41,6 +41,7 @@ export class IntegrationSettings {
   @Column({ type: 'varchar', length: 100, nullable: true, name: 'clickup_list_id' })
   clickupListId: string | null;
 
+  // Legacy Infisical columns: kept so no migration is needed; no longer read or written.
   @Column({ type: 'varchar', length: 300, nullable: true, name: 'infisical_url' })
   infisicalUrl: string | null;
 

@@ -20,8 +20,6 @@ describe('integrations', () => {
     gitlabGroup: 'platform',
     clickupToken: 'pk_saved',
     clickupListId: '123',
-    infisicalUrl: 'https://infisical.local',
-    infisicalToken: 'st_saved',
     githubLoginEnabled: true,
     gitlabLoginEnabled: true,
   };

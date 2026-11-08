@@ -60,8 +60,6 @@
 | **Integration Flags (for bootstrap status)** | | | |
 | `ARGOCD_URL` | — | ArgoCD URL (alternative to auto-detect) | |
 | `ARGOCD_TOKEN` | — | ArgoCD API token | |
-| `INFISICAL_URL` | — | Infisical server URL | |
-| `INFISICAL_TOKEN` | — | Infisical service token | |
 | `GRAFANA_URL` | — | Grafana URL (alternative to auto-detect) | |
 | `LOKI_URL` | `http://localhost:3100` | Loki push endpoint | |
 
@@ -84,7 +82,6 @@
 | `INSTALL_ARGOCD` | `y` | Install ArgoCD | |
 | `INSTALL_MONITORING` | `y` | Install Grafana + Prometheus + Loki | |
 | `INSTALL_PORTAINER` | `y` | Install Portainer | |
-| `INSTALL_INFISICAL` | `y` | Install Infisical | |
 | `INSTALL_CERTMANAGER` | `y` | Install cert-manager | |
 | **Let's Encrypt** | | | |
 | `LE_EMAIL` | — | Email for Let's Encrypt certificate registration | ✓ |
@@ -98,8 +95,6 @@
 | `PLATFORM_WEBHOOK_SECRET` | — | Webhook shared secret | |
 | `ARGOCD_PASSWORD` | — | ArgoCD admin password | |
 | `GRAFANA_PASSWORD` | — | Grafana admin password | |
-| `INFISICAL_ENCRYPTION_KEY` | — | Infisical master encryption key | |
-| `INFISICAL_JWT_SECRET` | — | Infisical JWT secret | |
 | **GitHub Integration** | | | |
 | `GITHUB_TOKEN` | — | PAT with `repo`, `admin:org_hook`, `write:packages` | |
 | `GITHUB_ORG` | — | GitHub organization name | |

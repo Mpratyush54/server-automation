@@ -116,7 +116,7 @@ graph LR
 | `config/` | Database (TypeORM), Mongoose, connections (pg/Redis/Mongo), permissions (5 preset roles), K8s client wrappers, init/shutdown |
 | `entities/` | 18 TypeORM entities — User, Role, Project, Environment, Deployment, Secret, SecretVersion, ServiceRegistration, SdkCredential, AuditLog, ClickupTaskLink, DbConnection, DbBackup, File, StorageProvider, Alert, SmtpConfig, ProjectConfig |
 | `routes/` | 18 route modules — auth, sdk, secrets, deployments, projects, webhooks, cicd, metrics, bug-reports, db-provision, db-connections, storage, alerts, config, bootstrap, audit-logs, settings |
-| `lib/` | 10 service modules — secrets-encryption (AES-256-GCM), gitlab, clickup, infisical, k8s, lokilog, database-service, preview, preview-decay (72h TTL), storage-service, smtp-service |
+| `lib/` | 10 service modules — secrets-encryption (AES-256-GCM), gitlab, clickup, k8s, lokilog, database-service, preview, preview-decay (72h TTL), storage-service, smtp-service |
 | `middleware/` | JWT verify, RBAC, permission cache (60s TTL), SDK token auth |
 | `schemas/` | Mongoose schemas — Log, ApiMetric, MetricsRaw, BugReport, ErrorDoc, SdkEvent, FeatureFlag, MetricsHourly |
 
@@ -215,11 +215,9 @@ graph LR
     GitLab["GitLab CI/CD"]
     GitHub["GitHub Actions"]
     ClickUp["ClickUp Tasks"]
-    Infisical["Infisical Secrets"]
     API -- "Webhooks → cicd.ts" --> GitLab
     API -- "Webhooks → cicd.ts" --> GitHub
     API -- "postComment()" --> ClickUp
-    API -- "fetchSecrets()" --> Infisical
     GitLab -- "triggerPipeline()" --> API
     GitHub -- "triggerPipeline()" --> API
 ```
@@ -238,9 +236,10 @@ graph LR
 - **Preview env notification:** `formatPreviewComment()` generates formatted comment with branch, URL, and expiry
 - **Task extraction:** `extractTaskId(branch)` parses `CU-12345` from branch name
 
-### Infisical
+### Secrets
 
-- **Fallback secret sync:** `fetchSecrets(projectId, environment)` reads from Platform's own Secret entity (AES-256-GCM), returns plaintext map
+- **Built-in encrypted secrets store:** project secrets are stored in Platform's own Secret entity (AES-256-GCM) and managed from the Secrets page or the secrets API — no external secret manager is required
+- `fetchSecrets(projectId, environment)` reads them and returns a plaintext map
 - Used by SDK config endpoint (`GET /api/sdk/config`) and DB credentials endpoint (`GET /api/sdk/db-credentials`)
 
 ## Key Design Decisions

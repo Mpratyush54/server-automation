@@ -14,8 +14,6 @@ export type ResolvedIntegrations = {
   gitlabGroup: string;
   clickupToken: string;
   clickupListId: string;
-  infisicalUrl: string;
-  infisicalToken: string;
   githubLoginEnabled: boolean;
   gitlabLoginEnabled: boolean;
 };
@@ -62,8 +60,6 @@ export async function resolveIntegrations(): Promise<ResolvedIntegrations> {
     gitlabGroup: pick(row?.gitlabGroup, process.env.GITLAB_GROUP),
     clickupToken: pick(row?.clickupToken, process.env.CLICKUP_API_TOKEN),
     clickupListId: pick(row?.clickupListId, process.env.CLICKUP_LIST_ID),
-    infisicalUrl: pick(row?.infisicalUrl, process.env.INFISICAL_URL),
-    infisicalToken: pick(row?.infisicalToken, process.env.INFISICAL_TOKEN),
     githubLoginEnabled: row?.githubLoginEnabled !== false && Boolean(githubClientId && githubClientSecret),
     gitlabLoginEnabled: row?.gitlabLoginEnabled !== false && Boolean(gitlabClientId && gitlabClientSecret),
   };
@@ -78,8 +74,6 @@ export function applyIntegrationsToEnv(cfg: ResolvedIntegrations) {
   if (cfg.gitlabGroup) process.env.GITLAB_GROUP = cfg.gitlabGroup;
   if (cfg.clickupToken) process.env.CLICKUP_API_TOKEN = cfg.clickupToken;
   if (cfg.clickupListId) process.env.CLICKUP_LIST_ID = cfg.clickupListId;
-  if (cfg.infisicalUrl) process.env.INFISICAL_URL = cfg.infisicalUrl;
-  if (cfg.infisicalToken) process.env.INFISICAL_TOKEN = cfg.infisicalToken;
   if (cfg.githubClientId) process.env.GITHUB_CLIENT_ID = cfg.githubClientId;
   if (cfg.githubClientSecret) process.env.GITHUB_CLIENT_SECRET = cfg.githubClientSecret;
   if (cfg.gitlabClientId) process.env.GITLAB_CLIENT_ID = cfg.gitlabClientId;
