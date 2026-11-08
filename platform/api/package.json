@@ -39,7 +39,7 @@
     "nodemailer": "^10.1.4",
     "pg": "^8.11.0",
     "rate-limit-redis": "^4.3.1",
-    "reflect-metadata": "^0.1.13",
+    "reflect-metadata": "^0.2.2",
     "typeorm": "^0.3.19",
     "uuid": "^9.0.0",
     "yaml": "^2.9.0"
