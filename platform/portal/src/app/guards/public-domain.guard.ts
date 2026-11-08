@@ -1,9 +1,21 @@
 import { inject } from '@angular/core';
 import { Router, CanActivateFn } from '@angular/router';
 
+/**
+ * Exact hostnames that serve the public marketing site (landing + docs).
+ * Any other host — including other *.pratyushes.dev names such as an app or
+ * portal subdomain — is an app host. Add hosts here to serve marketing pages
+ * from additional domains.
+ */
+export const MARKETING_HOSTS: readonly string[] = ['platform.pratyushes.dev'];
+
 /** True only on the public marketing site (landing + docs). */
-export function isPublicMarketingHost(host = window.location.hostname): boolean {
-  return host === 'platform.pratyushes.dev' || host.endsWith('.pratyushes.dev');
+export function isPublicMarketingHost(
+  host = window.location.hostname,
+  marketingHosts: readonly string[] = MARKETING_HOSTS,
+): boolean {
+  const normalized = host.toLowerCase().replace(/\.$/, '');
+  return marketingHosts.includes(normalized);
 }
 
 /**

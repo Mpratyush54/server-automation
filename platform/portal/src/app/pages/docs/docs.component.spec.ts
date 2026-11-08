@@ -82,6 +82,21 @@ describe('DocsComponent', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  it('sanitizes raw HTML and mermaid fences before rendering the article', async () => {
+    get.and.returnValue(of('# XSS\n\n<img src=x onerror="window.__docsXss=1">\n\n```mermaid\ngraph TD\nA</div><script>window.__docsXss=1</script>\n```\n'));
+    spyOn<any>(component, 'renderMermaidDiagrams').and.resolveTo();
+    params.next(convertToParamMap({ section: 'getting-started', page: 'installation' }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const article: HTMLElement = fixture.nativeElement.querySelector('.docs-markdown');
+    expect(article.querySelector('img')!.hasAttribute('onerror')).toBeFalse();
+    expect(article.querySelector('script')).toBeNull();
+    const diagram = article.querySelector('.mermaid')!;
+    expect(diagram.children.length).toBe(0);
+    expect(diagram.textContent).toContain('A</div><script>');
+    expect((window as any).__docsXss).toBeUndefined();
+  });
+
   it('resolves parent Markdown links and keeps API section fragment targets', async () => {
     get.and.returnValue(of('# Auth\n\n[Monitoring](../../guides/monitoring.md#logs)\n\n## `GET` /api/projects\n\nEndpoint.\n\n### `POST` /api/projects\n\nEndpoint.\n\n## Error Codes\n\nNone.'));
     params.next(convertToParamMap({ section: 'api-reference/platform-api', page: 'auth' }));
