@@ -65,6 +65,15 @@ rules:
 - apiGroups: [""]
   resources: ["secrets"]
   verbs: ["create"]
+# Leader election (exactly-once background jobs). create cannot be limited by
+# resourceName; get/update are limited to the one Lease, in this namespace only.
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["create"]
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  resourceNames: ["platform-api-leader"]
+  verbs: ["get", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

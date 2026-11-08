@@ -104,7 +104,7 @@ const PREVIEW_TTL_MS = 72 * 60 * 60 * 1000;    // 72 hours
 const CHECK_INTERVAL_MS = 15 * 60 * 1000;       // Check every 15 minutes
 ```
 
-1. **Startup** — The scheduler starts in `server.ts:57` via `startPreviewDecayScheduler()`
+1. **Startup** — `startPreviewDecayScheduler()` registers a leader-only job: with several API replicas only the holder of the `platform-api-leader` Lease runs it (see [Background jobs](../architecture/background-jobs.md))
 2. **Interval** — Every 15 minutes, the scheduler queries for stale preview deployments:
    - `environment_id` matches a preview environment
    - Status is `deployed`, `building`, or `deploying`
@@ -118,18 +118,19 @@ const CHECK_INTERVAL_MS = 15 * 60 * 1000;       // Check every 15 minutes
 
 ```bash
 # logs
-[decay] Preview environment decay scheduler started (TTL: 72h, check: 15min)
+[decay] Preview decay scheduled on the leader (TTL: 72h, check: 900s)
+[decay] run started (platform-api-7c9f-abcde)
 [decay] Found 3 expired preview deployments
 [decay] Expired preview: feature/CU-842-auth-fix (uuid)
 ```
 
 ### Configuration
 
-| Parameter | File | Current Value |
+| Parameter | Environment variable | Default |
 |---|---|---|
-| TTL | `preview-decay.ts:6` | 72 hours (259,200,000 ms) |
-| Check interval | `preview-decay.ts:7` | 15 minutes (900,000 ms) |
-| Initial delay | `preview-decay.ts:16` | 30 seconds |
+| TTL | `PREVIEW_TTL_HOURS` | 72 hours |
+| Check interval | `PREVIEW_DECAY_INTERVAL_SECONDS` | 900 (15 minutes) |
+| Initial delay after gaining leadership | — | 30 seconds (or the interval, if shorter) |
 
 ---
 

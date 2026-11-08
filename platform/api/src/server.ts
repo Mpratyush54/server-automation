@@ -10,7 +10,7 @@ import { getDb } from './config/database';
 import { connectMongo } from './config/mongoose';
 import { User } from './entities/User';
 import apiRouter from './routes/api';
-import { startPreviewDecayScheduler } from './lib/preview-decay';
+import { startBackgroundWork } from './lib/background';
 import { configuredAdminEmail, ensureAdminUser } from './lib/seed-admin';
 
 /** Paths called cross-origin by browser SDKs (bearer SDK token, no cookies). */
@@ -163,8 +163,8 @@ async function bootstrap() {
       console.warn(`[server] MongoDB connection failed (non-blocking): ${mongoErr.message}`);
     }
 
-    // Start preview environment decay scheduler (72h TTL)
-    startPreviewDecayScheduler();
+    // Leader-elected periodic jobs (preview decay, deploy recovery, cleanup)
+    startBackgroundWork();
 
     try {
       const { hydrateIntegrationsEnv } = await import('./lib/integrations');

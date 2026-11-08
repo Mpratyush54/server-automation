@@ -5,15 +5,13 @@ import { getDb } from '../config/database';
 import { Project } from '../entities/Project';
 import { Environment, EnvironmentName } from '../entities/Environment';
 import { Deployment, DeploymentStatus } from '../entities/Deployment';
-import { ClickupTaskLink } from '../entities/ClickupTaskLink';
-import { SmtpConfig } from '../entities/SmtpConfig';
-import { User, UserRole } from '../entities/User';
+import { UserRole } from '../entities/User';
 import { expressAuthenticate, expressRequireRole, logAudit, AuthenticatedRequest } from '../middleware/auth';
 import { triggerPipeline } from '../lib/gitlab';
-import { postComment, formatPreviewComment, extractTaskId } from '../lib/clickup';
+import { extractTaskId } from '../lib/clickup';
 import { generatePreviewUrl } from '../lib/preview';
-import { deployK8sPreview, ensureAndSyncArgoApp, argoAppName, ensureProjectIngress, operateProjectWorkloads, terminateK8sPreview, previewResourceName } from '../lib/k8s';
-import * as k8s from '@kubernetes/client-node';
+import { operateProjectWorkloads, terminateK8sPreview, previewResourceName } from '../lib/k8s';
+import { enqueueDeployment, markFailed } from '../lib/deploy-pipeline';
 
 const router = Router();
 
@@ -104,221 +102,14 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
       ip: req.ip,
     });
 
-    // Perform real deployment process
-    setTimeout(async () => {
-      try {
-        const checkDs = await getDb();
-        const dep = await checkDs.getRepository(Deployment).findOne({ where: { id: saved.id } });
-        if (!dep) return;
-
-        dep.status = DeploymentStatus.BUILDING;
-        await checkDs.getRepository(Deployment).save(dep);
-
-        let success = false;
-        let deployError = '';
-
-        if (env!.name === EnvironmentName.PREVIEW) {
-          dep.status = DeploymentStatus.DEPLOYING;
-          await checkDs.getRepository(Deployment).save(dep);
-
-          success = await deployK8sPreview(project.name, dep.branch, dep.imageTag, project.id);
-          if (!success) {
-            deployError = 'Preview deployment failed to apply or timeout occurred.';
-          }
-        } else {
-          dep.status = DeploymentStatus.DEPLOYING;
-          await checkDs.getRepository(Deployment).save(dep);
-
-          if (!project.repositoryUrl) {
-            deployError = 'Set project repositoryUrl (GitHub/GitLab) to pull & deploy via ArgoCD.';
-            success = false;
-          } else {
-            const appName = env!.namespace || argoAppName(project.name, String(env!.name), project.id);
-            const destNs = env!.namespace || argoAppName(project.name, String(env!.name), project.id);
-            const gitPath =
-              (body.gitPath as string) ||
-              (dep.metadata as any)?.gitPath ||
-              (project.repositoryUrl.includes('server-automation') ? 'examples/sdk-demo/k8s' : 'k8s');
-            const revision = dep.commitSha && dep.commitSha !== 'unknown'
-              ? dep.commitSha
-              : (dep.branch || 'main');
-
-            const argo = await ensureAndSyncArgoApp({
-              appName,
-              repoURL: project.repositoryUrl,
-              path: gitPath,
-              targetRevision: revision,
-              namespace: destNs,
-              imageTag: dep.imageTag,
-            });
-
-            if (argo.ok) {
-              // Discover a Service in the dest namespace to wire Ingress (prefer common names)
-              let serviceName = 'sdk-demo';
-              try {
-                const kcDiscover = new k8s.KubeConfig();
-                try { kcDiscover.loadFromCluster(); } catch { try { kcDiscover.loadFromDefault(); } catch {} }
-                const coreDiscover = kcDiscover.makeApiClient(k8s.CoreV1Api);
-                const svcs: any = await coreDiscover.listNamespacedService({ namespace: destNs });
-                const items = (svcs.body || svcs).items || [];
-                if (items.length) {
-                  const preferred = items.find((s: any) =>
-                    ['sdk-demo', appName, project.name].includes(s.metadata?.name)
-                  );
-                  serviceName = preferred?.metadata?.name || items[0].metadata.name;
-                }
-              } catch {}
-
-              const host =
-                env!.domain ||
-                `${appName}.${project.domain || process.env.DOMAIN || 'sslip.io'}`;
-              await ensureProjectIngress({
-                name: appName,
-                namespace: destNs,
-                host,
-                serviceName,
-                servicePort: 80,
-              });
-
-              let attempts = 0;
-              const maxAttempts = 36;
-              const kcLocal = new k8s.KubeConfig();
-              try { kcLocal.loadFromCluster(); } catch { try { kcLocal.loadFromDefault(); } catch {} }
-              const customApi = kcLocal.makeApiClient(k8s.CustomObjectsApi);
-
-              while (attempts < maxAttempts) {
-                await new Promise((r) => setTimeout(r, 5000));
-                attempts++;
-                try {
-                  const appResponse: any = await customApi.getNamespacedCustomObject({
-                    group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd',
-                    plural: 'applications', name: appName,
-                  });
-                  const status = (appResponse.body || appResponse).status || {};
-                  const sync = status.sync?.status;
-                  const health = status.health?.status;
-                  if (sync === 'Synced' && health === 'Healthy') {
-                    success = true;
-                    break;
-                  }
-                  if (sync === 'Synced' && health === 'Progressing' && attempts >= 6) {
-                    // Manifest applied; pods still coming up — treat as success for history UX
-                    success = true;
-                    break;
-                  }
-                  if (health === 'Degraded' || sync === 'Failed') {
-                    deployError = `ArgoCD health=${health} sync=${sync}`;
-                    break;
-                  }
-                } catch (pollErr: any) {
-                  deployError = pollErr.message;
-                }
-              }
-              if (!success && !deployError) {
-                deployError = 'ArgoCD sync timed out after 3 minutes.';
-              }
-            } else {
-              deployError = argo.error || 'Failed to create/sync ArgoCD Application';
-            }
-          }
-        }
-
-        const finalDep = await checkDs.getRepository(Deployment).findOne({ where: { id: saved.id } });
-        if (finalDep) {
-          if (success) {
-            finalDep.status = DeploymentStatus.DEPLOYED;
-            finalDep.deployedAt = new Date();
-            if (env?.domain) {
-              finalDep.previewUrl = `https://${env.domain}`;
-              finalDep.metadata = {
-                ...(finalDep.metadata || {}),
-                liveUrl: `https://${env.domain}`,
-              };
-            }
-          } else {
-            finalDep.status = DeploymentStatus.FAILED;
-            finalDep.metadata = {
-              ...(finalDep.metadata || {}),
-              error: deployError || 'Unknown deployment failure'
-            };
-          }
-          await checkDs.getRepository(Deployment).save(finalDep);
-
-          // --- SMTP Deployment Notification ---
-          (async () => {
-            try {
-              const smtpRepo = checkDs.getRepository(SmtpConfig);
-              const smtpCfg = await smtpRepo.findOne({ where: { isDefault: true } });
-              if (smtpCfg) {
-                const { sendMail, buildDeploymentSuccessEmail, buildDeploymentFailedEmail } = await import('../lib/smtp-service');
-                const usersRepo = checkDs.getRepository(User);
-                const devopsUsers = await usersRepo.find({ where: { role: UserRole.DEVOPS } });
-                const to = devopsUsers.map(u => u.email).filter(Boolean);
-                if (to.length > 0) {
-                  if (success) {
-                    const html = buildDeploymentSuccessEmail({
-                      projectName: project.name,
-                      environment: env?.name || finalDep.branch,
-                      version: finalDep.version,
-                      url: finalDep.previewUrl || `https://${env?.domain || project.name}`,
-                      commitSha: finalDep.commitSha,
-                      deployedBy: 'Platform',
-                    });
-                    await sendMail(smtpCfg as any, to, `[${project.name}] Deployment Successful — ${env?.name || finalDep.branch}`, html);
-                  } else {
-                    const html = buildDeploymentFailedEmail({
-                      projectName: project.name,
-                      environment: env?.name || finalDep.branch,
-                      version: finalDep.version,
-                      error: deployError || 'Unknown failure',
-                      deployedBy: 'Platform',
-                    });
-                    await sendMail(smtpCfg as any, to, `[${project.name}] Deployment FAILED — ${env?.name || finalDep.branch}`, html);
-                  }
-                }
-              }
-            } catch (smtpErr: any) {
-              console.warn('[smtp] Notification failed (non-blocking):', smtpErr.message);
-            }
-          })();
-
-          // Update ClickUp if linked and deployment succeeded
-
-          if (success && clickupTaskId) {
-            const comment = await formatPreviewComment({
-              project: project.name,
-              branch: finalDep.branch,
-              url: finalDep.previewUrl || `https://${env!.domain}`,
-              commit: finalDep.commitSha.substring(0, 7),
-            });
-            await postComment(clickupTaskId, comment);
-
-            const linkRepo = checkDs.getRepository(ClickupTaskLink);
-            const link = linkRepo.create({
-              clickupTaskId,
-              deploymentId: finalDep.id,
-              projectId: project.id,
-              branch: finalDep.branch,
-            });
-            await linkRepo.save(link);
-          }
-        }
-      } catch (err: any) {
-        console.error('[deploy-bg] Background deploy error:', err.message);
-        try {
-          const checkDs = await getDb();
-          const dep = await checkDs.getRepository(Deployment).findOne({ where: { id: saved.id } });
-          if (dep && (dep.status === DeploymentStatus.PENDING || dep.status === DeploymentStatus.BUILDING || dep.status === DeploymentStatus.DEPLOYING)) {
-            dep.status = DeploymentStatus.FAILED;
-            dep.metadata = {
-              ...(dep.metadata || {}),
-              error: err.message
-            };
-            await checkDs.getRepository(Deployment).save(dep);
-          }
-        } catch {}
-      }
-    }, 1000);
+    // Durable rollout: persisted as a background job and started on this
+    // replica; the leader resumes or fails it if this process dies mid-way.
+    try {
+      await enqueueDeployment(saved.id);
+    } catch (enqueueErr: any) {
+      await markFailed(saved.id, `Could not schedule deployment: ${enqueueErr.message}`).catch(() => {});
+      return res.status(500).json({ error: 'Could not schedule deployment' });
+    }
 
     return res.status(201).json(saved);
   } catch (err: any) {
