@@ -59,6 +59,30 @@ jest.mock('pg', () => ({
   Pool: jest.fn().mockImplementation(() => ({ connect, end, query })),
 }));
 
+const mockMongoCommand = jest.fn(async (cmd: any) => (cmd.usersInfo ? { users: [] } : { ok: 1 }));
+const mockMongoDb = jest.fn((_name: string) => ({ command: mockMongoCommand }));
+const mockCreateConnection = jest.fn((_uri: string, _opts?: any) => {
+  const conn: any = {
+    on: jest.fn(),
+    asPromise: jest.fn(async () => conn),
+    getClient: () => ({ db: mockMongoDb }),
+    close: jest.fn(async () => undefined),
+  };
+  return conn;
+});
+jest.mock('mongoose', () => ({ __esModule: true, default: { createConnection: mockCreateConnection }, createConnection: mockCreateConnection }));
+
+const mockRedisCall = jest.fn(async (..._args: any[]) => 'OK');
+const mockRedisInstances: any[] = [];
+jest.mock('ioredis', () => {
+  const Redis = jest.fn().mockImplementation((opts: any) => {
+    const client = { opts, on: jest.fn(), connect: jest.fn(async () => undefined), call: mockRedisCall, disconnect: jest.fn() };
+    mockRedisInstances.push(client);
+    return client;
+  });
+  return { __esModule: true, default: Redis };
+});
+
 describe('project-db-ensure', () => {
   beforeEach(() => {
     store.length = 0;
@@ -101,12 +125,70 @@ describe('project-db-ensure', () => {
     expect(second.creds?.dbName).toBe(first.creds?.dbName);
   });
 
-  it.each(['mongo', 'redis'])('fails closed for shared %s credentials', async (type) => {
-    process.env.MONGODB_URI = 'mongodb://root:platform-password@localhost/admin';
-    process.env.REDIS_PASSWORD = 'platform-password';
+  it('creates a per-project MongoDB user with readWrite on only its own database', async () => {
+    process.env.MONGODB_URI = 'mongodb://root:platform-password@mongo-0:27017,mongo-1:27017/plat_platform?replicaSet=rs0&authSource=admin';
+    mockMongoCommand.mockClear(); mockMongoDb.mockClear();
     const { resolveProjectDbCredentials } = require('../../src/lib/project-db-ensure');
-    await expect(resolveProjectDbCredentials('proj-1', 'demo', 'development', [type])).rejects.toThrow(/Isolated/);
-    expect(store).toHaveLength(0);
+    const creds = await resolveProjectDbCredentials('proj-1', 'demo', 'development', ['mongo']);
+    const dbName = mockMongoDb.mock.calls[0][0];
+    expect(dbName).toMatch(/^plat_[a-f0-9]{20}_[a-f0-9]{12}$/);
+    const create: any = mockMongoCommand.mock.calls.map((c: any[]) => c[0]).find((c: any) => c.createUser);
+    expect(create).toEqual({ createUser: `${dbName}_user`, pwd: expect.any(String), roles: [{ role: 'readWrite', db: dbName }] });
+    expect(creds.mongo.uri).toBe(`mongodb://${dbName}_user:${encodeURIComponent(create.pwd)}@mongo-0:27017,mongo-1:27017/${dbName}?replicaSet=rs0&authSource=${dbName}`);
+    expect(JSON.stringify(creds)).not.toContain('platform-password');
+    expect(JSON.stringify(creds)).not.toContain('root');
+    expect(store.find((s) => s.key === 'MONGO_PASSWORD').encryptedValue).toBe(`enc:${create.pwd}`);
+  });
+
+  it('updates the existing MongoDB user and reuses its stored password', async () => {
+    process.env.MONGODB_URI = 'mongodb://root:platform-password@mongo:27017/plat_platform';
+    const { resolveProjectDbCredentials } = require('../../src/lib/project-db-ensure');
+    const first = await resolveProjectDbCredentials('proj-1', 'demo', 'development', ['mongo']);
+    mockMongoCommand.mockClear();
+    mockMongoCommand.mockImplementation(async (cmd: any) => (cmd.usersInfo ? { users: [{ user: 'x' }] } : { ok: 1 }));
+    const second = await resolveProjectDbCredentials('proj-1', 'demo', 'development', ['mongo']);
+    mockMongoCommand.mockImplementation(async (cmd: any) => (cmd.usersInfo ? { users: [] } : { ok: 1 }));
+    expect(second.mongo.uri).toBe(first.mongo.uri);
+    expect(mockMongoCommand.mock.calls.map((c: any[]) => c[0]).some((c: any) => c.updateUser)).toBe(true);
+  });
+
+  it('never reuses a legacy MONGO_URI that carries platform credentials', async () => {
+    process.env.MONGODB_URI = 'mongodb://root:platform-password@mongo:27017/plat_platform';
+    store.push({ projectId: 'proj-1', environmentId: 'development', key: 'MONGO_URI', encryptedValue: 'enc:mongodb://root:platform-password@mongo:27017/plat_demo', isActive: true });
+    const { resolveProjectDbCredentials } = require('../../src/lib/project-db-ensure');
+    const creds = await resolveProjectDbCredentials('proj-1', 'demo', 'development', ['mongo']);
+    expect(creds.mongo.uri).not.toContain('platform-password');
+    expect(store.find((s) => s.key === 'MONGO_URI').encryptedValue).not.toContain('platform-password');
+  });
+
+  it('creates a Redis ACL user confined to the project key prefix', async () => {
+    process.env.REDIS_HOST = 'redis-master';
+    process.env.REDIS_PASSWORD = 'platform-password';
+    mockRedisCall.mockClear(); mockRedisInstances.length = 0;
+    // Legacy installs copied the platform password into project secrets.
+    store.push({ projectId: 'proj-1', environmentId: 'development', key: 'REDIS_PASSWORD', encryptedValue: 'enc:platform-password', isActive: true });
+    const { resolveProjectDbCredentials } = require('../../src/lib/project-db-ensure');
+    const creds = await resolveProjectDbCredentials('proj-1', 'demo', 'development', ['redis']);
+    expect(mockRedisInstances[0].opts.password).toBe('platform-password'); // admin connection only
+    const acl = mockRedisCall.mock.calls.find((c: any[]) => c[1] === 'SETUSER')!;
+    const { username, password, keyPrefix } = creds.redis;
+    expect(username).toMatch(/^plat_[a-f0-9]{20}_[a-f0-9]{12}$/);
+    expect(keyPrefix).toMatch(/^plat:[a-f0-9]{20}:[a-f0-9]{12}:$/);
+    expect(acl).toEqual(['ACL', 'SETUSER', username, 'reset', 'on', `>${password}`, `~${keyPrefix}*`, `&${keyPrefix}*`, '+@all', '-@admin', '-@dangerous']);
+    expect(password).not.toBe('platform-password');
+    expect(JSON.stringify(creds)).not.toContain('platform-password');
+    expect(creds.redis.host).toBe('redis-master');
+  });
+
+  it('reports a failed type as an error and throws only when every type failed', async () => {
+    process.env.REDIS_PASSWORD = 'platform-password';
+    mockRedisCall.mockRejectedValueOnce(new Error('NOPERM'));
+    const { resolveProjectDbCredentials } = require('../../src/lib/project-db-ensure');
+    const mixed = await resolveProjectDbCredentials('proj-1', 'demo', 'development', ['postgres', 'redis']);
+    expect(mixed.postgres.user).toMatch(/^plat_/);
+    expect(mixed.redis).toEqual({ status: 'error', error: 'NOPERM' });
+    mockRedisCall.mockRejectedValueOnce(new Error('NOPERM'));
+    await expect(resolveProjectDbCredentials('proj-1', 'demo', 'development', ['redis'])).rejects.toThrow('NOPERM');
   });
 
   it('does not return platform Postgres credentials on provisioning failure', async () => {

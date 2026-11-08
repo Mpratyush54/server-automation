@@ -60,8 +60,9 @@ function isPlatformSecretValue(value: unknown): boolean {
 }
 
 /**
- * Never hand the platform's own database credentials to an SDK client. If provisioning
- * failed, project-db-ensure may fall back to POSTGRES_* / MONGO_URI of the platform itself.
+ * Defence in depth: never hand the platform's own database credentials to an SDK client.
+ * project-db-ensure returns per-project credentials (Postgres role, MongoDB user, Redis ACL
+ * user) or { status: 'error' }; anything that looks platform-owned is replaced by an error.
  */
 function withoutPlatformCredentials(result: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = { ...result };
@@ -71,7 +72,7 @@ function withoutPlatformCredentials(result: Record<string, any>): Record<string,
   });
 
   const pg = out.postgres;
-  if (pg) {
+  if (pg && pg.status !== 'error') {
     const platUser = process.env.POSTGRES_USER || 'plat';
     const platPass = process.env.POSTGRES_PASSWORD || 'plat';
     const platDb = process.env.POSTGRES_DB || 'plat_platform';
@@ -86,16 +87,23 @@ function withoutPlatformCredentials(result: Record<string, any>): Record<string,
     const dbPath = (uri: string) => {
       try { return new URL(uri).pathname.replace(/^\/+/, ''); } catch { return uri.split('?')[0].split('/').slice(3).join('/'); }
     };
-    if (!mongo.uri || mongo.uri === platUri || dbPath(mongo.uri) === dbPath(platUri) || dbPath(mongo.uri) === '') {
+    const uriUser = (uri: string) => {
+      const m = /^mongodb(?:\+srv)?:\/\/([^@/]*)@/.exec(uri);
+      return m ? decodeURIComponent(m[1].split(':')[0]) : '';
+    };
+    if (mongo.status !== 'error' && (!mongo.uri || mongo.uri === platUri || dbPath(mongo.uri) === dbPath(platUri) || dbPath(mongo.uri) === ''
+      || !uriUser(mongo.uri) || uriUser(mongo.uri) === uriUser(platUri))) {
+      // Only a per-project MongoDB user (readWrite on its own database) may be handed out.
       out.mongo = refused('mongo');
     }
   }
 
   const redis = out.redis;
   const platRedisPass = process.env.REDIS_PASSWORD || '';
-  if (redis && (!redis.keyPrefix || (platRedisPass && redis.password === platRedisPass))) {
-    // Without a project prefix the client would share the platform keyspace, and a key
-    // prefix is no isolation at all when the password is the platform's own Redis password.
+  if (redis && redis.status !== 'error' && (!redis.keyPrefix || !redis.username || redis.username === 'default'
+    || !redis.password || (platRedisPass && redis.password === platRedisPass))) {
+    // Only a per-project ACL user confined to its key prefix is isolation; the default user or
+    // the platform's own Redis password would share the whole keyspace.
     out.redis = refused('redis');
   }
   return out;

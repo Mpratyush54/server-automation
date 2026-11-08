@@ -87,14 +87,38 @@ it('refuses redis credentials that reuse the platform Redis password, even with 
 it('passes through project-scoped credentials', async () => {
   mockResolve.mockResolvedValue({
     postgres: { host: 'pg', user: 'plat_demo_development_user', password: 'p', database: 'plat_demo_development' },
-    mongo: { uri: 'mongodb://u:p@mongo:27017/plat_demo_development' },
-    redis: { host: 'redis', password: 'r', keyPrefix: 'demo:development:' },
+    mongo: { uri: 'mongodb://plat_demo_user:p@mongo:27017/plat_demo_development?authSource=plat_demo_development' },
+    redis: { host: 'redis', username: 'plat_demo_development', password: 'r', keyPrefix: 'demo:development:' },
   });
   const r = await request(app).get(`/api/sdk/db-credentials?projectId=${PROJ}`).set(auth);
   expect(r.status).toBe(200);
   expect(r.body.postgres.user).toBe('plat_demo_development_user');
   expect(r.body.mongo.uri).toContain('plat_demo_development');
   expect(r.body.redis.keyPrefix).toBe('demo:development:');
+  expect(r.body.redis.username).toBe('plat_demo_development');
+});
+
+it('refuses mongo URIs with the platform user and redis credentials without an ACL user', async () => {
+  mockResolve.mockResolvedValue({
+    mongo: { uri: 'mongodb://plat:pw@mongo:27017/plat_demo_development' },
+    redis: { host: 'redis', password: 'r', keyPrefix: 'demo:development:' },
+  });
+  const r = await request(app).get(`/api/sdk/db-credentials?projectId=${PROJ}&dbTypes=mongo,redis`).set(auth);
+  expect(r.status).toBe(200);
+  expect(r.body.mongo.status).toBe('error');
+  expect(r.body.redis.status).toBe('error');
+  expect(JSON.stringify(r.body)).not.toContain('plat:pw');
+});
+
+it('passes per-type provisioning errors through unchanged', async () => {
+  mockResolve.mockResolvedValue({
+    postgres: { host: 'pg', user: 'plat_demo_development_user', password: 'p', database: 'plat_demo_development' },
+    redis: { status: 'error', error: 'Redis provisioning failed' },
+  });
+  const r = await request(app).get(`/api/sdk/db-credentials?projectId=${PROJ}&dbTypes=postgres,redis`).set(auth);
+  expect(r.status).toBe(200);
+  expect(r.body.postgres.user).toBe('plat_demo_development_user');
+  expect(r.body.redis).toEqual({ status: 'error', error: 'Redis provisioning failed' });
 });
 
 it('/sdk/config never serves platform-owned secret values copied into the project', async () => {
