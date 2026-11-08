@@ -3,6 +3,7 @@ import { registerLeaderJob, unregisterAllJobs } from './scheduler';
 import { startPreviewDecayScheduler } from './preview-decay';
 import { runDeployRecovery } from './deploy-pipeline';
 import { runTokenCleanup, TOKEN_CLEANUP_JOB } from './token-cleanup';
+import { startOperationWorker } from './operation-worker';
 
 /**
  * Background work inventory (every timer/loop in platform/api/src):
@@ -12,7 +13,10 @@ import { runTokenCleanup, TOKEN_CLEANUP_JOB } from './token-cleanup';
  * | preview-decay   | leader loop              | PREVIEW_DECAY_INTERVAL_SECONDS (900) |
  * | deploy-recovery | leader loop              | 15 s + on leadership gain    |
  * | token-cleanup   | leader loop              | hourly                       |
- * | deploy rollout  | durable job, any replica | per POST /deploy             |
+ * | deploy rollout  | operation (lib/deploy-op), accepting replica | per POST /deploy |
+ * | operation-resume | leader loop             | 60 s + on leadership gain    |
+ * | outbox-dispatch | leader loop              | 5 s                          |
+ * | operation-cleanup | leader loop            | hourly                       |
  *
  * Any leader-loop job can instead run as a Kubernetes CronJob
  * (`node dist/jobs/<name>.js`) by listing it in JOBS_EXTERNAL.
@@ -40,6 +44,8 @@ export function startBackgroundWork(): void {
     initialDelayMs: 5 * 60 * 1000,
     run: async () => { await runTokenCleanup(); },
   });
+  // Operations (#23): resume interrupted operations, dispatch the outbox, prune rows.
+  startOperationWorker();
 
   leadership.start();
   installReleaseOnShutdown();

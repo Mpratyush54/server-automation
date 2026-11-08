@@ -169,17 +169,14 @@ async function bootstrap() {
       console.warn(`[server] MongoDB connection failed (non-blocking): ${mongoErr.message}`);
     }
 
-    // Leader-elected periodic jobs (preview decay, deploy recovery, cleanup)
-    startBackgroundWork();
+    // Operation definitions (deploy, secret rotation, DB provisioning) must be
+    // registered before the leader's operation-resume job runs (issue #23).
+    await import('./lib/operation-types');
 
-    // Leader-only worker: resume interrupted operations, dispatch the outbox (issue #23).
-    try {
-      await import('./lib/operation-types');
-      const { startOperationWorker } = await import('./lib/operation-worker');
-      startOperationWorker();
-    } catch (opErr: any) {
-      console.warn(`[server] Operation worker not started: ${opErr.message}`);
-    }
+    // Leader-elected periodic jobs on the platform-api-leader Lease (#19):
+    // preview decay, deploy recovery, token cleanup, and the operation worker
+    // (resume, outbox, cleanup; #23).
+    startBackgroundWork();
 
     try {
       const { hydrateIntegrationsEnv } = await import('./lib/integrations');

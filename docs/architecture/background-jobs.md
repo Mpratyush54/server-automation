@@ -10,9 +10,12 @@ in `platform/api/src` and how each one is made exactly-once.
 | Work | Before | Now | Schedule |
 |---|---|---|---|
 | Preview decay (`lib/preview-decay.ts`) | `setInterval` + startup `setTimeout` in every replica | Leader loop | `PREVIEW_DECAY_INTERVAL_SECONDS` (default 900), TTL `PREVIEW_TTL_HOURS` (default 72) |
-| Deploy rollout (`POST /deploy`) | fire-and-forget `setTimeout`, lost on restart | Durable `background_jobs` row; started on the accepting replica | per request |
-| Argo health polling (rollout step) | `setTimeout` sleep loop inside the rollout | Unchanged loop, now inside the durable job (heartbeat keeps the lock) | 5 s × 36 |
-| Deploy recovery | — | Leader loop | every 15 s and right after gaining leadership |
+| Deploy rollout (`POST /deploy`) | fire-and-forget `setTimeout`, lost on restart | Step-logged operation (`lib/deploy-op.ts`, #23) under the deploy lock; started on the accepting replica | per request |
+| Argo health polling (rollout step) | `setTimeout` sleep loop inside the rollout | Unchanged loop, now the `wait-healthy` step of the deploy operation | 5 s × 36 |
+| Operation resume (`operation-resume`) | — | Leader loop: resumes non-terminal operations whose lock is free | every 60 s and right after gaining leadership |
+| Outbox dispatch (`outbox-dispatch`) | — | Leader loop | every 5 s |
+| Operation cleanup (`operation-cleanup`) | — | Leader loop: prunes expired idempotency keys, webhook deliveries, outbox rows | hourly |
+| Deploy recovery | — | Leader loop: fails orphaned rollouts with neither a job nor an operation | every 15 s and right after gaining leadership |
 | Token cleanup | — | Leader loop | hourly |
 | Alert evaluation (`POST /alerts/evaluate`) | request-driven; caller supplies the metric values | Unchanged (no timer) | — |
 | `withTimeout` (`lib/with-timeout.ts`) | per-request timeout helper | Unchanged (not background work) | — |
@@ -64,28 +67,35 @@ No cluster-wide Lease access is granted. The manifests are
 `platformctl/internal/manifests/data/platform-api-rbac.yaml` and
 `k8s/platform/api-rbac.yaml`; they must stay identical (a test enforces this).
 
-## Durable deploy jobs
+## Durable deploy rollouts
 
-`POST /deploy` saves the Deployment, then a `background_jobs` row
-(`type=deploy`, `status`, `step`, `attempts`, `max_attempts=2`, `locked_by`,
-`locked_until`). The accepting replica claims the row with a conditional
-`UPDATE` and runs the rollout, renewing a 60 s lock every 20 s and recording
-the step (`building`, `apply-preview` / `argo-sync`, `wait-healthy`,
-`finalize`, `notify`).
+`POST /deploy` takes the per-environment deploy lock
+(`lock:project:<id>:deploy:<envId>`), saves the Deployment and creates a
+`deployment.deploy` operation (`operations` + `operation_steps`, see
+`lib/operations.ts`). The accepting replica runs it while holding the lock
+(auto-renewed) and records each step: `apply`, `wait-healthy`, `finalize`.
 
-If that replica dies, the lock lapses and the leader's `deploy-recovery` job:
+If that replica dies, its lock lapses and the leader's `operation-resume` job:
 
-- re-runs the rollout (every step is idempotent: Argo app ensure+sync, preview
-  apply, ingress ensure), or skips it if the Deployment already reached a
-  terminal state;
-- once `max_attempts` is used up, marks the job **and** the Deployment
-  `failed` (`metadata.error` explains the interruption).
+- re-runs the step that was in flight (every step is idempotent: Argo app
+  ensure+sync, preview apply, ingress ensure), or fails the deploy as
+  superseded when a newer deployment of the same environment exists;
+- once a step was interrupted `maxAttempts` (2) times, fails the operation
+  **and** the Deployment (`metadata.error` explains the interruption).
 
-Deployments created by an older API version (no job row) that are still
-`pending`/`building`/`deploying` after 10 minutes are marked failed. A
-Deployment therefore never stays "in progress" after a restart.
+The operation worker has no leader mechanism of its own: its three jobs
+(`operation-resume`, `outbox-dispatch`, `operation-cleanup`) are ordinary
+leader jobs on the `platform-api-leader` Lease.
 
-Finished `background_jobs` rows are pruned after 30 days by `token-cleanup`.
+Deployments that are still `pending`/`building`/`deploying` after 10 minutes
+with neither a `background_jobs` row nor a deploy operation (rollouts started
+by an older API version) are marked failed by `deploy-recovery`. A Deployment
+therefore never stays "in progress" after a restart.
+
+`background_jobs` remains the generic durable-job table (claim with a
+conditional `UPDATE`, 60 s heartbeated lock, `max_attempts`); a legacy
+`type=deploy` row is handed over to a deploy operation. Finished rows are
+pruned after 30 days by `token-cleanup`.
 
 ## CronJob alternative
 
@@ -140,7 +150,7 @@ in Prometheus text format:
 
 - `platform_job_runs_total{job,result}` — `result` is `success`, `failure` or
   `skipped`; jobs: `preview-decay`, `deploy-recovery`, `token-cleanup`,
-  `job-deploy` (rollouts).
+  `operation-resume`, `outbox-dispatch`, `operation-cleanup`.
 - `platform_job_last_success_timestamp_seconds{job}`
 - `platform_api_leader` — 1 on the replica holding the Lease.
 

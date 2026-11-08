@@ -86,6 +86,15 @@ export function isJobTimerActive(name: string): boolean {
   return !!(r && (r.interval || r.initial));
 }
 
+/** Stop and forget one registered job. */
+export function unregisterLeaderJob(name: string): void {
+  const r = registered.get(name);
+  if (!r) return;
+  stopTimers(r);
+  r.unsubscribe();
+  registered.delete(name);
+}
+
 /** Stop and forget every registered job (shutdown / tests). */
 export function unregisterAllJobs(): void {
   for (const r of registered.values()) {
