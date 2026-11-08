@@ -58,3 +58,31 @@ func TestLegacyBootstrapUsesSameAPIRBACAndPodIsolation(t *testing.T) {
 		t.Fatal("legacy bootstrap grants cluster-admin")
 	}
 }
+
+func TestAPILeaseRBACIsNamespaceScoped(t *testing.T) {
+	embedded, err := Read("platform-api-rbac.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var leaseDocs []string
+	for _, doc := range strings.Split(strings.ReplaceAll(string(embedded), "\r\n", "\n"), "\n---") {
+		if strings.Contains(doc, "leases") {
+			leaseDocs = append(leaseDocs, doc)
+		}
+	}
+	if len(leaseDocs) != 1 {
+		t.Fatalf("expected lease rules in exactly one manifest, got %d", len(leaseDocs))
+	}
+	doc := leaseDocs[0]
+	if !strings.Contains(doc, "kind: Role\n") || !strings.Contains(doc, "namespace: platform\n") {
+		t.Fatal("lease permissions must be a namespaced Role in the platform namespace, not a ClusterRole")
+	}
+	if !strings.Contains(doc, "resourceNames: [\"platform-api-leader\"]\n  verbs: [\"get\", \"update\"]") {
+		t.Fatal("lease get/update must be limited to the platform-api-leader Lease")
+	}
+	for _, bad := range []string{"\"delete\"", "\"patch\"", "\"list\"", "\"watch\""} {
+		if strings.Contains(doc, "leases\"]\n  verbs: ["+bad) {
+			t.Fatalf("unexpected lease verb %s", bad)
+		}
+	}
+}

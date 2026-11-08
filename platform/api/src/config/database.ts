@@ -23,6 +23,7 @@ import { AgentToken } from '../entities/AgentToken';
 import { AgentCommandApproval } from '../entities/AgentCommandApproval';
 import { IntegrationSettings } from '../entities/IntegrationSettings';
 import { Notification } from '../entities/Notification';
+import { BackgroundJob } from '../entities/BackgroundJob';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -31,7 +32,7 @@ export const AppDataSource = new DataSource({
   username: process.env.POSTGRES_USER || 'plat',
   password: process.env.POSTGRES_PASSWORD || 'plat',
   database: process.env.POSTGRES_DB || 'plat_platform',
-  entities: [Project, Environment, Deployment, ServiceRegistration, ProjectConfig, File, Alert, DbConnection, User, Role, AuditLog, ClickupTaskLink, SdkCredential, DbBackup, SmtpConfig, StorageProvider, Secret, SecretVersion, ProjectMember, AgentToken, AgentCommandApproval, IntegrationSettings, Notification],
+  entities: [Project, Environment, Deployment, ServiceRegistration, ProjectConfig, File, Alert, DbConnection, User, Role, AuditLog, ClickupTaskLink, SdkCredential, DbBackup, SmtpConfig, StorageProvider, Secret, SecretVersion, ProjectMember, AgentToken, AgentCommandApproval, IntegrationSettings, Notification, BackgroundJob],
   synchronize: true,
   logging: false,
 });

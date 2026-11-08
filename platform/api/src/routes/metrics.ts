@@ -3,7 +3,9 @@ import { Router, Request, Response } from 'express';
 import { connectMongo } from '../config/mongoose';
 import { getDb } from '../config/database';
 import { MetricsRawModel } from '../schemas/MetricsRaw';
-import { expressAuthenticate, AuthenticatedRequest } from '../middleware/auth';
+import { expressAuthenticate, expressRequireRole, AuthenticatedRequest } from '../middleware/auth';
+import { UserRole } from '../entities/User';
+import { renderJobMetrics } from '../lib/job-metrics';
 import { projectIdMongoFilter, resolveProjectRef } from '../lib/project-resolve';
 
 const router = Router();
@@ -68,6 +70,16 @@ router.get('/metrics/aggregated', expressAuthenticate, async (req: Request, res:
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
+});
+
+/**
+ * Background job metrics of the replica serving the request, in Prometheus
+ * text format: platform_job_runs_total{job,result},
+ * platform_job_last_success_timestamp_seconds{job}, platform_api_leader.
+ * Scrape every API pod and sum across them.
+ */
+router.get('/metrics/jobs', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), (_req: Request, res: Response) => {
+  res.type('text/plain; version=0.0.4').send(renderJobMetrics());
 });
 
 export default router;
