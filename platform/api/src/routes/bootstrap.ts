@@ -61,12 +61,19 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
     return { ok: true, podCounts };
   };
 
-  // All probes run concurrently and each is bounded, so the endpoint answers
-  // within ~PROBE_TIMEOUT_MS even when every dependency is down.
-  const [pgStatus, mongoStatus, k8s] = await Promise.all([
+  // Saved integration settings live in the same Postgres the probe uses.
+  const probeIntegrations = async () => {
+    const { resolveIntegrations } = await import('../lib/integrations');
+    return resolveIntegrations();
+  };
+
+  // Every lookup runs concurrently and each is bounded, so the endpoint
+  // answers within ~PROBE_TIMEOUT_MS even when every dependency is down.
+  const [pgStatus, mongoStatus, k8s, cfg] = await Promise.all([
     withTimeout(probePostgres(), PROBE_TIMEOUT_MS, 'offline'),
     withTimeout(probeMongo(), PROBE_TIMEOUT_MS, 'offline'),
     withTimeout(probeK8s(), PROBE_TIMEOUT_MS, { ok: false, podCounts: {} as Record<string, number> }),
+    withTimeout(probeIntegrations(), PROBE_TIMEOUT_MS, null),
   ]);
   const k8sOk = k8s.ok;
   const podCounts = k8s.podCounts;
@@ -76,16 +83,9 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
     !k8sOk ? 'unknown' : (podCounts[ns] || 0) >= min ? 'running' : podCounts[ns] === 0 ? 'offline' : 'degraded';
 
   // ── Integration presence (saved settings, then env vars) ─────────────────
-  let githubOk = !!(process.env.GITHUB_TOKEN);
-  let gitlabOk = !!(process.env.GITLAB_TOKEN);
-  let clickupOk = !!(process.env.CLICKUP_API_TOKEN);
-  try {
-    const { resolveIntegrations } = await import('../lib/integrations');
-    const cfg = await resolveIntegrations();
-    githubOk = Boolean(cfg.githubToken);
-    gitlabOk = Boolean(cfg.gitlabToken);
-    clickupOk = Boolean(cfg.clickupToken);
-  } catch { /* env fallback already applied */ }
+  const githubOk = Boolean(cfg?.githubToken ?? process.env.GITHUB_TOKEN);
+  const gitlabOk = Boolean(cfg?.gitlabToken ?? process.env.GITLAB_TOKEN);
+  const clickupOk = Boolean(cfg?.clickupToken ?? process.env.CLICKUP_API_TOKEN);
 
   const integrations = {
     github:    githubOk,
