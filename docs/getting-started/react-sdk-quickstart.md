@@ -33,7 +33,7 @@ const config = {
 export function App() {
   return (
     <PlatformProvider config={config}>
-      <ErrorBoundary>
+      <ErrorBoundary config={config}>
         <Home />
       </ErrorBoundary>
       <BugReporterWidget config={config} />
