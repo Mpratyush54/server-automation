@@ -1,0 +1,6 @@
+# One JavaScript regular expression per line. Escape dots in addresses.
+# Historical developer server range (escaped to avoid embedding an address).
+148\.113\.
+# Former developer/test hosts (public cloud addresses, not documentation ranges).
+\b104\.21\.32\.14\b
+\b16\.4\.\d{1,3}\.\d{1,3}\.(sslip|nip)\.io\b

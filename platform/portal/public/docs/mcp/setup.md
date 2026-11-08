@@ -63,7 +63,7 @@ The process speaks **MCP over stdio**. Cursor and Claude spawn it for you; you n
 
 | Env var | Meaning |
 |---|---|
-| `PLATFORM_URL` | API base, with or without `/api`. Examples: `https://platform.example.com`, `http://localhost:3000`, `http://148.113.37.157` |
+| `PLATFORM_URL` | API base, with or without `/api`. Examples: `https://platform.example.com`, `http://localhost:3000`, `http://<your-ip>.sslip.io` |
 | `PLATFORM_AGENT_TOKEN` | Opaque `plat_agent_*` secret |
 
 `PLATFORM_URL` may be a DNS name or a raw IP. Use `https://` when the ingress has a certificate; use `http://` only if you exposed the API without TLS.
@@ -127,9 +127,9 @@ On macOS that file is typically `~/Library/Application Support/Claude/claude_des
 If the cluster is only reachable by IP (for example a fresh VM):
 
 ```bash
-export PLATFORM_URL=http://148.113.37.157
+export PLATFORM_URL=http://<your-ip>.sslip.io
 # or, once TLS + a certificate exist:
-export PLATFORM_URL=https://148.113.37.157
+export PLATFORM_URL=https://<your-ip>.sslip.io
 ```
 
 Use the same value in `mcp.json`. If HTTPS fails with a certificate name mismatch, either:
