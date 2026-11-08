@@ -31,6 +31,14 @@ export function drainingConnectionClose(_req: Request, res: Response, next: Next
 export interface ShutdownOptions {
   /** Force-close sockets and continue after this long. Default SHUTDOWN_TIMEOUT_MS or 25 s. */
   timeoutMs?: number;
+  /**
+   * Run first, before draining, and awaited (each bounded by `preDrainTimeoutMs`).
+   * Used to hand over leadership at once: releasing the leader Lease must finish
+   * before the process exits, or peers wait for it to expire (~lease duration).
+   */
+  preDrain?: Array<{ name: string; run: () => Promise<unknown> | unknown }>;
+  /** Per-step bound for `preDrain`. Default 3 s. */
+  preDrainTimeoutMs?: number;
   /** Resources to release after the HTTP server has stopped (DB, Redis, ...). Errors are logged. */
   closers?: Array<{ name: string; close: () => Promise<unknown> | unknown }>;
   /** Called with the exit code at the end. Default process.exit. */
@@ -43,6 +51,20 @@ export async function gracefulShutdown(server: Server, opts: ShutdownOptions = {
   const log = opts.log || ((m: string) => console.log(m));
   const timeoutMs = opts.timeoutMs ?? (Number(process.env.SHUTDOWN_TIMEOUT_MS) || 25_000);
   draining = true;
+
+  const preDrainTimeoutMs = opts.preDrainTimeoutMs ?? 3_000;
+  for (const step of opts.preDrain || []) {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const timedOut = new Promise<'timeout'>((r) => { timer = setTimeout(() => r('timeout'), preDrainTimeoutMs); });
+      const result = await Promise.race([Promise.resolve().then(step.run).then(() => 'done' as const), timedOut]);
+      log(result === 'done' ? `[server] shutdown: ${step.name}` : `[server] shutdown: ${step.name} timed out`);
+    } catch (err: any) {
+      log(`[server] shutdown: ${step.name} failed: ${err?.message || err}`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   log('[server] shutdown: draining in-flight requests');
 
   await new Promise<void>((resolve) => {

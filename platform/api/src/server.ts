@@ -10,7 +10,7 @@ import { getDb } from './config/database';
 import { connectMongo } from './config/mongoose';
 import { User } from './entities/User';
 import apiRouter from './routes/api';
-import { startBackgroundWork } from './lib/background';
+import { startBackgroundWork, stopBackgroundWork } from './lib/background';
 import { configuredAdminEmail, ensureAdminUser } from './lib/seed-admin';
 import { createLimiterStore } from './lib/rate-limit-store';
 import { closeRedis } from './lib/redis';
@@ -206,6 +206,9 @@ async function bootstrap() {
       console.log(`[server] Platform Express backend running on http://localhost:${port}`);
     });
     installGracefulShutdown(server, {
+      // Release the leader Lease first and wait for it: if the process exits
+      // before the release lands, peers wait for the lease to expire (#19).
+      preDrain: [{ name: 'released leadership', run: stopBackgroundWork }],
       closers: [
         { name: 'redis', close: closeRedis },
         { name: 'postgres', close: () => (ds.isInitialized ? ds.destroy() : undefined) },
