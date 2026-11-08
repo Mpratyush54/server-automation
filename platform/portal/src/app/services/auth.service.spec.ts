@@ -1,8 +1,8 @@
 import { TestBed } from '@angular/core/testing';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
-import { AuthService } from './auth.service';
+import { AuthService, safeReturnUrl } from './auth.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -135,6 +135,49 @@ describe('AuthService', () => {
 
       expect(localStorage.getItem('plat_auth_token')).toBeNull();
       expect(localStorage.getItem('plat_user_profile')).toBeNull();
+    });
+  });
+
+  describe('SSO login code exchange (no JWT in URLs)', () => {
+    let http: HttpTestingController;
+    beforeEach(() => (http = TestBed.inject(HttpTestingController)));
+    afterEach(() => http.verify());
+
+    it('POSTs the one-time code and stores the API-provided profile (role from server)', async () => {
+      const p = service.exchangeLoginCode('one-time-code');
+      const req = http.expectOne('/api/auth/exchange');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ code: 'one-time-code' });
+      req.flush({ token: 'h.eyJpZCI6IjEiLCJyb2xlIjoiYWRtaW4ifQ.s', user: { id: '1', role: 'viewer' } });
+      expect(await p).toBeTrue();
+      expect(service.getToken()).toBe('h.eyJpZCI6IjEiLCJyb2xlIjoiYWRtaW4ifQ.s');
+      expect(service.getRole()).toBe('viewer');
+    });
+
+    it('returns false and stores nothing for a rejected code', async () => {
+      const p = service.exchangeLoginCode('bad');
+      http.expectOne('/api/auth/exchange').flush({ error: 'Invalid' }, { status: 400, statusText: 'Bad Request' });
+      expect(await p).toBeFalse();
+      expect(service.getToken()).toBeNull();
+    });
+
+    it('loads the role from /api/users/me, ignoring JWT claims', async () => {
+      const p = service.loadProfile();
+      http.expectOne('/api/users/me').flush({ id: '1', role: 'developer' });
+      expect(await p).toBeTrue();
+      expect(service.getRole()).toBe('developer');
+      expect(service.profileVerified).toBeTrue();
+    });
+  });
+
+  describe('safeReturnUrl', () => {
+    it('allows app-relative paths', () => {
+      expect(safeReturnUrl('/oauth/authorize?client_id=argocd')).toBe('/oauth/authorize?client_id=argocd');
+    });
+    it('rejects absolute, protocol-relative and backslash URLs', () => {
+      for (const bad of ['https://evil.example/', '//evil.example/x', '/\\evil.example', 'javascript:alert(1)', '', null]) {
+        expect(safeReturnUrl(bad)).toBeNull();
+      }
     });
   });
 });

@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { AuthService } from '../../services/auth.service';
+import { AuthService, safeReturnUrl } from '../../services/auth.service';
 import { ApiService } from '../../services/api.service';
 
 @Component({
@@ -37,7 +37,9 @@ export class LoginComponent implements OnInit {
       this.errorMessage = oauthError;
     }
     if (this.auth.isAuthenticated()) {
-      this.router.navigate(['/dashboard']);
+      const returnUrl = safeReturnUrl(this.route.snapshot.queryParams['returnUrl']);
+      if (returnUrl) this.router.navigateByUrl(returnUrl);
+      else this.router.navigate(['/dashboard']);
       return;
     }
     await this.loadProviders();
@@ -76,7 +78,7 @@ export class LoginComponent implements OnInit {
         await firstValueFrom(this.auth.login('', this.password, ident));
       }
 
-      const returnUrl = this.route.snapshot.queryParams['returnUrl'];
+      const returnUrl = safeReturnUrl(this.route.snapshot.queryParams['returnUrl']);
       if (returnUrl) {
         this.router.navigateByUrl(returnUrl);
       } else {
