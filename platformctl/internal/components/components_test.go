@@ -9,8 +9,8 @@ func TestAllComponents(t *testing.T) {
 	if len(all) == 0 {
 		t.Fatal("All() returned no components")
 	}
-	if len(all) != 13 { // Infisical removed (secrets are in-house)
-		t.Errorf("expected 13 components, got %d", len(all))
+	if len(all) != 14 { // Infisical removed (secrets are in-house); "ingress" added (early TLS)
+		t.Errorf("expected 14 components, got %d", len(all))
 	}
 }
 

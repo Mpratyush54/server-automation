@@ -229,9 +229,11 @@ func Start(client *ocifetch.Client, tag string, p Paths, parallel int) *Download
 			mu.Unlock()
 			base <- berr
 		}()
+		// Base files download alone so k3s can start as early as possible;
+		// sharing bandwidth with the images delayed k3s by ~15 s.
 		run(baseFiles, &baseWG, nil)
-		run(imageFiles, &imageWG, func(path string) { images <- path })
 		baseWG.Wait()
+		run(imageFiles, &imageWG, func(path string) { images <- path })
 		imageWG.Wait()
 		close(images)
 
@@ -375,7 +377,11 @@ func importTarball(path string) error {
 		defer dec.Close()
 		r = dec
 	}
-	cmd := exec.Command("k3s", "ctr", "-n", "k8s.io", "images", "import", "-")
+	// --no-unpack: store the image content only. The CRI plugin unpacks an
+	// image when its first container is created, so unpacking spreads over the
+	// parallel pod starts instead of blocking the install (writing every image
+	// twice up front took ~2 minutes on a 125 MB/s disk).
+	cmd := exec.Command("k3s", "ctr", "-n", "k8s.io", "images", "import", "--no-unpack", "-")
 	cmd.Stdin = r
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))

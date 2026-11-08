@@ -57,6 +57,7 @@ func All() []Component {
 		{"oauth2-proxy", "OAuth2 authentication proxy", InstallOAuthProxy},
 		{"portainer", "Container management UI (subdomain + Platform SSO)", InstallPortainer},
 		{"platform", "Platform API + Portal", InstallPlatform},
+		{"ingress", "Create the Ingresses early so the TLS certificate issues during install", InstallIngress},
 		{"routing", "Ingress: ArgoCD /argocd, Grafana /grafana, Portainer subdomain+SSO", InstallRouting},
 		{"auto-update", "GHCR auto-update policy (Image Updater + CronJob)", InstallAutoUpdate},
 	}
@@ -1007,6 +1008,27 @@ kubectl wait --for=condition=Available deployment/platform-portal -n platform --
 // InstallRouting re-applies ingress so ArgoCD (full-page /argocd), Grafana
 // (iframe /grafana), and Portainer (subdomain + /portainer redirect) stay correct.
 // Also re-applies Portainer SSO in case Portainer was installed before ingress existed.
+// InstallIngress creates every Ingress (and the certificate issuers) as soon
+// as ingress-nginx and cert-manager run, so cert-manager requests the TLS
+// certificate while the databases and the platform are still installing.
+// Backends that do not exist yet just answer 503 until they start. Routing
+// re-applies the same objects later and then finds the certificate issued:
+// waiting for Let's Encrypt at the end cost ~45 s on every install.
+func InstallIngress(cfg *config.Config) error {
+	color.Cyan("\n  ■ Creating Ingresses early (TLS certificate issues during install)...")
+	if cfg.InstallCertManager {
+		if err := EnsureIssuers(cfg); err != nil {
+			// Not fatal: routing applies the issuers again and handles fallback.
+			color.Yellow("  ⚠ certificate issuers: %v (routing will retry)", err)
+		}
+	}
+	if err := ApplyServiceRouting(cfg); err != nil {
+		return err
+	}
+	color.Green("  ✓ Ingresses created")
+	return nil
+}
+
 func InstallRouting(cfg *config.Config) error {
 	if doneOrSkip("routing", "routing") {
 		return nil

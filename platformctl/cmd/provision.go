@@ -116,11 +116,16 @@ func provisionGraph(c *config.Config) []stepDef {
 		{name: "monitoring", skip: !c.InstallMonitoring, args: install("monitoring"), fn: components.InstallMonitoring},
 		{name: "platform", deps: []string{"postgresql", "mongodb", "redis", "minio"},
 			args: install("platform"), fn: components.InstallPlatform},
+		// Ingresses (and so the TLS certificate request) right after the ingress
+		// controller and cert-manager: the certificate issues in parallel with
+		// the databases and the platform instead of at the end.
+		{name: "ingress", deps: []string{"ingress-nginx", "cert-manager"},
+			args: install("ingress"), fn: components.InstallIngress, warnOnly: true},
 		// Routing creates every Ingress (backends may still be starting) and
 		// patches Argo CD; it does not wait for monitoring or Portainer, which
 		// finish on their own. That kept ~1 minute off the critical path.
 		{name: "routing", deps: []string{
-			"ingress-nginx", "cert-manager", "platform", "argocd", "minio",
+			"ingress-nginx", "cert-manager", "platform", "argocd", "minio", "ingress",
 		}, args: install("routing"), fn: components.InstallRouting},
 		// oauth2-proxy discovers OIDC at https://DOMAIN/api/oauth, which only exists
 		// once routing has created the platform Ingress, so it runs after routing.

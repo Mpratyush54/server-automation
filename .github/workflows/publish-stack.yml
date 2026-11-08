@@ -7,7 +7,7 @@ name: publish platform stack
 # workflow by hand to publish (and promote) `stable`.
 on:
   push:
-    branches: [master, feat/platform-stack] # TEMP: feature branch publishes `dev` for VM timing; remove before merge
+    branches: [master]
     paths:
       - platformctl/internal/versions/**
       - platformctl/internal/images/images.txt
@@ -41,7 +41,7 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || (github.ref == 'refs/heads/master' && 'edge' || 'dev') }}
+      CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || 'edge' }}
     steps:
       - uses: actions/checkout@v4
 
