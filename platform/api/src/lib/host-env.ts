@@ -9,7 +9,18 @@ export function platformCredDir(): string {
   return process.env.PLATFORM_CRED_DIR || '/etc/platform/credentials';
 }
 
+/**
+ * Defence in depth: tests must never write the real host config. Jest setup
+ * sandboxes these paths; this throws if a test somehow still targets them.
+ */
+function assertNotHostPathInTests(filePath: string): void {
+  if (process.env.NODE_ENV === 'test' && path.resolve(filePath).startsWith('/etc/platform')) {
+    throw new Error(`refusing to write ${filePath} under NODE_ENV=test; set PLATFORM_ENV_FILE/PLATFORM_CRED_DIR`);
+  }
+}
+
 function fsyncWrite(filePath: string, content: string): void {
+  assertNotHostPathInTests(filePath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
   const tmp = `${filePath}.tmp`;
   fs.writeFileSync(tmp, content, { mode: 0o600 });

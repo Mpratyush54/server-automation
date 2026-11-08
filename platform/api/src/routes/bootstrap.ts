@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
+import mongoose from 'mongoose';
 import { connectMongo } from '../config/mongoose';
 import { ClickupTaskLink } from '../entities/ClickupTaskLink';
 import { UserRole } from '../entities/User';
@@ -9,6 +10,7 @@ import { triggerPipeline } from '../lib/gitlab';
 import { getK8sNodes, getK8sNamespaces, getK8sPods, getPodLogs, deletePod, checkK8sConnection } from '../lib/k8s';
 import { v4 as uuidv4 } from 'uuid';
 import { withTimeout } from '../lib/with-timeout';
+import { resolveIntegrations } from '../lib/integrations';
 
 const router = Router();
 
@@ -37,35 +39,33 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
   };
 
   const probeMongo = async (): Promise<string> => {
-    const mg = require('mongoose');
-    if (mg.connection && mg.connection.readyState === 1) return 'running';
+    // A function, not an inline check: readyState changes across the await.
+    const connected = () => Number(mongoose.connection?.readyState) === 1;
+    if (connected()) return 'running';
     await connectMongo();
-    return mg.connection?.readyState === 1 ? 'running' : 'offline';
+    return connected() ? 'running' : 'offline';
   };
 
   // Real pod counts per namespace, fetched in parallel.
   const probeK8s = async (): Promise<{ ok: boolean; podCounts: Record<string, number> }> => {
     const podCounts: Record<string, number> = {};
     if (!(await checkK8sConnection())) return { ok: false, podCounts };
-    const k8s = await import('@kubernetes/client-node');
-    const kc = new k8s.KubeConfig();
-    kc.loadFromDefault();
-    const coreApi = kc.makeApiClient(k8s.CoreV1Api);
+    // Reuse lib/k8s's shared client: loading @kubernetes/client-node and
+    // building a KubeConfig inside the request was slow and synchronous.
     const namespaces = ['platform', 'databases', 'monitoring', 'storage', 'argocd', 'portainer', 'cert-manager', 'ingress-nginx'];
     await Promise.all(namespaces.map(async (ns) => {
       try {
-        const r = await coreApi.listNamespacedPod({ namespace: ns });
-        podCounts[ns] = r.items.filter(p => p.status?.phase === 'Running').length;
+        const pods = await getK8sPods(ns);
+        podCounts[ns] = pods.filter((p: any) => p.status === 'Running').length;
       } catch { podCounts[ns] = 0; }
     }));
     return { ok: true, podCounts };
   };
 
   // Saved integration settings live in the same Postgres the probe uses.
-  const probeIntegrations = async () => {
-    const { resolveIntegrations } = await import('../lib/integrations');
-    return resolveIntegrations();
-  };
+  // Statically imported: a request-time import() compiles the module on first
+  // use, which blocks the event loop (and these timeouts) on a cold start.
+  const probeIntegrations = () => resolveIntegrations();
 
   // Every lookup runs concurrently and each is bounded, so the endpoint
   // answers within ~PROBE_TIMEOUT_MS even when every dependency is down.
