@@ -985,7 +985,7 @@ install_infisical() {
 # =============================================================================
 deploy_platform() {
   source "$ENV_FILE"
-  is_done "platform" && { done_ "Platform already deployed"; return; }
+  # Reconcile workload security even when an older installation is marked done.
   header "Phase 15 — Platform"
 
   # Pull pre-built images from the configured registry.
@@ -1001,6 +1001,161 @@ deploy_platform() {
   retry 3 k3s crictl pull "$PLATFORM_PORTAL_IMAGE" 2>&1 | tee -a "$LOG_FILE"
 
   log "Building Platform environment config..."
+  if [[ -z "${SECRETS_ENCRYPTION_KEY:-}" ]]; then
+    SECRETS_ENCRYPTION_KEY="$(openssl rand -hex 32)"
+    write_env "SECRETS_ENCRYPTION_KEY" "$SECRETS_ENCRYPTION_KEY"
+  fi
+  if [[ ${#JWT_SECRET} -lt 32 ]]; then
+    JWT_SECRET="$(openssl rand -hex 32)"
+    write_env "JWT_SECRET" "$JWT_SECRET"
+  fi
+  if [[ -z "${ADMIN_PASSWORD:-}" ]]; then
+    ADMIN_PASSWORD="$(openssl rand -hex 24)"
+    write_env "ADMIN_PASSWORD" "$ADMIN_PASSWORD"
+  fi
+  kubectl delete clusterrolebinding platform-api-admin-binding --ignore-not-found
+  kubectl apply -f - <<'RBAC'
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-api
+  namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-api
+rules:
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["list", "create"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["list"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["list", "delete"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["list", "create", "update", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["create", "update", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-api
+subjects:
+- kind: ServiceAccount
+  name: platform-api
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: platform-api
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-api
+  namespace: platform
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["platform-env","platform-rotate-pending"]
+  verbs: ["get", "update"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["platform-rotate-pending"]
+  verbs: ["delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  resourceNames: ["platform-api"]
+  verbs: ["patch"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-api
+  namespace: platform
+subjects:
+- kind: ServiceAccount
+  name: platform-api
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-api
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-api
+  namespace: databases
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["postgresql","redis"]
+  verbs: ["get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-api
+  namespace: databases
+subjects:
+- kind: ServiceAccount
+  name: platform-api
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-api
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-api
+  namespace: argocd
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["argocd-secret","argocd-initial-admin-secret"]
+  verbs: ["get", "update"]
+- apiGroups: ["argoproj.io"]
+  resources: ["applications"]
+  verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-api
+  namespace: argocd
+subjects:
+- kind: ServiceAccount
+  name: platform-api
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-api
+RBAC
+  chgrp 1000 /etc/platform
+  chmod 0770 /etc/platform
+  chown 1000:1000 "$ENV_FILE"
+  chmod 0600 "$ENV_FILE"
+  install -d -m 0700 -o 1000 -g 1000 /etc/platform/credentials
+  find /etc/platform/credentials -maxdepth 1 -type f -exec chown 1000:1000 {} +
 
   # Combine all env vars into a K8s secret
   kubectl create secret generic platform-env \
@@ -1008,6 +1163,8 @@ deploy_platform() {
     --from-literal=NODE_ENV=production \
     --from-literal=PORT=3000 \
     --from-literal=JWT_SECRET="$JWT_SECRET" \
+    --from-literal=SECRETS_ENCRYPTION_KEY="$SECRETS_ENCRYPTION_KEY" \
+    --from-literal=ADMIN_PASSWORD="$ADMIN_PASSWORD" \
     --from-literal=PLATFORM_WEBHOOK_SECRET="$PLATFORM_WEBHOOK_SECRET" \
     --from-literal=POSTGRES_HOST="postgresql.databases" \
     --from-literal=POSTGRES_PORT=5432 \
@@ -1064,12 +1221,26 @@ spec:
       labels:
         app: platform-api
     spec:
+      serviceAccountName: platform-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: api
         image: ${PLATFORM_API_IMAGE}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
+        volumeMounts:
+        - name: platform-etc
+          mountPath: /etc/platform
         envFrom:
         - secretRef:
             name: platform-env
@@ -1092,6 +1263,11 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "1000m"
+      volumes:
+      - name: platform-etc
+        hostPath:
+          path: /etc/platform
+          type: Directory
 ---
 apiVersion: v1
 kind: Service
@@ -1136,12 +1312,21 @@ spec:
       labels:
         app: platform-portal
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: portal
         image: ${PLATFORM_PORTAL_IMAGE}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
         imagePullPolicy: IfNotPresent
         ports:
-        - containerPort: 80
+        - containerPort: 8080
         resources:
           requests:
             memory: "64Mi"
@@ -1161,20 +1346,7 @@ spec:
   ports:
   - name: http
     port: 80
-    targetPort: 80
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: platform-api-admin-binding
-subjects:
-- kind: ServiceAccount
-  name: default
-  namespace: platform
-roleRef:
-  kind: ClusterRole
-  name: cluster-admin
-  apiGroup: rbac.authorization.k8s.io
+    targetPort: 8080
 ---
 # Deploy Cross-Namespace Proxy Services (ExternalName)
 apiVersion: v1
@@ -1456,8 +1628,9 @@ EOF
 
   log "Waiting for Platform to become ready..."
   kubectl wait --for=condition=Available deployment/platform-api \
-    -n platform --timeout=300s 2>&1 | tee -a "$LOG_FILE" || \
-    warn "Platform API not ready within timeout — check: kubectl get pods -n platform"
+    -n platform --timeout=300s 2>&1 | tee -a "$LOG_FILE"
+  kubectl wait --for=condition=Available deployment/platform-portal \
+    -n platform --timeout=180s 2>&1 | tee -a "$LOG_FILE"
 
   log "Waiting for Let's Encrypt SSL certificate to be issued..."
   kubectl wait --for=condition=Ready certificate/platform-tls \

@@ -23,7 +23,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version-file: platformctl/go.mod
           cache-dependency-path: platformctl/go.sum
 
       - name: Set up Helm
@@ -31,10 +31,9 @@ jobs:
         with:
           version: v3.22.1
 
-      # Regenerate the embedded pre-pull image list from the pinned charts so
-      # the released binary always matches internal/versions.
-      - name: Generate image list
-        run: scripts/gen-images.sh
+      # Fail if the committed image list does not match the pinned charts.
+      - name: Check image list
+        run: scripts/gen-images.sh --check
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7

@@ -191,6 +191,7 @@ var chartsCmd = &cobra.Command{
 }
 
 func init() {
+	installCmd.Flags().BoolVar(&cfg.ResetPortainer, "reset", false, "wipe Portainer data before reinstalling (portainer only)")
 	chartsCmd.Flags().BoolVar(&chartsJSON, "json", false, "machine-readable output")
 	rootCmd.AddCommand(chartsCmd)
 	rootCmd.AddCommand(provisionCmd)
@@ -214,6 +215,9 @@ func init() {
 }
 
 func runInstall(name string) error {
+	if cfg.ResetPortainer && name != "portainer" {
+		return fmt.Errorf("--reset is only supported for portainer")
+	}
 	// Steps launched by `provision` run as children while the parent holds the
 	// provision lock; standalone `install` takes the lock itself.
 	if !isChild() {
@@ -228,6 +232,12 @@ func runInstall(name string) error {
 	comp := components.Find(name)
 	if comp == nil {
 		return fmt.Errorf("unknown component: %s\nAvailable: ingress-nginx, cert-manager, postgresql, mongodb, redis, minio, argocd, monitoring, oauth2-proxy, portainer, platform, routing, auto-update", name)
+	}
+	cfg.GenerateSecrets()
+	if !isChild() {
+		if err := cfg.SaveEnvFile("/etc/platform/.env"); err != nil {
+			return err
+		}
 	}
 	return comp.Install(cfg)
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/fatih/color"
@@ -64,7 +65,7 @@ func randomToken(n int) string {
 }
 
 const recoverScript = `
-set -uo pipefail
+set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 
 b64() { printf '%s' "$1" | base64 -w0 2>/dev/null || printf '%s' "$1" | base64; }
@@ -131,29 +132,43 @@ done < "$CAND_FILE"
 
 enable_trust() {
   kubectl -n databases exec "$PG_POD" -- bash -lc '
-    HBA="$(find /opt/bitnami /bitnami -name pg_hba.conf 2>/dev/null | head -1)"
+    set -euo pipefail
+    HBA="$(find /opt/bitnami /bitnami -name pg_hba.conf -print -quit 2>/dev/null || true)"
     [ -n "$HBA" ] || exit 1
     cp "$HBA" /tmp/pg_hba.recover.bak
     { echo "local all all trust"; echo "host all all 127.0.0.1/32 trust"; echo "host all all ::1/128 trust"; cat /tmp/pg_hba.recover.bak; } > "$HBA"
     PGDATA="${POSTGRESQL_DATA_DIR:-${PGDATA:-/bitnami/postgresql/data}}"
-    pg_ctl reload -D "$PGDATA" >/dev/null 2>&1 || /opt/bitnami/postgresql/bin/pg_ctl reload -D "$PGDATA" >/dev/null 2>&1 || kill -HUP 1 >/dev/null 2>&1 || true
+    pg_ctl reload -D "$PGDATA" >/dev/null 2>&1 || /opt/bitnami/postgresql/bin/pg_ctl reload -D "$PGDATA" >/dev/null 2>&1 || kill -HUP 1 >/dev/null 2>&1
   '
 }
 
 restore_trust() {
   kubectl -n databases exec "$PG_POD" -- bash -lc '
+    set -euo pipefail
     [ -f /tmp/pg_hba.recover.bak ] || exit 0
-    HBA="$(find /opt/bitnami /bitnami -name pg_hba.conf 2>/dev/null | head -1)"
-    [ -n "$HBA" ] && cp /tmp/pg_hba.recover.bak "$HBA"
+    HBA="$(find /opt/bitnami /bitnami -name pg_hba.conf -print -quit 2>/dev/null || true)"
+    [ -n "$HBA" ] || exit 1
+    cp /tmp/pg_hba.recover.bak "$HBA"
     PGDATA="${POSTGRESQL_DATA_DIR:-${PGDATA:-/bitnami/postgresql/data}}"
-    pg_ctl reload -D "$PGDATA" >/dev/null 2>&1 || /opt/bitnami/postgresql/bin/pg_ctl reload -D "$PGDATA" >/dev/null 2>&1 || kill -HUP 1 >/dev/null 2>&1 || true
-  ' 2>/dev/null || true
+    pg_ctl reload -D "$PGDATA" >/dev/null 2>&1 || /opt/bitnami/postgresql/bin/pg_ctl reload -D "$PGDATA" >/dev/null 2>&1 || kill -HUP 1 >/dev/null 2>&1
+  '
 }
 
 USED_TRUST=0
+TRUST_ACTIVE=0
+restore_on_exit() {
+ local rc=$?
+ trap - EXIT
+ if [[ "$TRUST_ACTIVE" == 1 ]]; then
+  restore_trust || { echo "Failed to restore Postgres authentication; restore pg_hba.conf from its backup immediately" >&2; rc=2; }
+ fi
+ exit "$rc"
+}
+trap restore_on_exit EXIT
 if [[ -z "$WORKING" ]]; then
   echo "  · no stored password worked — will ALTER only after passwords are on disk"
   persist_pg_now "$PG_TARGET"
+  TRUST_ACTIVE=1
   enable_trust || { echo "  ✗ could not enable local trust (pg_hba.conf not found)" >&2; exit 2; }
   USED_TRUST=1
   sleep 2
@@ -166,6 +181,7 @@ if [[ -z "$WORKING" ]]; then
   kubectl -n databases exec -i "$PG_POD" -- bash -lc 'cat > /tmp/platformctl-recover-alter.sql' < "$ALTER_FILE"
   kubectl -n databases exec "$PG_POD" -- psql -w -U postgres -d postgres -v ON_ERROR_STOP=1 -f /tmp/platformctl-recover-alter.sql
   restore_trust
+  TRUST_ACTIVE=0
   if ! psql_with_pw "$PG_TARGET" postgres -tAc "SELECT 1" >/dev/null 2>&1; then
     echo "  ✗ ALTER USER ran but on-disk password still does not authenticate — leaving backup in place" >&2
     exit 2
@@ -179,11 +195,7 @@ kubectl -n platform patch secret platform-env --type merge -p "{\"data\":{\"POST
 kubectl -n databases patch secret postgresql --type merge -p "{\"data\":{\"postgres-password\":\"$PG_B64\",\"password\":\"$PG_B64\"}}" || true
 
 kubectl -n databases exec -i "$PG_POD" -- bash -lc 'cat > /tmp/platformctl-recover-admin.sql' < "$SQL_FILE"
-if [[ "$USED_TRUST" = "1" ]]; then
-  kubectl -n databases exec "$PG_POD" -- psql -w -U postgres -d platform -v ON_ERROR_STOP=1 -f /tmp/platformctl-recover-admin.sql >/dev/null 2>&1 || true
-else
-  psql_with_pw "$WORKING" platform -f /tmp/platformctl-recover-admin.sql >/dev/null 2>&1 || true
-fi
+psql_with_pw "$WORKING" platform -f /tmp/platformctl-recover-admin.sql >/dev/null
 
 if [[ -n "$RD_PASS" ]]; then
   RD_POD="$(kubectl -n databases get pod -l app.kubernetes.io/name=redis -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
@@ -200,7 +212,7 @@ fi
 
 kubectl -n platform delete secret platform-rotate-pending --ignore-not-found >/dev/null 2>&1 || true
 kubectl -n platform rollout restart deployment/platform-api
-kubectl -n platform rollout status deployment/platform-api --timeout=180s || true
+kubectl -n platform rollout status deployment/platform-api --timeout=180s
 `
 
 // RecoverAccess restores Postgres/Redis credentials and admin login from the
@@ -270,14 +282,19 @@ func RecoverAccess(cfg *config.Config) error {
 		return fmt.Errorf("hash admin password: %w", err)
 	}
 
-	sqlPath := "/tmp/platformctl-recover.sql"
-	alterPath := "/tmp/platformctl-recover-alter.sql"
-	candPath := "/tmp/platformctl-recover-pg-candidates"
-	workingOut := "/tmp/platformctl-recover-working"
+	tmpDir, err := os.MkdirTemp("", "platformctl-recover-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+	sqlPath := filepath.Join(tmpDir, "admin.sql")
+	alterPath := filepath.Join(tmpDir, "alter.sql")
+	candPath := filepath.Join(tmpDir, "candidates")
+	workingOut := filepath.Join(tmpDir, "working")
 	alterSQL := fmt.Sprintf("ALTER USER postgres WITH PASSWORD '%s';\n", sqlLiteral(pgPass))
 	adminSQL := fmt.Sprintf(
-		"UPDATE users SET password_hash = '%s', is_active = true WHERE role = 'admin';\n",
-		sqlLiteral(string(hash)),
+		"BEGIN;\nUPDATE users SET password_hash = '%s', is_active = true WHERE role = 'admin';\nDO $recover$ BEGIN IF NOT EXISTS (SELECT 1 FROM users WHERE role = 'admin') OR EXISTS (SELECT 1 FROM users WHERE role = 'admin' AND (password_hash <> '%s' OR is_active IS DISTINCT FROM true)) THEN RAISE EXCEPTION 'Admin password verification failed'; END IF; END $recover$;\nCOMMIT;\n",
+		sqlLiteral(string(hash)), sqlLiteral(string(hash)),
 	)
 	if err := os.WriteFile(sqlPath, []byte(adminSQL), 0600); err != nil {
 		return fmt.Errorf("write recover SQL: %w", err)
