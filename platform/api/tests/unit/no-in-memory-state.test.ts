@@ -12,6 +12,22 @@ const ALLOWED: Record<string, string> = {
   'middleware/auth.ts': 'local cache with pub/sub invalidation',
   // Request-scoped lookup table (users by id) inside one handler.
   'routes/projects.ts': 'request-scoped',
+  // Per-process Prometheus counters (#19); scraped from every pod and summed.
+  'lib/job-metrics.ts': 'per-process metrics',
+  // Leader-job timers of this process (#19).
+  'lib/scheduler.ts': 'process-local timers',
+  // Locks this process holds + the memory backend used only when Redis and Postgres are both unusable (#23).
+  'lib/locks.ts': 'process-local holder index / last-resort fallback',
+  // MemoryOperationStore: tests, or when Postgres is unusable (#23).
+  'lib/operation-store.ts': 'test double / fallback',
+  // Operation definition registry + this process's in-flight runs (#23).
+  'lib/operations.ts': 'code registry / process-local runs',
+  // Outbox handler registry (code, not state) (#23).
+  'lib/outbox.ts': 'code registry',
+  // Fallback de-dupe only when the webhook_deliveries table is unusable (#23).
+  'lib/webhook-dedupe.ts': 'last-resort fallback',
+  // MemoryIdempotencyStore: last fallback after Redis and Postgres (#23).
+  'middleware/idempotency.ts': 'last-resort fallback',
 };
 
 function walk(dir: string): string[] {

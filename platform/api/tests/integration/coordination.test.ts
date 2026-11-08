@@ -28,6 +28,18 @@ jest.mock('../../src/lib/k8s', () => ({
   operateProjectWorkloads: jest.fn().mockResolvedValue(undefined),
   terminateK8sPreview: jest.fn().mockResolvedValue(true),
   previewResourceName: (id: string, branch: string) => `preview-${id}-${branch}`,
+  previewNamespace: (id: string) => `preview-${id}`,
+}));
+// Namespace isolation baseline (#22) runs as part of the deploy's apply step.
+const ensureProjectNamespace = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../src/lib/namespace-baseline', () => ({
+  ensureProjectNamespace: (...a: any[]) => ensureProjectNamespace(...a),
+}));
+jest.mock('../../src/lib/namespace-backfill', () => ({
+  reportNamespaceBaseline: jest.fn().mockResolvedValue({
+    warnings: [],
+    desired: { namespace: { metadata: { labels: { 'pod-security.kubernetes.io/enforce': 'restricted' } } } },
+  }),
 }));
 const triggerPipeline = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../src/lib/gitlab', () => ({ triggerPipeline: (...a: any[]) => triggerPipeline(...a) }));
@@ -197,6 +209,8 @@ describe('Idempotency-Key on POST /deploy', () => {
     expect(replay.headers['idempotent-replayed']).toBe('true');
     expect(deployments).toHaveLength(1);
     expect(ensureAndSyncArgoApp).toHaveBeenCalledTimes(1);
+    // The deploy operation applied the namespace baseline before syncing (#22).
+    expect(ensureProjectNamespace).toHaveBeenCalledWith(PROJECT_ID, expect.objectContaining({ id: ENV_ID }));
   });
 
   it('same key with a different body → 422', async () => {
