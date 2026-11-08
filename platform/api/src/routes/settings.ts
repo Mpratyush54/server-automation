@@ -17,6 +17,8 @@ import {
 } from '../lib/integrations';
 import { notifyUser } from '../lib/notify';
 import { rotatePlatformSecrets } from '../lib/secret-rotate';
+import { LockBusyError, lockBusyBody } from '../lib/locks';
+import { idempotency } from '../middleware/idempotency';
 
 function apiPublicBase(req: Request): string {
   const fromEnv = (process.env.API_PUBLIC_URL || process.env.API_URL || '').replace(/\/+$/, '');
@@ -357,7 +359,7 @@ router.put('/settings/integrations', expressAuthenticate, expressRequireRole([Us
   }
 });
 
-router.post('/settings/rotate-secrets', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+router.post('/settings/rotate-secrets', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), idempotency('POST /settings/rotate-secrets'), async (req: Request, res: Response) => {
   try {
     const confirm = String(req.body?.confirm || '');
     if (confirm !== 'ROTATE') {
@@ -368,6 +370,8 @@ router.post('/settings/rotate-secrets', expressAuthenticate, expressRequireRole(
     });
     return res.json(result);
   } catch (err: any) {
+    // Another rotation holds lock:platform:secret-rotation.
+    if (err instanceof LockBusyError) return res.status(409).json(lockBusyBody(err));
     return res.status(400).json({ error: err.message });
   }
 });

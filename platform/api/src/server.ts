@@ -154,6 +154,15 @@ async function bootstrap() {
     // Start preview environment decay scheduler (72h TTL)
     startPreviewDecayScheduler();
 
+    // Leader-only worker: resume interrupted operations, dispatch the outbox (issue #23).
+    try {
+      await import('./lib/operation-types');
+      const { startOperationWorker } = await import('./lib/operation-worker');
+      startOperationWorker();
+    } catch (opErr: any) {
+      console.warn(`[server] Operation worker not started: ${opErr.message}`);
+    }
+
     try {
       const { hydrateIntegrationsEnv } = await import('./lib/integrations');
       await hydrateIntegrationsEnv();

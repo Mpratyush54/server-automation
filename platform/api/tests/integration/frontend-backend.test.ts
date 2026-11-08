@@ -120,12 +120,20 @@ jest.mock('../../src/lib/lokilog', () => ({
 }));
 
 // Route delegates provisioning and credential persistence to the isolated helper.
-jest.mock('../../src/lib/project-db-ensure', () => ({
-  ensurePostgresForProject: jest.fn().mockResolvedValue({ status: 'ready', creds: {
+jest.mock('../../src/lib/project-db-ensure', () => {
+  const creds = {
     dbName: 'plat_project_id_environment', username: 'plat_project_id_environment_user',
     password: 'test-password', host: 'localhost', port: 5432,
-  } }),
-}));
+  };
+  return {
+    ensurePostgresForProject: jest.fn().mockResolvedValue({ status: 'ready', creds }),
+    // Step primitives used by the step-logged provisioning operation (lib/db-provision-op).
+    resolvePostgresIdentity: jest.fn().mockResolvedValue(creds),
+    applyPostgresRoleAndDatabase: jest.fn().mockResolvedValue({ createdRole: true, createdDatabase: true }),
+    dropPostgresRoleAndDatabase: jest.fn().mockResolvedValue(undefined),
+    persistPostgresCreds: jest.fn().mockResolvedValue(undefined),
+  };
+});
 
 import express from 'express';
 import request from 'supertest';

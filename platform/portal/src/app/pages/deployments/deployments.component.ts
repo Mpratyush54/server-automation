@@ -3,11 +3,12 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
+import { OperationProgressComponent } from '../../shared/operation-progress.component';
 
 @Component({
   selector: 'app-deployments',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, OperationProgressComponent],
   templateUrl: './deployments.component.html',
   styleUrl: './deployments.component.css'
 })
@@ -15,6 +16,8 @@ export class DeploymentsComponent implements OnInit {
   deployments: any[] = [];
   deployDto = { projectId: '', version: '', branch: 'main' };
   rollbackDto = { projectId: '', deploymentId: '' };
+  /** Progress of the last deploy started from this page. */
+  lastOperationId: string | null = null;
 
   constructor(private api: ApiService) {}
 
@@ -29,6 +32,7 @@ export class DeploymentsComponent implements OnInit {
     try {
       const d = await firstValueFrom(this.api.deploy(this.deployDto));
       this.deployments.unshift(d);
+      this.lastOperationId = (d as any)?.operationId || null;
       this.deployDto = { projectId: '', version: '', branch: 'main' };
     } catch (err: any) { alert('Deploy failed: ' + (err.error?.error || err.message)); }
   }
