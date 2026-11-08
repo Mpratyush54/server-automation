@@ -592,19 +592,19 @@ describe('OIDC / OAuth2', () => {
     expect(k).not.toHaveProperty('q');
   });
 
-  it('POST /api/oauth/token — invalid code returns 400', async () => {
+  it('POST /api/oauth/token — unregistered client returns 401 invalid_client', async () => {
     const r = await request(app)
       .post('/api/oauth/token')
       .send({ grant_type: 'authorization_code', code: 'invalid-code-abc', redirect_uri: 'https://app.io/cb', client_id: 'platform' });
-    expect(r.status).toBe(400);
-    expect(r.body).toHaveProperty('error');
+    expect(r.status).toBe(401);
+    expect(r.body.error).toBe('invalid_client');
   });
 
-  it('POST /api/oauth/token — missing code returns 400', async () => {
+  it('POST /api/oauth/token — missing client credentials returns 401', async () => {
     const r = await request(app)
       .post('/api/oauth/token')
       .send({ grant_type: 'authorization_code', redirect_uri: 'https://app.io/cb' });
-    expect(r.status).toBe(400);
+    expect(r.status).toBe(401);
   });
 
   it('GET /api/oauth/userinfo — 401 with no token', async () => {
