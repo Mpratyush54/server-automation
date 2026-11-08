@@ -55,6 +55,44 @@ registration, heartbeats, logs and config (an error is logged). Postgres has no 
 2. Starts a daemon **heartbeat** thread (every 15s)
 3. Connects any of `postgres` / `mongo` / `redis` listed in `databases` (non-blocking on failure)
 
+## Project Redis credentials
+
+When `databases` includes `redis`, initialization fetches `/api/sdk/db-credentials` with the
+SDK token, project and environment. The returned ACL `username`, password and `keyPrefix`
+are used automatically. If the request is unavailable, the manager falls back to environment
+configuration. An explicit Redis provisioning error leaves Redis disconnected.
+
+```python
+# After client.init(..., databases=["redis"])
+r = client.db["redis"]
+r.set("ping", "1", ttl=60)
+assert r.get("ping") == "1"
+assert r.get(r.prefixed("ping")) == "1"  # already-prefixed keys stay unchanged
+r.delete("ping")
+```
+
+`get`, `set` (including TTL) and `delete` transparently prepend the project's key prefix
+once. The Redis ACL enforces access to that prefix on the server. Raw `r.client` calls
+do **not** prepend it: use `r.client.incr(r.prefixed("counter"))` and apply `prefixed()` to
+every key argument for multi-key commands. Prefixing is a convenience; Redis ACLs provide
+the access boundary.
+
+For a standalone manager, pass `RedisManager({"host": "localhost", "port": 6379,
+"username": "project-user", "password": "...", "key_prefix": "project:"})`
+from `platform_sdk.db.redis`. Alternatively set `PLATFORM_REDIS_HOST`, `PLATFORM_REDIS_PORT`,
+`PLATFORM_REDIS_PASSWORD`, `PLATFORM_REDIS_USERNAME` and `PLATFORM_REDIS_KEY_PREFIX`.
+Explicit `username` and `key_prefix` config values override their environment values.
+Without a username or prefix, existing default-user, unprefixed connections still work.
+Direct config accepts redis-py TLS options such as `ssl=True`; Redis URL parsing is not provided.
+
+Run [`examples/05_redis_acl.py`](./examples/05_redis_acl.py) with `PLATFORM_URL`,
+`PLATFORM_SDK_TOKEN` and `PROJECT_NAME` set (optionally `ENVIRONMENT_NAME`) to exercise
+the project credentials and verify that Redis refuses a read outside the prefix.
+For provisioning acceptance, run it against a fresh Ubuntu 24.04
+installation created with `sudo platformctl provision`, with Redis enabled for the project.
+An operator can verify the ACL username via `CLIENT LIST` and the stored key prefix
+using administrative Redis access. The SDK token and Redis password should not be printed.
+
 ## API surface
 
 | Method / prop | Purpose |

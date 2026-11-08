@@ -77,8 +77,25 @@ class PlatformClient:
 
         if "redis" in self.options["databases"]:
             from .db.redis import RedisManager
-            self._db_connections["redis"] = RedisManager()
             try:
+                credentials = self._request("GET", "/api/sdk/db-credentials", params={
+                    "projectId": self.options["project_name"],
+                    "dbTypes": "redis",
+                    "environment": self.options["environment_name"],
+                })
+                redis_credentials = (credentials or {}).get("redis")
+                redis_config = None
+                if redis_credentials:
+                    if redis_credentials.get("status") == "error":
+                        raise ValueError("Platform Redis credentials are unavailable")
+                    redis_config = {
+                        key: redis_credentials[key]
+                        for key in ("host", "port", "username", "password", "db")
+                        if key in redis_credentials
+                    }
+                    if "keyPrefix" in redis_credentials:
+                        redis_config["key_prefix"] = redis_credentials["keyPrefix"]
+                self._db_connections["redis"] = RedisManager(redis_config)
                 self._db_connections["redis"].connect()
             except Exception as e:
                 logger.warning(f"Redis connection failed (non-blocking): {e}")

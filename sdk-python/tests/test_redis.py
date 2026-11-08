@@ -12,7 +12,7 @@ class TestRedisManager:
     def test_init_with_config(self):
         config = {"host": "localhost", "port": 6379, "password": None}
         manager = RedisManager(config)
-        assert manager.config == config
+        assert manager.config == {**config, "username": os.environ.get("PLATFORM_REDIS_USERNAME")}
         assert manager.connected is False
 
     def test_init_without_config(self):
@@ -100,3 +100,54 @@ class TestRedisManager:
     def test_disconnect_when_not_connected(self):
         manager = RedisManager()
         manager.disconnect()  # Should not raise
+
+    @patch.dict(os.environ, {"PLATFORM_REDIS_USERNAME": "project-user",
+                            "PLATFORM_REDIS_KEY_PREFIX": "project:"}, clear=True)
+    @patch('platform_sdk.db.redis.redis.Redis')
+    def test_acl_environment(self, mock_redis_class):
+        manager = RedisManager()
+        manager.connect()
+        mock_redis_class.assert_called_once_with(
+            host="localhost", port=6379, password=None,
+            username="project-user", decode_responses=True,
+        )
+        assert manager.prefixed("key") == "project:key"
+
+    @patch.dict(os.environ, {"PLATFORM_REDIS_USERNAME": "env-user",
+                            "PLATFORM_REDIS_KEY_PREFIX": "env:"}, clear=True)
+    @patch('platform_sdk.db.redis.redis.Redis')
+    def test_acl_config_overrides_environment_without_mutation(self, mock_redis_class):
+        config = {"host": "redis", "username": "project-user", "password": "secret",
+                  "key_prefix": "project:", "db": 0}
+        manager = RedisManager(config)
+        manager.connect()
+        mock_redis_class.assert_called_once_with(
+            host="redis", username="project-user", password="secret", db=0,
+            decode_responses=True,
+        )
+        assert config["key_prefix"] == "project:"
+        assert manager.prefixed("key") == "project:key"
+
+    @pytest.mark.parametrize("key", ["key", "project:key"])
+    @patch('platform_sdk.db.redis.redis.Redis')
+    def test_operations_prefix_once(self, mock_redis_class, key):
+        manager = RedisManager({"username": "project-user", "key_prefix": "project:"})
+        manager.connect()
+        client = mock_redis_class.return_value
+        manager.set(key, "value")
+        manager.set(key, "value", ttl=60)
+        manager.get(key)
+        manager.delete(key)
+        client.set.assert_called_once_with("project:key", "value")
+        client.setex.assert_called_once_with("project:key", 60, "value")
+        client.get.assert_called_once_with("project:key")
+        client.delete.assert_called_once_with("project:key")
+        assert manager.prefixed(manager.prefixed(key)) == "project:key"
+
+    @patch.dict(os.environ, {"PLATFORM_REDIS_KEY_PREFIX": "env:"}, clear=True)
+    def test_explicit_empty_prefix_preserves_legacy_keys(self):
+        manager = RedisManager({"key_prefix": ""})
+        assert manager.prefixed("key") == "key"
+
+    def test_delete_when_not_connected(self):
+        assert RedisManager().delete("key") is None
