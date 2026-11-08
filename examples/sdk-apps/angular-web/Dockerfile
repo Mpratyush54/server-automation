@@ -2,7 +2,7 @@
 # Build from repo root:
 #   docker build -f examples/sdk-apps/angular-web/Dockerfile -t sdk-angular-web:local .
 # Runs nginx as UID 101 on port 8080.
-FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24
+FROM nginxinc/nginx-unprivileged:1.31.7-alpine3.24
 USER root
 COPY examples/sdk-apps/angular-web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY examples/sdk-apps/angular-web/public /usr/share/nginx/html
