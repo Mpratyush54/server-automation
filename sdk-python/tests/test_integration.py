@@ -73,11 +73,12 @@ class TestPlatformClientIntegration:
 
         with patch.object(client, '_request') as mock_log:
             client.log("INFO", "Service started")
-            mock_log.assert_called_with("POST", "/api/logs/ingest", {
+            mock_log.assert_called_with("POST", "/api/sdk/logs", {"logs": [{
                 "projectId": "test",
-                "environmentId": "development",
+                "environment": "development",
                 "serviceName": "test",
+                "hostname": client.options["hostname"],
                 "level": "INFO",
                 "message": "Service started",
                 "metadata": {},
-            })
+            }]})

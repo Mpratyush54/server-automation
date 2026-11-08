@@ -17,6 +17,7 @@ client = PlatformClient()
 client.init(
     project_name=os.environ.get("PROJECT_NAME", "sdk-examples"),
     platform_url=os.environ.get("PLATFORM_URL", "http://localhost:3000").rstrip("/"),
+    sdk_token=os.environ.get("PLATFORM_SDK_TOKEN"),
     environment_name=os.environ.get("ENVIRONMENT_NAME", "development"),
 )
 

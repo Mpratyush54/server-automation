@@ -5,11 +5,13 @@ Auto-registration, metrics, logging, config, storage, DB connections
 import os
 import time
 import json
+import socket
 import logging
 import threading
 from typing import Optional, List, Dict, Any
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-from urllib.error import URLError
+from urllib.error import URLError, HTTPError
 
 logger = logging.getLogger('platform')
 
@@ -33,7 +35,14 @@ class PlatformClient:
         namespace: Optional[str] = None,
         hostname: Optional[str] = None,
         databases: Optional[List[str]] = None,
+        sdk_token: Optional[str] = None,
     ):
+        token = sdk_token or os.environ.get("PLATFORM_SDK_TOKEN")
+        if not token:
+            logger.warning(
+                "[platform] No SDK token configured (pass sdk_token= or set PLATFORM_SDK_TOKEN); "
+                "Platform API calls will be rejected."
+            )
         self.options = {
             "project_name": project_name,
             "platform_url": platform_url.rstrip("/"),
@@ -42,8 +51,9 @@ class PlatformClient:
             "branch": branch,
             "commit_sha": commit_sha,
             "namespace": namespace,
-            "hostname": hostname or os.uname().nodename,
+            "hostname": hostname or socket.gethostname(),
             "databases": databases or [],
+            "sdk_token": token,
         }
 
         self._register()
@@ -79,16 +89,25 @@ class PlatformClient:
                   params: Optional[Dict] = None) -> Optional[Dict]:
         url = f"{self.options['platform_url']}{path}"
         if params:
-            qs = "&".join(f"{k}={v}" for k, v in params.items())
-            url = f"{url}?{qs}"
+            url = f"{url}?{urlencode({k: v for k, v in params.items() if v is not None})}"
 
         headers = {"Content-Type": "application/json"}
+        token = self.options.get("sdk_token")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         body = json.dumps(data).encode() if data else None
 
         try:
             req = Request(url, data=body, headers=headers, method=method)
             with urlopen(req, timeout=5) as resp:
-                return json.loads(resp.read().decode())
+                raw = resp.read().decode()
+                return json.loads(raw) if raw else {}
+        except HTTPError as e:
+            if e.code in (401, 403):
+                logger.error(f"[platform] {method} {path} rejected ({e.code}): check sdk_token / PLATFORM_SDK_TOKEN")
+            else:
+                logger.warning(f"[platform] Request failed (silent): HTTP {e.code} {method} {path}")
+            return None
         except URLError as e:
             logger.warning(f"[platform] Request failed (silent): {e}")
             return None
@@ -97,7 +116,7 @@ class PlatformClient:
             return None
 
     def _register(self):
-        return self._request("POST", "/api/sdk/register", {
+        result = self._request("POST", "/api/sdk/register", {
             "projectName": self.options["project_name"],
             "environmentName": self.options["environment_name"],
             "serviceName": self.options["project_name"],
@@ -108,6 +127,9 @@ class PlatformClient:
             "hostname": self.options["hostname"],
             "dbTypes": self.options["databases"],
         })
+        if result is None:
+            logger.error("[platform] Service registration failed; this service is NOT being monitored")
+        return result
 
     def _start_heartbeat(self):
         def heartbeat():
@@ -124,8 +146,10 @@ class PlatformClient:
 
     # --- Config ---
     def config(self, key: str) -> Optional[Any]:
-        data = self._request("GET", "/api/config", params={
+        # SDK-token route (same contract as the Node SDK); /api/config requires a human JWT.
+        data = self._request("GET", "/api/sdk/config", params={
             "projectId": self.options["project_name"],
+            "environmentId": self.options.get("environment_name"),
         })
         if data and key in data:
             return data[key]
@@ -145,14 +169,15 @@ class PlatformClient:
 
     # --- Logging ---
     def log(self, level: str, message: str, metadata: Optional[Dict] = None):
-        self._request("POST", "/api/logs/ingest", {
+        self._request("POST", "/api/sdk/logs", {"logs": [{
             "projectId": self.options["project_name"],
-            "environmentId": self.options["environment_name"],
+            "environment": self.options["environment_name"],
             "serviceName": self.options["project_name"],
+            "hostname": self.options.get("hostname"),
             "level": level,
             "message": message,
             "metadata": metadata or {},
-        })
+        }]})
 
     # --- DB Access ---
     @property

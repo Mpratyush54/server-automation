@@ -15,12 +15,14 @@ Optional DB drivers are declared as package dependencies (`psycopg2-binary`, `py
 ## Quick start
 
 ```python
+import os
 from platform_sdk import PlatformClient  # or: from platform_sdk import platform
 
 client = PlatformClient()
 client.init(
     project_name="my-python-service",
     platform_url="https://api.example.sslip.io",
+    sdk_token=os.environ["PLATFORM_SDK_TOKEN"],  # sdk_live_... / sdk_test_... (Project -> Tokens)
     environment_name="development",
     databases=["postgres", "mongo", "redis"],  # optional
 )
@@ -38,9 +40,14 @@ Singleton style:
 ```python
 from platform_sdk import platform
 
+# sdk_token defaults to the PLATFORM_SDK_TOKEN environment variable
 platform.init(project_name="my-service", platform_url="https://api.example.sslip.io")
 platform.log("INFO", "hello")
 ```
+
+Every Platform API call sends `Authorization: Bearer <sdk_token>`. Without a token the API rejects
+registration, heartbeats, logs and config (an error is logged). Postgres has no default password: set
+`PLATFORM_PG_PASSWORD` (or pass a config with `password`) or `connect()` raises.
 
 ## What `init()` does
 
@@ -53,7 +60,7 @@ platform.log("INFO", "hello")
 | Method / prop | Purpose |
 |---------------|---------|
 | `init(...)` | Configure + register + optional DBs |
-| `config(key)` | Fetch remote config value |
+| `config(key)` | Fetch remote config value (`GET /api/sdk/config`) |
 | `log(level, message, metadata?)` | Ship a log line |
 | `storage_upload(path, bucket)` | Request an upload URL |
 | `db` | Dict of connected managers (`postgres` / `mongo` / `redis`) |

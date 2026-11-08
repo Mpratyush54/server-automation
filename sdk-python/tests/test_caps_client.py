@@ -95,6 +95,63 @@ class TestPlatformClient:
             result = self.client._request("GET", "/api/test")
             assert result is None
 
+    def _capture_request(self, token):
+        captured = {}
+
+        def fake_urlopen(req, timeout=None):
+            captured["url"] = req.full_url
+            captured["headers"] = {k.lower(): v for k, v in req.header_items()}
+            resp = MagicMock()
+            resp.read.return_value = b'{"ok": true}'
+            cm = MagicMock()
+            cm.__enter__ = lambda s: resp
+            cm.__exit__ = MagicMock(return_value=False)
+            return cm
+
+        self.client.options = {"platform_url": "http://localhost:3000", "sdk_token": token}
+        return captured, fake_urlopen
+
+    def test_request_sends_sdk_token_as_bearer(self):
+        captured, fake = self._capture_request("sdk_live_abc123")
+        with patch('platform_sdk.urlopen', side_effect=fake):
+            self.client._request("POST", "/api/sdk/heartbeat", {"a": 1})
+        assert captured["headers"]["authorization"] == "Bearer sdk_live_abc123"
+
+    def test_request_without_token_sends_no_authorization(self):
+        captured, fake = self._capture_request(None)
+        with patch('platform_sdk.urlopen', side_effect=fake):
+            self.client._request("GET", "/api/sdk/config")
+        assert "authorization" not in captured["headers"]
+
+    def test_request_url_encodes_params(self):
+        captured, fake = self._capture_request("sdk_test_x")
+        with patch('platform_sdk.urlopen', side_effect=fake):
+            self.client._request("GET", "/api/sdk/config", params={"projectId": "a b&c", "environmentId": None})
+        assert captured["url"] == "http://localhost:3000/api/sdk/config?projectId=a+b%26c"
+
+    @patch('platform_sdk.PlatformClient._start_heartbeat')
+    def test_init_reads_sdk_token_from_env(self, mock_heartbeat, monkeypatch):
+        monkeypatch.setenv("PLATFORM_SDK_TOKEN", "sdk_live_fromenv")
+        with patch.object(PlatformClient, '_request', return_value={}):
+            self.client.init(project_name="p", platform_url="http://x")
+        assert self.client.options["sdk_token"] == "sdk_live_fromenv"
+
+    @patch('platform_sdk.PlatformClient._start_heartbeat')
+    def test_init_sdk_token_argument_wins(self, mock_heartbeat, monkeypatch):
+        monkeypatch.setenv("PLATFORM_SDK_TOKEN", "sdk_live_fromenv")
+        with patch.object(PlatformClient, '_request', return_value={}):
+            self.client.init(project_name="p", platform_url="http://x", sdk_token="sdk_live_arg")
+        assert self.client.options["sdk_token"] == "sdk_live_arg"
+
+    def test_config_uses_sdk_route(self):
+        self.client.options = {"project_name": "test", "environment_name": "production"}
+        with patch.object(self.client, '_request', return_value={"KEY": "val"}) as mock_request:
+            self.client.config("KEY")
+        mock_request.assert_called_once_with("GET", "/api/sdk/config", params={
+            "projectId": "test",
+            "environmentId": "production",
+        })
+
     def test_config_returns_value(self):
         self.client.options = {"project_name": "test"}
         with patch.object(self.client, '_request', return_value={"KEY": "val"}):
@@ -112,14 +169,15 @@ class TestPlatformClient:
         }
         with patch.object(self.client, '_request') as mock_request:
             self.client.log("INFO", "Test message", {"extra": "data"})
-            mock_request.assert_called_once_with("POST", "/api/logs/ingest", {
+            mock_request.assert_called_once_with("POST", "/api/sdk/logs", {"logs": [{
                 "projectId": "test",
-                "environmentId": "dev",
+                "environment": "dev",
                 "serviceName": "test",
+                "hostname": None,
                 "level": "INFO",
                 "message": "Test message",
                 "metadata": {"extra": "data"},
-            })
+            }]})
 
     def test_log_without_metadata(self):
         self.client.options = {
@@ -128,14 +186,15 @@ class TestPlatformClient:
         }
         with patch.object(self.client, '_request') as mock_request:
             self.client.log("ERROR", "Error occurred")
-            mock_request.assert_called_once_with("POST", "/api/logs/ingest", {
+            mock_request.assert_called_once_with("POST", "/api/sdk/logs", {"logs": [{
                 "projectId": "test",
-                "environmentId": "dev",
+                "environment": "dev",
                 "serviceName": "test",
+                "hostname": None,
                 "level": "ERROR",
                 "message": "Error occurred",
                 "metadata": {},
-            })
+            }]})
 
     def test_db_property(self):
         assert self.client.db == {}

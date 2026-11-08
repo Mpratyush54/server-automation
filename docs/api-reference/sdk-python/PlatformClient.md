@@ -50,6 +50,7 @@ client.init(
     namespace: Optional[str] = None,
     hostname: Optional[str] = None,
     databases: Optional[list[str]] = None,
+    sdk_token: Optional[str] = None,
 ) -> None
 ```
 
@@ -64,12 +65,13 @@ client.init(
 | `branch` | `str` | `'main'` | Git branch name |
 | `commit_sha` | `str \| None` | — | Git commit SHA |
 | `namespace` | `str \| None` | — | Kubernetes namespace or equivalent |
-| `hostname` | `str \| None` | `os.uname().nodename` | Machine hostname |
+| `hostname` | `str \| None` | `socket.gethostname()` | Machine hostname |
 | `databases` | `list[str] \| None` | `[]` | Database types to auto-connect: `'postgres'`, `'mongo'`, `'redis'` |
+| `sdk_token` | `str \| None` | `$PLATFORM_SDK_TOKEN` | SDK credential (`sdk_live_...` / `sdk_test_...`). Sent as `Authorization: Bearer <token>` on every Platform API call |
 
 ### What `init()` does
 
-1. Registers the service with the Platform API (`POST /api/sdk/register`).
+1. Registers the service with the Platform API (`POST /api/sdk/register`). If registration fails (e.g. missing/invalid token) an error is logged.
 2. Starts a background **heartbeat** thread (every 15 s) sending `POST /api/sdk/heartbeat`.
 3. Connects to each database type listed in `databases` (non-blocking — failures are logged as warnings).
 
@@ -81,7 +83,7 @@ client.init(
 client.config(key: str) -> Optional[Any]
 ```
 
-Fetches all config from `GET /api/config` and returns the value for `key`. Returns `None` if the key is absent.
+Fetches all config from `GET /api/sdk/config` (SDK token auth, same as the Node SDK) and returns the value for `key`. Returns `None` if the key is absent.
 
 ---
 
@@ -95,7 +97,7 @@ client.log(
 ) -> None
 ```
 
-Sends a log entry to `POST /api/logs/ingest`. Example levels: `'INFO'`, `'WARN'`, `'ERROR'`, `'DEBUG'`.
+Sends a log entry to `POST /api/sdk/logs` (body `{"logs": [entry]}`). Example levels: `'INFO'`, `'WARN'`, `'ERROR'`, `'DEBUG'`.
 
 ---
 
