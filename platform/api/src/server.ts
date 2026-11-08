@@ -22,6 +22,30 @@ export const jsonBodyParser = express.json({
   verify: (req, _res, buf) => { (req as any).rawBody = buf; },
 });
 
+/**
+ * Request URL for access logs with every query-string value redacted. OAuth `code`/`state`,
+ * one-time exchange codes and any legacy `?token=` must never reach log storage.
+ */
+export function redactUrlForLog(url: string | undefined): string {
+  if (!url) return '-';
+  const q = url.indexOf('?');
+  if (q === -1) return url;
+  const query = url.slice(q + 1).split('#')[0];
+  const redacted = query
+    .split('&')
+    .filter(Boolean)
+    .map((pair) => `${pair.split('=')[0]}=[REDACTED]`)
+    .join('&');
+  return `${url.slice(0, q)}?${redacted}`;
+}
+
+morgan.token('redacted-url', (req: express.Request) => redactUrlForLog(req.originalUrl || req.url));
+
+/** Access logger (morgan) that never logs query-string values. */
+export function requestLogger(options: morgan.Options<express.Request, express.Response> = {}) {
+  return morgan(':method :redacted-url :status :response-time ms - :res[content-length]', options);
+}
+
 export function buildApp(): express.Express {
   const app = express();
   app.set('trust proxy', 1); // behind the ingress controller; needed for per-IP rate limiting
@@ -72,7 +96,7 @@ export function buildApp(): express.Express {
   // Keep the raw body for webhook signature verification (req.rawBody).
   app.use(jsonBodyParser);
   app.use(express.urlencoded({ extended: true }));
-  app.use(morgan('dev'));
+  app.use(requestLogger());
 
   // Main API routing
   app.use('/api', apiRouter);

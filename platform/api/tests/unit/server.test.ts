@@ -25,7 +25,7 @@ process.env.CORS_ORIGINS = 'https://portal.example.com';
 process.env.AUTH_RATE_LIMIT_MAX = '3';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { buildApp, jsonBodyParser } = require('../../src/server');
+const { buildApp, jsonBodyParser, requestLogger, redactUrlForLog } = require('../../src/server');
 
 describe('buildApp security middleware', () => {
   let app: express.Express;
@@ -73,5 +73,21 @@ describe('buildApp security middleware', () => {
     await request(probe).post('/x').set('Content-Type', 'application/json').send(payload);
     expect(raw?.toString()).toBe(payload);
     expect(parsed).toEqual({ a: 1, b: [2] });
+  });
+
+  it('never writes query-string values (OAuth code/state, tokens) to the access log', async () => {
+    const lines: string[] = [];
+    const probe = express();
+    probe.use(requestLogger({ stream: { write: (l: string) => { lines.push(l); } } }));
+    probe.get('/api/auth/github/callback', (_req, res) => res.json({ ok: true }));
+    await request(probe).get('/api/auth/github/callback?code=oauth-code-123&state=state-456&token=jwt-789');
+    const log = lines.join('');
+    expect(log).toContain('/api/auth/github/callback?code=[REDACTED]&state=[REDACTED]&token=[REDACTED]');
+    expect(log).not.toMatch(/oauth-code-123|state-456|jwt-789/);
+  });
+
+  it('redactUrlForLog keeps paths without a query unchanged', () => {
+    expect(redactUrlForLog('/api/health')).toBe('/api/health');
+    expect(redactUrlForLog('/api/x?flag')).toBe('/api/x?flag=[REDACTED]');
   });
 });
