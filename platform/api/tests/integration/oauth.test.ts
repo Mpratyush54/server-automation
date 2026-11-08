@@ -70,6 +70,8 @@ describe('OAuth2 / OIDC SSO Integration Tests', () => {
   let portalToken: string;
 
   beforeAll(() => {
+    // The API never falls back to a default secret; tests must configure it.
+    process.env.JWT_SECRET = JWT_SECRET;
     app = express();
     app.use(express.json());
     app.use('/api', apiRouter);
