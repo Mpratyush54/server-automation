@@ -78,6 +78,7 @@ describe('project isolation', () => {
     ['patch', '/deployments/foreign-dep/scale', { replicas: 2 }],
     ['post', '/deployments/foreign-dep/terminate', {}],
     ['get', `/projects/${foreign}/tokens`, undefined],
+    ['post', `/projects/${foreign}/tokens`, { name: 'foreign-token' }],
     ['put', `/projects/${foreign}`, { description: 'unauthorized' }],
     ['post', '/db-connections/connection/test', {}],
     ['delete', '/db-connections/connection', undefined],
