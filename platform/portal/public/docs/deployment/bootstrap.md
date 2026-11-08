@@ -15,7 +15,6 @@ Idempotent via `/etc/platform/.bootstrap_state`. No git clone and no on-server i
 
 Full command list: [platformctl CLI](../getting-started/platformctl.md).
 
-For the legacy bash phases (reference only), see `platform-bootstrap/bootstrap-legacy.sh`.
 
 ## High-level phases
 

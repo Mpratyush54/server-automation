@@ -233,7 +233,7 @@ graph LR
     P --- Flags
 ```
 
-Setup in `install-oauth2-proxy.sh`:
+Installed by `platformctl install oauth2-proxy` (values: `platformctl/internal/manifests/data/oauth2-proxy-values.yaml`):
 - OAuth2 Proxy sits in front of Grafana/Portainer
 - Redirects unauthenticated users to `/api/oauth/authorize`
 - After successful auth, Proxy validates id_token and sets `X-Forwarded-User` / `X-Email` headers

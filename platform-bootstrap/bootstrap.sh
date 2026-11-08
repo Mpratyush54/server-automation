@@ -7,21 +7,11 @@
 #    sudo platformctl provision
 #
 #  This script installs platformctl (if needed) and runs `platformctl provision`.
-#  To force the old bash installer: PLATFORM_BOOTSTRAP_LEGACY=1 sudo ./bootstrap.sh
 # =============================================================================
 set -euo pipefail
 
 REPO="${PLATFORMCTL_REPO:-Mpratyush54/SERVER-automation}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-if [[ "${PLATFORM_BOOTSTRAP_LEGACY:-}" == "1" ]]; then
-  if [[ -f "$SCRIPT_DIR/bootstrap-legacy.sh" ]]; then
-    echo "[Platform] Running legacy bootstrap.sh ..."
-    exec bash "$SCRIPT_DIR/bootstrap-legacy.sh" "$@"
-  fi
-  echo "[Platform] bootstrap-legacy.sh not found" >&2
-  exit 1
-fi
 
 echo "[Platform] Deprecated: cloning this repo / running bootstrap.sh is no longer required."
 echo "[Platform] Installing platformctl and provisioning from pre-built GHCR images..."
