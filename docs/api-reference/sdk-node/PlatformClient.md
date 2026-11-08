@@ -54,7 +54,6 @@ await client.init(options: PlatformOptions): Promise<void>
 | `commitSha` | `string?` | — | Git commit SHA |
 | `namespace` | `string?` | — | **Ignored** — server assigns `{project}-{environment}` |
 | `hostname` | `string` | `os.hostname()` | Machine hostname |
-| `infisicalEnv` | `string?` | — | Infisical environment slug for secret injection |
 | `databases` | `string[]` | `[]` | Database types to auto-connect: `'postgres'`, `'mongo'`, `'redis'` |
 | `repositoryUrl` | `string?` | — | Must match project `repositoryUrl` for GitOps register |
 | `gitPath` | `string?` | — | Path to manifests in the repo |

@@ -17,8 +17,8 @@ Registered automatically by `PlatformModule.forRoot()` — you typically do not 
 ## How It Works
 
 1. Angular calls `handleError(error)` when an unhandled exception occurs.
-2. Extracts `error.message` and `error.stack`.
-3. POSTs to `POST /api/sdk/bug-report` with:
+2. Extracts `error.message` and `error.stack` and redacts credential-like values.
+3. POSTs to `POST /api/sdk/bug-report` (`Authorization: Bearer <token>`, sent via `HttpBackend`) with:
    - `projectId`, `environment`
    - `description` — `error.message`
    - `category: 'angular-error'`
@@ -38,7 +38,7 @@ import { PlatformModule } from '@mpratyush54/sdk-angular';
   imports: [
     PlatformModule.forRoot({
       apiBase: 'https://platform.example.com',
-      token: 'sk-xxxx',
+      token: 'sdk_live_xxxx',
       projectId: 'my-app',
     }),
   ],

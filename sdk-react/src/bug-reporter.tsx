@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useContext } from 'react';
 import axios from 'axios';
-import { PlatformConfig } from './context';
+import { PlatformConfig, PlatformContext } from './context';
+import { maskSensitiveInputs, platformHeaders, redactSensitive } from './telemetry';
 
 interface ConsoleEntry {
   level: string;
@@ -17,14 +18,30 @@ interface NetworkEntry {
 }
 
 export interface BugReporterWidgetProps {
-  config: PlatformConfig;
+  /** Defaults to the config of the enclosing `<PlatformProvider>`. */
+  config?: PlatformConfig;
+  /**
+   * Attach a screenshot of the page (via html2canvas). Off by default; when on,
+   * password / payment / `data-platform-mask` fields are blanked first and the
+   * user can still untick it before submitting.
+   */
+  captureScreenshot?: boolean;
 }
 
-export function BugReporterWidget({ config }: BugReporterWidgetProps) {
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.href;
+  return (input as Request).url;
+}
+
+export function BugReporterWidget({ config: configProp, captureScreenshot: screenshotOptIn = false }: BugReporterWidgetProps) {
+  const ctx = useContext(PlatformContext);
+  const config = configProp ?? ctx?.config;
   const [isOpen, setIsOpen] = useState(false);
   const [description, setDescription] = useState('');
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [includeScreenshot, setIncludeScreenshot] = useState(screenshotOptIn);
   const consoleLogs = useRef<ConsoleEntry[]>([]);
   const networkLogs = useRef<NetworkEntry[]>([]);
 
@@ -36,7 +53,10 @@ export function BugReporterWidget({ config }: BugReporterWidgetProps) {
     const capture = (level: string, ...args: any[]) => {
       consoleLogs.current.push({
         level,
-        message: args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '),
+        message: redactSensitive(args.map(a => {
+          if (typeof a === 'string') return a;
+          try { return JSON.stringify(a); } catch { return String(a); }
+        }).join(' ')),
         timestamp: new Date().toISOString(),
       });
       if (consoleLogs.current.length > 100) consoleLogs.current.shift();
@@ -53,7 +73,7 @@ export function BugReporterWidget({ config }: BugReporterWidgetProps) {
         const res = await origFetch.apply(window, args);
         networkLogs.current.push({
           method: (args[1]?.method as string) || 'GET',
-          url: typeof args[0] === 'string' ? args[0] : (args[0] as Request).url,
+          url: redactSensitive(requestUrl(args[0])),
           status: res.status,
           duration: Date.now() - start,
           timestamp: new Date().toISOString(),
@@ -63,7 +83,7 @@ export function BugReporterWidget({ config }: BugReporterWidgetProps) {
       } catch (err) {
         networkLogs.current.push({
           method: (args[1]?.method as string) || 'GET',
-          url: typeof args[0] === 'string' ? args[0] : (args[0] as Request).url,
+          url: redactSensitive(requestUrl(args[0])),
           status: 0,
           duration: Date.now() - start,
           timestamp: new Date().toISOString(),
@@ -80,22 +100,29 @@ export function BugReporterWidget({ config }: BugReporterWidgetProps) {
     };
   }, []);
 
-  const captureScreenshot = useCallback(async (): Promise<string | null> => {
+  const takeScreenshot = useCallback(async (): Promise<string | null> => {
     try {
       const { default: html2canvas } = await import('html2canvas');
-      const canvas = await html2canvas(document.body);
+      const canvas = await html2canvas(document.body, {
+        onclone: (clonedDoc) => { maskSensitiveInputs(clonedDoc); },
+        ignoreElements: (el) => el.hasAttribute?.('data-platform-bug-reporter'),
+      });
       return canvas.toDataURL('image/png');
     } catch {
       return null;
     }
   }, []);
 
+  if (!config) {
+    return null;
+  }
+
   const handleSubmit = async () => {
     if (!description.trim()) return;
     setSending(true);
 
     try {
-      const screenshot = await captureScreenshot();
+      const screenshot = screenshotOptIn && includeScreenshot ? await takeScreenshot() : null;
 
       await axios.post(`${config.apiBase}/api/sdk/bug-report`, {
         projectId: config.projectId,
@@ -107,12 +134,12 @@ export function BugReporterWidget({ config }: BugReporterWidgetProps) {
         screenshotBase64: screenshot,
         browserInfo: {
           userAgent: navigator.userAgent,
-          url: window.location.href,
+          url: redactSensitive(window.location.href),
           viewport: `${window.innerWidth}x${window.innerHeight}`,
         },
         appState: {},
       }, {
-        headers: { Authorization: `Bearer ${config.token}` },
+        headers: platformHeaders(config),
       });
 
       setSent(true);
@@ -127,6 +154,7 @@ export function BugReporterWidget({ config }: BugReporterWidgetProps) {
   return (
     <>
       <button
+        data-platform-bug-reporter=""
         onClick={() => setIsOpen(!isOpen)}
         style={{
           position: 'fixed', bottom: '20px', right: '20px', zIndex: 99999,
@@ -141,7 +169,7 @@ export function BugReporterWidget({ config }: BugReporterWidgetProps) {
       </button>
 
       {isOpen && (
-        <div style={{
+        <div data-platform-bug-reporter="" style={{
           position: 'fixed', bottom: '80px', right: '20px', zIndex: 99999,
           width: '380px', maxHeight: '500px', background: '#1a1a2e', color: '#e0e0e0',
           borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
@@ -169,8 +197,18 @@ export function BugReporterWidget({ config }: BugReporterWidgetProps) {
                   }}
                 />
                 <div style={{ marginTop: '8px', fontSize: '11px', color: '#888' }}>
-                  A screenshot, console logs, and network history will be attached automatically.
+                  Recent console messages and request URLs (credentials redacted) and your browser info will be attached.
                 </div>
+                {screenshotOptIn && (
+                  <label style={{ display: 'flex', gap: '6px', marginTop: '8px', fontSize: '12px', color: '#ccc' }}>
+                    <input
+                      type="checkbox"
+                      checked={includeScreenshot}
+                      onChange={(e) => setIncludeScreenshot(e.target.checked)}
+                    />
+                    Include a screenshot of this page (password fields are blanked)
+                  </label>
+                )}
               </div>
               <div style={{ padding: '12px 16px', borderTop: '1px solid #333', display: 'flex', gap: '8px' }}>
                 <button

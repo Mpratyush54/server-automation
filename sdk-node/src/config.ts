@@ -35,10 +35,12 @@ export class ConfigClient {
   startBackgroundRefresh(): void {
     if (this.refreshInterval) clearInterval(this.refreshInterval);
     this.refreshInterval = setInterval(() => this.loadAll(), 30000);
+    (this.refreshInterval as any).unref?.();
   }
 
   stopBackgroundRefresh(): void {
     if (this.refreshInterval) clearInterval(this.refreshInterval);
+    this.refreshInterval = undefined;
   }
 
   get(key: string, defaultValue?: any): any {

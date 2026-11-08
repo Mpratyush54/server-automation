@@ -15,6 +15,7 @@ def main() -> None:
     client.init(
         project_name=name,
         platform_url=url,
+        sdk_token=os.environ.get("PLATFORM_SDK_TOKEN"),
         environment_name=os.environ.get("ENVIRONMENT_NAME", "development"),
         version=os.environ.get("APP_VERSION", "0.1.0"),
         branch=os.environ.get("GIT_BRANCH", "main"),

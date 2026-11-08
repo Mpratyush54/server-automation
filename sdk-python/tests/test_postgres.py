@@ -32,19 +32,54 @@ class TestPostgresManager:
         mock_pool.getconn.return_value = mock_conn
         mock_pool_class.return_value = mock_pool
 
-        manager = PostgresManager({"host": "localhost", "port": 5432})
+        manager = PostgresManager({"host": "localhost", "port": 5432, "password": "pw"})
         manager.connect()
 
         assert manager.connected is True
         mock_pool.getconn.assert_called_once()
-        mock_conn.close.assert_called_once()
+        # Regression (F06): the probe connection must be returned to the pool OPEN.
+        mock_conn.close.assert_not_called()
+        mock_conn.cursor.return_value.__enter__.return_value.execute.assert_called_once_with("SELECT 1")
         mock_pool.putconn.assert_called_once_with(mock_conn)
+
+    @patch('platform_sdk.db.postgres.pool.ThreadedConnectionPool')
+    def test_connect_does_not_pass_pool_size_to_psycopg2(self, mock_pool_class):
+        manager = PostgresManager({"host": "h", "password": "pw", "pool_size": 3})
+        manager.connect()
+        _, kwargs = mock_pool_class.call_args
+        assert kwargs["maxconn"] == 3
+        assert "pool_size" not in kwargs
+
+    @patch('platform_sdk.db.postgres.pool.ThreadedConnectionPool')
+    def test_connect_probe_failure_closes_pool(self, mock_pool_class):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_conn.cursor.side_effect = Exception("server closed the connection")
+        mock_pool.getconn.return_value = mock_conn
+        mock_pool_class.return_value = mock_pool
+
+        manager = PostgresManager({"host": "h", "password": "pw"})
+        with pytest.raises(Exception, match="server closed"):
+            manager.connect()
+        assert manager.connected is False
+        assert manager._pool is None
+        mock_pool.closeall.assert_called_once()
+
+    @patch('platform_sdk.db.postgres.pool.ThreadedConnectionPool')
+    def test_connect_fails_closed_without_password(self, mock_pool_class, monkeypatch):
+        monkeypatch.delenv("PLATFORM_PG_PASSWORD", raising=False)
+        manager = PostgresManager()
+        assert manager.config["password"] is None
+        with pytest.raises(RuntimeError, match="credentials missing"):
+            manager.connect()
+        mock_pool_class.assert_not_called()
+        assert manager.connected is False
 
     @patch('platform_sdk.db.postgres.pool.ThreadedConnectionPool')
     def test_connect_failure(self, mock_pool_class):
         mock_pool_class.side_effect = Exception("Connection refused")
 
-        manager = PostgresManager({"host": "localhost"})
+        manager = PostgresManager({"host": "localhost", "password": "pw"})
         with pytest.raises(Exception, match="Connection refused"):
             manager.connect()
 

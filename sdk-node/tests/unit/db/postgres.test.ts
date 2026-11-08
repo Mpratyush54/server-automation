@@ -48,9 +48,42 @@ describe('PostgresManager', () => {
         end: jest.fn(),
       });
 
-      const manager = new PostgresManager();
+      const manager = new PostgresManager({ password: 'test' });
       await manager.connect();
       expect(manager.isConnected).toBe(false);
+      await manager.disconnect();
+    });
+
+    it('fails closed when no password is configured (no default password)', async () => {
+      const prev = process.env.PLATFORM_PG_PASSWORD;
+      delete process.env.PLATFORM_PG_PASSWORD;
+      const { Pool } = require('pg');
+      const manager = new PostgresManager({});
+      await expect(manager.connect()).rejects.toThrow(/credentials missing/);
+      expect(Pool).not.toHaveBeenCalled();
+      if (prev !== undefined) process.env.PLATFORM_PG_PASSWORD = prev;
+    });
+
+    it('disposes the failed pool and cancels the retry timer on disconnect', async () => {
+      jest.useFakeTimers();
+      const { Pool } = require('pg');
+      const failedEnd = jest.fn().mockResolvedValue(undefined);
+      Pool.mockReturnValueOnce({
+        query: jest.fn().mockRejectedValue(new Error('Connection refused')),
+        connect: jest.fn(),
+        end: failedEnd,
+      });
+      const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const manager = new PostgresManager({ password: 'test' });
+      await manager.connect();
+      expect(failedEnd).toHaveBeenCalledTimes(1);
+      expect(jest.getTimerCount()).toBe(1);
+      await manager.disconnect();
+      expect(jest.getTimerCount()).toBe(0);
+      jest.advanceTimersByTime(60000);
+      expect(Pool).toHaveBeenCalledTimes(1);
+      errSpy.mockRestore();
+      jest.useRealTimers();
     });
   });
 

@@ -38,7 +38,6 @@ describe('RegistrationClient', () => {
         hostname: undefined,
         metadata: undefined,
         dbTypes: undefined,
-        infisicalEnv: undefined,
       });
     });
 

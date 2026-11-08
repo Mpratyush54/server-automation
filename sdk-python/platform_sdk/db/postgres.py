@@ -12,19 +12,37 @@ class PostgresManager:
             "host": _os.environ.get("PLATFORM_PG_HOST", "localhost"),
             "port": int(_os.environ.get("PLATFORM_PG_PORT", "5432")),
             "user": _os.environ.get("PLATFORM_PG_USER", "platform"),
-            "password": _os.environ.get("PLATFORM_PG_PASSWORD", "platform"),
+            # No default password: credentials must come from the environment or config.
+            "password": _os.environ.get("PLATFORM_PG_PASSWORD"),
             "database": _os.environ.get("PLATFORM_PG_DB", "platform"),
         }
         self._pool = None
         self.connected = False
 
     def connect(self):
-        self._pool = pool.ThreadedConnectionPool(
-            minconn=1, maxconn=self.config.get("pool_size", 10), **self.config
+        if not self.config.get("password") and not self.config.get("dsn"):
+            # Fail closed instead of silently trying a well-known password.
+            raise RuntimeError(
+                "[platform] PostgreSQL credentials missing: set PLATFORM_PG_PASSWORD "
+                "or pass a config with a password"
+            )
+        conn_kwargs = {k: v for k, v in self.config.items() if k != "pool_size"}
+        new_pool = pool.ThreadedConnectionPool(
+            minconn=1, maxconn=self.config.get("pool_size", 10), **conn_kwargs
         )
-        conn = self._pool.getconn()
-        conn.close()
-        self._pool.putconn(conn)
+        try:
+            # Probe with a real query and return the (still open) connection to the pool.
+            conn = new_pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+                conn.rollback()
+            finally:
+                new_pool.putconn(conn)
+        except Exception:
+            new_pool.closeall()
+            raise
+        self._pool = new_pool
         self.connected = True
         logger.info("[platform] PostgreSQL connected")
 

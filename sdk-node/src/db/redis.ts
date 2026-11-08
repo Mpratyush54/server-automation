@@ -5,6 +5,8 @@ export class RedisManager {
   private connected = false;
   private retryCount = 0;
   private maxRetries = 5;
+  private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private stopped = false;
   private config: any;
 
   constructor(config: any = {}) {
@@ -16,15 +18,21 @@ export class RedisManager {
   }
 
   async connect(): Promise<void> {
+    this.stopped = false;
+    this.clearReconnectTimer();
+    // Dispose any client left over from a previous (failed) attempt before creating a new one.
+    this.disposeClient();
+    const client = new Redis({ ...this.config, lazyConnect: true });
+    this.client = client;
     try {
-      this.client = new Redis({ ...this.config, lazyConnect: true });
-      await this.client.connect();
+      await client.connect();
       this.connected = true;
       this.retryCount = 0;
       console.log('[platform] Redis connected');
     } catch (err: any) {
       console.error('[platform] Redis connection failed:', err.message);
       this.connected = false;
+      this.disposeClient();
       this.scheduleReconnect();
     }
   }
@@ -45,16 +53,38 @@ export class RedisManager {
     await this.client.del(key);
   }
 
+  private disposeClient(): void {
+    const old = this.client;
+    this.client = null;
+    if (old) {
+      try { old.disconnect(); } catch {}
+    }
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
+  }
+
   private scheduleReconnect(): void {
-    if (this.retryCount >= this.maxRetries) return;
+    if (this.stopped || this.retryCount >= this.maxRetries) return;
     const delay = Math.min(1000 * Math.pow(2, this.retryCount), 30000);
     this.retryCount++;
-    setTimeout(() => this.connect(), delay);
+    this.clearReconnectTimer();
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+      this.connect().catch(() => {});
+    }, delay);
+    (this.reconnectTimer as any).unref?.();
   }
 
   async disconnect(): Promise<void> {
+    this.stopped = true;
+    this.clearReconnectTimer();
     if (this.client) {
-      await this.client.quit();
+      const client = this.client;
+      this.client = null;
+      try { await client.quit(); } catch { client.disconnect(); }
       this.connected = false;
       console.log('[platform] Redis disconnected');
     }

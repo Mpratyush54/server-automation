@@ -86,7 +86,7 @@ import { createWinstonTransport, createPinoTransport } from '@mpratyush54/sdk-no
 platform.captureConsole(); // forwards console.* → platform logs
 ```
 
-Avoid `captureConsole()` together with transports that also write to `console` (recursion). Prefer `platform.logger` in production APIs.
+`captureConsole()` is safe to combine with `platform.logger` (each line is forwarded once, no recursion). It returns a `restore()` function. Avoid combining it with Winston/Pino transports that also write to `console`, or lines are forwarded twice. Prefer `platform.logger` in production APIs.
 
 ### Databases
 
@@ -132,7 +132,7 @@ Docs: [Node quickstart](../docs/getting-started/node-sdk-quickstart.md) · [Plat
 |----------|---------|
 | `PLATFORM_URL` | API base (your convention) |
 | `PLATFORM_SDK_TOKEN` | Default for `sdkToken` |
-| `PLATFORM_PG_*` / `PLATFORM_MONGO_*` / `PLATFORM_REDIS_*` | Optional local DB overrides |
+| `PLATFORM_PG_*` / `PLATFORM_MONGO_*` / `PLATFORM_REDIS_*` | Optional local DB overrides (there is no default Postgres password; set `PLATFORM_PG_PASSWORD` if the Platform does not provide credentials) |
 
 ## License
 

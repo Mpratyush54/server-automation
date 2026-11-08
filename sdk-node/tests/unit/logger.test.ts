@@ -102,6 +102,37 @@ describe('LoggerClient', () => {
     });
   });
 
+  describe('timers', () => {
+    it('does not start a flush timer until configured, and the timer is unrefd', () => {
+      const spy = jest.spyOn(global, 'setInterval');
+      const fresh = new LoggerClient();
+      expect(spy).not.toHaveBeenCalled();
+      fresh.configure(mockHttp, 'p', 'e', 's');
+      expect(spy).toHaveBeenCalledTimes(1);
+      const handle: any = spy.mock.results[0].value;
+      expect(handle.hasRef()).toBe(false);
+      fresh.stop();
+      spy.mockRestore();
+    });
+  });
+
+  describe('buffer cap', () => {
+    it('never holds more than MAX_LOG_BUFFER entries while the API is down', async () => {
+      const { MAX_LOG_BUFFER } = require('../../src/logger');
+      mockHttp.post.mockRejectedValue(new Error('down'));
+      const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      for (let i = 0; i < MAX_LOG_BUFFER * 3; i++) {
+        logger.info(`Log ${i}`);
+        if (i % 50 === 0) await new Promise((r) => setImmediate(r));
+      }
+      await new Promise((r) => setImmediate(r));
+      expect(logger.pending).toBeLessThanOrEqual(MAX_LOG_BUFFER);
+      errSpy.mockRestore();
+      logSpy.mockRestore();
+    });
+  });
+
   describe('flush failure re-queue', () => {
     it('should re-queue logs on flush failure', async () => {
       mockHttp.post.mockRejectedValueOnce(new Error('Network error'));

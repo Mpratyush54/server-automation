@@ -1,5 +1,6 @@
 import type { PlatformClient } from '../client.js';
 import { PlatformApiError } from '../client.js';
+import { redactSecrets } from '../redact.js';
 
 export type ToolResult = {
   content: Array<{ type: 'text'; text: string }>;
@@ -8,7 +9,7 @@ export type ToolResult = {
 
 export function jsonResult(data: unknown): ToolResult {
   return {
-    content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+    content: [{ type: 'text', text: JSON.stringify(redactSecrets(data), null, 2) }],
   };
 }
 
@@ -20,7 +21,7 @@ export function toolError(err: unknown): ToolResult {
         {
           type: 'text',
           text: JSON.stringify(
-            {
+            redactSecrets({
               error: err.message,
               status: err.status,
               body: err.body,
@@ -28,7 +29,7 @@ export function toolError(err: unknown): ToolResult {
                 err.status === 401
                   ? 'Set PLATFORM_AGENT_TOKEN or call platform_login with valid credentials.'
                   : undefined,
-            },
+            }),
             null,
             2,
           ),
@@ -40,7 +41,7 @@ export function toolError(err: unknown): ToolResult {
   const message = err instanceof Error ? err.message : String(err);
   return {
     isError: true,
-    content: [{ type: 'text', text: JSON.stringify({ error: message }, null, 2) }],
+    content: [{ type: 'text', text: JSON.stringify(redactSecrets({ error: message }), null, 2) }],
   };
 }
 
@@ -65,7 +66,7 @@ export function registerTools(client: PlatformClient): RegisteredTool[] {
     {
       name: 'platform_login',
       description:
-        'Authenticate with Platform using email and password. Stores a human JWT in memory for subsequent API calls.',
+        'Authenticate with Platform using email and password. Stores a human JWT in server memory for subsequent API calls; the JWT is never returned. Returns { ok, user }.',
       inputSchema: {
         type: 'object',
         properties: {

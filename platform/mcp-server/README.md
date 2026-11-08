@@ -38,3 +38,10 @@ Exercises MCP initialize, `tools/list`, `resources/list`, and `platform_health`.
 |---|---|---|
 | `PLATFORM_URL` | yes for real clusters | API base (domain or IP) |
 | `PLATFORM_AGENT_TOKEN` | for authenticated tools | `plat_agent_*` secret |
+| `PLATFORM_MCP_TIMEOUT_MS` | no | Per-request timeout for Platform API calls (default `15000`) |
+| `PLATFORM_MCP_LONG_TIMEOUT_MS` | no | Timeout for `platform_run_command` execution and `platform_deploy` (default `90000`) |
+
+`platform_login` keeps the human JWT in server memory only and returns `{ ok, user }` — the JWT is never
+included in tool output. All tool results and errors are passed through a redactor that replaces
+JWTs, `plat_agent_*` / `sdk_live_*` / `sdk_test_*` tokens, `Bearer …` values and password/secret fields
+with `[REDACTED]`.

@@ -206,7 +206,7 @@ function Dashboard() {
         </footer>
       </div>
 
-      <BugReporterWidget config={platformConfig} />
+      <BugReporterWidget config={platformConfig} captureScreenshot />
     </div>
   );
 }
