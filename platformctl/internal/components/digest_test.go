@@ -75,6 +75,42 @@ func TestDigestUpdateRejectsInvalidDigestAndRolloutFailure(t *testing.T) {
 		}
 	}
 }
+// Offline/bundle installs: no registry digest, but the images are already on
+// the node. With ALLOW_LOCAL_IMAGES the tag is used as-is (migrations still run
+// first); without it the update must refuse, so online auto-update stays pinned.
+func TestDigestUpdateFallsBackToLocalImagesOnlyWhenAllowed(t *testing.T) {
+	wrap := `
+eval "$(declare -f kubectl | sed '1s/^kubectl/orig_kubectl/')"
+SET_FILE="$(mktemp)"
+kubectl() {
+ if [[ "$1 $2" == "set image" ]]; then
+  [[ -s "$MIG_FILE" ]] || { echo "API rolled before migrations" >&2; return 96; }
+  echo "$6" >> "$SET_FILE"; return 0
+ fi
+ orig_kubectl "$@"
+}
+API=ghcr.io/test/platform-api:offline
+PORTAL=ghcr.io/test/platform-portal:offline
+`
+	check := `
+grep -qx 'api=ghcr.io/test/platform-api:offline' "$SET_FILE" || { cat "$SET_FILE"; exit 80; }
+grep -qx 'portal=ghcr.io/test/platform-portal:offline' "$SET_FILE" || exit 81
+`
+	for name, setup := range map[string]string{
+		"registry has no digest": "DIGEST=invalid",
+		"registry unreachable":   "curl() { return 6; }",
+	} {
+		allowed := digestTestTools + "\n" + setup + "\nALLOW_LOCAL_IMAGES=true\n" + wrap + digestUpdateScript + check
+		if out, err := runJobShell(t, allowed); err != nil {
+			t.Fatalf("%s with ALLOW_LOCAL_IMAGES: %v %s", name, err, out)
+		}
+		strict := digestTestTools + "\n" + setup + "\n" + wrap + digestUpdateScript
+		if out, err := runJobShell(t, strict); err == nil {
+			t.Fatalf("%s without ALLOW_LOCAL_IMAGES must refuse: %s", name, out)
+		}
+	}
+}
+
 func TestRecoveryAdminSQLAlwaysAuthenticatesAndPropagatesFailure(t *testing.T) {
 	start := strings.Index(recoverScript, "kubectl -n databases exec -i \"$PG_POD\" -- bash -lc 'cat > /tmp/platformctl-recover-admin.sql'")
 	if start < 0 {

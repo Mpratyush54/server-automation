@@ -1394,6 +1394,12 @@ func CheckHealth() error {
 	return nil
 }
 
+// imagePresentLocally reports whether containerd already has the image (e.g.
+// imported from an offline bundle). Swapped in tests.
+var imagePresentLocally = func(image string) bool {
+	return shell.RunSilent("k3s", "crictl", "inspecti", image) == nil
+}
+
 // UpdateImages resolves moving GHCR tags before changing the pod template.
 // Order (after PrepareUpdate moved host state into Secrets, #20): migration Job
 // template + database backup, then the digest script runs the migrate Job and
@@ -1406,7 +1412,13 @@ func UpdateImages(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	if err := shell.RunBashEnv("export KUBECONFIG=\"${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}\"\nAPI="+shellQuote(apiImg)+"\nPORTAL="+shellQuote(portalImg)+"\n"+digestUpdateScript, map[string]string{"REGISTRY_USERNAME": "platformctl", "REGISTRY_PASSWORD": cfg.GitHubToken, "MIGRATE_BACKUP": backup}); err != nil {
+	env := map[string]string{"REGISTRY_USERNAME": "platformctl", "REGISTRY_PASSWORD": cfg.GitHubToken, "MIGRATE_BACKUP": backup}
+	// Offline/bundle installs have no registry to resolve digests from. Allow
+	// the already-imported images only when both are present on the node.
+	if imagePresentLocally(apiImg) && imagePresentLocally(portalImg) {
+		env["ALLOW_LOCAL_IMAGES"] = "true"
+	}
+	if err := shell.RunBashEnv("export KUBECONFIG=\"${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}\"\nAPI="+shellQuote(apiImg)+"\nPORTAL="+shellQuote(portalImg)+"\n"+digestUpdateScript, env); err != nil {
 		return err
 	}
 	return reconcileAPIRollout(cfg)
