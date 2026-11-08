@@ -83,7 +83,7 @@ replicas behind the `platform-api` Service.
 | Replicas | `2` (`standard` / `full` profiles); `1` on `minimal`. Override with `API_REPLICAS=<1-10>` when running `platformctl` (saved in `/etc/platform/.env`). |
 | Rolling update | `maxUnavailable: 0`, `maxSurge: 1` — a new pod must be ready before an old one stops |
 | PodDisruptionBudget | `platform-api`, `minAvailable: 1` (only when replicas ≥ 2; a single-replica PDB would block node drains) |
-| Readiness probe | `GET /api/health/ready` — PostgreSQL + Redis reachable and the pod is not draining |
+| Readiness probe | `GET /api/health/ready` — PostgreSQL reachable and the pod is not draining (Redis is reported, not required) |
 | Liveness probe | `GET /api/health` — process only; a database or Redis outage never restarts the API |
 | Shutdown | `preStop` sleep 10 s, then SIGTERM: readiness turns 503, new connections are refused, in-flight requests finish (up to `SHUTDOWN_TIMEOUT_MS`, default 25 s), then Redis, PostgreSQL and MongoDB connections close. `terminationGracePeriodSeconds: 45` |
 
@@ -112,9 +112,11 @@ automatically if Redis restarts without an ACL file; set `REDIS_API_USERNAME` /
 | Login state, exchange codes, OIDC codes | **Fail closed**: `/api/auth/github|gitlab` and `/api/auth/exchange` answer `503`, `/api/oauth/authorize` and `/api/oauth/token` answer `503 temporarily_unavailable`, an OAuth callback redirects to the login page with an error | A code kept only in one pod's memory could be replayed or fail on the other replica |
 | Permission cache | **Fail open to the database**: the local cache is bypassed until the invalidation subscription is back, so permissions are read from PostgreSQL on every request | A missed invalidation must never keep a revoked permission alive |
 | Rate limits | **Degrade to per-replica limits** (in-memory) with a logged warning; Redis is retried every 10 s | Brute-force protection never switches off, and password login keeps working |
-| Readiness | `/api/health/ready` returns `503`, so replicas leave the Service until Redis is back | Matches the hard dependency above |
+| Readiness | **Unaffected**: `/api/health/ready` stays `200` and reports `checks.redis: "unavailable"`, so every replica keeps serving | Gating readiness on a shared dependency would remove all replicas from the Service at once and turn a partial outage (OAuth/OIDC logins) into a full one |
 
-Password login and requests authenticated with existing session tokens do not need Redis.
+Password login and requests authenticated with existing session tokens do not need Redis, so
+they keep working through a Redis outage. Alert on the `[health] redis unavailable` log line
+or on `checks.redis` from `/api/health/ready`.
 
 `PLATFORM_STATE_STORE=memory` keeps all of this in process memory for single-process local
 development only; never use it with more than one replica.

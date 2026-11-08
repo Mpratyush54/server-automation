@@ -35,7 +35,7 @@ paths:
   /health/ready:
     get:
       tags: [Health]
-      summary: Readiness check (PostgreSQL + Redis, not draining)
+      summary: Readiness check (PostgreSQL reachable, not draining; Redis reported but not required)
       security: []
       responses:
         '200':
@@ -58,7 +58,7 @@ paths:
                         type: string
                         example: ok
         '503':
-          description: Not ready or draining
+          description: PostgreSQL unavailable, or draining
   /openapi.json:
     get:
       tags: [Health]

@@ -23,9 +23,11 @@ Used as the Kubernetes **liveness** probe: it checks only that the process is se
 
 ## `GET` /api/health/ready
 
-Readiness check used by the Kubernetes readiness probe. Returns `200` only when PostgreSQL and
-Redis answer and the pod is not shutting down; otherwise `503`. Error details are logged, not
-returned.
+Readiness check used by the Kubernetes readiness probe. Returns `200` when PostgreSQL answers
+and the pod is not shutting down; otherwise `503`. Redis is reported in `checks.redis` but does
+not affect readiness: during a Redis outage replicas stay in the Service and only the
+Redis-backed flows (OAuth login state, exchange and OIDC codes) answer `503`. Error details are
+logged, not returned.
 
 **Auth:** None
 
@@ -34,7 +36,9 @@ returned.
 { "status": "ready", "checks": { "db": "ok", "redis": "ok" } }
 ```
 
-**Response `503`:** `{ "status": "not_ready", "checks": { "db": "ok", "redis": "unavailable" } }` or `{ "status": "draining" }`.
+During a Redis outage: `200` with `{ "status": "ready", "checks": { "db": "ok", "redis": "unavailable" } }`.
+
+**Response `503`:** `{ "status": "not_ready", "checks": { "db": "unavailable", "redis": "ok" } }` or `{ "status": "draining" }`.
 
 ---
 

@@ -833,7 +833,7 @@ spec:
             exec:
               command: ["sleep", "10"]
         readinessProbe:
-          # DB + Redis + not draining.
+          # PostgreSQL reachable + not draining (Redis outages must not empty the Service).
           httpGet:
             path: /api/health/ready
             port: 3000

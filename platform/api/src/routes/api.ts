@@ -29,7 +29,7 @@ import healthRoutes from './health';
 import operationRoutes from './operations';
 import backupRoutes from './backups';
 
-router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB + Redis)
+router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB only; Redis reported, not gating)
 router.use('/', oidcRoutes); // before authRoutes: OIDC provider + GitHub/GitLab login (state cookie)
 router.use('/', authRoutes);
 router.use('/', versionRoutes);
