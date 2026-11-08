@@ -159,3 +159,14 @@ func TestEmbeddedScriptsParse(t *testing.T) {
 		}
 	}
 }
+
+// Regression: sqlite3 '.backup' restarts whenever k3s writes (continuously),
+// so the k3s capture spun for 10+ minutes on a live cluster.
+func TestK3sSQLiteCaptureUsesSnapshotNotOnlineBackup(t *testing.T) {
+	if strings.Contains(captureScript, "'.backup") {
+		t.Fatal("k3s SQLite capture must not use the restartable online backup API")
+	}
+	if !strings.Contains(captureScript, "VACUUM INTO") || !strings.Contains(captureScript, "quick_check") {
+		t.Fatal("k3s SQLite capture must snapshot with VACUUM INTO and verify it")
+	}
+}

@@ -85,8 +85,12 @@ k3s)
     k3s etcd-snapshot save --name platform-backup --etcd-snapshot-dir "$dest/etcd"
     printf 'etcd\n' > "$dest/datastore"
   else
-    # sqlite3's online backup includes WAL transactions without stopping k3s.
-    (cd "$dest"; sqlite3 /var/lib/rancher/k3s/server/db/state.db '.backup state.db')
+    # VACUUM INTO copies a consistent snapshot (committed WAL included) inside
+    # one read transaction, without stopping k3s. Do not use the sqlite3 .backup command: the
+    # online backup API restarts whenever another connection writes, and k3s
+    # writes continuously, so on a live cluster it can spin forever.
+    sqlite3 -cmd '.timeout 30000' /var/lib/rancher/k3s/server/db/state.db "VACUUM INTO '$dest/state.db'"
+    [ "$(sqlite3 "$dest/state.db" 'PRAGMA quick_check;')" = ok ] || { echo 'k3s datastore snapshot failed integrity check' >&2; exit 1; }
     printf 'sqlite\n' > "$dest/datastore"
   fi
   ;;
