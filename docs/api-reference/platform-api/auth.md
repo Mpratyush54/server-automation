@@ -17,6 +17,25 @@ Health check endpoint. Returns a simple status to confirm the API is running.
 }
 ```
 
+Used as the Kubernetes **liveness** probe: it checks only that the process is serving.
+
+---
+
+## `GET` /api/health/ready
+
+Readiness check used by the Kubernetes readiness probe. Returns `200` only when PostgreSQL and
+Redis answer and the pod is not shutting down; otherwise `503`. Error details are logged, not
+returned.
+
+**Auth:** None
+
+**Response `200`:**
+```json
+{ "status": "ready", "checks": { "db": "ok", "redis": "ok" } }
+```
+
+**Response `503`:** `{ "status": "not_ready", "checks": { "db": "ok", "redis": "unavailable" } }` or `{ "status": "draining" }`.
+
 ---
 
 ## `POST` /api/auth/login

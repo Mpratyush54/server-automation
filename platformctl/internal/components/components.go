@@ -700,6 +700,40 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// apiReplicas is the platform-api replica count (at least 1).
+func apiReplicas(cfg *config.Config) int {
+	if cfg.APIReplicas < 1 {
+		return 1
+	}
+	return cfg.APIReplicas
+}
+
+// apiPDBScript applies a PodDisruptionBudget (minAvailable: 1) when the API runs
+// more than one replica so node drains keep one pod serving. With a single
+// replica a PDB would block drains forever, so any old one is removed.
+func apiPDBScript(replicas int) string {
+	if replicas < 2 {
+		return "kubectl delete pdb platform-api -n platform --ignore-not-found"
+	}
+	return `kubectl apply -n platform -f - <<'EOF'
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: platform-api
+  namespace: platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: platform-api
+EOF`
+}
+
+// deploymentReadyCheck succeeds when every desired replica of the deployment is ready.
+func deploymentReadyCheck(ns, name string) string {
+	return fmt.Sprintf(`k3s kubectl get deployment -n %s %s -o jsonpath='{.status.readyReplicas} {.spec.replicas}' 2>/dev/null | awk '$1 != "" && $1 == $2 { ok = 1 } END { exit !ok }'`, ns, name)
+}
+
 func InstallPlatform(cfg *config.Config) error {
 	// Always reconcile security settings on existing installations as well.
 	color.Cyan("\n  ■ Deploying Platform API + Portal...")
@@ -755,7 +789,14 @@ metadata:
   labels:
     app: platform-api
 spec:
-  replicas: 1
+  replicas: %[3]d
+  # Zero-downtime rollouts: start a new pod and wait for readiness before
+  # removing an old one.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: platform-api
@@ -765,6 +806,8 @@ spec:
         app: platform-api
     spec:
       serviceAccountName: platform-api
+      # preStop sleep (10s) + in-process drain (SHUTDOWN_TIMEOUT_MS, 25s) + margin.
+      terminationGracePeriodSeconds: 45
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -773,7 +816,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: api
-        image: %s
+        image: %[1]s
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -787,18 +830,30 @@ spec:
         volumeMounts:
         - name: platform-etc
           mountPath: /etc/platform
+        lifecycle:
+          preStop:
+            # Keep serving while the endpoint is removed from Services/ingress;
+            # SIGTERM then drains in-flight requests (server.ts).
+            exec:
+              command: ["sleep", "10"]
         readinessProbe:
+          # DB + Redis + not draining.
           httpGet:
-            path: /api/health
+            path: /api/health/ready
             port: 3000
-          initialDelaySeconds: 15
-          periodSeconds: 10
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
         livenessProbe:
+          # Process only; dependency outages must not restart the API.
           httpGet:
             path: /api/health
             port: 3000
           initialDelaySeconds: 30
           periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 3
         resources:
           requests:
             memory: "256Mi"
@@ -862,7 +917,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: portal
-        image: %s
+        image: %[2]s
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -893,9 +948,10 @@ spec:
 
 EOF
 
+%[4]s
 kubectl wait --for=condition=Available deployment/platform-api -n platform --timeout=300s
 kubectl wait --for=condition=Available deployment/platform-portal -n platform --timeout=180s
-`, strconv.Quote(apiImg), strconv.Quote(portalImg),
+`, strconv.Quote(apiImg), strconv.Quote(portalImg), apiReplicas(cfg), apiPDBScript(apiReplicas(cfg)),
 	))
 	if err != nil {
 		return err
@@ -1279,7 +1335,7 @@ func CheckHealth() error {
 	}
 	checks := []check{
 		{"K3s nodes", "k3s kubectl get nodes --no-headers 2>/dev/null | grep -q Ready"},
-		{"Platform API", "k3s kubectl get deployment -n platform platform-api --no-headers 2>/dev/null | grep -q '1/1'"},
+		{"Platform API", deploymentReadyCheck("platform", "platform-api")},
 		{"Platform Portal", "k3s kubectl get deployment -n platform platform-portal --no-headers 2>/dev/null | grep -q '1/1'"},
 		{"Ingress NGINX", "k3s kubectl get deployment -n ingress-nginx ingress-nginx-controller --no-headers 2>/dev/null | grep -q '1/1'"},
 		{"ArgoCD", "k3s kubectl get deployment -n argocd argocd-server --no-headers 2>/dev/null | grep -q '1/1'"},
