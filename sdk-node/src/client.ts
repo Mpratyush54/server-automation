@@ -22,7 +22,6 @@ export interface PlatformOptions {
   /** Ignored — K8s namespace is always assigned by the platform server */
   namespace?: string;
   hostname?: string;
-  infisicalEnv?: string;
   databases?: string[];
   sdkToken?: string;
   /** GitHub/GitLab repo URL — must match the project repositoryUrl on the server */
@@ -117,7 +116,6 @@ export class PlatformClient {
         hostname: this.options.hostname,
         metadata: { sdkVersion: '1.0.0' },
         dbTypes: this.options.databases,
-        infisicalEnv: this.options.infisicalEnv,
         repositoryUrl: this.options.repositoryUrl,
         gitPath: this.options.gitPath,
         gitRevision: this.options.gitRevision || this.options.branch,
