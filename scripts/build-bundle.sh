@@ -74,7 +74,9 @@ curl -fSL --retry 5 --retry-delay 5 -o "$STAGE/k3s/$K3S_FILE" "$K3S_URL"
 # --- helm charts -----------------------------------------------------------
 export HELM_CACHE_HOME="$WORK/helm/cache" HELM_CONFIG_HOME="$WORK/helm/config" HELM_DATA_HOME="$WORK/helm/data"
 declare -A added_repos=()
-while IFS=$'\t' read -r name repo repo_url chart version; do
+# Fields are joined with the ASCII unit separator (\x1f), not tabs: bash merges
+# consecutive tab delimiters, which dropped the empty repo fields of OCI charts.
+while IFS=$'\x1f' read -r name repo repo_url chart version; do
   [[ -n "$name" ]] || continue
   [[ "$name" =~ ^[A-Za-z0-9._-]+$ && "$version" =~ ^[A-Za-z0-9._+-]+$ ]] || die "bad chart entry: $name $version"
   pull_dir="$WORK/pull/$name"
@@ -95,7 +97,7 @@ while IFS=$'\t' read -r name repo repo_url chart version; do
   shopt -u nullglob
   [[ ${#pulled[@]} -eq 1 ]] || die "expected one tarball for $name, got ${#pulled[@]}"
   mv "${pulled[0]}" "$STAGE/charts/${name}-${version}.tgz"
-done < <(jq -r '.charts[] | [.name, (.repo // ""), (.repoUrl // ""), .chart, .version] | @tsv' "$WORK/charts.json")
+done < <(jq -r '.charts[] | [.name, (.repo // ""), (.repoUrl // ""), .chart, .version] | join("\u001f")' "$WORK/charts.json")
 
 # --- platform images -------------------------------------------------------
 mapfile -t IMAGES < <(sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$IMAGES_TXT" | grep -v '^$' | sort -u)
