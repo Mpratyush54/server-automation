@@ -113,12 +113,27 @@ done < <(jq -r '.charts[] | [.name, (.repo // ""), (.repoUrl // ""), .chart, .ve
 # --- platform images -------------------------------------------------------
 mapfile -t IMAGES < <(sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$IMAGES_TXT" | grep -v '^$' | sort -u)
 [[ ${#IMAGES[@]} -gt 0 ]] || die "no images listed in $IMAGES_TXT"
+# With Docker's containerd image store an image can hold several platforms;
+# inspect and save must then name the platform, or they look for the build
+# host's (amd64) and an arm64 pull appears missing. Older Docker lacks the
+# flag, so fall back to the plain commands.
+docker_inspect_arch() {
+  docker image inspect --platform "linux/$ARCH" --format '{{.Architecture}}' "$1" 2>/dev/null \
+    || docker image inspect --format '{{.Architecture}}' "$1" 2>/dev/null || true
+}
+docker_save() {
+  if docker image save --help 2>/dev/null | grep -q -- '--platform'; then
+    docker save --platform "linux/$ARCH" "$@"
+  else
+    docker save "$@"
+  fi
+}
 available=()
 for img in "${IMAGES[@]}"; do
   log "docker pull --platform linux/$ARCH $img"
   got_arch=""
   if docker pull --quiet --platform "linux/$ARCH" "$img" >/dev/null; then
-    got_arch="$(docker image inspect --format '{{.Architecture}}' "$img" 2>/dev/null || true)"
+    got_arch="$(docker_inspect_arch "$img")"
   fi
   if [[ "$got_arch" == "$ARCH" ]]; then
     available+=("$img")
@@ -135,7 +150,7 @@ IMAGE_GROUPS="${IMAGE_GROUPS:-1}"
 if [[ "$IMAGE_GROUPS" == 1 ]]; then
   IMG_FILE="platform-images-${ARCH}.tar.zst"
   log "docker save ${#IMAGES[@]} images -> $IMG_FILE"
-  docker save "${IMAGES[@]}" | zstd -q -f -T0 "-$ZSTD_LEVEL" -o "$STAGE/images/$IMG_FILE"
+  docker_save "${IMAGES[@]}" | zstd -q -f -T0 "-$ZSTD_LEVEL" -o "$STAGE/images/$IMG_FILE"
 else
   # Round-robin over the sorted list keeps the groups similar in size.
   for ((g = 0; g < IMAGE_GROUPS; g++)); do
@@ -144,7 +159,7 @@ else
     [[ ${#group[@]} -gt 0 ]] || continue
     IMG_FILE="platform-images-${ARCH}-$((g + 1)).tar.zst"
     log "docker save ${#group[@]} images -> $IMG_FILE"
-    docker save "${group[@]}" | zstd -q -f -T0 "-$ZSTD_LEVEL" -o "$STAGE/images/$IMG_FILE"
+    docker_save "${group[@]}" | zstd -q -f -T0 "-$ZSTD_LEVEL" -o "$STAGE/images/$IMG_FILE"
   done
 fi
 

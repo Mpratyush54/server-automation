@@ -1028,7 +1028,9 @@ func InstallRouting(cfg *config.Config) error {
 	if pass == "" {
 		pass = cfg.AdminPassword
 	}
-	if cfg.InstallPortainer && !state.IsDone("portainer-sso") && len(pass) >= 12 {
+	// Only once Portainer's own step finished: routing no longer waits for it,
+	// and that step configures SSO itself on the first install.
+	if cfg.InstallPortainer && state.IsDone("portainer") && !state.IsDone("portainer-sso") && len(pass) >= 12 {
 		if err := ensurePortainerAdminAndSSO(cfg, pass); err != nil {
 			color.Yellow("  ⚠ Portainer SSO refresh: %v", err)
 		} else {

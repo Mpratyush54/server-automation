@@ -108,78 +108,162 @@ func destination(p Paths, name string) (string, os.FileMode) {
 	return "", 0
 }
 
-// Install downloads the stack tagged `tag` with up to `parallel` concurrent
-// downloads and places every file. Each file is verified against its digest.
-func Install(client *ocifetch.Client, tag string, p Paths, parallel int) (Result, error) {
+// Download is a stack download in progress (see Start).
+type Download struct {
+	// Base delivers one value once every file except the platform images
+	// (k3s binary + install script + airgap images, charts, stack.json) is in
+	// place: nil, or the error. The k3s step can start then.
+	Base <-chan error
+	// Images delivers the path of each platform image tarball as soon as it
+	// is downloaded and verified, so it can be imported while the rest are
+	// still downloading. Closed when no more will come.
+	Images <-chan string
+	done   chan struct{}
+	res    Result
+	err    error
+}
+
+// Wait blocks until every download finished and returns the summary.
+func (d *Download) Wait() (Result, error) {
+	<-d.done
+	return d.res, d.err
+}
+
+// Start downloads the stack tagged `tag` in the background, `parallel` files
+// at a time, base files first. Every file is verified against its digest.
+func Start(client *ocifetch.Client, tag string, p Paths, parallel int) *Download {
+	base := make(chan error, 1)
+	d := &Download{Base: base, done: make(chan struct{})}
+	finish := func(res Result, err error) {
+		d.res, d.err = res, err
+		close(d.done)
+	}
+
 	started := time.Now()
 	repo := strings.TrimPrefix(Repo, "ghcr.io/")
 	a, err := client.Resolve(repo, tag)
-	if err != nil {
-		return Result{}, fmt.Errorf("resolve %s:%s: %w", Repo, tag, err)
+	if err == nil && len(a.Files) == 0 {
+		err = fmt.Errorf("has no files")
 	}
-	if len(a.Files) == 0 {
-		return Result{}, fmt.Errorf("%s:%s has no files", Repo, tag)
-	}
-	for _, d := range []string{p.K3sImages, p.Charts, p.Staging, p.ImagesDir()} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			return Result{}, err
+	if err == nil {
+		for _, dir := range []string{p.K3sImages, p.Charts, p.Staging, p.ImagesDir()} {
+			if err = os.MkdirAll(dir, 0o755); err != nil {
+				break
+			}
 		}
+	}
+	if err != nil {
+		err = fmt.Errorf("resolve %s:%s: %w", Repo, tag, err)
+		images := make(chan string)
+		close(images)
+		d.Images = images
+		base <- err
+		finish(Result{}, err)
+		return d
 	}
 	if parallel < 1 {
 		parallel = 1
 	}
-	// Largest first, so the long downloads start immediately.
-	files := append([]ocifetch.File(nil), a.Files...)
-	sort.Slice(files, func(i, j int) bool { return files[i].Size > files[j].Size })
+
+	var baseFiles, imageFiles []ocifetch.File
+	for _, f := range a.Files {
+		switch dst, _ := destination(p, f.Name); {
+		case dst == "":
+		case filepath.Dir(dst) == p.ImagesDir():
+			imageFiles = append(imageFiles, f)
+		default:
+			baseFiles = append(baseFiles, f)
+		}
+	}
+	// Base files are queued first; within each group the largest start first.
+	bySize := func(fs []ocifetch.File) {
+		sort.Slice(fs, func(i, j int) bool { return fs[i].Size > fs[j].Size })
+	}
+	bySize(baseFiles)
+	bySize(imageFiles)
+	images := make(chan string, len(imageFiles))
+	d.Images = images
 
 	var (
-		wg    sync.WaitGroup
 		mu    sync.Mutex
 		errs  []string
 		total int64
 		sem   = make(chan struct{}, parallel)
 	)
-	for _, f := range files {
+	get := func(f ocifetch.File) (string, bool) {
 		dst, perm := destination(p, f.Name)
-		if dst == "" {
-			continue
-		}
-		wg.Add(1)
-		go func(f ocifetch.File, dst string, perm os.FileMode) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			if err := client.Download(a, f, dst, perm); err != nil {
-				mu.Lock()
-				errs = append(errs, fmt.Sprintf("%s: %v", f.Name, err))
-				mu.Unlock()
-				return
-			}
+		if err := client.Download(a, f, dst, perm); err != nil {
 			mu.Lock()
-			total += f.Size
+			errs = append(errs, fmt.Sprintf("%s: %v", f.Name, err))
 			mu.Unlock()
-		}(f, dst, perm)
+			return "", false
+		}
+		mu.Lock()
+		total += f.Size
+		mu.Unlock()
+		return dst, true
 	}
-	wg.Wait()
-	if len(errs) > 0 {
-		sort.Strings(errs)
-		return Result{}, fmt.Errorf("stack download failed: %s", strings.Join(errs, "; "))
+	run := func(fs []ocifetch.File, wg *sync.WaitGroup, onDone func(string)) {
+		for _, f := range fs {
+			wg.Add(1)
+			sem <- struct{}{} // acquire in queue order: base files go first
+			go func(f ocifetch.File) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				if dst, ok := get(f); ok && onDone != nil {
+					onDone(dst)
+				}
+			}(f)
+		}
 	}
 
-	res := Result{Tag: tag, Digest: a.Digest, Files: len(files), Bytes: total,
-		Seconds: time.Since(started).Seconds(), Finished: time.Now().UTC()}
-	if data, err := os.ReadFile(filepath.Join(p.Staging, "stack.json")); err == nil {
-		var meta struct {
-			StackVersion string `json:"stackVersion"`
+	go func() {
+		var baseWG, imageWG sync.WaitGroup
+		go func() {
+			baseWG.Wait()
+			mu.Lock()
+			var berr error
+			if len(errs) > 0 {
+				berr = fmt.Errorf("stack download failed: %s", strings.Join(errs, "; "))
+			}
+			mu.Unlock()
+			base <- berr
+		}()
+		run(baseFiles, &baseWG, nil)
+		run(imageFiles, &imageWG, func(path string) { images <- path })
+		baseWG.Wait()
+		imageWG.Wait()
+		close(images)
+
+		if len(errs) > 0 {
+			sort.Strings(errs)
+			finish(Result{}, fmt.Errorf("stack download failed: %s", strings.Join(errs, "; ")))
+			return
 		}
-		if json.Unmarshal(data, &meta) == nil {
-			res.Version = meta.StackVersion
+		res := Result{Tag: tag, Digest: a.Digest, Files: len(baseFiles) + len(imageFiles), Bytes: total,
+			Seconds: time.Since(started).Seconds(), Finished: time.Now().UTC()}
+		if data, err := os.ReadFile(filepath.Join(p.Staging, "stack.json")); err == nil {
+			var meta struct {
+				StackVersion string `json:"stackVersion"`
+			}
+			if json.Unmarshal(data, &meta) == nil {
+				res.Version = meta.StackVersion
+			}
 		}
+		if data, err := json.MarshalIndent(res, "", "  "); err == nil {
+			_ = os.WriteFile(p.Record, append(data, '\n'), 0o644)
+		}
+		finish(res, nil)
+	}()
+	return d
+}
+
+// Install downloads the whole stack and waits for it (Start, then Wait).
+func Install(client *ocifetch.Client, tag string, p Paths, parallel int) (Result, error) {
+	d := Start(client, tag, p, parallel)
+	for range d.Images {
 	}
-	if data, err := json.MarshalIndent(res, "", "  "); err == nil {
-		_ = os.WriteFile(p.Record, append(data, '\n'), 0o644)
-	}
-	return res, nil
+	return d.Wait()
 }
 
 // Staged reports whether the stack staged a k3s binary and install script.
@@ -233,6 +317,45 @@ func ImportImages(p Paths, parallel int) (int, error) {
 		return len(files) - len(errs), fmt.Errorf("image import failed: %s", strings.Join(errs, "; "))
 	}
 	return len(files), nil
+}
+
+// ImportFrom imports image tarballs as they arrive on `in` (Download.Images),
+// `parallel` at a time, deleting each once imported. It returns when `in` is
+// closed and every import finished, so imports overlap the downloads.
+func ImportFrom(in <-chan string, parallel int) (int, error) {
+	if parallel < 1 {
+		parallel = 1
+	}
+	var (
+		wg   sync.WaitGroup
+		mu   sync.Mutex
+		errs []string
+		ok   int
+	)
+	for w := 0; w < parallel; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for f := range in {
+				if err := importFn(f); err != nil {
+					mu.Lock()
+					errs = append(errs, fmt.Sprintf("%s: %v", filepath.Base(f), err))
+					mu.Unlock()
+					continue
+				}
+				_ = os.Remove(f)
+				mu.Lock()
+				ok++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if len(errs) > 0 {
+		sort.Strings(errs)
+		return ok, fmt.Errorf("image import failed: %s", strings.Join(errs, "; "))
+	}
+	return ok, nil
 }
 
 // importTarball streams a (zstd-compressed) `docker save` tarball into
