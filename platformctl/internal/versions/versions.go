@@ -10,12 +10,35 @@ package versions
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 )
 
 // K3sVersion is passed to get.k3s.io as INSTALL_K3S_VERSION.
 const K3sVersion = "v1.37.2+k3s1"
+
+// Mirrors on GHCR, published by .github/workflows/mirror-artifacts.yml. They
+// are the fallback when an upstream download fails, e.g. during a GitHub
+// Releases outage (charts and k3s are served from GitHub Releases, GHCR is a
+// separate service). Anonymous pulls; content is addressed by digest.
+const (
+	// ChartMirror holds every pinned chart as <ChartMirror>/<BaseName>:<version>.
+	ChartMirror = "oci://ghcr.io/mpratyush54/charts"
+	// K3sMirror holds the k3s binaries and install script, tagged MirrorTag(K3sVersion).
+	K3sMirror = "ghcr.io/mpratyush54/k3s"
+)
+
+// MirrorTag converts a version to a valid OCI tag ("+" is not allowed).
+func MirrorTag(version string) string {
+	out := []rune(version)
+	for i, r := range out {
+		if r == '+' {
+			out[i] = '-'
+		}
+	}
+	return string(out)
+}
 
 // HelmVersion is the Helm 3 release downloaded from get.helm.sh.
 // Helm 4 changed flag semantics; stay on 3.x until the installer is validated on 4.
@@ -64,6 +87,19 @@ func (c Chart) Ref() string {
 		return c.CacheFile()
 	}
 	return c.PullArgs()
+}
+
+// BaseName is the chart name without repo or registry path.
+func (c Chart) BaseName() string {
+	if c.IsOCI() {
+		return path.Base(c.Chart)
+	}
+	return c.Chart
+}
+
+// MirrorPullArgs is the GHCR mirror reference usable by `helm pull`.
+func (c Chart) MirrorPullArgs() string {
+	return fmt.Sprintf("%s/%s --version %s", ChartMirror, c.BaseName(), c.Version)
 }
 
 // PullArgs is the remote reference usable by `helm pull` / `helm install`.

@@ -62,6 +62,7 @@ else
 fi
 K3S_VERSION="$(jq -er '.k3s' "$WORK/charts.json")"
 HELM_VERSION="$(jq -er '.helm' "$WORK/charts.json")"
+CHART_MIRROR="$(jq -er '.chartMirror' "$WORK/charts.json")"
 log "version=$VERSION arch=$ARCH k3s=$K3S_VERSION helm=$HELM_VERSION"
 
 # --- k3s airgap images -----------------------------------------------------
@@ -69,7 +70,10 @@ K3S_TAG_ENC="${K3S_VERSION//+/%2B}"
 K3S_FILE="k3s-airgap-images-${ARCH}.tar.zst"
 K3S_URL="https://github.com/k3s-io/k3s/releases/download/${K3S_TAG_ENC}/${K3S_FILE}"
 log "downloading $K3S_URL"
-curl -fSL --retry 5 --retry-delay 5 -o "$STAGE/k3s/$K3S_FILE" "$K3S_URL"
+# Authenticated when GITHUB_TOKEN is set (CI): during GitHub Releases outages
+# anonymous downloads have failed while authenticated ones kept working.
+curl -fSL --retry 5 --retry-delay 5 ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} \
+  -o "$STAGE/k3s/$K3S_FILE" "$K3S_URL"
 
 # --- helm charts -----------------------------------------------------------
 export HELM_CACHE_HOME="$WORK/helm/cache" HELM_CONFIG_HOME="$WORK/helm/config" HELM_DATA_HOME="$WORK/helm/data"
@@ -81,16 +85,20 @@ while IFS=$'\x1f' read -r name repo repo_url chart version; do
   [[ "$name" =~ ^[A-Za-z0-9._-]+$ && "$version" =~ ^[A-Za-z0-9._+-]+$ ]] || die "bad chart entry: $name $version"
   pull_dir="$WORK/pull/$name"
   mkdir -p "$pull_dir"
+  mirror_ref="$CHART_MIRROR/${chart##*/}"
   if [[ -z "$repo_url" ]]; then
     log "helm pull $chart --version $version"
-    helm pull "$chart" --version "$version" --destination "$pull_dir"
+    helm pull "$chart" --version "$version" --destination "$pull_dir" \
+      || { log "upstream failed; helm pull $mirror_ref"; helm pull "$mirror_ref" --version "$version" --destination "$pull_dir"; }
   else
     if [[ -z "${added_repos[$repo]:-}" ]]; then
-      helm repo add "$repo" "$repo_url" --force-update >/dev/null
+      helm repo add "$repo" "$repo_url" --force-update >/dev/null || log "WARN: helm repo add $repo failed"
       added_repos[$repo]=1
     fi
     log "helm pull $repo/$chart --version $version"
-    helm pull "$repo/$chart" --version "$version" --destination "$pull_dir"
+    # Upstream unavailable (e.g. a GitHub Releases outage): use the GHCR mirror.
+    helm pull "$repo/$chart" --version "$version" --destination "$pull_dir" \
+      || { log "upstream failed; helm pull $mirror_ref"; helm pull "$mirror_ref" --version "$version" --destination "$pull_dir"; }
   fi
   shopt -s nullglob
   pulled=("$pull_dir"/*.tgz)

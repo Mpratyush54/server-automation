@@ -3,10 +3,13 @@ package k3s
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/fatih/color"
 
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ocifetch"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
@@ -87,10 +90,8 @@ func Install(domain, githubToken string) error {
 
 	if !IsInstalled() {
 		// Traefik is disabled and DNS configured via config.yaml (see WriteServerConfig).
-		if err := shell.RunBash(fmt.Sprintf(
-			`curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=%s sh -`,
-			shellQuote(versions.K3sVersion))); err != nil {
-			return fmt.Errorf("k3s install failed: %w", err)
+		if err := installK3s(); err != nil {
+			return err
 		}
 	} else {
 		color.Green("  ✓ K3s already installed")
@@ -109,6 +110,59 @@ func Install(domain, githubToken string) error {
 	}
 
 	return state.MarkDone("k3s")
+}
+
+// installUpstream and installFromMirror are swapped in tests.
+var (
+	installUpstream = func() error {
+		return shell.RunBash(fmt.Sprintf(`curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=%s sh -`,
+			shellQuote(versions.K3sVersion)))
+	}
+	installFromMirror = installK3sFromMirror
+)
+
+// installK3s installs k3s with the official script. The script downloads the
+// binary from GitHub Releases; when that (or get.k3s.io) fails, install the
+// same version from the GHCR mirror (versions.K3sMirror) instead.
+func installK3s() error {
+	upstream := installUpstream()
+	if upstream == nil {
+		return nil
+	}
+	color.Yellow("  ⚠ k3s download failed (%v); installing %s from the GHCR mirror", upstream, versions.K3sVersion)
+	if err := installFromMirror(); err != nil {
+		return fmt.Errorf("k3s install failed: %v; mirror: %w", upstream, err)
+	}
+	return nil
+}
+
+// k3sMirrorFile is the binary's file name in the mirror (the k3s release asset name).
+func k3sMirrorFile(goarch string) string {
+	if goarch == "arm64" {
+		return "k3s-arm64"
+	}
+	return "k3s"
+}
+
+func installK3sFromMirror() error {
+	host, repo, _ := strings.Cut(versions.K3sMirror, "/")
+	tag := versions.MirrorTag(versions.K3sVersion)
+	client := ocifetch.New(host)
+	tmp, err := os.MkdirTemp("", "platformctl-k3s-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	script := filepath.Join(tmp, "install.sh")
+	if err := client.Fetch(repo, tag, "install.sh", script, 0o700); err != nil {
+		return err
+	}
+	if err := client.Fetch(repo, tag, k3sMirrorFile(runtime.GOARCH), "/usr/local/bin/k3s", 0o755); err != nil {
+		return err
+	}
+	// The binary is digest-verified; the script only sets up the service.
+	return shell.RunBash(fmt.Sprintf("INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION=%s sh %s",
+		shellQuote(versions.K3sVersion), shellQuote(script)))
 }
 
 func WaitReady() error {

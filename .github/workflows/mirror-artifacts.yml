@@ -1,0 +1,87 @@
+name: mirror install artifacts to GHCR
+
+# Installs download Helm charts and the k3s binary from GitHub Releases. GHCR is
+# a separate service, so platformctl falls back to these copies when Releases
+# is unavailable (see versions.ChartMirror / versions.K3sMirror).
+#
+# Downloads from GitHub use the workflow token: during Releases outages
+# anonymous downloads have failed while authenticated ones kept working.
+on:
+  push:
+    branches: [master]
+    paths:
+      - platformctl/internal/versions/**
+      - .github/workflows/mirror-artifacts.yml
+  schedule:
+    - cron: "17 3 * * 1" # weekly: re-check, fill anything missing
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: mirror-artifacts
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ACTOR: ${{ github.actor }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: platformctl/go.mod
+          cache-dependency-path: platformctl/go.sum
+
+      - name: Install helm and oras (not from GitHub Releases)
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 5 https://get.helm.sh/helm-v3.22.1-linux-amd64.tar.gz | tar -xz -C /tmp
+          sudo install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
+          go install oras.land/oras/cmd/oras@v1.2.3
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Log in to GHCR
+        run: |
+          echo "$GITHUB_TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
+          echo "$GITHUB_TOKEN" | oras login ghcr.io -u "$ACTOR" --password-stdin
+
+      - name: Pinned versions
+        run: (cd platformctl && go run . charts --json) | tee charts.json
+
+      - name: Mirror Helm charts
+        run: python3 scripts/mirror-charts.py charts.json
+
+      - name: Mirror k3s
+        run: bash scripts/mirror-k3s.sh charts.json
+
+      - name: Make packages public
+        run: |
+          # New GHCR packages start private; anonymous installs need public.
+          pkgs="k3s $(jq -r '.charts[] | .chart | split("/") | last | "charts/" + .' charts.json)"
+          for p in $pkgs; do
+            enc="${p//\//%2F}"
+            gh api --method PUT "/user/packages/container/${enc}/visibility" -f visibility=public >/dev/null 2>&1 \
+              && echo "public: $p" \
+              || echo "::warning::could not make ghcr.io/mpratyush54/$p public (toggle it in Package settings)"
+          done
+
+      - name: Verify anonymous pulls
+        run: |
+          set -euo pipefail
+          helm registry logout ghcr.io || true
+          oras logout ghcr.io || true
+          for c in $(jq -r '.charts[] | (.chart | split("/") | last) + "@" + .version' charts.json); do
+            helm show chart "$(jq -r .chartMirror charts.json)/${c%@*}" --version "${c#*@}" >/dev/null \
+              || { echo "::error::anonymous pull failed for chart $c"; exit 1; }
+          done
+          k3s_tag="$(jq -r .k3s charts.json | tr + -)"
+          oras manifest fetch "$(jq -r .k3sMirror charts.json):$k3s_tag" >/dev/null \
+            || { echo "::error::anonymous pull failed for k3s $k3s_tag"; exit 1; }
+          echo "all mirrors are publicly pullable"

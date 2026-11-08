@@ -1,6 +1,7 @@
 package k3s
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -47,5 +48,33 @@ func TestCoreDNSOverrideEscapesDomain(t *testing.T) {
 	if !strings.Contains(o, `rewrite name regex (.*)\.1\.2\.3\.4\.sslip\.io ingress-nginx-controller`) ||
 		!strings.Contains(o, "rewrite name 1.2.3.4.sslip.io ingress-nginx-controller") {
 		t.Fatalf("bad override:\n%s", o)
+	}
+}
+
+// Regression: during a GitHub Releases outage get.k3s.io could not download
+// the k3s binary and provision stopped. Fall back to the GHCR mirror.
+func TestInstallK3sFallsBackToMirror(t *testing.T) {
+	origUp, origMirror := installUpstream, installFromMirror
+	t.Cleanup(func() { installUpstream, installFromMirror = origUp, origMirror })
+
+	mirrored := 0
+	installUpstream = func() error { return errors.New("exit status 22") }
+	installFromMirror = func() error { mirrored++; return nil }
+	if err := installK3s(); err != nil || mirrored != 1 {
+		t.Fatalf("expected mirror install, err=%v mirrored=%d", err, mirrored)
+	}
+
+	installUpstream = func() error { return nil }
+	if err := installK3s(); err != nil || mirrored != 1 {
+		t.Fatalf("mirror must not be used when upstream works (mirrored=%d)", mirrored)
+	}
+
+	installUpstream = func() error { return errors.New("upstream down") }
+	installFromMirror = func() error { return errors.New("mirror down") }
+	if err := installK3s(); err == nil || !strings.Contains(err.Error(), "upstream down") || !strings.Contains(err.Error(), "mirror down") {
+		t.Fatalf("expected both causes, got %v", err)
+	}
+	if k3sMirrorFile("amd64") != "k3s" || k3sMirrorFile("arm64") != "k3s-arm64" {
+		t.Fatal("mirror file names must match the k3s release assets")
 	}
 }

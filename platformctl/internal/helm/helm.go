@@ -99,15 +99,32 @@ func PrefetchCharts(concurrency int) map[string]error {
 	return errs
 }
 
+// helmPull runs `helm pull <args> -d <dir>`; swapped in tests.
+var helmPull = func(args, dir string) (string, error) {
+	return shell.OutputBash(fmt.Sprintf("helm pull %s -d %s", args, dir))
+}
+
+// pullChart caches a chart from its upstream source, falling back to the GHCR
+// mirror (versions.ChartMirror) when upstream fails, e.g. while GitHub
+// Releases (which serves most classic charts) is unavailable.
 func pullChart(c versions.Chart) error {
 	tmp, err := os.MkdirTemp("", "platformctl-chart-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	out, err := shell.OutputBash(fmt.Sprintf("helm pull %s -d %s", c.PullArgs(), tmp))
+	out, err := helmPull(c.PullArgs(), tmp)
 	if err != nil {
-		return fmt.Errorf("helm pull %s: %v: %s", c.Name, err, out)
+		upstream := fmt.Errorf("helm pull %s: %v: %s", c.Name, err, out)
+		_ = os.RemoveAll(tmp)
+		if err := os.MkdirAll(tmp, 0o700); err != nil {
+			return upstream
+		}
+		mout, merr := helmPull(c.MirrorPullArgs(), tmp)
+		if merr != nil {
+			return fmt.Errorf("%v; mirror %s: %v: %s", upstream, versions.ChartMirror, merr, mout)
+		}
+		color.Yellow("  ⚠ %s: upstream chart download failed, used the GHCR mirror", c.Name)
 	}
 	matches, _ := filepath.Glob(filepath.Join(tmp, "*.tgz"))
 	if len(matches) != 1 {
