@@ -81,34 +81,74 @@ func (c *Client) get(path, token, accept string) (*http.Response, error) {
 	return resp, nil
 }
 
-// Fetch writes the layer titled `file` of `repo:tag` to dst (mode perm),
-// verifying its sha256 digest. dst is replaced atomically.
-func (c *Client) Fetch(repo, tag, file, dst string, perm os.FileMode) error {
+// File is one named layer of an artifact.
+type File struct {
+	Name   string
+	Digest string
+	Size   int64
+}
+
+// Artifact is a resolved manifest: its files and the token to download them.
+type Artifact struct {
+	Repo, Tag string
+	// Digest is the manifest digest (what servers record as "installed").
+	Digest string
+	Files  []File
+	token  string
+}
+
+// Resolve reads the manifest of repo:tag.
+func (c *Client) Resolve(repo, tag string) (*Artifact, error) {
 	token, err := c.token(repo)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	resp, err := c.get(fmt.Sprintf("/v2/%s/manifests/%s", repo, tag), token,
 		"application/vnd.oci.image.manifest.v1+json")
 	if err != nil {
-		return err
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, err
 	}
 	var m manifest
-	err = json.NewDecoder(resp.Body).Decode(&m)
-	resp.Body.Close()
-	if err != nil {
-		return fmt.Errorf("manifest %s:%s: %w", repo, tag, err)
+	if err := json.Unmarshal(body, &m); err != nil {
+		return nil, fmt.Errorf("manifest %s:%s: %w", repo, tag, err)
 	}
-	digest := ""
+	sum := sha256.Sum256(body)
+	a := &Artifact{Repo: repo, Tag: tag, Digest: "sha256:" + hex.EncodeToString(sum[:]), token: token}
 	for _, l := range m.Layers {
-		if l.Annotations[TitleAnnotation] == file {
-			digest = l.Digest
-			break
+		if name := l.Annotations[TitleAnnotation]; name != "" && strings.HasPrefix(l.Digest, "sha256:") {
+			a.Files = append(a.Files, File{Name: name, Digest: l.Digest, Size: l.Size})
 		}
 	}
-	if !strings.HasPrefix(digest, "sha256:") {
-		return fmt.Errorf("%s:%s has no file %q", repo, tag, file)
+	return a, nil
+}
+
+// Download writes file f of the artifact to dst (mode perm), verifying its
+// digest; dst is replaced atomically. Safe to call concurrently.
+func (c *Client) Download(a *Artifact, f File, dst string, perm os.FileMode) error {
+	return c.download(a.Repo, a.token, f.Name, f.Digest, dst, perm)
+}
+
+// Fetch writes the layer titled `file` of `repo:tag` to dst (mode perm),
+// verifying its sha256 digest. dst is replaced atomically.
+func (c *Client) Fetch(repo, tag, file, dst string, perm os.FileMode) error {
+	a, err := c.Resolve(repo, tag)
+	if err != nil {
+		return err
 	}
+	for _, f := range a.Files {
+		if f.Name == file {
+			return c.Download(a, f, dst, perm)
+		}
+	}
+	return fmt.Errorf("%s:%s has no file %q", repo, tag, file)
+}
+
+func (c *Client) download(repo, token, file, digest, dst string, perm os.FileMode) error {
 	blob, err := c.get(fmt.Sprintf("/v2/%s/blobs/%s", repo, digest), token, "")
 	if err != nil {
 		return err

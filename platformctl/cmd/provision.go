@@ -21,8 +21,10 @@ import (
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/helm"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/k3s"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ocifetch"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/preflight"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/runner"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/stack"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
 )
@@ -31,9 +33,11 @@ import (
 // Children skip the provision lock (the parent holds it).
 const childEnv = "PLATFORMCTL_CHILD"
 
-// defaultParallel is how many cluster steps run at once. 4 keeps a minimum-spec
-// box (4 cores / 8 GB) responsive while overlapping image pulls and pod starts.
-const defaultParallel = 4
+// defaultParallel is how many cluster steps run at once. With images preloaded
+// from the platform stack the steps are mostly waiting on pod starts, so all
+// first-wave steps start at once and a minimum-spec box (4 cores / 8 GB) stays
+// responsive.
+const defaultParallel = 8
 
 var (
 	parallelFlag int
@@ -98,21 +102,30 @@ type stepDef struct {
 // the controller is ready).
 func provisionGraph(c *config.Config) []stepDef {
 	install := func(name string) []string { return []string{"install", name} }
+	// Ready steps start in this order, so the critical path comes first:
+	// databases -> platform -> routing, plus Portainer (slowest to become ready).
 	return []stepDef{
-		{name: "monitoring", skip: !c.InstallMonitoring, args: install("monitoring"), fn: components.InstallMonitoring},
 		{name: "postgresql", args: install("postgresql"), fn: components.InstallPostgreSQL},
 		{name: "mongodb", args: install("mongodb"), fn: components.InstallMongoDB},
 		{name: "redis", args: install("redis"), fn: components.InstallRedis},
 		{name: "minio", args: install("minio"), fn: components.InstallMinIO},
 		{name: "ingress-nginx", args: install("ingress-nginx"), fn: components.InstallIngressNginx},
 		{name: "cert-manager", skip: !c.InstallCertManager, args: install("cert-manager"), fn: components.InstallCertManager},
-		{name: "argocd", skip: !c.InstallArgoCD, args: install("argocd"), fn: components.InstallArgoCD},
 		{name: "portainer", skip: !c.InstallPortainer, args: install("portainer"), fn: components.InstallPortainer},
+		{name: "argocd", skip: !c.InstallArgoCD, args: install("argocd"), fn: components.InstallArgoCD},
+		{name: "monitoring", skip: !c.InstallMonitoring, args: install("monitoring"), fn: components.InstallMonitoring},
 		{name: "platform", deps: []string{"postgresql", "mongodb", "redis", "minio"},
 			args: install("platform"), fn: components.InstallPlatform},
+		// Ingresses (and so the TLS certificate request) right after the ingress
+		// controller and cert-manager: the certificate issues in parallel with
+		// the databases and the platform instead of at the end.
+		{name: "ingress", deps: []string{"ingress-nginx", "cert-manager"},
+			args: install("ingress"), fn: components.InstallIngress, warnOnly: true},
+		// Routing creates every Ingress (backends may still be starting) and
+		// patches Argo CD; it does not wait for monitoring or Portainer, which
+		// finish on their own. That kept ~1 minute off the critical path.
 		{name: "routing", deps: []string{
-			"ingress-nginx", "cert-manager", "platform", "argocd", "monitoring",
-			"portainer", "minio",
+			"ingress-nginx", "cert-manager", "platform", "argocd", "minio", "ingress",
 		}, args: install("routing"), fn: components.InstallRouting},
 		// oauth2-proxy discovers OIDC at https://DOMAIN/api/oauth, which only exists
 		// once routing has created the platform Ingress, so it runs after routing.
@@ -195,9 +208,24 @@ func runProvision() error {
 	}
 
 	// ── Wave 0: host. Docker is no longer installed: k3s ships containerd.
-	if err := hostStep("prereqs", apt.InstallPrereqs); err != nil {
-		return err
-	}
+	// The platform stack (every third-party image, chart and k3s in one GHCR
+	// artifact) downloads while the prerequisites install. It must land
+	// before k3s starts, which imports the image tarballs at start-up.
+	stackDone := startStackDownload()
+	// Prerequisites (apt) are only needed by the cluster steps, not by helm or
+	// k3s: install them in the background too, and wait before the cluster steps.
+	prereqsDone := make(chan error, 1)
+	go func() {
+		_ = state.MarkInProgress("prereqs")
+		track := state.Track("prereqs (background)")
+		err := apt.InstallPrereqs()
+		if err != nil {
+			track("failed")
+		} else {
+			track("ok")
+		}
+		prereqsDone <- err
+	}()
 	// Offline bundle must land before k3s starts: k3s imports airgap image
 	// tarballs from its images dir at start-up, and cached charts make the
 	// prefetch below a no-op.
@@ -210,7 +238,10 @@ func runProvision() error {
 		return err
 	}
 
-	// Chart tarballs download while k3s installs; helm then installs from disk.
+	waitForStack(stackDone)
+
+	// Charts missing from the stack (or without one) download while k3s
+	// installs; with the stack this is a no-op.
 	prefetchDone := make(chan map[string]error, 1)
 	go func() {
 		done := state.Track("chart-prefetch (background)")
@@ -228,10 +259,16 @@ func runProvision() error {
 			return err
 		}
 	}
+	// Load the stack's images into containerd in parallel before any workload
+	// starts. Not fatal: pods pull missing images from their registries.
+	importImagesFromStack(stackDone)
 
 	// ── Wave 1: cluster basics.
 	if err := hostStep("namespaces", components.Namespace); err != nil {
 		return err
+	}
+	if err := <-prereqsDone; err != nil {
+		return fail("prereqs", err)
 	}
 	startBackgroundPrePull()
 
@@ -254,6 +291,77 @@ func runProvision() error {
 	printTimings(started)
 	components.ProvisionComplete(cfg)
 	return nil
+}
+
+// stackParallel is how many stack files download at once.
+const stackParallel = 8
+
+// startStackDownload installs the platform stack in the background unless an
+// offline bundle was given, PLATFORM_STACK=off, it is already installed, or
+// k3s is already running (its images directory is only read at start-up).
+// The channel or version comes from PLATFORM_STACK (default "stable").
+//
+// It is a pipeline: the small base files (k3s, charts) come first so k3s can
+// start while the image tarballs are still downloading, and each tarball is
+// imported as soon as it arrives (importImagesFromStack).
+func startStackDownload() *stack.Download {
+	tag := stack.Tag(os.Getenv("PLATFORM_STACK"), runtime.GOARCH)
+	if bundleFlag != "" || tag == "" || state.IsDone("platform-stack") || k3s.IsInstalled() {
+		return nil
+	}
+	color.Cyan("  ■ Downloading the platform stack %s:%s in the background...", stack.Repo, tag)
+	return stack.Start(ocifetch.New("ghcr.io"), tag, stack.DefaultPaths, stackParallel)
+}
+
+// waitForStack blocks until the stack's base files (k3s, charts) are in
+// place. A failure is not fatal: k3s, charts and images are then downloaded
+// individually, as before.
+func waitForStack(dl *stack.Download) {
+	if dl == nil {
+		return
+	}
+	track := state.Track("platform-stack base (k3s, charts)")
+	if err := <-dl.Base; err != nil {
+		track("failed")
+		color.Yellow("  ⚠ platform stack unavailable (%v); k3s, charts and images will be downloaded individually", err)
+		return
+	}
+	track("ok")
+}
+
+// importParallel is how many image tarballs load into containerd at once.
+const importParallel = 4
+
+// importImagesFromStack imports the stack's image tarballs as they finish
+// downloading, then reports the whole download. Not fatal: pods pull any
+// missing image from its registry.
+func importImagesFromStack(dl *stack.Download) {
+	if dl == nil {
+		return
+	}
+	track := state.Track("image download + import (overlapped)")
+	n, ierr := stack.ImportFrom(dl.Images, importParallel)
+	res, derr := dl.Wait()
+	switch {
+	case derr != nil:
+		track("partial")
+		color.Yellow("  ⚠ %v; missing images will be pulled from their registries", derr)
+	case ierr != nil:
+		track("partial")
+		color.Yellow("  ⚠ %v; missing images will be pulled from their registries", ierr)
+	default:
+		track("ok")
+		_ = state.MarkDone("platform-stack")
+		color.Green("  ✓ Platform stack %s (%s): %d files, %.1f GB downloaded in %.0fs, %d image archive(s) imported",
+			res.Version, shortDigest(res.Digest), res.Files, float64(res.Bytes)/1e9, res.Seconds, n)
+	}
+}
+
+func shortDigest(d string) string {
+	if len(d) > 19 {
+		return d[:19]
+	}
+	return d
 }
 
 func printResumeHint() {

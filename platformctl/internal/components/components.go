@@ -57,6 +57,7 @@ func All() []Component {
 		{"oauth2-proxy", "OAuth2 authentication proxy", InstallOAuthProxy},
 		{"portainer", "Container management UI (subdomain + Platform SSO)", InstallPortainer},
 		{"platform", "Platform API + Portal", InstallPlatform},
+		{"ingress", "Create the Ingresses early so the TLS certificate issues during install", InstallIngress},
 		{"routing", "Ingress: ArgoCD /argocd, Grafana /grafana, Portainer subdomain+SSO", InstallRouting},
 		{"auto-update", "GHCR auto-update policy (Image Updater + CronJob)", InstallAutoUpdate},
 	}
@@ -213,7 +214,10 @@ func InstallRedis(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing Redis...")
-	err := helmValues("redis", "redis", "databases", map[string]any{"auth": map[string]string{"password": cfg.RedisPassword}}, "--set", "master.persistence.size=5Gi", "--wait", "--timeout", "10m")
+	err := helmValues("redis", "redis", "databases", map[string]any{"auth": map[string]string{"password": cfg.RedisPassword}}, "--set", "master.persistence.size=5Gi",
+		// Single server: one read replica. The chart default (3, started one at a
+		// time) added ~1.5 minutes to every install for no redundancy.
+		"--set", "replica.replicaCount=1", "--wait", "--timeout", "10m")
 	if err != nil {
 		return err
 	}
@@ -393,6 +397,9 @@ func InstallMonitoring(cfg *config.Config) error {
 	err = shell.RunBash(fmt.Sprintf(`
 		set -uo pipefail
 		# Loki is independent of kube-prometheus-stack: install both concurrently.
+		# No --wait: nothing later needs the monitoring pods ready (routing only
+		# creates the Grafana Ingress), so Grafana and Prometheus finish starting
+		# while the rest of the platform installs. Waiting cost ~2 minutes.
 		# Loki must not claim the default datasource: Grafana refuses to start when
 		# two datasources are marked default (the kube-prometheus datasource already is).
 		helm upgrade --install loki %[3]s \
@@ -400,7 +407,7 @@ func InstallMonitoring(cfg *config.Config) error {
 			--set grafana.enabled=false \
 			--set prometheus.enabled=false \
 			--set loki.isDefault=false \
-			--wait --timeout 10m > /tmp/platformctl-loki.log 2>&1 &
+			--timeout 10m > /tmp/platformctl-loki.log 2>&1 &
 		loki_pid=$!
 		helm upgrade --install kube-prometheus %[4]s \
 			--namespace monitoring --create-namespace \
@@ -408,7 +415,7 @@ func InstallMonitoring(cfg *config.Config) error {
 			-f %[2]s \
 			--set grafana.assertNoLeakedSecrets=false \
 			--set prometheus.prometheusSpec.retention=30d \
-			--wait --timeout 10m
+			--timeout 10m
 		rc=$?
 		wait "$loki_pid" || { echo "WARN: loki install failed (non-fatal):"; tail -20 /tmp/platformctl-loki.log; }
 		exit $rc
@@ -1001,6 +1008,27 @@ kubectl wait --for=condition=Available deployment/platform-portal -n platform --
 // InstallRouting re-applies ingress so ArgoCD (full-page /argocd), Grafana
 // (iframe /grafana), and Portainer (subdomain + /portainer redirect) stay correct.
 // Also re-applies Portainer SSO in case Portainer was installed before ingress existed.
+// InstallIngress creates every Ingress (and the certificate issuers) as soon
+// as ingress-nginx and cert-manager run, so cert-manager requests the TLS
+// certificate while the databases and the platform are still installing.
+// Backends that do not exist yet just answer 503 until they start. Routing
+// re-applies the same objects later and then finds the certificate issued:
+// waiting for Let's Encrypt at the end cost ~45 s on every install.
+func InstallIngress(cfg *config.Config) error {
+	color.Cyan("\n  ■ Creating Ingresses early (TLS certificate issues during install)...")
+	if cfg.InstallCertManager {
+		if err := EnsureIssuers(cfg); err != nil {
+			// Not fatal: routing applies the issuers again and handles fallback.
+			color.Yellow("  ⚠ certificate issuers: %v (routing will retry)", err)
+		}
+	}
+	if err := ApplyServiceRouting(cfg); err != nil {
+		return err
+	}
+	color.Green("  ✓ Ingresses created")
+	return nil
+}
+
 func InstallRouting(cfg *config.Config) error {
 	if doneOrSkip("routing", "routing") {
 		return nil
@@ -1022,7 +1050,9 @@ func InstallRouting(cfg *config.Config) error {
 	if pass == "" {
 		pass = cfg.AdminPassword
 	}
-	if cfg.InstallPortainer && !state.IsDone("portainer-sso") && len(pass) >= 12 {
+	// Only once Portainer's own step finished: routing no longer waits for it,
+	// and that step configures SSO itself on the first install.
+	if cfg.InstallPortainer && state.IsDone("portainer") && !state.IsDone("portainer-sso") && len(pass) >= 12 {
 		if err := ensurePortainerAdminAndSSO(cfg, pass); err != nil {
 			color.Yellow("  ⚠ Portainer SSO refresh: %v", err)
 		} else {

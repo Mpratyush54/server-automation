@@ -21,6 +21,9 @@
 #   PLATFORMCTL   prebuilt platformctl binary used for `charts --json`
 #   CHARTS_JSON   path to a pre-generated `charts --json` file
 #   ZSTD_LEVEL    compression level for the image tarball (default 10)
+#   IMAGE_GROUPS  split the images into N tarballs (default 1), so they can be
+#                 downloaded and imported in parallel (scripts/build-stack.sh)
+#   STAGE_ONLY    copy the staged files to this directory instead of packaging
 set -euo pipefail
 
 die() { echo "build-bundle: error: $*" >&2; exit 1; }
@@ -110,15 +113,50 @@ done < <(jq -r '.charts[] | [.name, (.repo // ""), (.repoUrl // ""), .chart, .ve
 # --- platform images -------------------------------------------------------
 mapfile -t IMAGES < <(sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$IMAGES_TXT" | grep -v '^$' | sort -u)
 [[ ${#IMAGES[@]} -gt 0 ]] || die "no images listed in $IMAGES_TXT"
+# Requires Docker's classic image store. With the containerd image store a
+# `--platform` pull of a multi-platform image keeps the index, so inspect and
+# save see the build host's platform: arm64 images look missing and `docker
+# save` exports incomplete images ("content digest ... not found" on import).
+# The workflows switch the store off (see publish-stack.yml); refuse otherwise.
+if docker info --format '{{range .DriverStatus}}{{index . 0}}={{index . 1}};{{end}}' 2>/dev/null | grep -q 'driver-type=io.containerd.snapshotter'; then
+  die "Docker uses the containerd image store; disable it (daemon.json features.containerd-snapshotter=false) and restart Docker"
+fi
+docker_inspect_arch() { docker image inspect --format '{{.Architecture}}' "$1" 2>/dev/null || true; }
+docker_save() { docker save "$@"; }
+available=()
 for img in "${IMAGES[@]}"; do
   log "docker pull --platform linux/$ARCH $img"
-  docker pull --quiet --platform "linux/$ARCH" "$img" >/dev/null
-  got_arch="$(docker image inspect --format '{{.Architecture}}' "$img")"
-  [[ "$got_arch" == "$ARCH" ]] || die "$img resolved to $got_arch, want $ARCH"
+  got_arch=""
+  if docker pull --quiet --platform "linux/$ARCH" "$img" >/dev/null; then
+    got_arch="$(docker_inspect_arch "$img")"
+  fi
+  if [[ "$got_arch" == "$ARCH" ]]; then
+    available+=("$img")
+  elif [[ "${ALLOW_MISSING_ARCH:-}" == 1 ]]; then
+    # Stack builds: such an image is pulled at install time instead.
+    log "WARN: $img has no linux/$ARCH image; leaving it out"
+  else
+    die "$img resolved to '${got_arch:-nothing}', want $ARCH"
+  fi
 done
-IMG_FILE="platform-images-${ARCH}.tar.zst"
-log "docker save ${#IMAGES[@]} images -> $IMG_FILE"
-docker save "${IMAGES[@]}" | zstd -q -f -T0 "-$ZSTD_LEVEL" -o "$STAGE/images/$IMG_FILE"
+IMAGES=("${available[@]}")
+IMAGE_GROUPS="${IMAGE_GROUPS:-1}"
+[[ "$IMAGE_GROUPS" =~ ^[1-9][0-9]?$ ]] || die "IMAGE_GROUPS must be 1-99"
+if [[ "$IMAGE_GROUPS" == 1 ]]; then
+  IMG_FILE="platform-images-${ARCH}.tar.zst"
+  log "docker save ${#IMAGES[@]} images -> $IMG_FILE"
+  docker_save "${IMAGES[@]}" | zstd -q -f -T0 "-$ZSTD_LEVEL" -o "$STAGE/images/$IMG_FILE"
+else
+  # Round-robin over the sorted list keeps the groups similar in size.
+  for ((g = 0; g < IMAGE_GROUPS; g++)); do
+    group=()
+    for ((i = g; i < ${#IMAGES[@]}; i += IMAGE_GROUPS)); do group+=("${IMAGES[$i]}"); done
+    [[ ${#group[@]} -gt 0 ]] || continue
+    IMG_FILE="platform-images-${ARCH}-$((g + 1)).tar.zst"
+    log "docker save ${#group[@]} images -> $IMG_FILE"
+    docker_save "${group[@]}" | zstd -q -f -T0 "-$ZSTD_LEVEL" -o "$STAGE/images/$IMG_FILE"
+  done
+fi
 
 # --- manifest + checksums --------------------------------------------------
 (cd "$STAGE" && find k3s images charts -type f | LC_ALL=C sort) >"$WORK/files.txt"
@@ -135,6 +173,13 @@ jq -n \
     images: ($images | split("\n") | map(select(length > 0))),
     files: ($files | split("\n") | map(select(length > 0)))}' >"$STAGE/manifest.json"
 (cd "$STAGE" && xargs -d '\n' sha256sum <"$WORK/files.txt" >SHA256SUMS)
+
+if [[ -n "${STAGE_ONLY:-}" ]]; then
+  mkdir -p "$STAGE_ONLY"
+  cp -R "$STAGE"/. "$STAGE_ONLY"/
+  log "staged in $STAGE_ONLY"
+  exit 0
+fi
 
 # --- package ---------------------------------------------------------------
 # Contents are already compressed; a low level keeps packaging fast.

@@ -11,6 +11,7 @@ import (
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ocifetch"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/stack"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
 )
@@ -112,6 +113,19 @@ func Install(domain, githubToken string) error {
 	return state.MarkDone("k3s")
 }
 
+// stackPaths is where the platform stack staged k3s (see internal/stack).
+var stackPaths = stack.DefaultPaths
+
+// installFromStack installs the k3s binary and install script staged by the
+// platform stack: no download at all. Swapped in tests.
+var installFromStack = func() error {
+	if err := shell.RunBash(fmt.Sprintf("install -m 0755 %s /usr/local/bin/k3s", shellQuote(stackPaths.K3sBinary()))); err != nil {
+		return err
+	}
+	return shell.RunBash(fmt.Sprintf("INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION=%s sh %s",
+		shellQuote(versions.K3sVersion), shellQuote(stackPaths.K3sScript())))
+}
+
 // installUpstream and installFromMirror are swapped in tests.
 var (
 	installUpstream = func() error {
@@ -125,6 +139,13 @@ var (
 // binary from GitHub Releases; when that (or get.k3s.io) fails, install the
 // same version from the GHCR mirror (versions.K3sMirror) instead.
 func installK3s() error {
+	if stackPaths.Staged() {
+		err := installFromStack()
+		if err == nil {
+			return nil
+		}
+		color.Yellow("  ⚠ k3s from the platform stack failed (%v); downloading it instead", err)
+	}
 	upstream := installUpstream()
 	if upstream == nil {
 		return nil
