@@ -1,0 +1,39 @@
+# Host maintenance uses the same root/hostPID boundary as platform-backup-nightly.
+# The provision lock also excludes manual upgrades, provision and backups.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: platform-auto-update
+  namespace: platform
+spec:
+  suspend: false
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 7200
+      template:
+        spec:
+          hostPID: true
+          nodeSelector:
+            node-role.kubernetes.io/control-plane: "true"
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          containers:
+          - name: upgrade
+            image: ubuntu:24.04
+            securityContext:
+              privileged: true
+              runAsUser: 0
+            command: ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "--root", "--wd", "--", "/usr/local/bin/platformctl", "upgrade", "--patch-only", "--yes"]
+            resources:
+              requests:
+                cpu: 50m
+                memory: 64Mi
+              limits:
+                cpu: "1"
+                memory: 512Mi

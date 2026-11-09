@@ -1459,7 +1459,7 @@ func InstallAutoUpdate(cfg *config.Config) error {
 	if !cfg.AutoUpdate {
 		return nil
 	}
-	manifest := readManifest("auto-update-cronjob.yaml")
+	manifest := readManifest("auto-upgrade-cronjob.yaml")
 	if manifest == "" {
 		return fmt.Errorf("auto-update manifest missing")
 	}

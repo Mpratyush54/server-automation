@@ -47,6 +47,26 @@ jobs:
       # Copy of the release on GHCR: install.sh falls back to it when GitHub
       # Releases is unavailable. oras comes from the Go module proxy, not from
       # GitHub Releases.
+      - name: Publish upgrade rules and chart pins
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        working-directory: platformctl
+        run: |
+          set -euo pipefail
+          go run . charts --json > dist/chart-pins.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          rules = json.loads(Path('upgrade-policy.json').read_text())
+          rules['charts'] = json.loads(Path('dist/chart-pins.json').read_text())['charts']
+          Path('dist/upgrade.json').write_text(json.dumps(rules, indent=2) + '\n')
+          PY
+          cd dist
+          sha256sum upgrade.json >> checksums.txt
+          gh release upload "$TAG" upgrade.json checksums.txt --clobber
+
       - name: Mirror platformctl to GHCR
         if: startsWith(github.ref, 'refs/tags/')
         env:
@@ -62,7 +82,7 @@ jobs:
           version="${TAG#v}"
           ref="ghcr.io/mpratyush54/platformctl"
           cd platformctl/dist
-          files=(checksums.txt "platformctl_${version}_linux_amd64.tar.gz" "platformctl_${version}_linux_arm64.tar.gz")
+          files=(checksums.txt upgrade.json "platformctl_${version}_linux_amd64.tar.gz" "platformctl_${version}_linux_arm64.tar.gz")
           ls -l "${files[@]}"
           oras push "$ref:$version" --artifact-type application/vnd.platform.platformctl.v1 "${files[@]}"
           # Pre-releases (vX.Y.Z-rc.N) never move "latest", matching GitHub's releases/latest.
