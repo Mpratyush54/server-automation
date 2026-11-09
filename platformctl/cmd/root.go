@@ -218,6 +218,7 @@ func init() {
 	rootCmd.AddCommand(backupCmd)
 	rootCmd.AddCommand(repairCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(mfaCmd) // break-glass MFA disable (#24)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default /etc/platform/.env)")
 	rootCmd.PersistentFlags().BoolVar(&cfg.NonInteractive, "auto", false, "non-interactive mode")
