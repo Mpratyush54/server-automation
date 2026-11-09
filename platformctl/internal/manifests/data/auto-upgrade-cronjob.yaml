@@ -3,11 +3,12 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: platform-auto-update
+  name: platform-auto-upgrade
   namespace: platform
 spec:
   suspend: false
-  schedule: "*/15 * * * *"
+  schedule: "20 4 * * *"
+  timeZone: "Etc/UTC"
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 600
   successfulJobsHistoryLimit: 1

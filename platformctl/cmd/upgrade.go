@@ -158,7 +158,7 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 			}
 			return e
 		}
-		return nil
+		return resume()
 	}
 	reader := bufio.NewReader(cmd.InOrStdin())
 	if !upgradeYes {
@@ -260,6 +260,9 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	}
 	if e = finishUpgradeInstallation(); e != nil {
 		return e
+	}
+	if e = resumeUpdater(); e != nil {
+		return fmt.Errorf("release is healthy; resume digest-refresh schedule: %w", e)
 	}
 	completed = true
 	return nil
@@ -395,22 +398,8 @@ func upgradePreflight() error {
 			return fmt.Errorf("repair pods in %s first: %w", ns, e)
 		}
 	}
-	token := os.Getenv("PLATFORM_UPGRADE_TOKEN")
-	if token == "" {
-		if b, e := os.ReadFile("/etc/platform/upgrade-token"); e == nil {
-			token = strings.TrimSpace(string(b))
-		}
-	}
-	if token == "" {
-		return fmt.Errorf("set PLATFORM_UPGRADE_TOKEN to an admin/devops bearer token to check active operations")
-	}
-	// Token is passed on stdin, never as a kubectl command argument or log output.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	c := exec.CommandContext(ctx, "kubectl", "-n", "platform", "exec", "-i", "deploy/platform-api", "-c", "api", "--", "node", "-e", operationsProbe)
-	c.Stdin = strings.NewReader(token)
-	if e = c.Run(); e != nil {
-		return fmt.Errorf("active-operation check failed; wait for running operations, check token, and retry: %w", e)
+	if e = checkActiveOperations(); e != nil {
+		return e
 	}
 	if _, e = os.Stat("/etc/platform/backup.json"); e == nil {
 		bc, e := backup.ReadConfig("/etc/platform/backup.json")
@@ -462,8 +451,6 @@ func healthyPods(raw []byte) error {
 	}
 	return nil
 }
-
-const operationsProbe = `const fs=require('fs');(async()=>{const token=fs.readFileSync(0,'utf8');const r=await fetch('http://platform-api.platform.svc.cluster.local:3000/api/operations?limit=100',{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(15000)});if(!r.ok)process.exit(1);const ops=await r.json();if(!Array.isArray(ops)||ops.length>=100||ops.some(o=>!['succeeded','failed','compensated'].includes(o.status)))process.exit(1)})().catch(()=>process.exit(1))`
 
 func upgradeBackup(source string) (string, error) {
 	if _, e := os.Stat("/etc/platform/backup.json"); e == nil {

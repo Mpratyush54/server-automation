@@ -6,8 +6,8 @@ checked against `checksums.txt`; GitHub asset failures fall back to the GHCR
 platformctl artifact, with layer digests verified as well.
 
 ```sh
-sudo --preserve-env=PLATFORM_UPGRADE_TOKEN platformctl upgrade --to vX.Y.Z --dry-run
-sudo --preserve-env=PLATFORM_UPGRADE_TOKEN platformctl upgrade --to vX.Y.Z
+sudo platformctl upgrade --to vX.Y.Z --dry-run
+sudo platformctl upgrade --to vX.Y.Z
 sudo platformctl upgrade --history
 ```
 
@@ -22,22 +22,19 @@ same-major upgrades are allowed. Release maintainers edit
 `irreversibleMigrations`; the release workflow attaches `upgrade.json` containing
 these rules and the target binary's chart pins and mirrors it to GHCR.
 
-## Preflight and authentication
-
-Provide an admin/devops bearer token in `PLATFORM_UPGRADE_TOKEN`, or in a
-root-owned mode-0600 `/etc/platform/upgrade-token` file for scheduled upgrades.
-Keep tokens out of shell history and logs. The token is sent through stdin to
-an in-cluster request to `platform-api.platform.svc.cluster.local`; the public
-ingress is never used. Expired or insufficient tokens stop upgrades.
+## Preflight
 
 Preflight requires 2 GiB free under `/var/lib`, 512 MiB available memory,
 Ready pods in `platform`, `databases`, and `storage` (completed Jobs are allowed),
 no active operations, and a readable configured backup destination. Repair the
-reported resource or target before retrying. The current operations API has no
-active filter or pagination and caps results at 100. Upgrade checks terminal
-statuses (`succeeded`, `failed`, `compensated`) and refuses when the result
-window reaches 100: an API follow-up must add a complete active-operation query
-before such an installation can safely proceed. No unsafe bypass is provided.
+reported resource or target before retrying. Root queries the `platform`
+database directly using `kubectl -n databases exec` and `psql` in the PostgreSQL
+pod. The password is resolved inside that container from `POSTGRES_PASSWORD`
+or `POSTGRES_PASSWORD_FILE`, using the same helper as backups. No API token is
+needed. The query counts all `pending`, `running`, and `compensating` operations;
+a refusal includes the count and five newest operations' type, status, and
+`updatedAt`. Older installations without the operations table count as zero;
+connection, permission, and other query errors stop the upgrade.
 Arrange a maintenance window and prevent new administrative mutations during
 the upgrade; the installer lock excludes other installer/backup processes,
 but does not lock new API operations.
@@ -88,7 +85,7 @@ upgrade. History is an append-only event log in
 recent events below Kubernetes size limits; the local file keeps all events.
 History write failures are reported, rather than claiming an unaudited success.
 
-Legacy digest-only schedules are suspended before the backup; a running legacy
+Digest-refresh schedules are suspended before the backup; a running digest-refresh
 Job must finish first. Failed upgrades restore the previous suspension setting.
 After a successful transaction the target executable is installed atomically
 at `/usr/local/bin/platformctl`, then the auto-update schedule is reconciled.
@@ -97,17 +94,27 @@ successful release upgrade and needs operator repair.
 
 ## Automatic upgrades
 
-Provision and successful upgrades install a CronJob running the **same**
-`platformctl upgrade --patch-only --yes` path. It selects the newest stable patch
-in the installed minor from the latest 100 GitHub releases. Minor/major changes
-remain manual. An offline lookup retains the installed release and preserves
-the shared resolver's existing local-image fallback. No changes means no backup
-or migrations. The root host-maintenance boundary (`hostPID`/`nsenter`) matches
-the existing backup CronJob; it has explicit resource limits and runs only on
-control-plane nodes. There is no new always-running service. Supply the token
-file before enabling the schedule; missing tokens fail closed. Disable scheduling
-with the existing `AUTO_UPDATE=false` installation setting, or suspend the
-CronJob. Upgrades never fall back to the legacy unguarded image updater.
+The existing `platform-auto-update` CronJob remains the digest-refresh path,
+including `ALLOW_LOCAL_IMAGES` and its local-image fallback. `AUTO_UPDATE=true`
+(the default) installs it with its existing manifest and schedule.
+
+Release upgrades use a separate, opt-in `platform-auto-upgrade` CronJob.
+Set `AUTO_UPGRADE=true` (default **false**) in the host's platform configuration
+and run `platformctl install auto-update` to install it. Provision
+and successful upgrades reconcile enabled schedules independently: either flag
+can be enabled without the other. Setting a flag false skips installation; to
+stop an already installed schedule, suspend or delete its CronJob explicitly.
+
+The release job runs `platformctl upgrade --patch-only --yes` daily at 04:20 UTC,
+selecting the newest stable patch in the installed minor from the latest 100
+GitHub releases. Minor/major changes remain manual. An offline lookup retains
+the installed release and preserves the resolver's local-image fallback. No
+changes means no backup or migrations. It needs no token. Its root host boundary
+(`hostPID`/`nsenter`) matches the backup CronJob, with explicit resource limits
+and control-plane node selection. `concurrencyPolicy: Forbid` prevents overlapping
+scheduled Jobs, and upgrades retain the shared provision/upgrade lock. The
+digest-refresh schedule is suspended during a release transaction, and a running
+digest-refresh Job must finish before it can proceed.
 
 ## VM release validation
 

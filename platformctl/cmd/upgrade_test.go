@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"errors"
-	"os/exec"
 	"strings"
 	"testing"
 )
@@ -53,27 +52,6 @@ func TestLegacyUpdaterSuspensionAndSharedLockSchedule(t *testing.T) {
 	}
 }
 
-func TestOperationsProbeExecutesAgainstInternalService(t *testing.T) {
-	node, e := exec.LookPath("node")
-	if e != nil {
-		t.Skip("node unavailable")
-	}
-	for _, tt := range []struct {
-		ops string
-		ok  bool
-	}{
-		{`[]`, true}, {`[{status:'succeeded'},{status:'failed'},{status:'compensated'}]`, true},
-		{`[{status:'running'}]`, false}, {`[{status:'pending'}]`, false}, {`Array(100).fill({status:'succeeded'})`, false}, {`{error:'Unauthorized'}`, false},
-	} {
-		script := `global.fetch=async(url,opts)=>{if(url!=='http://platform-api.platform.svc.cluster.local:3000/api/operations?limit=100'||opts.headers.Authorization!=='Bearer fixture')throw Error('bad request');return {ok:true,json:async()=>` + tt.ops + `}};` + operationsProbe
-		c := exec.Command(node, "-e", script)
-		c.Stdin = strings.NewReader("fixture")
-		out, e := c.CombinedOutput()
-		if (e == nil) != tt.ok {
-			t.Fatalf("%s: %v %s", tt.ops, e, out)
-		}
-	}
-}
 func TestUpgradePlanAndPreflightUseInjectedCommands(t *testing.T) {
 	old := upgradeRun
 	defer func() { upgradeRun = old }()

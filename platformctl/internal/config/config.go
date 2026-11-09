@@ -40,6 +40,7 @@ type Config struct {
 	InstallPortainer   bool
 	InstallCertManager bool
 	AutoUpdate         bool
+	AutoUpgrade        bool // Opt-in daily release patch upgrades.
 
 	// Profile is the install profile (minimal|standard|full) that set the
 	// Install* defaults. See ApplyProfile.
@@ -105,6 +106,7 @@ func Load() *Config {
 		SkipK8s:              os.Getenv("SKIP_K8S") == "true",
 		SkipPreflight:        os.Getenv("SKIP_PREFLIGHT") == "true",
 		AutoUpdate:           getEnvBool("AUTO_UPDATE", true),
+		AutoUpgrade:          getEnvBool("AUTO_UPGRADE", false),
 		MinioAccessKey:       getEnv("MINIO_ACCESS_KEY", "platformadmin"),
 		PostgresPassword:     os.Getenv("POSTGRES_PASSWORD"),
 		MongoPassword:        os.Getenv("MONGO_PASSWORD"),
@@ -287,6 +289,7 @@ func (c *Config) PromptInteractive() error {
 	askBool("Install Portainer (portainer.<domain>)", &c.InstallPortainer)
 	askBool("Install cert-manager (HTTPS / Let's Encrypt)", &c.InstallCertManager)
 	askBool("Enable image auto-update", &c.AutoUpdate)
+	askBool("Enable daily release patch upgrades", &c.AutoUpgrade)
 
 	return nil
 }
@@ -513,6 +516,7 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("OIDC_SECRET_MINIO=%s\n", c.OIDCSecretMinio))
 	b.WriteString(fmt.Sprintf("PLATFORM_IMAGE_TAG=%s\n", c.ImageTag))
 	b.WriteString(fmt.Sprintf("AUTO_UPDATE=%t\n", c.AutoUpdate))
+	b.WriteString(fmt.Sprintf("AUTO_UPGRADE=%t\n", c.AutoUpgrade))
 	b.WriteString(fmt.Sprintf("PLATFORM_PROFILE=%s\n", c.profileName()))
 	if c.APIReplicas > 0 {
 		b.WriteString(fmt.Sprintf("API_REPLICAS=%d\n", c.APIReplicas))
