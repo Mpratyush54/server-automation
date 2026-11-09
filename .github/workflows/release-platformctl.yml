@@ -1,5 +1,9 @@
 name: release platformctl
 
+# Every tag is published as a GitHub pre-release (platformctl/.goreleaser.yaml).
+# e2e-vm.yml, triggered by the same tag push, promotes a stable vX.Y.Z to the
+# Latest release (and the GHCR "latest" copy) only after the e2e VM suite
+# passes on both install profiles. See docs/operations/e2e-ci.md.
 on:
   push:
     tags:
@@ -65,8 +69,8 @@ jobs:
           files=(checksums.txt "platformctl_${version}_linux_amd64.tar.gz" "platformctl_${version}_linux_arm64.tar.gz")
           ls -l "${files[@]}"
           oras push "$ref:$version" --artifact-type application/vnd.platform.platformctl.v1 "${files[@]}"
-          # Pre-releases (vX.Y.Z-rc.N) never move "latest", matching GitHub's releases/latest.
-          if [[ "$version" != *-* ]]; then oras tag "$ref:$version" latest; fi
+          # "latest" moves only when e2e-vm.yml promotes a stable release after a
+          # passing e2e run, matching GitHub's releases/latest (release gate, #25).
           gh api --method PUT "/user/packages/container/platformctl/visibility" -f visibility=public \
             || echo "::warning::set ghcr.io/mpratyush54/platformctl public in its Package settings"
 

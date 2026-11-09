@@ -59,6 +59,7 @@ var statusCmd = &cobra.Command{
 	Short: "Check health of all platform components",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		color.Cyan("\n  ■ Platform Health Check\n")
+		printHardeningStatus()
 		if meta, err := state.LockInfo(); err == nil && meta != "" {
 			color.Yellow("  · provision lock present (%s) — status does not wait on it", meta)
 		}

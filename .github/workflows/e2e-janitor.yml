@@ -1,0 +1,51 @@
+name: e2e janitor
+
+# Hourly safety net for the e2e VM suite: terminates EC2 instances and deletes
+# security groups tagged purpose=platform-e2e-ci that are older than
+# E2E_MAX_AGE_MINUTES (default 120). With an hourly schedule nothing survives
+# 3 hours, even if a run's teardown never happened. VMs also power themselves
+# off (=> terminate) after 150 minutes. Skipped while the AWS variables are unset.
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only list what would be removed"
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: e2e-janitor
+  cancel-in-progress: false
+
+jobs:
+  janitor:
+    if: vars.E2E_AWS_ROLE_ARN != '' && vars.E2E_AWS_REGION != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: e2e-aws
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/e2e
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.E2E_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.E2E_AWS_REGION }}
+          role-session-name: platform-e2e-janitor-${{ github.run_id }}
+          mask-aws-account-id: true
+
+      - name: Remove expired e2e resources
+        env:
+          AWS_REGION: ${{ vars.E2E_AWS_REGION }}
+          E2E_MAX_AGE_MINUTES: ${{ vars.E2E_MAX_AGE_MINUTES || '120' }}
+          E2E_DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+        run: bash scripts/e2e/aws-vm.sh janitor

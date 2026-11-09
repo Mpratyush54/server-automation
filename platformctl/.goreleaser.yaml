@@ -43,15 +43,21 @@ release:
   github:
     owner: Mpratyush54
     name: SERVER-automation
-  # Tags with a pre-release suffix (v1.3.0-rc.1) are published as GitHub
-  # pre-releases and never become "Latest" (install.sh / update targets).
-  prerelease: auto
+  # Release gate (issue #25): every tag is published as a GitHub pre-release,
+  # so no tag becomes "Latest" (install.sh / releases/latest) on its own.
+  # .github/workflows/e2e-vm.yml promotes a stable tag (vX.Y.Z) to Latest once
+  # the e2e VM suite passes; -rc tags stay pre-releases forever.
+  prerelease: "true"
+  make_latest: "false"
   extra_files:
     - glob: ./install.sh
   header: |
     ## platformctl {{ .Version }}
 
     Platform server bootstrap and management tool.
+
+    > Published as a pre-release. Stable versions become the Latest release
+    > automatically once the end-to-end VM suite passes (docs/operations/e2e-ci.md).
 
     ### 📦 Downloads
 

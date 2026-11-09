@@ -1,2 +1,6 @@
 # Test fixture (not a credential) in the history of the #24 branch; the value is now built at runtime.
 cb605841bae71c0fbb77cd0e86d96c32f83da08d:platform/portal/src/app/services/auth.service.spec.ts:generic-api-key:181
+# Test fixtures (not credentials) in the history of the #25 branch; the values are now built at runtime.
+f8e0eaa583fa24d3f176cd0b3c5703c10ceb9891:scripts/tests/e2e-redact.test.mjs:database-url-credentials:20
+f8e0eaa583fa24d3f176cd0b3c5703c10ceb9891:scripts/tests/e2e-redact.test.mjs:database-url-credentials:31
+f8e0eaa583fa24d3f176cd0b3c5703c10ceb9891:scripts/tests/e2e-redact.test.mjs:generic-api-key:32

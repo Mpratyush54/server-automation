@@ -1,0 +1,352 @@
+name: e2e VM
+
+# Provision a fresh Ubuntu 24.04 VM on EC2 with the candidate platformctl and
+# images, run the functional + security regression suite, upload logs and
+# timings, and tear the VM down. On a stable release tag a passing run (both
+# profiles) promotes the GitHub release from pre-release to Latest.
+#
+# Needs repository variables E2E_AWS_ROLE_ARN and E2E_AWS_REGION (an IAM role
+# trusted via GitHub OIDC, see docs/operations/e2e-ci.md). Without them every
+# run is skipped with a notice, so forks and unconfigured clones stay green.
+on:
+  schedule:
+    - cron: "23 2 * * *" # nightly, master
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Install profile(s) to test"
+        type: choice
+        options: [minimal, full, both]
+        default: minimal
+      platformctl_version:
+        description: "Test a published release (e.g. v1.3.0). Empty: build platformctl from the selected ref."
+        type: string
+        default: ""
+      image_tag:
+        description: "Override the platform-api/portal image tag. Empty: the release's tag, else master."
+        type: string
+        default: ""
+      stack:
+        description: "Override PLATFORM_STACK (channel or version). Empty: stable for releases, edge otherwise."
+        type: string
+        default: ""
+
+permissions: {}
+
+concurrency:
+  group: e2e-vm-${{ github.ref }}
+  # Never cancel a running suite: its teardown must run.
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      enabled: ${{ steps.plan.outputs.enabled }}
+      profiles: ${{ steps.plan.outputs.profiles }}
+      mode: ${{ steps.plan.outputs.mode }}
+      release_tag: ${{ steps.plan.outputs.release_tag }}
+      image_tag: ${{ steps.plan.outputs.image_tag }}
+      image_note: ${{ steps.plan.outputs.image_note }}
+      stack: ${{ steps.plan.outputs.stack }}
+      promote: ${{ steps.plan.outputs.promote }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/e2e
+      - id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          IN_PROFILE: ${{ inputs.profile }}
+          IN_VERSION: ${{ inputs.platformctl_version }}
+          IN_IMAGE_TAG: ${{ inputs.image_tag }}
+          IN_STACK: ${{ inputs.stack }}
+          ROLE_ARN: ${{ vars.E2E_AWS_ROLE_ARN }}
+          REGION: ${{ vars.E2E_AWS_REGION }}
+        run: |
+          bash scripts/e2e/plan.sh
+          cat "$GITHUB_OUTPUT"
+
+  not-configured:
+    needs: plan
+    if: needs.plan.outputs.enabled != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - run: |
+          msg="e2e VM suite skipped: repository variables E2E_AWS_ROLE_ARN and E2E_AWS_REGION are not set (see docs/operations/e2e-ci.md). Release tags stay pre-releases until an e2e run passes."
+          echo "::notice title=e2e VM skipped::$msg"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+
+  # Build platformctl from the commit (or fetch the release binary) and wait
+  # until the platform images exist, so the 90-minute VM job never waits.
+  prepare:
+    needs: plan
+    if: needs.plan.outputs.enabled == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      binary: ${{ steps.bin.outputs.binary }}
+    env:
+      MODE: ${{ needs.plan.outputs.mode }}
+      RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
+      IMAGE_TAG: ${{ needs.plan.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: needs.plan.outputs.mode == 'build'
+        with:
+          go-version-file: platformctl/go.mod
+          cache-dependency-path: platformctl/go.sum
+
+      - name: Build platformctl from this commit
+        if: needs.plan.outputs.mode == 'build'
+        working-directory: platformctl
+        run: |
+          set -euo pipefail
+          ver="e2e-${GITHUB_SHA::12}"
+          mod=github.com/Mpratyush54/SERVER-automation/platformctl
+          mkdir -p "$RUNNER_TEMP/bin"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+            -ldflags "-s -w -X main.version=$ver -X $mod/cmd.Version=$ver -X $mod/internal/config.DefaultImageTag=$IMAGE_TAG" \
+            -o "$RUNNER_TEMP/bin/platformctl" .
+          echo "BINARY_DESC=built from ${GITHUB_SHA::12}" >> "$GITHUB_ENV"
+
+      # GoReleaser publishes the release (as a pre-release) from the same tag
+      # push; wait for it and verify the checksum.
+      - name: Download the release binary
+        if: needs.plan.outputs.mode == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          v="${RELEASE_TAG#v}"
+          asset="platformctl_${v}_linux_amd64.tar.gz"
+          mkdir -p "$RUNNER_TEMP/dl" "$RUNNER_TEMP/bin"
+          for i in $(seq 1 80); do
+            if gh release download "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" -p "$asset" -p checksums.txt -D "$RUNNER_TEMP/dl" --clobber 2>/dev/null; then break; fi
+            [ "$i" -lt 80 ] || { echo "release $RELEASE_TAG has no $asset after 40 minutes"; exit 1; }
+            echo "waiting for release $RELEASE_TAG ($i/80)"; sleep 30
+          done
+          cd "$RUNNER_TEMP/dl"
+          grep " $asset\$" checksums.txt | sha256sum -c -
+          tar -xzf "$asset" platformctl
+          install -m 0755 platformctl "$RUNNER_TEMP/bin/platformctl"
+          echo "BINARY_DESC=release $RELEASE_TAG" >> "$GITHUB_ENV"
+
+      - name: Wait for the platform images
+        run: |
+          set -euo pipefail
+          for img in platform-api platform-portal; do
+            for i in $(seq 1 80); do
+              token=$(curl -fsS "https://ghcr.io/token?scope=repository:mpratyush54/${img}:pull" | jq -r .token)
+              digest=$(curl -fsSI -H "Authorization: Bearer $token" \
+                -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json" \
+                "https://ghcr.io/v2/mpratyush54/${img}/manifests/${IMAGE_TAG}" 2>/dev/null | tr -d '\r' | sed -n 's/^docker-content-digest: //Ip') || true
+              if [ -n "$digest" ]; then echo "$img:$IMAGE_TAG -> $digest"; break; fi
+              [ "$i" -lt 80 ] || { echo "image $img:$IMAGE_TAG not published after 40 minutes"; exit 1; }
+              echo "waiting for $img:$IMAGE_TAG ($i/80)"; sleep 30
+            done
+          done
+
+      - id: bin
+        run: echo "binary=$BINARY_DESC" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: platformctl-e2e
+          path: ${{ runner.temp }}/bin/platformctl
+          retention-days: 3
+          if-no-files-found: error
+
+  e2e:
+    needs: [plan, prepare]
+    if: needs.plan.outputs.enabled == 'true'
+    name: e2e (${{ matrix.profile }})
+    runs-on: ubuntu-24.04
+    # Hard cap. The step caps below add up to less, so teardown always runs
+    # inside the job; the VM's own TTL and the janitor cover the rest.
+    timeout-minutes: 90
+    # The IAM role trusts only this environment (OIDC sub claim); restrict the
+    # environment's deployment branches/tags in the repository settings.
+    environment: e2e-aws
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJSON(needs.plan.outputs.profiles) }}
+    env:
+      AWS_REGION: ${{ vars.E2E_AWS_REGION }}
+      E2E_PROFILE: ${{ matrix.profile }}
+      E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      E2E_IMAGE_TAG: ${{ needs.plan.outputs.image_tag }}
+      E2E_STACK: ${{ needs.plan.outputs.stack }}
+      E2E_INSTANCE_TYPE: ${{ vars.E2E_INSTANCE_TYPE || 't3.xlarge' }}
+      E2E_SUBNET_ID: ${{ vars.E2E_SUBNET_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Prepare work directories
+        env:
+          IMAGE_NOTE: ${{ needs.plan.outputs.image_note }}
+          BINARY: ${{ needs.prepare.outputs.binary }}
+        run: |
+          set -euo pipefail
+          {
+            echo "E2E_WORK=$RUNNER_TEMP/e2e-work"
+            echo "E2E_ARTIFACTS=$RUNNER_TEMP/e2e-artifacts"
+            echo "PLATFORMCTL_BIN=$RUNNER_TEMP/bin/platformctl"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/e2e-work" "$RUNNER_TEMP/e2e-artifacts"
+          chmod 700 "$RUNNER_TEMP/e2e-work"
+          jq -n --arg profile "$E2E_PROFILE" --arg ref "$GITHUB_REF_NAME" --arg sha "$GITHUB_SHA" \
+            --arg binary "$BINARY" --arg image_tag "$E2E_IMAGE_TAG" --arg image_note "$IMAGE_NOTE" \
+            --arg stack "$E2E_STACK" --arg instance_type "$E2E_INSTANCE_TYPE" \
+            '$ARGS.named' > "$RUNNER_TEMP/e2e-artifacts/meta.json"
+          if [ -n "$IMAGE_NOTE" ]; then echo "::notice title=e2e images::$IMAGE_NOTE"; fi
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: platformctl-e2e
+          path: ${{ runner.temp }}/bin
+
+      - name: Build test tooling (SDK, API helpers)
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          chmod +x "$PLATFORMCTL_BIN"
+          (cd sdk-node && npm ci --no-audit --no-fund --loglevel=error && npm run build --silent)
+          (cd platform/api && npm ci --no-audit --no-fund --loglevel=error && npm run build --silent)
+
+      - name: AWS credentials (OIDC)
+        id: aws
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.E2E_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.E2E_AWS_REGION }}
+          role-session-name: platform-e2e-${{ github.run_id }}-${{ matrix.profile }}
+          role-duration-seconds: 7200
+          mask-aws-account-id: true
+
+      - name: Launch VM
+        id: launch
+        timeout-minutes: 10
+        run: |
+          bash scripts/e2e/aws-vm.sh keys
+          bash scripts/e2e/aws-vm.sh launch
+
+      - name: Provision
+        id: provision
+        timeout-minutes: 25
+        run: bash scripts/e2e/provision.sh
+
+      - name: Checks
+        id: checks
+        timeout-minutes: 30
+        run: bash scripts/e2e/run-checks.sh
+
+      - name: Collect logs
+        if: always() && steps.aws.outcome == 'success'
+        timeout-minutes: 6
+        run: bash scripts/e2e/collect.sh
+
+      - name: Teardown
+        if: always() && steps.aws.outcome == 'success'
+        timeout-minutes: 10
+        run: bash scripts/e2e/aws-vm.sh teardown
+
+      - name: Job summary
+        if: always()
+        run: |
+          market=$(sed -n 's/^MARKET=//p' "$E2E_WORK/state.env" 2>/dev/null | tail -n 1)
+          if [ -n "$market" ]; then
+            jq --arg m "$market" '.market = $m' "$E2E_ARTIFACTS/meta.json" > "$E2E_ARTIFACTS/meta.json.tmp" && mv "$E2E_ARTIFACTS/meta.json.tmp" "$E2E_ARTIFACTS/meta.json"
+          fi
+          node scripts/e2e/summary.mjs
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-${{ matrix.profile }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/e2e-artifacts
+          retention-days: 14
+          if-no-files-found: warn
+
+  # Release gate: GoReleaser publishes every tag as a pre-release; only a
+  # passing run on both profiles makes a stable tag the Latest release (what
+  # install.sh and releases/latest resolve) and moves the GHCR "latest" copy.
+  promote:
+    needs: [plan, e2e]
+    if: needs.plan.outputs.promote == 'true' && needs.e2e.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    permissions:
+      contents: write
+      packages: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.plan.outputs.release_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: platformctl/go.mod
+          cache-dependency-path: platformctl/go.sum
+
+      # Promote only a complete release (binaries, bundle parts, GHCR copy).
+      - name: Wait for the release workflow
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 120); do
+            state=$(gh run list -R "$GITHUB_REPOSITORY" --workflow release-platformctl.yml --commit "$GITHUB_SHA" \
+              --event push --limit 1 --json status,conclusion --jq '.[0] | "\(.status)/\(.conclusion)"' 2>/dev/null || true)
+            case "$state" in
+              completed/success) echo "release workflow succeeded"; break ;;
+              completed/*) echo "release workflow finished as $state; not promoting"; exit 1 ;;
+            esac
+            [ "$i" -lt 120 ] || { echo "release workflow not finished after 60 minutes"; exit 1; }
+            sleep 30
+          done
+
+      - name: Promote the GitHub release
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --prerelease=false --latest
+          echo "Promoted $TAG to the Latest release after a passing e2e run." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Move the GHCR latest tag
+        env:
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          go install oras.land/oras/cmd/oras@v1.2.3
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          echo "$GH_TOKEN" | oras login ghcr.io -u "$ACTOR" --password-stdin
+          oras tag "ghcr.io/mpratyush54/platformctl:${TAG#v}" latest

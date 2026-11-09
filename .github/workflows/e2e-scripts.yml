@@ -1,0 +1,42 @@
+name: e2e scripts
+
+# Fast checks for the e2e VM tooling (no cloud access): syntax, shellcheck and
+# unit tests of the planning, AWS launch/teardown/janitor (fake aws CLI),
+# redaction and summary logic.
+on:
+  push:
+    branches: [master]
+    paths:
+      - "scripts/e2e/**"
+      - "scripts/tests/e2e-*.test.mjs"
+      - ".github/workflows/e2e-*.yml"
+  pull_request:
+    paths:
+      - "scripts/e2e/**"
+      - "scripts/tests/e2e-*.test.mjs"
+      - ".github/workflows/e2e-*.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Syntax
+        run: |
+          set -euo pipefail
+          for f in scripts/e2e/*.sh scripts/e2e/remote/*.sh; do bash -n "$f"; done
+          python3 -m py_compile scripts/e2e/redact.py
+          for f in scripts/e2e/*.mjs scripts/e2e/checks/*.mjs; do node --check "$f"; done
+      - name: shellcheck
+        run: shellcheck -x -S warning scripts/e2e/*.sh scripts/e2e/remote/*.sh
+      - name: Unit tests
+        run: node --test scripts/tests/e2e-*.test.mjs
