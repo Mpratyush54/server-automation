@@ -44,37 +44,72 @@ During a Redis outage: `200` with `{ "status": "ready", "checks": { "db": "ok", 
 
 ## `POST` /api/auth/login
 
-Authenticates a user via email. No password is required — the platform uses email-only authentication. Returns a JWT token and the user object.
+Authenticates a user with email (or username) and password.
 
-**Auth:** None
+**Auth:** None (rate-limited per IP)
 
 **Request Body:**
 ```json
 {
-  "email": "admin@pratyushes.dev"
+  "email": "admin@example.com",
+  "password": "..."
 }
 ```
 
-**Response `200`:**
+**Response `200` — session:**
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiIs...",
-  "user": {
-    "id": "00000000-0000-0000-0000-000000000001",
-    "email": "admin@pratyushes.dev",
-    "name": "Admin",
-    "role": "admin",
-    "lastLogin": "2026-07-01T12:00:00.000Z"
-  }
+  "user": { "id": "...", "email": "admin@example.com", "name": "Admin", "role": "admin" }
 }
 ```
 
-**Error `401`:**
+The session JWT carries `amr` (`["pwd"]`, plus `"otp", "mfa"` after a second factor) and
+`auth_time`.
+
+**Response `200` — MFA enabled (no session yet):**
 ```json
 {
-  "error": "User email not found. Run init-demo first."
+  "mfa_required": true,
+  "status": "mfa_required",
+  "challengeToken": "eyJ...",
+  "expiresIn": 300,
+  "methods": ["totp", "recovery_code"]
 }
 ```
+
+Complete the login with `POST /api/auth/mfa/challenge { challengeToken, code }`.
+
+**Response `200` — role requires MFA, not enrolled:** `{ token, user, mfaEnrollmentRequired: true }`.
+The token only reaches `/api/auth/mfa/status|enroll|verify` and `GET /api/users/me`; every
+other endpoint answers `403 { "error": "mfa_enrollment_required" }` until enrolment is verified.
+
+**Error `401`:** `{ "error": "Invalid credentials." }`
+
+GitHub/GitLab logins (`POST /api/auth/exchange`) return the same three shapes, with `amr: ["fed"]`.
+
+---
+
+## MFA endpoints
+
+See [Multi-factor authentication](../../guides/mfa.md) for the full flow.
+
+| Method | Path | Body | Result |
+|---|---|---|---|
+| `POST` | `/api/auth/mfa/challenge` | `{ challengeToken, code }` | `{ token, user }`; `401 invalid_code` / `invalid_challenge`; `429` when rate-limited |
+| `GET` | `/api/auth/mfa/status` | — | `{ enabled, pending, recoveryCodesRemaining, required, requiredRoles, stepUpMaxAgeSec }` |
+| `POST` | `/api/auth/mfa/enroll` | — | `{ otpauthUri, qrDataUrl, secret, issuer }` (`409` if already enabled) |
+| `POST` | `/api/auth/mfa/verify` | `{ code }` | `{ recoveryCodes, token, user }` |
+| `POST` | `/api/auth/mfa/step-up` | `{ code }` | `{ token }` with `auth_time` = now |
+| `POST` | `/api/auth/mfa/recovery-codes` | `{ code }` | `{ recoveryCodes }` |
+| `POST` | `/api/auth/mfa/disable` | `{ code }` | `{ success }`; `403 mfa_required_by_policy` |
+| `POST` | `/api/users/:id/mfa/reset` | `{ reason? }` | admin + step-up; `{ success, hadMfa }` |
+| `GET` / `PUT` | `/api/settings/mfa` | `{ requiredRoles }` | policy `mfa.requiredRoles` (PUT: admin + step-up) |
+
+**Step-up:** secret reveal/export, `POST /api/settings/rotate-secrets`, `POST /api/agent-tokens`,
+admin MFA reset and `PUT /api/settings/mfa` answer `401 { "error": "step_up_required", "maxAgeSec": 900 }`
+unless the session verified a second factor within `MFA_STEP_UP_MAX_AGE_SEC`. Agent tokens are not
+subject to step-up.
 
 ---
 
@@ -467,7 +502,10 @@ Validates an array of permission strings against the known permission set. Retur
 | Status | Code                         | Description                         |
 |--------|------------------------------|-------------------------------------|
 | 401    | `Unauthorized: Missing token`| No Bearer token provided            |
-| 401    | `User email not found...`    | Login email not recognized          |
+| 401    | `Invalid credentials.`       | Wrong email/username or password    |
+| 401    | `step_up_required`           | Action needs a recent second factor |
+| 401    | `invalid_code`               | Wrong, reused or replayed MFA code  |
+| 403    | `mfa_enrollment_required`    | Session restricted to MFA enrolment |
 | 404    | `User not found`             | User ID does not exist              |
 | 409    | `User with this email...`    | Duplicate email on invite           |
 | 409    | `Role with this name...`     | Duplicate role name                 |

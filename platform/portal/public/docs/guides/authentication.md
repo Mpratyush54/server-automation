@@ -12,6 +12,8 @@ The Platform API issues JSON Web Tokens (JWT) for authentication. Tokens are sig
   "email": "john@pratyushes.dev",
   "name": "John Dev",
   "role": "developer",
+  "amr": ["pwd", "otp", "mfa"],
+  "auth_time": 1719000000,
   "iat": 1719000000,
   "exp": 1719086400
 }
@@ -23,6 +25,9 @@ The Platform API issues JSON Web Tokens (JWT) for authentication. Tokens are sig
 | `email` | User email address |
 | `name` | Display name |
 | `role` | Role preset: `admin`, `devops`, `tech_lead`, `developer`, `viewer` |
+| `amr` | Authentication methods (RFC 8176): `pwd` or `fed` (GitHub/GitLab), plus `otp` + `mfa` after a second factor |
+| `auth_time` | Time of the last authentication; refreshed by MFA step-up |
+| `mfa_enroll` | Only on sessions restricted to MFA enrolment |
 | `iat` | Issued-at timestamp (UNIX epoch) |
 | `exp` | Expiration timestamp — defaults to **24 hours** |
 
@@ -41,41 +46,16 @@ const token = jwt.sign(
 
 ---
 
-## Email-Only Login (No Password)
+## Password Login and MFA
 
-The login endpoint accepts **only an email address** — no password is required.
+`POST /api/auth/login` takes an email (or username) and a password. Users with TOTP MFA get an
+`mfa_required` answer with a short-lived challenge token and finish with
+`POST /api/auth/mfa/challenge`; admins and devops users (policy `mfa.requiredRoles`) must enrol
+before they can use the portal. Revealing secrets and other sensitive actions need a recent
+second factor (step-up).
 
-### Design Rationale
-
-1. **Internal PaaS context** — Platform is designed for internal/private deployments behind a VPN or OAuth2 proxy. The email itself is the identity.
-2. **SSO-first architecture** — Authentication is delegated to OAuth2/OIDC providers (see OIDC/SSO section). The email-only login exists for development convenience.
-3. **Simplified user onboarding** — No password management, no reset flows, no hashing overhead.
-4. **Demo-friendly** — Four demo users (`admin@pratyushes.dev`, `devops@pratyushes.dev`, `sarah@pratyushes.dev`, `john@pratyushes.dev`) can be seeded instantly.
-
-### API
-
-```http
-POST /api/auth/login HTTP/1.1
-Content-Type: application/json
-
-{"email": "john@pratyushes.dev"}
-```
-
-**Response:**
-
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiIs...",
-  "user": {
-    "id": "11111111-1111-1111-1111-111111111111",
-    "email": "john@pratyushes.dev",
-    "name": "John Dev",
-    "role": "developer"
-  }
-}
-```
-
-> **Security Advisory:** In production, ensure the platform is not exposed to the public internet without an OAuth2 proxy or network restriction. See [OIDC/SSO](#oidcsso) below.
+See [Multi-factor authentication](mfa.md) for enrolment, recovery codes, step-up, the policy,
+admin reset and the `platformctl mfa disable` break-glass command.
 
 ---
 

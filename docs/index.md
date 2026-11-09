@@ -16,7 +16,7 @@ applications on Kubernetes (k3s).
 | [Architecture](architecture/overview.md) | System design, data flow, auth flow |
 | [Deployment Guide](deployment/bootstrap.md) | Production deployment on k3s |
 | [Troubleshooting](troubleshooting/dns-ipv6-timeout.md) | Solutions to known issues |
-| [Guides](guides/authentication.md) | Authentication, secrets, monitoring, CI/CD |
+| [Guides](guides/authentication.md) | Authentication, [MFA](guides/mfa.md), secrets, monitoring, CI/CD |
 | [Contributing](contribution-guide.md) | How to contribute to Platform |
 
 ## What is Platform?
