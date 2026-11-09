@@ -1,0 +1,2 @@
+# Test fixture (not a credential) in the history of the #24 branch; the value is now built at runtime.
+cb605841bae71c0fbb77cd0e86d96c32f83da08d:platform/portal/src/app/services/auth.service.spec.ts:generic-api-key:181
