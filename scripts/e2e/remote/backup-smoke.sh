@@ -15,8 +15,9 @@ if ! command -v sqlite3 >/dev/null || ! command -v jq >/dev/null; then
   apt-get install -y -qq sqlite3 jq >/dev/null
 fi
 
-target=file:///var/lib/platform/e2e-backups
-cfg=/root/e2e-backup.json
+# Overridable so unit tests never touch host paths.
+target=${E2E_BACKUP_TARGET:-file:///var/lib/platform/e2e-backups}
+cfg=${E2E_BACKUP_CONFIG:-/root/e2e-backup.json}
 rm -f "$cfg"
 identity=$(platformctl backup init --backup-config "$cfg" --target "$target" \
   --components config,postgres,mongo,redis,k3s 2>/dev/null | grep -m1 '^AGE-SECRET-KEY-' || true)

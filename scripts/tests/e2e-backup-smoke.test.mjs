@@ -37,7 +37,7 @@ function setup() {
 function run(ctx, extra = {}) {
   return spawnSync('bash', ['-c', 'PATH="$(cd "$1" && pwd):$PATH"; exec bash "$2"', '_', posix(ctx.bin), posix(script)], {
     encoding: 'utf8',
-    env: { ...process.env, FAKE_LOG: posix(ctx.log), FAKE_STDIN: posix(ctx.stdin), FAKE_IDENTITY: identity, ...extra },
+    env: { ...process.env, FAKE_LOG: posix(ctx.log), FAKE_STDIN: posix(ctx.stdin), FAKE_IDENTITY: identity, E2E_BACKUP_CONFIG: posix(path.join(ctx.dir, 'backup.json')), E2E_BACKUP_TARGET: 'file://' + posix(path.join(ctx.dir, 'backups')), ...extra },
   });
 }
 
@@ -48,7 +48,11 @@ test('init, backup, list and restore-test with the identity on stdin only', () =
   const calls = readFileSync(ctx.log, 'utf8').split('\x1e').filter(Boolean).map((c) => c.split('\0').filter(Boolean));
   assert.deepEqual(calls.map((c) => c.slice(0, 2).join(' ')), ['backup init', 'backup --all', 'backup list', 'backup restore-test']);
   const init = calls[0];
-  assert.equal(init[init.indexOf('--target') + 1], 'file:///var/lib/platform/e2e-backups');
+  assert.equal(init[init.indexOf('--target') + 1], 'file://' + posix(path.join(ctx.dir, 'backups')));
+  // Production defaults stay on the VM's own paths (checked in the source, not executed).
+  const src = readFileSync(script, 'utf8');
+  assert.match(src, /E2E_BACKUP_TARGET:-file:\/\/\/var\/lib\/platform\/e2e-backups/);
+  assert.match(src, /E2E_BACKUP_CONFIG:-\/root\/e2e-backup\.json/);
   assert.equal(init[init.indexOf('--components') + 1], 'config,postgres,mongo,redis,k3s');
   const rt = calls[3];
   assert.equal(rt[rt.indexOf('--from') + 1], '20260109T020000Z');
