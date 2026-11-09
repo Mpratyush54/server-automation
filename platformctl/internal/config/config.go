@@ -29,6 +29,9 @@ type Config struct {
 	SkipK8s        bool
 	SkipPreflight  bool
 	ResetPortainer bool
+	SkipHardening  bool
+	WAF            bool
+	NginxAuthJail  bool
 
 	ImageRegistry string
 	ImageTag      string
@@ -116,6 +119,9 @@ func Load() *Config {
 		SkipK8s:              os.Getenv("SKIP_K8S") == "true",
 		SkipPreflight:        os.Getenv("SKIP_PREFLIGHT") == "true",
 		AutoUpdate:           getEnvBool("AUTO_UPDATE", true),
+		SkipHardening:        !getEnvBool("PLATFORM_HARDEN", true),
+		WAF:                  getEnvBool("PLATFORM_WAF", false),
+		NginxAuthJail:         getEnvBool("PLATFORM_NGINX_AUTH_JAIL", false),
 		MinioAccessKey:       getEnv("MINIO_ACCESS_KEY", "platformadmin"),
 		PostgresPassword:     os.Getenv("POSTGRES_PASSWORD"),
 		MongoPassword:        os.Getenv("MONGO_PASSWORD"),
@@ -525,6 +531,8 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("OIDC_SECRET_MINIO=%s\n", c.OIDCSecretMinio))
 	b.WriteString(fmt.Sprintf("PLATFORM_IMAGE_TAG=%s\n", c.ImageTag))
 	b.WriteString(fmt.Sprintf("AUTO_UPDATE=%t\n", c.AutoUpdate))
+	b.WriteString(fmt.Sprintf("PLATFORM_HARDEN=%t\nPLATFORM_WAF=%t\n", !c.SkipHardening, c.WAF))
+	b.WriteString(fmt.Sprintf("PLATFORM_NGINX_AUTH_JAIL=%t\n", c.NginxAuthJail))
 	b.WriteString(fmt.Sprintf("PLATFORM_PROFILE=%s\n", c.profileName()))
 	if c.APIReplicas > 0 {
 		b.WriteString(fmt.Sprintf("API_REPLICAS=%d\n", c.APIReplicas))

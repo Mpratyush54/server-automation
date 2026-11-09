@@ -137,27 +137,14 @@ func doneOrSkip(step, label string) bool {
 }
 
 func InstallIngressNginx(cfg *config.Config) error {
-	if doneOrSkip("ingress", "ingress-nginx") {
-		return nil
-	}
+	// Reconcile security defaults on existing installations too.
 	color.Cyan("\n  ■ Installing ingress-nginx...")
 	// allowSnippetAnnotations is required so portal iframes can hide
 	// X-Frame-Options / CSP from ArgoCD/Grafana/Portainer backends.
 	// Disable HSTS includeSubDomains so project hosts like
 	// {app}.{ip}.sslip.io are not force-HTTPS'd with the default fake cert
 	// before their own Let's Encrypt Ingress exists.
-	err := shell.RunBash(`
-		helm upgrade --install ingress-nginx ` + chart("ingress-nginx") + ` \
-			--namespace ingress-nginx --create-namespace \
-			--set controller.service.type=LoadBalancer \
-			--set controller.publishService.enabled=true \
-			--set controller.allowSnippetAnnotations=true \
-			--set controller.config.annotations-risk-level=Critical \
-			--set controller.config.hsts=true \
-			--set controller.config.hsts-include-subdomains=false \
-			--set controller.config.hsts-max-age=31536000 \
-			--wait --timeout 10m
-	`)
+	err := helmValues("ingress-nginx", "ingress-nginx", "ingress-nginx", IngressSecurityValues(cfg), "--wait", "--timeout", "10m")
 	if err != nil {
 		return err
 	}

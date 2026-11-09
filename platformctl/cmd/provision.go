@@ -185,6 +185,7 @@ func runProvision() error {
 	}
 
 	if !cfg.SkipPreflight {
+		hardeningPreflight()
 		color.Cyan("\n  ■ Pre-flight Checks\n")
 		result := preflight.Check()
 		preflight.PrintResult(result)
@@ -272,6 +273,9 @@ func runProvision() error {
 	if err := <-prereqsDone; err != nil {
 		return fail("prereqs", err)
 	}
+	// Host hardening (packages, SSH, fail2ban, chrony) runs alongside the
+	// cluster install; only the firewall step waits for the platform below.
+	hardenPrepared := startHardenPrepare()
 	startBackgroundPrePull()
 
 	if errs := <-prefetchDone; len(errs) > 0 {
@@ -290,6 +294,16 @@ func runProvision() error {
 	}
 
 	_ = cfg.SaveEnvFile("/etc/platform/.env")
+	// The firewall goes last: its automatic confirmation checks live local
+	// ports and the API through ingress (rollback timer armed meanwhile).
+	if !cfg.SkipHardening {
+		if err := <-hardenPrepared; err != nil {
+			return fail("harden", err)
+		}
+		if err := hostStep("harden-firewall", hardenFirewall); err != nil {
+			return err
+		}
+	}
 	printTimings(started)
 	components.ProvisionComplete(cfg)
 	return nil

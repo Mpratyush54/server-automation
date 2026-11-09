@@ -1,6 +1,7 @@
 package state
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -80,7 +81,8 @@ func WriteTimingTable(w io.Writer, total time.Duration) {
 	fmt.Fprintf(w, "  %-*s  %9s\n", width, "wall clock", fmtDur(total))
 }
 
-// SaveTimingTable writes the summary to <dir>/timings.txt (best effort).
+// SaveTimingTable writes the summary to <dir>/timings.txt and the same data
+// as JSON to <dir>/timings.json (best effort; CI reads the JSON).
 func SaveTimingTable(dir string, total time.Duration) (string, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", err
@@ -91,10 +93,51 @@ func SaveTimingTable(dir string, total time.Duration) (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	fmt.Fprintf(f, "platformctl provision — %s\n\n", time.Now().UTC().Format(time.RFC3339))
+	now := time.Now().UTC()
+	fmt.Fprintf(f, "platformctl provision — %s\n\n", now.Format(time.RFC3339))
 	WriteTimingTable(f, total)
+	_ = SaveTimingJSON(filepath.Join(dir, "timings.json"), now, total)
 	return p, nil
 }
+
+// TimingReport is the machine-readable form of the timing summary.
+type TimingReport struct {
+	FinishedAt        time.Time         `json:"finishedAt"`
+	WallClockSeconds  float64           `json:"wallClockSeconds"`
+	SumOfStepsSeconds float64           `json:"sumOfStepsSeconds"`
+	Steps             []TimingReportRow `json:"steps"`
+}
+
+// TimingReportRow is one step in a TimingReport.
+type TimingReportRow struct {
+	Step            string    `json:"step"`
+	Start           time.Time `json:"start"`
+	DurationSeconds float64   `json:"durationSeconds"`
+	Status          string    `json:"status"`
+}
+
+// BuildTimingReport returns this run's entries (ordered by start time) and totals.
+func BuildTimingReport(finished time.Time, total time.Duration) TimingReport {
+	r := TimingReport{FinishedAt: finished.UTC(), WallClockSeconds: round2(total.Seconds()), Steps: []TimingReportRow{}}
+	var sum time.Duration
+	for _, t := range Timings() {
+		sum += t.Duration
+		r.Steps = append(r.Steps, TimingReportRow{Step: t.Step, Start: t.Start.UTC(), DurationSeconds: round2(t.Duration.Seconds()), Status: t.Status})
+	}
+	r.SumOfStepsSeconds = round2(sum.Seconds())
+	return r
+}
+
+// SaveTimingJSON writes BuildTimingReport to path.
+func SaveTimingJSON(path string, finished time.Time, total time.Duration) error {
+	b, err := json.MarshalIndent(BuildTimingReport(finished, total), "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(b, '\n'), 0644)
+}
+
+func round2(f float64) float64 { return float64(int64(f*100+0.5)) / 100 }
 
 func fmtDur(d time.Duration) string {
 	d = d.Round(time.Second)

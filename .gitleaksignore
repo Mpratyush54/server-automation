@@ -1,0 +1,4 @@
+# Test fixtures (not credentials) in the history of the #25 branch; the values are now built at runtime.
+f8e0eaa583fa24d3f176cd0b3c5703c10ceb9891:scripts/tests/e2e-redact.test.mjs:database-url-credentials:20
+f8e0eaa583fa24d3f176cd0b3c5703c10ceb9891:scripts/tests/e2e-redact.test.mjs:database-url-credentials:31
+f8e0eaa583fa24d3f176cd0b3c5703c10ceb9891:scripts/tests/e2e-redact.test.mjs:generic-api-key:32
