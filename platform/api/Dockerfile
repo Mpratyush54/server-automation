@@ -31,6 +31,12 @@ RUN if [ -f package-lock.json ]; then \
 # ── runtime: non-root, compiled output + prod deps only ─────────────────────
 FROM node:22.23.4-alpine3.24 AS runtime
 ENV NODE_ENV=production
+# Apply Alpine security fixes released after the base image was built, and
+# drop npm/npx/corepack: the runtime only runs `node` (server and migrate
+# Job), and npm's bundled dependencies were the image's only HIGH findings.
+RUN apk upgrade --no-cache \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+            /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 WORKDIR /app
 # Application files stay root-owned, i.e. read-only for the app user.
 COPY package.json ./
