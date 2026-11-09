@@ -43,9 +43,9 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || 'edge' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: platformctl/go.mod
           cache-dependency-path: platformctl/go.sum
