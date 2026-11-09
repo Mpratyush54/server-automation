@@ -250,6 +250,32 @@ describe('OAuth2 / OIDC SSO Integration Tests', () => {
   });
 
   describe('POST /api/oauth/token and GET /api/oauth/userinfo flow', () => {
+    it('includes amr and the portal auth_time in the ID token (#24)', async () => {
+      const authTime = Math.floor(Date.now() / 1000) - 120;
+      const mfaPortal = jwt.sign(
+        { id: mockUser.id, email: mockUser.email, name: mockUser.name, role: mockUser.role, amr: ['pwd', 'otp', 'mfa'], auth_time: authTime },
+        JWT_SECRET,
+        { expiresIn: '24h' },
+      );
+      const authz = await request(app)
+        .post('/api/oauth/authorize')
+        .set('Authorization', `Bearer ${mfaPortal}`)
+        .send({ client_id: 'argocd', redirect_uri: ARGO_REDIRECT, response_type: 'code', state: 's' });
+      const code = new URL(authz.body.redirect).searchParams.get('code')!;
+      const res = await request(app)
+        .post('/api/oauth/token')
+        .set('Authorization', basic('argocd', ARGO_SECRET))
+        .type('form')
+        .send({ code, redirect_uri: ARGO_REDIRECT, grant_type: 'authorization_code' });
+      expect(res.status).toBe(200);
+      const idToken: any = jwt.decode(res.body.id_token);
+      expect(idToken.amr).toEqual(['pwd', 'otp', 'mfa']);
+      expect(idToken.auth_time).toBe(authTime);
+      expect((jwt.decode(res.body.access_token) as any).amr).toEqual(['pwd', 'otp', 'mfa']);
+      const discovery = await request(app).get('/api/oauth/.well-known/openid-configuration');
+      expect(discovery.body.claims_supported).toEqual(expect.arrayContaining(['amr', 'auth_time']));
+    });
+
     it('exchanges a code with client_secret_basic and serves userinfo', async () => {
       const code = await issueCode({ nonce: 'n-123' });
       const res = await request(app)

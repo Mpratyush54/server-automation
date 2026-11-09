@@ -157,7 +157,9 @@ loadOpenApiJson();
 
 const JWT_SECRET = 'plat-super-secret-key';
 const sign = (user: Record<string, unknown>) => jwt.sign(user, JWT_SECRET, { expiresIn: '2h' });
-const adminJwt = sign({ id: ADMIN.id, email: ADMIN.email, name: ADMIN.name, role: 'admin' });
+// Agent-token creation needs a recent second factor (#24): this admin session just passed one.
+const adminJwt = sign({ id: ADMIN.id, email: ADMIN.email, name: ADMIN.name, role: 'admin', amr: ['pwd', 'otp', 'mfa'], auth_time: Math.floor(Date.now() / 1000) });
+const adminNoMfaJwt = sign({ id: ADMIN.id, email: ADMIN.email, name: ADMIN.name, role: 'admin', amr: ['pwd'], auth_time: Math.floor(Date.now() / 1000) });
 const developerJwt = sign({ id: DEVELOPER.id, email: DEVELOPER.email, name: DEVELOPER.name, role: 'developer' });
 const techLeadJwt = sign({ id: TECH_LEAD.id, email: TECH_LEAD.email, name: TECH_LEAD.name, role: 'tech_lead' });
 
@@ -272,6 +274,15 @@ describe('Agent token CRUD', () => {
     expect(r.body.name).toBe('cursor-mcp');
     expect(r.body.scopes.length).toBeGreaterThan(0);
     expect(r.body.tokenHash).toBeUndefined();
+  });
+
+  it('requires a recent second factor to create a token (#24)', async () => {
+    const r = await request(app)
+      .post('/api/agent-tokens')
+      .set('Authorization', `Bearer ${adminNoMfaJwt}`)
+      .send({ name: 'needs-step-up' });
+    expect(r.status).toBe(401);
+    expect(r.body.error).toBe('step_up_required');
   });
 
   it('rejects developer creating tokens', async () => {

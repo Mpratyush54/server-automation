@@ -137,6 +137,22 @@ describe('baseline idempotent DDL', () => {
     });
   });
 
+  it('accepts every statement of the MFA migration (#24) and makes it idempotent', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { UserMfa1795000000000 } = require('../../../src/migrations/1795000000000-UserMfa');
+    const sql: string[] = [];
+    const runner = { query: async (q: string) => { sql.push(q); } };
+    return new UserMfa1795000000000().up(runner as any).then(() => {
+      for (const t of ['user_mfa', 'mfa_recovery_codes']) {
+        expect(sql.some((q) => q.startsWith(`CREATE TABLE IF NOT EXISTS "${t}"`))).toBe(true);
+      }
+      expect(sql).toContain('ALTER TABLE "integration_settings" ADD COLUMN IF NOT EXISTS "mfa_required_roles" jsonb');
+      expect(sql.filter((q) => /^CREATE TABLE /.test(q) && !/IF NOT EXISTS/.test(q))).toEqual([]);
+      expect(sql.filter((q) => /^CREATE (UNIQUE )?INDEX /.test(q) && !/IF NOT EXISTS/.test(q))).toEqual([]);
+      expect(sql.filter((q) => /ADD CONSTRAINT/.test(q) && !/pg_constraint/.test(q))).toEqual([]);
+    });
+  });
+
   it('refuses to revert the baseline unless explicitly allowed', async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { InitialSchema1762560000000 } = require('../../../src/migrations/1762560000000-InitialSchema');

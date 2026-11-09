@@ -85,6 +85,7 @@ export function buildApp(): express.Express {
       '/api/oauth/token',
       '/api/auth/github/callback',
       '/api/auth/gitlab/callback',
+      '/api/auth/mfa/challenge', // also limited per account in routes/mfa.ts (#24)
     ],
     credentialLimiter,
   );

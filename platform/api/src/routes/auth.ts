@@ -4,13 +4,12 @@ import { User, UserRole } from '../entities/User';
 import { Role } from '../entities/Role';
 import { expressAuthenticate, expressRequireRole, requirePermission, logAudit, clearPermissionCache, getUserPermissions, AuthenticatedRequest } from '../middleware/auth';
 import { Permission, ROLE_RANK, isKnownPermission } from '../config/permissions';
-import { getJwtSecret } from '../config/security-env';
-import jwt from 'jsonwebtoken';
-import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
 import bcrypt from 'bcryptjs';
 import { resolveIntegrations, publicAuthProviders } from '../lib/integrations';
+import { completeFirstFactor, loginResponseBody, mfaEnabledUserIds } from '../lib/mfa';
+import { AMR_PASSWORD } from '../lib/session-token';
 
 const router = Router();
 
@@ -85,6 +84,9 @@ router.get('/health', (req: Request, res: Response) => {
 /**
  * POST /api/auth/login
  * Requires email (or username) + password. Passwordless login is not supported.
+ * With MFA enabled the answer is `{ mfa_required: true, challengeToken }` (no session yet);
+ * POST /api/auth/mfa/challenge completes the login. Users whose role requires MFA but who have
+ * not enrolled get a session restricted to enrolment (`mfaEnrollmentRequired: true`).
  */
 router.post('/auth/login', async (req: Request, res: Response) => {
   try {
@@ -128,16 +130,12 @@ router.post('/auth/login', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Account is inactive. Contact an administrator.' });
     }
 
-    user.lastLogin = new Date();
-    await repo.save(user);
-
-    const token = jwt.sign(
-      { id: user.id, email: user.email, name: user.name, role: user.role },
-      getJwtSecret(),
-      { expiresIn: '24h' }
-    );
-    const { passwordHash: _, ...safeUser } = user as any;
-    return res.json({ token, user: safeUser });
+    const outcome = await completeFirstFactor(user, [AMR_PASSWORD], req.ip);
+    if (outcome.kind === 'session') {
+      user.lastLogin = new Date();
+      await repo.save(user);
+    }
+    return res.json(loginResponseBody(outcome, user));
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
@@ -199,10 +197,11 @@ router.get('/users', expressAuthenticate, expressRequireRole([UserRole.ADMIN, Us
     const users = await ds.getRepository(User).find({
       order: { createdAt: 'DESC' as any },
     });
+    const withMfa = await mfaEnabledUserIds().catch(() => new Set<string>());
     // Never return password hashes to the client
     return res.json(users.map((u) => {
       const { passwordHash, ...safe } = u as any;
-      return { ...safe, hasPassword: !!passwordHash };
+      return { ...safe, hasPassword: !!passwordHash, mfaEnabled: withMfa.has(u.id) };
     }));
   } catch (err: any) {
     return res.status(400).json({ error: err.message });

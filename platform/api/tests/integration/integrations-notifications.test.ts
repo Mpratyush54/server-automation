@@ -159,8 +159,9 @@ import apiRouter from '../../src/routes/api';
 const JWT_SECRET = 'plat-super-secret-key';
 // The API never falls back to a default secret; tests must configure it.
 process.env.JWT_SECRET = JWT_SECRET;
+// Rotation needs a recent second factor (#24): this admin session just passed one.
 const adminToken = jwt.sign(
-  { id: ADMIN.id, email: ADMIN.email, name: ADMIN.name, role: ADMIN.role },
+  { id: ADMIN.id, email: ADMIN.email, name: ADMIN.name, role: ADMIN.role, amr: ['pwd', 'otp', 'mfa'], auth_time: Math.floor(Date.now() / 1000) },
   JWT_SECRET,
   { expiresIn: '2h' },
 );
@@ -250,6 +251,16 @@ describe('integrations + notifications + rotate', () => {
       .set(authHeader(devToken))
       .send({ confirm: 'ROTATE' });
     expect(rotate.status).toBe(403);
+  });
+
+  it('requires a recent second factor to rotate (#24)', async () => {
+    const noMfa = jwt.sign({ id: ADMIN.id, email: ADMIN.email, name: ADMIN.name, role: ADMIN.role, amr: ['pwd'] }, JWT_SECRET, { expiresIn: '2h' });
+    const r = await request(app)
+      .post('/api/settings/rotate-secrets')
+      .set(authHeader(noMfa))
+      .send({ confirm: 'ROTATE' });
+    expect(r.status).toBe(401);
+    expect(r.body.error).toBe('step_up_required');
   });
 
   it('requires ROTATE confirm and then returns one-time secret values', async () => {
