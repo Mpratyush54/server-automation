@@ -15,6 +15,9 @@ export function safeReturnUrl(raw: unknown): string | null {
   }
 }
 
+/** First-factor result kept for the MFA step (session storage; never a session). */
+const MFA_CHALLENGE_KEY = 'plat_mfa_challenge';
+
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private base = '/api';
@@ -29,17 +32,64 @@ export class AuthService {
       body.email = email.trim();
     }
     return this.http.post<any>(`${this.base}/auth/login`, body).pipe(
-      tap(res => this.storeSession(res))
+      tap(res => {
+        if (res?.mfa_required) this.setPendingChallenge(res.challengeToken);
+        else this.storeSession(res);
+      })
     );
+  }
+
+  /** Pending MFA challenge from a password or GitHub/GitLab login (#24). */
+  getPendingChallenge(): string | null {
+    try {
+      return sessionStorage.getItem(MFA_CHALLENGE_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  setPendingChallenge(token: string | null | undefined) {
+    try {
+      if (token) sessionStorage.setItem(MFA_CHALLENGE_KEY, token);
+      else sessionStorage.removeItem(MFA_CHALLENGE_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+  }
+
+  /** Second step of a login: TOTP or recovery code for the pending challenge. */
+  async completeMfaChallenge(code: string): Promise<any> {
+    const challengeToken = this.getPendingChallenge();
+    if (!challengeToken) throw { status: 401, error: { error: 'invalid_challenge' } };
+    const res = await firstValueFrom(this.http.post<any>(`${this.base}/auth/mfa/challenge`, { challengeToken, code }));
+    this.setPendingChallenge(null);
+    this.storeSession(res);
+    return res;
+  }
+
+  /** Store a new session token (after MFA verify / step-up) and its profile. */
+  replaceSession(res: { token?: string; user?: any }) {
+    this.storeSession(res);
+  }
+
+  /** Session restricted to MFA enrolment: the role requires MFA and none is set up yet. */
+  mfaEnrollmentRequired(): boolean {
+    const token = this.getToken();
+    return !!token && this.decodeToken(token)?.mfa_enroll === true;
   }
 
   /**
    * Swap the one-time `?code=` from the GitHub/GitLab callback for a session (POST, never a URL token).
-   * Resolves false when the code is invalid, expired or already used.
+   * Resolves false when the code is invalid, expired or already used, and 'mfa_required' when the
+   * user must enter a second factor first (the challenge is kept for the login page).
    */
-  async exchangeLoginCode(code: string): Promise<boolean> {
+  async exchangeLoginCode(code: string): Promise<boolean | 'mfa_required'> {
     try {
       const res = await firstValueFrom(this.http.post<any>(`${this.base}/auth/exchange`, { code }));
+      if (res?.mfa_required && res.challengeToken) {
+        this.setPendingChallenge(res.challengeToken);
+        return 'mfa_required';
+      }
       if (!res?.token || !res?.user) return false;
       this.storeSession(res);
       return true;
@@ -89,6 +139,7 @@ export class AuthService {
   clearSession() {
     localStorage.removeItem('plat_auth_token');
     localStorage.removeItem('plat_user_profile');
+    this.setPendingChallenge(null);
     this.profileVerified = false;
   }
 

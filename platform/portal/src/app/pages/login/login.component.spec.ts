@@ -15,7 +15,7 @@ describe('LoginComponent', () => {
   let apiService: jasmine.SpyObj<ApiService>;
 
   beforeEach(async () => {
-    const authSpy = jasmine.createSpyObj('AuthService', ['login', 'getToken', 'isAuthenticated']);
+    const authSpy = jasmine.createSpyObj('AuthService', ['login', 'getToken', 'isAuthenticated', 'getPendingChallenge', 'setPendingChallenge', 'completeMfaChallenge', 'mfaEnrollmentRequired']);
     queryParams = {};
     const apiSpy = jasmine.createSpyObj('ApiService', ['getAuthProviders']);
     apiSpy.getAuthProviders.and.returnValue(of({
@@ -77,6 +77,54 @@ describe('LoginComponent', () => {
 
     expect(authService.login).toHaveBeenCalledWith('test@test.com', 'TestPass123');
     expect(router.navigate).toHaveBeenCalledWith(['/dashboard']);
+  });
+
+  it('asks for the second factor when the API answers mfa_required (#24)', async () => {
+    authService.isAuthenticated.and.returnValue(false);
+    authService.login.and.returnValue(of({ mfa_required: true, challengeToken: 'c' }));
+    const fixture = TestBed.createComponent(LoginComponent);
+    fixture.componentInstance.email = 'admin@example.com';
+    fixture.componentInstance.password = 'pw';
+    await fixture.componentInstance.login();
+    expect(fixture.componentInstance.mfaStep).toBeTrue();
+    expect(router.navigate).not.toHaveBeenCalled();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.mfa-code')).toBeTruthy();
+
+    authService.completeMfaChallenge.and.resolveTo({ token: 't' });
+    fixture.componentInstance.mfaCode = '123456';
+    await fixture.componentInstance.verifyMfa();
+    expect(authService.completeMfaChallenge).toHaveBeenCalledWith('123456');
+    expect(router.navigate).toHaveBeenCalledWith(['/dashboard']);
+  });
+
+  it('shows an error for a wrong or reused code and stays on the code step (#24)', async () => {
+    authService.completeMfaChallenge.and.rejectWith({ status: 401, error: { error: 'invalid_code' } });
+    const fixture = TestBed.createComponent(LoginComponent);
+    fixture.componentInstance.mfaStep = true;
+    fixture.componentInstance.mfaCode = '000000';
+    await fixture.componentInstance.verifyMfa();
+    expect(fixture.componentInstance.mfaStep).toBeTrue();
+    expect(fixture.componentInstance.errorMessage).toContain('not valid');
+    expect(router.navigate).not.toHaveBeenCalled();
+  });
+
+  it('resumes the code step after a GitHub/GitLab login that needs MFA (#24)', async () => {
+    authService.isAuthenticated.and.returnValue(false);
+    authService.getPendingChallenge.and.returnValue('pending');
+    const fixture = TestBed.createComponent(LoginComponent);
+    await fixture.componentInstance.ngOnInit();
+    expect(fixture.componentInstance.mfaStep).toBeTrue();
+  });
+
+  it('sends admins without MFA to the forced enrolment screen (#24)', async () => {
+    authService.isAuthenticated.and.returnValue(false);
+    authService.login.and.returnValue(of({ token: 't', user: { role: 'admin' }, mfaEnrollmentRequired: true }));
+    const fixture = TestBed.createComponent(LoginComponent);
+    fixture.componentInstance.email = 'admin@example.com';
+    fixture.componentInstance.password = 'pw';
+    await fixture.componentInstance.login();
+    expect(router.navigate).toHaveBeenCalledWith(['/mfa/enroll']);
   });
 
   it('should login with username when identity has no @', async () => {

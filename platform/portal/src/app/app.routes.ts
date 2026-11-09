@@ -26,6 +26,7 @@ import { OauthAuthorizeComponent } from './pages/oauth-authorize/oauth-authorize
 import { IframeViewComponent } from './pages/iframe-view/iframe-view.component';
 import { DocsComponent } from './pages/docs/docs.component';
 import { ProfileComponent } from './pages/profile/profile.component';
+import { MfaEnrollComponent } from './pages/mfa-enroll/mfa-enroll.component';
 
 import { authGuard } from './guards/auth.guard';
 import { docsMatcher } from './guards/docs.matcher';
@@ -42,6 +43,8 @@ export const routes: Routes = [
   // App / server hosts only
   { path: 'login', component: LoginComponent, canActivate: [appHostGuard] },
   { path: 'oauth/authorize', component: OauthAuthorizeComponent, canActivate: [appHostGuard] },
+  // Forced MFA enrolment for roles in mfa.requiredRoles (#24); the component checks the session.
+  { path: 'mfa/enroll', component: MfaEnrollComponent, canActivate: [appHostGuard] },
 
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
   // ArgoCD is full-page at /argocd/ (ingress) — leave the SPA rather than iframe.

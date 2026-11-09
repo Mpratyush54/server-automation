@@ -1,9 +1,11 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
+import { StepUpService } from '../../services/step-up.service';
+import { MfaService } from '../../services/mfa.service';
 import { OperationProgressComponent } from '../../shared/operation-progress.component';
 
 @Component({
@@ -52,6 +54,7 @@ import { OperationProgressComponent } from '../../shared/operation-progress.comp
     }
     @if (isDevOps) {
       <button class="btn btn-sm" [class.btn-primary]="activeTab === 'rotate'" (click)="activeTab = 'rotate'">⟳ Rotate secrets</button>
+      <button class="btn btn-sm" [class.btn-primary]="activeTab === 'security'" (click)="activeTab = 'security'">🛡️ Security (MFA)</button>
     }
   </div>
 
@@ -393,6 +396,32 @@ import { OperationProgressComponent } from '../../shared/operation-progress.comp
     </div>
   }
 
+  <!-- ─────────────────── SECURITY (MFA) TAB ─────────────────── -->
+  @if (activeTab === 'security' && isDevOps) {
+    <div class="card mfa-policy" style="padding:20px; max-width:720px;">
+      <h2>Two-factor authentication policy</h2>
+      <p style="color:var(--text-secondary); font-size:0.8rem;">Users in these roles must set up an authenticator app before they can use the portal (setting <code>mfa.requiredRoles</code>). Revealing secrets, rotating platform secrets and creating agent tokens always ask for a recent code.</p>
+      <div style="display:flex; gap:14px; flex-wrap:wrap; margin:12px 0;">
+        @for (r of allRoles; track r) {
+          <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;">
+            <input type="checkbox" [checked]="mfaRoles.includes(r)" (change)="toggleMfaRole(r)" [disabled]="!isAdmin"> {{ r }}
+          </label>
+        }
+      </div>
+      @if (mfaPolicySource) {
+        <div style="font-size:0.75rem; color:var(--text-muted);">Source: {{ mfaPolicySource }}</div>
+      }
+      @if (isAdmin) {
+        <button class="btn btn-primary btn-sm" style="margin-top:10px;" (click)="saveMfaPolicy()" [disabled]="savingMfaPolicy">Save policy</button>
+      } @else {
+        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:8px;">Only admins can change the policy.</div>
+      }
+      @if (mfaPolicyMessage) {
+        <div style="margin-top:10px; font-size:0.8rem;">{{ mfaPolicyMessage }}</div>
+      }
+    </div>
+  }
+
   <!-- ─────────────────── ROTATE TAB ─────────────────── -->
   @if (activeTab === 'rotate' && isDevOps) {
     <div>
@@ -472,7 +501,45 @@ export class SettingsComponent implements OnInit {
   /** Latest secret-rotation operation (live step progress, also after an API restart). */
   rotationOperationId: string | null = null;
 
+  private stepUp = inject(StepUpService);
+  private mfa = inject(MfaService);
+  readonly allRoles = ['admin', 'devops', 'tech_lead', 'developer', 'viewer'];
+  isAdmin = false;
+  mfaRoles: string[] = [];
+  mfaPolicySource = '';
+  mfaPolicyMessage = '';
+  savingMfaPolicy = false;
+
   constructor(private api: ApiService, private auth: AuthService) {}
+
+  async loadMfaPolicy() {
+    try {
+      const p = await firstValueFrom(this.mfa.getPolicy());
+      this.mfaRoles = [...(p.requiredRoles || [])];
+      this.mfaPolicySource = p.source;
+    } catch {
+      this.mfaPolicySource = '';
+    }
+  }
+
+  toggleMfaRole(role: string) {
+    this.mfaRoles = this.mfaRoles.includes(role) ? this.mfaRoles.filter((r) => r !== role) : [...this.mfaRoles, role];
+  }
+
+  async saveMfaPolicy() {
+    this.savingMfaPolicy = true;
+    this.mfaPolicyMessage = '';
+    try {
+      const p: any = await this.stepUp.run(() => firstValueFrom(this.mfa.setPolicy(this.mfaRoles)), 'Change the MFA policy');
+      this.mfaRoles = [...(p.requiredRoles || [])];
+      this.mfaPolicySource = p.source;
+      this.mfaPolicyMessage = 'Policy saved. It applies at each user\'s next sign-in.';
+    } catch (err: any) {
+      this.mfaPolicyMessage = err?.error?.error || err?.message || 'Failed to save policy';
+    } finally {
+      this.savingMfaPolicy = false;
+    }
+  }
 
   async loadLatestRotation() {
     try {
@@ -483,7 +550,9 @@ export class SettingsComponent implements OnInit {
 
   async ngOnInit() {
     this.isDevOps = this.auth.isDevOps() || this.auth.isAdmin();
+    this.isAdmin = this.auth.isAdmin();
     if (this.isDevOps) void this.loadLatestRotation();
+    if (this.isDevOps) void this.loadMfaPolicy();
     this.isTechLeadOrDevOps = this.auth.isTechLeadOrDevOps();
 
     if (this.isDevOps) {
@@ -651,7 +720,7 @@ export class SettingsComponent implements OnInit {
     // A retried request with the same key is replayed instead of rotating twice.
     const idempotencyKey = (globalThis.crypto as any)?.randomUUID?.() || `rotate-${Date.now()}-${Math.random()}`;
     try {
-      const res = await firstValueFrom(this.api.rotateSecrets('ROTATE', idempotencyKey));
+      const res: any = await this.stepUp.run(() => firstValueFrom(this.api.rotateSecrets('ROTATE', idempotencyKey)), 'Rotate platform secrets');
       this.rotateValues = res.values || null;
       this.rotateResults = res.results || [];
       if (res.operationId) this.rotationOperationId = res.operationId;

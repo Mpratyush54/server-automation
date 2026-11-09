@@ -57,11 +57,17 @@
             @if (u.hasPassword === false) {
               <span style="margin-left:6px;font-size:0.7rem;color:#f59e0b;">no password</span>
             }
+            @if (u.mfaEnabled) {
+              <span class="mfa-badge" style="margin-left:6px;font-size:0.7rem;color:var(--accent-success, #2dd4a0);">2FA</span>
+            }
           </td>
           <td>{{ u.lastLogin ? (u.lastLogin | date:'medium') : 'Never' }}</td>
           @if (canManage) {
             <td style="text-align:right;display:flex;gap:8px;justify-content:flex-end;">
               <button class="btn btn-sm" (click)="openEditModal(u)">Edit</button>
+              @if (isAdmin && u.mfaEnabled) {
+                <button class="btn btn-sm mfa-reset" (click)="resetMfa(u)" title="Remove this user's authenticator (lost device). Audit-logged.">Reset MFA</button>
+              }
               <button class="btn btn-danger btn-sm" (click)="deleteUser(u.id)">Delete</button>
             </td>
           }

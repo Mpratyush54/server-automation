@@ -1,10 +1,11 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
+import { StepUpService } from '../../services/step-up.service';
 import { OperationProgressComponent } from '../../shared/operation-progress.component';
 
 @Component({
@@ -93,6 +94,8 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   
   // Timer for logs & heartbeats refresh
   private refreshTimer?: any;
+
+  private stepUp = inject(StepUpService);
 
   constructor(private route: ActivatedRoute, private api: ApiService, private auth: AuthService) {}
 
@@ -778,10 +781,11 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
 
   async revealSecret(secret: any) {
     try {
-      const res = await firstValueFrom(this.api.revealSecret(this.project.id, {
+      // Needs a recent second factor: the step-up modal asks for a code and the reveal is retried (#24).
+      const res: any = await this.stepUp.run(() => firstValueFrom(this.api.revealSecret(this.project.id, {
         environmentId: secret.environmentId,
         key: secret.key
-      }));
+      })), `Reveal ${secret.key}`);
       secret.revealedValue = res.value;
       secret.isRevealed = true;
     } catch (err: any) {
@@ -852,7 +856,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
 
   async doExportSecrets(envId: string) {
     try {
-      const res = await firstValueFrom(this.api.exportSecrets(this.project.id, envId));
+      const res: any = await this.stepUp.run(() => firstValueFrom(this.api.exportSecrets(this.project.id, envId)), 'Export secrets');
       this.exportedSecretsText = res.secrets;
       this.exportedEnvId = envId;
       this.showExportModal = true;

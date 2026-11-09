@@ -19,6 +19,10 @@ export class LoginComponent implements OnInit {
   showPassword = false;
   errorMessage = '';
   loading = false;
+  /** Second step (#24): the password (or GitHub/GitLab) was accepted, MFA code required. */
+  mfaStep = false;
+  mfaCode = '';
+  useRecoveryCode = false;
   providers = {
     github: { enabled: false, configured: false },
     gitlab: { enabled: false, configured: false, url: 'https://gitlab.com' },
@@ -37,12 +41,59 @@ export class LoginComponent implements OnInit {
       this.errorMessage = oauthError;
     }
     if (this.auth.isAuthenticated()) {
-      const returnUrl = safeReturnUrl(this.route.snapshot.queryParams['returnUrl']);
-      if (returnUrl) this.router.navigateByUrl(returnUrl);
-      else this.router.navigate(['/dashboard']);
+      this.goToApp();
       return;
     }
+    // GitHub/GitLab login of a user with MFA: the exchange left a challenge for this step.
+    if (this.auth.getPendingChallenge?.()) {
+      this.mfaStep = true;
+    }
     await this.loadProviders();
+  }
+
+  private goToApp() {
+    if (this.auth.mfaEnrollmentRequired?.()) {
+      this.router.navigate(['/mfa/enroll']);
+      return;
+    }
+    const returnUrl = safeReturnUrl(this.route.snapshot.queryParams['returnUrl']);
+    if (returnUrl) this.router.navigateByUrl(returnUrl);
+    else this.router.navigate(['/dashboard']);
+  }
+
+  async verifyMfa() {
+    const code = (this.mfaCode || '').trim();
+    if (!code) {
+      this.errorMessage = this.useRecoveryCode ? 'Enter a recovery code.' : 'Enter the 6-digit code from your authenticator app.';
+      return;
+    }
+    this.errorMessage = '';
+    this.loading = true;
+    try {
+      await this.auth.completeMfaChallenge(code);
+      this.goToApp();
+    } catch (err: any) {
+      const apiError = err?.error?.error;
+      if (apiError === 'invalid_challenge') {
+        this.cancelMfa();
+        this.errorMessage = 'Sign-in expired. Please sign in again.';
+      } else if (err?.status === 429) {
+        this.errorMessage = 'Too many attempts. Wait a few minutes and try again.';
+      } else {
+        this.errorMessage = 'That code is not valid (or was already used).';
+      }
+    } finally {
+      this.mfaCode = '';
+      this.loading = false;
+    }
+  }
+
+  cancelMfa() {
+    this.auth.setPendingChallenge?.(null);
+    this.mfaStep = false;
+    this.mfaCode = '';
+    this.useRecoveryCode = false;
+    this.password = '';
   }
 
   async loadProviders() {
@@ -72,18 +123,19 @@ export class LoginComponent implements OnInit {
         this.loading = false;
         return;
       }
-      if (ident.includes('@')) {
-        await firstValueFrom(this.auth.login(ident, this.password));
-      } else {
-        await firstValueFrom(this.auth.login('', this.password, ident));
-      }
+      const res = ident.includes('@')
+        ? await firstValueFrom(this.auth.login(ident, this.password))
+        : await firstValueFrom(this.auth.login('', this.password, ident));
 
-      const returnUrl = safeReturnUrl(this.route.snapshot.queryParams['returnUrl']);
-      if (returnUrl) {
-        this.router.navigateByUrl(returnUrl);
-      } else {
-        this.router.navigate(['/dashboard']);
+      if (res?.mfa_required) {
+        this.mfaStep = true;
+        return;
       }
+      if (res?.mfaEnrollmentRequired) {
+        this.router.navigate(['/mfa/enroll']);
+        return;
+      }
+      this.goToApp();
     } catch (err: any) {
       this.errorMessage = err.error?.error || 'Authentication failed. Please check your credentials.';
     } finally {

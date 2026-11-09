@@ -20,7 +20,7 @@ describe('authGuard', () => {
   beforeEach(() => {
     localStorage.clear();
     auth = Object.assign(
-      jasmine.createSpyObj('AuthService', ['isAuthenticated', 'exchangeLoginCode', 'loadProfile', 'clearSession', 'decodeToken']),
+      jasmine.createSpyObj('AuthService', ['isAuthenticated', 'exchangeLoginCode', 'loadProfile', 'clearSession', 'decodeToken', 'mfaEnrollmentRequired']),
       { profileVerified: false },
     );
     TestBed.configureTestingModule({
@@ -56,6 +56,20 @@ describe('authGuard', () => {
     auth.exchangeLoginCode.and.resolveTo(false);
     const result = await run('/dashboard?code=stale');
     expect(router.serializeUrl(result as UrlTree)).toMatch(/^\/login\?error=/);
+  });
+
+  it('sends a GitHub/GitLab login that needs MFA to the code step (#24)', async () => {
+    auth.exchangeLoginCode.and.resolveTo('mfa_required');
+    const result = await run('/dashboard?code=abc');
+    expect(router.serializeUrl(result as UrlTree)).toBe('/login?mfa=1');
+  });
+
+  it('keeps an enrolment-only session on the MFA enrolment screen (#24)', async () => {
+    auth.isAuthenticated.and.returnValue(true);
+    auth.mfaEnrollmentRequired.and.returnValue(true);
+    const result = await run('/projects');
+    expect(router.serializeUrl(result as UrlTree)).toBe('/mfa/enroll');
+    expect(auth.loadProfile).not.toHaveBeenCalled();
   });
 
   it('loads the profile (role) from the API before activating', async () => {
