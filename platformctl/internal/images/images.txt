@@ -2,6 +2,8 @@
 # Regenerate after bumping platformctl/internal/versions/versions.go or
 # changing platformctl/internal/manifests/data/*: scripts/gen-images.sh
 # platform-api / platform-portal are passed at runtime (tag-dependent).
+# NOTE(#28): kyverno images below were added by hand; coordinator must run
+# scripts/gen-images.sh and replace this file with the regenerated output.
 docker.io/bitnamilegacy/minio-object-browser:2.0.2-debian-12-r3
 docker.io/bitnamilegacy/minio:2025.7.23-debian-12-r3
 docker.io/grafana/grafana:13.3.0-distroless
@@ -23,6 +25,11 @@ quay.io/prometheus-operator/prometheus-operator:v0.94.2
 quay.io/prometheus/alertmanager:v0.34.2
 quay.io/prometheus/node-exporter:v1.12.1-distroless
 quay.io/prometheus/prometheus:v3.16.0-distroless
+reg.kyverno.io/kyverno/background-controller:v1.13.4
+reg.kyverno.io/kyverno/cleanup-controller:v1.13.4
+reg.kyverno.io/kyverno/kyverno:v1.13.4
+reg.kyverno.io/kyverno/kyvernopre:v1.13.4
+reg.kyverno.io/kyverno/reports-controller:v1.13.4
 registry-1.docker.io/bitnami/mongodb:latest
 registry-1.docker.io/bitnami/postgresql:latest
 registry-1.docker.io/bitnami/redis:latest

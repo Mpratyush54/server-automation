@@ -60,6 +60,7 @@ func All() []Component {
 		{"ingress", "Create the Ingresses early so the TLS certificate issues during install", InstallIngress},
 		{"routing", "Ingress: ArgoCD /argocd, Grafana /grafana, Portainer subdomain+SSO", InstallRouting},
 		{"auto-update", "GHCR auto-update policy (Image Updater + CronJob)", InstallAutoUpdate},
+		{"kyverno", "Admission policies (image signature verify; full profile + INSTALL_KYVERNO)", InstallKyverno},
 	}
 }
 
@@ -787,6 +788,9 @@ func InstallPlatform(cfg *config.Config) error {
 	// Always reconcile security settings on existing installations as well.
 	color.Cyan("\n  ■ Deploying Platform API + Portal...")
 
+	if err := verifyPlatformImages(cfg); err != nil {
+		return err
+	}
 	if err := pullPlatformImages(cfg, false); err != nil {
 		return err
 	}
@@ -1436,6 +1440,9 @@ var imagePresentLocally = func(image string) bool {
 // only then sets the new images (#17); finally the #18 rollout settings and PDB
 // are reconciled on the new image.
 func UpdateImages(cfg *config.Config) error {
+	if err := verifyPlatformImages(cfg); err != nil {
+		return err
+	}
 	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
 	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
 	backup, err := prepareAPIMigrations(cfg)

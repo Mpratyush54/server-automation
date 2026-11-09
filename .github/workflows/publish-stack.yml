@@ -26,6 +26,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 concurrency:
   group: publish-stack
@@ -80,11 +81,32 @@ jobs:
         run: echo "$GITHUB_TOKEN" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Build and push the stack
+        id: push_stack
         run: |
           version="$(date -u +%Y.%m.%d)-${{ github.run_number }}"
           echo "stack version $version, channel $CHANNEL"
           PUSH=1 bash scripts/build-stack.sh "$version" "${{ matrix.arch }}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "### platform-stack $version-${{ matrix.arch }} → $CHANNEL" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+
+      - name: Sign platform-stack (keyless)
+        env:
+          VERSION: ${{ steps.push_stack.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+          COSIGN_YES: "true"
+        run: |
+          set -euo pipefail
+          ref="ghcr.io/mpratyush54/platform-stack:${VERSION}-${ARCH}"
+          digest="$(oras resolve "$ref")"
+          if [ -z "$digest" ]; then
+            echo "::error::could not resolve digest for $ref"
+            exit 1
+          fi
+          cosign sign --yes "ghcr.io/mpratyush54/platform-stack@${digest}"
+          echo "- Signed \`${ref}\` (@${digest})" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify anonymous pull
         run: |

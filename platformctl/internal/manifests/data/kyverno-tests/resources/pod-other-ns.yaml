@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: other-ns-platform-image
+  namespace: default
+spec:
+  containers:
+    - name: api
+      image: ghcr.io/mpratyush54/platform-api:unsigned-test

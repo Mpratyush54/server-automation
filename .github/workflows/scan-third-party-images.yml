@@ -1,0 +1,90 @@
+name: Scan third-party images
+
+# Weekly Trivy scan of every image in platformctl/internal/images/images.txt.
+# Results stay private to the workflow (artifact + job summary). Do not open
+# public issues: the repository is public and CVE write-ups must not leak.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: scan-third-party-images
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Trivy
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/aquasecurity/trivy/v0.59.1/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin v0.59.1
+          trivy --version
+
+      - name: Scan images.txt
+        env:
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: |
+          set -euo pipefail
+          list=platformctl/internal/images/images.txt
+          mkdir -p scan-out
+          summary="$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Third-party image CVE scan"
+            echo ""
+            echo "| Image | Critical (fixable) | High (fixable) | Status |"
+            echo "|---|---:|---:|---|"
+          } >> "$summary"
+
+          failed=0
+          scanned=0
+          while IFS= read -r image || [ -n "$image" ]; do
+            image="$(printf '%s' "$image" | tr -d '\r')"
+            case "$image" in
+              ""|\#*) continue ;;
+            esac
+            scanned=$((scanned + 1))
+            safe="$(printf '%s' "$image" | tr '/:@' '___')"
+            out="scan-out/${safe}.json"
+            echo "::group::trivy $image"
+            if ! trivy image --quiet --ignore-unfixed --severity CRITICAL,HIGH \
+              --format json --output "$out" "$image"; then
+              echo "::warning::trivy failed for $image"
+              echo "| \`$image\` | - | - | scan-error |" >> "$summary"
+              failed=$((failed + 1))
+              echo "::endgroup::"
+              continue
+            fi
+            # Counts only; no CVE identifiers or descriptions in the summary.
+            counts="$(jq -r '[.Results[]?.Vulnerabilities[]?.Severity] | "\(map(select(. == "CRITICAL")) | length) \(map(select(. == "HIGH")) | length)"' "$out")"
+            crit="${counts%% *}"
+            high="${counts##* }"
+            status=ok
+            if [ "$crit" -gt 0 ]; then status=critical; fi
+            echo "| \`$image\` | $crit | $high | $status |" >> "$summary"
+            echo "::endgroup::"
+          done < "$list"
+
+          {
+            echo ""
+            echo "Scanned **${scanned}** images; **${failed}** scan errors."
+            echo "Full JSON reports are attached as a workflow artifact (private to Actions)."
+          } >> "$summary"
+
+      - name: Upload scan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: third-party-trivy-json
+          path: scan-out/
+          retention-days: 30

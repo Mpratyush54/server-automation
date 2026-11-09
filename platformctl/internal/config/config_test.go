@@ -556,3 +556,34 @@ func TestSaveEnvFileWritesAPIReplicas(t *testing.T) {
 		t.Fatalf("API_REPLICAS not saved:\n%s", data)
 	}
 }
+
+func TestKyvernoOptInFullOnly(t *testing.T) {
+	t.Run("full opt-in", func(t *testing.T) {
+		profileEnv(t, "")
+		t.Setenv("PLATFORM_PROFILE", "full")
+		t.Setenv("INSTALL_KYVERNO", "true")
+		t.Setenv("KYVERNO_POLICY_MODE", "Enforce")
+		c := Load()
+		if !c.InstallKyverno || c.KyvernoPolicyMode != "Enforce" {
+			t.Fatalf("got kyverno=%v mode=%q", c.InstallKyverno, c.KyvernoPolicyMode)
+		}
+	})
+	t.Run("ignored on minimal", func(t *testing.T) {
+		profileEnv(t, "")
+		t.Setenv("PLATFORM_PROFILE", "minimal")
+		t.Setenv("INSTALL_KYVERNO", "true")
+		c := Load()
+		if c.InstallKyverno {
+			t.Fatal("INSTALL_KYVERNO must be ignored outside full profile")
+		}
+	})
+	t.Run("default full off", func(t *testing.T) {
+		profileEnv(t, "")
+		t.Setenv("PLATFORM_PROFILE", "full")
+		t.Setenv("INSTALL_KYVERNO", "")
+		c := Load()
+		if c.InstallKyverno || c.KyvernoPolicyMode != "Audit" {
+			t.Fatalf("default full must not install kyverno; mode=%q", c.KyvernoPolicyMode)
+		}
+	})
+}

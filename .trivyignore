@@ -1,0 +1,5 @@
+# Trivy CVE allowlist for platform image scans (docker-build.yml).
+# Every entry MUST include an expiry (YYYY-MM-DD) and a short reason.
+# Format: CVE-YYYY-NNNNN (one per line). Lines starting with # are comments.
+# Example:
+# CVE-2024-12345  # expiry:2026-12-31 reason:waiting on upstream patch in base image

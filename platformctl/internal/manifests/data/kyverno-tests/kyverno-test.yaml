@@ -1,0 +1,30 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: verify-platform-images
+spec:
+  policies:
+    - policy.yaml
+  resources:
+    - resources/pod-other-ns.yaml
+    - resources/pod-nginx-platform.yaml
+    - resources/pod-unsigned-platform.yaml
+  results:
+    # Wrong namespace: rule does not match.
+    - policy: verify-platform-images
+      rule: verify-platform-ghcr
+      resources:
+        - other-ns-platform-image
+      result: skip
+    # Platform namespace but non-platform image: imageReferences do not match.
+    - policy: verify-platform-images
+      rule: verify-platform-ghcr
+      resources:
+        - nginx-in-platform
+      result: skip
+    # Platform image in platform namespace without a signature must fail.
+    - policy: verify-platform-images
+      rule: verify-platform-ghcr
+      resources:
+        - unsigned-platform-api
+      result: fail
