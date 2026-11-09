@@ -137,6 +137,19 @@ jobs:
             echo "signed_ref=${ref}@${DIGEST}" >> "$GITHUB_OUTPUT"
           fi
 
+      # Human-readable findings in the job log (never fails); the gate below
+      # writes SARIF, which does not show which package needs fixing.
+      - name: Trivy findings (table)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.ref.outputs.target }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          format: table
+          exit-code: "0"
+          vuln-type: os,library
+
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -148,6 +161,8 @@ jobs:
           output: trivy-${{ matrix.image }}.sarif
           exit-code: "1"
           vuln-type: os,library
+          # The table step above already installed Trivy and fetched the DB.
+          skip-setup-trivy: true
 
       - name: Upload Trivy SARIF
         if: always()

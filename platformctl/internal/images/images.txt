@@ -2,14 +2,20 @@
 # Regenerate after bumping platformctl/internal/versions/versions.go or
 # changing platformctl/internal/manifests/data/*: scripts/gen-images.sh
 # platform-api / platform-portal are passed at runtime (tag-dependent).
-# NOTE(#28): kyverno images below were added by hand; coordinator must run
 # scripts/gen-images.sh and replace this file with the regenerated output.
+bitnami/kubectl:1.30.2
 docker.io/bitnamilegacy/minio-object-browser:2.0.2-debian-12-r3
 docker.io/bitnamilegacy/minio:2025.7.23-debian-12-r3
 docker.io/grafana/grafana:13.3.0-distroless
 docker.io/grafana/promtail:3.5.1
 ecr-public.aws.com/docker/library/redis:8.6.4-alpine
 ghcr.io/jkroepke/kube-webhook-certgen:1.11.1
+ghcr.io/kyverno/background-controller:v1.13.4
+ghcr.io/kyverno/cleanup-controller:v1.13.4
+ghcr.io/kyverno/kyverno-cli:v1.13.4
+ghcr.io/kyverno/kyverno:v1.13.4
+ghcr.io/kyverno/kyvernopre:v1.13.4
+ghcr.io/kyverno/reports-controller:v1.13.4
 grafana/loki:2.6.1
 portainer/portainer-ce:2.45.3
 quay.io/argoproj/argocd:v3.6.1
@@ -25,11 +31,6 @@ quay.io/prometheus-operator/prometheus-operator:v0.94.2
 quay.io/prometheus/alertmanager:v0.34.2
 quay.io/prometheus/node-exporter:v1.12.1-distroless
 quay.io/prometheus/prometheus:v3.16.0-distroless
-reg.kyverno.io/kyverno/background-controller:v1.13.4
-reg.kyverno.io/kyverno/cleanup-controller:v1.13.4
-reg.kyverno.io/kyverno/kyverno:v1.13.4
-reg.kyverno.io/kyverno/kyvernopre:v1.13.4
-reg.kyverno.io/kyverno/reports-controller:v1.13.4
 registry-1.docker.io/bitnami/mongodb:latest
 registry-1.docker.io/bitnami/postgresql:latest
 registry-1.docker.io/bitnami/redis:latest
