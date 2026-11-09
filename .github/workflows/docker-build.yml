@@ -161,6 +161,9 @@ jobs:
           output: trivy-${{ matrix.image }}.sarif
           exit-code: "1"
           vuln-type: os,library
+          # Without this, SARIF output ignores `severity` and the gate fails
+          # on HIGH findings too; the policy is CRITICAL with a fix.
+          limit-severities-for-sarif: true
           # The table step above already installed Trivy and fetched the DB.
           skip-setup-trivy: true
 
