@@ -80,6 +80,7 @@ EOF
 
 run_instance() { # run_instance spot|on-demand SG_ID SUBNET AMI
   local market=$1 sg=$2 subnet=$3 ami=$4 args
+  # shellcheck disable=SC2054 # commas are part of single AWS CLI arguments (Key=a,Value=b)
   args=(ec2 run-instances --image-id "$ami" --instance-type "${E2E_INSTANCE_TYPE:-t3.xlarge}" --count 1
     --user-data "file://$E2E_WORK/user-data.yaml"
     --instance-initiated-shutdown-behavior terminate
@@ -179,6 +180,7 @@ cmd_teardown() {
   source "$(dirname "$0")/lib.sh"
   : "${E2E_RUN_ID:?}" "${E2E_PROFILE:?}"
   local filters ids sgs sg ok=1 i
+  # shellcheck disable=SC2054 # commas are part of single AWS CLI arguments (Key=a,Value=b)
   filters=(Name=tag:purpose,Values="$PURPOSE" Name=tag:run-id,Values="$E2E_RUN_ID" Name=tag:profile,Values="$E2E_PROFILE")
   ids=$( { state_get INSTANCE_ID; aws ec2 describe-instances --filters "${filters[@]}" \
       Name=instance-state-name,Values=pending,running,stopping,stopped \
