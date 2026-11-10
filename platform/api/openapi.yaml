@@ -16,6 +16,7 @@ tags:
   - name: Projects
   - name: Settings
   - name: Notifications
+  - name: Synthetics
 paths:
   /projects/{projectId}/argocd/refresh:
     post:
@@ -1044,6 +1045,148 @@ paths:
           description: Project or environment not found
         '503':
           description: Kubernetes unreachable
+  /projects/{projectId}/synthetics/checks:
+    get:
+      tags: [Synthetics]
+      summary: List synthetic checks (project viewer+). Secrets are write-only; only secretNames are returned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: '{ checks: [...] }' }
+        '403': { description: No access to this project }
+    post:
+      tags: [Synthetics]
+      summary: Create a check (project developer+, audited as synthetics.create)
+      description: |
+        Body { name, type: http|multistep|browser|ssl, intervalSeconds, timeoutMs, environmentId?, enabled?,
+        config, alertPolicy? { enabled, failureThreshold, severity }, secrets? { NAME: value } }.
+        Targets are checked against the SSRF guard (no cluster-internal, private, loopback or link-local
+        targets unless the host is one of the project's own ingress hosts). Browser checks need the full
+        profile with SYNTHETICS_BROWSER=true (409 otherwise).
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: '{ check, resources }' }
+        '400': { description: Validation or SSRF refusal }
+        '409': { description: Browser runner unavailable or per-project limit reached }
+  /projects/{projectId}/synthetics/checks/{checkId}:
+    get:
+      tags: [Synthetics]
+      summary: One check (viewer+)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: checkId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: '{ check }' }
+        '404': { description: Not found }
+    put:
+      tags: [Synthetics]
+      summary: Replace a check definition (developer+, audited). secrets values set, null deletes, omitted keeps.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: checkId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: '{ check, resources }' }
+    delete:
+      tags: [Synthetics]
+      summary: Delete a check, its results, screenshots and Kubernetes resources (developer+, audited)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: checkId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: '{ deleted: true }' }
+  /projects/{projectId}/synthetics/checks/{checkId}/run:
+    post:
+      tags: [Synthetics]
+      summary: Run a non-browser check now (developer+, 10/min per user and project)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: checkId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: '{ result }' }
+  /projects/{projectId}/synthetics/checks/{checkId}/results:
+    get:
+      tags: [Synthetics]
+      summary: Run history, newest first (viewer+). Query limit (<=500), before (ISO time).
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: checkId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: '{ results: [{ id, status: pass|fail|degraded, latencyMs, statusCode, error, assertions, steps, sslExpiresAt, hasScreenshot, startedAt }] }' }
+  /projects/{projectId}/synthetics/results/{resultId}/screenshot:
+    get:
+      tags: [Synthetics]
+      summary: PNG screenshot of a failed browser run (viewer+)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: resultId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: image/png }
+        '404': { description: No screenshot }
+  /projects/{projectId}/synthetics/status-feed:
+    get:
+      tags: [Synthetics]
+      summary: Public-safe aggregate status per project (for status pages, #46)
+      description: |
+        { projectId, generatedAt, status: operational|degraded|partial_outage|major_outage|unknown,
+          components: [{ id, name, type, status: operational|degraded|outage|unknown, lastCheckedAt,
+          uptime: { 24h, 7d, 30d }, avgLatencyMs24h, days: [{ date, uptime, status }] (30 days) }] }.
+        No URLs, hosts, errors, assertion details or secret names. Checks with statusPage.visible=false are omitted.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Status feed }
+  /synthetics/capabilities:
+    get:
+      tags: [Synthetics]
+      summary: Check types, interval/timeout limits and whether browser checks / blackbox Probes are available
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Capabilities }
+  /synthetics/templates:
+    get:
+      tags: [Synthetics]
+      summary: Starter templates for the check editor
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: '{ templates }' }
+  /synthetics/runner/checks/{checkId}:
+    get:
+      tags: [Synthetics]
+      summary: Browser runner only (per-check run token from the CronJob Secret) - check steps and secrets
+      parameters:
+        - { name: checkId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Runner definition }
+        '401': { description: Missing or wrong run token }
+  /synthetics/runner/checks/{checkId}/results:
+    post:
+      tags: [Synthetics]
+      summary: Browser runner only - report a run { status, latencyMs, error, steps, startedAt, screenshot (base64 PNG, <=2 MiB) }
+      parameters:
+        - { name: checkId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Recorded }
   /deploy:
     post:
       tags: [Deployments]
