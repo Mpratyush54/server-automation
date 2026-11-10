@@ -1,3 +1,5 @@
+import { releaseVersion } from './release-version';
+import { injectRelease } from './release-workloads';
 import * as k8s from '@kubernetes/client-node';
 import { MoreThan } from 'typeorm';
 import { getDb } from '../config/database';
@@ -111,7 +113,7 @@ export const deployOperation = defineOperation<DeployState>({
 
         if (env.name === EnvironmentName.PREVIEW) {
           ctx.state.preview = true;
-          const ok = await deployK8sPreview(project.name, dep.branch, dep.imageTag, project.id);
+          const ok = await deployK8sPreview(project.name, dep.branch, dep.imageTag, project.id, releaseVersion(dep));
           if (!ok) throw new Error('Preview deployment failed to apply or timeout occurred.');
           return;
         }
@@ -197,8 +199,10 @@ export const deployOperation = defineOperation<DeployState>({
       name: 'finalize',
       async run(ctx) {
         const { ds, dep, project, env } = await load(ctx.state.deploymentId);
+        // Keep the original three-step operation layout so interrupted pre-upgrade operations can resume.
+        if (!ctx.state.preview) await injectRelease(env.namespace, project.id, releaseVersion(dep));
         dep.status = DeploymentStatus.DEPLOYED;
-        dep.deployedAt = new Date();
+        dep.deployedAt = dep.deployedAt || new Date();
         if (env.domain) {
           dep.previewUrl = `https://${env.domain}`;
           dep.metadata = { ...(dep.metadata || {}), liveUrl: `https://${env.domain}` };
@@ -206,6 +210,10 @@ export const deployOperation = defineOperation<DeployState>({
         dep.metadata = { ...(dep.metadata || {}), operationId: ctx.operationId };
         await ds.getRepository(Deployment).save(dep);
 
+        if (dep.metadata?.rollbackFrom) {
+          await ds.getRepository(Deployment).update(String(dep.metadata.rollbackFrom), { status: DeploymentStatus.ROLLED_BACK, terminatedAt: dep.deployedAt });
+        }
+        ctx.emit('deploy.marker', { deploymentId: dep.id });
         ctx.emit('deploy.email', {
           success: true,
           projectName: project.name,

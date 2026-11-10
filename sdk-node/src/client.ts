@@ -71,7 +71,7 @@ export class PlatformClient {
   async init(options: PlatformOptions): Promise<void> {
     this.options = {
       environmentName: 'development',
-      version: options.version || process.env.APP_VERSION || process.env.OTEL_SERVICE_VERSION || options.commitSha || process.env.GIT_SHA,
+      version: process.env.PLATFORM_RELEASE || options.version || process.env.APP_VERSION || process.env.OTEL_SERVICE_VERSION || options.commitSha || process.env.GIT_SHA,
       branch: 'main',
       hostname: os.hostname(),
       databases: [],

@@ -1,3 +1,4 @@
+import { ReleasesPanelComponent } from './releases-panel.component';
 import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -13,7 +14,7 @@ import { TopologyGraphComponent } from './topology/topology-graph.component';
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent, ArgocdPanelComponent],
+  imports: [ReleasesPanelComponent, CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent, ArgocdPanelComponent],
   templateUrl: './project-detail.component.html',
   styleUrl: './project-detail.component.css'
 })

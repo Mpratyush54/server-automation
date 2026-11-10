@@ -9,7 +9,8 @@ import { Environment, EnvironmentName } from '../entities/Environment';
 import { Deployment, DeploymentStatus } from '../entities/Deployment';
 import { UserRole } from '../entities/User';
 import { expressAuthenticate, expressRequireRole, logAudit, AuthenticatedRequest } from '../middleware/auth';
-import { triggerPipeline } from '../lib/gitlab';
+import { In, LessThan } from 'typeorm';
+import { releaseVersion } from '../lib/release-version';
 import { extractTaskId } from '../lib/clickup';
 import { generatePreviewUrl } from '../lib/preview';
 import { operateProjectWorkloads, terminateK8sPreview, previewResourceName } from '../lib/k8s';
@@ -101,6 +102,7 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
     if (env.name !== EnvironmentName.PREVIEW) await assertDedicatedNamespace(env);
 
     const revision = await projectRevision(project, body.gitRevision, body.branch);
+    releaseVersion({ commitSha: body.commitSha, imageTag: body.imageTag || 'latest' });
     const clickupTaskId = body.branch ? extractTaskId(body.branch) : null;
 
     // Concurrent deploys of the same project environment: the second one gets 409.
@@ -183,41 +185,39 @@ router.post('/rollback', expressAuthenticate, expressRequireRole([UserRole.DEVOP
     const env = await ds.getRepository(Environment).findOne({ where: { id: current.environmentId, projectId: current.projectId } });
     if (!env) return res.status(404).json({ error: 'Deployment environment not found' });
 
-    const lock = await lockDeployTarget(current.projectId, current.environmentId, `rollback:${newOperationId()}`);
+    const operationId = newOperationId();
+    const lock = await lockDeployTarget(current.projectId, current.environmentId, operationId);
+    let handedOff = false;
     try {
-      current.status = DeploymentStatus.ROLLED_BACK;
-      current.terminatedAt = new Date();
-      await repo.save(current);
-
-      const rollback = repo.create({
-        projectId: current.projectId,
-        environmentId: current.environmentId,
-        version: body.previousVersion || current.version,
-        branch: current.branch,
-        commitSha: current.commitSha,
-        imageTag: current.imageTag,
-        status: DeploymentStatus.DEPLOYED,
+      if (typeof body.reason !== 'string' || !body.reason.trim() || body.reason.length > 1000) {
+        return res.status(400).json({ error: 'A rollback reason (1-1000 characters) is required' });
+      }
+      // Re-read under the environment lock; stale portal actions cannot roll back a newer release.
+      const latest = await repo.findOne({ where: { projectId: current.projectId, environmentId: current.environmentId!, status: DeploymentStatus.DEPLOYED }, order: { deployedAt: 'DESC', createdAt: 'DESC' } });
+      if (!latest || latest.id !== current.id) return res.status(409).json({ error: 'Only the current successful deployment can be rolled back' });
+      const previous = await repo.findOne({ where: { projectId: current.projectId, environmentId: current.environmentId!, status: In([DeploymentStatus.DEPLOYED, DeploymentStatus.ROLLED_BACK]), createdAt: LessThan(current.createdAt) }, order: { createdAt: 'DESC' } });
+      if (!previous) return res.status(409).json({ error: 'No previous successful deployment exists' });
+      const { grafanaAnnotationId: _annotation, operationId: _operation, ...previousMetadata } = previous.metadata || {};
+      const saved = await repo.save(repo.create({
+        projectId: current.projectId, environmentId: current.environmentId,
+        version: previous.version, branch: previous.branch, commitSha: previous.commitSha,
+        imageTag: previous.imageTag, status: DeploymentStatus.PENDING,
         deployedById: (req as AuthenticatedRequest).user?.id,
-        metadata: { ...(current.metadata || {}), rollbackFrom: current.id },
-        deployedAt: new Date(),
+        metadata: { ...previousMetadata, rollbackFrom: current.id, rollbackTarget: previous.id, rollbackReason: body.reason.trim() },
+      }));
+      await createOperation(DEPLOY_OPERATION, {
+        id: operationId, projectId: current.projectId,
+        lockKey: deployLockKey(current.projectId, current.environmentId),
+        input: { deploymentId: saved.id, environmentId: current.environmentId },
+        state: { deploymentId: saved.id }, createdById: (req as AuthenticatedRequest).user?.id ?? null,
       });
-      const saved = await repo.save(rollback);
-
-      // Call GitLab Pipeline trigger simulating roll back
-      await triggerPipeline(current.projectId, current.branch);
-
-      await logAudit({
-        userId: (req as AuthenticatedRequest).user?.id,
-        action: 'deployment.rolled_back',
-        targetType: 'Deployment',
-        targetId: current.id,
-        metadata: { rollbackDeploymentId: saved.id, previousVersion: body.previousVersion },
-        ip: req.ip,
-      });
-
-      return res.status(201).json({ rolledBack: current, newDeployment: saved });
+      handedOff = true;
+      setImmediate(() => runOperation(operationId, { lock }).catch(err => console.error('[rollback]', err.message)));
+      await logAudit({ userId: (req as AuthenticatedRequest).user?.id, action: 'deployment.rollback_requested', targetType: 'Deployment', targetId: current.id,
+        metadata: { rollbackDeploymentId: saved.id, targetDeploymentId: previous.id, reason: body.reason.trim() }, ip: req.ip });
+      return res.status(201).json({ newDeployment: saved, operationId });
     } finally {
-      await lock.release();
+      if (!handedOff) await lock.release();
     }
   } catch (err: any) {
     return sendError(res, err);
@@ -237,7 +237,7 @@ router.post('/deployments/:id/restart', expressAuthenticate, expressRequireRole(
     try {
       await controlDeployment(deployment, 'restart');
       deployment.status = DeploymentStatus.DEPLOYED;
-      deployment.deployedAt = new Date();
+      deployment.metadata = { ...(deployment.metadata || {}), lastRestartAt: new Date().toISOString() };
       await repo.save(deployment);
 
       return res.json({ message: 'Restart triggered', deployment });

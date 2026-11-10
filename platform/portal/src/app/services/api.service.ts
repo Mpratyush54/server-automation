@@ -29,7 +29,7 @@ export class ApiService {
 
   // Deployments
   deploy(data: any): Observable<any> { return this.http.post(`${this.base}/deploy`, data); }
-  rollback(data: any): Observable<any> { return this.http.post(`${this.base}/rollback`, data); }
+  rollback(data: any): Observable<any> { return this.http.post(`${this.base}/rollback`, { reason: 'Manual rollback from deployment view', ...data }, { headers: { 'Idempotency-Key': crypto.randomUUID() } }); }
   restartDeployment(id: string): Observable<any> { return this.http.post(`${this.base}/deployments/${id}/restart`, {}); }
   getProjectDeployments(projectId: string): Observable<any> { return this.http.get(`${this.base}/deployments/${projectId}`); }
   getDeployment(id: string): Observable<any> { return this.http.get(`${this.base}/deployments/${id}`); }

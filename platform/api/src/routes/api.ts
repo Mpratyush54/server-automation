@@ -1,3 +1,4 @@
+import releaseRoutes from './releases';
 import { Router } from 'express';
 const router = Router();
 
@@ -43,6 +44,7 @@ router.use('/', versionRoutes);
 router.use('/', projectRoutes);
 router.use('/', projectArgoRoutes);
 router.use('/', deploymentRoutes);
+router.use('/', releaseRoutes);
 router.use('/', configRoutes);
 router.use('/', secretRoutes);
 router.use('/', environmentRoutes); // merged config + secrets view for the Environment tab (#29)

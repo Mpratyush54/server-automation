@@ -1,3 +1,4 @@
+import { releaseEnv } from './release-version';
 import { ensureProjectNamespace } from './namespace-baseline';
 import { createHash } from 'crypto';
 import { assignedNamespace } from './project-namespace';
@@ -150,6 +151,7 @@ export async function deployK8sPreview(
   branch: string,
   imageTag: string,
   projectId: string,
+  release: string = imageTag,
 ): Promise<boolean> {
   const sanitized = branch
     .replace(/^(feature|fix|chore)\//i, '')
@@ -187,6 +189,7 @@ export async function deployK8sPreview(
             containers: [{
               name: 'web',
               image,
+              env: releaseEnv(release),
               securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } },
               ports: [{ containerPort: 80 }],
             }],
@@ -471,9 +474,15 @@ export async function ensureAndSyncArgoApp(opts: {
           server: 'https://kubernetes.default.svc',
           namespace,
         },
+        ignoreDifferences: [
+          ...(app?.spec?.ignoreDifferences || []).filter((r: any) => !r.jqPathExpressions?.some((v: string) => v.includes('PLATFORM_RELEASE'))),
+          ...['Deployment', 'StatefulSet'].map(kind => ({ group: 'apps', kind,
+            jqPathExpressions: ['.spec.template.spec | (.containers[], .initContainers[]?) | .env[]? | select(.name == "PLATFORM_RELEASE" or .name == "OTEL_SERVICE_VERSION" or .name == "OTEL_RESOURCE_ATTRIBUTES")'],
+          })),
+        ],
         syncPolicy: {
           automated: { prune: true, selfHeal: true },
-          syncOptions: [],
+          syncOptions: ['RespectIgnoreDifferences=true'],
         },
       },
     };

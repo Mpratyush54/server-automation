@@ -1,3 +1,4 @@
+@if (project) { <app-releases-panel [projectId]="project.id" /> }
 @if (project?.namespaceBaselines?.length) {
   <section class="card mb-8" aria-label="Namespace isolation">
     <h2>Namespace isolation</h2>
