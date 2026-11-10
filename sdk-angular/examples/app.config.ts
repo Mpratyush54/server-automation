@@ -13,7 +13,7 @@ export const appConfig: ApplicationConfig = {
     importProvidersFrom(
       PlatformModule.forRoot({
         apiBase: (globalThis as any).NG_APP_PLATFORM_URL || 'https://api.example.sslip.io',
-        token: (globalThis as any).NG_APP_PLATFORM_SDK_TOKEN || '',
+        token: (globalThis as any).NG_APP_PLATFORM_BROWSER_TOKEN || '',
         projectId: (globalThis as any).NG_APP_PLATFORM_PROJECT_ID || '',
         environment: 'development',
         appName: 'angular-standalone-example',

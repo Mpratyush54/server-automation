@@ -24,7 +24,11 @@ $env:PLATFORM_SDK_TOKEN='sdk_live_...'
 ## Common prerequisites
 
 1. Create a **project** in the portal.
-2. Create an **SDK token** (Project → Tokens).
+2. Create an **SDK token** (Project → SDK Tokens). Pick the kind by where it runs:
+   - **Server** for backend SDKs (Node, Python): reads project config/secrets, registers services.
+   - **Browser** for frontend SDKs (React, Angular): only sends bug reports, logs and API metrics.
+     Frontend config is public, so never ship a server token to a browser. If an SDK token was
+     previously embedded in a frontend, revoke it and create new tokens of the right kind.
 3. Set `PLATFORM_URL` / `PLATFORM_SDK_TOKEN` (and project id where required).
 4. For GitOps demos, set the project **repository URL** to the same git remote the SDK sends.
 

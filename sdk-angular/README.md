@@ -26,7 +26,7 @@ import { AppComponent } from './app.component';
     HttpClientModule,
     PlatformModule.forRoot({
       apiBase: 'https://api.example.sslip.io',
-      token: 'sdk_live_…',
+      token: 'sdk_live_…', // browser-kind SDK token
       projectId: 'your-project-id',
       environment: 'development',
       appName: 'my-angular-app',
@@ -58,7 +58,7 @@ bootstrapApplication(AppComponent, {
     importProvidersFrom(
       PlatformModule.forRoot({
         apiBase: environment.platformUrl,
-        token: environment.sdkToken,
+        token: environment.sdkBrowserToken, // browser-kind SDK token
         projectId: environment.projectId,
         environment: 'development',
       }),
@@ -82,7 +82,7 @@ Import `BugReporterComponent` into a standalone page and add `<platform-bug-repo
 | Field | Required | Description |
 |-------|----------|-------------|
 | `apiBase` | yes | Platform API base URL |
-| `token` | yes | SDK token (`sdk_live_…` / `sdk_test_…`), sent as `Authorization: Bearer` on every Platform call |
+| `token` | yes | **Browser** SDK token (`sdk_live_…` / `sdk_test_…`, kind *Browser* in Project → SDK Tokens), sent as `Authorization: Bearer` on every Platform call. Never use a server token here: frontend config is public. |
 | `projectId` | yes | Project id for metrics / bugs |
 | `environment` | no | Environment label |
 | `appName` | no | App label |

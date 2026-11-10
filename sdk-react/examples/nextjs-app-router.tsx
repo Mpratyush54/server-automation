@@ -18,7 +18,7 @@ import {
 
 const config: PlatformConfig = {
   apiBase: process.env.NEXT_PUBLIC_PLATFORM_URL || '',
-  token: process.env.NEXT_PUBLIC_PLATFORM_SDK_TOKEN || '',
+  token: process.env.NEXT_PUBLIC_PLATFORM_BROWSER_TOKEN || '',
   projectId: process.env.NEXT_PUBLIC_PLATFORM_PROJECT_ID || '',
   environment: process.env.NEXT_PUBLIC_PLATFORM_ENV || 'production',
   appName: 'nextjs-example',

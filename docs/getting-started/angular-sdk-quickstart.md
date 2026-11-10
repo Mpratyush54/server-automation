@@ -12,6 +12,13 @@ npm install @mpratyush54/sdk-angular
 
 ## NgModule setup
 
+> **Use a browser SDK token.** In the portal open Project → SDK Tokens and create a token of kind
+> **Browser**. Anything in frontend config (`VITE_*`, `NEXT_PUBLIC_*`, Angular `environment.ts`) is
+> bundled into public JavaScript, so never put a **Server** token there. Browser tokens can only
+> send bug reports, logs and API metrics; they cannot read project config, secrets or database
+> credentials. If an SDK token was previously embedded in a frontend, revoke it and create a new
+> one (a browser token for the frontend, a server token for your backend).
+
 Config fields are `apiBase` / `token` / `projectId` (not `apiUrl` / `sdkToken`):
 
 ```ts
@@ -22,7 +29,7 @@ import { PlatformModule } from '@mpratyush54/sdk-angular';
     HttpClientModule,
     PlatformModule.forRoot({
       apiBase: 'https://api.example.sslip.io',
-      token: 'sdk_live_…',
+      token: 'sdk_live_…', // browser-kind SDK token
       projectId: 'your-project-id',
       environment: 'development',
       appName: 'my-angular-app',
@@ -51,7 +58,7 @@ bootstrapApplication(AppComponent, {
     importProvidersFrom(
       PlatformModule.forRoot({
         apiBase: environment.platformUrl,
-        token: environment.sdkToken,
+        token: environment.sdkBrowserToken, // browser-kind SDK token
         projectId: environment.projectId,
       }),
     ),
