@@ -1,3 +1,4 @@
+import { startStorageHealth } from './storage-providers';
 import { repairArgoDefaultBranches } from './argocd-branch-repair';
 import { getLeadership } from './leader';
 import { registerLeaderJob, unregisterAllJobs } from './scheduler';
@@ -48,6 +49,7 @@ export function startBackgroundWork(): void {
   });
   // Operations (#23): resume interrupted operations, dispatch the outbox, prune rows.
   startOperationWorker();
+  startStorageHealth();
 
   leadership.start();
   installReleaseOnShutdown();
