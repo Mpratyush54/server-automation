@@ -52,7 +52,7 @@ The default S3 endpoint is bundled MinIO. To use an external compatible S3
 service, supply backend Helm overrides for endpoint/region/TLS and the scoped
 Secrets; the installer currently provisions bundled MinIO, not external
 cloud IAM. Keep each backend's bucket and credentials separate. Full profile also
-creates a `replays` bucket (7d lifecycle) for session replay (#40) and GDPR delete.
+creates a `replays` bucket (365 d lifecycle backstop; per-project replay retention is enforced by the API) for session replay (#40) and GDPR delete.
 
 ## Ingest contract and API integration (#49)
 

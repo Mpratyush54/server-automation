@@ -267,9 +267,9 @@ func telemetryBucketScript(bucket string) string {
 	if bucket == "replays" {
 		lifecycle = `
 cat >"$work/lifecycle.json" <<'LIFECYCLE'
-{"Rules":[{"ID":"replays-default-7d","Status":"Enabled","Filter":{"Prefix":"replays/"},"Expiration":{"Days":7}}]}
+{"Rules":[{"ID":"replays-max-365d","Status":"Enabled","Filter":{"Prefix":"replays/"},"Expiration":{"Days":365}}]}
 LIFECYCLE
-mc ilm import local/replays <"$work/lifecycle.json" >/dev/null || mc ilm rule add --expire-days 7 local/replays >/dev/null
+mc ilm import local/replays <"$work/lifecycle.json" >/dev/null || mc ilm rule add --expire-days 365 local/replays >/dev/null
 `
 	}
 	return fmt.Sprintf(`set -eu
