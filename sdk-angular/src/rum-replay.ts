@@ -950,6 +950,28 @@ function record(c: Context, mod: ReplayRecorderModule, session: ReplaySessionSta
   };
   if (navTimer) cleanups.push(() => clearInterval(navTimer));
   cleanups.push(() => snapTimer && clearTimeout(snapTimer));
+  // Detect SPA navigations immediately (history API + back/forward); the 1 s poll
+  // above stays as a fallback. Fast clicks (under a second apart) were missed.
+  const hist = (win as any)?.history;
+  if (hist && typeof hist.pushState === 'function') {
+    const wrap = (name: 'pushState' | 'replaceState') => {
+      const original = hist[name];
+      const wrapped = function (this: unknown, ...args: unknown[]) {
+        const result = original.apply(this, args);
+        try { checkNav(); } catch { /* ignore */ }
+        return result;
+      };
+      hist[name] = wrapped;
+      cleanups.push(() => { if (hist[name] === wrapped) hist[name] = original; });
+    };
+    wrap('pushState');
+    wrap('replaceState');
+  }
+  if (win && typeof (win as any).addEventListener === 'function') {
+    const onPop = () => { try { checkNav(); } catch { /* ignore */ } };
+    (win as any).addEventListener('popstate', onPop);
+    cleanups.push(() => (win as any).removeEventListener('popstate', onPop));
+  }
 
   // Unload: flush the open chunk and send it with keepalive.
   const onHide = () => {
