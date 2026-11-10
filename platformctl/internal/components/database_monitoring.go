@@ -6,6 +6,12 @@ import "github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 // during the database graph steps (Prometheus CRDs are installed later).
 func databaseMonitoringValues(c *config.Config, engine string, auth map[string]string) map[string]any {
 	v := map[string]any{"auth": auth}
+	if engine == "mongo" {
+		// Standalone MongoDB is a Deployment on one RWO volume: a rolling update starts
+		// the new pod while the old one holds mongod.lock (DBPathInUse) and every Helm
+		// upgrade that changes the pod (e.g. enabling the exporter) never completes.
+		v["updateStrategy"] = map[string]any{"type": "Recreate"}
+	}
 	metrics := map[string]any{"enabled": FullTelemetry(c)}
 	v["metrics"] = metrics
 	if !FullTelemetry(c) {

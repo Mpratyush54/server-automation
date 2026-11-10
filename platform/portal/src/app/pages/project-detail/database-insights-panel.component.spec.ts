@@ -27,4 +27,14 @@ describe('DatabaseInsightsPanelComponent', () => {
     await work; expect(c.samples.length).toBe(60); expect(c.samples[59]).toBe(2);
     fixture.destroy();
   });
+  it('defaults to production even when it is not the first environment', () => {
+    const fixture = TestBed.createComponent(DatabaseInsightsPanelComponent);
+    const c = fixture.componentInstance;
+    c.project = { id: 'p', environments: [{ name: 'staging' }, { name: 'production' }] };
+    c.ngOnChanges();
+    TestBed.inject(HttpTestingController).expectOne('/api/projects/p/databases/insights?environment=production').flush({ enabled: false, reason: 'x' });
+    expect(c.environment).toBe('production');
+    expect(c.bytes(8091327)).toBe('7.7 MB');
+    fixture.destroy();
+  });
 });
