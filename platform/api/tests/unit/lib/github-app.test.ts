@@ -94,7 +94,7 @@ async function connectApp() {
 describe('manifest generation', () => {
   it('requests the minimum permissions and the deploy events with this install\'s URLs', () => {
     const m = buildGithubManifest({ apiBase: `${API}/`, portalBase: PORTAL });
-    expect(m.default_permissions).toEqual({ contents: 'read', metadata: 'read', pull_requests: 'read', email_addresses: 'read' });
+    expect(m.default_permissions).toEqual({ contents: 'read', metadata: 'read', pull_requests: 'read', emails: 'read' });
     expect(m.default_events).toEqual(['push', 'pull_request']);
     expect(m.hook_attributes).toEqual({ url: `${API}/api/webhooks/github`, active: true });
     expect(m.callback_urls).toEqual([`${API}/api/auth/github/callback`]);

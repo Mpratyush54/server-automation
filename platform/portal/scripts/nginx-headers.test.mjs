@@ -94,3 +94,12 @@ test('production build emits no inline event handlers blocked by script-src', as
   const optimization = angular.projects.portal.architect.build.configurations.production.optimization;
   assert.equal(optimization?.styles?.inlineCritical, false);
 });
+
+// The GitHub App manifest flow (#35) posts a form from Settings to github.com.
+// Only that origin is added; nothing else may receive form posts.
+test('nginx.conf: form-action allows self and github.com only', async () => {
+  const conf = await readFile(new URL('../nginx.conf', import.meta.url), 'utf8');
+  const csp = conf.split('\n').find((l) => l.includes('add_header Content-Security-Policy') && l.includes('default-src'));
+  const formAction = /form-action ([^;]+);/.exec(csp)[1].trim().split(/\s+/);
+  assert.deepEqual(formAction, ["'self'", 'https://github.com']);
+});

@@ -97,7 +97,8 @@ export function buildGithubManifest(opts: { apiBase: string; portalBase: string;
       contents: 'read',
       metadata: 'read',
       pull_requests: 'read',
-      email_addresses: 'read',
+      // Account permission; GitHub manifests call it "emails" ("email_addresses" is rejected).
+      emails: 'read',
     },
     default_events: ['push', 'pull_request'],
   };
