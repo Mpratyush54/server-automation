@@ -1,3 +1,4 @@
+import { startStorageHealth } from './storage-providers';
 import { repairArgoDefaultBranches } from './argocd-branch-repair';
 import { getLeadership } from './leader';
 import { registerLeaderJob, unregisterAllJobs } from './scheduler';
@@ -52,6 +53,7 @@ export function startBackgroundWork(): void {
   startOperationWorker();
   // SDK telemetry queue consumer (#49): forwards queued logs/metrics/heartbeats.
   startTelemetryConsumer();
+  startStorageHealth();
 
   leadership.start();
   installReleaseOnShutdown();

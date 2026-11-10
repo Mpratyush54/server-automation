@@ -481,14 +481,11 @@ func upgradeHealth() error {
 			return e
 		}
 	}
-	urls := []string{"http://platform-api.platform.svc.cluster.local:3000/api/health/ready", "http://platform-portal.platform.svc.cluster.local", "http://platform-api.platform.svc.cluster.local:3000/api/oauth/.well-known/openid-configuration"}
 	installed, e := uk("-n", "argocd", "get", "service", "argocd-server", "--ignore-not-found", "-o", "name")
 	if e != nil {
 		return e
 	}
-	if installed != "" {
-		urls = append(urls, "http://argocd-server.argocd.svc.cluster.local")
-	}
+	urls := upgradeHealthURLs(installed != "")
 	for _, url := range urls {
 		script := `(async()=>{const r=await fetch(process.argv[1],{signal:AbortSignal.timeout(15000)});if(r.status!==200)process.exit(1)})().catch(()=>process.exit(1))`
 		var last error
@@ -505,6 +502,18 @@ func upgradeHealth() error {
 	}
 	return nil
 }
+
+// upgradeHealthURLs lists the in-cluster endpoints that must answer 200 after an
+// upgrade (and after a rollback). Argo CD is served under a root path
+// (/argocd), so its "/" is 404; /healthz answers regardless of the root path.
+func upgradeHealthURLs(argoInstalled bool) []string {
+	urls := []string{"http://platform-api.platform.svc.cluster.local:3000/api/health/ready", "http://platform-portal.platform.svc.cluster.local", "http://platform-api.platform.svc.cluster.local:3000/api/oauth/.well-known/openid-configuration"}
+	if argoInstalled {
+		urls = append(urls, "http://argocd-server.argocd.svc.cluster.local/healthz")
+	}
+	return urls
+}
+
 func saveUpgradeHistory(r upgrade.Record) error {
 	b, e := upgrade.AppendHistory(upgradeState, r)
 	if e != nil {
