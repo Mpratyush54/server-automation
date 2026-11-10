@@ -2,7 +2,7 @@
 # Node 22 LTS, pinned in every FROM (literal tags so Dependabot can bump them).
 
 # ── build: full dependency tree (incl. devDependencies) + tsc ───────────────
-FROM node:22.23.4-alpine3.24 AS build
+FROM node:26.12.1-alpine3.24 AS build
 WORKDIR /app
 COPY package*.json ./
 # Reproducible install when a lockfile is committed; fall back until it is.
@@ -17,7 +17,7 @@ COPY src ./src
 RUN npm run build
 
 # ── deps: production dependencies only ──────────────────────────────────────
-FROM node:22.23.4-alpine3.24 AS deps
+FROM node:26.12.1-alpine3.24 AS deps
 WORKDIR /app
 COPY package*.json ./
 RUN if [ -f package-lock.json ]; then \
@@ -29,7 +29,7 @@ RUN if [ -f package-lock.json ]; then \
     && npm cache clean --force
 
 # ── runtime: non-root, compiled output + prod deps only ─────────────────────
-FROM node:22.23.4-alpine3.24 AS runtime
+FROM node:26.12.1-alpine3.24 AS runtime
 ENV NODE_ENV=production
 # Apply Alpine security fixes released after the base image was built, and
 # drop npm/npx/corepack: the runtime only runs `node` (server and migrate
