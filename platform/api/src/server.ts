@@ -193,6 +193,13 @@ async function bootstrap() {
     const oidcKey = await initOidcSigningKey();
     console.log(`[server] OIDC signing key ready (kid ${oidcKey.kid}, source ${oidcKey.source})`);
 
+    // Telemetry ingest-token key (#49): created once in platform-credentials. Never throws;
+    // on failure the first use retries.
+    const { initIngestSigningKey } = await import('./lib/telemetry-tokens');
+    const ingestKey = await initIngestSigningKey();
+    if (ingestKey.ok) console.log(`[server] Telemetry ingest signing key ready (${ingestKey.source})`);
+    else console.warn(`[server] Telemetry ingest signing key not ready: ${ingestKey.error}`);
+
     const app = buildApp();
     const port = process.env.PORT || 3000;
     // Parse openapi.yaml once now, not on the first GET /api/openapi.json.

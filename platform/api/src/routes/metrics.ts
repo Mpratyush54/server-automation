@@ -6,6 +6,7 @@ import { MetricsRawModel } from '../schemas/MetricsRaw';
 import { expressAuthenticate, expressRequireRole, AuthenticatedRequest } from '../middleware/auth';
 import { UserRole } from '../entities/User';
 import { renderJobMetrics } from '../lib/job-metrics';
+import { renderTelemetryMetrics } from '../lib/telemetry-queue';
 import { projectIdMongoFilter, resolveProjectRef } from '../lib/project-resolve';
 
 const router = Router();
@@ -75,11 +76,18 @@ router.get('/metrics/aggregated', expressAuthenticate, async (req: Request, res:
 /**
  * Background job metrics of the replica serving the request, in Prometheus
  * text format: platform_job_runs_total{job,result},
- * platform_job_last_success_timestamp_seconds{job}, platform_api_leader.
- * Scrape every API pod and sum across them.
+ * platform_job_last_success_timestamp_seconds{job}, platform_api_leader, plus the
+ * telemetry queue (platform_telemetry_*: depth, pending, lag, enqueued/rejected/dropped; #49).
+ * Scrape every API pod and sum the counters across them.
  */
-router.get('/metrics/jobs', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), (_req: Request, res: Response) => {
-  res.type('text/plain; version=0.0.4').send(renderJobMetrics());
+router.get('/metrics/jobs', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (_req: Request, res: Response) => {
+  let telemetry = '';
+  try {
+    telemetry = await renderTelemetryMetrics();
+  } catch {
+    /* never fail the scrape */
+  }
+  res.type('text/plain; version=0.0.4').send(renderJobMetrics() + telemetry);
 });
 
 export default router;

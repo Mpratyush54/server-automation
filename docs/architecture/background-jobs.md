@@ -17,6 +17,7 @@ in `platform/api/src` and how each one is made exactly-once.
 | Operation cleanup (`operation-cleanup`) | — | Leader loop: prunes expired idempotency keys, webhook deliveries, outbox rows | hourly |
 | Deploy recovery | — | Leader loop: fails orphaned rollouts with neither a job nor an operation | every 15 s and right after gaining leadership |
 | Token cleanup | — | Leader loop | hourly |
+| Telemetry consumer (`telemetry-consumer`, #49) | synchronous Mongo/Loki writes inside `POST /sdk/logs`, `/sdk/api-metrics`, `/sdk/heartbeat` | Leader loop: Redis Streams consumer group forwarding the queued events (see [telemetry-ingestion.md](telemetry-ingestion.md)) | every 1 s |
 | Alert evaluation (`POST /alerts/evaluate`) | request-driven; caller supplies the metric values | Unchanged (no timer) | — |
 | `withTimeout` (`lib/with-timeout.ts`) | per-request timeout helper | Unchanged (not background work) | — |
 | Webhook preview deploys (`routes/webhooks.ts`) | inline in the webhook request | Unchanged (not background work) | — |

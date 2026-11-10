@@ -24,6 +24,11 @@ export interface ConfigStore {
    * stored values either way (the existing ones win — handles concurrent creators).
    */
   createIfAbsent(values: Record<string, string>): Promise<Record<string, string>>;
+  /**
+   * Store `value` under `key` only when the key is absent or empty; returns the
+   * stored value either way (an existing value wins, also across concurrent callers).
+   */
+  setIfAbsent?(key: string, value: string): Promise<string>;
 }
 
 export const PLATFORM_NAMESPACE = process.env.PLATFORM_NAMESPACE || 'platform';
@@ -160,6 +165,34 @@ export class KubeSecretStore implements ConfigStore {
     if (await this.create(nonEmpty(values))) return nonEmpty(values);
     return this.read(); // 409: another replica won the race
   }
+
+  async setIfAbsent(key: string, value: string): Promise<string> {
+    if (!value) throw new Error('setIfAbsent needs a non-empty value');
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
+      const secret = await this.readRaw();
+      if (!secret) {
+        if (await this.create({ [key]: value })) return value;
+        continue; // created concurrently: re-read
+      }
+      const existing = decodeData(secret)[key];
+      if (existing) return existing;
+      const body = { ...secret, data: { ...(secret.data || {}), [key]: Buffer.from(value, 'utf8').toString('base64') } };
+      delete body.stringData;
+      try {
+        // Compare-and-swap on resourceVersion: a concurrent writer makes us re-read, and
+        // if it stored the key first its value wins.
+        await this.api.replaceNamespacedSecret({ name: this.name, namespace: this.namespace, body });
+        return value;
+      } catch (err) {
+        if (k8sStatusCode(err) !== 409) throw err;
+        lastErr = err;
+      }
+    }
+    throw new Error(
+      `${this.description}: gave up after ${this.maxAttempts} conflicting updates (${(lastErr as any)?.message || 'conflict'})`,
+    );
+  }
 }
 
 function parseDotEnv(text: string): Record<string, string> {
@@ -238,6 +271,13 @@ export class FileStore implements ConfigStore {
     if (Object.keys(existing).length > 0) return existing;
     await this.patch(values);
     return nonEmpty(values);
+  }
+
+  async setIfAbsent(key: string, value: string): Promise<string> {
+    const existing = (await this.read())[key];
+    if (existing) return existing;
+    await this.patch({ [key]: value });
+    return value;
   }
 }
 
