@@ -152,3 +152,8 @@ additional file via `SERVER_ADDRESS_DENYLIST` or a command-line argument. Additi
 lists always extend the built-in list. Run its regression tests and the configuration
 checks with `node --test scripts/tests/server-addresses.test.mjs scripts/tests/sdk-config.test.mjs`.
 The changed SDK/MCP doc pages are mirrored in the portal and checked for equality.
+
+## Backend traces, correlated logs and profiles
+
+See [TELEMETRY.md](TELEMETRY.md) for optional dependencies, startup ordering, the Python
+Flask/PostgreSQL example, resource attributes and full-profile collector verification.

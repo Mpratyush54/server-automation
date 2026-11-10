@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import type Redis from 'ioredis';
 
 export class RedisManager {
   private client: Redis | null = null;
@@ -26,7 +26,10 @@ export class RedisManager {
     this.clearReconnectTimer();
     // Dispose any client left over from a previous (failed) attempt before creating a new one.
     this.disposeClient();
-    const client = new Redis({ ...this.config, lazyConnect: true });
+    // Loaded lazily so OpenTelemetry's ioredis instrumentation (started first) can patch it.
+    const ioredis = require('ioredis');
+    const RedisCtor = (ioredis.default ?? ioredis) as typeof Redis;
+    const client = new RedisCtor({ ...this.config, lazyConnect: true });
     // Without a listener ioredis re-emits connection failures as "Unhandled error event".
     client.on('error', (err: Error) => {
       if (this.client === client) this.connected = false;

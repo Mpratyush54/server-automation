@@ -14,8 +14,6 @@
  *   PORT                  default 4100
  */
 const { platformUrl: PLATFORM_URL, projectDomain: PROJECT_DOMAIN } = require('./config.cjs').readConfig();
-const express = require('express');
-const cors = require('cors');
 const path = require('path');
 
 let mod;
@@ -60,6 +58,9 @@ async function main() {
     databases: ['postgres', 'mongo', 'redis'],
   });
 
+  // Load frameworks only AFTER awaited init installs enabled instrumentations.
+  const express = require('express');
+  const cors = require('cors');
   const app = express();
   app.use(cors());
   app.use(express.json());
@@ -70,6 +71,7 @@ async function main() {
   );
 
   app.get('/api/db-check', async (_req, res) => {
+    platform.logger.info('Database probe requested', { route: '/api/db-check' });
     const result = {
       postgres: { connected: !!(platform.db.postgres && platform.db.postgres.isConnected) },
       mongo: { connected: !!(platform.db.mongo && platform.db.mongo.isConnected) },

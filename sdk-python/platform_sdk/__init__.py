@@ -23,13 +23,14 @@ class PlatformClient:
         self.initialized = False
         self._heartbeat_timer = None
         self._db_connections = {}
+        self._telemetry = None
 
     def init(
         self,
         project_name: str,
         platform_url: str,
         environment_name: str = "development",
-        version: str = "1.0.0",
+        version: Optional[str] = None,
         branch: str = "main",
         commit_sha: Optional[str] = None,
         namespace: Optional[str] = None,
@@ -47,7 +48,7 @@ class PlatformClient:
             "project_name": project_name,
             "platform_url": platform_url.rstrip("/"),
             "environment_name": environment_name,
-            "version": version,
+            "version": version or os.getenv('APP_VERSION') or os.getenv('OTEL_SERVICE_VERSION') or commit_sha or os.getenv('GIT_SHA') or '1.0.0',
             "branch": branch,
             "commit_sha": commit_sha,
             "namespace": namespace,
@@ -55,6 +56,21 @@ class PlatformClient:
             "databases": databases or [],
             "sdk_token": token,
         }
+
+        # Keep OTel and native profiling entirely absent on disabled/older platforms.
+        if self._telemetry:
+            self._telemetry.shutdown()
+            self._telemetry = None
+        if os.getenv('PLATFORM_OTEL_ENABLED', '').lower() not in ('false', '0', 'off'):
+            def fetch_config():
+                return self._request("GET", "/api/sdk/config", params={
+                    "projectId": project_name, "environmentId": environment_name,
+                })
+            data = fetch_config()
+            if data and data.get("telemetry", {}).get("enabled"):
+                from .telemetry import Telemetry
+                self._telemetry = Telemetry(self.options, fetch_config)
+                self._telemetry.start(data["telemetry"])
 
         self._register()
         self._start_heartbeat()
@@ -190,6 +206,10 @@ class PlatformClient:
 
     # --- Logging ---
     def log(self, level: str, message: str, metadata: Optional[Dict] = None):
+        context = self._telemetry.trace_context() if self._telemetry else {}
+        metadata = {**(metadata or {}), **context}
+        if self._telemetry:
+            self._telemetry.emit(level, message, metadata)
         self._request("POST", "/api/sdk/logs", {"logs": [{
             "projectId": self.options["project_name"],
             "environment": self.options["environment_name"],
@@ -197,7 +217,8 @@ class PlatformClient:
             "hostname": self.options.get("hostname"),
             "level": level,
             "message": message,
-            "metadata": metadata or {},
+            "metadata": metadata,
+            **context,
         }]})
 
     # --- DB Access ---
@@ -206,6 +227,9 @@ class PlatformClient:
         return self._db_connections
 
     def shutdown(self):
+        if self._telemetry:
+            self._telemetry.shutdown()
+            self._telemetry = None
         for name, conn in self._db_connections.items():
             try:
                 conn.disconnect()

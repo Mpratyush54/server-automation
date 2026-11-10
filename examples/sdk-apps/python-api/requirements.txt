@@ -1,0 +1,2 @@
+../../../sdk-python[telemetry,profiling]
+Flask>=3.0,<4
