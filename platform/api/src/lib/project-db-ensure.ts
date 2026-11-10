@@ -7,7 +7,8 @@ import {
 } from './database-service';
 import { Pool } from 'pg';
 import { Project } from '../entities/Project';
-import { createHash } from 'crypto';
+import { projectDbIdentity } from './project-db-identity';
+export { projectDbIdentity } from './project-db-identity';
 
 /**
  * Key used to encrypt NEW project secrets: SECRETS_ENCRYPTION_KEY when set. Earlier releases
@@ -35,14 +36,6 @@ export function decryptStoredSecret(payload: string, env: NodeJS.ProcessEnv = pr
     }
   }
   throw lastErr;
-}
-
-/** Stable, id-based resource name parts (never derived from the editable project name). */
-export function projectDbIdentity(projectId: string, environment: string): { id: string; env: string } {
-  return {
-    id: createHash('sha256').update(projectId).digest('hex').slice(0, 20),
-    env: createHash('sha256').update(environment).digest('hex').slice(0, 12),
-  };
 }
 
 async function upsertSecret(
@@ -276,6 +269,8 @@ export async function ensureMongoForProject(
       const info: any = await db.command({ usersInfo: username });
       const exists = Array.isArray(info?.users) && info.users.length > 0;
       await db.command(buildMongoUserCommand(dbName, username, password, exists));
+      const { monitoringEnabled, slowMs } = await import('./database-insights');
+      if (monitoringEnabled()) await db.command({ profile: 1, slowms: slowMs() });
     } finally {
       await conn.close().catch(() => {});
     }

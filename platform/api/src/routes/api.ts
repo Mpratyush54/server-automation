@@ -1,3 +1,4 @@
+import databaseInsightsRoutes from './database-insights';
 import releaseRoutes from './releases';
 import errorTrackingRoutes from './error-tracking';
 import { Router } from 'express';
@@ -69,6 +70,7 @@ router.use('/', gitAppRoutes); // GitHub App manifest flow + GitLab OAuth app au
 router.use('/', auditLogRoutes);
 router.use('/', bugReportRoutes);
 router.use('/', dbProvisionRoutes);
+router.use('/', databaseInsightsRoutes);
 router.use('/', agentTokenRoutes);
 router.use('/', agentCommandRoutes);
 router.use('/', notificationRoutes);
