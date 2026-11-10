@@ -6,7 +6,10 @@ import { LogModel } from '../schemas/Log';
 import { ErrorDocModel } from '../schemas/ErrorDoc';
 import { MetricsRawModel } from '../schemas/MetricsRaw';
 import { ApiMetricModel } from '../schemas/ApiMetric';
+import { TelemetryPrivacySettings } from '../entities/TelemetryPrivacySettings';
 import { forwardToLoki } from './lokilog';
+import { scrubValue } from './pii-scrub';
+import { scrubOptionsFromSettings } from './privacy-settings';
 
 /**
  * Destinations for SDK telemetry that still arrives at the API (POST /sdk/logs,
@@ -53,10 +56,44 @@ const asDate = (v: string | Date | undefined): Date => {
   return Number.isNaN(d.getTime()) ? new Date() : d;
 };
 
+async function scrubOptsForProject(projectId: string) {
+  try {
+    const ds = await getDb();
+    const settings = await ds.getRepository(TelemetryPrivacySettings).findOne({ where: { projectId } });
+    return scrubOptionsFromSettings(settings);
+  } catch {
+    return scrubOptionsFromSettings(null);
+  }
+}
+
 export async function processLogs(docs: LogDoc[]): Promise<void> {
   if (docs.length === 0) return;
   await connectMongo();
-  const resolved = docs.map((d) => ({ ...d, timestamp: asDate(d.timestamp) }));
+  const optsCache: Record<string, Awaited<ReturnType<typeof scrubOptsForProject>>> = {}; // per call
+  const resolved: Array<LogDoc & { userId?: string; sessionId?: string }> = [];
+  for (const d of docs) {
+    let opts = optsCache[d.projectId];
+    if (!opts) {
+      opts = await scrubOptsForProject(d.projectId);
+      optsCache[d.projectId] = opts;
+    }
+    const scrubbed = scrubValue(
+      { ...d, message: d.message, fields: d.fields || {} },
+      { ...opts, target: 'logs' },
+    );
+    const userId = typeof scrubbed.fields?.userId === 'string' ? scrubbed.fields.userId
+      : typeof scrubbed.fields?.['user.id'] === 'string' ? scrubbed.fields['user.id']
+        : undefined;
+    const sessionId = typeof scrubbed.fields?.sessionId === 'string' ? scrubbed.fields.sessionId
+      : typeof scrubbed.fields?.['session.id'] === 'string' ? scrubbed.fields['session.id']
+        : undefined;
+    resolved.push({
+      ...scrubbed,
+      timestamp: asDate(d.timestamp),
+      ...(userId ? { userId } : {}),
+      ...(sessionId ? { sessionId } : {}),
+    });
+  }
   await LogModel.insertMany(resolved);
   await forwardToLoki(resolved);
 
@@ -66,7 +103,14 @@ export async function processLogs(docs: LogDoc[]): Promise<void> {
     await ErrorDocModel.findOneAndUpdate(
       { projectId: err.projectId, errorType: err.fields?.errorType || 'UnknownError', stackHash },
       {
-        $set: { environment: err.environment, message: err.message, lastSeen: new Date() },
+        $set: {
+          environment: err.environment,
+          message: err.message,
+          lastSeen: new Date(),
+          ...(err.userId ? { userId: err.userId } : {}),
+          ...(err.sessionId ? { sessionId: err.sessionId } : {}),
+          fields: err.fields || {},
+        },
         $inc: { occurrenceCount: 1 },
         $setOnInsert: { firstSeen: new Date() },
       },

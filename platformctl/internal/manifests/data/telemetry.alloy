@@ -139,9 +139,47 @@ otelcol.processor.transform "identity" {
     ]
   }
   output {
+    traces = [otelcol.processor.transform.pii_scrub.input]
+    logs = [otelcol.processor.transform.pii_scrub.input]
+    metrics = [otelcol.processor.batch.ingest.input]
+  }
+}
+// Authoritative PII scrubbing (#47): emails, tokens, card-like numbers, IPs.
+// Applied to log bodies/attributes and span attributes before batching.
+otelcol.processor.transform "pii_scrub" {
+  error_mode = "ignore"
+  trace_statements {
+    context = "span"
+    statements = [
+      `replace_all_patterns(attributes, "value", "(?i)[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}", "[EMAIL]")`,
+      `replace_all_patterns(attributes, "value", "(?i)(authorization\\s*[:=]\\s*)(bearer|basic)?\\s*[^\\s]+", "$1[REDACTED]")`,
+      `replace_all_patterns(attributes, "value", "(?i)\\b(bearer|basic)\\s+[A-Za-z0-9._~+/=\\-]+", "$1 [REDACTED]")`,
+      `replace_all_patterns(attributes, "value", "\\b(sdk_(?:live|test)_|plat_agent_|plat_ingest_(?:web_)?)[A-Za-z0-9._\\-]+", "$1[REDACTED]")`,
+      `replace_all_patterns(attributes, "value", "\\beyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+", "[REDACTED_JWT]")`,
+      `replace_all_patterns(attributes, "value", "\\b(?:\\d[ -]*?){13,19}\\b", "[CARD]")`,
+      `replace_all_patterns(attributes, "value", "\\b(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\b", "[IP]")`,
+    ]
+  }
+  log_statements {
+    context = "log"
+    statements = [
+      `replace_pattern(body, "(?i)[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}", "[EMAIL]")`,
+      `replace_all_patterns(attributes, "value", "(?i)[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}", "[EMAIL]")`,
+      `replace_pattern(body, "(?i)(authorization\\s*[:=]\\s*)(bearer|basic)?\\s*[^\\s]+", "$1[REDACTED]")`,
+      `replace_all_patterns(attributes, "value", "(?i)(authorization\\s*[:=]\\s*)(bearer|basic)?\\s*[^\\s]+", "$1[REDACTED]")`,
+      `replace_pattern(body, "(?i)\\b(bearer|basic)\\s+[A-Za-z0-9._~+/=\\-]+", "$1 [REDACTED]")`,
+      `replace_pattern(body, "\\b(sdk_(?:live|test)_|plat_agent_|plat_ingest_(?:web_)?)[A-Za-z0-9._\\-]+", "$1[REDACTED]")`,
+      `replace_pattern(body, "\\beyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+", "[REDACTED_JWT]")`,
+      `replace_all_patterns(attributes, "value", "\\beyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+", "[REDACTED_JWT]")`,
+      `replace_pattern(body, "\\b(?:\\d[ -]*?){13,19}\\b", "[CARD]")`,
+      `replace_all_patterns(attributes, "value", "\\b(?:\\d[ -]*?){13,19}\\b", "[CARD]")`,
+      `replace_pattern(body, "\\b(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\b", "[IP]")`,
+      `replace_all_patterns(attributes, "value", "\\b(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\b", "[IP]")`,
+    ]
+  }
+  output {
     traces = [otelcol.processor.batch.ingest.input]
     logs = [otelcol.processor.batch.ingest.input]
-    metrics = [otelcol.processor.batch.ingest.input]
   }
 }
 otelcol.processor.batch "ingest" {
@@ -188,6 +226,34 @@ pyroscope.write "local" {
 discovery.kubernetes "pods" { role = "pod" }
 loki.source.kubernetes "pods" {
   targets = discovery.kubernetes.pods.targets
+  forward_to = [loki.process.pii_scrub.receiver]
+}
+// Pod-log PII scrubbing (#47); mirrors the OTLP transform rules above.
+loki.process "pii_scrub" {
+  stage.replace {
+    expression = "(?i)[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}"
+    replace = "[EMAIL]"
+  }
+  stage.replace {
+    expression = "(?i)\\b(bearer|basic)\\s+[A-Za-z0-9._~+/=\\-]+"
+    replace = "${1} [REDACTED]"
+  }
+  stage.replace {
+    expression = "\\b(sdk_(?:live|test)_|plat_agent_|plat_ingest_(?:web_)?)[A-Za-z0-9._\\-]+"
+    replace = "${1}[REDACTED]"
+  }
+  stage.replace {
+    expression = "\\beyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+"
+    replace = "[REDACTED_JWT]"
+  }
+  stage.replace {
+    expression = "\\b(?:\\d[ -]*?){13,19}\\b"
+    replace = "[CARD]"
+  }
+  stage.replace {
+    expression = "\\b(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\b"
+    replace = "[IP]"
+  }
   forward_to = [loki.write.local.receiver]
 }
 loki.write "local" {

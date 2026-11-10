@@ -39,15 +39,20 @@ to #42, not the installer.
 valid values are 1..365. Loki retention and Tempo compaction are enabled;
 Pyroscope uses `limits.compactor_blocks_retention_period`. Deletion is asynchronous
 and includes the backend's compaction/deletion delay. Do not configure an S3
-lifecycle policy that independently removes live index/WAL objects.
+lifecycle policy that independently removes live index/WAL objects (the separate
+`replays` bucket may use lifecycle — see [telemetry-privacy.md](./telemetry-privacy.md)).
+Loki also applies per-stream retention for `telemetry_type=replays` (7d) and
+`telemetry_type=errors` (90d). Project overrides and GDPR delete live in the API
+Privacy settings (#47).
 `TELEMETRY_SAMPLING_PERCENTAGE=100` retains every trace by default. Operators can
 explicitly select 0..100 for a smaller server. Both settings persist to the
 installer .env so parallel child steps and reruns see the same values.
 
 The default S3 endpoint is bundled MinIO. To use an external compatible S3
-service, supply backend Helm overrides for endpoint/region/TLS and the three
-scoped Secrets; the installer currently provisions bundled MinIO, not external
-cloud IAM. Keep each backend's bucket and credentials separate.
+service, supply backend Helm overrides for endpoint/region/TLS and the scoped
+Secrets; the installer currently provisions bundled MinIO, not external
+cloud IAM. Keep each backend's bucket and credentials separate. Full profile also
+creates a `replays` bucket (7d lifecycle) for session replay (#40) and GDPR delete.
 
 ## Ingest contract and API integration (#49)
 
@@ -74,8 +79,11 @@ Alloy clears untrusted resource identities, associates the connection with
 Kubernetes pods and their namespace's `platform.io/project` / `platform.io/env`
 labels, then overwrites project/environment from the authenticated headers on
 traces, logs and metric datapoints BEFORE batching. Incoming client identity
-attributes are removed before metadata extraction. The stack uses a single
-Loki/Tempo tenant; it deliberately does not derive `X-Scope-OrgID` from a project.
+attributes are removed before metadata extraction. After identity, the
+`pii_scrub` transform redacts emails, tokens, card-like numbers and IPs on
+traces and logs (not on `/pyroscope`). Pod logs use `loki.process "pii_scrub"`.
+The stack uses a single Loki/Tempo tenant; it deliberately does not derive
+`X-Scope-OrgID` from a project.
 API query proxies must enforce project scoping (#48). Never expose backend query
 ports directly to project workloads. A NetworkPolicy restricts Alloy ingress
 to the ingress controller, platform API, and Prometheus metrics scraping.

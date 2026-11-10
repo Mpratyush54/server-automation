@@ -15,7 +15,11 @@ SDK ──OTLP/Faro/profiles──▶ ingress-nginx (otel.<DOMAIN>) ──auth-u
 
 SDK ──POST /api/sdk/logs, /logs/ingest, /sdk/api-metrics, /sdk/heartbeat──▶ API
         validate + bind to the token's project ─▶ XADD plat:api:telemetry:ingest ─▶ 202
-        leader: consumer group telemetry-forwarders ─▶ MongoDB / Loki (as before) ─▶ XACK + XDEL
+        leader: consumer group telemetry-forwarders ─▶ PII scrub (#47) ─▶ MongoDB / Loki ─▶ XACK + XDEL
+
+Privacy (#47): Alloy `pii_scrub` on OTLP/Faro logs+traces; API `lib/pii-scrub.ts` on
+SDK log ingest; consent hooks at `/api/sdk/privacy/*` for session replay (#40).
+See docs/operations/telemetry-privacy.md.
 ```
 
 ## `telemetry` block of `GET /api/sdk/config`

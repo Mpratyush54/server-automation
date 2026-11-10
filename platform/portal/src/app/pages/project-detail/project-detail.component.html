@@ -57,6 +57,7 @@
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'api-metrics'" (click)="switchTab('api-metrics')">⚡ API Latency</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'logs'" (click)="switchTab('logs')">📝 Logs</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'environment'" (click)="switchTab('environment')">🧩 Environment</button>
+  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'privacy'" (click)="switchTab('privacy')">🔒 Privacy</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'storage'" (click)="switchTab('storage')">📁 Storage</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'environments'" (click)="switchTab('environments')">🌐 Environments</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'access'" (click)="switchTab('access')">👥 Access</button>
@@ -500,6 +501,10 @@
 }
 
 <!-- ENVIRONMENT TAB (#29): plain config + encrypted secrets in one list -->
+@if (activeTab === 'privacy' && project) {
+  <app-privacy-tab [projectId]="project.id"></app-privacy-tab>
+}
+
 @if (activeTab === 'environment' && project) {
   <app-environment-tab [projectId]="project.id" [environments]="project.environments || []"></app-environment-tab>
 }

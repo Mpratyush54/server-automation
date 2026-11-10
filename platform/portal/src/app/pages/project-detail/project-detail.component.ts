@@ -8,12 +8,13 @@ import { AuthService } from '../../services/auth.service';
 import { ArgocdPanelComponent } from './argocd-panel.component';
 import { OperationProgressComponent } from '../../shared/operation-progress.component';
 import { EnvironmentTabComponent } from './environment-tab/environment-tab.component';
+import { PrivacyTabComponent } from './privacy-tab/privacy-tab.component';
 import { TopologyGraphComponent } from './topology/topology-graph.component';
 
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent, ArgocdPanelComponent],
+  imports: [CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, PrivacyTabComponent, TopologyGraphComponent, ArgocdPanelComponent],
   templateUrl: './project-detail.component.html',
   styleUrl: './project-detail.component.css'
 })
