@@ -524,6 +524,53 @@ describe('Project SDK Tokens', () => {
       }
     });
 
+    it('201 — kind defaults to server and is stored on the credential', async () => {
+      sdkCredRepo.save.mockImplementation((t: any) => Promise.resolve({ id: TOKEN_ID, ...t }));
+      sdkCredRepo.create.mockClear();
+      const r = await request(app)
+        .post(`/api/projects/${PROJ_ID}/tokens`)
+        .set('Authorization', `Bearer ${T.devops}`)
+        .send({ name: 'backend' });
+      expect(r.status).toBe(201);
+      expect(r.body.kind).toBe('server');
+      expect(sdkCredRepo.create).toHaveBeenCalledWith(expect.objectContaining({ kind: 'server' }));
+    });
+
+    it('201 — creates a browser token when kind=browser', async () => {
+      sdkCredRepo.save.mockImplementation((t: any) => Promise.resolve({ id: TOKEN_ID, ...t }));
+      sdkCredRepo.create.mockClear();
+      const r = await request(app)
+        .post(`/api/projects/${PROJ_ID}/tokens`)
+        .set('Authorization', `Bearer ${T.devops}`)
+        .send({ name: 'web', kind: 'browser' });
+      expect(r.status).toBe(201);
+      expect(r.body.kind).toBe('browser');
+      expect(r.body.token).toMatch(/^sdk_live_/);
+      expect(sdkCredRepo.create).toHaveBeenCalledWith(expect.objectContaining({ kind: 'browser' }));
+    });
+
+    it('400 — rejects an unknown kind', async () => {
+      sdkCredRepo.create.mockClear();
+      const r = await request(app)
+        .post(`/api/projects/${PROJ_ID}/tokens`)
+        .set('Authorization', `Bearer ${T.devops}`)
+        .send({ name: 'x', kind: 'admin' });
+      expect(r.status).toBe(400);
+      expect(sdkCredRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('list shows the kind; credentials without one are server', async () => {
+      sdkCredRepo.find.mockResolvedValueOnce([
+        { ...seedToken, id: 'a', kind: 'browser' },
+        { ...seedToken, id: 'b' },
+      ]);
+      const r = await request(app)
+        .get(`/api/projects/${PROJ_ID}/tokens`)
+        .set('Authorization', `Bearer ${T.devops}`);
+      expect(r.status).toBe(200);
+      expect(r.body.map((t: any) => t.kind)).toEqual(['browser', 'server']);
+    });
+
     it('400 — name field is required', async () => {
       const r = await request(app)
         .post(`/api/projects/${PROJ_ID}/tokens`)

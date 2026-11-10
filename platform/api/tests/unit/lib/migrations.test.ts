@@ -153,6 +153,20 @@ describe('baseline idempotent DDL', () => {
     });
   });
 
+  it('SDK token kind migration is additive, idempotent and defaults existing tokens to server', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { SdkTokenKind1797000000100 } = require('../../../src/migrations/1797000000100-SdkTokenKind');
+    const sql: string[] = [];
+    const runner = { query: async (q: string) => { sql.push(q); } };
+    await new SdkTokenKind1797000000100().up(runner as any);
+    expect(sql[0]).toBe(`ALTER TABLE "sdk_credentials" ADD COLUMN IF NOT EXISTS "kind" character varying(20) NOT NULL DEFAULT 'server'`);
+    expect(sql.filter((q) => /UPDATE "sdk_credentials" SET "kind" = 'server'/.test(q))).toHaveLength(1);
+    expect(sql.filter((q) => /DROP|'browser'/.test(q))).toEqual([]);
+    const down: string[] = [];
+    await new SdkTokenKind1797000000100().down({ query: async (q: string) => { down.push(q); } } as any);
+    expect(down).toEqual([`ALTER TABLE "sdk_credentials" DROP COLUMN IF EXISTS "kind"`]);
+  });
+
   it('refuses to revert the baseline unless explicitly allowed', async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { InitialSchema1762560000000 } = require('../../../src/migrations/1762560000000-InitialSchema');

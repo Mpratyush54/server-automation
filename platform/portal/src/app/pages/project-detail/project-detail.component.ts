@@ -33,7 +33,10 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   // SDK Tokens
   tokens: any[] = [];
   newKeyName = '';
+  /** `server`: backend SDKs (config, secrets, registration). `browser`: frontend SDKs (ingest only). */
+  newKeyKind: 'server' | 'browser' = 'server';
   generatedKeyPlaintext = '';
+  generatedKeyKind: 'server' | 'browser' = 'server';
 
   // GitOps / ArgoCD Pods
   pods: any[] = [];
@@ -459,9 +462,11 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   async createToken() {
     if (!this.project || !this.newKeyName.trim()) return;
     try {
-      const res = await firstValueFrom(this.api.createProjectToken(this.project.id, this.newKeyName));
+      const res = await firstValueFrom(this.api.createProjectToken(this.project.id, this.newKeyName, this.newKeyKind));
       this.generatedKeyPlaintext = res.token;
+      this.generatedKeyKind = res.kind === 'browser' ? 'browser' : 'server';
       this.newKeyName = '';
+      this.newKeyKind = 'server';
       await this.loadTokens();
     } catch (err: any) {
       alert('Failed to generate SDK token: ' + (err.error?.error || err.message));

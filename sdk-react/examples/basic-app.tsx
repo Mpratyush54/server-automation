@@ -3,7 +3,7 @@ import { PlatformProvider, usePlatform, PlatformConfig } from '@mpratyush54/sdk-
 
 const config: PlatformConfig = {
   apiBase: import.meta.env.VITE_PLATFORM_URL,
-  token: import.meta.env.VITE_PLATFORM_SDK_TOKEN,
+  token: import.meta.env.VITE_PLATFORM_BROWSER_TOKEN,
   projectId: import.meta.env.VITE_PLATFORM_PROJECT_ID,
   environment: 'development',
   appName: 'sdk-react-example',

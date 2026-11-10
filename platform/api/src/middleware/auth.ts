@@ -6,7 +6,7 @@ import { User, UserRole } from '../entities/User';
 import { Role } from '../entities/Role';
 import { AuditLog } from '../entities/AuditLog';
 import { AgentToken } from '../entities/AgentToken';
-import { SdkCredential } from '../entities/SdkCredential';
+import { SdkCredential, SdkTokenKind, normalizeSdkTokenKind } from '../entities/SdkCredential';
 import { Project } from '../entities/Project';
 import { Permission, ROLE_PRESETS } from '../config/permissions';
 import { getJwtSecret } from '../config/security-env';
@@ -33,6 +33,10 @@ export interface AuthenticatedRequest extends Request {
   projectId?: string;
   /** Project name the SDK credential is bound to (set only by sdkTokenAuth). */
   sdkProjectName?: string;
+  /** Kind of the SDK credential (set only by sdkTokenAuth): `server` or `browser`. */
+  sdkTokenKind?: SdkTokenKind;
+  /** Set by allowBrowserSdkToken: this route accepts browser SDK tokens. */
+  browserSdkTokenAllowed?: boolean;
   agentToken?: {
     id: string;
     name: string;
@@ -385,6 +389,20 @@ export async function logAudit(params: { userId?: string; action: string; target
   } catch {}
 }
 
+/**
+ * Opt a route in to browser SDK tokens. Place it before sdkTokenAuth / sdkOrUserAuthenticate:
+ *
+ *   router.post('/sdk/bug-report', allowBrowserSdkToken, sdkTokenAuth, handler)
+ *
+ * Without it every SDK route is server-only: a `browser` token is answered with 403. Only add
+ * it to write-only ingest endpoints that return no project config, secrets or credentials and
+ * do not change deployments or service state, because a browser token ships in public JS.
+ */
+export function allowBrowserSdkToken(req: Request, _res: Response, next: NextFunction) {
+  (req as AuthenticatedRequest).browserSdkTokenAllowed = true;
+  next();
+}
+
 export async function sdkTokenAuth(req: Request, res: Response, next: NextFunction) {
   const auth = req.headers.authorization;
   if (!auth?.startsWith('Bearer ')) {
@@ -401,6 +419,7 @@ export async function sdkTokenAuth(req: Request, res: Response, next: NextFuncti
 
   let projectId: string;
   let projectName: string;
+  let kind: SdkTokenKind;
   try {
     const ds = await getDb();
     const credential = await ds.getRepository(SdkCredential).findOne({ where: { token, status: 'active' } });
@@ -413,11 +432,19 @@ export async function sdkTokenAuth(req: Request, res: Response, next: NextFuncti
     }
     projectId = project.id;
     projectName = project.name;
+    kind = normalizeSdkTokenKind(credential.kind);
   } catch {
     return res.status(401).json({ error: 'Unauthorized: Could not validate SDK token' });
   }
 
+  if (kind === 'browser' && !(req as AuthenticatedRequest).browserSdkTokenAllowed) {
+    return res.status(403).json({
+      error: 'Forbidden: browser SDK tokens cannot call this endpoint. Use a server SDK token from your backend.',
+    });
+  }
+
   (req as AuthenticatedRequest).sdkToken = true;
+  (req as AuthenticatedRequest).sdkTokenKind = kind;
   (req as AuthenticatedRequest).projectId = projectId;
   (req as AuthenticatedRequest).sdkProjectName = projectName;
   next();

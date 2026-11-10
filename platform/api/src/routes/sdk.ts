@@ -9,7 +9,7 @@ import { ServiceRegistration } from '../entities/ServiceRegistration';
 import { DbConnection, DbConnectionStatus, DbType } from '../entities/DbConnection';
 import { ProjectConfig } from '../entities/ProjectConfig';
 import { Secret } from '../entities/Secret';
-import { sdkTokenAuth, expressAuthenticate, sdkProjectMatches, AuthenticatedRequest } from '../middleware/auth';
+import { sdkTokenAuth, allowBrowserSdkToken, expressAuthenticate, sdkProjectMatches, AuthenticatedRequest } from '../middleware/auth';
 import { requireProjectAccess } from '../lib/project-access';
 import { decryptValue } from '../lib/secrets-encryption';
 import { ingestTelemetry, TelemetryBackpressureError, TelemetryPayloadTooLargeError } from '../lib/telemetry-queue';
@@ -27,6 +27,17 @@ import { assignedNamespace, assignedEnvHost, projectSlug as makeProjectSlug } fr
 import { loadKubeConfig } from '../lib/kube-config';
 
 const router = Router();
+
+/*
+ * SDK token kinds (see entities/SdkCredential): every route below is server-only unless it is
+ * listed with allowBrowserSdkToken. Browser-allowed (write-only ingest, project-bound, returns
+ * no config, secrets or credentials):
+ *   POST /sdk/bug-report   bug reporter / error boundary in the browser SDKs
+ *   POST /sdk/api-metrics  frontend HTTP timing metrics
+ *   POST /sdk/logs, POST /logs/ingest   frontend log lines
+ * Server-only: /sdk/register, /sdk/deregister, /sdk/heartbeat (service and DB health state),
+ * GET /sdk/config (config values and decrypted secrets), GET /sdk/db-credentials.
+ */
 
 /**
  * SDK credentials are bound to exactly one project. Any project reference the client
@@ -597,10 +608,14 @@ const handleSdkLogs = async (req: Request, res: Response) => {
     { status: 201, body: { received: logs.length } }, { received: logs.length });
 };
 
-router.post('/sdk/logs', sdkTokenAuth, handleSdkLogs);
-router.post('/logs/ingest', sdkTokenAuth, handleSdkLogs);
+router.post('/sdk/logs', allowBrowserSdkToken, sdkTokenAuth, handleSdkLogs);
+router.post('/logs/ingest', allowBrowserSdkToken, sdkTokenAuth, handleSdkLogs);
 
 router.get('/sdk/config', sdkTokenAuth, async (req: Request, res: Response) => {
+  // Defence in depth: sdkTokenAuth already refuses browser tokens on this route.
+  if ((req as AuthenticatedRequest).sdkTokenKind !== 'server') {
+    return res.status(403).json({ error: 'Forbidden: project config is only available to server SDK tokens' });
+  }
   try {
     let { projectId, environmentId } = req.query as Record<string, string>;
     if (!projectId) {
@@ -662,6 +677,9 @@ router.get('/sdk/config', sdkTokenAuth, async (req: Request, res: Response) => {
 });
 
 router.get('/sdk/db-credentials', sdkTokenAuth, async (req: Request, res: Response) => {
+  if ((req as AuthenticatedRequest).sdkTokenKind !== 'server') {
+    return res.status(403).json({ error: 'Forbidden: database credentials are only available to server SDK tokens' });
+  }
   try {
     const { projectId, dbTypes, environment } = req.query as Record<string, string>;
     if (!projectId) {
@@ -689,7 +707,7 @@ router.get('/sdk/db-credentials', sdkTokenAuth, async (req: Request, res: Respon
   }
 });
 
-router.post('/sdk/api-metrics', sdkTokenAuth, async (req: Request, res: Response) => {
+router.post('/sdk/api-metrics', allowBrowserSdkToken, sdkTokenAuth, async (req: Request, res: Response) => {
   const { metrics, projectId } = req.body || {};
   if (!projectId) return res.status(400).json({ error: 'projectId is required' });
   if (rejectForeignProject(req, res, projectId)) return;
@@ -760,7 +778,7 @@ router.get('/sdk/api-metrics', expressAuthenticate, async (req: Request, res: Re
   }
 });
 
-router.post('/sdk/bug-report', sdkTokenAuth, async (req: Request, res: Response) => {
+router.post('/sdk/bug-report', allowBrowserSdkToken, sdkTokenAuth, async (req: Request, res: Response) => {
   try {
     const body = req.body;
     if (!body.projectId || !body.description) return res.status(400).json({ error: 'projectId and description required' });

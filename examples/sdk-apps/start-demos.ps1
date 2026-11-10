@@ -26,7 +26,7 @@ if (-not $Token -and (Test-Path "$root\.demo-env.json")) {
 }
 
 if (-not $Token) {
-  Write-Error "PLATFORM_SDK_TOKEN required (create one in portal → project → SDK tokens)"
+  Write-Error "PLATFORM_SDK_TOKEN required (create a Server token in portal → project → SDK tokens)"
 }
 
 Write-Host "Starting node-api :4100  project=$ProjectName"

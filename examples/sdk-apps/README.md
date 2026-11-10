@@ -121,6 +121,9 @@ hostname used to register project ingress hosts. Both are required before the No
 demo or any `scripts/e2e-sdk-*.mjs` script starts. Use your VM's address/domain,
 for example `https://api.<your-ip>.sslip.io` and `<your-ip>.sslip.io`.
 The browser demos call the local Node demo; they need no platform credentials.
+`PLATFORM_SDK_TOKEN` is a **server** SDK token used only by the Node API. If you add the
+React/Angular SDKs to the web demos, create a separate **browser** SDK token for them
+(Project → SDK Tokens → kind *Browser*); never ship the server token in frontend code.
 E2E scripts additionally require `ADMIN_EMAIL` and `ADMIN_PASSWORD` for your VM.
 Install dependencies and build `sdk-node` first. GitOps E2E also requires authenticated
 `gh` and git; `GH_OWNER` defaults to the authenticated GitHub user. Each script accepts

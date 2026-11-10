@@ -22,7 +22,7 @@ import {
 
 const platformConfig = {
   apiBase: import.meta.env.VITE_PLATFORM_URL,   // or process.env.REACT_APP_…
-  token: import.meta.env.VITE_PLATFORM_SDK_TOKEN,
+  token: import.meta.env.VITE_PLATFORM_BROWSER_TOKEN, // browser-kind SDK token
   projectId: import.meta.env.VITE_PLATFORM_PROJECT_ID, // UUID or project name used by API metrics
   environment: 'development',
   appName: 'my-web',
@@ -68,7 +68,7 @@ function Dashboard() {
 | Field | Required | Description |
 |-------|----------|-------------|
 | `apiBase` | yes | Platform API base URL |
-| `token` | yes | SDK token (`sdk_live_…` / `sdk_test_…`), sent as `Authorization: Bearer` |
+| `token` | yes | **Browser** SDK token (`sdk_live_…` / `sdk_test_…`, kind *Browser* in Project → SDK Tokens), sent as `Authorization: Bearer`. Never use a server token here: frontend config is public. |
 | `projectId` | yes | Project id used when posting metrics |
 | `environment` | no | Default `production` in metric payloads |
 | `appName` | no | App label |

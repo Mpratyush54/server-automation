@@ -12,6 +12,13 @@ npm install @mpratyush54/sdk-react
 
 ## Setup
 
+> **Use a browser SDK token.** In the portal open Project → SDK Tokens and create a token of kind
+> **Browser**. Anything in frontend config (`VITE_*`, `NEXT_PUBLIC_*`, Angular `environment.ts`) is
+> bundled into public JavaScript, so never put a **Server** token there. Browser tokens can only
+> send bug reports, logs and API metrics; they cannot read project config, secrets or database
+> credentials. If an SDK token was previously embedded in a frontend, revoke it and create a new
+> one (a browser token for the frontend, a server token for your backend).
+
 `PlatformProvider` takes a **`config` object** (not flat props):
 
 ```tsx
@@ -24,7 +31,7 @@ import {
 
 const config = {
   apiBase: import.meta.env.VITE_PLATFORM_URL,
-  token: import.meta.env.VITE_PLATFORM_SDK_TOKEN,
+  token: import.meta.env.VITE_PLATFORM_BROWSER_TOKEN, // browser-kind SDK token
   projectId: import.meta.env.VITE_PLATFORM_PROJECT_ID,
   environment: 'development',
   appName: 'my-web',
@@ -33,7 +40,7 @@ const config = {
 export function App() {
   return (
     <PlatformProvider config={config}>
-      <ErrorBoundary>
+      <ErrorBoundary config={config}>
         <Home />
       </ErrorBoundary>
       <BugReporterWidget config={config} />

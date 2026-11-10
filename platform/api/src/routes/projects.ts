@@ -5,7 +5,7 @@ import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { Project, StackType } from '../entities/Project';
 import { Environment, EnvironmentName } from '../entities/Environment';
-import { SdkCredential } from '../entities/SdkCredential';
+import { SdkCredential, SDK_TOKEN_KINDS, isSdkTokenKind, normalizeSdkTokenKind } from '../entities/SdkCredential';
 import { User } from '../entities/User';
 import { ProjectMember, ProjectAccessRole } from '../entities/ProjectMember';
 import { expressAuthenticate, expressRequireRole, logAudit, AuthenticatedRequest } from '../middleware/auth';
@@ -247,6 +247,7 @@ router.get('/projects/:projectId/tokens', expressAuthenticate, async (req: Reque
       id: t.id,
       name: t.name,
       token: `${t.token.substring(0, 14)}...${t.token.substring(t.token.length - 4)}`,
+      kind: normalizeSdkTokenKind(t.kind),
       status: t.status,
       createdAt: t.createdAt
     }));
@@ -260,8 +261,13 @@ router.post('/projects/:projectId/tokens', expressAuthenticate, expressRequireRo
   try {
     const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, ProjectAccessRole.DEVOPS);
     if (access.ok === false) return res.status(access.status).json({ error: access.error });
-    const { name } = req.body;
-    if (!name) return res.status(400).json({ error: 'Token name is required' });
+    const { name } = req.body || {};
+    if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Token name is required' });
+    // Default `server` keeps existing clients working; `browser` tokens are ingest-only.
+    const kind = req.body?.kind === undefined || req.body?.kind === null || req.body?.kind === '' ? 'server' : req.body.kind;
+    if (!isSdkTokenKind(kind)) {
+      return res.status(400).json({ error: `kind must be one of: ${SDK_TOKEN_KINDS.join(', ')}` });
+    }
 
     const ds = await getDb();
     const project = await ds.getRepository(Project).findOne({ where: { id: req.params.projectId } });
@@ -274,6 +280,7 @@ router.post('/projects/:projectId/tokens', expressAuthenticate, expressRequireRo
       projectId: project.id,
       name,
       token: rawToken,
+      kind,
       status: 'active'
     });
     
@@ -284,6 +291,7 @@ router.post('/projects/:projectId/tokens', expressAuthenticate, expressRequireRo
       action: 'sdk_token.created',
       targetType: 'SdkCredential',
       targetId: saved.id,
+      metadata: { kind },
       ip: req.ip,
     });
 
@@ -292,6 +300,7 @@ router.post('/projects/:projectId/tokens', expressAuthenticate, expressRequireRo
       id: saved.id,
       name: saved.name,
       token: rawToken, // Return plaintext so developer can copy it
+      kind,
       status: saved.status,
       createdAt: saved.createdAt
     });
