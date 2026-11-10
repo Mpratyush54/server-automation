@@ -2,7 +2,7 @@
 # Build JS on the native builder arch. Angular/esbuild crashes under QEMU
 # (linux/arm64 on amd64 runners → "Illegal instruction" / deadlock).
 # The dist output is arch-independent; only the runtime image is multi-arch.
-FROM --platform=$BUILDPLATFORM node:22.23.4-alpine3.24 AS builder
+FROM --platform=$BUILDPLATFORM node:26.12.1-alpine3.24 AS builder
 WORKDIR /app
 COPY package*.json ./
 # Reproducible install when a lockfile is committed; fall back until it is.
