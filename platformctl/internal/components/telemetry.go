@@ -219,17 +219,20 @@ func telemetryStorage(c *config.Config) error {
 			return err
 		}
 		container := map[string]any{"name": "mc", "image": telemetryMCImage, "command": []string{"/bin/sh", "-ec", telemetryBucketScript(backend)}, "envFrom": []any{map[string]any{"secretRef": map[string]string{"name": "telemetry-bootstrap"}}, map[string]any{"secretRef": map[string]string{"name": name}}}, "resources": map[string]any{"requests": map[string]string{"cpu": "25m", "memory": "32Mi"}, "limits": map[string]string{"cpu": "200m", "memory": "128Mi"}}}
-		if err := applyTelemetryJSON(map[string]any{"apiVersion": "batch/v1", "kind": "Job", "metadata": map[string]string{"name": job, "namespace": "monitoring"}, "spec": map[string]any{"backoffLimit": 3, "activeDeadlineSeconds": 300, "ttlSecondsAfterFinished": 600, "template": map[string]any{"spec": map[string]any{"restartPolicy": "Never", "containers": []any{container}}}}}); err != nil {
+		if err := applyTelemetryJSON(map[string]any{"apiVersion": "batch/v1", "kind": "Job", "metadata": map[string]string{"name": job, "namespace": "monitoring"}, "spec": map[string]any{"backoffLimit": 3, "activeDeadlineSeconds": 900, "ttlSecondsAfterFinished": 600, "template": map[string]any{"spec": map[string]any{"restartPolicy": "Never", "containers": []any{container}}}}}); err != nil {
 			return err
 		}
-		if err := shell.Run("kubectl", "-n", "monitoring", "wait", "--for=condition=complete", "job/"+job, "--timeout=330s"); err != nil {
+		if err := shell.Run("kubectl", "-n", "monitoring", "wait", "--for=condition=complete", "job/"+job, "--timeout=930s"); err != nil {
 			return fmt.Errorf("MinIO IAM job %s failed (inspect job logs): %w", job, err)
 		}
 	}
 	return nil
 }
 
-const telemetryMCImage = "quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z"
+// The MinIO server image already used by the minio chart (and in the platform
+// stack) ships the mc client; upstream quay.io/minio/mc tags are not reliably
+// available, so no separate client image is pulled.
+const telemetryMCImage = "docker.io/bitnamilegacy/minio:2025.7.23-debian-12-r3"
 
 func telemetryBucketScript(bucket string) string {
 	// bucket is an internal constant, never operator input. Commands never print
@@ -250,13 +253,20 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/telemetry-iam.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 export MC_CONFIG_DIR="$work/mc"
 mc alias set local http://minio.storage.svc.cluster.local:9000 "$ROOT_USER" "$ROOT_PASSWORD" >/dev/null
+# MinIO IAM answers "Server not initialized" until its OpenID issuer (platform API) is reachable.
+waited=0
+until mc admin policy list local >/dev/null 2>&1; do
+  [ "$waited" -ge 600 ] && { echo "MinIO admin API not ready after 600s" >&2; exit 1; }
+  sleep 5; waited=$((waited + 5))
+done
 mc mb --ignore-existing local/%[1]s
 cat >"$work/policy.json" <<'POLICY'
 {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:ListBucket","s3:GetBucketLocation","s3:ListBucketMultipartUploads"],"Resource":["arn:aws:s3:::%[1]s"]},{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload","s3:ListMultipartUploadParts"],"Resource":["arn:aws:s3:::%[1]s/*"]}]}
 POLICY
 mc admin user add local "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
 mc admin policy create local telemetry-%[1]s "$work/policy.json"
-mc admin policy attach local telemetry-%[1]s --user "$S3_ACCESS_KEY"
+# attach fails when already attached (re-run): accept an existing mapping.
+mc admin policy attach local telemetry-%[1]s --user "$S3_ACCESS_KEY" >/dev/null 2>&1 \n  || mc admin user info local "$S3_ACCESS_KEY" 2>/dev/null | grep -q "telemetry-%[1]s" \n  || { echo "attach policy telemetry-%[1]s failed" >&2; exit 1; }
 %[2]s`, bucket, lifecycle)
 }
 

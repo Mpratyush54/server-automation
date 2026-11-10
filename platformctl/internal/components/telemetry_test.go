@@ -166,7 +166,8 @@ const telemetryFakeMC = `mc() {
   'admin user') [[ "${FAIL_IAM:-0}" != 1 ]] || return 20
     [[ "$5" == "$S3_ACCESS_KEY" && "$6" == "$S3_SECRET_KEY" ]] || return 93;;
   'admin policy')
-    if [[ "$3" == create ]]; then
+    if [[ "$3" == list ]]; then return 0
+    elif [[ "$3" == create ]]; then
       [[ "$5" == "telemetry-$BUCKET" ]] || return 94
       grep -q "arn:aws:s3:::$BUCKET" "$6" || return 95
       ! grep -q 's3:\*' "$6" || return 96
