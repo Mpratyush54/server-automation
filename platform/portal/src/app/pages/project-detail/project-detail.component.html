@@ -81,6 +81,9 @@
         <div class="form-group">
           <label>GitHub Repository URL</label>
           <input [(ngModel)]="projectSettings.repositoryUrl" placeholder="https://github.com/org/repo.git" style="width:100%;">
+          <label style="display:block; margin-top:12px">Git revision override (next deployment)</label>
+          <input [(ngModel)]="projectSettings.gitRevision" [placeholder]="project?.defaultBranch || 'Automatic default branch'" style="width:100%">
+          <small>Leave empty to use the repository default branch: {{ project?.defaultBranch || 'HEAD (resolved on deploy)' }}.</small>
         </div>
         <div class="form-group">
           <label>Custom Domain (base)</label>
@@ -210,7 +213,7 @@
             </select>
           }
           @if (!gitBranches.length) {
-            <input [(ngModel)]="deployDto.branch" (change)="onBranchChange()" placeholder="main" style="width:100%;">
+            <input [(ngModel)]="deployDto.branch" (change)="onBranchChange()" placeholder="HEAD" style="width:100%;">
           }
         </div>
         <div class="form-group">
@@ -941,75 +944,7 @@
 <!-- GITOPS / ARGOCD TAB -->
 @if (activeTab === 'gitops') {
   <div>
-    <!-- ArgoCD Application Summary Card -->
-    <div class="card mb-6" style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.4), rgba(15, 23, 42, 0.6)); border: 1px solid rgba(139, 92, 246, 0.15); margin-top:20px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
-        <div>
-          <h2 style="font-size:1.25rem; margin:0; border:0; padding:0; color:#fff; display:flex; align-items:center; gap:8px;">
-            🐙 GitOps Application Controller (ArgoCD)
-          </h2>
-          <p style="color:var(--color-text-secondary); font-size:0.8rem; margin:4px 0 0 0;">
-            Syncing state from branch: <span style="font-family:monospace; color:var(--primary);">{{ project?.deployments[0]?.branch || 'main' }}</span>
-          </p>
-        </div>
-        <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-size:0.75rem; color:var(--color-text-secondary); text-transform:uppercase; font-weight:600;">Sync Status:</span>
-            @if (argoStatus?.syncStatus === 'Synced') {
-              <span class="badge badge-active" style="background-color:rgba(16,185,129,0.15); color:#10b981; border-color:rgba(16,185,129,0.3);">
-                SYNCED
-              </span>
-            }
-            @if (argoStatus?.syncStatus === 'OutOfSync') {
-              <span class="badge badge-failed" style="background-color:rgba(239,68,68,0.15); color:#ef4444; border-color:rgba(239,68,68,0.3);">
-                OUT OF SYNC
-              </span>
-            }
-            @if (argoStatus?.syncStatus !== 'Synced' && argoStatus?.syncStatus !== 'OutOfSync') {
-              <span class="badge badge-pending" style="background-color:rgba(245,158,11,0.15); color:#f59e0b; border-color:rgba(245,158,11,0.3);">
-                {{ argoStatus?.syncStatus || 'OFFLINE' }}
-              </span>
-            }
-          </div>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-size:0.75rem; color:var(--color-text-secondary); text-transform:uppercase; font-weight:600;">App Health:</span>
-            @if (argoStatus?.healthStatus === 'Healthy') {
-              <span class="badge badge-active" style="background-color:rgba(16,185,129,0.15); color:#10b981; border-color:rgba(16,185,129,0.3);">
-                HEALTHY
-              </span>
-            }
-            @if (argoStatus?.healthStatus === 'Degraded') {
-              <span class="badge badge-failed" style="background-color:rgba(239,68,68,0.15); color:#ef4444; border-color:rgba(239,68,68,0.3);">
-                DEGRADED
-              </span>
-            }
-            @if (argoStatus?.healthStatus === 'Progressing') {
-              <span class="badge badge-pending" style="background-color:rgba(245,158,11,0.15); color:#f59e0b; border-color:rgba(245,158,11,0.3);">
-                PROGRESSING
-              </span>
-            }
-            @if (argoStatus?.healthStatus !== 'Healthy' && argoStatus?.healthStatus !== 'Degraded' && argoStatus?.healthStatus !== 'Progressing') {
-              <span class="badge badge-pending" style="background-color:rgba(100,116,139,0.15); color:#cbd5e1; border-color:rgba(100,116,139,0.3);">
-                {{ argoStatus?.healthStatus || 'UNKNOWN' }}
-              </span>
-            }
-          </div>
-          @if (argoStatus?.consoleUrl) {
-            <a [href]="argoStatus.consoleUrl + '/applications/' + (argoStatus?.appName || (project?.name + '-staging' | lowercase))" target="_blank" class="btn btn-sm btn-primary" style="display:inline-flex; align-items:center; gap:6px; font-weight:600; padding:6px 12px; font-size:0.75rem; text-decoration:none;">
-              External ArgoCD Console ↗
-            </a>
-          }
-        </div>
-      </div>
-    </div>
-    <!-- Connection Status Warning -->
-    @if (!argoStatus?.connected) {
-      <div class="card mb-6" style="background:rgba(245,158,11,0.1); border-color:rgba(245,158,11,0.25); color:#fde047; padding:12px 18px; font-size:0.85rem;">
-        ⚠️ <strong>ArgoCD Controller Disconnected:</strong> Could not retrieve real-time ArgoCD status: {{ argoStatus?.error || 'unreachable' }}. Showing local GitOps state.@if (argoStatus?.consoleUrl) {
-        <a [href]="argoStatus.consoleUrl" target="_blank" style="color:var(--primary); font-weight:600; text-decoration:underline; margin-left:6px;">Open ArgoCD console ↗</a>
-      }
-    </div>
-  }
+    <app-argocd-panel [project]="project" [status]="argoStatus" (reload)="loadArgoStatus()" />
   <!-- ArgoCD Visual Resource Tree Layout -->
   <div class="card" style="padding: 24px; background: rgba(10, 15, 30, 0.4); border: 1px solid var(--border-glass);">
     <h2>Application Resource Topology</h2>

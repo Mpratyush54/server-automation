@@ -5,6 +5,7 @@ import authRoutes from './auth';
 import mfaRoutes from './mfa';
 import oidcRoutes from './oidc';
 import projectRoutes from './projects';
+import projectArgoRoutes from './project-argocd';
 import deploymentRoutes from './deployments';
 import configRoutes from './config';
 import secretRoutes from './secrets';
@@ -35,6 +36,7 @@ router.use('/', authRoutes);
 router.use('/', mfaRoutes); // TOTP MFA: enrolment, login challenge, step-up (#24)
 router.use('/', versionRoutes);
 router.use('/', projectRoutes);
+router.use('/', projectArgoRoutes);
 router.use('/', deploymentRoutes);
 router.use('/', configRoutes);
 router.use('/', secretRoutes);
