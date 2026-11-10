@@ -51,10 +51,10 @@ func TestProvisionGraphCriticalDeps(t *testing.T) {
 	}
 	must := map[string][]string{
 		// Ingress-nginx's webhook rejects Ingress creates until it is ready.
-		"routing":   {"ingress-nginx", "platform"},
+		"routing": {"ingress-nginx", "platform"},
 		// OIDC discovery needs the platform Ingress that routing creates.
 		"oauth2-proxy": {"routing"},
-		"platform":  {"postgresql", "mongodb", "redis", "minio", "kyverno"},
+		"platform":     {"postgresql", "mongodb", "redis", "minio", "kyverno"},
 		// Image Updater + Argo Application need ArgoCD's CRDs.
 		"auto-update": {"argocd", "platform"},
 		"seed":        {"platform"},
@@ -126,5 +126,32 @@ func TestResolveParallel(t *testing.T) {
 	defer func() { parallelFlag = 0 }()
 	if got := resolveParallel(); got != 6 {
 		t.Errorf("flag: got %d", got)
+	}
+}
+
+func TestTelemetryGraphAfterAPIAndRouting(t *testing.T) {
+	for _, profile := range []string{config.ProfileMinimal, config.ProfileStandard, config.ProfileFull} {
+		c := allOn()
+		if err := c.ApplyProfile(profile); err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, step := range provisionGraph(c) {
+			if step.name != "telemetry" {
+				continue
+			}
+			found = true
+			if step.skip != (profile != config.ProfileFull) {
+				t.Fatalf("profile %s: telemetry skip %v", profile, step.skip)
+			}
+			for _, dep := range []string{"platform", "monitoring", "routing"} {
+				if !slices.Contains(step.deps, dep) {
+					t.Fatalf("telemetry missing dependency %s", dep)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("missing telemetry step")
+		}
 	}
 }

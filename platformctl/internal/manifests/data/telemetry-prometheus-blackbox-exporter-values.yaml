@@ -1,0 +1,16 @@
+fullnameOverride: blackbox-exporter
+resources:
+  requests: {cpu: 25m, memory: 24Mi}
+  limits: {cpu: 200m, memory: 64Mi}
+config:
+  modules:
+    http_2xx:
+      prober: http
+      timeout: 5s
+      http:
+        follow_redirects: true
+        preferred_ip_protocol: ip4
+serviceMonitor:
+  selfMonitor:
+    enabled: true
+    labels: {release: kube-prometheus}

@@ -125,7 +125,7 @@ func TestInstallDatastoreSecretsAreLiteralValues(t *testing.T) {
 			calls := fakeTools(t)
 			// Includes command substitution, quoting, Helm comma syntax and a newline.
 			secret := "space $(touch /tmp/injected) '" + "\"" + ",false=true\nsecond line"
-			cfg := &config.Config{PostgresPassword: secret, MongoPassword: secret, RedisPassword: secret, MinioSecretKey: secret, MinioAccessKey: "admin", GrafanaPassword: secret}
+			cfg := &config.Config{InstallMonitoring: true, Profile: config.ProfileStandard, PostgresPassword: secret, MongoPassword: secret, RedisPassword: secret, MinioSecretKey: secret, MinioAccessKey: "admin", GrafanaPassword: secret}
 			if err := Find(name).Install(cfg); err != nil {
 				t.Fatal(err)
 			}

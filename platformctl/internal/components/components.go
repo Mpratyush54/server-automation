@@ -54,6 +54,7 @@ func All() []Component {
 		{"minio", "S3-compatible object storage", InstallMinIO},
 		{"argocd", "ArgoCD GitOps", InstallArgoCD},
 		{"monitoring", "Grafana + Prometheus + Loki", InstallMonitoring},
+		{"telemetry", "Full profile telemetry backends and collector", InstallTelemetry},
 		{"oauth2-proxy", "OAuth2 authentication proxy", InstallOAuthProxy},
 		{"portainer", "Container management UI (subdomain + Platform SSO)", InstallPortainer},
 		{"platform", "Platform API + Portal", InstallPlatform},
@@ -224,7 +225,7 @@ func InstallMinIO(cfg *config.Config) error {
 	}
 	defer os.Remove(tmpFile)
 
-	err = helmValues("minio", "minio", "storage", map[string]any{"auth": map[string]string{"rootUser": cfg.MinioAccessKey, "rootPassword": cfg.MinioSecretKey}}, "-f", tmpFile, "--set", "persistence.size=50Gi", "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser", "--set", `defaultBuckets=platform-backups\,platform-logs\,platform-uploads`, "--wait", "--timeout", "10m")
+	err = helmValues("minio", "minio", "storage", minioInstallValues(cfg), "-f", tmpFile, "--set", "persistence.size=50Gi", "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser", "--set", `defaultBuckets=platform-backups\,platform-logs\,platform-uploads`, "--wait", "--timeout", "10m")
 	if err != nil {
 		return err
 	}
@@ -367,6 +368,13 @@ func patchArgoCDSubpath(cfg *config.Config) error {
 }
 
 func InstallMonitoring(cfg *config.Config) error {
+	if !cfg.InstallMonitoring {
+		return nil
+	}
+	if FullTelemetry(cfg) {
+		return nil
+	} // installed after platform by telemetry
+
 	if doneOrSkip("monitoring", "monitoring") {
 		return nil
 	}

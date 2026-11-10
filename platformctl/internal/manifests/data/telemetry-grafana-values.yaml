@@ -1,0 +1,80 @@
+prometheus:
+  prometheusSpec:
+    enableRemoteWriteReceiver: true
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: "1", memory: 768Mi}
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests: {cpu: 25m, memory: 48Mi}
+      limits: {cpu: 200m, memory: 96Mi}
+prometheusOperator:
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 250m, memory: 128Mi}
+  prometheusConfigReloader:
+    resources:
+      requests: {cpu: 10m, memory: 16Mi}
+      limits: {cpu: 100m, memory: 32Mi}
+  admissionWebhooks:
+    patch:
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+        limits: {cpu: 100m, memory: 32Mi}
+kube-state-metrics:
+  resources:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 200m, memory: 64Mi}
+prometheus-node-exporter:
+  resources:
+    requests: {cpu: 25m, memory: 24Mi}
+    limits: {cpu: 200m, memory: 64Mi}
+grafana:
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+  sidecar:
+    resources:
+      requests: {cpu: 10m, memory: 24Mi}
+      limits: {cpu: 100m, memory: 48Mi}
+    dashboards:
+      enabled: true
+  additionalDataSources:
+    - name: Loki
+      uid: loki
+      type: loki
+      access: proxy
+      url: http://loki.monitoring.svc:3100
+      jsonData:
+        derivedFields:
+          - name: TraceID
+            datasourceUid: tempo
+            matcherRegex: '"trace_?id"\s*:\s*"([a-f0-9]{32})"'
+            url: '${__value.raw}'
+    - name: Tempo
+      uid: tempo
+      type: tempo
+      access: proxy
+      url: http://tempo.monitoring.svc:3200
+      jsonData:
+        tracesToLogsV2:
+          datasourceUid: loki
+          tags: [{key: service.name, value: service_name}]
+          filterByTraceID: true
+        tracesToMetrics:
+          datasourceUid: prometheus
+          tags: [{key: service.name, value: service}]
+          queries:
+            - name: Request rate
+              query: 'sum(rate(traces_spanmetrics_calls_total{$__tags}[5m]))'
+        serviceMap: {datasourceUid: prometheus}
+        tracesToProfiles:
+          datasourceUid: pyroscope
+          tags: [service.name]
+          profileTypeId: 'process_cpu:cpu:nanoseconds:cpu:nanoseconds'
+    - name: Pyroscope
+      uid: pyroscope
+      type: grafana-pyroscope-datasource
+      access: proxy
+      url: http://pyroscope.monitoring.svc:4040

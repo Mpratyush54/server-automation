@@ -23,8 +23,8 @@ var (
 var rootCmd = &cobra.Command{
 	Use:          "platformctl",
 	SilenceUsage: true, // a failing step should not dump the help text into its log
-	Short: "Platform server bootstrap and management tool",
-	Long:  `PlatformCTL provisions and manages a full Platform stack on a fresh Ubuntu server using pre-built GHCR images (no on-server compile).`,
+	Short:        "Platform server bootstrap and management tool",
+	Long:         `PlatformCTL provisions and manages a full Platform stack on a fresh Ubuntu server using pre-built GHCR images (no on-server compile).`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
@@ -226,7 +226,7 @@ func init() {
 	provisionCmd.Flags().IntVar(&parallelFlag, "parallel", 0,
 		"cluster steps to run at once (default 4, env PLATFORMCTL_PARALLEL; 1 = serial with live output)")
 	provisionCmd.Flags().StringVar(&profileFlag, "profile", "",
-		"component set: minimal | standard | full (default full, env PLATFORM_PROFILE)")
+		"component set: minimal | standard | full (default standard, env PLATFORM_PROFILE)")
 	provisionCmd.Flags().StringVar(&bundleFlag, "bundle", "",
 		"offline bundle: path to platform-bundle-*.tar.zst, or 'auto' to download the matching release")
 }
