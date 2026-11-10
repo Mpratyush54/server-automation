@@ -1,12 +1,47 @@
+:host {
+  /* The public page owns its surface: it is served on the portal's dark body, and the
+     brand primary colour is a user-chosen accent, never a text colour (it may be dark). */
+  --sp-bg: #f8fafc;
+  --sp-surface: #ffffff;
+  --sp-text: #0f172a;
+  --sp-muted: #475569;
+  --sp-border: #e2e8f0;
+  --sp-empty-bar: #cbd5e1;
+  --sp-ok-text: #166534;
+  --sp-warn-text: #92400e;
+  --sp-bad-text: #991b1b;
+  display: block;
+  min-height: 100vh;
+  background: var(--sp-bg);
+  color: var(--sp-text);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :host {
+    --sp-bg: #0b0f17;
+    --sp-surface: #111827;
+    --sp-text: #e5e7eb;
+    --sp-muted: #9ca3af;
+    --sp-border: #1f2937;
+    --sp-empty-bar: #374151;
+    --sp-ok-text: #86efac;
+    --sp-warn-text: #fcd34d;
+    --sp-bad-text: #fca5a5;
+    color-scheme: dark;
+  }
+}
 .public-status {
   --sp-primary: #0f172a;
   --sp-accent: #16a34a;
   max-width: 860px;
   margin: 0 auto;
   padding: 32px 20px 64px;
-  color: var(--sp-primary);
+  color: var(--sp-text);
   font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  border-top: 4px solid var(--sp-primary);
 }
+.public-status h1, .public-status h2, .public-status h3, .public-status strong { color: var(--sp-text); }
+.public-status h2 { font-size: 1.1rem; margin: 0 0 8px; }
 .hero { margin-bottom: 28px; }
 .logo { max-height: 40px; margin-bottom: 12px; }
 .hero h1 { margin: 0 0 8px; font-size: 1.8rem; }
@@ -16,17 +51,18 @@
   padding: 6px 12px;
   border-radius: 6px;
   background: color-mix(in srgb, var(--sp-accent) 18%, transparent);
+  color: var(--sp-ok-text);
   font-weight: 600;
 }
 .overall[data-status="degraded"],
-.overall[data-status="partial_outage"] { background: rgba(217, 119, 6, 0.15); }
-.overall[data-status="major_outage"] { background: rgba(220, 38, 38, 0.15); }
-.overall[data-status="unknown"] { background: rgba(148, 163, 184, 0.2); }
-.muted { color: #64748b; font-size: 0.9rem; }
+.overall[data-status="partial_outage"] { background: rgba(217, 119, 6, 0.15); color: var(--sp-warn-text); }
+.overall[data-status="major_outage"] { background: rgba(220, 38, 38, 0.15); color: var(--sp-bad-text); }
+.overall[data-status="unknown"] { background: rgba(148, 163, 184, 0.2); color: var(--sp-muted); }
+.muted { color: var(--sp-muted); font-size: 0.9rem; }
 .components, .incidents { margin-top: 28px; }
 .component, .incident {
   padding: 12px 0;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--sp-border);
 }
 .comp-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
 .dot {
@@ -36,7 +72,7 @@
 .dot[data-status="operational"] { background: var(--sp-accent); }
 .dot[data-status="degraded"] { background: #d97706; }
 .dot[data-status="outage"] { background: #dc2626; }
-.uptime { margin-left: auto; font-size: 0.85rem; color: #64748b; }
+.uptime { margin-left: auto; font-size: 0.85rem; color: var(--sp-muted); }
 .bars {
   display: flex;
   gap: 2px;
@@ -47,13 +83,13 @@
   flex: 1 1 0;
   min-width: 2px;
   border-radius: 2px;
-  background: #cbd5e1;
+  background: var(--sp-empty-bar);
 }
 .bar[data-status="operational"] { background: var(--sp-accent); }
 .bar[data-status="degraded"] { background: #d97706; }
 .bar[data-status="outage"] { background: #dc2626; }
 .incident h3 { margin: 0 0 4px; font-size: 1.05rem; }
-.meta { margin: 0 0 8px; font-size: 0.85rem; color: #64748b; }
+.meta { margin: 0 0 8px; font-size: 0.85rem; color: var(--sp-muted); }
 .incident ol { margin: 0; padding-left: 18px; font-size: 0.9rem; }
 .incident.resolved { opacity: 0.75; }
 .foot { margin-top: 36px; font-size: 0.85rem; }
