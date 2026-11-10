@@ -95,6 +95,7 @@ full_only sso-grafana       "${N[@]}" "$HERE/checks/sso.mjs" grafana
 full_only sso-argocd        "${N[@]}" "$HERE/checks/sso.mjs" argocd
 full_only sso-portainer     "${N[@]}" "$HERE/checks/sso.mjs" portainer
 full_only argocd-sync       bash "$HERE/argocd-sync.sh"
+full_only observability-scoping "${N[@]}" "$HERE/checks/observability.mjs" scoping
 check tenant-isolation      bash -c 'cd "$1/platform/api" && node scripts/test-namespace-isolation.mjs' _ "$E2E_ROOT"
 check backup-restore        bash -c 'source "$1/lib.sh" && vm_ssh "sudo bash -s" < "$1/remote/backup-smoke.sh"' _ "$HERE"
 

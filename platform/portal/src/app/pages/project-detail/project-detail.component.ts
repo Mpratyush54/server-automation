@@ -30,6 +30,8 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   dbConnections: any[] = [];
 
   activeTab = 'deployments';
+  /** #48: the Observability page replaces Metrics / API Latency / Logs when telemetry is installed. */
+  observabilityEnabled = false;
   role = 'devops';
 
   // SDK Tokens
@@ -106,6 +108,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     this.role = (this.auth.getRole() || 'developer').toLowerCase();
     this.canManageAccess = this.role === 'admin' || this.role === 'devops' || this.auth.canManageUsers?.() === true;
     this.applyTabParam();
+    this.api.getObservabilityStatus?.()?.subscribe({ next: (s: any) => { this.observabilityEnabled = !!s?.enabled; }, error: () => {} });
 
     await this.fetchData();
     this.refreshTimer = setInterval(() => this.pollData(), 5000);

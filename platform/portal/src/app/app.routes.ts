@@ -76,6 +76,8 @@ export const routes: Routes = [
   { path: 'projects', component: ProjectsComponent, canActivate: [authGuard] },
   { path: 'projects/:id', component: ProjectDetailComponent, canActivate: [authGuard] },
   { path: 'projects/:id/synthetics', component: SyntheticsComponent, canActivate: [authGuard] }, // #42
+  { path: 'projects/:id/observability', loadComponent: () => import('./pages/observability/obs-project.component').then(m => m.ObsProjectComponent), canActivate: [authGuard] }, // #48
+  { path: 'observability', loadComponent: () => import('./pages/observability/obs-fleet.component').then(m => m.ObsFleetComponent), canActivate: [authGuard] }, // #48
   { path: 'deployments', component: DeploymentsComponent, canActivate: [authGuard] },
   { path: 'services', component: ServicesComponent, canActivate: [authGuard] },
   { path: 'metrics', component: MetricsComponent, canActivate: [authGuard] },
