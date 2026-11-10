@@ -544,7 +544,11 @@ paths:
         - { name: environmentId, in: query, required: false, schema: { type: string } }
       responses:
         '200':
-          description: '`{ KEY: value }` (secrets masked unless the caller holds secrets.reveal; reveals are audited)'
+          description: '`{ KEY: value }` (secrets masked unless the caller holds secrets.reveal and has a recent MFA step-up; reveals are audited)'
+          headers:
+            X-Secrets-Masked:
+              description: '`step-up-required` when the caller holds secrets.reveal but secrets were masked for lack of a recent MFA step-up (POST /api/auth/mfa/step-up, then retry).'
+              schema: { type: string }
     post:
       tags: [Projects]
       deprecated: true
