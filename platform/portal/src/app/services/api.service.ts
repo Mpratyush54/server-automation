@@ -54,6 +54,11 @@ export class ApiService {
   deleteConfig(projectId: string, key: string): Observable<any> { return this.http.delete(`${this.base}/config`, { params: { projectId, key } }); }
   setFeatureFlag(data: any): Observable<any> { return this.http.post(`${this.base}/config/feature-flags`, data); }
 
+  // Environment tab (#29): merged plain config + secrets; reveal stays on revealSecret()
+  getEnvironmentVars(projectId: string, environmentId?: string): Observable<any> { return this.http.get(`${this.base}/projects/${projectId}/environment`, { params: environmentId !== undefined ? { environmentId } : {} }); }
+  setEnvironmentVar(projectId: string, key: string, data: { environmentId: string | null; value?: string; secret: boolean }): Observable<any> { return this.http.put(`${this.base}/projects/${projectId}/environment/${encodeURIComponent(key)}`, data); }
+  deleteEnvironmentVar(projectId: string, key: string, type: 'plain' | 'secret', environmentId: string | null): Observable<any> { return this.http.delete(`${this.base}/projects/${projectId}/environment/${encodeURIComponent(key)}`, { params: { type, ...(environmentId ? { environmentId } : {}) } }); }
+
   // Secrets
   getSecrets(projectId: string): Observable<any> { return this.http.get(`${this.base}/projects/${projectId}/secrets`); }
   revealSecret(projectId: string, data: { environmentId: string | null; key: string }): Observable<any> { return this.http.post(`${this.base}/projects/${projectId}/secrets/reveal`, data); }
