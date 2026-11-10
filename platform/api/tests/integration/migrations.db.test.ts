@@ -23,7 +23,8 @@ jest.setTimeout(120_000);
 
 const BASELINE = 'InitialSchema1762560000000';
 const WAVE1 = 'BackgroundJobsAndOperations1794127020627';
-const ALL = [BASELINE, WAVE1];
+const MFA = 'UserMfa1795000000000';
+const ALL = [BASELINE, WAVE1, MFA];
 const created: string[] = [];
 const open: DataSource[] = [];
 
@@ -122,7 +123,7 @@ d('migrations against Postgres', () => {
     await old.destroy();
 
     const ds = await connect(db);
-    expect(await runPendingMigrations(ds)).toEqual([WAVE1]);
+    expect(await runPendingMigrations(ds)).toEqual([WAVE1, MFA]);
     expect(await pendingSchemaChanges(ds)).toEqual([]);
     const tables = await ds.query(
       `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ANY($1) ORDER BY table_name`,
@@ -133,7 +134,13 @@ d('migrations against Postgres', () => {
     ]);
     expect(await ds.query(`SELECT name FROM "roles" WHERE name = 'before-upgrade'`)).toHaveLength(1);
 
-    // The wave-1 migration reverts cleanly (the baseline stays).
+    // The MFA migration (#24) reverts cleanly, then the wave-1 one (the baseline stays).
+    await ds.undoLastMigration({ transaction: 'each' });
+    expect(await appliedNames(ds)).toEqual([BASELINE, WAVE1]);
+    expect(await ds.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'user_mfa'`)).toEqual([]);
+    expect(await ds.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = 'integration_settings' AND column_name = 'mfa_required_roles'`,
+    )).toEqual([]);
     await ds.undoLastMigration({ transaction: 'each' });
     expect(await appliedNames(ds)).toEqual([BASELINE]);
     expect(await ds.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'operations'`)).toEqual([]);
@@ -155,7 +162,10 @@ d('migrations against Postgres', () => {
 
     const { InitialSchema1762560000000 } = await import('../../src/migrations/1762560000000-InitialSchema');
     const { BackgroundJobsAndOperations1794127020627 } = await import('../../src/migrations/1794127020627-BackgroundJobsAndOperations');
-    const ds = await connect(db, { migrations: [InitialSchema1762560000000, BackgroundJobsAndOperations1794127020627, Broken1999999999999] });
+    const { UserMfa1795000000000 } = await import('../../src/migrations/1795000000000-UserMfa');
+    const ds = await connect(db, {
+      migrations: [InitialSchema1762560000000, BackgroundJobsAndOperations1794127020627, UserMfa1795000000000, Broken1999999999999],
+    });
     await expect(runPendingMigrations(ds)).rejects.toThrow();
     expect(await appliedNames(ds)).toEqual(ALL);
     const cols = await ds.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'roles' AND column_name = 'half_done'`);

@@ -587,3 +587,31 @@ func TestKyvernoOptInFullOnly(t *testing.T) {
 		}
 	})
 }
+
+func TestAutoUpgradeOptInAndPersistence(t *testing.T) {
+	for _, value := range []string{"", "false", "true"} {
+		t.Run("value="+value, func(t *testing.T) {
+			profileEnv(t, "")
+			t.Setenv("AUTO_UPGRADE", value)
+			c := Load()
+			if c.AutoUpgrade != (value == "true") {
+				t.Fatalf("AUTO_UPGRADE=%q: %v", value, c.AutoUpgrade)
+			}
+			path := filepath.Join(t.TempDir(), "saved.env")
+			if err := c.SaveEnvFile(path); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "AUTO_UPGRADE=false\n"
+			if c.AutoUpgrade {
+				want = "AUTO_UPGRADE=true\n"
+			}
+			if !strings.Contains(string(data), want) {
+				t.Fatalf("missing %s", want)
+			}
+		})
+	}
+}

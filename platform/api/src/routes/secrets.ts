@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { getDb } from '../config/database';
 import { Secret } from '../entities/Secret';
 import { SecretVersion } from '../entities/SecretVersion';
-import { expressAuthenticate, requirePermission, logAudit, AuthenticatedRequest } from '../middleware/auth';
+import { expressAuthenticate, requirePermission, requireRecentMfa, logAudit, AuthenticatedRequest } from '../middleware/auth';
 import { encryptValue, decryptValue } from '../lib/secrets-encryption';
 import { ProjectAccessRole } from '../entities/ProjectMember';
 import { requireProjectAccess } from '../lib/project-access';
@@ -49,7 +49,8 @@ router.get('/projects/:projectId/secrets', expressAuthenticate, requirePermissio
 });
 
 // Reveal a specific secret value (audit-logged)
-router.post('/projects/:projectId/secrets/reveal', expressAuthenticate, requirePermission('secrets.reveal'), requireProjectMember(ProjectAccessRole.DEVELOPER), async (req: Request, res: Response) => {
+// Step-up: needs a second factor verified within MFA_STEP_UP_MAX_AGE_SEC (#24).
+router.post('/projects/:projectId/secrets/reveal', expressAuthenticate, requirePermission('secrets.reveal'), requireProjectMember(ProjectAccessRole.DEVELOPER), requireRecentMfa(), async (req: Request, res: Response) => {
   try {
     const { environmentId, key } = req.body;
     const userId = (req as AuthenticatedRequest).user?.id;
@@ -164,7 +165,7 @@ router.delete('/projects/:projectId/secrets/:secretId', expressAuthenticate, req
 });
 
 // Export secrets as .env format
-router.get('/projects/:projectId/secrets/export/:environmentId', expressAuthenticate, requirePermission('secrets.export'), requireProjectMember(ProjectAccessRole.DEVELOPER), async (req: Request, res: Response) => {
+router.get('/projects/:projectId/secrets/export/:environmentId', expressAuthenticate, requirePermission('secrets.export'), requireProjectMember(ProjectAccessRole.DEVELOPER), requireRecentMfa(), async (req: Request, res: Response) => {
   try {
     const userId = (req as AuthenticatedRequest).user?.id;
     const masterKey = MASTER_KEY();

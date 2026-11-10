@@ -31,10 +31,19 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } })
       : req;
 
+  // MFA (#24): wrong codes and step-up prompts are answered with 401 but keep the session.
+  const isMfaCall = req.url.includes('/auth/mfa/');
+
   return next(authReq).pipe(
     catchError((err: HttpErrorResponse) => {
+      const apiError = (err.error as any)?.error;
+      if (err.status === 403 && apiError === 'mfa_enrollment_required') {
+        if (!router.url.startsWith('/mfa/enroll')) router.navigateByUrl('/mfa/enroll');
+        return throwError(() => err);
+      }
+      const keepsSession = apiError === 'step_up_required' || isMfaCall;
       // A 401 for credentials the caller chose says nothing about the session.
-      if (err.status === 401 && !isLogin && !usesOwnAuth) {
+      if (err.status === 401 && !isLogin && !usesOwnAuth && !keepsSession) {
         clearSession();
         if (!router.url.startsWith('/login')) {
           router.navigateByUrl('/login');

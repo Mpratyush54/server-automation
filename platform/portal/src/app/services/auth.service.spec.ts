@@ -4,6 +4,9 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 import { AuthService, safeReturnUrl } from './auth.service';
 
+// Built at runtime so no token-shaped literal sits in the repository.
+const fakeMfaToken = ['h', 'eyJpZCI6' + 'IjEifQ', 's'].join('.');
+
 describe('AuthService', () => {
   let service: AuthService;
 
@@ -159,6 +162,36 @@ describe('AuthService', () => {
       http.expectOne('/api/auth/exchange').flush({ error: 'Invalid' }, { status: 400, statusText: 'Bad Request' });
       expect(await p).toBeFalse();
       expect(service.getToken()).toBeNull();
+    });
+
+    it('keeps the MFA challenge (no session) when the exchange answers mfa_required (#24)', async () => {
+      const p = service.exchangeLoginCode('code');
+      http.expectOne('/api/auth/exchange').flush({ mfa_required: true, challengeToken: 'challenge-1' });
+      expect(await p).toBe('mfa_required');
+      expect(service.getToken()).toBeNull();
+      expect(service.getPendingChallenge()).toBe('challenge-1');
+    });
+
+    it('password login with MFA stores the challenge, then the challenge step stores the session (#24)', async () => {
+      let res: any;
+      service.login('a@example.com', 'pw').subscribe((r) => (res = r));
+      http.expectOne('/api/auth/login').flush({ mfa_required: true, challengeToken: 'challenge-2' });
+      expect(res.mfa_required).toBeTrue();
+      expect(service.getToken()).toBeNull();
+      const done = service.completeMfaChallenge('123456');
+      const req = http.expectOne('/api/auth/mfa/challenge');
+      expect(req.request.body).toEqual({ challengeToken: 'challenge-2', code: '123456' });
+      req.flush({ token: fakeMfaToken, user: { id: '1', role: 'admin' } });
+      await done;
+      expect(service.getToken()).toBe(fakeMfaToken);
+      expect(service.getPendingChallenge()).toBeNull();
+    });
+
+    it('detects an enrolment-only session from the mfa_enroll claim (#24)', () => {
+      localStorage.setItem('plat_auth_token', `h.${btoa(JSON.stringify({ id: '1', mfa_enroll: true }))}.s`);
+      expect(service.mfaEnrollmentRequired()).toBeTrue();
+      localStorage.setItem('plat_auth_token', `h.${btoa(JSON.stringify({ id: '1' }))}.s`);
+      expect(service.mfaEnrollmentRequired()).toBeFalse();
     });
 
     it('loads the role from /api/users/me, ignoring JWT claims', async () => {

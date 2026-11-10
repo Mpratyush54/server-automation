@@ -43,6 +43,7 @@ type Config struct {
 	InstallPortainer   bool
 	InstallCertManager bool
 	AutoUpdate         bool
+	AutoUpgrade        bool // Opt-in daily release patch upgrades.
 
 	// InstallKyverno enables the Kyverno admission controller. Only honored
 	// when Profile is full and INSTALL_KYVERNO=true (opt-in; keeps default
@@ -119,6 +120,7 @@ func Load() *Config {
 		SkipK8s:              os.Getenv("SKIP_K8S") == "true",
 		SkipPreflight:        os.Getenv("SKIP_PREFLIGHT") == "true",
 		AutoUpdate:           getEnvBool("AUTO_UPDATE", true),
+		AutoUpgrade:          getEnvBool("AUTO_UPGRADE", false),
 		SkipHardening:        !getEnvBool("PLATFORM_HARDEN", true),
 		WAF:                  getEnvBool("PLATFORM_WAF", false),
 		NginxAuthJail:         getEnvBool("PLATFORM_NGINX_AUTH_JAIL", false),
@@ -305,6 +307,7 @@ func (c *Config) PromptInteractive() error {
 	askBool("Install Portainer (portainer.<domain>)", &c.InstallPortainer)
 	askBool("Install cert-manager (HTTPS / Let's Encrypt)", &c.InstallCertManager)
 	askBool("Enable image auto-update", &c.AutoUpdate)
+	askBool("Enable daily release patch upgrades", &c.AutoUpgrade)
 
 	return nil
 }
@@ -531,6 +534,7 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("OIDC_SECRET_MINIO=%s\n", c.OIDCSecretMinio))
 	b.WriteString(fmt.Sprintf("PLATFORM_IMAGE_TAG=%s\n", c.ImageTag))
 	b.WriteString(fmt.Sprintf("AUTO_UPDATE=%t\n", c.AutoUpdate))
+	b.WriteString(fmt.Sprintf("AUTO_UPGRADE=%t\n", c.AutoUpgrade))
 	b.WriteString(fmt.Sprintf("PLATFORM_HARDEN=%t\nPLATFORM_WAF=%t\n", !c.SkipHardening, c.WAF))
 	b.WriteString(fmt.Sprintf("PLATFORM_NGINX_AUTH_JAIL=%t\n", c.NginxAuthJail))
 	b.WriteString(fmt.Sprintf("PLATFORM_PROFILE=%s\n", c.profileName()))

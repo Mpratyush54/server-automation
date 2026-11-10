@@ -15,6 +15,7 @@ This file provides a machine-readable index of all documentation pages for LLM c
 - `docs/getting-started/deploy-your-app.md` — Git push to preview URL pipeline
 - `docs/getting-started/upgrade-guide.md` — caps→platform migration guide
 - `docs/guides/authentication.md` — JWT flow, RBAC roles, OIDC/SSO
+- `docs/guides/mfa.md` — TOTP MFA, recovery codes, step-up, mfa.requiredRoles, break-glass
 - `docs/guides/secrets-management.md` — Secrets encryption, versioning, env scoping
 - `docs/guides/preview-environments.md` — Preview environment pipeline
 - `docs/guides/clickup-integration.md` — ClickUp webhook setup

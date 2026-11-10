@@ -2,6 +2,7 @@ import { Router } from 'express';
 const router = Router();
 
 import authRoutes from './auth';
+import mfaRoutes from './mfa';
 import oidcRoutes from './oidc';
 import projectRoutes from './projects';
 import deploymentRoutes from './deployments';
@@ -31,6 +32,7 @@ import backupRoutes from './backups';
 router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB only; Redis reported, not gating)
 router.use('/', oidcRoutes); // before authRoutes: OIDC provider + GitHub/GitLab login (state cookie)
 router.use('/', authRoutes);
+router.use('/', mfaRoutes); // TOTP MFA: enrolment, login challenge, step-up (#24)
 router.use('/', versionRoutes);
 router.use('/', projectRoutes);
 router.use('/', deploymentRoutes);

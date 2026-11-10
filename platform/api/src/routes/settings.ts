@@ -7,7 +7,7 @@ import { StorageProvider } from '../entities/StorageProvider';
 import { Project } from '../entities/Project';
 import { User, UserRole } from '../entities/User';
 import { IntegrationSettings } from '../entities/IntegrationSettings';
-import { expressAuthenticate, expressRequireRole, logAudit, AuthenticatedRequest } from '../middleware/auth';
+import { expressAuthenticate, expressRequireRole, requireRecentMfa, logAudit, AuthenticatedRequest } from '../middleware/auth';
 import {
   applyIntegrationsToEnv,
   getOrCreateIntegrationSettings,
@@ -362,7 +362,7 @@ router.put('/settings/integrations', expressAuthenticate, expressRequireRole([Us
   }
 });
 
-router.post('/settings/rotate-secrets', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), idempotency('POST /settings/rotate-secrets'), async (req: Request, res: Response) => {
+router.post('/settings/rotate-secrets', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), requireRecentMfa(), idempotency('POST /settings/rotate-secrets'), async (req: Request, res: Response) => {
   try {
     const confirm = String(req.body?.confirm || '');
     if (confirm !== 'ROTATE') {

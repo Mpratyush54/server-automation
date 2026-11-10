@@ -1,9 +1,11 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
+import { MfaService } from '../../services/mfa.service';
+import { StepUpService } from '../../services/step-up.service';
 
 @Component({
   selector: 'app-users',
@@ -31,10 +33,27 @@ export class UsersComponent implements OnInit {
     isActive: true,
   };
 
+  isAdmin = false;
+  private mfa = inject(MfaService);
+  private stepUp = inject(StepUpService);
+
   constructor(private api: ApiService, private auth: AuthService) {}
+
+  /** Admin reset of a user's MFA (lost device); needs the admin's own recent second factor (#24). */
+  async resetMfa(u: any) {
+    if (!this.isAdmin) return;
+    if (!confirm(`Remove the authenticator of ${u.email}? They will enrol again at next sign-in if their role requires it.`)) return;
+    try {
+      await this.stepUp.run(() => firstValueFrom(this.mfa.adminReset(u.id, 'reset from portal')), `Reset MFA for ${u.email}`);
+      await this.loadUsers();
+    } catch (err: any) {
+      alert('Failed to reset MFA: ' + (err.error?.error || err.message));
+    }
+  }
 
   async ngOnInit() {
     this.canManage = this.auth.canManageUsers();
+    this.isAdmin = this.auth.isAdmin();
     await this.loadUsers();
   }
 

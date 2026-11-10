@@ -103,6 +103,8 @@ const mockDataSource = {
     if (name === 'Project') return mockProjectRepository;
     if (name === 'Environment') return mockEnvironmentRepository;
     if (name === 'AuditLog') return mockAuditLogRepository;
+    // No MFA enrolled (#24): login completes after the password (enrolment-only session for devops).
+    if (name === 'UserMfa') return { findOne: jest.fn().mockResolvedValue(null) };
     return {};
   }),
 };

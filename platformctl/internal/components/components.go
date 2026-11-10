@@ -1450,6 +1450,25 @@ func UpdateImages(cfg *config.Config) error {
 
 // InstallAutoUpdate installs a digest-aware updater for only two deployments.
 func InstallAutoUpdate(cfg *config.Config) error {
+	if err := installDigestAutoUpdate(cfg); err != nil {
+		return err
+	}
+	if !cfg.AutoUpgrade {
+		return nil
+	}
+	manifest := readManifest("auto-upgrade-cronjob.yaml")
+	if manifest == "" {
+		return fmt.Errorf("auto-upgrade manifest missing")
+	}
+	_, err := autoUpdateApply("kubectl", []string{"apply", "-f", "-"}, manifest)
+	return err
+}
+
+var autoUpdateApply = shell.RunWithInput
+var autoUpdateRunBash = shell.RunBash
+var autoUpdateMarkDone = state.MarkDone
+
+func installDigestAutoUpdate(cfg *config.Config) error {
 	if !cfg.AutoUpdate {
 		return nil
 	}
@@ -1469,7 +1488,7 @@ func InstallAutoUpdate(cfg *config.Config) error {
 	manifest = strings.ReplaceAll(manifest, "\"{{API_IMAGE}}\"", string(apiJSON))
 	manifest = strings.ReplaceAll(manifest, "\"{{PORTAL_IMAGE}}\"", string(portalJSON))
 	// Retire the old tag-based GitOps updater so it cannot undo digest pins.
-	if err := shell.RunBash(`set -euo pipefail
+	if err := autoUpdateRunBash(`set -euo pipefail
 if [[ -n "$(kubectl get crd applications.argoproj.io --ignore-not-found -o name)" ]]; then
  if [[ -n "$(kubectl -n argocd get application platform --ignore-not-found -o name)" ]]; then
   kubectl -n argocd patch application platform --type=merge -p '{"metadata":{"annotations":{"argocd-image-updater.argoproj.io/image-list":null}},"spec":{"syncPolicy":{"automated":null}}}'
@@ -1477,8 +1496,8 @@ if [[ -n "$(kubectl get crd applications.argoproj.io --ignore-not-found -o name)
 fi`); err != nil {
 		return err
 	}
-	if _, err := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, manifest); err != nil {
+	if _, err := autoUpdateApply("kubectl", []string{"apply", "-f", "-"}, manifest); err != nil {
 		return err
 	}
-	return state.MarkDone("auto-update")
+	return autoUpdateMarkDone("auto-update")
 }

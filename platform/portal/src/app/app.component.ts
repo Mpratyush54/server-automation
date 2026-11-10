@@ -2,13 +2,14 @@ import { Component } from '@angular/core';
 import { RouterOutlet, NavigationEnd, Router } from '@angular/router';
 import { SidebarComponent } from './layout/sidebar/sidebar.component';
 import { HeaderComponent } from './layout/header/header.component';
+import { StepUpModalComponent } from './shared/step-up-modal.component';
 
 import { filter } from 'rxjs';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, SidebarComponent, HeaderComponent],
+  imports: [RouterOutlet, SidebarComponent, HeaderComponent, StepUpModalComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css'
 })
@@ -46,7 +47,7 @@ export class AppComponent {
   constructor(router: Router) {
     router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(() => {
       const segment = router.url.split(/[?#]/)[0].split('/')[1] || '';
-      this.isLoginPage = segment === 'login' || segment === 'oauth';
+      this.isLoginPage = segment === 'login' || segment === 'oauth' || segment === 'mfa';
       this.isLandingPage = segment === '' || segment === 'landing';
       this.isDocsPage = segment === 'docs';
       this.pageTitle = this.titles[segment] || 'Platform';

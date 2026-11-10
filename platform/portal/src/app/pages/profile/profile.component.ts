@@ -4,11 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
+import { MfaService, MfaStatus, downloadRecoveryCodes } from '../../services/mfa.service';
+import { MfaEnrollmentComponent } from '../../shared/mfa-enrollment.component';
 
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, MfaEnrollmentComponent],
   template: `
 <div>
   <div class="card" style="background:linear-gradient(135deg, rgba(91,110,245,0.05), rgba(45,212,160,0.02)); border-color:var(--border-subtle); margin-bottom:20px;">
@@ -76,6 +78,43 @@ import { AuthService } from '../../services/auth.service';
         </div>
       </div>
 
+      <div class="card mfa-card" style="padding:20px; margin-bottom:16px;">
+        <h2>Two-factor authentication</h2>
+        @if (mfaStatus?.enabled) {
+          <p class="mfa-on" style="font-size:0.82rem; margin:0 0 8px;">
+            <span style="color:var(--accent-success);">● On</span>
+            · {{ mfaStatus!.recoveryCodesRemaining }} recovery code{{ mfaStatus!.recoveryCodesRemaining === 1 ? '' : 's' }} left
+          </p>
+          @if (mfaStatus!.required) {
+            <p style="font-size:0.75rem; color:var(--text-muted); margin:0 0 8px;">Required for your role ({{ me.role }}).</p>
+          }
+          @if (newRecoveryCodes.length) {
+            <ul class="mfa-new-codes" style="columns:2; list-style:none; padding:10px; font-family:var(--font-code); background:rgba(0,0,0,0.2); border-radius:6px;">
+              @for (c of newRecoveryCodes; track c) { <li>{{ c }}</li> }
+            </ul>
+            <button class="btn btn-sm" type="button" (click)="downloadCodes()">Download codes</button>
+          }
+          <div class="form-group" style="margin-top:10px;">
+            <label>Current code (authenticator or recovery code)</label>
+            <input [(ngModel)]="mfaCode" autocomplete="one-time-code" style="width:100%;">
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-sm mfa-regenerate" type="button" (click)="regenerateCodes()" [disabled]="mfaBusy || !mfaCode">New recovery codes</button>
+            @if (!mfaStatus!.required) {
+              <button class="btn btn-sm btn-danger mfa-disable" type="button" (click)="disableMfa()" [disabled]="mfaBusy || !mfaCode">Turn off</button>
+            }
+          </div>
+        } @else if (mfaStatus) {
+          <p style="font-size:0.82rem; color:var(--text-secondary); margin:0 0 10px;">
+            Off. {{ mfaStatus.required ? 'Your role requires it.' : 'Revealing secrets needs it.' }}
+          </p>
+          <app-mfa-enrollment [account]="me.email" (completed)="loadMfa()"></app-mfa-enrollment>
+        }
+        @if (mfaMessage) {
+          <div style="font-size:0.8rem; margin-top:8px;">{{ mfaMessage }}</div>
+        }
+      </div>
+
       <div class="card" style="padding:20px;">
         <h2>Password</h2>
         @if (me.hasPassword) {
@@ -101,10 +140,15 @@ export class ProfileComponent implements OnInit {
   newPassword = '';
   saving = false;
   savingPassword = false;
+  mfaStatus: MfaStatus | null = null;
+  mfaCode = '';
+  mfaBusy = false;
+  mfaMessage = '';
+  newRecoveryCodes: string[] = [];
   error = '';
   success = '';
 
-  constructor(private api: ApiService, private auth: AuthService) {}
+  constructor(private api: ApiService, private auth: AuthService, private mfa: MfaService) {}
 
   get initials(): string {
     const n = this.me?.name || this.me?.email || '?';
@@ -114,7 +158,52 @@ export class ProfileComponent implements OnInit {
   }
 
   async ngOnInit() {
-    await this.load();
+    await Promise.all([this.load(), this.loadMfa()]);
+  }
+
+  async loadMfa() {
+    try {
+      this.mfaStatus = await firstValueFrom(this.mfa.status());
+    } catch {
+      this.mfaStatus = null;
+    }
+  }
+
+  async regenerateCodes() {
+    this.mfaBusy = true;
+    this.mfaMessage = '';
+    try {
+      const res = await firstValueFrom(this.mfa.regenerateRecoveryCodes(this.mfaCode.trim()));
+      this.newRecoveryCodes = res.recoveryCodes || [];
+      this.mfaMessage = 'New recovery codes generated. The old codes no longer work — save these now.';
+      await this.loadMfa();
+    } catch (err: any) {
+      this.mfaMessage = err?.status === 429 ? 'Too many attempts. Try again later.' : 'That code is not valid.';
+    } finally {
+      this.mfaCode = '';
+      this.mfaBusy = false;
+    }
+  }
+
+  async disableMfa() {
+    if (!confirm('Turn off two-factor authentication?')) return;
+    this.mfaBusy = true;
+    this.mfaMessage = '';
+    try {
+      await firstValueFrom(this.mfa.disable(this.mfaCode.trim()));
+      this.newRecoveryCodes = [];
+      this.mfaMessage = 'Two-factor authentication is off.';
+      await this.loadMfa();
+    } catch (err: any) {
+      this.mfaMessage = err?.error?.error === 'mfa_required_by_policy' ? 'Your role requires two-factor authentication.' : 'That code is not valid.';
+    } finally {
+      this.mfaCode = '';
+      this.mfaBusy = false;
+    }
+  }
+
+  downloadCodes() {
+    downloadRecoveryCodes(this.newRecoveryCodes, this.me.email);
   }
 
   async load() {

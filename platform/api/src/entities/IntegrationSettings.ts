@@ -54,6 +54,10 @@ export class IntegrationSettings {
   @Column({ type: 'boolean', default: true, name: 'gitlab_login_enabled' })
   gitlabLoginEnabled: boolean;
 
+  /** Setting `mfa.requiredRoles` (#24): built-in roles that must use MFA. null = default [admin, devops]. */
+  @Column({ type: 'jsonb', nullable: true, name: 'mfa_required_roles' })
+  mfaRequiredRoles: string[] | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

@@ -9,6 +9,8 @@ import { getOidcSigningKey, getOidcVerificationKeys, rotateOidcSigningKey } from
 import { getOidcIssuer } from '../lib/oidc-issuer';
 import { createCodeStore, verifyPkceS256 } from '../lib/oidc-codes';
 import { StateStoreUnavailableError } from '../lib/redis';
+import { completeFirstFactor, loginResponseBody } from '../lib/mfa';
+import { AMR_FEDERATED } from '../lib/session-token';
 import {
   buildAuthorizeUrl,
   completeOAuthCallback,
@@ -40,6 +42,8 @@ interface AuthCodeSession {
   nonce: string | null;
   codeChallenge: string | null;
   authTime: number;
+  /** Authentication methods of the portal session that approved the request (#24). */
+  amr?: string[];
 }
 
 /** Authorization codes live in Redis (shared by all replicas; GETDEL = single use). */
@@ -132,7 +136,7 @@ router.get('/oauth/.well-known/openid-configuration', (_req: Request, res: Respo
     token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
     code_challenge_methods_supported: ['S256'],
     scopes_supported: ['openid', 'profile', 'email', 'groups'],
-    claims_supported: ['sub', 'iss', 'aud', 'exp', 'iat', 'name', 'email', 'email_verified', 'groups', 'roles', 'nonce'],
+    claims_supported: ['sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'amr', 'name', 'email', 'email_verified', 'groups', 'roles', 'nonce'],
   });
 });
 
@@ -204,6 +208,8 @@ router.post('/oauth/authorize', expressAuthenticate, requireHumanJwt, async (req
   const v = validateAuthorizeParams(body);
   if (!v.ok) return oauthError(res, v.status!, v.error!, v.description!);
 
+  const portalSession = authReq.session;
+  const now = Math.floor(Date.now() / 1000);
   let code: string;
   try {
     code = await oidcAuthCodes.issue({
@@ -213,7 +219,10 @@ router.post('/oauth/authorize', expressAuthenticate, requireHumanJwt, async (req
       scope: str(body.scope) || 'openid',
       nonce: str(body.nonce) || null,
       codeChallenge: str(body.code_challenge) || null,
-      authTime: Math.floor(Date.now() / 1000),
+      // When the user signed in to the portal and with which methods: downstream tools can
+      // require `mfa` in `amr` or a recent `auth_time`.
+      authTime: typeof portalSession?.authTime === 'number' && portalSession.authTime <= now ? portalSession.authTime : now,
+      amr: portalSession?.amr?.length ? portalSession.amr : undefined,
     });
   } catch (err) {
     // Fail closed: without the shared store the code could not be redeemed on another replica.
@@ -306,7 +315,7 @@ router.post('/oauth/token', express.urlencoded({ extended: false }), async (req:
     const now = Math.floor(Date.now() / 1000);
 
     const accessToken = jwt.sign(
-      { id: user.id, email: user.email, name: user.name, role: user.role, scope: session.scope },
+      { id: user.id, email: user.email, name: user.name, role: user.role, scope: session.scope, ...(session.amr ? { amr: session.amr } : {}) },
       key.privateKey,
       { algorithm: 'RS256', expiresIn: TOKEN_TTL_SECONDS, issuer, audience: client.id, subject: user.id, keyid: key.kid },
     );
@@ -319,6 +328,7 @@ router.post('/oauth/token', express.urlencoded({ extended: false }), async (req:
         exp: now + TOKEN_TTL_SECONDS,
         iat: now,
         auth_time: session.authTime,
+        ...(session.amr ? { amr: session.amr } : {}),
         ...(session.nonce ? { nonce: session.nonce } : {}),
         name: user.name,
         email: user.email,
@@ -432,14 +442,16 @@ router.get('/auth/gitlab/callback', finishProviderLogin('gitlab'));
 /**
  * POST /api/auth/exchange { code } → { token, user }
  * Swaps the one-time code from /dashboard?code=... (GitHub/GitLab login) for a session JWT.
+ * With MFA enabled it answers `{ mfa_required: true, challengeToken }` instead (no session
+ * before the second factor; POST /api/auth/mfa/challenge completes the login).
  */
 router.post('/auth/exchange', async (req: Request, res: Response) => {
   res.set('Cache-Control', 'no-store');
   try {
     const result = await exchangeLoginCode(req.body?.code);
     if (!result) return res.status(400).json({ error: 'Invalid or expired login code' });
-    const { passwordHash: _ph, ...safe } = result.user as any;
-    return res.json({ token: result.token, user: safe });
+    const outcome = await completeFirstFactor(result.user, [AMR_FEDERATED], req.ip);
+    return res.json(loginResponseBody(outcome, result.user));
   } catch (err: any) {
     if (err instanceof StateStoreUnavailableError) {
       return res.status(503).json({ error: 'Sign-in is temporarily unavailable. Try again in a moment.' });

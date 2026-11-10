@@ -8,7 +8,7 @@ const mockCreateAdapter = jest.fn((..._args: any[]) => ({ upload: mockUpload, do
 const mockRestore = jest.fn((..._args: any[]) => Promise.resolve({ success: true }));
 const mockChecksum = jest.fn((..._args: any[]) => Promise.resolve('checksum'));
 jest.mock('../../src/config/database', () => ({ getDb: async () => ({ getRepository: (entity: any) => mockRepos[entity.name] }) }));
-jest.mock('../../src/middleware/auth', () => ({ expressAuthenticate: (req: any, _res: any, next: any) => { req.user = { id: 'admin', role: 'admin' }; next(); }, expressRequireRole: () => (_req: any, _res: any, next: any) => next(), logAudit: jest.fn() }));
+jest.mock('../../src/middleware/auth', () => ({ expressAuthenticate: (req: any, _res: any, next: any) => { req.user = { id: 'admin', role: 'admin' }; next(); }, expressRequireRole: () => (_req: any, _res: any, next: any) => next(), requireRecentMfa: () => (_req: any, _res: any, next: any) => next(), logAudit: jest.fn() }));
 let mockDefaultType = 'local';
 jest.mock('../../src/lib/storage-service', () => ({
   createAdapter: (...args: any[]) => mockCreateAdapter(...args),
