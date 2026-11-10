@@ -5,4 +5,5 @@ f8e0eaa583fa24d3f176cd0b3c5703c10ceb9891:scripts/tests/e2e-redact.test.mjs:datab
 f8e0eaa583fa24d3f176cd0b3c5703c10ceb9891:scripts/tests/e2e-redact.test.mjs:database-url-credentials:31
 f8e0eaa583fa24d3f176cd0b3c5703c10ceb9891:scripts/tests/e2e-redact.test.mjs:generic-api-key:32
 7ef6311335fedb5d7945ec311fa6aa80181cbcaa:platform/api/tests/unit/lib/gitlab-app.test.ts:gitlab-pat:25
+4f62461ff6242109d8f777ce4008397044b05f70:platform/portal/src/app/pages/project-detail/releases-panel.component.ts:generic-api-key:48
 633f25777a72d0d6333c0187ac42ec4b3243f2f4:platform/api/src/lib/error-sourcemaps.ts:generic-api-key:45

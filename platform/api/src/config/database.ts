@@ -36,6 +36,8 @@ import { MfaRecoveryCode } from '../entities/MfaRecoveryCode';
 import { GitProviderApp } from '../entities/GitProviderApp';
 import { GitAppInstallation } from '../entities/GitAppInstallation';
 import { ALERTING_ENTITIES } from '../entities/alerting-entities';
+import { SyntheticCheck } from '../entities/SyntheticCheck';
+import { SyntheticResult } from '../entities/SyntheticResult';
 import { TelemetryPrivacySettings } from '../entities/TelemetryPrivacySettings';
 import { TelemetryConsent } from '../entities/TelemetryConsent';
 
@@ -63,6 +65,8 @@ export const AppDataSource = new DataSource({
     GitProviderApp, GitAppInstallation,
     // Telemetry privacy (#47): scrubbing/retention settings + subject consent for replay (#40).
     TelemetryPrivacySettings, TelemetryConsent,
+    // Synthetic monitoring (#42): check definitions + run history.
+    SyntheticCheck, SyntheticResult,
     // Alerting and on-call (#43).
     ...ALERTING_ENTITIES],
   // Schema changes ship as reviewed, versioned migrations (src/migrations),

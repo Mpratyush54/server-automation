@@ -1,3 +1,4 @@
+@if (project) { <app-releases-panel [projectId]="project.id" /> }
 @if (project?.namespaceBaselines?.length) {
   <section class="card mb-8" aria-label="Namespace isolation">
     <h2>Namespace isolation</h2>
@@ -64,6 +65,7 @@
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'sdk-tokens'" (click)="switchTab('sdk-tokens')">🔑 SDK Tokens</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'gitops'" (click)="switchTab('gitops')">🐙 GitOps / ArgoCD</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'databases'" (click)="switchTab('databases')">🗄️ Databases</button>
+  <a class="btn btn-sm" [routerLink]="['/projects', project?.id, 'synthetics']">🩺 Synthetics</a>
 </div>
 
 <!-- DEPLOYMENTS TAB -->

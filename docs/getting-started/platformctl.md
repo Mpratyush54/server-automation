@@ -103,6 +103,9 @@ or `full`:
 Saved explicit profiles remain in effect. Existing `loki-stack` installations
 must follow the telemetry migration procedure before selecting full.
 
+Browser synthetic checks (headless Chromium CronJobs) are an extra opt-in on the
+full profile: `SYNTHETICS_BROWSER=true`. See [Synthetic monitoring](../operations/synthetics.md).
+
 Explicit `INSTALL_*` variables override the profile. The profile is saved as
 `PLATFORM_PROFILE` in `/etc/platform/.env`; choosing a new profile explicitly ignores the
 `INSTALL_*` values saved by an earlier run.

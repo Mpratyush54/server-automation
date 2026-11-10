@@ -8,6 +8,7 @@ import { runTokenCleanup, TOKEN_CLEANUP_JOB } from './token-cleanup';
 import { startOperationWorker } from './operation-worker';
 import { startTelemetryConsumer } from './telemetry-queue';
 import { startAlerting } from './alerting';
+import { startSyntheticsScheduler } from './synthetic-scheduler';
 
 /**
  * Background work inventory (every timer/loop in platform/api/src):
@@ -23,6 +24,7 @@ import { startAlerting } from './alerting';
  * | operation-cleanup | leader loop            | hourly                       |
  * | telemetry-consumer | leader loop (Redis Streams consumer group) | 1 s (#49) |
  * | alerting-*      | leader loop (see lib/alerting.ts) | 1 s .. 5 min (#43) |
+ * | synthetics-runner / -retention / -reconcile | leader loop | 5 s / hourly / 10 min (#42) |
  *
  * Any leader-loop job can instead run as a Kubernetes CronJob
  * (`node dist/jobs/<name>.js`) by listing it in JOBS_EXTERNAL.
@@ -56,6 +58,8 @@ export function startBackgroundWork(): void {
   // SDK telemetry queue consumer (#49): forwards queued logs/metrics/heartbeats.
   startTelemetryConsumer();
   startAlerting(); // alerting + on-call (#43): events, delivery, escalation, evaluation
+  // Synthetic checks (#42): run due checks, prune results, reconcile Probes/CronJobs.
+  startSyntheticsScheduler();
   startStorageHealth();
 
   leadership.start();

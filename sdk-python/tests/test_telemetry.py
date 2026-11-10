@@ -45,6 +45,12 @@ class TelemetryTests(unittest.TestCase):
             self.assertFalse(any(call.args[1] == '/api/sdk/config' for call in request.call_args_list))
             self.assertIsNone(client._telemetry)
 
+    def test_platform_release_overrides_app_and_config_versions(self):
+        with patch.dict(os.environ, {'PLATFORM_RELEASE': 'sha123', 'APP_VERSION': 'old'}, clear=True):
+            cfg = config()
+            cfg['resource']['service.version'] = 'stale'
+            self.assertEqual(resource_attributes(self.options, cfg)['service.version'], 'sha123')
+
     def test_resource_uses_server_scope_and_downward_api(self):
         with patch.dict(os.environ, {'K8S_POD_NAME': 'pod-test'}, clear=True):
             attrs = resource_attributes(self.options, config())

@@ -9,8 +9,8 @@ func TestAllComponents(t *testing.T) {
 	if len(all) == 0 {
 		t.Fatal("All() returned no components")
 	}
-	if len(all) != 17 { // Infisical removed; ingress (early TLS); kyverno (#28); storage-scoped (#36); telemetry (#37)
-		t.Errorf("expected 17 components, got %d", len(all))
+	if len(all) != 18 { // Infisical removed; ingress (early TLS); kyverno (#28); storage-scoped (#36); telemetry (#37); synthetics (#42)
+		t.Errorf("expected 18 components, got %d", len(all))
 	}
 }
 
