@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Redact secrets from e2e logs before they are printed or uploaded.
 
-Known values (from the VM's /etc/platform/.env, the admin password file and
-JSON files such as fetched database credentials) are replaced everywhere, plus
-generic token shapes (JWTs, SDK/agent tokens, age identities, private keys,
-KEY=value lines whose key looks secret).
+Known values (from the VM's /etc/platform/.env, the admin password file, JSON
+files such as fetched database credentials, and the admin's MFA state: TOTP
+secret and recovery codes) are replaced everywhere, plus generic token shapes
+(JWTs, SDK/agent tokens, age identities, private keys, otpauth URIs, QR data
+URLs, JSON "secret"/"challengeToken"/"recoveryCodes" fields, KEY=value lines
+whose key looks secret).
 
-  redact.py [--env-file F] [--secret-file F] [--json-secrets F] --stdout FILE
-  redact.py [--env-file F] [--secret-file F] [--json-secrets F] --out DIR SRC...
+  redact.py [--env-file F] [--secret-file F] [--json-secrets F] [--mfa-state F] --stdout FILE
+  redact.py [--env-file F] [--secret-file F] [--json-secrets F] [--mfa-state F] --out DIR SRC...
 
 With --out, each SRC (file or directory) is copied into DIR redacted. Binary
 files and files over 50 MB are skipped (listed in DIR/REDACTION-SKIPPED.txt).
@@ -28,6 +30,10 @@ GENERIC = [
     (re.compile(r"\b(sdk_live|sdk_test|plat_agent|plat_pat)_[A-Za-z0-9_-]{8,}"), r"\1_[REDACTED]"),
     (re.compile(r"\b(sdk-[0-9a-f-]{8,}):[^\s\"']+"), r"\1:[REDACTED]"),
     (re.compile(r"(://[^/\s:@\"']+:)[^@\s\"']+@"), r"\1[REDACTED]@"),
+    (re.compile(r"otpauth://[^\s\"'<>]+"), "[REDACTED OTPAUTH URI]"),
+    (re.compile(r"data:image/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=]+"), "[REDACTED DATA URL]"),
+    (re.compile(r"(?i)(\"(?:secret|totpSecret|challengeToken)\"\s*:\s*\")[^\"]*\""), r'\1[REDACTED]"'),
+    (re.compile(r"(?i)(\"recoveryCodes\"\s*:\s*)\[[^\]]*\]"), r'\1["[REDACTED]"]'),
     (re.compile(r"(?i)\b(authorization:\s*(bearer|basic)\s+)[^\s\"']+"), r"\1[REDACTED]"),
     (re.compile(r"(?im)^(\s*(?:export\s+)?[A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|PRIVATE_KEY|ACCESS_KEY)[A-Z0-9_]*\s*[=:]\s*)\S.*$"), r"\1[REDACTED]"),
 ]
@@ -79,6 +85,28 @@ def file_values(path):
         return []
 
 
+def mfa_values(path):
+    """TOTP secret and recovery codes from the admin MFA state (admin-mfa.json)."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            state = json.load(f)
+    except (FileNotFoundError, ValueError):
+        return []
+    if not isinstance(state, dict):
+        return []
+    out = []
+    secret = state.get("secret")
+    if isinstance(secret, str) and len(secret) >= MIN_LEN:
+        out += [secret, secret.lower()]
+    codes = state.get("recoveryCodes")
+    for code in codes if isinstance(codes, list) else []:
+        if isinstance(code, str) and len(code) >= MIN_LEN:
+            # As issued (xxxxx-xxxxx) and without the dash, in either case.
+            plain = code.replace("-", "")
+            out += [code, code.upper(), plain, plain.upper()]
+    return out
+
+
 def build(args):
     values = []
     for p in args.env_file:
@@ -87,6 +115,8 @@ def build(args):
         values += file_values(p)
     for p in args.json_secrets:
         values += json_values(p)
+    for p in args.mfa_state:
+        values += mfa_values(p)
     # Longest first so a value containing another is replaced whole.
     values = sorted(set(values), key=len, reverse=True)
 
@@ -137,6 +167,7 @@ def main():
     ap.add_argument("--env-file", action="append", default=[])
     ap.add_argument("--secret-file", action="append", default=[])
     ap.add_argument("--json-secrets", action="append", default=[])
+    ap.add_argument("--mfa-state", action="append", default=[])
     ap.add_argument("--stdout", metavar="FILE")
     ap.add_argument("--out", metavar="DIR")
     ap.add_argument("sources", nargs="*")
