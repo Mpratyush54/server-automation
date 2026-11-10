@@ -172,7 +172,7 @@ describe('HeatmapsComponent', () => {
     http.expectOne((r) => r.params.get('type') === 'click').flush({ ...FIXTURE, page: '/features', topTargets: [] });
     http.expectOne((r) => r.params.get('type') === 'scroll').flush({ views: 0, buckets: [], reach: [] });
     await settle();
-    http.expectOne((r) => r.url === `/api/projects/${PID}/replays`).flush({ sessions: [{ sessionId: 'sess-1' }] });
+    http.expectOne((r) => r.url === `/api/projects/${PID}/replays`).flush({ enabled: true, sessions: [{ session_id: 'sess-1', pages: ['/features'] }] });
     await settle();
     http.expectOne((r) => r.url === `/api/projects/${PID}/replays/sess-1/snapshot` && r.params.get('page') === '/features')
       .flush({ html: '<html><head></head><body><h1>Hi</h1><script>alert(1)</script><img src=x onerror=alert(2)></body></html>' });
