@@ -179,7 +179,7 @@ func InstallPostgreSQL(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing PostgreSQL...")
-	err := helmValues("postgresql", "postgresql", "databases", map[string]any{"auth": map[string]string{"postgresPassword": cfg.PostgresPassword, "database": "platform"}}, "--set", "primary.persistence.size=10Gi", "--wait", "--timeout", "10m")
+	err := helmValues("postgresql", "postgresql", "databases", databaseMonitoringValues(cfg, "postgres", map[string]string{"postgresPassword": cfg.PostgresPassword, "database": "platform"}), "--set", "primary.persistence.size=10Gi", "--wait", "--timeout", "10m")
 	if err != nil {
 		return err
 	}
@@ -192,7 +192,7 @@ func InstallMongoDB(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing MongoDB...")
-	err := helmValues("mongodb", "mongodb", "databases", map[string]any{"auth": map[string]string{"rootPassword": cfg.MongoPassword}}, "--set", "persistence.size=10Gi", "--wait", "--timeout", "10m")
+	err := helmValues("mongodb", "mongodb", "databases", databaseMonitoringValues(cfg, "mongo", map[string]string{"rootPassword": cfg.MongoPassword}), "--set", "persistence.size=10Gi", "--wait", "--timeout", "10m")
 	if err != nil {
 		return err
 	}
@@ -205,7 +205,7 @@ func InstallRedis(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing Redis...")
-	err := helmValues("redis", "redis", "databases", map[string]any{"auth": map[string]string{"password": cfg.RedisPassword}}, "--set", "master.persistence.size=5Gi",
+	err := helmValues("redis", "redis", "databases", databaseMonitoringValues(cfg, "redis", map[string]string{"password": cfg.RedisPassword}), "--set", "master.persistence.size=5Gi",
 		// Single server: one read replica. The chart default (3, started one at a
 		// time) added ~1.5 minutes to every install for no redundancy.
 		"--set", "replica.replicaCount=1", "--wait", "--timeout", "10m")
