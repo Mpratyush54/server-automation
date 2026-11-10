@@ -14,6 +14,7 @@ import secretRoutes from './secrets';
 import environmentRoutes from './environment';
 import storageRoutes from './storage';
 import alertRoutes from './alerts';
+import alertingRoutes from './alerting';
 import dbConnectionRoutes from './db-connections';
 import bootstrapRoutes from './bootstrap';
 import webhookRoutes from './webhooks';
@@ -55,6 +56,7 @@ router.use('/', secretRoutes);
 router.use('/', environmentRoutes); // merged config + secrets view for the Environment tab (#29)
 router.use('/', storageRoutes);
 router.use('/', alertRoutes);
+router.use('/', alertingRoutes); // monitors, SLOs, silences, channels, on-call, incidents (#43)
 router.use('/', dbConnectionRoutes);
 router.use('/', bootstrapRoutes);
 router.use('/', webhookRoutes);

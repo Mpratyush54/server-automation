@@ -6,8 +6,36 @@ import { getDb } from '../config/database';
 import { Alert } from '../entities/Alert';
 import { UserRole } from '../entities/User';
 import { expressAuthenticate, expressRequireRole, AuthenticatedRequest } from '../middleware/auth';
+import { AlertMonitor } from '../entities/AlertMonitor';
+import { legacyAlertToMonitor } from '../lib/alerting-rules';
+import { scheduleRulesSync } from '../lib/alerting-k8s';
 
+/**
+ * Legacy alert rules (pre-#43). Kept for API compatibility: every row is mirrored to an
+ * alert_monitors row (legacy_alert_id), which the rule-based alerting of /alerting evaluates
+ * and routes. New clients should use /projects/:projectId/alerting/monitors.
+ * POST /alerts/evaluate (client-supplied metric values) is deprecated: it still answers as
+ * before but notifies nobody; real evaluation is rule-based (Prometheus ruler or API evaluator).
+ */
 const router = Router();
+
+async function mirrorLegacy(alert: Alert, removed = false): Promise<void> {
+  try {
+    const ds = await getDb();
+    const repo = ds.getRepository(AlertMonitor);
+    const existing = await repo.findOne({ where: { legacyAlertId: alert.id } });
+    if (removed) {
+      if (existing) await repo.delete({ id: existing.id });
+    } else {
+      const fields = legacyAlertToMonitor(alert as any);
+      const row: AlertMonitor = existing ? Object.assign(existing, { ...fields, name: existing.name }) as AlertMonitor : repo.create({ ...fields, state: 'ok' } as any) as unknown as AlertMonitor;
+      await repo.save(row);
+    }
+    scheduleRulesSync(alert.projectId);
+  } catch (err: any) {
+    console.warn(`[alerts] legacy rule mirror failed for ${alert.id}: ${err?.message || err}`);
+  }
+}
 
 router.get('/alerts', expressAuthenticate, async (req: Request, res: Response) => {
   try {
@@ -45,6 +73,7 @@ router.post('/alerts', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
       isEnabled: body.enabled !== false,
     });
     const saved = await repo.save(alert);
+    await mirrorLegacy(saved);
     return res.status(201).json(saved);
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
@@ -67,6 +96,7 @@ router.put('/alerts/:id', expressAuthenticate, expressRequireRole([UserRole.DEVO
     if (body.severity !== undefined) alert.severity = body.severity;
 
     await repo.save(alert);
+    await mirrorLegacy(alert);
     return res.json(alert);
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
@@ -83,6 +113,7 @@ router.delete('/alerts/:id', expressAuthenticate, expressRequireRole([UserRole.D
     if (access.ok === false) return res.status(access.status).json({ error: access.error });
 
     await repo.remove(alert);
+    await mirrorLegacy(alert, true);
     return res.json({ success: true });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
@@ -91,6 +122,8 @@ router.delete('/alerts/:id', expressAuthenticate, expressRequireRole([UserRole.D
 
 router.post('/alerts/evaluate', expressAuthenticate, async (req: Request, res: Response) => {
   try {
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Link', '</api/projects/{projectId}/alerting/monitors>; rel="successor-version"');
     const { projectId, metrics } = req.body;
     const access = await requireProjectAccess(req as AuthenticatedRequest, String(projectId || ''), ProjectAccessRole.DEVOPS);
     if (access.ok === false) return res.status(access.status).json({ error: access.error });

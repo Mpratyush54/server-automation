@@ -1,0 +1,36 @@
+# Alerting and on-call (#43), full profile only (applied by InstallTelemetry).
+# The platform API renders one PrometheusRule and one AlertmanagerConfig per
+# project (named platform-alerts-<project id>) into the monitoring namespace,
+# and keeps the bearer token Alertmanager uses for the API webhook receiver in
+# the platform-alerting-webhook Secret. Namespace-scoped: no other namespace
+# and no other Secret is readable. `create` cannot be limited by resourceName.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-alerting
+  namespace: monitoring
+rules:
+  - apiGroups: [monitoring.coreos.com]
+    resources: [prometheusrules, alertmanagerconfigs]
+    verbs: [get, list, create, update, delete]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [platform-alerting-webhook]
+    verbs: [get, update]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-alerting
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-alerting
+subjects:
+  - kind: ServiceAccount
+    name: platform-api
+    namespace: platform

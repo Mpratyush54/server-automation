@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideHttpClient } from '@angular/common/http';
+import { provideRouter } from '@angular/router';
 import { AlertsComponent } from './alerts.component';
 import { ApiService } from '../../services/api.service';
 import { of } from 'rxjs';
@@ -16,6 +17,7 @@ describe('AlertsComponent', () => {
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
+        provideRouter([]),
         { provide: ApiService, useValue: spy },
       ],
     }).compileComponents();

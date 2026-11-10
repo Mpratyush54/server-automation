@@ -1,13 +1,14 @@
 import { Component, OnInit } from '@angular/core';
 
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 
 @Component({
   selector: 'app-alerts',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, RouterLink],
   templateUrl: './alerts.component.html',
   styleUrl: './alerts.component.css'
 })
