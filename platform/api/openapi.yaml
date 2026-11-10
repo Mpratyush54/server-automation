@@ -10,6 +10,7 @@ servers:
 tags:
   - name: Health
   - name: Auth
+  - name: MFA
   - name: AgentTokens
   - name: AgentCommands
   - name: Projects
@@ -87,11 +88,294 @@ paths:
                 password:
                   type: string
                   format: password
+      description: |
+        Password login. Outcomes:
+        - MFA enabled: `{ mfa_required: true, challengeToken, expiresIn }` (no session yet);
+          complete with POST /auth/mfa/challenge.
+        - Role listed in `mfa.requiredRoles` (default admin, devops) without MFA: a session restricted
+          to enrolment (`mfaEnrollmentRequired: true`; other endpoints answer 403 `mfa_enrollment_required`).
+        - Otherwise `{ token, user }`. Session JWTs carry `amr` and `auth_time`.
       responses:
         '200':
-          description: JWT issued
+          description: Session issued, or MFA challenge required
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/LoginSession'
+                  - $ref: '#/components/schemas/MfaChallengeRequired'
         '401':
           description: Invalid credentials
+  /auth/exchange:
+    post:
+      tags: [Auth]
+      summary: Swap the one-time GitHub/GitLab login code for a session (or an MFA challenge)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+      responses:
+        '200':
+          description: Same outcomes as POST /auth/login (`amr` is `fed`)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/LoginSession'
+                  - $ref: '#/components/schemas/MfaChallengeRequired'
+        '400':
+          description: Invalid, expired or reused code
+  /auth/mfa/challenge:
+    post:
+      tags: [MFA]
+      summary: Complete a login with a TOTP code or a recovery code
+      description: Rate-limited per account (failures only, shared across replicas). TOTP codes and recovery codes are accepted once.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challengeToken, code]
+              properties:
+                challengeToken:
+                  type: string
+                code:
+                  type: string
+                  description: 6-digit TOTP code or a recovery code (xxxxx-xxxxx)
+      responses:
+        '200':
+          description: Session issued (`amr` includes `otp` and `mfa`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginSession'
+        '401':
+          description: '`invalid_challenge` (expired/forged) or `invalid_code` (wrong, reused or replayed code)'
+        '429':
+          description: Too many failed attempts
+  /auth/mfa/status:
+    get:
+      tags: [MFA]
+      summary: MFA state of the current user and the policy that applies
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: { type: boolean }
+                  pending: { type: boolean }
+                  enabledAt: { type: string, format: date-time, nullable: true }
+                  recoveryCodesRemaining: { type: integer }
+                  required: { type: boolean }
+                  requiredRoles: { type: array, items: { type: string } }
+                  stepUpMaxAgeSec: { type: integer }
+  /auth/mfa/enroll:
+    post:
+      tags: [MFA]
+      summary: Start TOTP enrolment (allowed on an enrolment-only session)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Pending secret
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  otpauthUri: { type: string, example: 'otpauth://totp/Platform:admin%40example.com?secret=...' }
+                  qrDataUrl: { type: string, description: PNG data URL of the otpauth URI }
+                  secret: { type: string, description: Base32 secret for manual entry }
+                  issuer: { type: string }
+        '409':
+          description: MFA already enabled
+  /auth/mfa/verify:
+    post:
+      tags: [MFA]
+      summary: Confirm enrolment with the first code; returns recovery codes (shown once) and a full session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaCode'
+      responses:
+        '200':
+          description: Enabled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recoveryCodes: { type: array, items: { type: string }, minItems: 10, maxItems: 10 }
+                  token: { type: string }
+                  user: { type: object }
+        '400':
+          description: invalid_code / no_pending_enrollment
+  /auth/mfa/step-up:
+    post:
+      tags: [MFA]
+      summary: Re-verify the second factor; returns a session whose auth_time is now
+      description: Needed by step-up protected endpoints (secret reveal/export, platform secret rotation, agent-token creation, admin MFA reset, MFA policy).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaCode'
+      responses:
+        '200':
+          description: New session token
+        '400':
+          description: invalid_code / mfa_not_enrolled
+        '429':
+          description: Too many failed attempts
+  /auth/mfa/recovery-codes:
+    post:
+      tags: [MFA]
+      summary: Regenerate the 10 recovery codes (old codes stop working)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaCode'
+      responses:
+        '200':
+          description: New codes (shown once)
+        '400':
+          description: invalid_code / mfa_not_enrolled
+  /auth/mfa/disable:
+    post:
+      tags: [MFA]
+      summary: Remove the authenticator (requires a current code)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaCode'
+      responses:
+        '200':
+          description: Disabled
+        '400':
+          description: invalid_code / mfa_not_enrolled
+        '403':
+          description: mfa_required_by_policy (role is in mfa.requiredRoles)
+  /users/{id}/mfa/reset:
+    post:
+      tags: [MFA]
+      summary: Admin reset of another user's MFA (audit-logged; needs a recent admin second factor)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        '200':
+          description: Reset
+        '401':
+          $ref: '#/components/responses/StepUpRequired'
+        '403':
+          description: Not an admin
+  /settings/mfa:
+    get:
+      tags: [MFA, Settings]
+      summary: Policy mfa.requiredRoles (default [admin, devops])
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Policy
+    put:
+      tags: [MFA, Settings]
+      summary: Update mfa.requiredRoles (admin, recent second factor)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requiredRoles]
+              properties:
+                requiredRoles:
+                  type: array
+                  items:
+                    type: string
+                    enum: [admin, devops, tech_lead, developer, viewer]
+      responses:
+        '200':
+          description: Saved
+        '401':
+          $ref: '#/components/responses/StepUpRequired'
+  /projects/{projectId}/secrets/reveal:
+    post:
+      tags: [Projects]
+      summary: Reveal a secret value (audit-logged; step-up)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key]
+              properties:
+                key: { type: string }
+                environmentId: { type: string, nullable: true }
+      responses:
+        '200':
+          description: Plaintext value
+        '401':
+          $ref: '#/components/responses/StepUpRequired'
+  /projects/{projectId}/secrets/export/{environmentId}:
+    get:
+      tags: [Projects]
+      summary: Export secrets as .env (audit-logged; step-up)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: environmentId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: .env lines
+        '401':
+          $ref: '#/components/responses/StepUpRequired'
   /auth/providers:
     get:
       tags: [Auth]
@@ -181,6 +465,8 @@ paths:
       responses:
         '200':
           description: New values (shown once), per-credential results and the operationId of the step log
+        '401':
+          $ref: '#/components/responses/StepUpRequired'
         '409':
           description: Another rotation is in progress (operationId of the holder), or the same Idempotency-Key is still running
         '422':
@@ -230,6 +516,8 @@ paths:
       responses:
         '201':
           description: Created (includes raw token once)
+        '401':
+          $ref: '#/components/responses/StepUpRequired'
   /agent-tokens/{id}:
     get:
       tags: [AgentTokens]
@@ -408,6 +696,44 @@ paths:
         '200':
           description: Operations, newest first
 components:
+  responses:
+    StepUpRequired:
+      description: |
+        No second factor within MFA_STEP_UP_MAX_AGE_SEC (default 900 s): `{ error: 'step_up_required', maxAgeSec }`.
+        Call POST /auth/mfa/step-up and retry with the returned token. Agent tokens are not subject to step-up.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string, example: step_up_required }
+              maxAgeSec: { type: integer, example: 900 }
+  schemas:
+    MfaCode:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          description: 6-digit TOTP code, or a recovery code where accepted
+    LoginSession:
+      type: object
+      properties:
+        token:
+          type: string
+          description: Session JWT (claims id, email, name, role, amr, auth_time; mfa_enroll on enrolment-only sessions)
+        user:
+          type: object
+        mfaEnrollmentRequired:
+          type: boolean
+    MfaChallengeRequired:
+      type: object
+      properties:
+        mfa_required: { type: boolean, example: true }
+        status: { type: string, example: mfa_required }
+        challengeToken: { type: string, description: 'Short-lived (5 min); not a session' }
+        expiresIn: { type: integer, example: 300 }
+        methods: { type: array, items: { type: string }, example: [totp, recovery_code] }
   parameters:
     IdempotencyKey:
       name: Idempotency-Key
@@ -428,7 +754,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Human JWT from POST /auth/login
+      description: Human session JWT from POST /auth/login (or /auth/mfa/challenge when MFA is enabled)
     agentTokenAuth:
       type: http
       scheme: bearer

@@ -41,6 +41,26 @@ export interface AuthenticatedRequest extends Request {
   };
   /** True when authenticated via human JWT (not agent token / SDK). */
   humanJwt?: boolean;
+  /** Session JWT authentication context (#24): methods, auth time, enrolment-only restriction. */
+  session?: {
+    amr: string[];
+    /** Seconds since epoch; null for sessions issued before MFA support. */
+    authTime: number | null;
+    mfaEnroll: boolean;
+  };
+}
+
+/** Default max age of the second factor for step-up protected actions (MFA_STEP_UP_MAX_AGE_SEC). */
+export function stepUpMaxAgeSec(): number {
+  const n = Number(process.env.MFA_STEP_UP_MAX_AGE_SEC);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 15 * 60;
+}
+
+/** Endpoints an enrolment-only session (`mfa_enroll`) may call. */
+export function allowedDuringEnrollment(method: string, path: string): boolean {
+  const p = path.split('?')[0].replace(/\/+$/, '');
+  if (/\/auth\/mfa\/(status|enroll|verify)$/.test(p)) return true;
+  return method === 'GET' && /\/users\/me$/.test(p);
 }
 
 // Short-lived per-process permission cache: userId → { permissions, expiresAt }. Not shared
@@ -153,6 +173,16 @@ export async function expressAuthenticate(req: Request, res: Response, next: Nex
   // routes that explicitly use sdkTokenAuth / sdkOrUserAuthenticate.
   try {
     const decoded = jwt.verify(token, getJwtSecret()) as any;
+    // Only session tokens: MFA challenge tokens (typ/aud) and anything without a user id are refused.
+    if (!decoded || typeof decoded !== 'object' || typeof decoded.id !== 'string' || !decoded.id || decoded.typ || decoded.aud) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
+    }
+    if (decoded.mfa_enroll === true && !allowedDuringEnrollment(req.method, req.originalUrl || req.url)) {
+      return res.status(403).json({
+        error: 'mfa_enrollment_required',
+        message: 'Your role requires multi-factor authentication. Enrol an authenticator app to continue.',
+      });
+    }
     const ds = await getDb();
     const repo = ds.getRepository(User);
     const user = await repo.findOne({ where: { id: decoded.id } });
@@ -171,6 +201,11 @@ export async function expressAuthenticate(req: Request, res: Response, next: Nex
       email: user.email,
     };
     (req as AuthenticatedRequest).humanJwt = true;
+    (req as AuthenticatedRequest).session = {
+      amr: Array.isArray(decoded.amr) ? decoded.amr.filter((m: unknown) => typeof m === 'string') : [],
+      authTime: typeof decoded.auth_time === 'number' ? decoded.auth_time : null,
+      mfaEnroll: decoded.mfa_enroll === true,
+    };
     next();
   } catch (err: any) {
     return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
@@ -280,6 +315,33 @@ export function requireAgentScope(...scopes: string[]) {
       });
     }
     return next();
+  };
+}
+
+/**
+ * Step-up (#24): a human session must carry a second factor (`amr` contains `mfa`) verified
+ * within `maxAgeSec`, otherwise 401 `{ error: 'step_up_required' }` (POST /api/auth/mfa/step-up,
+ * then retry). Agent tokens (plat_agent_*) and SDK credentials are non-interactive: they stay
+ * governed by scopes and human approval and pass through unchanged.
+ */
+export function requireRecentMfa(maxAgeSec?: number) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.agentToken || authReq.sdkToken) return next();
+    if (!authReq.user || !authReq.humanJwt) {
+      return res.status(401).json({ error: 'Unauthorized: Not authenticated' });
+    }
+    const max = maxAgeSec ?? stepUpMaxAgeSec();
+    const s = authReq.session;
+    const now = Math.floor(Date.now() / 1000);
+    const fresh = !!s && s.amr.includes('mfa') && typeof s.authTime === 'number'
+      && s.authTime <= now + 60 && now - s.authTime <= max;
+    if (fresh) return next();
+    return res.status(401).json({
+      error: 'step_up_required',
+      maxAgeSec: max,
+      message: 'Confirm with your authenticator app (POST /api/auth/mfa/step-up), then retry.',
+    });
   };
 }
 

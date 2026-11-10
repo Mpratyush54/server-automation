@@ -30,6 +30,8 @@ import { OperationStep } from '../entities/OperationStep';
 import { OutboxMessage } from '../entities/OutboxMessage';
 import { WebhookDelivery } from '../entities/WebhookDelivery';
 import { IdempotencyKey } from '../entities/IdempotencyKey';
+import { UserMfa } from '../entities/UserMfa';
+import { MfaRecoveryCode } from '../entities/MfaRecoveryCode';
 
 export const MIGRATIONS_TABLE = 'migrations';
 
@@ -48,7 +50,9 @@ export const AppDataSource = new DataSource({
   database: process.env.POSTGRES_DB || 'plat_platform',
   entities: [Project, Environment, Deployment, ServiceRegistration, ProjectConfig, File, Alert, DbConnection, User, Role, AuditLog, ClickupTaskLink, SdkCredential, DbBackup, SmtpConfig, StorageProvider, Secret, SecretVersion, ProjectMember, AgentToken, AgentCommandApproval, IntegrationSettings, Notification, BackgroundJob,
     // Coordination (#23): operations step log, outbox, webhook dedupe, idempotency.
-    Operation, OperationStep, OutboxMessage, WebhookDelivery, IdempotencyKey],
+    Operation, OperationStep, OutboxMessage, WebhookDelivery, IdempotencyKey,
+    // MFA (#24): TOTP factor + single-use recovery codes.
+    UserMfa, MfaRecoveryCode],
   // Schema changes ship as reviewed, versioned migrations (src/migrations),
   // applied once per release by `node dist/migrate.js` (the platform-api-migrate
   // Job) before the API rolls. Never auto-sync: it silently drops columns and

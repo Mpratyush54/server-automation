@@ -62,6 +62,22 @@ describe('authInterceptor', () => {
     expect(navigateByUrl).not.toHaveBeenCalled();
   });
 
+  it('keeps the session on 401 step_up_required and on wrong MFA codes (#24)', () => {
+    http.post('/api/projects/p/secrets/reveal', {}).subscribe({ error: () => undefined });
+    backend.expectOne('/api/projects/p/secrets/reveal').flush({ error: 'step_up_required' }, { status: 401, statusText: 'Unauthorized' });
+    http.post('/api/auth/mfa/challenge', {}).subscribe({ error: () => undefined });
+    backend.expectOne('/api/auth/mfa/challenge').flush({ error: 'invalid_code' }, { status: 401, statusText: 'Unauthorized' });
+    expect(localStorage.getItem('plat_auth_token')).toBe(sessionJwt);
+    expect(navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  it('sends an enrolment-only session to the MFA enrolment screen (#24)', () => {
+    http.get('/api/projects').subscribe({ error: () => undefined });
+    backend.expectOne('/api/projects').flush({ error: 'mfa_enrollment_required' }, { status: 403, statusText: 'Forbidden' });
+    expect(navigateByUrl).toHaveBeenCalledWith('/mfa/enroll');
+    expect(localStorage.getItem('plat_auth_token')).toBe(sessionJwt);
+  });
+
   it('ends the session when the session JWT gets a 401', () => {
     http.get('/api/projects').subscribe({ error: () => undefined });
     backend.expectOne('/api/projects').flush({}, { status: 401, statusText: 'Unauthorized' });

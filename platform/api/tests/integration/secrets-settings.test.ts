@@ -205,8 +205,9 @@ import jwt from 'jsonwebtoken';
 import apiRouter from '../../src/routes/api';
 
 const JWT_SECRET = 'plat-super-secret-key';
-const sign = (role: string, id: string) =>
-  jwt.sign({ id, email: `${role}@io`, name: role, role }, JWT_SECRET, { expiresIn: '2h' });
+// Sessions that passed a second factor just now (secret reveal/export need step-up, #24).
+const sign = (role: string, id: string, extra: Record<string, unknown> = { amr: ['pwd', 'otp', 'mfa'], auth_time: Math.floor(Date.now() / 1000) }) =>
+  jwt.sign({ id, email: `${role}@io`, name: role, role, ...extra }, JWT_SECRET, { expiresIn: '2h' });
 
 const T = {
   devops:    sign('devops',    'uid-devops'),
@@ -366,6 +367,35 @@ describe('Secrets API', () => {
         .set('Authorization', `Bearer ${T.viewer}`)
         .send({ key: 'ANY_KEY' });
       expect(r.status).toBe(403);
+    });
+
+    it('401 step_up_required — session without a second factor (#24)', async () => {
+      secretRepo.findOne.mockResolvedValue(seedSecret);
+      const noMfa = sign('devops', 'uid-devops', { amr: ['pwd'], auth_time: Math.floor(Date.now() / 1000) });
+      const r = await request(app)
+        .post(`/api/projects/${PROJ_ID}/secrets/reveal`)
+        .set('Authorization', `Bearer ${noMfa}`)
+        .send({ key: 'DATABASE_URL', environmentId: 'development' });
+      expect(r.status).toBe(401);
+      expect(r.body.error).toBe('step_up_required');
+      expect(r.body.value).toBeUndefined();
+      const legacy = sign('devops', 'uid-devops', {}); // pre-MFA session: no amr / auth_time
+      const r2 = await request(app)
+        .get(`/api/projects/${PROJ_ID}/secrets/export/e1111111-1111-1111-1111-111111111111`)
+        .set('Authorization', `Bearer ${legacy}`);
+      expect(r2.status).toBe(401);
+      expect(r2.body.error).toBe('step_up_required');
+    });
+
+    it('401 step_up_required — second factor older than MFA_STEP_UP_MAX_AGE_SEC (#24)', async () => {
+      secretRepo.findOne.mockResolvedValue(seedSecret);
+      const stale = sign('devops', 'uid-devops', { amr: ['pwd', 'otp', 'mfa'], auth_time: Math.floor(Date.now() / 1000) - 16 * 60 });
+      const r = await request(app)
+        .post(`/api/projects/${PROJ_ID}/secrets/reveal`)
+        .set('Authorization', `Bearer ${stale}`)
+        .send({ key: 'DATABASE_URL', environmentId: 'development' });
+      expect(r.status).toBe(401);
+      expect(r.body).toMatchObject({ error: 'step_up_required', maxAgeSec: 900 });
     });
 
     it('500 — SECRETS_ENCRYPTION_KEY not set causes 500', async () => {

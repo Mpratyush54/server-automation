@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../config/database';
 import { User, UserRole } from '../entities/User';
@@ -7,7 +6,7 @@ import { resolveIntegrations } from './integrations';
 import { notifyUser } from './notify';
 import { createCodeStore } from './oidc-codes';
 import { StateStoreUnavailableError } from './redis';
-import { getJwtSecret } from '../config/security-env';
+import { AMR_FEDERATED, signSessionToken as signSession } from './session-token';
 
 /** Browser-binding cookie for the GitHub/GitLab login `state` (login-CSRF protection). */
 export const OAUTH_STATE_COOKIE = 'plat_oauth_state';
@@ -66,26 +65,23 @@ export function loginFailedRedirect(reqHost: string | undefined, proto: string, 
   return `${portalBase(reqHost, proto)}/login?error=${encodeURIComponent(message)}`;
 }
 
-/** Sign the portal session JWT (same shape as password login). */
+/** Sign a plain portal session JWT for a GitHub/GitLab login (`amr: ['fed']`). */
 export function signSessionToken(user: Pick<User, 'id' | 'email' | 'name' | 'role'>): string {
-  return jwt.sign(
-    { id: user.id, email: user.email, name: user.name, role: user.role },
-    getJwtSecret(),
-    { expiresIn: '24h' },
-  );
+  return signSession(user, { amr: [AMR_FEDERATED] });
 }
 
 /**
- * Redeem a login exchange code. Returns null when unknown, expired, reused, or the user is inactive.
+ * Redeem a login exchange code. Returns the user (the caller runs the MFA state machine before
+ * any session is issued); null when unknown, expired, reused, or the user is inactive.
  * Throws StateStoreUnavailableError when the session store is down (caller answers 503).
  */
-export async function exchangeLoginCode(code: unknown): Promise<{ token: string; user: User } | null> {
+export async function exchangeLoginCode(code: unknown): Promise<{ user: User } | null> {
   const entry = await loginExchangeCodes.consume(code);
   if (!entry) return null;
   const ds = await getDb();
   const user = await ds.getRepository(User).findOne({ where: { id: entry.userId } });
   if (!user || user.isActive === false) return null;
-  return { token: signSessionToken(user), user };
+  return { user };
 }
 
 export function stateCookieHeader(state: string, secure: boolean): string {

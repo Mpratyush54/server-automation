@@ -30,15 +30,24 @@ export const authGuard: CanActivateFn = async (_route, state) => {
   if (loginCode) {
     auth.clearSession();
     const ok = await auth.exchangeLoginCode(loginCode);
+    if (ok === 'mfa_required') {
+      return router.createUrlTree(['/login'], { queryParams: { mfa: '1' } });
+    }
     if (!ok) {
       return router.createUrlTree(['/login'], { queryParams: { error: 'Sign-in link expired. Please sign in again.' } });
     }
+    if (auth.mfaEnrollmentRequired()) return router.createUrlTree(['/mfa/enroll']);
     const target = (state?.url || window.location.pathname).split('?')[0];
     return router.parseUrl(target || '/dashboard');
   }
 
   if (!auth.isAuthenticated()) {
     return router.createUrlTree(['/login']);
+  }
+
+  // Role requires MFA but none is enrolled: the session only reaches the enrolment screen (#24).
+  if (auth.mfaEnrollmentRequired()) {
+    return router.createUrlTree(['/mfa/enroll']);
   }
 
   if (!auth.profileVerified) {

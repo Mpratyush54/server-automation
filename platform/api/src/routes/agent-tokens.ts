@@ -7,6 +7,7 @@ import {
   AuthenticatedRequest,
   expressAuthenticate,
   expressRequireRole,
+  requireRecentMfa,
   logAudit,
   AGENT_TOKEN_PREFIX,
   AGENT_TOKEN_LOOKUP_LEN,
@@ -101,6 +102,8 @@ router.post(
   '/agent-tokens',
   expressAuthenticate,
   expressRequireRole([UserRole.ADMIN, UserRole.DEVOPS]),
+  // Minting a credential needs a recent second factor of the human creating it (#24).
+  requireRecentMfa(),
   async (req: Request, res: Response) => {
     try {
       const authReq = req as AuthenticatedRequest;

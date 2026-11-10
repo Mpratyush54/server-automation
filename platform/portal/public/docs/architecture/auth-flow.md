@@ -1,45 +1,40 @@
 # Authentication Flow
 
-## Login Flow (Email-only)
+## Login Flow (password or GitHub/GitLab, then TOTP)
 
 ```mermaid
 sequenceDiagram
     participant Browser
-    participant Portal
     participant API
     participant PostgreSQL
 
-    Browser->>API: POST /api/auth/login<br/>{ email: "..." }
-    API->>PostgreSQL: SELECT * FROM users<br/>WHERE email = '...'
-    PostgreSQL-->>API: User row
-    Note over API: jwt.sign(<br/>{ id, email, name, role },<br/>JWT_SECRET,<br/>{ expiresIn: '24h' })
-    API-->>Browser: { token, user }
-    Note over Browser: Store token in<br/>localStorage/<br/>httpOnly cookie
+    Browser->>API: POST /api/auth/login { email, password }
+    API->>PostgreSQL: user + user_mfa
+    alt MFA enabled
+        API-->>Browser: { mfa_required, challengeToken (5 min, not a session) }
+        Browser->>API: POST /api/auth/mfa/challenge { challengeToken, code }
+        Note over API: TOTP step > last_used_step (conditional UPDATE)<br/>or unused recovery code (bcrypt, single use)
+        API-->>Browser: { token (amr: pwd otp mfa, auth_time), user }
+    else role in mfa.requiredRoles, not enrolled
+        API-->>Browser: { token (mfa_enroll: true, 1 h), mfaEnrollmentRequired }
+        Browser->>API: POST /api/auth/mfa/enroll, then /verify { code }
+        API-->>Browser: { recoveryCodes, token (full session) }
+    else
+        API-->>Browser: { token (amr: pwd, auth_time), user }
+    end
 ```
 
-**Code** (`src/routes/auth.ts:38-59`):
-```typescript
-router.post('/auth/login', async (req, res) => {
-  const { email } = req.body;
-  const user = await ds.getRepository(User).findOne({ where: { email } });
-  if (!user) return res.status(401).json({ error: 'User email not found' });
+GitHub/GitLab logins end with `POST /api/auth/exchange { code }`, which runs the same state machine
+(`amr: ["fed"]`), so no session is issued before the second factor.
 
-  user.lastLogin = new Date();
-  await ds.getRepository(User).save(user);
+Code: `src/routes/auth.ts` (password), `src/routes/oidc.ts` (exchange), `src/lib/mfa.ts`
+(TOTP, recovery codes, policy, state machine), `src/lib/session-token.ts` (session and challenge
+tokens), `src/routes/mfa.ts` (MFA endpoints). Details: [MFA guide](../guides/mfa.md).
 
-  const token = jwt.sign(
-    { id: user.id, email: user.email, name: user.name, role: user.role },
-    JWT_SECRET,
-    { expiresIn: '24h' }
-  );
-  return res.json({ token, user });
-});
-```
-
-**Key characteristics:**
-- No password — email lookup only
-- Demo users seeded on empty DB: admin@pratyushes.dev, john@pratyushes.dev, sarah@pratyushes.dev, devops@pratyushes.dev
-- JWT payload: `{ id, email, name, role }` — no secrets
+**Step-up:** `requireRecentMfa(maxAgeSec)` (`src/middleware/auth.ts`) protects secret
+reveal/export, platform secret rotation, agent-token creation, admin MFA reset and the MFA policy.
+It answers `401 { error: 'step_up_required' }` unless `amr` contains `mfa` and `auth_time` is within
+`MFA_STEP_UP_MAX_AGE_SEC` (default 900 s). Agent tokens pass through (scopes + human approval).
 
 ## JWT Middleware
 
@@ -215,9 +210,14 @@ const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
   "email": "admin@pratyushes.dev",
   "email_verified": true,
   "groups": ["admin"],
-  "roles": ["admin"]
+  "roles": ["admin"],
+  "auth_time": 1719000000,
+  "amr": ["pwd", "otp", "mfa"]
 }
 ```
+
+`auth_time` and `amr` come from the portal session that approved the authorization request, so
+relying parties can require a second factor.
 
 ### OAuth2 Proxy for Grafana/Portainer SSO
 
