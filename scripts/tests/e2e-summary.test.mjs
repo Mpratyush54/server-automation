@@ -49,6 +49,15 @@ test('empty artifact directory still renders', () => {
   assert.match(md, /not run/);
 });
 
+test('a failed upgrade phase cannot report passing seed checks as success', () => {
+  const md = render(dir({
+    'phases.jsonl': jsonl([{ phase: 'provision', status: 'ok', seconds: 1 }, { phase: 'upgrade', status: 'failed', seconds: 2 }]),
+    'results.jsonl': jsonl([{ name: 'upgrade-seed', status: 'pass', seconds: 0 }]),
+  }));
+  assert.match(md, /profile FAILED/);
+  assert.match(md, /upgrade \| FAIL/);
+});
+
 test('table cells cannot break the Markdown table', () => {
   const md = render(dir({ 'meta.json': JSON.stringify({ profile: 'a|b', image_note: 'x|y' }), 'results.jsonl': jsonl([{ name: 'n|m', status: 'pass', seconds: 1 }]) }));
   assert.match(md, /a\\\|b/);

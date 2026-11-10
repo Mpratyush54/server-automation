@@ -20,6 +20,10 @@ RUN sed -i -E 's/^([[:space:]]*)listen[[:space:]]+80;/\1listen 8080;/' nginx.con
 
 # Runtime: nginx as UID 101, listening on 8080.
 FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24
+# Apply Alpine security fixes released after the base image was built
+# (Trivy gates releases on fixable CRITICAL vulnerabilities).
+USER root
+RUN apk upgrade --no-cache
 COPY --from=builder /app/dist/portal/browser /usr/share/nginx/html
 COPY --from=builder /app/nginx.conf /etc/nginx/conf.d/default.conf
 USER 101

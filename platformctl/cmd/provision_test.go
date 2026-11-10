@@ -54,7 +54,7 @@ func TestProvisionGraphCriticalDeps(t *testing.T) {
 		"routing":   {"ingress-nginx", "platform"},
 		// OIDC discovery needs the platform Ingress that routing creates.
 		"oauth2-proxy": {"routing"},
-		"platform":  {"postgresql", "mongodb", "redis", "minio"},
+		"platform":  {"postgresql", "mongodb", "redis", "minio", "kyverno"},
 		// Image Updater + Argo Application need ArgoCD's CRDs.
 		"auto-update": {"argocd", "platform"},
 		"seed":        {"platform"},
@@ -75,13 +75,23 @@ func TestProvisionGraphHonoursToggles(t *testing.T) {
 	for _, s := range provisionGraph(c) {
 		skipped[s.name] = s.skip
 	}
-	for _, n := range []string{"monitoring", "argocd", "auto-update"} {
+	for _, n := range []string{"monitoring", "argocd", "auto-update", "kyverno"} {
 		if !skipped[n] {
 			t.Errorf("%s should be skipped", n)
 		}
 	}
 	if skipped["platform"] || skipped["routing"] {
 		t.Error("core steps must never be skipped")
+	}
+}
+
+func TestProvisionGraphKyvernoOptIn(t *testing.T) {
+	c := allOn()
+	c.InstallKyverno = true
+	for _, s := range provisionGraph(c) {
+		if s.name == "kyverno" && s.skip {
+			t.Fatal("kyverno must run when InstallKyverno is set")
+		}
 	}
 }
 

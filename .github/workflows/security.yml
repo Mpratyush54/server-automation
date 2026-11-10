@@ -124,6 +124,25 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+  kyverno-test:
+    name: kyverno test (image policies)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Kyverno CLI
+        uses: kyverno/action-install-cli@fcee92fca5c883169ef9927acf543e0b5fc58289 # v0.2.0
+        with:
+          release: v1.13.4
+
+      - name: Run policy tests
+        run: kyverno test platformctl/internal/manifests/data/kyverno-tests
+
   npm-test:
     name: npm test (${{ matrix.package }})
     runs-on: ubuntu-latest

@@ -52,6 +52,11 @@ func init() {
 	rootCmd.AddCommand(c)
 }
 func runUpgrade(cmd *cobra.Command, _ []string) error {
+	if !upgradeHistory {
+		if _, e := upgrade.Parse(Version); e != nil {
+			return fmt.Errorf("this platformctl was not built as a release; install a release binary (install.sh) to use upgrade")
+		}
+	}
 	hostKubeconfig()
 	if upgradeHistory {
 		h, e := upgrade.ReadHistory(upgradeState)

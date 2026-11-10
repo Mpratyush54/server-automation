@@ -126,6 +126,8 @@ var charts = map[string]Chart{
 	"loki-stack":    {Name: "loki-stack", Repo: "grafana", RepoURL: "https://grafana.github.io/helm-charts", Chart: "loki-stack", Version: "2.10.3"},
 	"oauth2-proxy":  {Name: "oauth2-proxy", Repo: "oauth2-proxy", RepoURL: "https://oauth2-proxy.github.io/manifests", Chart: "oauth2-proxy", Version: "10.7.2"},
 	"portainer":     {Name: "portainer", Repo: "portainer", RepoURL: "https://portainer.github.io/k8s/", Chart: "portainer", Version: "245.3.0"},
+	// Kyverno is opt-in (full profile + INSTALL_KYVERNO); ~200 MB control plane.
+	"kyverno": {Name: "kyverno", Repo: "kyverno", RepoURL: "https://kyverno.github.io/kyverno/", Chart: "kyverno", Version: "3.3.7"},
 }
 
 // Get returns a pinned chart; it panics on an unknown name (programming error).

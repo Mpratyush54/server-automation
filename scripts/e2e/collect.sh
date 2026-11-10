@@ -21,7 +21,7 @@ fi
 [[ -d "$E2E_WORK/checks" ]] && cp -R "$E2E_WORK/checks" "$raw/"
 
 python3 "$HERE/redact.py" --env-file "$E2E_WORK/platform.env" --secret-file "$E2E_WORK/admin-password" \
-  --json-secrets "$E2E_WORK/db-credentials.json" --out "$E2E_ARTIFACTS/logs" "$raw"/* 2>/dev/null || true
+  --json-secrets "$E2E_WORK/db-credentials.json" --mfa-state "$E2E_WORK/admin-mfa.json" --out "$E2E_ARTIFACTS/logs" "$raw"/* 2>/dev/null || true
 rm -rf "$raw" "$E2E_WORK/platform.env"
 log "artifacts collected ($(du -sh "$E2E_ARTIFACTS" 2>/dev/null | cut -f1))"
 exit 0

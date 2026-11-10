@@ -4,7 +4,23 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
+
+func TestUpgradeUnstampedBuild(t *testing.T) {
+	oldVersion, oldHistory := Version, upgradeHistory
+	defer func() { Version, upgradeHistory = oldVersion, oldHistory }()
+	upgradeHistory = false
+	for _, version := range []string{"dev", "", "e2e-abcdef", "invalid"} {
+		Version = version
+		err := runUpgrade(&cobra.Command{}, nil)
+		const want = "this platformctl was not built as a release; install a release binary (install.sh) to use upgrade"
+		if err == nil || err.Error() != want {
+			t.Fatalf("version %q: got %v, want %q", version, err, want)
+		}
+	}
+}
 
 func TestUpgradeHealthyPods(t *testing.T) {
 	for _, tt := range []struct {

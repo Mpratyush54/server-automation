@@ -45,6 +45,17 @@ type Config struct {
 	AutoUpdate         bool
 	AutoUpgrade        bool // Opt-in daily release patch upgrades.
 
+	// InstallKyverno enables the Kyverno admission controller. Only honored
+	// when Profile is full and INSTALL_KYVERNO=true (opt-in; keeps default
+	// installs light). See docs/operations/image-signing.md.
+	InstallKyverno bool
+	// InstallKyvernoCVEPolicy applies the optional CVE ClusterPolicy that
+	// consumes Trivy Operator VulnerabilityReports. Trivy Operator itself is
+	// never installed by platformctl.
+	InstallKyvernoCVEPolicy bool
+	// KyvernoPolicyMode is Audit (default) or Enforce for Kyverno policies.
+	KyvernoPolicyMode string
+
 	// Profile is the install profile (minimal|standard|full) that set the
 	// Install* defaults. See ApplyProfile.
 	Profile string
@@ -135,6 +146,7 @@ func Load() *Config {
 	c.resolveProfile(explicit)
 	_, profileExplicit := explicit["PLATFORM_PROFILE"]
 	c.resolveAPIReplicas(explicitReplicas, profileExplicit)
+	c.resolveKyverno()
 	return c
 }
 
@@ -533,6 +545,9 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("INSTALL_MONITORING=%t\n", c.InstallMonitoring))
 	b.WriteString(fmt.Sprintf("INSTALL_PORTAINER=%t\n", c.InstallPortainer))
 	b.WriteString(fmt.Sprintf("INSTALL_CERTMANAGER=%t\n", c.InstallCertManager))
+	b.WriteString(fmt.Sprintf("INSTALL_KYVERNO=%t\n", c.InstallKyverno))
+	b.WriteString(fmt.Sprintf("INSTALL_KYVERNO_CVE_POLICY=%t\n", c.InstallKyvernoCVEPolicy))
+	b.WriteString(fmt.Sprintf("KYVERNO_POLICY_MODE=%s\n", c.KyvernoPolicyMode))
 	return os.WriteFile(path, []byte(b.String()), 0600)
 }
 
@@ -667,7 +682,23 @@ func (c *Config) ApplyProfile(name string) error {
 	if c.explicitAPIReplicas > 0 {
 		c.APIReplicas = c.explicitAPIReplicas
 	}
+	c.resolveKyverno()
 	return nil
+}
+
+// resolveKyverno sets Kyverno-related flags. Kyverno is never part of a
+// profile default: it requires an explicit INSTALL_KYVERNO=true and a full
+// profile so single-server installs stay light.
+func (c *Config) resolveKyverno() {
+	c.InstallKyverno = normalizeProfile(c.Profile) == ProfileFull && getEnvBool("INSTALL_KYVERNO", false)
+	c.InstallKyvernoCVEPolicy = getEnvBool("INSTALL_KYVERNO_CVE_POLICY", false)
+	mode := strings.TrimSpace(getEnv("KYVERNO_POLICY_MODE", "Audit"))
+	switch strings.ToLower(mode) {
+	case "enforce":
+		c.KyvernoPolicyMode = "Enforce"
+	default:
+		c.KyvernoPolicyMode = "Audit"
+	}
 }
 
 // MaxAPIReplicas bounds API_REPLICAS.

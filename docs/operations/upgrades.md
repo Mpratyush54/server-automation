@@ -15,12 +15,49 @@ sudo platformctl upgrade --history
 displayed plan for automation. A saved successful upgrade takes precedence over
 the saved image tag when determining the source version. For an installation
 without upgrade history, ensure its saved `PLATFORM_IMAGE_TAG` reflects its
-installed release. Development builds need a valid source release version.
+installed release. Unstamped development builds must be replaced with a release binary.
 Downgrades and skipping majors are refused. Without `upgrade.json`, only
 same-major upgrades are allowed. Release maintainers edit
 `platformctl/upgrade-policy.json` to set `minimumSource`, `breakingNotes`, and
 `irreversibleMigrations`; the release workflow attaches `upgrade.json` containing
 these rules and the target binary's chart pins and mirrors it to GHCR.
+
+## First upgradable release
+
+Release upgrades work from the first published release containing `platformctl
+upgrade` onwards. Releases published before #27 do not contain that command;
+a target without it cannot perform the target-binary handoff. No published
+release contained it when #115 was opened. Confirm the release contents rather
+than assuming a particular rc number is the first upgradable release.
+
+For an older installation, install the **target** release's platformctl using
+`install.sh`, then upgrade the existing cluster (do not provision it again):
+
+```sh
+curl -fsSL https://github.com/Mpratyush54/server-automation/releases/download/<target>/install.sh -o install.sh
+sudo env PLATFORMCTL_VERSION=<target> bash install.sh
+sudo platformctl upgrade --to <target> --yes
+```
+
+Replace `<target>` with a published release tag containing `upgrade`. The
+installer changes the CLI; `upgrade` changes the cluster. Older mutable images
+must first be digest-pinned with `platformctl update`, as described below.
+Unstamped builds (`dev`, empty, or other non-release versions) must also be
+replaced with a release binary before using upgrade.
+
+The `upgrade` job in `e2e-vm.yml` tests a minimal-profile VM on release tag
+pushes and manual dispatches targeting a release. `upgrade_from` selects the
+source tag; empty selects the highest published version below the target from
+the paginated GitHub releases API, including pre-releases. The source binary
+is checksum-verified, provisions its own image tag, and performs the upgrade
+to the target. A source without the command emits an explicit skip notice;
+download, checksum, provisioning, upgrade and verification failures fail the job.
+It seeds an admin session, project, project secret and MinIO object through the
+API, runs the standard checks after upgrade, then verifies the project, secret
+record, object bytes, fresh login and original session. This does not verify
+secret decryption or MFA. Logs are redacted, artifacts uploaded and VM teardown
+always attempted. Promotion requires fresh-install tests and a successful or
+skipped upgrade job. See [e2e CI](e2e-ci.md) for inputs and remaining VM tests.
 
 ## Preflight
 

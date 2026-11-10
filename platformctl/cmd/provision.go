@@ -114,7 +114,9 @@ func provisionGraph(c *config.Config) []stepDef {
 		{name: "portainer", skip: !c.InstallPortainer, args: install("portainer"), fn: components.InstallPortainer},
 		{name: "argocd", skip: !c.InstallArgoCD, args: install("argocd"), fn: components.InstallArgoCD},
 		{name: "monitoring", skip: !c.InstallMonitoring, args: install("monitoring"), fn: components.InstallMonitoring},
-		{name: "platform", deps: []string{"postgresql", "mongodb", "redis", "minio"},
+		// Kyverno is opt-in (full + INSTALL_KYVERNO); skipped nodes satisfy deps.
+		{name: "kyverno", skip: !c.InstallKyverno, args: install("kyverno"), fn: components.InstallKyverno},
+		{name: "platform", deps: []string{"postgresql", "mongodb", "redis", "minio", "kyverno"},
 			args: install("platform"), fn: components.InstallPlatform},
 		// Ingresses (and so the TLS certificate request) right after the ingress
 		// controller and cert-manager: the certificate issues in parallel with

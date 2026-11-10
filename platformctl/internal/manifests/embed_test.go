@@ -46,7 +46,7 @@ func TestListContainsExpected(t *testing.T) {
 		t.Fatalf("List() failed: %v", err)
 	}
 
-	expected := []string{"argocd-values.yaml", "grafana-values.yaml", "minio-values.yaml"}
+	expected := []string{"argocd-values.yaml", "grafana-values.yaml", "minio-values.yaml", "kyverno-verify-images.yaml"}
 	for _, e := range expected {
 		found := false
 		for _, n := range names {

@@ -24,10 +24,11 @@ c() { curl -fsS --max-time 30 "${curl_ca[@]}" "$@"; }
 step() { echo "  -- $*"; }
 
 step "login and project"
-jq -n --arg e "$ADMIN_EMAIL" --rawfile p "$E2E_WORK/admin-password" '{email:$e,password:($p|rtrimstr("\n"))}' > "$TMP/login.json"
-TOKEN=$(c -X POST "$API/api/auth/login" -H 'Content-Type: application/json' --data @"$TMP/login.json" | jq -r .token)
-rm -f "$TMP/login.json"
-[[ -n "$TOKEN" && "$TOKEN" != null ]] || die "admin login failed"
+# Admins sign in with a second factor (#24): the helper completes the MFA challenge
+# with the stored TOTP secret and prints the session token for capture (never echoed).
+TOKEN=$(E2E_ADMIN_PASSWORD_FILE="${E2E_ADMIN_PASSWORD_FILE:-$E2E_WORK/admin-password}" node "$E2E_ROOT/scripts/e2e/checks/admin-token.mjs") \
+  || die "admin login failed"
+[[ -n "$TOKEN" ]] || die "admin login failed"
 auth=(-H "Authorization: Bearer $TOKEN")
 PROJECT_ID=$(c "${auth[@]}" "$API/api/projects" | jq -r '[.[] | select(.name=="sdk-demo-apps")][0].id // empty')
 if [[ -z "$PROJECT_ID" ]]; then

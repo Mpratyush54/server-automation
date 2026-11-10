@@ -72,3 +72,35 @@ test('--stdout prints a redacted copy and tolerates missing inputs', (t) => {
   assert.equal(missing.status, 0, missing.stderr);
   assert.equal(missing.stdout, '');
 });
+
+test('admin MFA state: TOTP secret, recovery codes, otpauth URIs and QR data URLs are removed (#114)', (t) => {
+  const probe = spawnSync(python, ['--version']);
+  if (probe.status !== 0) return t.skip('python not available');
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'e2e-redact-mfa-'));
+  // Built at runtime so no secret-shaped literal sits in the repository.
+  const secret = ['JBSWY3DP', 'EHPK3PXP', 'KRUGS4ZA'].join('');
+  const codes = ['k7m2p', 'x9q4r'].map((a, i) => `${a}-${'w3n8z'.slice(i)}${'abcde'.slice(0, i)}`);
+  const stateFile = path.join(dir, 'admin-mfa.json');
+  writeFileSync(stateFile, JSON.stringify({ secret, recoveryCodes: codes, lastStep: 60000000 }));
+  const src = path.join(dir, 'checks');
+  mkdirSync(src);
+  writeFileSync(path.join(src, 'mfa-flow.log'), [
+    `secret ${secret} and lowercase ${secret.toLowerCase()}`,
+    `recovery ${codes[0]} typed ${codes[0].replace('-', '').toUpperCase()}`,
+    `uri otpauth://totp/Platform:admin?secret=${'MFRGG'.repeat(4)}&issuer=Platform`,
+    `qr data:image/png;base64,${'iVBORw0KGgo'.repeat(3)}=`,
+    `body {"secret":"${'NBSWY3DP'.repeat(2)}","recoveryCodes":["${'zzzzz-yyyyy'}"],"challengeToken":"opaque-challenge"}`,
+    '  ok   a fresh code completes the login',
+  ].join('\n'));
+  const out = path.join(dir, 'out');
+  const r = spawnSync(python, [script, '--mfa-state', stateFile, '--out', out, src], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const text = readFileSync(path.join(out, 'checks', 'mfa-flow.log'), 'utf8');
+  for (const leak of [secret, secret.toLowerCase(), codes[0], codes[0].replace('-', '').toUpperCase(), 'MFRGGMFRGG', 'iVBORw0KGgo', 'NBSWY3DPNBSWY3DP', 'zzzzz-yyyyy', 'opaque-challenge']) {
+    assert.ok(!text.includes(leak), `leaked: ${leak.slice(0, 6)}`);
+  }
+  assert.match(text, /a fresh code completes the login/);
+  // A missing state file is tolerated (e.g. the run failed before mfa-flow).
+  const missing = spawnSync(python, [script, '--mfa-state', path.join(dir, 'nope.json'), '--stdout', path.join(src, 'mfa-flow.log')], { encoding: 'utf8' });
+  assert.equal(missing.status, 0, missing.stderr);
+});

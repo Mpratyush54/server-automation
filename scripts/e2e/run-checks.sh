@@ -21,6 +21,9 @@ export PLATFORM_URL="https://api.${E2E_DOMAIN}"
 export PROJECT_DOMAIN="$E2E_DOMAIN"
 export ADMIN_EMAIL="${E2E_ADMIN_EMAIL:-admin@example.com}"
 export E2E_ADMIN_PASSWORD_FILE="$E2E_WORK/admin-password"
+# Admin TOTP secret and recovery codes (MFA, #24/#114): written 0600 by mfa-flow /
+# adminSession, used by every later check, never printed or uploaded.
+export E2E_MFA_STATE_FILE="$E2E_WORK/admin-mfa.json"
 export E2E_PLATFORM_CA="$E2E_WORK/platform-ca.pem"
 export E2E_TLS_MODE_FILE="$E2E_WORK/tls-mode"
 CHECK_DIR="$E2E_WORK/checks"
@@ -70,6 +73,10 @@ if [[ "$(cat "$E2E_TLS_MODE_FILE" 2>/dev/null)" == platform-ca ]]; then
   echo "     note: certificates come from the platform's internal CA (Let's Encrypt fallback)"
 fi
 check api-health            "${N[@]}" "$HERE/checks/api.mjs" health
+# MFA first: mfa-flow enrols the admin; break-glass removes the factor on the host and
+# re-enrols. Every later check signs in through the MFA challenge with the stored secret.
+check mfa-flow              "${N[@]}" "$HERE/checks/mfa.mjs" flow
+check mfa-breakglass        "${N[@]}" "$HERE/checks/mfa.mjs" breakglass
 check admin-login           "${N[@]}" "$HERE/checks/api.mjs" login
 check security-unauth       "${N[@]}" "$HERE/checks/security.mjs" unauth
 check security-headers      "${N[@]}" "$HERE/checks/security.mjs" headers
