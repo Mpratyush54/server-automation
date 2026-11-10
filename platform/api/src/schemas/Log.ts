@@ -10,6 +10,9 @@ export interface ILog extends Document {
   message: string;
   fields: Record<string, any>;
   timestamp: Date;
+  /** Optional subject for GDPR delete (#47). */
+  userId?: string;
+  sessionId?: string;
 }
 
 const LogSchema = new Schema<ILog>({
@@ -22,8 +25,12 @@ const LogSchema = new Schema<ILog>({
   message: { type: String, required: true },
   fields: { type: Schema.Types.Mixed },
   timestamp: { type: Date, default: Date.now },
+  userId: { type: String, index: true },
+  sessionId: { type: String, index: true },
 }, { collection: 'logs' });
 
 LogSchema.index({ timestamp: -1 }, { expireAfterSeconds: 2592000 });
 LogSchema.index({ projectId: 1, environment: 1, timestamp: -1 });
+LogSchema.index({ projectId: 1, userId: 1 });
+LogSchema.index({ projectId: 1, sessionId: 1 });
 export const LogModel = mongoose.model<ILog>('Log', LogSchema);

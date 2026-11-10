@@ -199,7 +199,8 @@ func telemetryStorage(c *config.Config) error {
 		return err
 	}
 	defer shell.RunSilent("kubectl", "-n", "monitoring", "delete", "secret", "telemetry-bootstrap", "--ignore-not-found")
-	for _, backend := range []string{"loki", "tempo", "pyroscope"} {
+	// loki/tempo/pyroscope: backend object storage. replays: #40 session chunks + #47 GDPR delete prefix.
+	for _, backend := range []string{"loki", "tempo", "pyroscope", "replays"} {
 		name := "telemetry-" + backend + "-s3"
 		existing, err := shell.Output("kubectl", "-n", "monitoring", "get", "secret", name, "--ignore-not-found", "-o", "name")
 		if err != nil {
@@ -234,6 +235,16 @@ const telemetryMCImage = "quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z"
 func telemetryBucketScript(bucket string) string {
 	// bucket is an internal constant, never operator input. Commands never print
 	// credentials; mc's private config is on the ephemeral job filesystem.
+	// Replays get a 7-day lifecycle rule (default retention; #47 / #40).
+	lifecycle := ""
+	if bucket == "replays" {
+		lifecycle = `
+cat >"$work/lifecycle.json" <<'LIFECYCLE'
+{"Rules":[{"ID":"replays-default-7d","Status":"Enabled","Filter":{"Prefix":"replays/"},"Expiration":{"Days":7}}]}
+LIFECYCLE
+mc ilm import local/replays <"$work/lifecycle.json" >/dev/null || mc ilm rule add --expire-days 7 local/replays >/dev/null
+`
+	}
 	return fmt.Sprintf(`set -eu
 umask 077
 work=$(mktemp -d "${TMPDIR:-/tmp}/telemetry-iam.XXXXXX")
@@ -247,7 +258,7 @@ POLICY
 mc admin user add local "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
 mc admin policy create local telemetry-%[1]s "$work/policy.json"
 mc admin policy attach local telemetry-%[1]s --user "$S3_ACCESS_KEY"
-`, bucket)
+%[2]s`, bucket, lifecycle)
 }
 
 // Existing MinIO chart defaults are too large for the 8 GB full-profile target.
