@@ -6,7 +6,9 @@
 //   2. the provider accepts the request and hands over to the portal consent page;
 //   3. the consent call (admin session) returns an authorization code;
 //   4. the tool redeems the code (server side, token endpoint) and opens a session.
-import { CookieJar, apiUrl, domain, expect, login, main, request, retry } from './common.mjs';
+// The admin must use a second factor (#24): the portal session is completed through
+// the MFA challenge first (adminSession), otherwise consent refuses it with 403.
+import { CookieJar, adminSession, apiUrl, decodeJwt, domain, expect, main, request, retry } from './common.mjs';
 
 const mode = process.argv[2];
 const REDIRECTS = [301, 302, 303, 307, 308];
@@ -22,6 +24,29 @@ async function discovery() {
 }
 
 function parse(url, base) { try { return new URL(url, base); } catch { return null; } }
+
+/** Portal session for the consent step, completed through the MFA challenge. */
+async function portalSession(tool) {
+  const { token, kind } = await adminSession();
+  const amr = decodeJwt(token)?.amr || [];
+  expect(kind !== 'password' && amr.includes('mfa'), `${tool}: portal session completed the second factor`, `amr: ${amr.join(',') || 'none'}`);
+  return token;
+}
+
+/**
+ * Argo CD keeps the provider's ID token in the argocd.token cookie (split into
+ * argocd.token-1, -2, ... with an "<n>:" prefix when long). Returns its claims, or null.
+ */
+function argocdIdTokenClaims(jar) {
+  if (!jar.has('argocd.token')) return null;
+  let value = jar.cookies.get('argocd.token');
+  const m = /^(\d+):(.*)$/.exec(value);
+  if (m) {
+    value = m[2];
+    for (let i = 1; i < Number(m[1]); i++) value += jar.cookies.get(`argocd.token-${i}`) || '';
+  }
+  return decodeJwt(value);
+}
 
 /** Steps 2 and 3: provider hands over to the portal; consent returns the redirect with a code. */
 async function authorize(tool, target, adminToken) {
@@ -62,13 +87,14 @@ async function cookieFlow(tool, entryUrl, clientId, redirectUri, sessionCookie) 
   const jar = new CookieJar();
   const target = await entry(tool, entryUrl, clientId, redirectUri, jar);
   if (!target) return;
-  const back = await authorize(tool, target, await login());
+  const back = await authorize(tool, target, await portalSession(tool));
   if (!back) return;
   // Step 4: the callback redeems the code and must set the tool's session cookie.
   const cb = jar.store(await request(back.href, { headers: { cookie: jar.header() }, timeoutMs: 30000 }));
   const loc = cb.headers.get('location') || '';
   const session = REDIRECTS.includes(cb.status) && jar.has(sessionCookie) && !/error|\/login(\?|$)/i.test(loc);
   expect(session, `${tool}: SSO login completes with a session`, session ? '' : `HTTP ${cb.status}`);
+  return jar;
 }
 
 async function portainer() {
@@ -86,7 +112,7 @@ async function portainer() {
   expect(target.searchParams.get('client_id') === 'portainer', 'Portainer: client_id is portainer', 'unexpected client');
   expect(target.searchParams.get('redirect_uri') === `https://portainer.${D}/`, 'Portainer: registered redirect URI', 'unexpected redirect_uri');
   if (!target.searchParams.get('state')) target.searchParams.set('state', 'e2e');
-  const back = await authorize('Portainer', target, await login());
+  const back = await authorize('Portainer', target, await portalSession('Portainer'));
   if (!back) return;
   // Portainer's web UI posts the code to its API, which redeems it server side.
   const v = await request(`https://portainer.${D}/api/auth/oauth/validate`, { method: 'POST', body: { code: back.searchParams.get('code') }, timeoutMs: 30000 });
@@ -106,7 +132,15 @@ await main(async () => {
   } else if (mode === 'grafana') {
     await cookieFlow('Grafana', `https://${D}/grafana/login/generic_oauth`, 'grafana', `https://${D}/grafana/login/generic_oauth`, 'grafana_session');
   } else if (mode === 'argocd') {
-    await cookieFlow('Argo CD', `https://${D}/argocd/auth/login?return_url=${encodeURIComponent(`https://${D}/argocd/applications`)}`, 'argocd', `https://${D}/argocd/auth/callback`, 'argocd.token');
+    const jar = await cookieFlow('Argo CD', `https://${D}/argocd/auth/login?return_url=${encodeURIComponent(`https://${D}/argocd/applications`)}`, 'argocd', `https://${D}/argocd/auth/callback`, 'argocd.token');
+    // The ID token issued by the platform carries the authentication methods (#24).
+    const claims = jar ? argocdIdTokenClaims(jar) : null;
+    if (claims?.iss === `https://${D}/api/oauth`) {
+      const amr = Array.isArray(claims.amr) ? claims.amr : [];
+      expect(amr.includes('mfa'), 'Argo CD: ID token amr includes mfa', `amr: ${amr.join(',') || 'missing'}`);
+    } else if (jar?.has('argocd.token')) {
+      console.log('  note Argo CD session cookie is not a platform ID token; amr not checked');
+    }
   } else if (mode === 'portainer') {
     await portainer();
   } else {
