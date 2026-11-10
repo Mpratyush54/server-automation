@@ -10,8 +10,8 @@ import { idempotentStatements } from '../lib/baseline-sql';
  * (constraint names come from TypeORM's DefaultNamingStrategy). Additive only, so the
  * previous API version keeps working against the migrated schema. Idempotent.
  */
-export class GitProviderApps1790000035000 implements MigrationInterface {
-  name = 'GitProviderApps1790000035000';
+export class GitProviderApps1796000000035 implements MigrationInterface {
+  name = 'GitProviderApps1796000000035';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     for (const sql of idempotentStatements(UP)) {

@@ -7,6 +7,8 @@
  *   MIGRATION_TEST_PG_USER=postgres MIGRATION_TEST_PG_PASSWORD=postgres \
  *   npx jest tests/integration/migrations.db.test.ts
  */
+import { readdirSync } from 'fs';
+import path from 'path';
 import { DataSource, MigrationInterface, QueryRunner } from 'typeorm';
 import { AppDataSource, MIGRATIONS_TABLE, migrationsGlob } from '../../src/config/database';
 import { pendingSchemaChanges, runPendingMigrations, withMigrationLock } from '../../src/lib/migrations';
@@ -24,7 +26,13 @@ jest.setTimeout(120_000);
 const BASELINE = 'InitialSchema1762560000000';
 const WAVE1 = 'BackgroundJobsAndOperations1794127020627';
 const MFA = 'UserMfa1795000000000';
-const ALL = [BASELINE, WAVE1, MFA];
+// Every migration in src/migrations, in timestamp order ("<ts>-<Name>.ts" defines class
+// "<Name><ts>"), so a new migration does not have to edit this test.
+const ALL = readdirSync(path.join(__dirname, '../../src/migrations'))
+  .map((f) => /^(\d+)-(\w+)\.ts$/.exec(f))
+  .filter((m): m is RegExpExecArray => m !== null)
+  .sort((a, b) => Number(a[1]) - Number(b[1]))
+  .map((m) => `${m[2]}${m[1]}`);
 const created: string[] = [];
 const open: DataSource[] = [];
 
@@ -123,7 +131,7 @@ d('migrations against Postgres', () => {
     await old.destroy();
 
     const ds = await connect(db);
-    expect(await runPendingMigrations(ds)).toEqual([WAVE1, MFA]);
+    expect(await runPendingMigrations(ds)).toEqual(ALL.slice(1));
     expect(await pendingSchemaChanges(ds)).toEqual([]);
     const tables = await ds.query(
       `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ANY($1) ORDER BY table_name`,
@@ -134,7 +142,11 @@ d('migrations against Postgres', () => {
     ]);
     expect(await ds.query(`SELECT name FROM "roles" WHERE name = 'before-upgrade'`)).toHaveLength(1);
 
-    // The MFA migration (#24) reverts cleanly, then the wave-1 one (the baseline stays).
+    // Later migrations revert cleanly back to MFA...
+    while ((await appliedNames(ds)).length > 3) await ds.undoLastMigration({ transaction: 'each' });
+    expect(await appliedNames(ds)).toEqual([BASELINE, WAVE1, MFA]);
+    expect(await pendingSchemaChanges(ds)).not.toEqual([]);
+    // ...then the MFA migration (#24), then the wave-1 one (the baseline stays).
     await ds.undoLastMigration({ transaction: 'each' });
     expect(await appliedNames(ds)).toEqual([BASELINE, WAVE1]);
     expect(await ds.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'user_mfa'`)).toEqual([]);
@@ -160,12 +172,7 @@ d('migrations against Postgres', () => {
     await runPendingMigrations(base);
     await base.destroy();
 
-    const { InitialSchema1762560000000 } = await import('../../src/migrations/1762560000000-InitialSchema');
-    const { BackgroundJobsAndOperations1794127020627 } = await import('../../src/migrations/1794127020627-BackgroundJobsAndOperations');
-    const { UserMfa1795000000000 } = await import('../../src/migrations/1795000000000-UserMfa');
-    const ds = await connect(db, {
-      migrations: [InitialSchema1762560000000, BackgroundJobsAndOperations1794127020627, UserMfa1795000000000, Broken1999999999999],
-    });
+    const ds = await connect(db, { migrations: [migrationsGlob(), Broken1999999999999] });
     await expect(runPendingMigrations(ds)).rejects.toThrow();
     expect(await appliedNames(ds)).toEqual(ALL);
     const cols = await ds.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'roles' AND column_name = 'half_done'`);

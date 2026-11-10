@@ -4,3 +4,4 @@ cb605841bae71c0fbb77cd0e86d96c32f83da08d:platform/portal/src/app/services/auth.s
 f8e0eaa583fa24d3f176cd0b3c5703c10ceb9891:scripts/tests/e2e-redact.test.mjs:database-url-credentials:20
 f8e0eaa583fa24d3f176cd0b3c5703c10ceb9891:scripts/tests/e2e-redact.test.mjs:database-url-credentials:31
 f8e0eaa583fa24d3f176cd0b3c5703c10ceb9891:scripts/tests/e2e-redact.test.mjs:generic-api-key:32
+7ef6311335fedb5d7945ec311fa6aa80181cbcaa:platform/api/tests/unit/lib/gitlab-app.test.ts:gitlab-pat:25
