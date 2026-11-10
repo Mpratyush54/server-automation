@@ -53,7 +53,7 @@ export class TelemetryPrivacySettings {
   @Column({ type: 'jsonb', name: 'retention_days', default: () => "'{}'" })
   retentionDays: TelemetryRetentionDays;
 
-  @Column({ type: 'jsonb', name: 'consent_defaults', default: () => "'{\"replay\":false,\"analytics\":true}'" })
+  @Column({ type: 'jsonb', name: 'consent_defaults', default: () => "'{\"replay\": false, \"analytics\": true}'" })
   consentDefaults: PrivacyConsentDefaults;
 
   @Column({ type: 'uuid', nullable: true, name: 'updated_by_id' })

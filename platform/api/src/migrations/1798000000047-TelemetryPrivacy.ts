@@ -28,13 +28,13 @@ const UP: string[] = [
           "scrub_rules" jsonb NOT NULL DEFAULT '[]',
           "scrub_ips" boolean NOT NULL DEFAULT true,
           "retention_days" jsonb NOT NULL DEFAULT '{}',
-          "consent_defaults" jsonb NOT NULL DEFAULT '{"replay":false,"analytics":true}',
+          "consent_defaults" jsonb NOT NULL DEFAULT '{"replay": false, "analytics": true}',
           "updated_by_id" uuid,
           "created_at" TIMESTAMP NOT NULL DEFAULT now(),
           "updated_at" TIMESTAMP NOT NULL DEFAULT now(),
           CONSTRAINT "PK_telemetry_privacy_settings" PRIMARY KEY ("id")
       )`,
-  `CREATE UNIQUE INDEX "IDX_telemetry_privacy_settings_project" ON "telemetry_privacy_settings" ("project_id")`,
+  `CREATE UNIQUE INDEX "IDX_b9ae9066d61f92f6b60d494d16" ON "telemetry_privacy_settings" ("project_id")`,
   `CREATE TABLE "telemetry_consents" (
           "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
           "project_id" uuid NOT NULL,
@@ -47,14 +47,12 @@ const UP: string[] = [
           "updated_at" TIMESTAMP NOT NULL DEFAULT now(),
           CONSTRAINT "PK_telemetry_consents" PRIMARY KEY ("id")
       )`,
-  `CREATE UNIQUE INDEX "IDX_telemetry_consents_project_subject_session" ON "telemetry_consents" ("project_id", "subject_id", "session_id")`,
-  `CREATE INDEX "IDX_telemetry_consents_project" ON "telemetry_consents" ("project_id")`,
+  `CREATE UNIQUE INDEX "IDX_ed28418fdc33d22464f73b33a2" ON "telemetry_consents" ("project_id", "subject_id", "session_id")`,
 ];
 
 const DOWN: string[] = [
-  `DROP INDEX IF EXISTS "public"."IDX_telemetry_consents_project"`,
-  `DROP INDEX IF EXISTS "public"."IDX_telemetry_consents_project_subject_session"`,
+  `DROP INDEX IF EXISTS "public"."IDX_ed28418fdc33d22464f73b33a2"`,
   `DROP TABLE IF EXISTS "telemetry_consents"`,
-  `DROP INDEX IF EXISTS "public"."IDX_telemetry_privacy_settings_project"`,
+  `DROP INDEX IF EXISTS "public"."IDX_b9ae9066d61f92f6b60d494d16"`,
   `DROP TABLE IF EXISTS "telemetry_privacy_settings"`,
 ];
