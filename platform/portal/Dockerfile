@@ -19,7 +19,7 @@ RUN sed -i -E 's/^([[:space:]]*)listen[[:space:]]+80;/\1listen 8080;/' nginx.con
     && grep -q 'listen 8080;' nginx.conf
 
 # Runtime: nginx as UID 101, listening on 8080.
-FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24
+FROM nginxinc/nginx-unprivileged:1.31.7-alpine3.24
 # Apply Alpine security fixes released after the base image was built
 # (Trivy gates releases on fixable CRITICAL vulnerabilities).
 USER root
