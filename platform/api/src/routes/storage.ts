@@ -1,3 +1,4 @@
+import { defaultUploadTarget, fileUploadStore } from '../lib/provider-upload-store';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { File, FileProvider } from '../entities/File';
@@ -9,7 +10,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { UPLOADS_DIR, containedUploadPath, getUploadStore } from '../lib/upload-store';
+import { UPLOADS_DIR, containedUploadPath } from '../lib/upload-store';
 
 export { UPLOADS_DIR, containedUploadPath };
 const PRESIGN_TTL_SECONDS = 900;
@@ -122,16 +123,17 @@ router.post('/storage/upload-url', sdkOrUserAuthenticate, async (req: Request, r
     const fileId = uuidv4();
     const displayName = sanitizeDisplayName(fileName);
     const storageKey = `${projectId}/${fileId}`;
-    const store = getUploadStore();
+    const { store, providerId, providerType } = await defaultUploadTarget();
 
     const file = repo.create({
       id: fileId,
       projectId,
-      provider: store.kind === 's3' ? FileProvider.MINIO : (provider || FileProvider.LOCAL),
+      provider: store.kind === 's3' ? (providerType === 's3' ? FileProvider.S3 : FileProvider.MINIO) : FileProvider.LOCAL,
       bucket: store.kind === 's3'
         ? store.bucket
         : (typeof bucket === 'string' && bucket ? bucket.slice(0, 200) : 'default-bucket'),
       storageKey,
+      storageProviderId: providerId,
       originalName: displayName,
       mimeType: typeof mimeType === 'string' && mimeType ? mimeType.slice(0, 100) : null,
       category: typeof category === 'string' && category ? category.slice(0, 100) : null,
@@ -165,6 +167,7 @@ router.put('/storage/upload-raw/:fileId', sdkOrUserAuthenticate, async (req: Req
     // Spool to a private temp file (bounded), then hand it to the object store.
     const filePath = path.join(os.tmpdir(), `platform-upload-${file.id}-${uuidv4()}`);
     const ds = await getDb();
+    const uploadStore = await fileUploadStore(file);
     const writeStream = fs.createWriteStream(filePath, { mode: 0o600 });
     let written = 0;
     let aborted = false;
@@ -183,7 +186,7 @@ router.put('/storage/upload-raw/:fileId', sdkOrUserAuthenticate, async (req: Req
       if (aborted) return;
       const stats = fs.statSync(filePath);
       file.size = stats.size;
-      getUploadStore().put(key, filePath, file.mimeType)
+      uploadStore.put(key, filePath, file.mimeType)
         .then(() => ds.getRepository(File).save(file))
         .then(() => res.json({ success: true, size: stats.size }))
         .catch((e: any) => {
@@ -244,7 +247,7 @@ router.post('/storage/delete', sdkOrUserAuthenticate, async (req: Request, res: 
     const key = objectKey(file);
     if (key) {
       try {
-        await getUploadStore().delete(key);
+        await (await fileUploadStore(file)).delete(key);
       } catch (e: any) {
         console.warn(`[storage] object delete failed for ${file.id}: ${e.message}`);
       }
@@ -267,7 +270,7 @@ router.get('/storage/file/:id', sdkOrUserAuthenticate, async (req: Request, res:
     if (!(await authorizeProject(req, res, file.projectId, ProjectAccessRole.VIEWER))) return;
 
     const key = objectKey(file);
-    const store = getUploadStore();
+    const store = await fileUploadStore(file);
     if (key && req.query.presigned === '1') {
       const presignedUrl = store.presign('GET', key, PRESIGN_TTL_SECONDS);
       if (presignedUrl) return res.json({ url: presignedUrl, expiresIn: PRESIGN_TTL_SECONDS });

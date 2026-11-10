@@ -1,3 +1,4 @@
+import { StorageSettingsComponent } from './storage-settings.component';
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -7,11 +8,12 @@ import { AuthService } from '../../services/auth.service';
 import { StepUpService } from '../../services/step-up.service';
 import { MfaService } from '../../services/mfa.service';
 import { OperationProgressComponent } from '../../shared/operation-progress.component';
+import { GitConnectComponent } from './git-connect.component';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, OperationProgressComponent],
+  imports: [CommonModule, FormsModule, OperationProgressComponent, GitConnectComponent, StorageSettingsComponent],
   template: `
 <div>
   <!-- Page Header -->
@@ -61,8 +63,9 @@ import { OperationProgressComponent } from '../../shared/operation-progress.comp
   <!-- ─────────────────── LOGIN TAB ─────────────────── -->
   @if (activeTab === 'login' && isDevOps) {
     <div>
+      <app-git-connect [isAdmin]="isAdmin"></app-git-connect>
       <div class="card" style="margin-bottom:16px; padding:16px;">
-        <p style="margin:0; color:var(--text-secondary); font-size:0.8rem;">OAuth apps are optional at install time. Create a GitHub OAuth App and a GitLab Application, paste the client ID/secret here, then users can sign in from the login page. Callback URLs must match exactly.</p>
+        <p style="margin:0; color:var(--text-secondary); font-size:0.8rem;">Fallback when the one-click connect above cannot be used. OAuth apps are optional at install time. Create a GitHub OAuth App and a GitLab Application, paste the client ID/secret here, then users can sign in from the login page. Callback URLs must match exactly.</p>
       </div>
       <div class="grid-2" style="align-items:start;">
         <div class="card" style="padding:20px;">
@@ -211,119 +214,8 @@ import { OperationProgressComponent } from '../../shared/operation-progress.comp
   }
 
   <!-- ─────────────────── STORAGE TAB ─────────────────── -->
-  @if (activeTab === 'storage' && isDevOps) {
-    <div>
-      <div class="grid-2" style="align-items:start;">
-        <!-- Storage Form -->
-        <div class="card" style="padding:20px;">
-          <h2>Add Storage Provider</h2>
-          <div class="form-group">
-            <label>Name / Label</label>
-            <input [(ngModel)]="newStorage.name" placeholder="Production MinIO" style="width:100%;">
-          </div>
-          <div class="form-group">
-            <label>Provider Type</label>
-            <select [(ngModel)]="newStorage.providerType" style="width:100%;">
-              <option value="minio">MinIO (Self-hosted)</option>
-              <option value="s3">AWS S3 / S3-Compatible</option>
-              <option value="google_drive">Google Drive</option>
-              <option value="local">Local Filesystem</option>
-            </select>
-          </div>
-          @if (newStorage.providerType === 'minio' || newStorage.providerType === 's3') {
-            <div class="form-group">
-              <label>Endpoint URL</label>
-              <input [(ngModel)]="newStorage.endpointUrl" placeholder="http://minio:9000" style="width:100%;">
-            </div>
-          }
-          @if (newStorage.providerType !== 'local' && newStorage.providerType !== 'google_drive') {
-            <div>
-              <div class="form-group">
-                <label>Access Key ID</label>
-                <input [(ngModel)]="newStorage.credentials.accessKeyId" placeholder="minioadmin" style="width:100%;">
-              </div>
-              <div class="form-group">
-                <label>Secret Key</label>
-                <input type="password" [(ngModel)]="newStorage.credentials.secretAccessKey" placeholder="••••••••" style="width:100%;">
-              </div>
-              <div class="form-group">
-                <label>Bucket Name</label>
-                <input [(ngModel)]="newStorage.bucketName" placeholder="plat-backups" style="width:100%;">
-              </div>
-              <div class="form-group">
-                <label>Region (AWS S3 only)</label>
-                <input [(ngModel)]="newStorage.credentials.region" placeholder="us-east-1" style="width:100%;">
-              </div>
-            </div>
-          }
-          @if (newStorage.providerType === 'google_drive') {
-            <div>
-              <div class="form-group">
-                <label>Client ID</label>
-                <input [(ngModel)]="newStorage.credentials.clientId" placeholder="xxxx.apps.googleusercontent.com" style="width:100%;">
-              </div>
-              <div class="form-group">
-                <label>Client Secret</label>
-                <input type="password" [(ngModel)]="newStorage.credentials.clientSecret" placeholder="••••••••" style="width:100%;">
-              </div>
-              <div class="form-group">
-                <label>Refresh Token</label>
-                <input type="password" [(ngModel)]="newStorage.credentials.refreshToken" placeholder="1//0g..." style="width:100%;">
-              </div>
-            </div>
-          }
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
-            <input type="checkbox" id="storageDefault" [(ngModel)]="newStorage.isDefault" style="width:14px; height:14px; cursor:pointer;">
-            <label for="storageDefault" style="margin:0; cursor:pointer; font-size:0.75rem; text-transform:none; letter-spacing:0; color:var(--text-secondary);">Set as default storage</label>
-          </div>
-          <button class="btn btn-primary" (click)="saveStorage()" style="width:100%;">Save Storage Provider</button>
-        </div>
-        <!-- Storage List -->
-        <div class="card" style="padding:20px;">
-          <h2>Configured Storage Providers</h2>
-          @for (s of storageProviders; track s) {
-            <div style="background:rgba(0,0,0,0.15); border:1px solid var(--border-subtle); border-radius:6px; padding:12px; margin-bottom:10px;">
-              <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                <div>
-                  <div style="font-family:var(--font-heading); font-weight:700; color:#fff; font-size:0.85rem; margin-bottom:2px;">{{ s.name }}</div>
-                  <div style="font-size:0.72rem; color:var(--text-secondary); font-family:var(--font-code);">
-                    {{ s.providerType | uppercase }}
-                    @if (s.bucketName) {
-                      <span> • {{ s.bucketName }}</span>
-                    }
-                  </div>
-                  @if (s.isDefault) {
-                    <div class="badge badge-syncing" style="font-size:0.6rem; padding:1px 6px; margin-top:6px;">✓ DEFAULT</div>
-                  }
-                </div>
-                <div style="display:flex; gap:6px; flex-shrink:0;">
-                  <button class="btn btn-sm" (click)="testStorage(s)">Test</button>
-                  @if (!s.isDefault) {
-                    <button class="btn btn-sm" (click)="setDefaultStorage(s.id)">Make Default</button>
-                  }
-                  <button class="btn btn-sm" (click)="deleteStorage(s.id)" style="color:var(--accent-danger)">Delete</button>
-                </div>
-              </div>
-              @if (storageTestResults[s.id]) {
-                <div style="margin-top:8px; padding:6px 10px; border-radius:4px; font-size:0.75rem; font-family:var(--font-code);"
-                  [style.background]="storageTestResults[s.id].success ? 'rgba(45,212,160,0.1)' : 'rgba(240,82,82,0.1)'"
-                  [style.color]="storageTestResults[s.id].success ? 'var(--accent-success)' : 'var(--accent-danger)'">
-                  {{ storageTestResults[s.id].success ? '✓ Connection successful' : '✗ ' + storageTestResults[s.id].message }}
-                </div>
-              }
-            </div>
-          }
-          @if (storageProviders.length === 0) {
-            <div style="color:var(--text-muted); text-align:center; padding:32px 16px; font-size:0.8rem;">
-              No storage providers configured. Add one to enable database backups.
-            </div>
-          }
-        </div>
-      </div>
-    </div>
-  }
+  @if (activeTab === 'storage' && isDevOps) { <app-storage-settings /> }
 
-  <!-- ─────────────────── INTEGRATIONS TAB ─────────────────── -->
   @if (activeTab === 'integrations') {
     <div class="grid-2" style="align-items:start;">
       <div class="card" style="padding:20px;">

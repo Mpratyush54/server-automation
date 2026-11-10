@@ -1,3 +1,5 @@
+import { startStorageHealth } from './storage-providers';
+import { repairArgoDefaultBranches } from './argocd-branch-repair';
 import { getLeadership } from './leader';
 import { registerLeaderJob, unregisterAllJobs } from './scheduler';
 import { startPreviewDecayScheduler } from './preview-decay';
@@ -31,6 +33,7 @@ export function startBackgroundWork(): void {
   started = true;
   const leadership = getLeadership();
 
+  registerLeaderJob({ name: 'argocd-branch-repair', intervalMs: 60 * 60 * 1000, initialDelayMs: 5000, run: repairArgoDefaultBranches });
   startPreviewDecayScheduler();
   registerLeaderJob({
     name: DEPLOY_RECOVERY_JOB,
@@ -46,6 +49,7 @@ export function startBackgroundWork(): void {
   });
   // Operations (#23): resume interrupted operations, dispatch the outbox, prune rows.
   startOperationWorker();
+  startStorageHealth();
 
   leadership.start();
   installReleaseOnShutdown();
