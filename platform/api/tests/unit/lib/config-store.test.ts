@@ -102,6 +102,33 @@ describe('KubeSecretStore', () => {
     await expect(store.createIfAbsent({ K: 'second' })).resolves.toEqual({ K: 'first' });
   });
 
+  it('setIfAbsent creates the Secret, adds a missing key, and never overwrites an existing value', async () => {
+    const api = fakeApi();
+    const store = new KubeSecretStore(api as unknown as SecretApi, 'platform', 'platform-credentials');
+    await expect(store.setIfAbsent('K', 'first')).resolves.toBe('first');
+    await expect(store.setIfAbsent('K', 'second')).resolves.toBe('first');
+    await expect(store.setIfAbsent('OTHER', 'o')).resolves.toBe('o');
+    expect(decode(api.current().data)).toEqual({ K: 'first', OTHER: 'o' });
+  });
+
+  it('setIfAbsent: a concurrent writer that stored the key first wins (CAS retry)', async () => {
+    const api = fakeApi({ A: '1' });
+    const store = new KubeSecretStore(api as unknown as SecretApi, 'platform', 'platform-credentials');
+    const realReplace = api.replaceNamespacedSecret.getMockImplementation()!;
+    let raced = false;
+    api.replaceNamespacedSecret.mockImplementation(async (args: any) => {
+      if (!raced) {
+        raced = true;
+        // Another replica stores its key between our read and our replace.
+        const cur = api.current();
+        await realReplace({ body: { ...cur, data: { ...cur.data, K: b64('theirs') } } } as any);
+      }
+      return realReplace(args);
+    });
+    await expect(store.setIfAbsent('K', 'mine')).resolves.toBe('theirs');
+    expect(decode(api.current().data)).toEqual({ A: '1', K: 'theirs' });
+  });
+
   it('propagates non-404/409 errors (e.g. RBAC 403)', async () => {
     const api = fakeApi();
     api.readNamespacedSecret.mockRejectedValue(apiError(403));
@@ -137,6 +164,14 @@ describe('FileStore', () => {
     expect(text).not.toContain('POSTGRES_PASSWORD_PREV');
     expect(fs.readFileSync(path.join(root, 'credentials', 'postgres.prev'), 'utf8').trim()).toBe('old');
     await expect(store.read()).resolves.toMatchObject({ KEEP: '1', QUOTED: 'a b', POSTGRES_PASSWORD: 'pg', POSTGRES_PASSWORD_PREV: 'old' });
+  });
+
+  it('setIfAbsent writes a missing key once and keeps an existing value', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cfgstore-'));
+    const store = new FileStore(path.join(root, '.env'));
+    await expect(store.setIfAbsent('K', 'first')).resolves.toBe('first');
+    await expect(store.setIfAbsent('K', 'second')).resolves.toBe('first');
+    expect(fs.readFileSync(path.join(root, '.env'), 'utf8')).toContain('K=first');
   });
 });
 

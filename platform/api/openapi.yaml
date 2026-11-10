@@ -146,6 +146,43 @@ paths:
                         example: ok
         '503':
           description: PostgreSQL unavailable, or draining
+  /telemetry/ingest-auth:
+    get:
+      tags: [Telemetry]
+      summary: Collector auth for ingress-nginx external auth (validates a plat_ingest_ / plat_ingest_web_ token)
+      description: |
+        Called by the otel.<DOMAIN> Ingress for every collector request (any method is accepted).
+        Uses Authorization (ingest token), X-Original-URL (path scope), X-Original-Method and Origin
+        (browser tokens). Ingest tokens are issued in the telemetry block of GET /sdk/config and never
+        authenticate against the API. See docs/architecture/telemetry-ingestion.md.
+      security: []
+      parameters:
+        - in: header
+          name: Authorization
+          required: true
+          schema: { type: string, example: 'Bearer plat_ingest_...' }
+        - in: header
+          name: X-Original-URL
+          required: false
+          schema: { type: string }
+        - in: header
+          name: Origin
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Token valid for this path (and origin)
+          headers:
+            X-Platform-Project-Id:
+              schema: { type: string }
+            X-Platform-Environment:
+              schema: { type: string }
+        '401':
+          description: Missing, invalid, expired or wrong-scope token, or origin not allowed
+        '429':
+          description: Per-token rate limit exceeded (Retry-After)
+        '503':
+          description: Signing key temporarily unavailable
   /openapi.json:
     get:
       tags: [Health]

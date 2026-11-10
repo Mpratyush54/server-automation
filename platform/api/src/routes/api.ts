@@ -30,10 +30,12 @@ import { loadOpenApiJson, OpenApiUnavailableError } from '../lib/openapi-spec';
 import healthRoutes from './health';
 import operationRoutes from './operations';
 import backupRoutes from './backups';
+import telemetryRoutes from './telemetry';
 import gitAppRoutes from './git-apps';
 import topologyRoutes from './topology';
 
 router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB only; Redis reported, not gating)
+router.use('/', telemetryRoutes); // ingress-nginx external auth for the collector (#49); token-authenticated itself
 router.use('/', oidcRoutes); // before authRoutes: OIDC provider + GitHub/GitLab login (state cookie)
 router.use('/', authRoutes);
 router.use('/', mfaRoutes); // TOTP MFA: enrolment, login challenge, step-up (#24)

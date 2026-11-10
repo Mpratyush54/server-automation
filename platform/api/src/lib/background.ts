@@ -6,6 +6,7 @@ import { startPreviewDecayScheduler } from './preview-decay';
 import { runDeployRecovery } from './deploy-pipeline';
 import { runTokenCleanup, TOKEN_CLEANUP_JOB } from './token-cleanup';
 import { startOperationWorker } from './operation-worker';
+import { startTelemetryConsumer } from './telemetry-queue';
 
 /**
  * Background work inventory (every timer/loop in platform/api/src):
@@ -19,6 +20,7 @@ import { startOperationWorker } from './operation-worker';
  * | operation-resume | leader loop             | 60 s + on leadership gain    |
  * | outbox-dispatch | leader loop              | 5 s                          |
  * | operation-cleanup | leader loop            | hourly                       |
+ * | telemetry-consumer | leader loop (Redis Streams consumer group) | 1 s (#49) |
  *
  * Any leader-loop job can instead run as a Kubernetes CronJob
  * (`node dist/jobs/<name>.js`) by listing it in JOBS_EXTERNAL.
@@ -49,6 +51,8 @@ export function startBackgroundWork(): void {
   });
   // Operations (#23): resume interrupted operations, dispatch the outbox, prune rows.
   startOperationWorker();
+  // SDK telemetry queue consumer (#49): forwards queued logs/metrics/heartbeats.
+  startTelemetryConsumer();
   startStorageHealth();
 
   leadership.start();

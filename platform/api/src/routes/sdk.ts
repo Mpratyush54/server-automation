@@ -12,10 +12,9 @@ import { Secret } from '../entities/Secret';
 import { sdkTokenAuth, expressAuthenticate, sdkProjectMatches, AuthenticatedRequest } from '../middleware/auth';
 import { requireProjectAccess } from '../lib/project-access';
 import { decryptValue } from '../lib/secrets-encryption';
-import { forwardToLoki } from '../lib/lokilog';
-import { LogModel } from '../schemas/Log';
-import { ErrorDocModel } from '../schemas/ErrorDoc';
-import { MetricsRawModel } from '../schemas/MetricsRaw';
+import { ingestTelemetry, TelemetryBackpressureError, TelemetryPayloadTooLargeError } from '../lib/telemetry-queue';
+import type { ApiMetricDoc, HeartbeatEvent, LogDoc, TelemetryKind } from '../lib/telemetry-processors';
+import { buildTelemetryBlock } from '../lib/telemetry-sdk-config';
 import { SdkEventModel } from '../schemas/SdkEvent';
 import { BugReportModel } from '../schemas/BugReport';
 import * as k8s from '@kubernetes/client-node';
@@ -516,141 +515,86 @@ router.post('/sdk/deregister', sdkTokenAuth, async (req: Request, res: Response)
   }
 });
 
-router.post('/sdk/heartbeat', sdkTokenAuth, async (req: Request, res: Response) => {
+/**
+ * Telemetry ingest (issue #49): validate and authorize synchronously, then hand the
+ * project-bound payload to the queue (lib/telemetry-queue). 202 when queued; when the
+ * queue is not in use (memory state mode, TELEMETRY_QUEUE=off, Redis outage) the payload
+ * is processed inline and the historical status is returned. 429 + Retry-After above the
+ * backlog threshold.
+ */
+async function acceptTelemetry(
+  res: Response,
+  kind: TelemetryKind,
+  projectId: string,
+  payload: unknown,
+  count: number,
+  inline: { status: number; body: Record<string, unknown> },
+  queuedBody: Record<string, unknown>,
+) {
   try {
-    const body = req.body || {};
-    if (rejectForeignProject(req, res, body.projectId)) return;
-    const tokenProjectId = (req as AuthenticatedRequest).projectId!;
-    const ds = await getDb();
-
-    const regRepo = ds.getRepository(ServiceRegistration);
-
-    // Lookup registration — always constrained to the token's project
-    let registration: ServiceRegistration | null = null;
-    if (body.registrationId && typeof body.registrationId === 'string') {
-      registration = await regRepo.findOne({ where: { id: body.registrationId, projectId: tokenProjectId } });
-      if (registration && registration.projectId !== tokenProjectId) registration = null;
-    }
-    if (!registration) {
-      registration = await regRepo.findOne({ where: { projectId: tokenProjectId } });
-      if (registration && registration.projectId !== tokenProjectId) registration = null;
-    }
-
-    if (registration) {
-      registration.lastSeen = new Date();
-      registration.status = 'online';
-      await regRepo.save(registration);
-    }
-
-    if (body.dbHealth && registration) {
-      const dbRepo = ds.getRepository(DbConnection);
-      // dbHealth structure: { postgres: { activeCount: 2, idleCount: 8, status: 'connected' } }
-      for (const [dbType, health] of Object.entries(body.dbHealth) as any) {
-        let conn = await dbRepo.findOne({ where: { registrationId: registration.id, dbType: dbType as DbType } });
-        if (!conn) {
-          conn = dbRepo.create({
-            registrationId: registration.id,
-            projectId: registration.projectId,
-            dbType: dbType as DbType,
-            poolSize: 10,
-            status: DbConnectionStatus.CONNECTED,
-          });
-        }
-        conn.status = health.status === 'connected' ? DbConnectionStatus.CONNECTED : DbConnectionStatus.DISCONNECTED;
-        conn.lastHeartbeat = new Date();
-        conn.activeCount = health.activeCount ?? conn.activeCount;
-        conn.idleCount = health.idleCount ?? conn.idleCount;
-        await dbRepo.save(conn);
-      }
-    }
-
-    await connectMongo();
-    await MetricsRawModel.create({
-      registrationId: registration?.id || null,
-      projectId: tokenProjectId,
-      environment: body.environment || registration?.environmentId || 'development',
-      cpuPct: body.cpuPct || Math.random() * 20,
-      memoryMb: body.memoryMb || 128 + Math.random() * 64,
-      heapMb: body.heapMb || 80,
-      uptimeS: body.uptimeS || 100,
-      requestCount: body.requestCount || Math.floor(Math.random() * 10),
-      avgResponseMs: body.avgResponseMs || 15,
-      p95ResponseMs: body.p95ResponseMs || 40,
-      errors4xx: body.errors4xx || 0,
-      errors5xx: body.errors5xx || 0,
-      dbHealth: body.dbHealth || {},
-      timestamp: new Date(),
-    });
-
-    return res.json({ ok: true });
+    const outcome = await ingestTelemetry(kind, projectId, payload, count);
+    if (outcome === 'queued') return res.status(202).json({ ...queuedBody, queued: true });
+    return res.status(inline.status).json(inline.body);
   } catch (err: any) {
+    if (err instanceof TelemetryBackpressureError) {
+      res.setHeader('Retry-After', String(err.retryAfterSeconds));
+      return res.status(429).json({ error: err.message, retryAfterSeconds: err.retryAfterSeconds });
+    }
+    if (err instanceof TelemetryPayloadTooLargeError) {
+      return res.status(413).json({ error: err.message });
+    }
     return res.status(400).json({ error: err.message });
   }
+}
+
+const HEARTBEAT_FIELDS = [
+  'registrationId', 'environment', 'cpuPct', 'memoryMb', 'heapMb', 'uptimeS', 'requestCount',
+  'avgResponseMs', 'p95ResponseMs', 'errors4xx', 'errors5xx', 'dbHealth',
+] as const;
+
+router.post('/sdk/heartbeat', sdkTokenAuth, async (req: Request, res: Response) => {
+  const body = req.body || {};
+  if (rejectForeignProject(req, res, body.projectId)) return;
+  const tokenProjectId = (req as AuthenticatedRequest).projectId!;
+  const picked: Record<string, unknown> = {};
+  for (const k of HEARTBEAT_FIELDS) if (body[k] !== undefined) picked[k] = body[k];
+  const event: HeartbeatEvent = { projectId: tokenProjectId, body: picked, receivedAt: new Date().toISOString() };
+  return acceptTelemetry(res, 'heartbeat', tokenProjectId, event, 1, { status: 200, body: { ok: true } }, { ok: true });
 });
 
 const handleSdkLogs = async (req: Request, res: Response) => {
-  try {
-    const body = req.body;
-    const logs: any[] = body.logs;
+  const body = req.body || {};
+  const logs: any[] = body.logs;
 
-    if (!Array.isArray(logs)) {
-      return res.status(400).json({ error: 'logs must be an array' });
-    }
-    if (logs.length === 0) {
-      return res.status(201).json({ received: 0 });
-    }
-
-    // Every entry must belong to the token's project (UUID or name, or omitted).
-    if (rejectForeignProject(req, res, body.projectId, ...logs.map((l) => l?.projectId))) return;
-    const tokenProjectId = (req as AuthenticatedRequest).projectId!;
-
-    await connectMongo();
-    const resolvedLogs = [];
-
-    for (const log of logs) {
-      resolvedLogs.push({
-        projectId: tokenProjectId,
-        environment: log.environment || 'development',
-        branch: log.branch || 'main',
-        commitSha: log.commitSha || 'unknown',
-        hostname: log.hostname || 'localhost',
-        level: (log.level || 'INFO').toUpperCase(),
-        message: log.message,
-        fields: log.metadata || log.fields || {},
-        timestamp: log.timestamp ? new Date(log.timestamp) : new Date(),
-      });
-    }
-
-    await LogModel.insertMany(resolvedLogs);
-    await forwardToLoki(resolvedLogs);
-
-    // Track Errors
-    const errorLogs = resolvedLogs.filter((log) => log.level === 'ERROR');
-    for (const err of errorLogs) {
-      const stackHash = err.fields?.stackHash || err.message;
-      await ErrorDocModel.findOneAndUpdate(
-        {
-          projectId: err.projectId,
-          errorType: err.fields?.errorType || 'UnknownError',
-          stackHash,
-        },
-        {
-          $set: {
-            environment: err.environment,
-            message: err.message,
-            lastSeen: new Date(),
-          },
-          $inc: { occurrenceCount: 1 },
-          $setOnInsert: { firstSeen: new Date() },
-        },
-        { upsert: true }
-      );
-    }
-
-    return res.status(201).json({ received: logs.length });
-  } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+  if (!Array.isArray(logs)) {
+    return res.status(400).json({ error: 'logs must be an array' });
   }
+  if (logs.length === 0) {
+    return res.status(201).json({ received: 0 });
+  }
+
+  // Every entry must belong to the token's project (UUID or name, or omitted).
+  if (rejectForeignProject(req, res, body.projectId, ...logs.map((l) => l?.projectId))) return;
+  // Validated here (not only by the Log schema) so a queued batch cannot fail later.
+  if (logs.some((l) => !l || typeof l !== 'object' || l.message === undefined || l.message === null || l.message === '')) {
+    return res.status(400).json({ error: 'every log entry needs a message' });
+  }
+  const tokenProjectId = (req as AuthenticatedRequest).projectId!;
+
+  const resolvedLogs: LogDoc[] = logs.map((log) => ({
+    projectId: tokenProjectId,
+    environment: log.environment || 'development',
+    branch: log.branch || 'main',
+    commitSha: log.commitSha || 'unknown',
+    hostname: log.hostname || 'localhost',
+    level: String(log.level || 'INFO').toUpperCase(),
+    message: log.message,
+    fields: log.metadata || log.fields || {},
+    timestamp: log.timestamp ? new Date(log.timestamp) : new Date(),
+  }));
+
+  return acceptTelemetry(res, 'logs', tokenProjectId, resolvedLogs, logs.length,
+    { status: 201, body: { received: logs.length } }, { received: logs.length });
 };
 
 router.post('/sdk/logs', sdkTokenAuth, handleSdkLogs);
@@ -670,6 +614,7 @@ router.get('/sdk/config', sdkTokenAuth, async (req: Request, res: Response) => {
     const resolvedProjectId = (req as AuthenticatedRequest).projectId!;
 
     const ds = await getDb();
+    const environmentRef = environmentId;
 
     // Resolve environment name to UUID if needed
     if (environmentId && !environmentId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
@@ -707,7 +652,10 @@ router.get('/sdk/config', sdkTokenAuth, async (req: Request, res: Response) => {
       }
     }
 
-    return res.json(result);
+    // Collector endpoints + short-lived ingest tokens (issue #49). Object-valued key; config
+    // values are strings, so SDKs can tell it apart from a user key of the same name.
+    const telemetry = await buildTelemetryBlock({ ds, projectId: resolvedProjectId, environmentRef, configValues: result });
+    return res.json({ ...result, telemetry });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
@@ -742,32 +690,27 @@ router.get('/sdk/db-credentials', sdkTokenAuth, async (req: Request, res: Respon
 });
 
 router.post('/sdk/api-metrics', sdkTokenAuth, async (req: Request, res: Response) => {
-  try {
-    const { metrics, projectId } = req.body;
-    if (!projectId) return res.status(400).json({ error: 'projectId is required' });
-    if (rejectForeignProject(req, res, projectId)) return;
-    if (metrics === undefined || metrics === null) return res.status(400).json({ error: 'metrics array is required' });
-    if (!Array.isArray(metrics)) return res.status(400).json({ error: 'metrics must be an array' });
-    if (rejectForeignProject(req, res, ...metrics.map((m: any) => m?.projectId))) return;
-    if (metrics.length === 0) return res.status(201).json({ saved: 0 });
-    await connectMongo();
-    const resolvedId = (req as AuthenticatedRequest).projectId!;
-    const docs = metrics.map((m: any) => ({
-      projectId: resolvedId,
-      route: m.route || '/',
-      method: (m.method || 'GET').toUpperCase(),
-      statusCode: m.statusCode || 200,
-      durationMs: m.durationMs || 0,
-      memoryDeltaBytes: m.memoryDeltaBytes || 0,
-      sdkVersion: m.sdkVersion,
-      environment: m.environment || 'production',
-      timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
-    }));
-    await ApiMetricModel.insertMany(docs);
-    return res.status(201).json({ saved: docs.length });
-  } catch (err: any) {
-    return res.status(400).json({ error: err.message });
-  }
+  const { metrics, projectId } = req.body || {};
+  if (!projectId) return res.status(400).json({ error: 'projectId is required' });
+  if (rejectForeignProject(req, res, projectId)) return;
+  if (metrics === undefined || metrics === null) return res.status(400).json({ error: 'metrics array is required' });
+  if (!Array.isArray(metrics)) return res.status(400).json({ error: 'metrics must be an array' });
+  if (rejectForeignProject(req, res, ...metrics.map((m: any) => m?.projectId))) return;
+  if (metrics.length === 0) return res.status(201).json({ saved: 0 });
+  const resolvedId = (req as AuthenticatedRequest).projectId!;
+  const docs: ApiMetricDoc[] = metrics.map((m: any) => ({
+    projectId: resolvedId,
+    route: m?.route || '/',
+    method: String(m?.method || 'GET').toUpperCase(),
+    statusCode: m?.statusCode || 200,
+    durationMs: m?.durationMs || 0,
+    memoryDeltaBytes: m?.memoryDeltaBytes || 0,
+    sdkVersion: m?.sdkVersion,
+    environment: m?.environment || 'production',
+    timestamp: m?.timestamp ? new Date(m.timestamp) : new Date(),
+  }));
+  return acceptTelemetry(res, 'api-metrics', resolvedId, docs, docs.length,
+    { status: 201, body: { saved: docs.length } }, { accepted: docs.length });
 });
 
 router.get('/sdk/api-metrics', expressAuthenticate, async (req: Request, res: Response) => {
