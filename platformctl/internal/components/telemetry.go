@@ -81,6 +81,10 @@ func InstallTelemetry(c *config.Config) error {
 	if err != nil {
 		return err
 	}
+	proxyImage, err := ProfileIngestImage(c)
+	if err != nil {
+		return err
+	}
 	// Never replace a local Loki release implicitly. Its PVC may contain the
 	// only copy of historic logs; see the explicit migration procedure.
 	old, err := shell.Output("helm", "list", "-n", "monitoring", "-o", "json", "--filter", "^loki$")
@@ -156,26 +160,21 @@ func InstallTelemetry(c *config.Config) error {
 			return fmt.Errorf("telemetry %s: %w", name, err)
 		}
 	}
-	for _, name := range []string{"telemetry-ingress.yaml", "telemetry-rules.yaml", "telemetry-dashboard.yaml"} {
-		p, err := temporaryManifest(name, c)
+	// The profile proxy is applied (and ready) before the Ingress routes to it.
+	for _, name := range []string{"telemetry-profile-ingest.yaml", "telemetry-ingress.yaml", "telemetry-rules.yaml", "telemetry-dashboard.yaml"} {
+		p, err := telemetryManifest(name, c, proxyImage)
 		if err != nil {
 			return err
-		}
-		if name == "telemetry-ingress.yaml" {
-			b, readErr := os.ReadFile(p)
-			if readErr != nil {
-				os.Remove(p)
-				return readErr
-			}
-			if err := os.WriteFile(p, []byte(strings.ReplaceAll(string(b), "letsencrypt-prod", ActiveIssuer())), 0600); err != nil {
-				os.Remove(p)
-				return err
-			}
 		}
 		err = shell.Run("kubectl", "apply", "-f", p)
 		os.Remove(p)
 		if err != nil {
 			return err
+		}
+		if name == "telemetry-profile-ingest.yaml" {
+			if err := shell.Run("kubectl", "-n", "monitoring", "rollout", "status", "deployment/profile-ingest", "--timeout=180s"); err != nil {
+				return fmt.Errorf("telemetry profile-ingest: %w", err)
+			}
 		}
 	}
 	if err := publishTelemetryBackend(c, sampling); err != nil {
@@ -266,4 +265,50 @@ func minioInstallValues(c *config.Config) map[string]any {
 func publishTelemetryBackend(c *config.Config, sampling float64) error {
 	endpoint := "https://otel." + c.Domain
 	return applyTelemetryJSON(map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]string{"name": "telemetry-backend", "namespace": "monitoring"}, "data": map[string]string{"enabled": "true", "otlpEndpoint": endpoint, "faroEndpoint": endpoint + "/collect", "profilesEndpoint": endpoint + "/pyroscope", "samplingRatio": strconv.FormatFloat(sampling/100, 'f', -1, 64)}})
+}
+
+// telemetryManifest writes a private temporary copy of a telemetry manifest
+// with installer substitutions applied; the caller removes it.
+func telemetryManifest(name string, c *config.Config, proxyImage string) (string, error) {
+	p, err := temporaryManifest(name, c)
+	if err != nil {
+		return "", err
+	}
+	var r *strings.Replacer
+	switch name {
+	case "telemetry-profile-ingest.yaml":
+		r = strings.NewReplacer("{{PROFILE_INGEST_IMAGE}}", proxyImage)
+	case "telemetry-ingress.yaml":
+		r = strings.NewReplacer("letsencrypt-prod", ActiveIssuer())
+	default:
+		return p, nil
+	}
+	b, err := os.ReadFile(p)
+	if err == nil {
+		err = os.WriteFile(p, []byte(r.Replace(string(b))), 0600)
+	}
+	if err != nil {
+		os.Remove(p)
+		return "", err
+	}
+	return p, nil
+}
+
+var imageRefRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._/:-]*$`)
+var imageTagRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$`)
+
+// ProfileIngestImage is the profile ingest proxy image of this release
+// (built with platform-api/portal by docker-build.yml; tag-dependent like them).
+func ProfileIngestImage(c *config.Config) (string, error) {
+	registry, tag := strings.TrimRight(strings.TrimSpace(c.ImageRegistry), "/"), strings.TrimSpace(c.ImageTag)
+	if registry == "" {
+		registry = "ghcr.io/mpratyush54"
+	}
+	if tag == "" {
+		tag = config.DefaultImageTag
+	}
+	if !imageRefRe.MatchString(registry) || !imageTagRe.MatchString(tag) {
+		return "", fmt.Errorf("invalid PLATFORM_IMAGE_REGISTRY/PLATFORM_IMAGE_TAG for the profile ingest image")
+	}
+	return registry + "/platform-profile-ingest:" + tag, nil
 }

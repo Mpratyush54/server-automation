@@ -18,12 +18,18 @@ import (
 func startBackgroundPrePull() {
 	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
 	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
-	n := len(images.ListForTelemetry(components.FullTelemetry(cfg))) + 2
+	extra := []string{apiImg, portalImg}
+	if components.FullTelemetry(cfg) {
+		if img, err := components.ProfileIngestImage(cfg); err == nil {
+			extra = append(extra, img)
+		}
+	}
+	n := len(images.ListForTelemetry(components.FullTelemetry(cfg))) + len(extra)
 	color.Cyan("  ■ Pre-pulling %d images in background (log: %s)", n, images.LogPath)
 
 	go func() {
 		done := state.Track("image-prepull (background)")
-		res := images.PrePullForTelemetry(context.Background(), resolveParallel(), components.FullTelemetry(cfg), apiImg, portalImg)
+		res := images.PrePullForTelemetry(context.Background(), resolveParallel(), components.FullTelemetry(cfg), extra...)
 		done(fmt.Sprintf("%d pulled, %d present, %d failed", len(res.Pulled), len(res.Skipped), len(res.Failed)))
 	}()
 }
