@@ -26,7 +26,7 @@ import {
   parseStacktrace,
 } from '@grafana/faro-web-sdk';
 import { SDK_NAME, SENSITIVE_INPUT_SELECTOR } from './rum-deps';
-import { RumHandle, RumPlan, RumTransportItem, sanitizeUrl, scrubText, scrubTransportItem, shouldPropagate } from './rum';
+import { emitRumSpan, getReplayId, RumHandle, RumPlan, RumTransportItem, sanitizeUrl, scrubText, scrubTransportItem, shouldPropagate } from './rum';
 import { ClientSpan, installPropagation } from './rum-propagation';
 import { PlatformTransport } from './rum-transport';
 import { PlatformWebVitalsInstrumentation } from './rum-vitals';
@@ -186,7 +186,7 @@ export function buildFaroConfig(plan: RumPlan, view: { id: string; name: string 
     parseStacktrace,
     paused: false,
     preventGlobalExposure: true,
-    transports: [new PlatformTransport({ url: plan.faroEndpoint, token: plan.browserToken, errorsUrl: plan.errorsEndpoint, release: plan.options.appVersion })],
+    transports: [new PlatformTransport({ url: plan.faroEndpoint, token: plan.browserToken, errorsUrl: plan.errorsEndpoint, release: plan.options.appVersion, replayId: getReplayId })],
     unpatchedConsole: defaultUnpatchedConsole,
     beforeSend,
     eventDomain: EVENT_DOMAIN,
@@ -245,6 +245,7 @@ export function startFaro(plan: RumPlan, initialView: string): RumHandle {
         return shouldPropagate(url, plan.propagateTo, origin);
       },
       onSpan: (span) => {
+        emitRumSpan(span); // session replay network markers (#40)
         try {
           faro.api.pushTraces(spanToOtlp(span, plan, { sessionId: sessionId(), viewId: view.id, viewName: view.name }));
         } catch {

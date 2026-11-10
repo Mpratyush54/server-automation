@@ -52,8 +52,8 @@ export function PlatformProvider({ config, children }: PlatformProviderProps) {
 
   useEffect(() => {
     // Starts once per page; a no-op (no Faro download) unless `rum` is configured and enabled.
-    if (config.rum) void initRum(config.rum, { appName: config.appName, environment: config.environment });
-  }, [config.rum, config.appName, config.environment]);
+    if (config.rum) void initRum(config.rum, { appName: config.appName, environment: config.environment, apiBase: config.apiBase, token: config.token });
+  }, [config.rum, config.appName, config.environment, config.apiBase, config.token]);
 
   return React.createElement(PlatformContext.Provider, { value: { config, api } }, children);
 }

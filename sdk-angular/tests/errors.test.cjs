@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { PlatformTransport } = require('../dist/rum-transport');
 test('scrubbed Faro exceptions mirror to project ingest with release, frames and breadcrumbs', async () => {
   const calls = [];
-  const t = new PlatformTransport({ url: 'https://otel.example.test/collect', errorsUrl: 'https://platform.example.test/api/errors/rum', token: 'web-test', release: '1.2.3', fetchImpl: async (url, init) => {
+  const t = new PlatformTransport({ url: 'https://otel.example.test/collect', errorsUrl: 'https://platform.example.test/api/errors/rum', token: 'web-test', release: '1.2.3', replayId: () => 'replay-test', fetchImpl: async (url, init) => {
     calls.push({ url, init }); return { status: 202 };
   }});
   t.send([{ type: 'event', payload: { name: 'cart opened' }, meta: {} }, {
@@ -13,7 +13,7 @@ test('scrubbed Faro exceptions mirror to project ingest with release, frames and
   await new Promise(r => setImmediate(r));
   const errorCall = calls.find(c => c.url.endsWith('/errors/rum'));
   const e = JSON.parse(errorCall.init.body);
-  assert.equal(e.release, '1.2.3'); assert.equal(e.sessionId, 'session-test');
+  assert.equal(e.release, '1.2.3'); assert.equal(e.sessionId, 'session-test'); assert.equal(e.replayId, 'replay-test');
   assert.equal(e.frames[0].column, 3); assert.equal(e.breadcrumbs[0].message, 'cart opened');
   assert.equal(errorCall.init.credentials, 'omit');
   assert.equal(errorCall.init.headers.Authorization, 'Bearer web-test');
