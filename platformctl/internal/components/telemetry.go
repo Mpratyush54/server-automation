@@ -17,6 +17,15 @@ import (
 
 // FullTelemetry deliberately does not interpret an empty profile as full:
 // old saved installations must explicitly opt in to the new storage layout.
+// observabilityFlag is PLATFORM_OBSERVABILITY for the API: "enabled" when the
+// collector at otel.<DOMAIN> is installed, "" (disabled) otherwise.
+func observabilityFlag(c *config.Config) string {
+	if FullTelemetry(c) {
+		return "enabled"
+	}
+	return ""
+}
+
 func FullTelemetry(c *config.Config) bool {
 	return c.Profile == config.ProfileFull && c.InstallMonitoring
 }

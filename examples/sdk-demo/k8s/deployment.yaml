@@ -15,6 +15,12 @@ spec:
       labels:
         app: sdk-demo
     spec:
+      # Project namespaces enforce Pod Security "restricted" (#22).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: app
           # Public image so GitOps sync becomes Ready without a private registry.
@@ -22,6 +28,11 @@ spec:
           args:
             - "-text=hello-from-github-sdk-demo"
             - "-listen=:8080"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - name: http
               containerPort: 8080

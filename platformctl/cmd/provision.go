@@ -136,6 +136,9 @@ func provisionGraph(c *config.Config) []stepDef {
 			args: install("auto-update"), fn: components.InstallAutoUpdate},
 		{name: "telemetry", deps: []string{"platform", "monitoring", "routing"}, skip: !components.FullTelemetry(c), args: install("telemetry"), fn: components.InstallTelemetry},
 		{name: "seed", deps: []string{"platform"}, args: []string{"seed"}, fn: components.SeedAdmin, warnOnly: true},
+		// MinIO IAM needs the platform API (its OpenID issuer), so the API's scoped
+		// storage user is created after "platform"; the API restarts with it.
+		{name: "storage-scoped", deps: []string{"platform", "minio"}, args: install("storage-scoped"), fn: components.SetupBundledStorage},
 	}
 }
 

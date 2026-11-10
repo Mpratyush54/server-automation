@@ -278,3 +278,12 @@ func TestFullProfileMinIOBudget(t *testing.T) {
 		t.Fatal("full-profile MinIO unbounded")
 	}
 }
+
+// #49 turns the /api/sdk/config telemetry block on from PLATFORM_OBSERVABILITY.
+func TestObservabilityFlagFollowsFullTelemetry(t *testing.T) {
+	full := &config.Config{Profile: config.ProfileFull, InstallMonitoring: true}
+	std := &config.Config{Profile: config.ProfileStandard, InstallMonitoring: true}
+	if observabilityFlag(full) != "enabled" || observabilityFlag(std) != "" {
+		t.Fatalf("full=%q standard=%q", observabilityFlag(full), observabilityFlag(std))
+	}
+}
