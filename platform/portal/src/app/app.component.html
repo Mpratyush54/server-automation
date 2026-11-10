@@ -1,4 +1,4 @@
-@if (!isLoginPage && !isLandingPage && !isDocsPage) {
+@if (!isLoginPage && !isLandingPage && !isDocsPage && !isPublicStatusPage) {
   <div class="app-layout">
     <!-- Sleek Next.js background glow -->
     <div class="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-900/20 blur-[120px] pointer-events-none"></div>
@@ -13,7 +13,7 @@
   </div>
 }
 
-@if (isLoginPage || isLandingPage || isDocsPage) {
+@if (isLoginPage || isLandingPage || isDocsPage || isPublicStatusPage) {
   <div>
     <router-outlet></router-outlet>
   </div>
