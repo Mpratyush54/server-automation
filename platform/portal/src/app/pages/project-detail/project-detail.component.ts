@@ -7,11 +7,12 @@ import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { OperationProgressComponent } from '../../shared/operation-progress.component';
 import { EnvironmentTabComponent } from './environment-tab/environment-tab.component';
+import { TopologyGraphComponent } from './topology/topology-graph.component';
 
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent],
+  imports: [CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent],
   templateUrl: './project-detail.component.html',
   styleUrl: './project-detail.component.css'
 })
