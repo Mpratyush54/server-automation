@@ -25,7 +25,7 @@ export function render(dir) {
   const timings = readJSON(path.join(dir, 'timings.json'));
   const failed = results.filter((r) => r.status === 'fail');
   const provision = phases.find((p) => p.phase === 'provision');
-  const verdict = failed.length === 0 && results.length > 0 && provision?.status === 'ok' ? 'passed' : 'FAILED';
+  const verdict = failed.length === 0 && !phases.some((p) => p.status === 'failed') && results.length > 0 && provision?.status === 'ok' ? 'passed' : 'FAILED';
   const out = [];
   out.push(`## e2e VM: ${cell(meta.profile || '?')} profile ${verdict}`, '');
   const facts = [

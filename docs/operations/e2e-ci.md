@@ -23,6 +23,39 @@ Before the VM starts, a `prepare` job builds or downloads `platformctl` and
 waits (up to 40 minutes) until the `platform-api` and `platform-portal` images
 for the chosen tag exist, so a tag push does not race the image build.
 
+### Upgrade job
+
+Release `v*` tag pushes also run `upgrade` on a separate minimal-profile VM
+(90-minute cap). Nightly runs do not. For `workflow_dispatch`, select a release
+tag or set `platformctl_version` to the target release. A dispatch building
+from a branch has no release target and skips this job. `image_tag` does not
+override upgrade images: the source and target must use their own release tags.
+
+The optional `upgrade_from` input is a release tag strictly below the target.
+When empty, the job queries all pages of the GitHub releases API and picks the
+highest version below the target, including rc/pre-releases, excluding drafts,
+invalid version tags and the target itself. If no prior release exists, or its
+checksum-verified binary's command list lacks `upgrade`, the job emits a clear
+skip notice and allocates no VM. Download/checksum/API failures fail the job.
+
+It reuses `aws-vm.sh`, `provision.sh`, `run-checks.sh`, `collect.sh`, `summary.mjs`
+and `lib.sh`. The source release's binary provisions the source image tag.
+It logs in as admin and seeds a project, project secret and MinIO object via
+the API, then runs `platformctl upgrade --to <target> --yes` using the installed
+source CLI. Standard checks run after upgrade, followed by verification of the
+same project/secret IDs, object bytes, a fresh login and the original JWT.
+Private seed state is never uploaded. Upgrade console output goes through the
+existing redaction/collection path. The `e2e-upgrade-<run>-<attempt>` artifact
+contains logs and the job summary; teardown always runs, including after a
+partially failed launch. The existing TTL and janitor also apply.
+
+The first upgradable release cannot prove a release-to-release upgrade when
+its predecessor lacks the command. Two published releases containing `upgrade`
+and configured AWS OIDC access are needed to validate that path. Manual VM
+checks remain required for MFA, secret decryption, seeded deployments, detailed
+migration/backup/history assertions, injected rollback, and active-operation,
+low-disk and unreachable-backup refusals. See [upgrade operations](upgrades.md).
+
 ### One run, step by step
 
 1. **Launch** (`scripts/e2e/aws-vm.sh launch`): a per-run security group (SSH
@@ -84,7 +117,8 @@ Any failed check fails the job; the logs are uploaded either way.
 GoReleaser publishes **every** tag as a GitHub pre-release
 (`platformctl/.goreleaser.yaml`: `prerelease: "true"`, `make_latest: "false"`).
 For a stable tag `vX.Y.Z`, the `promote` job of `e2e-vm.yml` runs only when
-both profiles passed with the release binary and the release's own images. It
+both profiles passed with the release binary and the release's own images, and
+the `upgrade` job succeeded or was skipped. A failing upgrade blocks promotion. It
 waits for `release-platformctl.yml` to finish successfully, then:
 
 - `gh release edit vX.Y.Z --prerelease=false --latest`
