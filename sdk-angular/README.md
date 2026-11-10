@@ -76,6 +76,8 @@ Import `BugReporterComponent` into a standalone page and add `<platform-bug-repo
 | `PlatformHttpInterceptor` | Times every `HttpClient` call → `/api/sdk/api-metrics` (SDK's own calls are skipped) |
 | `PlatformErrorHandler` | Replaces Angular `ErrorHandler`; reports uncaught errors |
 | `BugReporterComponent` | Floating reporter; attaches recent console messages (credentials redacted) + browser info |
+| `PlatformRumService` | Frontend RUM: `trackRouter(router)` records a view per `NavigationEnd`; started by `forRoot` when `rum` is set |
+| `providePlatformRum(rum)` | RUM only, for standalone apps that skip `forRoot` |
 
 ## `PlatformConfig`
 
@@ -86,6 +88,19 @@ Import `BugReporterComponent` into a standalone page and add `<platform-bug-repo
 | `projectId` | yes | Project id for metrics / bugs |
 | `environment` | no | Environment label |
 | `appName` | no | App label |
+| `rum` | no | Frontend RUM via Grafana Faro (web vitals, errors, resources, clicks, routes, `traceparent` on HttpClient/fetch to `propagateTo` origins). Off when omitted: nothing is loaded |
+
+## Frontend RUM
+
+```ts
+PlatformModule.forRoot({ ...config, rum: { telemetryUrl: '/rum-config.json', propagateTo: ['https://api.example.com'] } });
+// AppComponent
+constructor(router: Router, rum: PlatformRumService) { rum.trackRouter(router); }
+```
+
+Faro is a lazy chunk (about 18 KB gzip, +1 KB in the initial chunk), fetched only when RUM is
+enabled by the platform, allowed by Do-Not-Track and sampled in. No PII by default. Measure with
+`npm run size`. Full guide: [docs/guides/frontend-rum.md](../docs/guides/frontend-rum.md).
 
 ## Examples
 

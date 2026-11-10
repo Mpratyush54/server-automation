@@ -42,8 +42,8 @@ Write-Host "Starting react-web :5173"
 Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'npm run dev' -WorkingDirectory "$root\react-web" -WindowStyle Minimized
 
 Write-Host "Starting angular-web :4200"
-$angCmd = 'set PORT=&& set ANGULAR_PORT=4200&& set API_URL=http://127.0.0.1:4100&& npm start'
-Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $angCmd -WorkingDirectory "$root\angular-web" -WindowStyle Minimized
+# ng serve on :4200, proxying /api and /health to node-api (proxy.conf.json).
+Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'npm start' -WorkingDirectory "$root\angular-web" -WindowStyle Minimized
 
 Write-Host ""
 Write-Host "Demos:"

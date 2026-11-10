@@ -25,6 +25,38 @@ script substitutes your platform's `DOMAIN` (e.g. `sed "s/__DOMAIN__/$DOMAIN/g" 
 
 The React and Angular images run unprivileged nginx (UID 101) on port **8080**; their
 containers and Services target 8080 (the Services still expose port 80 to the Ingress).
+Both images build the SDK from this repo first (`sdk-react` / `sdk-angular`), then the app
+(Vite / Angular CLI).
+
+## Frontend RUM (web vitals, errors, traces)
+
+`react-web` (react-router v7, `PlatformProvider` `rum` option + `useRumPageView`) and
+`angular-web` (Angular 18 standalone app, `providePlatformRum` + `PlatformRumService.trackRouter`)
+collect web vitals per page, JS errors, resource timings, clicks and a client span per API call,
+with `traceparent` sent only to their own origin and the Node API origin. The Node API's
+OpenTelemetry instrumentation (sdk-node) continues the trace, so Tempo shows browser -> API traces.
+
+RUM is off until the browser telemetry block is provided. At container start
+`rum-config.sh` writes `/rum-config.json` from `RUM_FARO_ENDPOINT`, `RUM_BROWSER_TOKEN` and
+`RUM_SAMPLING_RATIO` (k8s: optional Secret `sdk-demo-rum`); without them Faro is never loaded.
+See [docs/guides/frontend-rum.md](../../docs/guides/frontend-rum.md).
+
+Verify on a full-profile install (needs the observability backend, #37/#49):
+
+```bash
+NS=sdk-demo-apps-development
+# Browser telemetry block for the project (SDK token from the portal / deploy script)
+curl -fsS -H "Authorization: Bearer $SDK_TOKEN" "$PLATFORM_URL/api/sdk/config?projectId=$PROJECT_ID" | jq .telemetry
+kubectl -n $NS create secret generic sdk-demo-rum   --from-literal=faroEndpoint="https://otel.$DOMAIN/collect"   --from-literal=browserToken="<telemetry.browserToken>" --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n $NS rollout restart deploy/sdk-react-web deploy/sdk-angular-web
+curl -fsS "https://sdk-react.$DOMAIN/rum-config.json"   # {"enabled":true,...}
+```
+
+Then open `https://sdk-react.$DOMAIN/` and `https://sdk-angular.$DOMAIN/` (or drive them with
+Playwright), click the API buttons, visit Orders -> an order, and press "Throw JS error". In
+Grafana: Faro/Loki shows `web-vitals` measurements per view (`/`, `/orders`, `/orders/:id`),
+the exception with its stack, `click` events with selectors; Tempo shows `HTTP GET` client spans
+from `sdk-react-web` / `sdk-angular-web` whose children are the Node API server spans.
 
 Portal project: **sdk-demo-apps** → Metrics / API Latency.
 

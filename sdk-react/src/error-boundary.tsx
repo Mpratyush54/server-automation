@@ -2,6 +2,7 @@ import React, { Component, ErrorInfo, ReactNode } from 'react';
 import axios from 'axios';
 import { PlatformConfig, PlatformContext, PlatformContextValue } from './context';
 import { platformHeaders, redactSensitive } from './telemetry';
+import { reportRumError } from './rum';
 
 export interface ErrorBoundaryProps {
   /** Defaults to the config of the enclosing `<PlatformProvider>`. */
@@ -29,6 +30,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    reportRumError(error, { source: 'react-error-boundary' });
     this.reportBug(error, errorInfo);
   }
 

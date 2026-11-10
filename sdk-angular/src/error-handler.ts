@@ -2,6 +2,7 @@ import { Injectable, Inject, ErrorHandler, Injector } from '@angular/core';
 import { HttpBackend, HttpClient } from '@angular/common/http';
 import { PLATFORM_CONFIG, PlatformConfig } from './platform-config';
 import { platformHeaders, redactSensitive } from './platform-http';
+import { reportRumError } from './rum';
 
 @Injectable()
 export class PlatformErrorHandler implements ErrorHandler {
@@ -13,6 +14,8 @@ export class PlatformErrorHandler implements ErrorHandler {
   handleError(error: any): void {
     const message = redactSensitive(error?.message || String(error));
     const stack = redactSensitive(error?.stack || '');
+    // Angular swallows errors in its zone, so Faro's window.onerror hook never sees them.
+    reportRumError(error, { source: 'angular-error-handler' });
 
     try {
       // HttpBackend bypasses app interceptors (no metrics loop, no foreign headers).

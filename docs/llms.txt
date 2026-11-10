@@ -20,6 +20,7 @@ This file provides a machine-readable index of all documentation pages for LLM c
 - `docs/guides/preview-environments.md` — Preview environment pipeline
 - `docs/guides/clickup-integration.md` — ClickUp webhook setup
 - `docs/guides/monitoring.md` — Grafana, Loki, Prometheus
+- `docs/guides/frontend-rum.md` — React/Angular SDK RUM (Faro): web vitals, errors, routes, traceparent, privacy, bundle size
 - `docs/guides/database-backups.md` — Automated pg_dump, restore workflow
 - `docs/guides/local-development.md` — Running everything locally
 - `docs/guides/testing.md` — Unit, integration, deployment tests

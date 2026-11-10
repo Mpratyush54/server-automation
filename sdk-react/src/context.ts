@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, ReactNode } from 'react';
 import axios, { AxiosInstance } from 'axios';
 import { attachMetrics, createTelemetryClient, platformHeaders } from './telemetry';
+import { initRum, PlatformRumOptions } from './rum';
 
 export interface PlatformConfig {
   apiBase: string;
@@ -8,6 +9,11 @@ export interface PlatformConfig {
   projectId: string;
   environment?: string;
   appName?: string;
+  /**
+   * Frontend RUM (web vitals, errors, resources, clicks, routes, trace propagation)
+   * via Grafana Faro. Off when omitted: nothing is loaded. See `PlatformRumOptions`.
+   */
+  rum?: PlatformRumOptions | false;
 }
 
 export interface PlatformContextValue {
@@ -43,6 +49,11 @@ export function PlatformProvider({ config, children }: PlatformProviderProps) {
     const telemetry = createTelemetryClient(config);
     return attachMetrics(api, telemetry, config);
   }, [api, config]);
+
+  useEffect(() => {
+    // Starts once per page; a no-op (no Faro download) unless `rum` is configured and enabled.
+    if (config.rum) void initRum(config.rum, { appName: config.appName, environment: config.environment });
+  }, [config.rum, config.appName, config.environment]);
 
   return React.createElement(PlatformContext.Provider, { value: { config, api } }, children);
 }

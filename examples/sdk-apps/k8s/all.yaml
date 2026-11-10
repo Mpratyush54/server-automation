@@ -106,6 +106,15 @@ spec:
         - name: web
           image: sdk-react-web:local
           imagePullPolicy: IfNotPresent
+          env:
+            # Browser RUM (optional): Faro endpoint + public browser token from GET /api/sdk/config
+            # (telemetry.faroEndpoint / telemetry.browserToken), stored in Secret sdk-demo-rum.
+            - name: RUM_FARO_ENDPOINT
+              valueFrom:
+                secretKeyRef: { name: sdk-demo-rum, key: faroEndpoint, optional: true }
+            - name: RUM_BROWSER_TOKEN
+              valueFrom:
+                secretKeyRef: { name: sdk-demo-rum, key: browserToken, optional: true }
           ports:
             - containerPort: 8080
           resources:
@@ -152,6 +161,14 @@ spec:
           env:
             - name: API_BASE
               value: "https://sdk-demo-apps-development.__DOMAIN__"
+            # Browser RUM (optional): Faro endpoint + public browser token from GET /api/sdk/config
+            # (telemetry.faroEndpoint / telemetry.browserToken), stored in Secret sdk-demo-rum.
+            - name: RUM_FARO_ENDPOINT
+              valueFrom:
+                secretKeyRef: { name: sdk-demo-rum, key: faroEndpoint, optional: true }
+            - name: RUM_BROWSER_TOKEN
+              valueFrom:
+                secretKeyRef: { name: sdk-demo-rum, key: browserToken, optional: true }
           ports:
             - containerPort: 8080
           resources:

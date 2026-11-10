@@ -1,8 +1,10 @@
 #!/bin/sh
 set -eu
+html=/usr/share/nginx/html
 API_BASE="${API_BASE:-}"
-# Rewrite app.js fetch base if API_BASE is set
-if [ -n "$API_BASE" ] && [ -f /usr/share/nginx/html/app.js ]; then
-  sed -i "s|__API_BASE__|${API_BASE}|g" /usr/share/nginx/html/app.js
-fi
+case "$API_BASE" in *'"'*|*'\'*|*'<'*) echo "API_BASE contains invalid characters" >&2; exit 1 ;; esac
+# Runtime config read by the app (src/app/api-base.ts).
+printf 'window.__APP_CONFIG__ = { apiBase: "%s" };\n' "$API_BASE" > "$html/app-config.js"
+# Browser RUM config (RUM_FARO_ENDPOINT / RUM_BROWSER_TOKEN / RUM_SAMPLING_RATIO).
+RUM_CONFIG_PATH="$html/rum-config.json" /usr/local/bin/rum-config.sh
 exec nginx -g 'daemon off;'
