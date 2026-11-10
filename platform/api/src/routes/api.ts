@@ -38,6 +38,7 @@ import privacyRoutes from './privacy';
 import gitAppRoutes from './git-apps';
 import topologyRoutes from './topology';
 import syntheticRoutes from './synthetics';
+import observabilityRoutes from './observability';
 
 router.use('/', errorTrackingRoutes);
 router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB only; Redis reported, not gating)
@@ -74,6 +75,7 @@ router.use('/', notificationRoutes);
 router.use('/', operationRoutes);
 router.use('/', backupRoutes);
 router.use('/', syntheticRoutes); // synthetic checks, results, status feed, browser runner (#42)
+router.use('/', observabilityRoutes); // project-scoped Prometheus/Loki/Tempo/Pyroscope query proxies, fleet view (#48)
 router.use('/', topologyRoutes); // GET /projects/:projectId/environments/:envId/topology (#31)
 
 /** GET /api/openapi.json — OpenAPI 3 spec derived from openapi.yaml (parsed once, cached). */

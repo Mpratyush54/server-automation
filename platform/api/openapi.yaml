@@ -17,6 +17,7 @@ tags:
   - name: Settings
   - name: Notifications
   - name: Synthetics
+  - name: Observability
   - name: Privacy
   - name: Telemetry
 paths:
@@ -1354,6 +1355,206 @@ paths:
         - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
         '200': { description: Status feed }
+  /observability/status:
+    get:
+      tags: [Observability]
+      summary: Whether the observability backends (full profile) are installed, and query limits
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: '{ enabled, backends, limits: { maxRangeHours, maxLogLines, maxTraces } }' }
+  /observability/fleet:
+    get:
+      tags: [Observability]
+      summary: Fleet overview (per project health, request rate, error rate, p95, active alerts, open errors, synthetics, SLOs)
+      description: |
+        Platform admin/devops see every project; other users only the projects they are members of.
+        Metric queries are grouped by project and restricted to the visible projects server-side.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: since, in: query, schema: { type: string, example: 1h } }
+      responses:
+        '200': { description: '{ telemetryEnabled, telemetryError, range, truncated, scope: all|member, projects: [...] }' }
+  /projects/{projectId}/observability/summary:
+    get:
+      tags: [Observability]
+      summary: Project overview (RED + Apdex from Tempo span metrics, incidents, open errors, synthetics, SLOs, health)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: since, in: query, schema: { type: string, example: 1h } }
+        - { name: environment, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Summary (works without telemetry; red is null then) }
+        '403': { description: Not a project member }
+  /projects/{projectId}/observability/services:
+    get:
+      tags: [Observability]
+      summary: APM service list (request rate, error rate, p95) from span metrics
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: since, in: query, schema: { type: string, example: 1h } }
+        - { name: environment, in: query, schema: { type: string } }
+      responses:
+        '200': { description: '{ range, services: [{ name, requestRate, errorRate, p95Ms }] }' }
+        '503': { description: Observability backends not installed (code observability_disabled) }
+  /projects/{projectId}/observability/endpoints:
+    get:
+      tags: [Observability]
+      summary: APM endpoint table (top 100 span names by rate)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: since, in: query, schema: { type: string, example: 1h } }
+        - { name: service, in: query, schema: { type: string } }
+        - { name: environment, in: query, schema: { type: string } }
+      responses:
+        '200': { description: '{ range, endpoints: [{ service, name, requestRate, errorRate, p95Ms }] }' }
+  /projects/{projectId}/observability/red:
+    get:
+      tags: [Observability]
+      summary: RED time series (request rate, error percent, p95 ms)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: since, in: query, schema: { type: string, example: 1h } }
+        - { name: step, in: query, schema: { type: string } }
+        - { name: service, in: query, schema: { type: string } }
+        - { name: environment, in: query, schema: { type: string } }
+      responses:
+        '200': { description: '{ range, step, requestRate: [[t, v]], errorRate, p95Ms }' }
+  /projects/{projectId}/observability/service-graph:
+    get:
+      tags: [Observability]
+      summary: Service map from Tempo service-graph metrics; services of other projects are shown as "(other project)"
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: since, in: query, schema: { type: string, example: 1h } }
+        - { name: environment, in: query, schema: { type: string } }
+      responses:
+        '200': { description: '{ range, nodes: [{ id, external, virtual }], edges: [{ source, target, requestRate, failedRate, errorRate }] }' }
+  /projects/{projectId}/observability/infra:
+    get:
+      tags: [Observability]
+      summary: Pod CPU and memory series and restarts for the project namespaces
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: since, in: query, schema: { type: string, example: 1h } }
+        - { name: environment, in: query, schema: { type: string } }
+      responses:
+        '200': { description: '{ range, step, namespaces, cpu, memory, restarts }' }
+  /projects/{projectId}/observability/query/prom:
+    get:
+      tags: [Observability]
+      summary: PromQL proxy; platform_project_id="<project>" is injected into every selector
+      description: |
+        Matchers on platform_project_id other than the caller's own id are refused (400 invalid_query), as is
+        selector syntax the proxy cannot scope. Range capped (OBSERVABILITY_MAX_RANGE_HOURS), step raised to
+        at most OBSERVABILITY_MAX_POINTS points, series capped, upstream errors are not passed through.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: query, in: query, required: true, schema: { type: string, maxLength: 4000 } }
+        - { name: since, in: query, schema: { type: string, example: 1h } }
+        - { name: start, in: query, schema: { type: string } }
+        - { name: end, in: query, schema: { type: string } }
+        - { name: step, in: query, schema: { type: string } }
+        - { name: instant, in: query, schema: { type: string, enum: ['1', 'true'] } }
+      responses:
+        '200': { description: '{ query (scoped), range, step, resultType, result, truncated }' }
+        '400': { description: Query cannot be scoped, or the backend rejected it }
+        '504': { description: Query timed out }
+  /projects/{projectId}/observability/query/loki:
+    get:
+      tags: [Observability]
+      summary: LogQL proxy; every stream selector is scoped to the project (or use structured filters)
+      description: |
+        Pass `query` (LogQL) or the structured filters service / environment / level / search / traceId.
+        `after` (nanosecond cursor) supports live tail by polling. Entries carry traceId/spanId for trace links.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: query, in: query, schema: { type: string, maxLength: 4000 } }
+        - { name: service, in: query, schema: { type: string } }
+        - { name: environment, in: query, schema: { type: string } }
+        - { name: level, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: traceId, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer } }
+        - { name: direction, in: query, schema: { type: string, enum: [backward, forward] } }
+        - { name: after, in: query, schema: { type: string } }
+        - { name: since, in: query, schema: { type: string, example: 1h } }
+      responses:
+        '200': { description: '{ query, range, resultType, entries: [{ ts, line, labels, traceId, spanId }], truncated }' }
+  /projects/{projectId}/observability/query/tempo:
+    get:
+      tags: [Observability]
+      summary: TraceQL search proxy; every spanset filter is wrapped in the project condition
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: q, in: query, schema: { type: string, maxLength: 4000 } }
+        - { name: service, in: query, schema: { type: string } }
+        - { name: name, in: query, schema: { type: string } }
+        - { name: environment, in: query, schema: { type: string } }
+        - { name: minDuration, in: query, schema: { type: string } }
+        - { name: maxDuration, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [error, ok, unset] } }
+        - { name: limit, in: query, schema: { type: integer } }
+        - { name: since, in: query, schema: { type: string, example: 1h } }
+      responses:
+        '200': { description: '{ query, range, traces: [{ traceId, rootServiceName, startTime, durationMs, spans, matched }] }' }
+  /projects/{projectId}/observability/traces/{traceId}:
+    get:
+      tags: [Observability]
+      summary: One trace (waterfall); only spans of this project are returned, others are counted in hiddenSpans
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: traceId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F]{1,32}$' } }
+      responses:
+        '200': { description: '{ traceId, spans, hiddenSpans, truncated }' }
+        '404': { description: Trace not found (or no span of this project) }
+  /projects/{projectId}/observability/profiles/meta:
+    get:
+      tags: [Observability]
+      summary: Profiled services and profile types of the project (Pyroscope)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: since, in: query, schema: { type: string, example: 24h } }
+      responses:
+        '200': { description: '{ range, services, profileTypes }' }
+  /projects/{projectId}/observability/query/pyroscope:
+    get:
+      tags: [Observability]
+      summary: Flame graph (Pyroscope flamebearer); the selector is built server-side from validated parameters
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: profileType, in: query, schema: { type: string } }
+        - { name: service, in: query, schema: { type: string } }
+        - { name: environment, in: query, schema: { type: string } }
+        - { name: maxNodes, in: query, schema: { type: integer, maximum: 8192 } }
+        - { name: since, in: query, schema: { type: string, example: 1h } }
+      responses:
+        '200': { description: '{ query, range, profileType, flamebearer, metadata }' }
   /synthetics/capabilities:
     get:
       tags: [Synthetics]

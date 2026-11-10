@@ -14,6 +14,9 @@ const ALLOWED: Record<string, string> = {
   'middleware/auth.ts': 'local cache with pub/sub invalidation',
   // Request-scoped lookup table (users by id) inside one handler.
   'routes/projects.ts': 'request-scoped',
+  // Observability proxies (#48): per-response lookup tables (series by label, graph edges).
+  'lib/observability-backends.ts': 'request-scoped',
+  'routes/observability.ts': 'request-scoped',
   // Per-process Prometheus counters (#19); scraped from every pod and summed.
   'lib/job-metrics.ts': 'per-process metrics',
   // Leader-job timers of this process (#19).
