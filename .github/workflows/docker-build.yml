@@ -7,6 +7,9 @@ on:
     paths:
       - "platform/api/**"
       - "platform/portal/**"
+      - "platformctl/profile-ingest/**"
+      - "platformctl/internal/profileproxy/**"
+      - "platformctl/go.mod"
       - ".github/workflows/docker-build.yml"
       - ".trivyignore"
   pull_request:
@@ -14,6 +17,9 @@ on:
     paths:
       - "platform/api/**"
       - "platform/portal/**"
+      - "platformctl/profile-ingest/**"
+      - "platformctl/internal/profileproxy/**"
+      - "platformctl/go.mod"
       - ".github/workflows/docker-build.yml"
       - ".trivyignore"
   workflow_dispatch:
@@ -42,10 +48,17 @@ jobs:
         include:
           - name: api
             context: ./platform/api
+            file: ./platform/api/Dockerfile
             image: platform-api
           - name: portal
             context: ./platform/portal
+            file: ./platform/portal/Dockerfile
             image: platform-portal
+          # Profile ingest proxy for the full telemetry profile (platformctl module).
+          - name: profile-ingest
+            context: ./platformctl
+            file: ./platformctl/profile-ingest/Dockerfile
+            image: platform-profile-ingest
 
     steps:
       - name: Checkout repository
@@ -87,6 +100,7 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
           platforms: linux/amd64
           load: true
           push: false
@@ -101,6 +115,7 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -242,7 +257,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OWNER: ${{ github.repository_owner }}
         run: |
-          for pkg in platform-api platform-portal; do
+          for pkg in platform-api platform-portal platform-profile-ingest; do
             echo "Setting visibility for $pkg..."
             gh api \
               --method PUT \

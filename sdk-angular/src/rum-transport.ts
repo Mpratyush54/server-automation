@@ -8,11 +8,14 @@
  *
  * NOTE: shared verbatim between sdk-react and sdk-angular.
  */
+import type { ErrorEvent } from './error-event';
 import { BaseTransport, getTransportBody, VERSION } from '@grafana/faro-core';
 
 export interface PlatformTransportOptions {
   url: string;
   token: string;
+  errorsUrl?: string | null;
+  release?: string;
   /** Max batches waiting while the collector is unavailable (default 30). */
   maxQueue?: number;
   /** Backoff cap in ms (default 60 s). */
@@ -40,6 +43,7 @@ export class PlatformTransport extends BaseTransport {
   /** Batches dropped because the queue was full. */
   dropped = 0;
   private queue: string[] = [];
+  private breadcrumbs: NonNullable<ErrorEvent['breadcrumbs']> = [];
   private blockedUntil = 0;
   private failures = 0;
   private inFlight = false;
@@ -62,6 +66,32 @@ export class PlatformTransport extends BaseTransport {
     try {
       const list = Array.isArray(items) ? items : [items];
       if (!list.length) return;
+      if (this.opts.errorsUrl) for (const item of list.slice(0, 20)) {
+        if (item.type !== 'exception') {
+          if (item.type === 'event' || item.type === 'log') {
+            this.breadcrumbs.push({ message: String(item.payload?.name || item.payload?.message || item.type).slice(0, 1000), category: item.type });
+            if (this.breadcrumbs.length > 20) this.breadcrumbs.shift();
+          }
+          continue;
+        }
+        const p = item.payload || {}, meta = item.meta || {};
+        const event: ErrorEvent = {
+          eventId: globalThis.crypto?.randomUUID?.(), type: String(p.type || 'Error').slice(0, 200),
+          message: String(p.value || p.message || 'Unknown error').slice(0, 8000),
+          release: this.opts.release || meta.app?.version || 'unknown',
+          environment: meta.app?.environment || 'production',
+          sessionId: meta.session?.id, userId: meta.user?.id, breadcrumbs: [...this.breadcrumbs],
+          traceId: p.trace?.trace_id,
+          frames: (p.stacktrace?.frames || []).slice(0, 100).map((f: any) => ({
+            file: String(f.filename || f.file || '<unknown>'), function: f.function,
+            line: Math.max(1, Number(f.lineno ?? f.line) || 1),
+            column: Math.max(0, (Number(f.colno ?? f.column) || 1) - 1),
+          })),
+        };
+        void this.fetchImpl(this.opts.errorsUrl, { method: 'POST', credentials: 'omit',
+          headers: { Authorization: `Bearer ${this.opts.token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(event), keepalive: true }).catch(() => {});
+      }
       this.enqueue(JSON.stringify(getTransportBody(list)));
       this.pump();
     } catch {
@@ -74,7 +104,7 @@ export class PlatformTransport extends BaseTransport {
   }
 
   override getIgnoreUrls(): Array<string | RegExp> {
-    return [this.opts.url];
+    return [this.opts.url, ...(this.opts.errorsUrl ? [this.opts.errorsUrl] : [])];
   }
 
   private enqueue(body: string): void {

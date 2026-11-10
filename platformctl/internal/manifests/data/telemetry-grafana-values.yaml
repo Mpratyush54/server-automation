@@ -71,7 +71,11 @@ grafana:
         serviceMap: {datasourceUid: prometheus}
         tracesToProfiles:
           datasourceUid: pyroscope
-          tags: [service.name]
+          # Profiles carry the project from the ingest token and the service
+          # without its project prefix as platform_service (profile-ingest proxy).
+          tags:
+            - {key: platform.project_id, value: platform_project_id}
+            - {key: service.name, value: platform_service}
           profileTypeId: 'process_cpu:cpu:nanoseconds:cpu:nanoseconds'
     - name: Pyroscope
       uid: pyroscope

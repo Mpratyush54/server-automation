@@ -17,7 +17,207 @@ tags:
   - name: Settings
   - name: Notifications
   - name: Synthetics
+  - name: Privacy
+  - name: Telemetry
 paths:
+  /privacy/defaults:
+    get:
+      tags: [Privacy]
+      summary: Cluster-wide privacy defaults and built-in scrub rules
+      security: []
+      responses:
+        '200':
+          description: Defaults for retention, consent and built-in PII rules
+  /projects/{projectId}/privacy:
+    get:
+      tags: [Privacy]
+      summary: Project privacy settings (scrubbing, retention, consent defaults)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Privacy settings }
+        '401': { description: Authentication required }
+        '403': { description: Project access required }
+  /projects/{projectId}/privacy/scrubbing:
+    put:
+      tags: [Privacy]
+      summary: Update project scrubbing rules
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scrubIps: { type: boolean }
+                rules:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, pattern]
+                    properties:
+                      id: { type: string }
+                      pattern: { type: string }
+                      replacement: { type: string }
+                      flags: { type: string }
+                      enabled: { type: boolean }
+      responses:
+        '200': { description: Updated settings }
+        '400': { description: Invalid rules }
+  /projects/{projectId}/privacy/retention:
+    put:
+      tags: [Privacy]
+      summary: Update per-type retention days (logs, traces, profiles, replays, errors)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Updated settings }
+  /projects/{projectId}/privacy/consent-defaults:
+    put:
+      tags: [Privacy]
+      summary: Update default consent for replay/analytics (hooks for #40)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Updated settings }
+  /projects/{projectId}/privacy/consent:
+    get:
+      tags: [Privacy]
+      summary: Resolve consent for a subject
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: subjectId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: sessionId
+          schema: { type: string }
+      responses:
+        '200': { description: Consent decision }
+    put:
+      tags: [Privacy]
+      summary: Record consent for a subject (portal)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Consent record }
+  /projects/{projectId}/privacy/gdpr-delete:
+    post:
+      tags: [Privacy]
+      summary: Delete a subject's telemetry across stores (audited)
+      description: |
+        Requires project owner. Deletes Mongo logs/errors matching userId/sessionId,
+        consent rows, MinIO objects under replays/{projectId}/user|session/…, and
+        submits Loki delete API requests. Always writes audit action privacy.gdpr_delete.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId: { type: string }
+                sessionId: { type: string }
+                email: { type: string, description: Optional; only SHA-256 is stored in audit metadata }
+      responses:
+        '200': { description: Delete result }
+        '400': { description: userId or sessionId required }
+  /sdk/privacy/consent:
+    get:
+      tags: [Privacy]
+      summary: SDK consent check (browser tokens allowed; for #40 replay gate)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: subjectId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: sessionId
+          schema: { type: string }
+      responses:
+        '200':
+          description: Compact consent decision
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  replayAllowed: { type: boolean }
+                  analyticsAllowed: { type: boolean }
+                  source: { type: string, enum: [recorded, default] }
+    put:
+      tags: [Privacy]
+      summary: SDK consent upsert (browser tokens allowed)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectId]
+              properties:
+                subjectId: { type: string }
+                sessionId: { type: string }
+                replayAllowed: { type: boolean }
+                analyticsAllowed: { type: boolean }
+      responses:
+        '200': { description: Consent record }
+  /sdk/privacy/replay-allowed:
+    get:
+      tags: [Privacy]
+      summary: Boolean replay gate for session replay (#40)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: subjectId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: sessionId
+          schema: { type: string }
+      responses:
+        '200':
+          description: Whether rrweb may start
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  replayAllowed: { type: boolean }
+
   /projects/{projectId}/argocd/refresh:
     post:
       tags: [Projects]

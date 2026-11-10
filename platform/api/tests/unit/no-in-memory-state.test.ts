@@ -6,6 +6,8 @@ import fs from 'fs';
 import path from 'path';
 
 const ALLOWED: Record<string, string> = {
+  // Bounded immutable source-map cache; Postgres/MinIO remain authoritative (#41).
+  'lib/error-sourcemaps.ts': '16-entry content-addressed performance cache',
   // In-memory OneTimeCodeStore: test double / PLATFORM_STATE_STORE=memory only.
   'lib/oidc-codes.ts': 'test double',
   // Short-TTL local permission cache; invalidated cluster-wide over Redis pub/sub.

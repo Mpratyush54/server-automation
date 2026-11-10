@@ -246,7 +246,7 @@ async function finish(r: Redis, ids: string[]): Promise<void> {
   await r.xdel(TELEMETRY_STREAM, ...ids);
 }
 
-const KNOWN_KINDS = new Set(['logs', 'api-metrics', 'heartbeat']);
+const KNOWN_KINDS = new Set(['logs', 'api-metrics', 'heartbeat', 'errors']);
 
 /** Forward a batch; returns the ids that are done (forwarded or dropped). */
 async function forward(entries: Entry[]): Promise<string[]> {

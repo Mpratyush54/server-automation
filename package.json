@@ -16,7 +16,8 @@
     "start": "concurrently \"npm run start:api:dev\" \"npm run start:portal\"",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
-    "docker:build": "docker-compose build"
+    "docker:build": "docker-compose build",
+    "platform-sourcemaps": "node scripts/platform-sourcemaps.mjs"
   },
   "devDependencies": {
     "concurrently": "^8.2.0"
