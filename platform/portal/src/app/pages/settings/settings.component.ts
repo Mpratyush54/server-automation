@@ -7,11 +7,12 @@ import { AuthService } from '../../services/auth.service';
 import { StepUpService } from '../../services/step-up.service';
 import { MfaService } from '../../services/mfa.service';
 import { OperationProgressComponent } from '../../shared/operation-progress.component';
+import { GitConnectComponent } from './git-connect.component';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, OperationProgressComponent],
+  imports: [CommonModule, FormsModule, OperationProgressComponent, GitConnectComponent],
   template: `
 <div>
   <!-- Page Header -->
@@ -61,8 +62,9 @@ import { OperationProgressComponent } from '../../shared/operation-progress.comp
   <!-- ─────────────────── LOGIN TAB ─────────────────── -->
   @if (activeTab === 'login' && isDevOps) {
     <div>
+      <app-git-connect [isAdmin]="isAdmin"></app-git-connect>
       <div class="card" style="margin-bottom:16px; padding:16px;">
-        <p style="margin:0; color:var(--text-secondary); font-size:0.8rem;">OAuth apps are optional at install time. Create a GitHub OAuth App and a GitLab Application, paste the client ID/secret here, then users can sign in from the login page. Callback URLs must match exactly.</p>
+        <p style="margin:0; color:var(--text-secondary); font-size:0.8rem;">Fallback when the one-click connect above cannot be used. OAuth apps are optional at install time. Create a GitHub OAuth App and a GitLab Application, paste the client ID/secret here, then users can sign in from the login page. Callback URLs must match exactly.</p>
       </div>
       <div class="grid-2" style="align-items:start;">
         <div class="card" style="padding:20px;">
