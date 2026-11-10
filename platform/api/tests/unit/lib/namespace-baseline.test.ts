@@ -185,7 +185,13 @@ it('grants exactly the verbs the baseline uses, namespaced only, with no broad R
   expect(baseline.rules).toEqual([
     { apiGroups: ['networking.k8s.io'], resources: ['networkpolicies'], verbs: ['get', 'list', 'create', 'update'] },
     { apiGroups: [''], resources: ['resourcequotas', 'limitranges'], verbs: ['get', 'list', 'create', 'update'] },
+    // #31 live topology: read-only lists in project namespaces; never secrets/configmaps.
+    { apiGroups: [''], resources: ['pods', 'services', 'persistentvolumeclaims', 'events'], verbs: ['list'] },
+    { apiGroups: ['apps'], resources: ['deployments', 'replicasets'], verbs: ['list'] },
+    { apiGroups: ['networking.k8s.io'], resources: ['ingresses'], verbs: ['list'] },
+    { apiGroups: ['cert-manager.io'], resources: ['certificates'], verbs: ['list'] },
   ]);
+  expect(baseline.rules.flatMap((r: any) => r.resources)).not.toContain('secrets');
   const api = docs.find(d => d.kind === 'ClusterRole' && d.metadata.name === 'platform-api');
   const rule = (resource: string) => api.rules.find((r: any) => r.resources.includes(resource));
   expect(rule('namespaces').verbs).toEqual(['get', 'list', 'create', 'update']);

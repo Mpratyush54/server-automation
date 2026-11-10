@@ -29,6 +29,7 @@ import { loadOpenApiJson, OpenApiUnavailableError } from '../lib/openapi-spec';
 import healthRoutes from './health';
 import operationRoutes from './operations';
 import backupRoutes from './backups';
+import topologyRoutes from './topology';
 
 router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB only; Redis reported, not gating)
 router.use('/', oidcRoutes); // before authRoutes: OIDC provider + GitHub/GitLab login (state cookie)
@@ -57,6 +58,7 @@ router.use('/', agentCommandRoutes);
 router.use('/', notificationRoutes);
 router.use('/', operationRoutes);
 router.use('/', backupRoutes);
+router.use('/', topologyRoutes); // GET /projects/:projectId/environments/:envId/topology (#31)
 
 /** GET /api/openapi.json — OpenAPI 3 spec derived from openapi.yaml (parsed once, cached). */
 router.get('/openapi.json', (_req, res) => {

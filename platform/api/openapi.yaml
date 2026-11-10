@@ -765,6 +765,28 @@ paths:
       responses:
         '200':
           description: Projects
+  /projects/{projectId}/environments/{envId}/topology:
+    get:
+      tags: [Projects]
+      summary: Live read-only resource graph for one environment (Argo Application resources + namespace objects)
+      description: |
+        Nodes {id, kind, name, health, sync, info, events} and edges {from, to, type: owns|routes|selects}.
+        Scoped to the environment namespace. Secret/ConfigMap nodes carry names only.
+      security:
+        - bearerAuth: []
+        - agentTokenAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: envId, in: path, required: true, description: Environment UUID (or environment name), schema: { type: string } }
+      responses:
+        '200':
+          description: Graph (argo.found=false when the Application does not exist; warnings lists partial read failures)
+        '403':
+          description: No access to this project
+        '404':
+          description: Project or environment not found
+        '503':
+          description: Kubernetes unreachable
   /deploy:
     post:
       tags: [Deployments]

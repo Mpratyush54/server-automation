@@ -245,3 +245,18 @@ rules:
 - apiGroups: [""]
   resources: ["resourcequotas", "limitranges"]
   verbs: ["get", "list", "create", "update"]
+# Live topology graph (#31): read-only list in project namespaces only (this
+# ClusterRole is bound per project namespace). No secrets/configmaps: Secret and
+# ConfigMap nodes are derived by name from the objects that reference them.
+- apiGroups: [""]
+  resources: ["pods", "services", "persistentvolumeclaims", "events"]
+  verbs: ["list"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["list"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["list"]
+- apiGroups: ["cert-manager.io"]
+  resources: ["certificates"]
+  verbs: ["list"]
