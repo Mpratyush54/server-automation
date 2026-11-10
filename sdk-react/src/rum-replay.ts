@@ -544,8 +544,29 @@ export class ReplayUploader {
       budget -= item.body.length;
       this.queue.splice(start, 1);
       this.queuedBytes -= item.body.length;
-      void this.request(item.body, true).catch(() => {});
+      // If the browser refuses the keepalive request (e.g. no keepalive preflight support),
+      // put the chunk back: the page may only be hidden, and the normal path retries it.
+      let req: Promise<{ status: number }>;
+      try {
+        req = this.request(item.body, true);
+      } catch (err) {
+        req = Promise.reject(err);
+      }
+      req.then(
+        (res) => {
+          if (res && res.status >= 200 && res.status < 300) this.sent++;
+          else if (res && (res.status === 0 || res.status >= 500 || res.status === 429)) this.requeue(item);
+        },
+        () => this.requeue(item),
+      );
     }
+  }
+
+  private requeue(item: { seq: number; body: Uint8Array }): void {
+    if (this.stopped) return;
+    this.queue.unshift(item);
+    this.queuedBytes += item.body.length;
+    this.schedule(1000);
   }
 
   stop(): void {

@@ -390,6 +390,30 @@ test('uploader queue is bounded and unload flush uses keepalive within 64 KiB', 
   assert.ok(keep.reduce((a, i) => a + i.body.length, 0) <= 60_000);
 });
 
+test('a refused keepalive request puts the chunk back for the normal retry path', async () => {
+  let calls = 0;
+  const timers = [];
+  const up = new replay.ReplayUploader({
+    url: 'u', token: 't', compress: (s) => Buffer.from(s), random: () => 0,
+    setTimer: (fn, ms) => timers.push({ fn, ms }),
+    fetchImpl: async (url, init) => {
+      calls++;
+      if (init.keepalive) throw new TypeError('Preflight request for request with keepalive specified is currently not supported');
+      return { status: 202, headers: { get: () => null } };
+    },
+  });
+  up.queue.push({ seq: 0, body: Buffer.from('a') }); // queued while hidden, nothing in flight
+  up.queuedBytes = 1;
+  up.flushUnload();
+  await flushMicro();
+  assert.equal(up.pending, 1, 'requeued');
+  timers.at(-1).fn();
+  await flushMicro();
+  assert.equal(up.pending, 0);
+  assert.equal(up.sent, 1);
+  assert.equal(calls, 2);
+});
+
 test('errors carry the replay id; exports are lazy wrappers', async () => {
   rum.setReplayIdForErrors('sess-1');
   assert.equal(rum.getReplayId(), 'sess-1');

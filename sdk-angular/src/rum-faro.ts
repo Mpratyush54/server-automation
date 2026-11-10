@@ -190,7 +190,7 @@ export function buildFaroConfig(plan: RumPlan, view: { id: string; name: string 
     unpatchedConsole: defaultUnpatchedConsole,
     beforeSend,
     eventDomain: EVENT_DOMAIN,
-    ignoreUrls: [plan.faroEndpoint, ...(plan.errorsEndpoint ? [plan.errorsEndpoint] : []), /\/collect(?:\/[\w]*)?$/],
+    ignoreUrls: [plan.faroEndpoint, ...(plan.errorsEndpoint ? [plan.errorsEndpoint] : []), /\/collect(?:\/[\w]*)?$/, /\/api\/sdk\/replay\//],
     // Sampling already happened in planRum (unsampled sessions never load Faro).
     sessionTracking: {
       enabled: true,
@@ -239,6 +239,7 @@ export function startFaro(plan: RumPlan, initialView: string): RumHandle {
       allow: (url) => {
         try {
           if (collector && new URL(url, origin).href.startsWith(collector)) return false;
+          if (/\/api\/sdk\/replay\//.test(new URL(url, origin).pathname)) return false; // session replay uploads (#40)
         } catch {
           return false;
         }
