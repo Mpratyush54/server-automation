@@ -46,7 +46,7 @@ router.get('/privacy/defaults', (_req, res) => {
     retentionDays: { ...DEFAULT_RETENTION_DAYS },
     consent: { ...DEFAULT_CONSENT },
     builtinScrubRules: builtinRulesPublic(true),
-    replayObjectPrefix: 'replays/{projectId}/user/{userId}/ | replays/{projectId}/session/{sessionId}/',
+    replayObjectPrefix: 'replays/{projectId}/{sessionId}/ (bucket replays; user deletes resolve sessions via replay_sessions)',
   });
 });
 
