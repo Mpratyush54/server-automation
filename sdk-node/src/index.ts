@@ -15,3 +15,5 @@ export { createWinstonTransport, createPinoTransport } from './transports';
 
 export { Telemetry, TelemetryConfig } from './telemetry';
 export { traceContext } from './telemetry-context';
+
+export type { ErrorEvent, ErrorFrame } from './error-event';

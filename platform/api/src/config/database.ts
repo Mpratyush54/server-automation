@@ -1,3 +1,4 @@
+import { ErrorIssue } from '../entities/ErrorIssue';
 import 'reflect-metadata';
 import path from 'path';
 import { DataSource } from 'typeorm';
@@ -52,7 +53,7 @@ export const AppDataSource = new DataSource({
   username: process.env.POSTGRES_USER || 'plat',
   password: process.env.POSTGRES_PASSWORD || 'plat',
   database: process.env.POSTGRES_DB || 'plat_platform',
-  entities: [Project, Environment, Deployment, ServiceRegistration, ProjectConfig, File, Alert, DbConnection, User, Role, AuditLog, ClickupTaskLink, SdkCredential, DbBackup, SmtpConfig, StorageProvider, Secret, SecretVersion, ProjectMember, AgentToken, AgentCommandApproval, IntegrationSettings, Notification, BackgroundJob,
+  entities: [ErrorIssue, Project, Environment, Deployment, ServiceRegistration, ProjectConfig, File, Alert, DbConnection, User, Role, AuditLog, ClickupTaskLink, SdkCredential, DbBackup, SmtpConfig, StorageProvider, Secret, SecretVersion, ProjectMember, AgentToken, AgentCommandApproval, IntegrationSettings, Notification, BackgroundJob,
     // Coordination (#23): operations step log, outbox, webhook dedupe, idempotency.
     Operation, OperationStep, OutboxMessage, WebhookDelivery, IdempotencyKey,
     // MFA (#24): TOTP factor + single-use recovery codes.

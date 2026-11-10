@@ -17,7 +17,7 @@ import { closeRedis } from './lib/redis';
 import { drainingConnectionClose, installGracefulShutdown } from './lib/shutdown';
 
 /** Paths called cross-origin by browser SDKs (bearer SDK token, no cookies). */
-const SDK_PUBLIC_PATH = /^\/api\/(sdk\/|logs\/ingest$)/;
+const SDK_PUBLIC_PATH = /^\/api\/(sdk\/|errors\/rum$|logs\/ingest$)/;
 
 /** JSON body parser that keeps the raw bytes on req.rawBody (webhook signature verification). */
 export const jsonBodyParser = express.json({

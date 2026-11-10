@@ -1,3 +1,4 @@
+import { processErrorEvent } from './error-tracking';
 import { getDb } from '../config/database';
 import { connectMongo } from '../config/mongoose';
 import { ServiceRegistration } from '../entities/ServiceRegistration';
@@ -19,7 +20,7 @@ import { scrubOptionsFromSettings } from './privacy-settings';
  * Every processor must tolerate being re-run for the same event (at-least-once delivery).
  */
 
-export type TelemetryKind = 'logs' | 'api-metrics' | 'heartbeat';
+export type TelemetryKind = 'logs' | 'api-metrics' | 'heartbeat' | 'errors';
 
 export interface LogDoc {
   projectId: string;
@@ -193,6 +194,7 @@ export async function processHeartbeat(ev: HeartbeatEvent): Promise<void> {
 /** Process one event of `kind` (inline path, or the consumer's per-event retry). */
 export async function processTelemetryEvent(kind: TelemetryKind, payload: any): Promise<void> {
   switch (kind) {
+    case 'errors': return processErrorEvent(payload);
     case 'logs': return processLogs(payload as LogDoc[]);
     case 'api-metrics': return processApiMetrics(payload as ApiMetricDoc[]);
     case 'heartbeat': return processHeartbeat(payload as HeartbeatEvent);
