@@ -24,6 +24,10 @@ on:
         description: "Test a published release (e.g. v1.3.0). Empty: build platformctl from the selected ref."
         type: string
         default: ""
+      upgrade_from:
+        description: "Upgrade source release tag. Empty: previous published release, including pre-releases. Target: platformctl_version or selected release tag."
+        type: string
+        default: ""
       image_tag:
         description: "Override the platform-api/portal image tag. Empty: the release's tag, else master."
         type: string
@@ -295,12 +299,166 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+  upgrade:
+    needs: [plan, prepare]
+    if: >-
+      needs.plan.outputs.enabled == 'true' && needs.plan.outputs.mode == 'release' &&
+      ((github.event_name == 'push' && github.ref_type == 'tag') || github.event_name == 'workflow_dispatch')
+    name: upgrade (minimal)
+    runs-on: ubuntu-24.04
+    # Hard cap. The step caps below add up to less, so teardown always runs
+    # inside the job; the VM's own TTL and the janitor cover the rest.
+    timeout-minutes: 90
+    # The IAM role trusts only this environment (OIDC sub claim); restrict the
+    # environment's deployment branches/tags in the repository settings.
+    environment: e2e-aws
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.E2E_AWS_REGION }}
+      E2E_PROFILE: minimal
+      E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}-upgrade
+      UPGRADE_TO: ${{ needs.plan.outputs.release_tag }}
+      GH_TOKEN: ${{ github.token }}
+      E2E_STACK: ${{ needs.plan.outputs.stack }}
+      E2E_INSTANCE_TYPE: ${{ vars.E2E_INSTANCE_TYPE || 't3.xlarge' }}
+      E2E_SUBNET_ID: ${{ vars.E2E_SUBNET_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Prepare work directories
+        env:
+          IMAGE_NOTE: ${{ needs.plan.outputs.image_note }}
+          BINARY: ${{ needs.prepare.outputs.binary }}
+        run: |
+          set -euo pipefail
+          {
+            echo "E2E_WORK=$RUNNER_TEMP/e2e-work"
+            echo "E2E_ARTIFACTS=$RUNNER_TEMP/e2e-artifacts"
+            echo "PLATFORMCTL_BIN=$RUNNER_TEMP/e2e-work/source/platformctl"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/e2e-work" "$RUNNER_TEMP/e2e-artifacts"
+          chmod 700 "$RUNNER_TEMP/e2e-work"
+          jq -n --arg profile "$E2E_PROFILE" --arg ref "$GITHUB_REF_NAME" --arg sha "$GITHUB_SHA" \
+            --arg binary "$BINARY" --arg image_tag "$UPGRADE_TO" --arg image_note "$IMAGE_NOTE" \
+            --arg stack "$E2E_STACK" --arg instance_type "$E2E_INSTANCE_TYPE" \
+            '$ARGS.named' > "$RUNNER_TEMP/e2e-artifacts/meta.json"
+          if [ -n "$IMAGE_NOTE" ]; then echo "::notice title=e2e images::$IMAGE_NOTE"; fi
+
+      - name: Select source release
+        id: source
+        env:
+          IN_UPGRADE_FROM: ${{ inputs.upgrade_from }}
+        run: node scripts/e2e/upgrade-plan.mjs
+
+      - name: Download source and check upgrade support
+        id: support
+        timeout-minutes: 5
+        env:
+          UPGRADE_FROM: ${{ steps.source.outputs.upgrade_from }}
+        run: bash scripts/e2e/upgrade-source.sh
+
+      - name: Build test tooling (SDK, API helpers)
+        if: steps.support.outputs.supported == 'true'
+        timeout-minutes: 6
+        run: |
+          set -euo pipefail
+          chmod +x "$PLATFORMCTL_BIN"
+          (cd sdk-node && npm ci --no-audit --no-fund --loglevel=error && npm run build --silent)
+          (cd platform/api && npm ci --no-audit --no-fund --loglevel=error && npm run build --silent)
+
+      - name: AWS credentials (OIDC)
+        id: aws
+        if: steps.support.outputs.supported == 'true'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.E2E_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.E2E_AWS_REGION }}
+          role-session-name: platform-e2e-${{ github.run_id }}-minimal
+          role-duration-seconds: 7200
+          mask-aws-account-id: true
+
+      - name: Launch VM
+        id: launch
+        if: steps.support.outputs.supported == 'true'
+        timeout-minutes: 8
+        run: |
+          bash scripts/e2e/aws-vm.sh keys
+          bash scripts/e2e/aws-vm.sh launch
+
+      - name: Provision
+        id: provision
+        if: steps.support.outputs.supported == 'true'
+        timeout-minutes: 20
+        env:
+          E2E_IMAGE_TAG: ${{ steps.source.outputs.upgrade_from }}
+        run: E2E_IMAGE_TAG="${E2E_IMAGE_TAG#v}" bash scripts/e2e/provision.sh
+
+      - name: Seed source release
+        if: steps.support.outputs.supported == 'true'
+        timeout-minutes: 3
+        run: bash scripts/e2e/upgrade.sh seed
+
+      - name: Upgrade with the source binary
+        if: steps.support.outputs.supported == 'true'
+        timeout-minutes: 12
+        run: bash scripts/e2e/upgrade.sh apply
+
+      - name: Checks
+        id: checks
+        if: steps.support.outputs.supported == 'true'
+        timeout-minutes: 18
+        run: bash scripts/e2e/run-checks.sh
+
+      - name: Verify seed data and original session
+        if: always() && steps.checks.outcome != 'skipped' && steps.support.outputs.supported == 'true'
+        timeout-minutes: 3
+        run: bash scripts/e2e/upgrade.sh verify
+
+      - name: Collect logs
+        if: always() && steps.aws.outcome == 'success'
+        timeout-minutes: 4
+        run: bash scripts/e2e/collect.sh
+
+      - name: Teardown
+        if: always()
+        timeout-minutes: 8
+        run: |
+          if [ -d "${E2E_WORK:-}" ] && [ "${{ steps.aws.outcome }}" = success ]; then
+            bash scripts/e2e/aws-vm.sh teardown
+          fi
+
+      - name: Job summary
+        if: always() && steps.support.outputs.supported == 'true'
+        run: |
+          market=$(sed -n 's/^MARKET=//p' "$E2E_WORK/state.env" 2>/dev/null | tail -n 1) || true
+          if [ -n "$market" ]; then
+            jq --arg m "$market" '.market = $m' "$E2E_ARTIFACTS/meta.json" > "$E2E_ARTIFACTS/meta.json.tmp" && mv "$E2E_ARTIFACTS/meta.json.tmp" "$E2E_ARTIFACTS/meta.json"
+          fi
+          node scripts/e2e/summary.mjs
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-upgrade-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/e2e-artifacts
+          retention-days: 14
+          if-no-files-found: warn
+
   # Release gate: GoReleaser publishes every tag as a pre-release; only a
   # passing run on both profiles makes a stable tag the Latest release (what
   # install.sh and releases/latest resolve) and moves the GHCR "latest" copy.
   promote:
-    needs: [plan, e2e]
-    if: needs.plan.outputs.promote == 'true' && needs.e2e.result == 'success'
+    needs: [plan, e2e, upgrade]
+    if: always() && (needs.upgrade.result == 'success' || needs.upgrade.result == 'skipped') && needs.plan.outputs.promote == 'true' && needs.e2e.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     permissions:
