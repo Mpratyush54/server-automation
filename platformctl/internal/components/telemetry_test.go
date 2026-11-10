@@ -241,7 +241,7 @@ func TestInstallTelemetryWithFakeTools(t *testing.T) {
 		if call.Tool == "bash" && strings.Contains(strings.Join(call.Args, " "), "helm upgrade --install") {
 			lastChart = i
 		}
-		if call.Tool == "kubectl" && strings.Contains(strings.Join(call.Args, " "), "--for=condition=complete") {
+		if call.Tool == "bash" && strings.Contains(strings.Join(call.Args, " "), "Complete=True") {
 			waits++
 		}
 		if call.Input == "" {
@@ -297,5 +297,32 @@ func TestObservabilityFlagFollowsFullTelemetry(t *testing.T) {
 	std := &config.Config{Profile: config.ProfileStandard, InstallMonitoring: true}
 	if observabilityFlag(full) != "enabled" || observabilityFlag(std) != "" {
 		t.Fatalf("full=%q standard=%q", observabilityFlag(full), observabilityFlag(std))
+	}
+}
+
+// Regression (found on a VM): a failed IAM Job left the installer waiting for
+// the whole timeout because only the Complete condition was awaited.
+func TestTelemetryJobWaitStopsOnFailureAndPrintsLog(t *testing.T) {
+	fake := func(conds string) string {
+		return `kubectl() {
+ case "$*" in
+  *"get job"*) printf '%s' "` + conds + `" ;;
+  *"get pods"*) echo pod/telemetry-storage-loki-abc ;;
+  *"logs"*) echo "mc: real failure reason" ;;
+ esac
+}
+sleep() { :; }
+`
+	}
+	out, err := runJobShell(t, fake("Failed=True ")+telemetryJobWaitScript("telemetry-storage-loki", 5))
+	if err == nil || !strings.Contains(out, "real failure reason") {
+		t.Fatalf("failed job must stop the wait and show the log: err=%v out=%s", err, out)
+	}
+	if _, err := runJobShell(t, fake("Complete=True ")+telemetryJobWaitScript("telemetry-storage-loki", 5)); err != nil {
+		t.Fatalf("completed job: %v", err)
+	}
+	out, err = runJobShell(t, fake("")+telemetryJobWaitScript("telemetry-storage-loki", 3))
+	if err == nil || !strings.Contains(out, "did not finish") {
+		t.Fatalf("timeout: err=%v out=%s", err, out)
 	}
 }

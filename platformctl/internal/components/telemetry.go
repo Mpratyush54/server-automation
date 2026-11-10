@@ -219,14 +219,39 @@ func telemetryStorage(c *config.Config) error {
 			return err
 		}
 		container := map[string]any{"name": "mc", "image": telemetryMCImage, "command": []string{"/bin/sh", "-ec", telemetryBucketScript(backend)}, "envFrom": []any{map[string]any{"secretRef": map[string]string{"name": "telemetry-bootstrap"}}, map[string]any{"secretRef": map[string]string{"name": name}}}, "resources": map[string]any{"requests": map[string]string{"cpu": "25m", "memory": "32Mi"}, "limits": map[string]string{"cpu": "200m", "memory": "128Mi"}}}
-		if err := applyTelemetryJSON(map[string]any{"apiVersion": "batch/v1", "kind": "Job", "metadata": map[string]string{"name": job, "namespace": "monitoring"}, "spec": map[string]any{"backoffLimit": 3, "activeDeadlineSeconds": 900, "ttlSecondsAfterFinished": 600, "template": map[string]any{"spec": map[string]any{"restartPolicy": "Never", "containers": []any{container}}}}}); err != nil {
+		if err := applyTelemetryJSON(map[string]any{"apiVersion": "batch/v1", "kind": "Job", "metadata": map[string]string{"name": job, "namespace": "monitoring"}, "spec": map[string]any{"backoffLimit": 3, "activeDeadlineSeconds": 900, "ttlSecondsAfterFinished": 3600, "template": map[string]any{"spec": map[string]any{"restartPolicy": "Never", "containers": []any{container}}}}}); err != nil {
 			return err
 		}
-		if err := shell.Run("kubectl", "-n", "monitoring", "wait", "--for=condition=complete", "job/"+job, "--timeout=930s"); err != nil {
-			return fmt.Errorf("MinIO IAM job %s failed (inspect job logs): %w", job, err)
+		// Wait for Complete OR Failed: `kubectl wait --for=condition=complete` would
+		// sit out the whole timeout on a failed Job. On failure print the pod log.
+		if err := shell.RunBash(telemetryJobWaitScript(job, 930)); err != nil {
+			return fmt.Errorf("MinIO IAM job %s failed: %w", job, err)
 		}
 	}
 	return nil
+}
+
+// telemetryJobWaitScript waits until the Job completes (exit 0) or fails (exit 1,
+// printing the newest pod's log), or the timeout passes.
+func telemetryJobWaitScript(job string, timeoutSec int) string {
+	return fmt.Sprintf(`set -uo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+job=%s
+for _ in $(seq 1 %d); do
+  conds="$(kubectl -n monitoring get job "$job" -o jsonpath='{range .status.conditions[*]}{.type}={.status} {end}' 2>/dev/null || true)"
+  case " $conds " in
+    *" Complete=True "*) exit 0 ;;
+    *" Failed=True "*)
+      pod="$(kubectl -n monitoring get pods -l job-name="$job" --sort-by=.metadata.creationTimestamp -o name 2>/dev/null | tail -1)"
+      echo "job $job failed; last pod log:" >&2
+      [ -n "$pod" ] && kubectl -n monitoring logs "$pod" --tail=30 >&2 || true
+      exit 1 ;;
+  esac
+  sleep 1
+done
+echo "job $job did not finish within %ds" >&2
+exit 1
+`, shellQuote(job), timeoutSec, timeoutSec)
 }
 
 // The MinIO server image already used by the minio chart (and in the platform
@@ -266,7 +291,9 @@ POLICY
 mc admin user add local "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
 mc admin policy create local telemetry-%[1]s "$work/policy.json"
 # attach fails when already attached (re-run): accept an existing mapping.
-mc admin policy attach local telemetry-%[1]s --user "$S3_ACCESS_KEY" >/dev/null 2>&1 \n  || mc admin user info local "$S3_ACCESS_KEY" 2>/dev/null | grep -q "telemetry-%[1]s" \n  || { echo "attach policy telemetry-%[1]s failed" >&2; exit 1; }
+if ! mc admin policy attach local telemetry-%[1]s --user "$S3_ACCESS_KEY" >/dev/null 2>&1; then
+  mc admin user info local "$S3_ACCESS_KEY" 2>/dev/null | grep -q "telemetry-%[1]s" || { echo "attach policy telemetry-%[1]s failed" >&2; exit 1; }
+fi
 %[2]s`, bucket, lifecycle)
 }
 
