@@ -7,7 +7,7 @@ import { ProjectConfig } from '../entities/ProjectConfig';
 import { Secret } from '../entities/Secret';
 import { UserRole } from '../entities/User';
 import { ProjectAccessRole } from '../entities/ProjectMember';
-import { expressAuthenticate, expressRequireRole, getUserPermissions, logAudit, AuthenticatedRequest } from '../middleware/auth';
+import { expressAuthenticate, expressRequireRole, getUserPermissions, hasRecentMfa, logAudit, AuthenticatedRequest } from '../middleware/auth';
 import { requireProjectAccess } from '../lib/project-access';
 import { resolveProjectRef } from '../lib/project-resolve';
 import { decryptValue } from '../lib/secrets-encryption';
@@ -55,17 +55,27 @@ router.get('/config', expressAuthenticate, async (req: Request, res: Response) =
       result[c.key] = c.isSecret ? '***' : c.value;
     }
 
-    // Secrets from the Secret entity: masked unless the caller holds secrets.reveal
-    // (same permission + audit trail as POST /projects/:id/secrets/reveal).
+    // Secrets from the Secret entity: masked unless the caller holds secrets.reveal AND has a
+    // recent MFA step-up (same permission, step-up rule and audit trail as
+    // POST /projects/:id/secrets/reveal). Without step-up the request still succeeds with
+    // secrets masked, since SDK/CLI/portal clients read this endpoint for plain config.
     const secretRepo = ds.getRepository(Secret);
     const secrets = (await secretRepo.find({ where: { isActive: true, projectId } }))
       .filter((s) => !s.projectId || s.projectId === projectId)
       .filter((s) => !(s.environmentId && environmentId && s.environmentId !== environmentId));
 
     let canReveal = false;
+    let stepUpRequired = false;
     if (authReq.user && authReq.humanJwt && !authReq.agentToken && !authReq.sdkToken) {
       const perms = await getUserPermissions(authReq.user);
-      canReveal = perms.has('secrets.reveal');
+      if (perms.has('secrets.reveal')) {
+        canReveal = hasRecentMfa(authReq);
+        stepUpRequired = !canReveal;
+      }
+    }
+    if (stepUpRequired && secrets.length) {
+      // Lets the portal prompt for step-up (POST /api/auth/mfa/step-up) and retry.
+      res.setHeader('X-Secrets-Masked', 'step-up-required');
     }
     const masterKey = process.env.SECRETS_ENCRYPTION_KEY;
     const revealedKeys: string[] = [];

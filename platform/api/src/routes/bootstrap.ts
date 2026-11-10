@@ -83,8 +83,9 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
     !k8sOk ? 'unknown' : (podCounts[ns] || 0) >= min ? 'running' : podCounts[ns] === 0 ? 'offline' : 'degraded';
 
   // ── Integration presence (saved settings, then env vars) ─────────────────
-  const githubOk = Boolean(cfg?.githubToken ?? process.env.GITHUB_TOKEN);
-  const gitlabOk = Boolean(cfg?.gitlabToken ?? process.env.GITLAB_TOKEN);
+  // A connected GitHub App / GitLab application (#35) counts as configured.
+  const githubOk = Boolean(cfg?.githubToken ?? process.env.GITHUB_TOKEN) || cfg?.githubSource === 'app';
+  const gitlabOk = Boolean(cfg?.gitlabToken ?? process.env.GITLAB_TOKEN) || cfg?.gitlabSource === 'app';
   const clickupOk = Boolean(cfg?.clickupToken ?? process.env.CLICKUP_API_TOKEN);
 
   const integrations = {

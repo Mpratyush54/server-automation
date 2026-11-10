@@ -5,6 +5,7 @@ import authRoutes from './auth';
 import mfaRoutes from './mfa';
 import oidcRoutes from './oidc';
 import projectRoutes from './projects';
+import projectArgoRoutes from './project-argocd';
 import deploymentRoutes from './deployments';
 import configRoutes from './config';
 import secretRoutes from './secrets';
@@ -30,6 +31,8 @@ import healthRoutes from './health';
 import operationRoutes from './operations';
 import backupRoutes from './backups';
 import telemetryRoutes from './telemetry';
+import gitAppRoutes from './git-apps';
+import topologyRoutes from './topology';
 
 router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB only; Redis reported, not gating)
 router.use('/', telemetryRoutes); // ingress-nginx external auth for the collector (#49); token-authenticated itself
@@ -38,6 +41,7 @@ router.use('/', authRoutes);
 router.use('/', mfaRoutes); // TOTP MFA: enrolment, login challenge, step-up (#24)
 router.use('/', versionRoutes);
 router.use('/', projectRoutes);
+router.use('/', projectArgoRoutes);
 router.use('/', deploymentRoutes);
 router.use('/', configRoutes);
 router.use('/', secretRoutes);
@@ -51,6 +55,7 @@ router.use('/', cicdRoutes);
 router.use('/', sdkRoutes);
 router.use('/', metricRoutes);
 router.use('/', settingRoutes);
+router.use('/', gitAppRoutes); // GitHub App manifest flow + GitLab OAuth app automation (#35)
 router.use('/', auditLogRoutes);
 router.use('/', bugReportRoutes);
 router.use('/', dbProvisionRoutes);
@@ -59,6 +64,7 @@ router.use('/', agentCommandRoutes);
 router.use('/', notificationRoutes);
 router.use('/', operationRoutes);
 router.use('/', backupRoutes);
+router.use('/', topologyRoutes); // GET /projects/:projectId/environments/:envId/topology (#31)
 
 /** GET /api/openapi.json — OpenAPI 3 spec derived from openapi.yaml (parsed once, cached). */
 router.get('/openapi.json', (_req, res) => {

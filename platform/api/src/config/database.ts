@@ -32,6 +32,8 @@ import { WebhookDelivery } from '../entities/WebhookDelivery';
 import { IdempotencyKey } from '../entities/IdempotencyKey';
 import { UserMfa } from '../entities/UserMfa';
 import { MfaRecoveryCode } from '../entities/MfaRecoveryCode';
+import { GitProviderApp } from '../entities/GitProviderApp';
+import { GitAppInstallation } from '../entities/GitAppInstallation';
 
 export const MIGRATIONS_TABLE = 'migrations';
 
@@ -52,7 +54,9 @@ export const AppDataSource = new DataSource({
     // Coordination (#23): operations step log, outbox, webhook dedupe, idempotency.
     Operation, OperationStep, OutboxMessage, WebhookDelivery, IdempotencyKey,
     // MFA (#24): TOTP factor + single-use recovery codes.
-    UserMfa, MfaRecoveryCode],
+    UserMfa, MfaRecoveryCode,
+    // Automated Git provider connect (#35): GitHub App / GitLab OAuth app + installations.
+    GitProviderApp, GitAppInstallation],
   // Schema changes ship as reviewed, versioned migrations (src/migrations),
   // applied once per release by `node dist/migrate.js` (the platform-api-migrate
   // Job) before the API rolls. Never auto-sync: it silently drops columns and

@@ -27,7 +27,7 @@ function configuredDomain(): string {
   return String(process.env.DOMAIN || '').trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
 }
 
-function portalBase(reqHost: string | undefined, proto: string): string {
+export function portalBase(reqHost: string | undefined, proto: string): string {
   if (process.env.PORTAL_URL) return process.env.PORTAL_URL.replace(/\/+$/, '');
   // Prefer configuration over the request Host header so a spoofed Host cannot redirect login codes.
   const domain = configuredDomain();
@@ -37,7 +37,7 @@ function portalBase(reqHost: string | undefined, proto: string): string {
   return `${proto}://${host}`;
 }
 
-function apiBase(reqHost: string | undefined, proto: string): string {
+export function apiBase(reqHost: string | undefined, proto: string): string {
   if (process.env.API_PUBLIC_URL) return process.env.API_PUBLIC_URL.replace(/\/+$/, '');
   const domain = configuredDomain();
   if (domain) return `https://${domain}`;

@@ -5,13 +5,15 @@ import { firstValueFrom } from 'rxjs';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
+import { ArgocdPanelComponent } from './argocd-panel.component';
 import { OperationProgressComponent } from '../../shared/operation-progress.component';
 import { EnvironmentTabComponent } from './environment-tab/environment-tab.component';
+import { TopologyGraphComponent } from './topology/topology-graph.component';
 
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent],
+  imports: [CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent, ArgocdPanelComponent],
   templateUrl: './project-detail.component.html',
   styleUrl: './project-detail.component.css'
 })
@@ -66,7 +68,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   gitLoading = false;
   gitError = '';
   gitMeta: { ownerRepo?: string; defaultBranch?: string; provider?: string } = {};
-  projectSettings = { repositoryUrl: '', domain: '' };
+  projectSettings = { repositoryUrl: '', domain: '', gitRevision: '' };
   savingSettings = false;
   members: any[] = [];
   newMember = { email: '', role: 'developer' };
@@ -118,6 +120,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
       }
       this.projectSettings = {
         repositoryUrl: this.project?.repositoryUrl || '',
+        gitRevision: this.project?.gitRevision || '',
         domain: this.project?.domain || '',
       };
       await this.loadGitInfo();
@@ -214,10 +217,12 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     try {
       this.project = await firstValueFrom(this.api.updateProject(this.project.id, {
         repositoryUrl: this.projectSettings.repositoryUrl || null,
+        gitRevision: this.projectSettings.gitRevision || null,
         domain: this.projectSettings.domain || null,
       }));
       this.projectSettings = {
         repositoryUrl: this.project?.repositoryUrl || '',
+        gitRevision: this.project?.gitRevision || '',
         domain: this.project?.domain || '',
       };
       await this.loadGitInfo();
@@ -253,10 +258,13 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
         defaultBranch: data.defaultBranch,
         provider: data.provider,
       };
+      if (data.defaultBranch && data.defaultBranch !== 'HEAD') this.project.defaultBranch = data.defaultBranch;
       const preferred =
+        this.project.gitRevision ||
         this.gitBranches.find((b) => b.name === data.defaultBranch)?.name ||
         this.gitBranches[0]?.name ||
         '';
+      if (preferred && !this.gitBranches.some(b => b.name === preferred)) this.gitBranches.unshift({ name: preferred, sha: '' });
       this.deployDto.branch = preferred;
       if (preferred) {
         await this.onBranchChange(preferred);
@@ -276,7 +284,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
       }
     } catch (err: any) {
       this.gitError = err.error?.error || err.message || 'Failed to load branches from Git';
-      if (!this.deployDto.branch) this.deployDto.branch = 'main';
+      if (!this.deployDto.branch) this.deployDto.branch = this.project?.gitRevision || this.project?.defaultBranch || 'HEAD';
     } finally {
       this.gitLoading = false;
     }
@@ -395,7 +403,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
         projectId: this.project.id,
         environmentId: this.deployDto.environmentId,
         version: this.deployDto.version,
-        branch: this.deployDto.branch || 'main',
+        branch: this.deployDto.branch || this.project?.gitRevision || this.project?.defaultBranch || 'HEAD',
         commitSha: this.deployDto.commitSha || undefined,
         imageTag: this.deployDto.imageTag || 'latest',
         gitPath: this.deployDto.gitPath || 'k8s',
