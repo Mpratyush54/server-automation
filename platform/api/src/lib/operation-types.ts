@@ -5,3 +5,5 @@
 import './deploy-op';
 import './db-provision-op';
 import './secret-rotate';
+
+import './storage-migrate-op';

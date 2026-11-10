@@ -172,6 +172,10 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 	expect("ClusterRole", "platform-namespace-baseline", "", []rbacRule{
 		{`["networking.k8s.io"]`, `["networkpolicies"]`, "", `["get", "list", "create", "update"]`},
 		{`[""]`, `["resourcequotas", "limitranges"]`, "", `["get", "list", "create", "update"]`},
+		{`[""]`, `["pods", "services", "persistentvolumeclaims", "events"]`, "", `["list"]`}, // #31 topology
+		{`["apps"]`, `["deployments", "replicasets"]`, "", `["list"]`},                      // #31 topology
+		{`["networking.k8s.io"]`, `["ingresses"]`, "", `["list"]`},                          // #31 topology
+		{`["cert-manager.io"]`, `["certificates"]`, "", `["list"]`},                         // #31 topology
 	})
 	if strings.Contains(manifest, "kind: ClusterRoleBinding\nmetadata:\n  name: platform-namespace-baseline") {
 		t.Fatal("platform-namespace-baseline must only be bound per project namespace")

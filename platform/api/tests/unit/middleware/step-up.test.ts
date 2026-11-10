@@ -12,6 +12,7 @@ import {
   AuthenticatedRequest,
   allowedDuringEnrollment,
   expressAuthenticate,
+  hasRecentMfa,
   requireRecentMfa,
   stepUpMaxAgeSec,
 } from '../../../src/middleware/auth';
@@ -37,6 +38,22 @@ beforeEach(() => {
   delete process.env.MFA_STEP_UP_MAX_AGE_SEC;
   getDb.mockResolvedValue({
     getRepository: () => ({ findOne: jest.fn(async ({ where }: any) => (where.id === USER.id ? USER : null)) }),
+  });
+});
+
+describe('hasRecentMfa', () => {
+  it('is true only for a human session with a recent second factor', () => {
+    expect(hasRecentMfa(authed({ amr: ['pwd', 'otp', 'mfa'], authTime: now() - 60, mfaEnroll: false }) as Request)).toBe(true);
+    expect(hasRecentMfa(authed({ amr: ['pwd'], authTime: now(), mfaEnroll: false }) as Request)).toBe(false);
+    expect(hasRecentMfa(authed({ amr: ['mfa'], authTime: now() - 901, mfaEnroll: false }) as Request)).toBe(false);
+    expect(hasRecentMfa(authed({ amr: ['mfa'], authTime: now() - 120, mfaEnroll: false }) as Request, 60)).toBe(false);
+  });
+
+  it('is false for agent and SDK tokens (they never count as a step-up)', () => {
+    const agent = { agentToken: { id: 't', name: 'mcp', scopes: ['*'], tokenPrefix: 'plat_agent_x' } } as AuthenticatedRequest;
+    expect(hasRecentMfa(agent as Request)).toBe(false);
+    const sdk = authed({ amr: ['mfa'], authTime: now(), mfaEnroll: false }, { sdkToken: true });
+    expect(hasRecentMfa(sdk as Request)).toBe(false);
   });
 });
 

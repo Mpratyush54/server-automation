@@ -1,5 +1,7 @@
 import { getDb } from '../config/database';
 import { IntegrationSettings } from '../entities/IntegrationSettings';
+import { loadGithubApp } from './github-app';
+import { loadGitlabApp } from './gitlab-app';
 
 export type ResolvedIntegrations = {
   row: IntegrationSettings | null;
@@ -16,7 +18,19 @@ export type ResolvedIntegrations = {
   clickupListId: string;
   githubLoginEnabled: boolean;
   gitlabLoginEnabled: boolean;
+  /** Where the OAuth client credentials come from (#35): automated app first, then manual entry, then env. */
+  githubSource: CredentialSource;
+  gitlabSource: CredentialSource;
 };
+
+export type CredentialSource = 'app' | 'manual' | 'env' | 'none';
+
+function sourceOf(fromApp: boolean, dbVal: string | null | undefined, envVal: string | undefined): CredentialSource {
+  if (fromApp) return 'app';
+  if (dbVal && dbVal.trim()) return 'manual';
+  if (envVal && envVal.trim()) return 'env';
+  return 'none';
+}
 
 function pick(dbVal: string | null | undefined, envVal: string | undefined): string {
   return (dbVal && dbVal.trim()) || (envVal || '').trim();
@@ -43,17 +57,23 @@ export async function resolveIntegrations(): Promise<ResolvedIntegrations> {
   } catch {
     row = null;
   }
-  const githubClientId = pick(row?.githubClientId, process.env.GITHUB_CLIENT_ID);
-  const githubClientSecret = pick(row?.githubClientSecret, process.env.GITHUB_CLIENT_SECRET);
-  const gitlabClientId = pick(row?.gitlabClientId, process.env.GITLAB_CLIENT_ID);
-  const gitlabClientSecret = pick(row?.gitlabClientSecret, process.env.GITLAB_CLIENT_SECRET);
+  // Automated connect (#35): a GitHub App / GitLab OAuth app created by the platform wins;
+  // manually entered OAuth apps and env values remain the fallback.
+  const githubApp = await loadGithubApp().catch(() => null);
+  const gitlabApp = await loadGitlabApp().catch(() => null);
+  const ghFromApp = Boolean(githubApp?.clientId && githubApp.clientSecret);
+  const glFromApp = Boolean(gitlabApp?.clientId && gitlabApp.clientSecret);
+  const githubClientId = ghFromApp ? githubApp!.clientId : pick(row?.githubClientId, process.env.GITHUB_CLIENT_ID);
+  const githubClientSecret = ghFromApp ? githubApp!.clientSecret : pick(row?.githubClientSecret, process.env.GITHUB_CLIENT_SECRET);
+  const gitlabClientId = glFromApp ? gitlabApp!.clientId : pick(row?.gitlabClientId, process.env.GITLAB_CLIENT_ID);
+  const gitlabClientSecret = glFromApp ? gitlabApp!.clientSecret : pick(row?.gitlabClientSecret, process.env.GITLAB_CLIENT_SECRET);
   return {
     row,
     githubClientId,
     githubClientSecret,
     githubToken: pick(row?.githubToken, process.env.GITHUB_TOKEN),
     githubOrg: pick(row?.githubOrg, process.env.GITHUB_ORG),
-    gitlabUrl: (pick(row?.gitlabUrl, process.env.GITLAB_URL) || 'https://gitlab.com').replace(/\/+$/, ''),
+    gitlabUrl: ((glFromApp && gitlabApp!.baseUrl) || pick(row?.gitlabUrl, process.env.GITLAB_URL) || 'https://gitlab.com').replace(/\/+$/, ''),
     gitlabClientId,
     gitlabClientSecret,
     gitlabToken: pick(row?.gitlabToken, process.env.GITLAB_TOKEN),
@@ -62,6 +82,8 @@ export async function resolveIntegrations(): Promise<ResolvedIntegrations> {
     clickupListId: pick(row?.clickupListId, process.env.CLICKUP_LIST_ID),
     githubLoginEnabled: row?.githubLoginEnabled !== false && Boolean(githubClientId && githubClientSecret),
     gitlabLoginEnabled: row?.gitlabLoginEnabled !== false && Boolean(gitlabClientId && gitlabClientSecret),
+    githubSource: sourceOf(ghFromApp, row?.githubClientId, process.env.GITHUB_CLIENT_ID),
+    gitlabSource: sourceOf(glFromApp, row?.gitlabClientId, process.env.GITLAB_CLIENT_ID),
   };
 }
 

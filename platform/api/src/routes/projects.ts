@@ -1,3 +1,5 @@
+import { explicitRevision, projectRevision } from '../lib/project-revision';
+import { mapArgoStatus } from '../lib/argocd';
 import { namespaceBaselineStatus } from '../lib/namespace-baseline';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
@@ -78,6 +80,7 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
       stack: body.stack,
       description: body.description,
       repositoryUrl: body.repositoryUrl,
+      gitRevision: explicitRevision(body.gitRevision) || null,
       domain: body.domain,
       clickupListId: body.clickupListId,
       createdById: userId,
@@ -162,6 +165,8 @@ router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
       return res.status(404).json({ error: 'Project not found' });
     }
 
+    if (body.gitRevision !== undefined) project.gitRevision = explicitRevision(body.gitRevision) || null;
+    if (body.repositoryUrl !== undefined && body.repositoryUrl !== project.repositoryUrl) project.defaultBranch = null;
     const allowedFields = ['name', 'stack', 'description', 'repositoryUrl', 'domain', 'clickupListId'];
     const domainChanged = body.domain !== undefined && body.domain !== project.domain;
     for (const field of allowedFields) {
@@ -351,16 +356,10 @@ router.get('/projects/:projectId/argocd-status', expressAuthenticate, async (req
       });
       
       const app = appResponse.body || appResponse;
-      const status = app.status || {};
       return res.json({
-        connected: true,
-        appName,
-        repositoryUrl: project.repositoryUrl,
-        domain: project.domain,
-        syncStatus: status.sync?.status || 'Unknown',
-        healthStatus: status.health?.status || 'Unknown',
-        revision: status.sync?.revision || 'Unknown',
-        syncTime: status.operationState?.finishedAt || status.reconciledAt || null
+        connected: true, appName, repositoryUrl: project.repositoryUrl, domain: project.domain,
+        defaultBranch: project.defaultBranch, configuredRevision: project.gitRevision,
+        ...mapArgoStatus(app),
       });
     } catch (err: any) {
       return res.json({
@@ -410,7 +409,7 @@ router.get('/projects/:projectId/git/commits', expressAuthenticate, async (req: 
     if (!project.repositoryUrl) {
       return res.status(400).json({ error: 'Project has no repositoryUrl — set a GitHub/GitLab URL first' });
     }
-    const branch = String(req.query.branch || 'main');
+    const branch = String(req.query.branch || await projectRevision(project));
     const limit = Math.min(parseInt(String(req.query.limit || '20'), 10) || 20, 50);
     const commits = await fetchBranchCommits(project.repositoryUrl, branch, limit);
     return res.json({

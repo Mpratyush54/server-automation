@@ -4,8 +4,11 @@ import { ProjectAccessRole } from '../entities/ProjectMember';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { Project } from '../entities/Project';
-import { expressAuthenticate, expressRequireRole, AuthenticatedRequest } from '../middleware/auth';
+import { expressAuthenticate, expressRequireRole, AuthenticatedRequest, logAudit } from '../middleware/auth';
 import { UserRole } from '../entities/User';
+import { findInstallationForRepo, loadGithubApp } from '../lib/github-app';
+import { gitlabWebhookCredentials } from '../lib/gitlab-app';
+import { githubInstallUrl } from '../lib/git-app-store';
 
 const router = Router();
 
@@ -24,15 +27,15 @@ router.post('/cicd/register-webhook/:projectId', expressAuthenticate, expressReq
     }
 
     const webhookUrl = `${req.protocol}://${req.get('host')}/api/webhooks/gitlab`;
-    const token = process.env.GITLAB_WEBHOOK_SECRET || process.env.GITLAB_WEBHOOK_TOKEN;
     const remote = parseGitRemote(project.repositoryUrl);
     if (!remote) return res.status(400).json({ error: 'Unsupported repository origin' });
 
     if (remote.provider === 'gitlab') {
       const GITLAB_API = remote.apiBase;
+      // #35: token + hook secret from the automated GitLab connect; env values remain the fallback.
+      const { apiToken: TOKEN, secret: token } = await gitlabWebhookCredentials();
       if (!token) return res.status(500).json({ error: 'GITLAB_WEBHOOK_SECRET must be configured' });
-      const TOKEN = process.env.GITLAB_TOKEN;
-      if (!TOKEN) return res.status(500).json({ error: 'GITLAB_TOKEN not configured' });
+      if (!TOKEN) return res.status(500).json({ error: 'GITLAB_TOKEN not configured (connect GitLab with "keep token" or set a linking token)' });
 
       const projectIdPath = `${remote.owner}/${remote.repo}`;
       const response = await fetch(`${GITLAB_API}/projects/${encodeURIComponent(projectIdPath)}/hooks`, {
@@ -54,10 +57,41 @@ router.post('/cicd/register-webhook/:projectId', expressAuthenticate, expressReq
         const err = await response.text();
         return res.status(500).json({ error: `GitLab webhook registration failed: ${err}` });
       }
+      await logAudit({ userId: (req as AuthenticatedRequest).user?.id, action: 'cicd.webhook.registered', targetType: 'Project', targetId: project.id, metadata: { provider: 'gitlab', mode: 'token' }, ip: req.ip });
       return res.json({ success: true, message: 'Webhook registered on GitLab', webhookUrl });
     }
 
     if (remote.provider === 'github') {
+      // #35: with the GitHub App connected, push/pull_request events for every repository the
+      // App is installed on arrive on the App webhook (signed with the App's secret), so no
+      // personal token and no per-repository hook are needed.
+      const app = await loadGithubApp();
+      if (app) {
+        const inst = await findInstallationForRepo(remote.owner, remote.repo);
+        if (inst) {
+          await logAudit({
+            userId: (req as AuthenticatedRequest).user?.id,
+            action: 'cicd.webhook.linked',
+            targetType: 'Project',
+            targetId: project.id,
+            metadata: { provider: 'github', mode: 'github-app', installationId: inst.installationId },
+            ip: req.ip,
+          });
+          return res.json({
+            success: true,
+            mode: 'github-app',
+            message: 'Repository is covered by the GitHub App installation; events are delivered to the App webhook',
+            webhookUrl: `${req.protocol}://${req.get('host')}/api/webhooks/github`,
+            installationId: inst.installationId,
+          });
+        }
+        if (!process.env.GITHUB_TOKEN) {
+          return res.status(409).json({
+            error: `The GitHub App is not installed on ${remote.owner}/${remote.repo}. Install it on the repository, then retry.`,
+            installUrl: app.slug ? githubInstallUrl(app.slug) : null,
+          });
+        }
+      }
       const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
       const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
       if (!GITHUB_TOKEN || !GITHUB_WEBHOOK_SECRET) {
@@ -89,6 +123,7 @@ router.post('/cicd/register-webhook/:projectId', expressAuthenticate, expressReq
         const err = await response.text();
         return res.status(500).json({ error: `GitHub webhook registration failed: ${err}` });
       }
+      await logAudit({ userId: (req as AuthenticatedRequest).user?.id, action: 'cicd.webhook.registered', targetType: 'Project', targetId: project.id, metadata: { provider: 'github', mode: 'token' }, ip: req.ip });
       return res.json({ success: true, message: 'Webhook registered on GitHub', webhookUrl: `${req.protocol}://${req.get('host')}/api/webhooks/github` });
     }
 

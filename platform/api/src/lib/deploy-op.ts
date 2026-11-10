@@ -125,7 +125,7 @@ export const deployOperation = defineOperation<DeployState>({
           (ctx.input.gitPath as string) ||
           (dep.metadata as any)?.gitPath ||
           (project.repositoryUrl.includes('server-automation') ? 'examples/sdk-demo/k8s' : 'k8s');
-        const revision = dep.commitSha && dep.commitSha !== 'unknown' ? dep.commitSha : (dep.branch || 'main');
+        const revision = dep.commitSha && dep.commitSha !== 'unknown' ? dep.commitSha : (dep.branch || 'HEAD');
 
         const argo = await ensureAndSyncArgoApp({
           projectId: project.id, environmentName: String(env.name),
