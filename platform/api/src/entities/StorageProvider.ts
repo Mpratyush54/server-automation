@@ -1,4 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { storageCredentialsTransformer } from '../lib/storage-credentials';
+import { Entity, Index, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 export enum StorageProviderType {
   MINIO = 'minio',
@@ -8,6 +9,7 @@ export enum StorageProviderType {
 }
 
 @Entity('storage_providers')
+@Index('storage_one_default', ['isDefault'], { unique: true, where: 'is_default' })
 export class StorageProvider {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -18,7 +20,7 @@ export class StorageProvider {
   @Column({ type: 'enum', enum: StorageProviderType, name: 'provider_type' })
   providerType: StorageProviderType;
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'jsonb', nullable: true, transformer: storageCredentialsTransformer })
   credentials: Record<string, string> | null;
 
   @Column({ type: 'varchar', length: 200, nullable: true, name: 'bucket_name' })
@@ -29,6 +31,15 @@ export class StorageProvider {
 
   @Column({ type: 'boolean', default: false, name: 'is_default' })
   isDefault: boolean;
+
+  @Column({ type: 'varchar', length: 20, default: 'unknown', name: 'health_status' })
+  healthStatus: string;
+
+  @Column({ type: 'text', nullable: true, name: 'last_error' })
+  lastError: string | null;
+
+  @Column({ type: 'timestamp', nullable: true, name: 'checked_at' })
+  checkedAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

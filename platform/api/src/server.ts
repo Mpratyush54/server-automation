@@ -172,6 +172,8 @@ async function bootstrap() {
 
     // Operation definitions (deploy, secret rotation, DB provisioning) must be
     // registered before the leader's operation-resume job runs (issue #23).
+    await (await import('./lib/storage-providers')).encryptLegacyStorage(ds);
+    await (await import('./lib/storage-providers')).ensureBundledStorage(ds);
     await import('./lib/operation-types');
 
     // Leader-elected periodic jobs on the platform-api-leader Lease (#19):

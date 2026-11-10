@@ -1,3 +1,4 @@
+import storageSettingsRouter from './storage-settings';
 import { requireProjectAccess } from '../lib/project-access';
 import { ProjectAccessRole } from '../entities/ProjectMember';
 import { Router, Request, Response } from 'express';
@@ -69,59 +70,7 @@ router.delete('/settings/smtp/:id', expressAuthenticate, expressRequireRole([Use
   } catch (err: any) { return res.status(400).json({ error: err.message }); }
 });
 
-router.get('/settings/storage', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
-  try {
-    const ds = await getDb();
-    const providers = await ds.getRepository(StorageProvider).find();
-    return res.json(providers.map(p => ({ ...p, credentials: p.credentials ? { ...p.credentials, secretAccessKey: '***', refreshToken: '***', password: '***' } : null })));
-  } catch (err: any) { return res.status(400).json({ error: err.message }); }
-});
-
-router.post('/settings/storage', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
-  try {
-    if (!req.body?.name) return res.status(400).json({ error: 'name is required' });
-    const ds = await getDb();
-    const repo = ds.getRepository(StorageProvider);
-    if (req.body.isDefault) await repo.update({ isDefault: true }, { isDefault: false });
-    const provider = repo.create(req.body);
-    const saved = await repo.save(provider);
-    return res.status(201).json(saved);
-  } catch (err: any) { return res.status(400).json({ error: err.message }); }
-});
-
-router.post('/settings/storage/:id/test', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
-  try {
-    const ds = await getDb();
-    const provider = await ds.getRepository(StorageProvider).findOne({ where: { id: req.params.id } });
-    if (!provider) return res.status(404).json({ error: 'Provider not found' });
-    const { createAdapter } = await import('../lib/storage-service');
-    const adapter = createAdapter(
-      provider.providerType,
-      provider.credentials || {},
-      provider.bucketName || undefined,
-      provider.endpointUrl || undefined
-    );
-    const ok = await adapter.testConnection();
-    return res.json({ success: ok, message: ok ? 'Connection successful' : 'Connection failed' });
-  } catch (err: any) { return res.status(400).json({ error: err.message }); }
-});
-
-router.patch('/settings/storage/:id/set-default', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
-  try {
-    const ds = await getDb();
-    await ds.getRepository(StorageProvider).update({}, { isDefault: false });
-    await ds.getRepository(StorageProvider).update(req.params.id, { isDefault: true });
-    return res.json({ success: true });
-  } catch (err: any) { return res.status(400).json({ error: err.message }); }
-});
-
-router.delete('/settings/storage/:id', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
-  try {
-    const ds = await getDb();
-    await ds.getRepository(StorageProvider).delete(req.params.id);
-    return res.json({ success: true });
-  } catch (err: any) { return res.status(400).json({ error: err.message }); }
-});
+router.use(storageSettingsRouter);
 
 router.post('/projects/:projectId/databases/backup', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
   try {

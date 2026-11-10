@@ -148,6 +148,7 @@ const projectRepo = {
 };
 
 const mockDataSource = {
+  transaction: jest.fn(async (fn: any) => fn({ query: jest.fn(), getRepository: (entity: any) => mockDataSource.getRepository(entity) })),
   getRepository: jest.fn().mockImplementation((entity: any) => {
     const n = typeof entity === 'string' ? entity : entity?.name;
     if (n === 'User')            return userRepo;
@@ -714,6 +715,17 @@ describe('Settings — Storage Providers', () => {
   });
 
   describe('POST /api/settings/storage', () => {
+    it('creates R2 from essentials and never echoes credentials', async () => {
+      const result = await request(app).post('/api/settings/storage')
+        .set('Authorization', `Bearer ${T.devops}`)
+        .send({ preset: 'r2', accountId: 'a'.repeat(32), bucketName: 'example-bucket', credentials: { accessKeyId: 'private-key-id', secretAccessKey: 'private-secret' } });
+      expect(result.status).toBe(201);
+      expect(result.body.endpointUrl).toBe(`https://${'a'.repeat(32)}.r2.cloudflarestorage.com`);
+      expect(result.body.credentials).toBeUndefined();
+      expect(JSON.stringify(result.body)).not.toContain('private-secret');
+      expect(JSON.stringify(result.body)).not.toContain('private-key-id');
+    });
+
     it('201 — devops creates storage provider', async () => {
       const r = await request(app)
         .post('/api/settings/storage')
