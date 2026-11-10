@@ -421,3 +421,26 @@ test('errors carry the replay id; exports are lazy wrappers', async () => {
   assert.equal(typeof rum.setConsent, 'function');
   assert.equal(typeof rum.stopReplay, 'function');
 });
+
+// Regression (Phase 4 VM): navigations less than a second apart were missed by the 1 s poll.
+test('history.pushState and popstate record every SPA navigation immediately', async () => {
+  const f = fakeEnv({ serverAllows: true });
+  const pushed = [];
+  f.env.win.history = {
+    pushState(_s, _t, url) { pushed.push(url); f.env.win.location.href = 'https://app.example.test' + url; },
+    replaceState(_s, _t, url) { f.env.win.location.href = 'https://app.example.test' + url; },
+  };
+  const rec = fakeRecorder();
+  const h = await replay.startReplay({ sampleRate: 1 }, TELEMETRY, {}, { env: f.env, load: rec.load });
+  f.env.win.history.pushState({}, '', '/orders');
+  f.env.win.history.pushState({}, '', '/orders/101');
+  f.env.win.history.replaceState({}, '', '/');
+  const navs = rec.state.custom.filter((c) => c.tag === 'navigation').map((c) => c.payload.path);
+  assert.deepEqual(navs, ['/orders', '/orders/101', '/']);
+  assert.deepEqual(pushed, ['/orders', '/orders/101']);
+  f.env.win.location.href = 'https://app.example.test/checkout';
+  for (const fn of f.listeners.popstate || []) fn();
+  assert.equal(rec.state.custom.filter((c) => c.tag === 'navigation').at(-1).payload.path, '/checkout');
+  h.stop();
+  assert.equal(typeof f.env.win.history.pushState, 'function');
+});
