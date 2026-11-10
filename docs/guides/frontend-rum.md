@@ -96,6 +96,7 @@ RUM through `PlatformErrorHandler` (`forRoot`) or `PlatformRumErrorHandler` (ins
 | `trackResources` | `true` | Report all resources, not only fetch/XHR |
 | `appName`, `appVersion`, `environment` | provider config | Faro app meta |
 | `beforeSend` | — | Extra filter run after the built-in redaction; return `null` to drop |
+| `heatmaps` | off | `true` or options: click / scroll-depth heatmaps, lazy-loaded (+~2.7 KB gzip chunk). See [Heatmaps](heatmaps.md) |
 
 ## Privacy defaults (no PII)
 

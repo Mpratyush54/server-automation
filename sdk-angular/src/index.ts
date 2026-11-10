@@ -32,6 +32,7 @@ export {
   RumTransportItem,
   RumEnvironment,
 } from './rum';
+export type { PlatformHeatmapOptions } from './rum-heatmap';
 export {
   PlatformRumService,
   RumRouterLike,
