@@ -15,6 +15,12 @@ export interface TopologyFetchResult {
   sources: TopologySources;
   /** Per-list failures (e.g. cert-manager CRD absent, RBAC not yet bootstrapped). */
   warnings: string[];
+  /**
+   * The environment was never deployed: no Argo Application and the namespace
+   * baseline (RBAC) does not exist yet, so lists are forbidden. Shown as an
+   * empty "not deployed yet" state instead of a list of 403 errors.
+   */
+  notDeployed?: boolean;
 }
 
 let clients: {
@@ -66,8 +72,8 @@ export async function fetchTopologySources(namespace: string, appName: string): 
   const [app, deployments, replicaSets, pods, services, ingresses, certificates, pvcs, events] = await Promise.all([
     custom
       .getNamespacedCustomObject({ group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd', plural: 'applications', name: appName })
-      .then((r: any) => ({ app: r?.body || r, error: null as string | null }))
-      .catch((err: any) => ({ app: null, error: statusCode(err) === 404 ? `ArgoCD Application '${appName}' not found` : shortError(err) })),
+      .then((r: any) => ({ app: r?.body || r, missing: false, error: null as string | null }))
+      .catch((err: any) => ({ app: null, missing: statusCode(err) === 404, error: statusCode(err) === 404 ? `ArgoCD Application '${appName}' not found` : shortError(err) })),
     list('deployments', () => apps.listNamespacedDeployment({ namespace })),
     list('replicasets', () => apps.listNamespacedReplicaSet({ namespace })),
     list('pods', () => core.listNamespacedPod({ namespace })),
@@ -78,6 +84,24 @@ export async function fetchTopologySources(namespace: string, appName: string): 
     list('persistentvolumeclaims', () => core.listNamespacedPersistentVolumeClaim({ namespace })),
     list('events', () => core.listNamespacedEvent({ namespace })),
   ]);
+
+  // Never deployed: Argo app absent and every failed list is a 403 (the per-namespace
+  // RBAC binding is created on first deploy). Nothing to show, nothing went wrong.
+  if (
+    !app.app && app.missing && deployments === null && replicaSets === null
+    && (pods || []).length === 0 && (services || []).length === 0
+    && warnings.length > 0 && warnings.every((w) => /\b403\b/.test(w))
+  ) {
+    return {
+      sources: {
+        namespace, appName, app: null, appError: null,
+        deployments: [], replicaSets: [], pods: [], services: [], ingresses: [], certificates: [],
+        pvcs: [], configMaps: [], secrets: [], events: [],
+      },
+      warnings: [],
+      notDeployed: true,
+    };
+  }
 
   const core3 = [deployments, pods, services];
   if (core3.every((x) => x === null) && !app.app) {

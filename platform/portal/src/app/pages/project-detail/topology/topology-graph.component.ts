@@ -26,6 +26,7 @@ export interface TopologyResponse {
   edges: TopologyEdge[];
   counts: Record<string, number>;
   warnings?: string[];
+  notDeployed?: boolean;
   generatedAt: string;
 }
 
@@ -112,7 +113,8 @@ export class TopologyGraphComponent implements OnInit, OnChanges, OnDestroy {
 
   private defaultEnvId(): string {
     const envs = this.environments || [];
-    return (envs.find((e) => e.name === 'staging') || envs.find((e) => e.name === 'production') || envs[0])?.id || '';
+    // Same order as the Argo panel above: development first.
+    return (envs.find((e) => e.name === 'development') || envs.find((e) => e.name === 'staging') || envs[0])?.id || '';
   }
 
   selectEnv(id: string): void {

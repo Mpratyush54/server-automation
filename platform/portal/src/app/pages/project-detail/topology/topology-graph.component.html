@@ -26,7 +26,7 @@
     </div>
   </header>
 
-  @if (data && !data.argo.found) {
+  @if (data && !data.argo.found && !data.notDeployed) {
     <div class="topo-banner warn" data-test="argo-missing">
       ArgoCD Application <code>{{ data.appName }}</code> not found{{ data.argo.error ? ': ' + data.argo.error : '' }}.
       Showing live namespace objects without sync status.
@@ -48,6 +48,11 @@
     </div>
   } @else if (!data) {
     <div class="topo-state" data-test="loading">Loading resources…</div>
+  } @else if (data.notDeployed) {
+    <div class="topo-state" data-test="not-deployed">
+      <strong>This environment has not been deployed yet.</strong>
+      <span>Deploy it and its Deployments, Pods, Services and Ingresses appear here.</span>
+    </div>
   } @else if (!nodes.length) {
     <div class="topo-state" data-test="empty">
       <strong>No resources in this environment yet.</strong>

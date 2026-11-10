@@ -41,10 +41,10 @@ router.get('/projects/:projectId/environments/:envId/topology', expressAuthentic
     const namespace = env.namespace || assignedNamespace(project.name, String(env.name), project.id);
     const appName = namespace;
 
-    const { sources, warnings } = await fetchTopologySources(namespace, appName);
+    const { sources, warnings, notDeployed } = await fetchTopologySources(namespace, appName);
     const graph = buildTopology(sources);
     res.set('Cache-Control', 'no-store');
-    return res.json({ ...graph, environmentId: env.id, environment: env.name, warnings });
+    return res.json({ ...graph, environmentId: env.id, environment: env.name, warnings, notDeployed: !!notDeployed });
   } catch (err: any) {
     const status = err?.status === 503 ? 503 : 500;
     return res.status(status).json({ error: status === 503 ? err.message : 'Failed to build topology' });

@@ -183,4 +183,21 @@ describe('TopologyGraphComponent', () => {
     expect(comp.scale).toBeGreaterThan(0);
     expect(comp.scale).toBeLessThanOrEqual(1.2);
   });
+
+  it('defaults to the development environment, like the Argo panel', async () => {
+    const DEV = '44444444-4444-4444-8444-444444444444';
+    init([{ id: ENV, name: 'staging' }, { id: DEV, name: 'development' }]);
+    http.expectOne(`/api/projects/${PID}/environments/${DEV}/topology`).flush(graph());
+    await settle();
+    expect(comp.envId).toBe(DEV);
+  });
+
+  it('shows "not deployed yet" instead of Argo/403 banners for a never-deployed environment', async () => {
+    init();
+    http.expectOne(URL).flush(graph({ nodes: [], edges: [], notDeployed: true, warnings: [], argo: { found: false, error: null } as any }));
+    await settle();
+    expect(el().querySelector('[data-test="not-deployed"]')).toBeTruthy();
+    expect(el().querySelector('[data-test="argo-missing"]')).toBeNull();
+    expect(el().querySelector('[data-test="warnings"]')).toBeNull();
+  });
 });
