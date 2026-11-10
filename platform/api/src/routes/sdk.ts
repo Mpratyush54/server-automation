@@ -1,3 +1,4 @@
+import { projectRevision } from '../lib/project-revision';
 import { ensureProjectNamespace } from '../lib/namespace-baseline';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
@@ -188,6 +189,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       );
     }
 
+    const resolvedRevision = await projectRevision(project, body.gitRevision, body.branch);
     const repo = ds.getRepository(ServiceRegistration);
     let registration = await repo.findOne({
       where: {
@@ -201,7 +203,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       registration.hostname = body.hostname ?? registration.hostname;
       registration.ipAddress = body.ipAddress ?? registration.ipAddress;
       registration.version = body.version ?? registration.version;
-      registration.branch = body.branch ?? registration.branch;
+      registration.branch = resolvedRevision;
       registration.commitSha = body.commitSha ?? registration.commitSha;
       registration.envKeys = body.envKeys ?? registration.envKeys;
       registration.dbTypes = body.dbTypes ?? registration.dbTypes;
@@ -216,7 +218,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
         ipAddress: body.ipAddress || '127.0.0.1',
         serviceName: body.serviceName || project.name,
         version: body.version || '1.0.0',
-        branch: body.branch || 'main',
+        branch: resolvedRevision,
         commitSha: body.commitSha || 'unknown',
         envKeys: body.envKeys || [],
         dbTypes: body.dbTypes || [],
@@ -287,7 +289,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       (repoUrl.toLowerCase().includes('server-automation')
         ? 'examples/sdk-apps/k8s'
         : 'k8s');
-    const gitRevision = body.gitRevision || body.branch || 'main';
+    const gitRevision = resolvedRevision;
     const useGitops = body.gitops !== false && !!repoUrl;
     const slug = makeProjectSlug(project.name);
     const destNamespace = env.namespace; // server-owned only — never body.namespace
