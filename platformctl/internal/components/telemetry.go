@@ -156,7 +156,7 @@ func InstallTelemetry(c *config.Config) error {
 			return fmt.Errorf("telemetry %s: %w", name, err)
 		}
 	}
-	for _, name := range []string{"telemetry-ingress.yaml", "telemetry-rules.yaml", "telemetry-dashboard.yaml"} {
+	for _, name := range []string{"telemetry-ingress.yaml", "telemetry-rules.yaml", "telemetry-dashboard.yaml", alertingRBACManifest} {
 		p, err := temporaryManifest(name, c)
 		if err != nil {
 			return err
