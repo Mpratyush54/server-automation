@@ -89,7 +89,7 @@ export class ApiService {
 
   // SDK Project Tokens
   getProjectTokens(projectId: string): Observable<any> { return this.http.get(`${this.base}/projects/${projectId}/tokens`); }
-  createProjectToken(projectId: string, name: string): Observable<any> { return this.http.post(`${this.base}/projects/${projectId}/tokens`, { name }); }
+  createProjectToken(projectId: string, name: string, kind: 'server' | 'browser' = 'server'): Observable<any> { return this.http.post(`${this.base}/projects/${projectId}/tokens`, { name, kind }); }
   deleteProjectToken(projectId: string, tokenId: string): Observable<any> { return this.http.delete(`${this.base}/projects/${projectId}/tokens/${tokenId}`); }
   getArgoCDStatus(projectId: string): Observable<any> { return this.http.get(`${this.base}/projects/${projectId}/argocd-status`); }
   getProjectGitBranches(projectId: string): Observable<any> { return this.http.get(`${this.base}/projects/${projectId}/git/branches`); }

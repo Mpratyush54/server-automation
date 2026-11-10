@@ -700,12 +700,30 @@
         <div class="card">
           <h2>Generate SDK Token</h2>
           <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;margin-bottom:20px;">
-            Generate an API key that your service can use with `&#64;mpratyush54/sdk-node` or `mpratyush54-sdk` to authenticate and register.
+            Generate an API key for the Platform SDKs. Pick the kind by where the token will run.
           </p>
           <div class="form-group">
             <label>Token Description / Name</label>
             <input [(ngModel)]="newKeyName" placeholder="e.g. Production Service Key" style="width:100%;">
           </div>
+          <div class="form-group">
+            <label for="sdk-token-kind">Token kind</label>
+            <select id="sdk-token-kind" [(ngModel)]="newKeyKind" style="width:100%;">
+              <option value="server">Server: backend SDKs (Node, Python)</option>
+              <option value="browser">Browser: frontend SDKs (React, Angular)</option>
+            </select>
+          </div>
+          @if (newKeyKind === 'server') {
+            <p class="sdk-token-kind-hint" style="font-size:0.8rem;color:var(--color-warning, #f59e0b);margin:8px 0 0;">
+              Server tokens can read this project's config and secrets. Keep them on your backend and
+              never ship them to browsers or mobile apps (frontend env vars such as VITE_* end up in public JavaScript).
+            </p>
+          } @else {
+            <p class="sdk-token-kind-hint" style="font-size:0.8rem;color:var(--color-text-secondary);margin:8px 0 0;">
+              Browser tokens can only send bug reports, logs and API metrics. They cannot read config,
+              secrets or database credentials, so they are safe to embed in frontend code.
+            </p>
+          }
           <button class="btn btn-primary" (click)="createToken()" [disabled]="!newKeyName.trim()" style="width:100%; margin-top: 10px;">
             Generate Token
           </button>
@@ -715,6 +733,11 @@
               <h3 style="color: var(--primary); margin-top: 0; font-size: 1rem;">Token Generated Successfully</h3>
               <p style="font-size: 0.8rem; color: var(--color-text-secondary); margin-bottom: 12px;">
                 ⚠️ Copy this key now! You will not be able to see it again.
+                @if (generatedKeyKind === 'server') {
+                  This is a <strong>server</strong> token: never put it in frontend code.
+                } @else {
+                  This is a <strong>browser</strong> token for the React/Angular SDKs.
+                }
               </p>
               <div style="position:relative;background:rgba(0,0,0,0.3);padding:12px;border-radius:6px;border:1px solid var(--border-glass);color:#fff;font-family:monospace;font-size:0.85rem;word-break:break-all;display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                 <span>{{ generatedKeyPlaintext }}</span>
@@ -736,6 +759,7 @@
               <tr>
                 <th>Name</th>
                 <th>Token Prefix</th>
+                <th>Kind</th>
                 <th>Status</th>
                 <th>Created At</th>
                 @if (role === 'devops') {
@@ -748,6 +772,7 @@
                 <tr>
                   <td style="font-weight:600;color:#fff;">{{ t.name }}</td>
                   <td style="font-family:monospace;font-size:0.85rem;">{{ t.token }}</td>
+                  <td><span class="badge" [title]="(t.kind || 'server') === 'browser' ? 'Ingest only (bug reports, logs, API metrics)' : 'Config, secrets and service registration'">{{ (t.kind || 'server') | uppercase }}</span></td>
                   <td><span class="badge badge-active">{{ t.status | uppercase }}</span></td>
                   <td>{{ t.createdAt | date:'short' }}</td>
                   @if (role === 'devops') {
@@ -759,7 +784,7 @@
               }
               @if (tokens.length === 0) {
                 <tr>
-                  <td [attr.colspan]="role === 'devops' ? 5 : 4" style="text-align:center;color:var(--color-text-muted);">
+                  <td [attr.colspan]="role === 'devops' ? 6 : 5" style="text-align:center;color:var(--color-text-muted);">
                     No SDK credentials configured for this project.
                   </td>
                 </tr>
