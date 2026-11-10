@@ -31,9 +31,10 @@ prometheus-node-exporter:
     requests: {cpu: 25m, memory: 24Mi}
     limits: {cpu: 200m, memory: 64Mi}
 grafana:
+  # Grafana 13 peaks above 256Mi while starting (OOMKilled on a VM); 512Mi limit.
   resources:
-    requests: {cpu: 50m, memory: 128Mi}
-    limits: {cpu: 500m, memory: 256Mi}
+    requests: {cpu: 50m, memory: 192Mi}
+    limits: {cpu: 500m, memory: 512Mi}
   sidecar:
     resources:
       requests: {cpu: 10m, memory: 24Mi}
