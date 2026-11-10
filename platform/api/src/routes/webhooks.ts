@@ -6,7 +6,8 @@ import { triggerPipeline } from '../lib/gitlab';
 import { postComment, formatPreviewComment, extractTaskId } from '../lib/clickup';
 import { generatePreviewUrl } from '../lib/preview';
 import { deployK8sPreview, terminateK8sPreview, previewResourceName } from '../lib/k8s';
-import * as crypto from 'crypto';
+import { githubWebhookSecrets, handleInstallationWebhook, verifyHubSignature } from '../lib/github-app';
+import { gitlabWebhookSecrets, verifyGitlabTokenAgainst } from '../lib/gitlab-app';
 import { claimWebhookDelivery, releaseWebhookDelivery, webhookDeliveryId, WebhookProvider } from '../lib/webhook-dedupe';
 
 /**
@@ -27,19 +28,14 @@ async function answeredAsDuplicate(provider: WebhookProvider, req: Request, res:
   return false;
 }
 
-function verifyGitHubSignature(payload: unknown, signature: string | undefined): boolean {
-  const secret = process.env.GITHUB_WEBHOOK_SECRET;
-  if (!secret || !Buffer.isBuffer(payload) || !signature || !/^sha256=[a-f0-9]{64}$/.test(signature)) return false;
-  const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+/** #35: accepts the GitHub App's webhook secret (stored encrypted) and the legacy env secret. */
+async function verifyGitHubSignature(payload: unknown, signature: string | undefined): Promise<boolean> {
+  return verifyHubSignature(payload, signature, await githubWebhookSecrets());
 }
 
-function verifyGitLabToken(token: string | undefined): boolean {
-  const secret = process.env.GITLAB_WEBHOOK_SECRET || process.env.GITLAB_WEBHOOK_TOKEN;
-  if (!secret || typeof token !== 'string') return false;
-  const expected = Buffer.from(secret);
-  const supplied = Buffer.from(token);
-  return expected.length === supplied.length && crypto.timingSafeEqual(expected, supplied);
+/** #35: accepts the secret created by the automated GitLab connect and the legacy env secret. */
+async function verifyGitLabToken(token: string | undefined): Promise<boolean> {
+  return verifyGitlabTokenAgainst(token, await gitlabWebhookSecrets());
 }
 
 const router = Router();
@@ -49,13 +45,20 @@ router.post('/webhooks/github', async (req: Request, res: Response) => {
     const signature = req.headers['x-hub-signature-256'] as string | undefined;
     const rawBody = (req as any).rawBody;
 
-    if (!verifyGitHubSignature(rawBody, signature)) {
+    if (!(await verifyGitHubSignature(rawBody, signature))) {
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
     const event = req.headers['x-github-event'] as string;
     const payload = req.body;
     if (await answeredAsDuplicate('github', req, res, event)) return;
+
+    if (event === 'ping') return res.json({ success: true, message: 'pong' });
+    // GitHub App installation lifecycle (#35): keep installations -> repositories in sync.
+    if (event === 'installation' || event === 'installation_repositories') {
+      const result = await handleInstallationWebhook(event, payload);
+      return res.json({ success: true, ...result });
+    }
 
     if (event === 'push') {
       const branch = (payload.ref || '').replace('refs/heads/', '');
@@ -188,7 +191,7 @@ router.post('/webhooks/github', async (req: Request, res: Response) => {
 router.post('/webhooks/gitlab', async (req: Request, res: Response) => {
   try {
     const token = req.headers['x-gitlab-token'] as string | undefined;
-    if (!verifyGitLabToken(token)) {
+    if (!(await verifyGitLabToken(token))) {
       return res.status(401).json({ error: 'Invalid token' });
     }
 

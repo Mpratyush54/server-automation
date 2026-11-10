@@ -30,6 +30,8 @@ const ALLOWED: Record<string, string> = {
   'middleware/idempotency.ts': 'last-resort fallback',
   // Pure graph builder: call-scoped node/edge indexes for one topology response (#31).
   'lib/topology.ts': 'request-scoped',
+  // Installation-token cache memory backend: tests / PLATFORM_STATE_STORE=memory only; Redis otherwise (#35).
+  'lib/github-app.ts': 'test double (Redis in deployments)',
 };
 
 function walk(dir: string): string[] {
