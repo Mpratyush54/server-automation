@@ -43,7 +43,7 @@
     "@grafana/faro-core": "2.13.0",
     "@grafana/faro-web-sdk": "2.13.0",
     "@rrweb/record": "2.2.0",
-    "fflate": "0.8.2",
+    "fflate": "0.8.3",
     "web-vitals": "6.2.3"
   },
   "module": "dist/esm/index.js",
