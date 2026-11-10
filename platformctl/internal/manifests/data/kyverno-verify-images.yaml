@@ -35,6 +35,7 @@ spec:
                     issuer: "https://token.actions.githubusercontent.com"
                     rekor:
                       url: https://rekor.sigstore.dev
-          mutateDigest: true
+          # Kyverno only allows digest mutation in Enforce mode (platformctl sets it).
+          mutateDigest: {{MUTATE_DIGEST}}
           verifyDigest: true
           required: true

@@ -106,6 +106,8 @@ chart_args() {
     kyverno)
       # Match platformctl/internal/components/kyverno.go resource pins.
       echo "--set admissionController.replicas=1" \
+           "--set webhooksCleanup.image.repository=bitnamilegacy/kubectl" \
+           "--set policyReportsCleanup.image.repository=bitnamilegacy/kubectl" \
            "--set admissionController.container.resources.requests.cpu=100m" \
            "--set admissionController.container.resources.requests.memory=256Mi" \
            "--set admissionController.container.resources.limits.cpu=500m" \

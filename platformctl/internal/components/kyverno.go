@@ -3,6 +3,7 @@ package components
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/fatih/color"
@@ -36,6 +37,8 @@ clear_helm_lock kyverno kyverno
 helm upgrade --install kyverno ` + chart("kyverno") + ` \
   --namespace kyverno --create-namespace \
   --set admissionController.replicas=1 \
+  --set webhooksCleanup.image.repository=bitnamilegacy/kubectl \
+  --set policyReportsCleanup.image.repository=bitnamilegacy/kubectl \
   --set backgroundController.enabled=true \
   --set cleanupController.enabled=true \
   --set reportsController.enabled=true \
@@ -80,15 +83,23 @@ func kyvernoPolicyMode(cfg *config.Config) string {
 	}
 }
 
+// renderVerifyImagesPolicy fills the policy mode. Kyverno rejects
+// mutateDigest=true unless the failure action is Enforce, so digest pinning
+// is only enabled together with enforcement.
+func renderVerifyImagesPolicy(manifest, mode string) string {
+	manifest = strings.ReplaceAll(manifest, "{{VALIDATION_FAILURE_ACTION}}", mode)
+	return strings.ReplaceAll(manifest, "{{MUTATE_DIGEST}}", strconv.FormatBool(mode == "Enforce"))
+}
+
 func applyKyvernoPolicies(cfg *config.Config) error {
 	manifest := readManifest("kyverno-verify-images.yaml")
 	if manifest == "" {
 		return fmt.Errorf("kyverno-verify-images.yaml manifest missing")
 	}
 	mode := kyvernoPolicyMode(cfg)
-	manifest = strings.ReplaceAll(manifest, "{{VALIDATION_FAILURE_ACTION}}", mode)
-	if _, err := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, manifest); err != nil {
-		return fmt.Errorf("apply kyverno verifyImages policy: %w", err)
+	manifest = renderVerifyImagesPolicy(manifest, mode)
+	if out, err := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, manifest); err != nil {
+		return fmt.Errorf("apply kyverno verifyImages policy: %w: %s", err, strings.TrimSpace(out))
 	}
 	// Optional CVE policy: only when explicitly requested. Trivy Operator is
 	// NOT installed here; see docs/operations/image-signing.md.

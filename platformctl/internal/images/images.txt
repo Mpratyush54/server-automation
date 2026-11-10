@@ -2,7 +2,7 @@
 # Regenerate after bumping platformctl/internal/versions/versions.go or
 # changing platformctl/internal/manifests/data/*: scripts/gen-images.sh
 # platform-api / platform-portal are passed at runtime (tag-dependent).
-bitnami/kubectl:1.30.2
+bitnamilegacy/kubectl:1.30.2
 docker.io/bitnamilegacy/minio-object-browser:2.0.2-debian-12-r3
 docker.io/bitnamilegacy/minio:2025.7.23-debian-12-r3
 docker.io/grafana/grafana:13.3.0-distroless
