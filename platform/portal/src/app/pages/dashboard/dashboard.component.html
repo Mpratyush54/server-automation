@@ -1,10 +1,9 @@
 <div class="mb-8 flex justify-between items-end">
   <div>
     <h2 class="text-2xl font-semibold tracking-tight text-white mb-2">Cluster Overview</h2>
-    <p class="text-sm text-[#a1a1aa]">Real-time telemetry and deployments for <code class="bg-[#111] border border-[#333] rounded px-1.5 py-0.5 text-[#ededed]">Prod-Kengeri-Kvm8</code></p>
+    <p class="text-sm text-[#a1a1aa]">Real-time telemetry and deployments @if (platformName) { for <code class="bg-[#111] border border-[#333] rounded px-1.5 py-0.5 text-[#ededed]">{{ platformName }}</code> }</p>
   </div>
   <div class="flex items-center gap-3 text-xs text-[#a1a1aa]">
-    <span class="flex items-center gap-1.5"><div class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div> Live Sync</span>
     @if (platformVersion) {
       <span class="flex items-center gap-1.5 border-l border-[#333] pl-3">
         @if (releasesUrl) {
@@ -47,18 +46,20 @@
   <div class="card p-5 relative overflow-hidden group">
     <div class="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl group-hover:bg-purple-500/20 transition-all duration-500"></div>
     <div class="text-sm font-medium text-[#a1a1aa] mb-1">Active Projects</div>
-    <div class="text-3xl font-semibold text-white font-mono tracking-tight">{{ stats.projects }}</div>
-    <div class="mt-4 flex items-center gap-2 text-xs text-[#a1a1aa]">
-      <span class="text-green-500 flex items-center">↑ 12%</span> vs last week
-    </div>
+    <div class="text-3xl font-semibold text-white font-mono tracking-tight">{{ stats.projects ?? '—' }}</div>
+    @if (projectTrend !== null) {
+      <div class="mt-4 text-xs text-[#a1a1aa]" title="Growth of accessible active projects since seven days ago">
+        {{ projectTrend > 0 ? '+' : '' }}{{ projectTrend }}% projects vs last week
+      </div>
+    }
   </div>
 
   <div class="card p-5 relative overflow-hidden group">
     <div class="absolute top-0 right-0 w-32 h-32 bg-zinc-500/10 rounded-full blur-3xl group-hover:bg-zinc-500/20 transition-all duration-500"></div>
     <div class="text-sm font-medium text-[#a1a1aa] mb-1">Deployments</div>
-    <div class="text-3xl font-semibold text-white font-mono tracking-tight">{{ stats.deployments }}</div>
+    <div class="text-3xl font-semibold text-white font-mono tracking-tight">{{ stats.deployments ?? '—' }}</div>
     <div class="mt-4 flex items-center gap-2 text-xs text-[#a1a1aa]">
-      <span class="text-blue-500 flex items-center">~2m</span> avg deploy time
+      <span class="text-blue-500 flex items-center" title="Mean creation-to-completion duration of accessible completed deployments">{{ avgDeployTime }}</span> avg deploy time
     </div>
   </div>
 </div>
@@ -82,11 +83,11 @@
               <div class="text-xs text-[#a1a1aa] flex items-center gap-2">
                 <span class="font-mono bg-[#222] px-1 rounded text-[#ededed]">{{ p.stack }}</span>
                 <span>•</span>
-                <span>Updated {{ p.createdAt | date:'shortDate' }}</span>
+                <span>Created {{ p.createdAt | date:'shortDate' }}</span>
               </div>
             </div>
           </div>
-          <span class="badge badge-active">Active</span>
+          @if (p.isActive) { <span class="badge badge-active">Active</span> }
         </div>
       }
 
@@ -128,7 +129,7 @@
             </td>
             <td class="py-3 px-4">
               <span class="badge"
-                [class.badge-active]="d.status === 'active' || d.status === 'success'"
+                [class.badge-active]="d.status === 'deployed' || d.status === 'active' || d.status === 'success'"
                 [class.badge-pending]="d.status === 'pending' || d.status === 'building'"
                 [class.badge-failed]="d.status === 'failed'">
                 {{ d.status }}
@@ -180,11 +181,11 @@
     </div>
     <div>
       <div class="text-xs text-[#a1a1aa] mb-1">Avg CPU</div>
-      <div class="text-2xl font-mono text-white">{{ telemetry.cpuAvg | number:'1.0-1' }}%</div>
+      <div class="text-2xl font-mono text-white">@if (telemetry.heartbeats) { {{ telemetry.cpuAvg | number:'1.0-1' }}% } @else { — }</div>
     </div>
     <div>
       <div class="text-xs text-[#a1a1aa] mb-1">Avg Memory</div>
-      <div class="text-2xl font-mono text-white">{{ telemetry.memoryAvg | number:'1.0-0' }} MB</div>
+      <div class="text-2xl font-mono text-white">@if (telemetry.heartbeats) { {{ telemetry.memoryAvg | number:'1.0-0' }} MB } @else { — }</div>
     </div>
   </div>
 

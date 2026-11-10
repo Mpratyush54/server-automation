@@ -797,6 +797,28 @@ describe('Database Provisioning', () => {
 // 7. BOOTSTRAP
 // ════════════════════════════════════════════════════════════════════
 describe('Bootstrap API', () => {
+  it.each([
+    [' My Install ', 'install.example.test', 'My Install'],
+    ['  ', ' install.example.test ', 'install.example.test'],
+    ['', '', null],
+  ])('exposes configured install identity without inventing a name (%s, %s)', async (name, domain, expected) => {
+    const oldName = process.env.PLATFORM_NAME;
+    const oldDomain = process.env.DOMAIN;
+    try {
+      process.env.PLATFORM_NAME = name!;
+      process.env.DOMAIN = domain!;
+      const r = await request(app).get('/api/bootstrap/status')
+        .set('Authorization', `Bearer ${T.developer}`);
+      expect(r.status).toBe(200);
+      expect(r.body.platformName).toBe(expected);
+    } finally {
+      if (oldName === undefined) delete process.env.PLATFORM_NAME;
+      else process.env.PLATFORM_NAME = oldName;
+      if (oldDomain === undefined) delete process.env.DOMAIN;
+      else process.env.DOMAIN = oldDomain;
+    }
+  });
+
   it('GET /api/bootstrap/status — 200 for any auth user', async () => {
     const r = await request(app)
       .get('/api/bootstrap/status')

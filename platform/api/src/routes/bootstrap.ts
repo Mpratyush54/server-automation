@@ -117,6 +117,7 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
 
   const overallHealthy = pgStatus === 'running' && mongoStatus === 'running';
   return res.json({
+    platformName: process.env.PLATFORM_NAME?.trim() || process.env.DOMAIN?.trim() || null,
     status: overallHealthy ? 'healthy' : 'degraded',
     postgres: pgStatus,
     mongodb: mongoStatus,
