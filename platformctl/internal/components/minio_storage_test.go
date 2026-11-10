@@ -17,6 +17,9 @@ mc() {
     if [[ "${FRESH:-}" == yes ]]; then
       [[ "$5" == platform-api-storage && "$6" =~ ^[a-f0-9]{64}$ ]] || return 92
     else [[ "$6" == 'api secret with $dollar' ]] || return 92; fi ;;
+  "admin policy list "*) [[ "${ADMIN_NOT_READY:-}" != yes ]] || return 98 ;;
+  "admin policy attach "*) [[ "${ATTACHED:-}" != yes ]] || return 99 ;;
+  "admin user info "*) [[ "${ATTACHED:-}" == yes ]] && echo "PolicyName: platform-api-storage" ;;
   "admin policy create "*)
     grep -q 'arn:aws:s3:::platform-uploads/\*' "$6" || return 93
     grep -q 'arn:aws:s3:::platform-backups/\*' "$6" || return 94
@@ -27,6 +30,9 @@ mc() {
 export -f mc
 kubectl() {
  case "$*" in
+  *"get secret platform-env "*) [[ "${ENV_CURRENT:-}" == yes ]] && { [[ "$*" == *ACCESS* ]] && printf 'api-key' | base64 || printf 'api secret with $dollar' | base64; }; true ;;
+  *"patch secret platform-env "*"--patch-file "*) f="${@: -1}"; [[ "$(cat "$f")" == *'"MINIO_API_SECRET_KEY":"'* ]] || return 81; echo patched >&2 ;;
+  *"rollout restart deployment/platform-api"*) echo restarted >&2 ;;
   *"get secret "*"MINIO_API_ACCESS_KEY"*) [[ "${FRESH:-}" == yes ]] || printf 'api-key' | base64 ;;
   *"get secret "*"MINIO_API_SECRET_KEY"*) [[ "${FRESH:-}" == yes ]] || printf 'api secret with $dollar' | base64 ;;
   *"get pods "*) printf 'minio-0' ;;
@@ -67,5 +73,39 @@ func TestMinioScopedSetupCreatesFreshCredentials(t *testing.T) {
 	}
 	if !strings.Contains(out, "complete") {
 		t.Fatal(out)
+	}
+}
+
+func TestMinioScopedSetupPublishesToAPIEnvAndRestartsOnlyOnChange(t *testing.T) {
+	out, err := runJobShell(t, minioFakeTools+minioStorageScript)
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if !strings.Contains(out, "patched") || !strings.Contains(out, "restarted") {
+		t.Fatalf("credentials not published to platform-env / API not restarted: %s", out)
+	}
+	out, err = runJobShell(t, minioFakeTools+"\nexport ENV_CURRENT=yes\n"+minioStorageScript)
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if strings.Contains(out, "restarted") || !strings.Contains(out, "unchanged") {
+		t.Fatalf("API restarted although credentials were unchanged: %s", out)
+	}
+}
+
+func TestMinioScopedSetupWaitsForAdminAPIAndFailsWithReason(t *testing.T) {
+	out, err := runJobShell(t, minioFakeTools+"\nexport ADMIN_NOT_READY=yes MINIO_ADMIN_WAIT_SECONDS=0\n"+minioStorageScript)
+	if err == nil {
+		t.Fatalf("expected failure while MinIO IAM is not initialised: %s", out)
+	}
+	if !strings.Contains(out, "admin API not ready") || strings.Contains(out, "patched") {
+		t.Fatalf("missing reason or published anyway: %s", out)
+	}
+}
+
+func TestMinioScopedSetupRerunWithPolicyAlreadyAttached(t *testing.T) {
+	out, err := runJobShell(t, minioFakeTools+"\nexport ATTACHED=yes\n"+minioStorageScript+"\necho complete\n")
+	if err != nil || !strings.Contains(out, "complete") {
+		t.Fatalf("re-run with an attached policy must succeed: %v: %s", err, out)
 	}
 }

@@ -57,6 +57,7 @@ func All() []Component {
 		{"oauth2-proxy", "OAuth2 authentication proxy", InstallOAuthProxy},
 		{"portainer", "Container management UI (subdomain + Platform SSO)", InstallPortainer},
 		{"platform", "Platform API + Portal", InstallPlatform},
+		{"storage-scoped", "Bucket-scoped MinIO credentials for the API (after platform)", SetupBundledStorage},
 		{"ingress", "Create the Ingresses early so the TLS certificate issues during install", InstallIngress},
 		{"routing", "Ingress: ArgoCD /argocd, Grafana /grafana, Portainer subdomain+SSO", InstallRouting},
 		{"auto-update", "GHCR auto-update policy (Image Updater + CronJob)", InstallAutoUpdate},
@@ -790,9 +791,6 @@ func InstallPlatform(cfg *config.Config) error {
 	// root-only break-glass copy. Must run before platform-env is applied so a
 	// rotated webhook secret is adopted rather than overwritten.
 	if err := MigrateHostState(cfg); err != nil {
-		return err
-	}
-	if err := SetupBundledStorage(cfg); err != nil {
 		return err
 	}
 	if err := applySecret("platform", "platform-env", map[string]string{
