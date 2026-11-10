@@ -17,6 +17,11 @@ func TestDatabaseMonitoringProfile(t *testing.T) {
 			if profile == "full" && m["resources"] == nil {
 				t.Fatal("missing resource bounds")
 			}
+			if engine == "mongo" {
+				if us, _ := v["updateStrategy"].(map[string]any); us["type"] != "Recreate" {
+					t.Fatalf("mongo must use the Recreate strategy (%s)", profile)
+				}
+			}
 			if profile != "full" && v["postgresqlSharedPreloadLibraries"] != nil {
 				t.Fatal("preload on light profile")
 			}
