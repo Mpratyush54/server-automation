@@ -1,3 +1,4 @@
+import { projectRevision } from '../lib/project-revision';
 import { previewNamespace } from '../lib/k8s';
 import { requireProjectAccess } from '../lib/project-access';
 import { ProjectAccessRole } from '../entities/ProjectMember';
@@ -99,6 +100,7 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
     }
     if (env.name !== EnvironmentName.PREVIEW) await assertDedicatedNamespace(env);
 
+    const revision = await projectRevision(project, body.gitRevision, body.branch);
     const clickupTaskId = body.branch ? extractTaskId(body.branch) : null;
 
     // Concurrent deploys of the same project environment: the second one gets 409.
@@ -111,7 +113,7 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
         projectId: body.projectId,
         environmentId: env.id,
         version: body.version || '1.0.0',
-        branch: body.branch || 'main',
+        branch: revision,
         commitSha: body.commitSha || 'unknown',
         imageTag: body.imageTag || 'latest',
         status: DeploymentStatus.PENDING,
@@ -120,7 +122,7 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
         previewUrl: env.name === EnvironmentName.PREVIEW ? `https://${env.domain}` : null,
         metadata: {
           previewNamespace: env.name === EnvironmentName.PREVIEW ? previewNamespace(project.id) : undefined,
-          previewResourceName: env.name === EnvironmentName.PREVIEW ? previewResourceName(project.id, body.branch || 'main') : undefined,
+          previewResourceName: env.name === EnvironmentName.PREVIEW ? previewResourceName(project.id, revision) : undefined,
           gitPath: body.gitPath || undefined,
           pullFromGit: body.pullFromGit !== false,
           domain: project.domain || undefined,
