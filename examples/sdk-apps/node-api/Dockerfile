@@ -2,7 +2,7 @@
 # Build from repo root:
 #   docker build -f examples/sdk-apps/node-api/Dockerfile -t sdk-node-api:local .
 
-FROM node:22.23.4-alpine3.24 AS sdk
+FROM node:26.12.1-alpine3.24 AS sdk
 WORKDIR /src
 COPY sdk-node/package*.json ./sdk-node/
 # Reproducible install when a lockfile is committed; fall back until it is.
@@ -15,7 +15,7 @@ RUN cd sdk-node && if [ -f package-lock.json ]; then \
 COPY sdk-node ./sdk-node
 RUN cd sdk-node && npm run build && npm prune --omit=dev
 
-FROM node:22.23.4-alpine3.24
+FROM node:26.12.1-alpine3.24
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=sdk /src/sdk-node /sdk-node
