@@ -319,6 +319,21 @@ export function requireAgentScope(...scopes: string[]) {
 }
 
 /**
+ * True when the request carries a human session whose second factor was confirmed within
+ * `maxAgeSec` (default: stepUpMaxAgeSec()). Same rule as requireRecentMfa, for handlers that
+ * degrade gracefully instead of failing. Agent/SDK tokens never count as a recent step-up.
+ */
+export function hasRecentMfa(req: Request, maxAgeSec?: number): boolean {
+  const authReq = req as AuthenticatedRequest;
+  if (!authReq.user || !authReq.humanJwt || authReq.agentToken || authReq.sdkToken) return false;
+  const max = maxAgeSec ?? stepUpMaxAgeSec();
+  const s = authReq.session;
+  const now = Math.floor(Date.now() / 1000);
+  return !!s && s.amr.includes('mfa') && typeof s.authTime === 'number'
+    && s.authTime <= now + 60 && now - s.authTime <= max;
+}
+
+/**
  * Step-up (#24): a human session must carry a second factor (`amr` contains `mfa`) verified
  * within `maxAgeSec`, otherwise 401 `{ error: 'step_up_required' }` (POST /api/auth/mfa/step-up,
  * then retry). Agent tokens (plat_agent_*) and SDK credentials are non-interactive: they stay
@@ -332,11 +347,7 @@ export function requireRecentMfa(maxAgeSec?: number) {
       return res.status(401).json({ error: 'Unauthorized: Not authenticated' });
     }
     const max = maxAgeSec ?? stepUpMaxAgeSec();
-    const s = authReq.session;
-    const now = Math.floor(Date.now() / 1000);
-    const fresh = !!s && s.amr.includes('mfa') && typeof s.authTime === 'number'
-      && s.authTime <= now + 60 && now - s.authTime <= max;
-    if (fresh) return next();
+    if (hasRecentMfa(authReq, max)) return next();
     return res.status(401).json({
       error: 'step_up_required',
       maxAgeSec: max,

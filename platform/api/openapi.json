@@ -29,6 +29,169 @@
     }
   ],
   "paths": {
+    "/projects/{projectId}/argocd/refresh": {
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Request ArgoCD hard refresh (audited)",
+        "description": "Requires project developer membership or global admin/devops. Application names are server-selected. Sync never overwrites an active operation.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "env": {
+                    "type": "string",
+                    "default": "development"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Action accepted; poll argocd-status for progress"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Project developer membership required"
+          },
+          "404": {
+            "description": "Project, environment or Application not found"
+          },
+          "409": {
+            "description": "Concurrent modification or sync already running"
+          },
+          "502": {
+            "description": "Kubernetes request failed"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/argocd/sync": {
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Request ArgoCD sync (audited)",
+        "description": "Requires project developer membership or global admin/devops. Application names are server-selected. Sync never overwrites an active operation.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "env": {
+                    "type": "string",
+                    "default": "development"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Action accepted; poll argocd-status for progress"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Project developer membership required"
+          },
+          "404": {
+            "description": "Project, environment or Application not found"
+          },
+          "409": {
+            "description": "Concurrent modification or sync already running"
+          },
+          "502": {
+            "description": "Kubernetes request failed"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/argocd-status": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Read project ArgoCD status, conditions and operation errors",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "agentTokenAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "env",
+            "schema": {
+              "type": "string",
+              "default": "development"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connection state; when connected includes branch, sync.revision, conditions, operationState phase/message and resources counts (total, synced, outOfSync, healthy, degraded). Existing revision and syncStatus fields are preserved."
+          },
+          "403": {
+            "description": "Project viewer membership or projects:read agent scope required"
+          },
+          "404": {
+            "description": "Project or environment not found"
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [

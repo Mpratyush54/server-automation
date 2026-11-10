@@ -56,10 +56,7 @@
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'metrics'" (click)="switchTab('metrics')">📊 Metrics</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'api-metrics'" (click)="switchTab('api-metrics')">⚡ API Latency</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'logs'" (click)="switchTab('logs')">📝 Logs</button>
-  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'config'" (click)="switchTab('config')">⚙️ Config</button>
-  @if (role === 'devops' || role === 'tech_lead' || role === 'admin') {
-    <button class="btn btn-sm" [class.btn-primary]="activeTab === 'secrets'" (click)="switchTab('secrets')">🔐 Secrets</button>
-  }
+  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'environment'" (click)="switchTab('environment')">🧩 Environment</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'storage'" (click)="switchTab('storage')">📁 Storage</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'environments'" (click)="switchTab('environments')">🌐 Environments</button>
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'access'" (click)="switchTab('access')">👥 Access</button>
@@ -81,6 +78,9 @@
         <div class="form-group">
           <label>GitHub Repository URL</label>
           <input [(ngModel)]="projectSettings.repositoryUrl" placeholder="https://github.com/org/repo.git" style="width:100%;">
+          <label style="display:block; margin-top:12px">Git revision override (next deployment)</label>
+          <input [(ngModel)]="projectSettings.gitRevision" [placeholder]="project?.defaultBranch || 'Automatic default branch'" style="width:100%">
+          <small>Leave empty to use the repository default branch: {{ project?.defaultBranch || 'HEAD (resolved on deploy)' }}.</small>
         </div>
         <div class="form-group">
           <label>Custom Domain (base)</label>
@@ -210,7 +210,7 @@
             </select>
           }
           @if (!gitBranches.length) {
-            <input [(ngModel)]="deployDto.branch" (change)="onBranchChange()" placeholder="main" style="width:100%;">
+            <input [(ngModel)]="deployDto.branch" (change)="onBranchChange()" placeholder="HEAD" style="width:100%;">
           }
         </div>
         <div class="form-group">
@@ -499,175 +499,9 @@
   </div>
 }
 
-<!-- CONFIG TAB -->
-@if (activeTab === 'config') {
-  <div class="grid-2">
-    @if (role !== 'developer') {
-      <div class="card">
-        <h2>Set Environment Value</h2>
-        <div class="form-group">
-          <label>Config Key</label>
-          <input [(ngModel)]="newConfig.key" placeholder="database.pool_size" style="width:100%;">
-        </div>
-        <div class="form-group">
-          <label>Config Value</label>
-          <textarea [(ngModel)]="newConfig.value" placeholder="25" style="width:100%;height:100px;"></textarea>
-        </div>
-        <div class="form-group">
-          <label>Environment Scope</label>
-          <select [(ngModel)]="newConfig.environmentId" style="width:100%;">
-            <option value="">Global (All Environments)</option>
-            @for (env of project?.environments; track env) {
-              <option [value]="env.id">{{ env.name | uppercase }}</option>
-            }
-          </select>
-        </div>
-        <div class="form-group" style="flex-direction:row;align-items:center;gap:10px;">
-          <input type="checkbox" [(ngModel)]="newConfig.isSecret" id="isSec">
-          <label for="isSec" style="margin:0;cursor:pointer;">Is Secret Value (Mask in outputs)</label>
-        </div>
-        <button class="btn btn-primary" (click)="addConfig()" [disabled]="!newConfig.key || !newConfig.value" style="width:100%;">Save Configuration</button>
-      </div>
-    }
-    <div class="card" style="flex:2;">
-      <h2>Runtime Configuration</h2>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead>
-            <tr>
-              <th>Key</th>
-              <th>Value</th>
-              <th>Scope</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (item of configs | keyvalue; track item.key) {
-              <tr>
-                <td style="font-family:monospace;font-weight:700;">{{ item.key }}</td>
-                <td style="font-family:monospace;">{{ item.value }}</td>
-                <td><span class="badge badge-active">Active</span></td>
-                <td>
-                  @if (role === 'devops') {
-                    <button class="btn btn-sm btn-danger" (click)="deleteConfig(item.key)">Delete</button>
-                  }
-                </td>
-              </tr>
-            }
-            @if ((configs | keyvalue).length === 0) {
-              <tr>
-                <td colspan="4" style="text-align:center;color:var(--color-text-muted);">No runtime configurations defined</td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-}
-
-<!-- SECRETS TAB -->
-@if (activeTab === 'secrets') {
-  <div class="grid-2">
-    <!-- Create/Edit Secret Card -->
-    @if (role === 'devops' || role === 'tech_lead' || role === 'admin') {
-      <div class="card">
-        <h2>Set Encrypted Secret</h2>
-        <p style="color:var(--color-text-secondary);font-size:0.8rem;margin-bottom:16px;">
-          Secrets are encrypted at rest using AES-256-GCM.
-        </p>
-        <div class="form-group">
-          <label>Secret Key</label>
-          <input [(ngModel)]="newSecret.key" placeholder="API_SECRET_KEY" style="width:100%;">
-        </div>
-        <div class="form-group">
-          <label>Secret Value</label>
-          <textarea [(ngModel)]="newSecret.value" placeholder="super-secret-value-here" style="width:100%;height:100px;"></textarea>
-        </div>
-        <div class="form-group">
-          <label>Environment Scope</label>
-          <select [(ngModel)]="newSecret.environmentId" style="width:100%;">
-            <option value="">Global (All Environments)</option>
-            @for (env of project?.environments; track env) {
-              <option [value]="env.id">{{ env.name | uppercase }}</option>
-            }
-          </select>
-        </div>
-        <button class="btn btn-primary" (click)="addSecret()" [disabled]="!newSecret.key || !newSecret.value" style="width:100%;">Save Secret</button>
-        <div style="margin-top:24px;border-top:1px solid var(--border-glass);padding-top:16px;display:flex;gap:8px;">
-          <button class="btn btn-sm btn-secondary" style="flex:1;" (click)="bulkImportEnvId=''; bulkImportText=''; showBulkImportModal=true">📤 Bulk Import</button>
-          <button class="btn btn-sm btn-secondary" style="flex:1;" (click)="doExportSecrets('')">📥 Export All</button>
-        </div>
-      </div>
-    }
-    <!-- Secrets List Card -->
-    <div class="card" style="flex:2;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
-        <h2>Environment Secrets</h2>
-        @if (project?.environments?.length) {
-          <div style="display:flex;gap:8px;">
-            @for (env of project.environments; track env) {
-              <button class="btn btn-sm btn-secondary" (click)="doExportSecrets(env.id)">📥 Export {{ env.name | uppercase }}</button>
-            }
-          </div>
-        }
-      </div>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead>
-            <tr>
-              <th>Key</th>
-              <th>Value</th>
-              <th>Environment Scope</th>
-              <th>Version</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (s of secrets; track s) {
-              <tr>
-                <td style="font-family:monospace;font-weight:700;">{{ s.key }}</td>
-                <td style="font-family:monospace;">
-                  @if (!s.isRevealed) {
-                    <span>••••••••</span>
-                  }
-                  @if (s.isRevealed) {
-                    <span style="color:#10b981;font-weight:600;">{{ s.revealedValue }}</span>
-                  }
-                </td>
-                <td>
-                  <span class="badge" [class.badge-active]="!s.environmentId">
-                    {{ getEnvName(s.environmentId) }}
-                  </span>
-                </td>
-                <td>
-                  <a href="javascript:void(0)" (click)="showSecretVersions(s)" style="color:var(--primary);text-decoration:underline;font-weight:600;">v{{ s.version }}</a>
-                </td>
-                <td>
-                  <div style="display:flex;gap:6px;">
-                    @if (!s.isRevealed) {
-                      <button class="btn btn-sm btn-secondary" (click)="revealSecret(s)">👁️ Reveal</button>
-                    }
-                    @if (s.isRevealed) {
-                      <button class="btn btn-sm btn-secondary" (click)="hideSecret(s)">🙈 Hide</button>
-                    }
-                    @if (role === 'devops' || role === 'admin') {
-                      <button class="btn btn-sm btn-danger" (click)="deleteSecret(s.id)">Delete</button>
-                    }
-                  </div>
-                </td>
-              </tr>
-            }
-            @if (secrets.length === 0) {
-              <tr>
-                <td colspan="5" style="text-align:center;color:var(--color-text-muted);">No encrypted secrets defined</td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
+<!-- ENVIRONMENT TAB (#29): plain config + encrypted secrets in one list -->
+@if (activeTab === 'environment' && project) {
+  <app-environment-tab [projectId]="project.id" [environments]="project.environments || []"></app-environment-tab>
 }
 
 <!-- STORAGE TAB -->
@@ -941,208 +775,15 @@
 <!-- GITOPS / ARGOCD TAB -->
 @if (activeTab === 'gitops') {
   <div>
-    <!-- ArgoCD Application Summary Card -->
-    <div class="card mb-6" style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.4), rgba(15, 23, 42, 0.6)); border: 1px solid rgba(139, 92, 246, 0.15); margin-top:20px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
-        <div>
-          <h2 style="font-size:1.25rem; margin:0; border:0; padding:0; color:#fff; display:flex; align-items:center; gap:8px;">
-            🐙 GitOps Application Controller (ArgoCD)
-          </h2>
-          <p style="color:var(--color-text-secondary); font-size:0.8rem; margin:4px 0 0 0;">
-            Syncing state from branch: <span style="font-family:monospace; color:var(--primary);">{{ project?.deployments[0]?.branch || 'main' }}</span>
-          </p>
-        </div>
-        <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-size:0.75rem; color:var(--color-text-secondary); text-transform:uppercase; font-weight:600;">Sync Status:</span>
-            @if (argoStatus?.syncStatus === 'Synced') {
-              <span class="badge badge-active" style="background-color:rgba(16,185,129,0.15); color:#10b981; border-color:rgba(16,185,129,0.3);">
-                SYNCED
-              </span>
-            }
-            @if (argoStatus?.syncStatus === 'OutOfSync') {
-              <span class="badge badge-failed" style="background-color:rgba(239,68,68,0.15); color:#ef4444; border-color:rgba(239,68,68,0.3);">
-                OUT OF SYNC
-              </span>
-            }
-            @if (argoStatus?.syncStatus !== 'Synced' && argoStatus?.syncStatus !== 'OutOfSync') {
-              <span class="badge badge-pending" style="background-color:rgba(245,158,11,0.15); color:#f59e0b; border-color:rgba(245,158,11,0.3);">
-                {{ argoStatus?.syncStatus || 'OFFLINE' }}
-              </span>
-            }
-          </div>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-size:0.75rem; color:var(--color-text-secondary); text-transform:uppercase; font-weight:600;">App Health:</span>
-            @if (argoStatus?.healthStatus === 'Healthy') {
-              <span class="badge badge-active" style="background-color:rgba(16,185,129,0.15); color:#10b981; border-color:rgba(16,185,129,0.3);">
-                HEALTHY
-              </span>
-            }
-            @if (argoStatus?.healthStatus === 'Degraded') {
-              <span class="badge badge-failed" style="background-color:rgba(239,68,68,0.15); color:#ef4444; border-color:rgba(239,68,68,0.3);">
-                DEGRADED
-              </span>
-            }
-            @if (argoStatus?.healthStatus === 'Progressing') {
-              <span class="badge badge-pending" style="background-color:rgba(245,158,11,0.15); color:#f59e0b; border-color:rgba(245,158,11,0.3);">
-                PROGRESSING
-              </span>
-            }
-            @if (argoStatus?.healthStatus !== 'Healthy' && argoStatus?.healthStatus !== 'Degraded' && argoStatus?.healthStatus !== 'Progressing') {
-              <span class="badge badge-pending" style="background-color:rgba(100,116,139,0.15); color:#cbd5e1; border-color:rgba(100,116,139,0.3);">
-                {{ argoStatus?.healthStatus || 'UNKNOWN' }}
-              </span>
-            }
-          </div>
-          @if (argoStatus?.consoleUrl) {
-            <a [href]="argoStatus.consoleUrl + '/applications/' + (argoStatus?.appName || (project?.name + '-staging' | lowercase))" target="_blank" class="btn btn-sm btn-primary" style="display:inline-flex; align-items:center; gap:6px; font-weight:600; padding:6px 12px; font-size:0.75rem; text-decoration:none;">
-              External ArgoCD Console ↗
-            </a>
-          }
-        </div>
-      </div>
-    </div>
-    <!-- Connection Status Warning -->
-    @if (!argoStatus?.connected) {
-      <div class="card mb-6" style="background:rgba(245,158,11,0.1); border-color:rgba(245,158,11,0.25); color:#fde047; padding:12px 18px; font-size:0.85rem;">
-        ⚠️ <strong>ArgoCD Controller Disconnected:</strong> Could not retrieve real-time ArgoCD status: {{ argoStatus?.error || 'unreachable' }}. Showing local GitOps state.@if (argoStatus?.consoleUrl) {
-        <a [href]="argoStatus.consoleUrl" target="_blank" style="color:var(--primary); font-weight:600; text-decoration:underline; margin-left:6px;">Open ArgoCD console ↗</a>
-      }
-    </div>
+    <app-argocd-panel [project]="project" [status]="argoStatus" (reload)="loadArgoStatus()" />
+  <!-- Live resource topology (#31): lazy chunk, loaded when scrolled into view -->
+  @if (project?.id) {
+    @defer (on viewport) {
+      <app-topology-graph [projectId]="project.id" [environments]="project.environments || []" (podLogs)="openPodLogs($event)" />
+    } @placeholder {
+      <div class="card" style="margin-top:20px; min-height:160px;"></div>
+    }
   }
-  <!-- ArgoCD Visual Resource Tree Layout -->
-  <div class="card" style="padding: 24px; background: rgba(10, 15, 30, 0.4); border: 1px solid var(--border-glass);">
-    <h2>Application Resource Topology</h2>
-    <p style="color:var(--color-text-secondary); font-size:0.8rem; margin-top:0; margin-bottom:30px;">
-      Interactive diagram representing active Kubernetes manifests and container replicas.
-    </p>
-    <!-- ArgoCD Tree Diagram -->
-    <div style="display: flex; flex-direction: column; gap: 32px; align-items: center; position: relative;">
-      <!-- Level 1: Git Repo -> ArgoCD App -->
-      <div style="display: flex; gap: 40px; align-items: center; justify-content: center; width: 100%; flex-wrap: wrap;">
-        <!-- Git Source Node -->
-        <div class="card text-center" style="margin:0; padding:12px 20px; width:220px; border-color:rgba(255,255,255,0.08); background:rgba(0,0,0,0.3);">
-          <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:700;">Git Repository</div>
-          <div style="font-family:monospace; font-size:0.85rem; font-weight:600; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:4px;">
-            {{ project?.repositoryUrl || project?.name }}
-          </div>
-          <div style="font-size:0.75rem; color:var(--primary); font-family:monospace; margin-top:2px;">
-            {{ project?.deployments[0]?.branch || 'main' }}
-          </div>
-        </div>
-        <div style="font-size: 1.5rem; color: var(--color-text-muted);">➡️</div>
-        <!-- Argo Application Node -->
-        <div class="card text-center" style="margin:0; padding:12px 20px; width:220px; border-color:var(--primary); background:rgba(139,92,246,0.05); box-shadow:0 0 15px rgba(139,92,246,0.15);">
-          <div style="font-size:0.7rem; text-transform:uppercase; color:var(--primary); font-weight:800; letter-spacing:0.05em;">ArgoCD Application</div>
-          <div style="font-family:monospace; font-size:0.85rem; font-weight:600; color:#fff; margin-top:4px;">
-            {{ project?.name }}-app
-          </div>
-          <div style="font-size:0.7rem; color:#10b981; font-weight:600; margin-top:2px;">
-            ● Synced
-          </div>
-        </div>
-      </div>
-      <div style="font-size: 1.25rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
-      <!-- Level 2: K8s Infrastructure Services Split -->
-      <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 40px; width: 100%;">
-        <!-- Left Wing: Deployments -> Pods -->
-        <div style="display: flex; flex-direction: column; gap: 24px; align-items: center; border: 1px dashed rgba(255,255,255,0.05); border-radius: 12px; padding: 20px; flex: 1; min-width: 320px;">
-          <h4 style="margin: 0; font-size: 0.8rem; text-transform: uppercase; color: var(--color-text-secondary); letter-spacing: 0.05em;">Compute Resources</h4>
-          <!-- Deployment Node -->
-          <div class="card text-center" style="margin:0; padding:12px 20px; width:200px; border-color:#60a5fa; background:rgba(96,165,250,0.05);">
-            <div style="font-size:0.7rem; text-transform:uppercase; color:#60a5fa; font-weight:700;">K8s Deployment</div>
-            <div style="font-family:monospace; font-size:0.8rem; font-weight:600; color:#fff; margin-top:4px;">
-              {{ project?.name }}-dep
-            </div>
-            <div style="font-size:0.7rem; color:#10b981; margin-top:2px;">
-              Status: Healthy
-            </div>
-          </div>
-          <div style="font-size: 1rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
-          <!-- ReplicaSet Node -->
-          <div class="card text-center" style="margin:0; padding:12px 20px; width:200px; border-color:rgba(255,255,255,0.05); background:rgba(0,0,0,0.25);">
-            <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:700;">ReplicaSet</div>
-            <div style="font-family:monospace; font-size:0.75rem; color:#cbd5e1; margin-top:4px;">
-              {{ project?.name }}-dep-7bf9dc
-            </div>
-            <div style="font-size:0.7rem; color:var(--color-text-secondary); margin-top:2px;">
-              Replicas: {{ pods.length || 1 }} active
-            </div>
-          </div>
-          <div style="font-size: 1rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
-          <!-- Pods Leaf Nodes Grid -->
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; width: 100%;">
-            @for (pod of pods; track pod) {
-              <div class="card" style="margin:0; padding:12px; border:1px solid rgba(255,255,255,0.05); background:rgba(0,0,0,0.35); position:relative;"
-                [style.border-color]="pod.status === 'Running' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                  <span style="font-family:monospace; font-size:0.8rem; font-weight:600; color:#fff; max-width:70%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                    {{ pod.name }}
-                  </span>
-                  <span class="badge" [ngClass]="{'badge-active': pod.status === 'Running', 'badge-failed': pod.status !== 'Running'}">
-                    {{ pod.status }}
-                  </span>
-                </div>
-                <div style="font-size:0.75rem; color:var(--color-text-secondary); margin-bottom:10px;">
-                  Node: {{ pod.node }} &bull; Restarts: {{ pod.restarts }} &bull; Age: {{ pod.age }}
-                </div>
-                <div style="display:flex; gap:6px;">
-                  <button class="btn btn-sm" (click)="openPodLogs(pod)" style="flex:1; font-size:0.7rem; padding:4px 0;">
-                    Logs
-                  </button>
-                  @if (role === 'devops') {
-                    <button class="btn btn-sm btn-danger" (click)="restartPod(pod)" style="flex:1; font-size:0.7rem; padding:4px 0;">
-                      Restart
-                    </button>
-                  }
-                </div>
-              </div>
-            }
-            @if (pods.length === 0) {
-              <div class="card text-center" style="margin:0; padding:16px; color:var(--color-text-muted); font-size:0.8rem;">
-                No active pods found. Trigger a deployment first.
-              </div>
-            }
-          </div>
-        </div>
-        <!-- Right Wing: Ingress / Routing Services -->
-        <div style="display: flex; flex-direction: column; gap: 24px; align-items: center; border: 1px dashed rgba(255,255,255,0.05); border-radius: 12px; padding: 20px; flex: 1; min-width: 320px;">
-          <h4 style="margin: 0; font-size: 0.8rem; text-transform: uppercase; color: var(--color-text-secondary); letter-spacing: 0.05em;">Network Routing</h4>
-          <!-- Service Node -->
-          <div class="card text-center" style="margin:0; padding:12px 20px; width:200px; border-color:#34d399; background:rgba(52,211,153,0.05);">
-            <div style="font-size:0.7rem; text-transform:uppercase; color:#34d399; font-weight:700;">K8s Service</div>
-            <div style="font-family:monospace; font-size:0.8rem; font-weight:600; color:#fff; margin-top:4px;">
-              {{ project?.name }}-svc
-            </div>
-            <div style="font-size:0.7rem; color:var(--color-text-secondary); margin-top:2px;">
-              Type: ClusterIP
-            </div>
-          </div>
-          <div style="font-size: 1rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
-          <!-- Ingress Node -->
-          <div class="card text-center" style="margin:0; padding:12px 20px; width:200px; border-color:#fb7185; background:rgba(251,113,133,0.05);">
-            <div style="font-size:0.7rem; text-transform:uppercase; color:#fb7185; font-weight:700;">Ingress Controller</div>
-            <div style="font-family:monospace; font-size:0.75rem; color:#cbd5e1; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-              {{ project?.name }}-ingress
-            </div>
-            <div style="font-size:0.7rem; color:var(--color-text-secondary); margin-top:2px;">
-              SSL Redirect: active
-            </div>
-          </div>
-          <div style="font-size: 1rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
-          <!-- Target Router URL Card -->
-          <div class="card text-center" style="margin:0; padding:14px; width:100%; border-color:rgba(255,255,255,0.05); background:rgba(0,0,0,0.3);">
-            <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:600;">Ingress Route Domain</div>
-            <div style="font-family:monospace; font-size:0.85rem; font-weight:700; margin-top:4px;">
-              <a href="http://{{ project?.domain || project?.name + '.platform.dev' }}" target="_blank" style="color:var(--primary); text-decoration:none;">
-                {{ project?.domain || project?.name + '.platform.dev' }}
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
 </div>
 }
 
@@ -1365,84 +1006,6 @@
       <div style="padding:12px 24px; border-top:1px solid var(--border-glass); display:flex; justify-content:flex-end; gap:8px; background:rgba(15,23,42,0.4);">
         <button class="btn btn-sm" (click)="fetchPodLogs()">Refresh Logs</button>
         <button class="btn btn-sm btn-primary" (click)="closeLogsModal()">Close Terminal</button>
-      </div>
-    </div>
-  </div>
-}
-
-<!-- VERSION HISTORY MODAL -->
-@if (showVersionsModal) {
-  <div class="modal-backdrop" (click)="showVersionsModal = false" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999;display:flex;justify-content:center;align-items:center;">
-    <div class="card" (click)="$event.stopPropagation()" style="width:550px;max-width:90%;background:#0f172a;border:1px solid var(--border-glass);box-shadow:0 20px 25px -5px rgba(0,0,0,0.5);">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid var(--border-glass);padding-bottom:12px;">
-        <h2 style="margin:0;border:none;padding:0;">Version History: {{ activeSecretKey }}</h2>
-        <button class="btn btn-sm btn-secondary" (click)="showVersionsModal = false">✕</button>
-      </div>
-      <div style="max-height:300px;overflow-y:auto;margin-bottom:16px;">
-        <table style="width:100%;">
-          <thead>
-            <tr>
-              <th>Version</th>
-              <th>Changed At</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (ver of activeSecretVersions; track ver) {
-              <tr>
-                <td>v{{ ver.version }}</td>
-                <td style="font-size:0.8rem;color:var(--color-text-secondary);">{{ ver.changedAt | date:'short' }}</td>
-                <td>
-                  @if (role === 'devops' || role === 'admin') {
-                    <button class="btn btn-sm btn-primary" (click)="rollbackToVersion(ver.version)">Rollback</button>
-                  }
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-}
-
-<!-- BULK IMPORT MODAL -->
-@if (showBulkImportModal) {
-  <div class="modal-backdrop" (click)="showBulkImportModal = false" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999;display:flex;justify-content:center;align-items:center;">
-    <div class="card" (click)="$event.stopPropagation()" style="width:600px;max-width:95%;background:#0f172a;border:1px solid var(--border-glass);box-shadow:0 20px 25px -5px rgba(0,0,0,0.5);">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid var(--border-glass);padding-bottom:12px;">
-        <h2 style="margin:0;border:none;padding:0;">Bulk Import Secrets (.env format)</h2>
-        <button class="btn btn-sm btn-secondary" (click)="showBulkImportModal = false">✕</button>
-      </div>
-      <div class="form-group">
-        <label>Environment Scope Scope</label>
-        <select [(ngModel)]="bulkImportEnvId" style="width:100%;">
-          <option value="">Global (All Environments)</option>
-          @for (env of project?.environments; track env) {
-            <option [value]="env.id">{{ env.name | uppercase }}</option>
-          }
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Paste .env Content</label>
-        <textarea [(ngModel)]="bulkImportText" placeholder="KEY1=VALUE1&#10;KEY2=VALUE2" style="width:100%;height:200px;font-family:monospace;font-size:0.85rem;background:rgba(0,0,0,0.25);border-color:var(--border-glass);color:#fff;padding:8px;"></textarea>
-      </div>
-      <button class="btn btn-primary" (click)="doBulkImport()" [disabled]="!bulkImportText" style="width:100%;margin-top:12px;">Import Secrets</button>
-    </div>
-  </div>
-}
-
-<!-- EXPORT SECRETS MODAL -->
-@if (showExportModal) {
-  <div class="modal-backdrop" (click)="showExportModal = false" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999;display:flex;justify-content:center;align-items:center;">
-    <div class="card" (click)="$event.stopPropagation()" style="width:600px;max-width:95%;background:#0f172a;border:1px solid var(--border-glass);box-shadow:0 20px 25px -5px rgba(0,0,0,0.5);">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid var(--border-glass);padding-bottom:12px;">
-        <h2 style="margin:0;border:none;padding:0;">Exported Secrets ({{ exportedEnvId ? getEnvName(exportedEnvId) : 'GLOBAL' }})</h2>
-        <button class="btn btn-sm btn-secondary" (click)="showExportModal = false">✕</button>
-      </div>
-      <p style="color:var(--color-text-secondary);font-size:0.8rem;margin-bottom:12px;">Copy these into your local <code>.env</code> file.</p>
-      <div class="form-group">
-        <textarea readonly [value]="exportedSecretsText" style="width:100%;height:250px;font-family:monospace;font-size:0.85rem;background:rgba(0,0,0,0.25);border-color:var(--border-glass);color:#fff;padding:8px;"></textarea>
       </div>
     </div>
   </div>

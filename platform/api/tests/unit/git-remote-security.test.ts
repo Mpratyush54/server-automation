@@ -1,3 +1,5 @@
+// No database in this unit test: no stored GitHub App / GitLab app (#35), env tokens apply.
+jest.mock('../../src/config/database', () => ({ getDb: jest.fn().mockRejectedValue(new Error('no database in unit tests')) }));
 import { parseGitRemote, fetchRepoBranches } from '../../src/lib/git-remote';
 
 describe('provider credential destinations', () => {

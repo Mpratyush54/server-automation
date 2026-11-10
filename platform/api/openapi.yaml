@@ -17,6 +17,92 @@ tags:
   - name: Settings
   - name: Notifications
 paths:
+  /projects/{projectId}/argocd/refresh:
+    post:
+      tags: [Projects]
+      summary: Request ArgoCD hard refresh (audited)
+      description: Requires project developer membership or global admin/devops. Application names are server-selected. Sync never overwrites an active operation.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                env: { type: string, default: development }
+      responses:
+        '202':
+          description: Action accepted; poll argocd-status for progress
+        '401':
+          description: Authentication required
+        '403':
+          description: Project developer membership required
+        '404':
+          description: Project, environment or Application not found
+        '409':
+          description: Concurrent modification or sync already running
+        '502':
+          description: Kubernetes request failed
+  /projects/{projectId}/argocd/sync:
+    post:
+      tags: [Projects]
+      summary: Request ArgoCD sync (audited)
+      description: Requires project developer membership or global admin/devops. Application names are server-selected. Sync never overwrites an active operation.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                env: { type: string, default: development }
+      responses:
+        '202':
+          description: Action accepted; poll argocd-status for progress
+        '401':
+          description: Authentication required
+        '403':
+          description: Project developer membership required
+        '404':
+          description: Project, environment or Application not found
+        '409':
+          description: Concurrent modification or sync already running
+        '502':
+          description: Kubernetes request failed
+  /projects/{projectId}/argocd-status:
+    get:
+      tags: [Projects]
+      summary: Read project ArgoCD status, conditions and operation errors
+      security:
+        - bearerAuth: []
+        - agentTokenAuth: []
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: env
+          schema: { type: string, default: development }
+      responses:
+        '200':
+          description: Connection state; when connected includes branch, sync.revision, conditions, operationState phase/message and resources counts (total, synced, outOfSync, healthy, degraded). Existing revision and syncStatus fields are preserved.
+        '403':
+          description: Project viewer membership or projects:read agent scope required
+        '404':
+          description: Project or environment not found
   /health:
     get:
       tags: [Health]
@@ -376,6 +462,134 @@ paths:
           description: .env lines
         '401':
           $ref: '#/components/responses/StepUpRequired'
+  /projects/{projectId}/environment:
+    get:
+      tags: [Projects]
+      summary: Merged environment variables (plain config + secrets) for the Environment tab
+      description: |
+        Rows `{key, type: plain|secret, value, masked, environmentId, scope, version, updatedBy, updatedAt, secretId, conflict}`.
+        Secret values are always null (reveal via POST /projects/{projectId}/secrets/reveal). Plain values are null for
+        viewers and agent tokens (keys and types only). `environmentId` omitted = every scope; `global` = global rows
+        only; an environment id or name = global rows plus rows for that environment. `conflict` marks a key stored as
+        both plain and secret in the same scope.
+      security:
+        - bearerAuth: []
+        - agentTokenAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: environmentId, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: '`{ projectId, environmentId, environment, capabilities, conflicts, variables }`'
+        '403':
+          description: Not a member of the project
+  /projects/{projectId}/environment/{key}:
+    put:
+      tags: [Projects]
+      summary: Set a variable as plain config or encrypted secret (moves it between stores in one transaction)
+      description: |
+        `secret: true` writes the secret store (secrets.create; config.update too when a plain value is moved) and deletes
+        the plain row in the same transaction. `secret: false` writes config (config.update); converting an existing
+        secret to plain also needs secrets.delete + secrets.reveal and a recent MFA step-up. Omit `value` to convert
+        while keeping the stored value. Audit-logged; values are never logged.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: key, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9_.-]{0,199}$' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [secret]
+              properties:
+                environmentId: { type: string, nullable: true, description: 'null / omitted = global (all environments)' }
+                value: { type: string }
+                secret: { type: boolean }
+      responses:
+        '200':
+          description: Updated `{ key, type, environmentId, status, convertedFrom, version, secretId }`
+        '201':
+          description: Created
+        '401':
+          $ref: '#/components/responses/StepUpRequired'
+        '403':
+          description: Missing permission or project role
+    delete:
+      tags: [Projects]
+      summary: Delete one variable from the plain or secret store (audit-logged)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: key, in: path, required: true, schema: { type: string } }
+        - { name: type, in: query, required: true, schema: { type: string, enum: [plain, secret] } }
+        - { name: environmentId, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: Deleted
+        '404':
+          description: Not found
+  /config:
+    get:
+      tags: [Projects]
+      deprecated: true
+      summary: Flat config map (deprecated; use GET /projects/{projectId}/environment). Kept for SDK/CLI compatibility.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: query, required: true, schema: { type: string } }
+        - { name: environmentId, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: '`{ KEY: value }` (secrets masked unless the caller holds secrets.reveal and has a recent MFA step-up; reveals are audited)'
+          headers:
+            X-Secrets-Masked:
+              description: '`step-up-required` when the caller holds secrets.reveal but secrets were masked for lack of a recent MFA step-up (POST /api/auth/mfa/step-up, then retry).'
+              schema: { type: string }
+    post:
+      tags: [Projects]
+      deprecated: true
+      summary: Upsert a plain config value (deprecated; use PUT /projects/{projectId}/environment/{key})
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Saved
+    delete:
+      tags: [Projects]
+      deprecated: true
+      summary: Delete a plain config value (deprecated; use DELETE /projects/{projectId}/environment/{key}?type=plain)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Deleted
+  /projects/{projectId}/secrets:
+    get:
+      tags: [Projects]
+      deprecated: true
+      summary: List secrets, values masked (deprecated; use GET /projects/{projectId}/environment)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Masked secrets
+    post:
+      tags: [Projects]
+      deprecated: true
+      summary: Create or update a secret (deprecated; use PUT /projects/{projectId}/environment/{key} with secret=true)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201':
+          description: Saved
   /auth/providers:
     get:
       tags: [Auth]
@@ -443,6 +657,136 @@ paths:
       responses:
         '200':
           description: Saved
+  /settings/integrations/git:
+    get:
+      tags: [Settings]
+      summary: GitHub App / GitLab OAuth app connection status and health (never returns secrets)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Per-provider status, callback/webhook URLs, reachability warnings
+  /settings/integrations/github/manifest:
+    post:
+      tags: [Settings]
+      summary: Start the GitHub App Manifest flow (admin, MFA step-up); returns the manifest, a one-time state and the GitHub URL to post it to
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ownerType: { type: string, enum: [user, org] }
+                org: { type: string }
+                name: { type: string, maxLength: 34 }
+      responses:
+        '200':
+          description: manifest, state, postUrl, expiresInSec
+        '401':
+          $ref: '#/components/responses/StepUpRequired'
+  /settings/integrations/github/manifest/complete:
+    post:
+      tags: [Settings]
+      summary: Finish the manifest flow; converts the code and stores the App credentials encrypted (admin, MFA step-up)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, state]
+              properties:
+                code: { type: string }
+                state: { type: string }
+      responses:
+        '200':
+          description: Connected; includes the installation URL
+        '400':
+          description: Unknown, expired or reused state
+        '403':
+          description: State issued to a different user
+  /settings/integrations/github/installations:
+    get:
+      tags: [Settings]
+      summary: GitHub App installations with their repositories and mapped projects
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Installations
+  /settings/integrations/github/installations/sync:
+    post:
+      tags: [Settings]
+      summary: Re-read installations from GitHub (admin)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Installations
+  /settings/integrations/github/repositories:
+    get:
+      tags: [Settings]
+      summary: Repositories the GitHub App can access (installation tokens)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Repositories
+  /settings/integrations/gitlab/connect:
+    post:
+      tags: [Settings]
+      summary: Create the GitLab OAuth application from an api-scoped token (admin, MFA step-up)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                baseUrl: { type: string, example: 'https://gitlab.com' }
+                token: { type: string }
+                groupPath: { type: string }
+                keepToken: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Connected
+        '422':
+          description: Group applications cannot be created through this GitLab's API; manual entry required
+  /settings/integrations/{provider}/check:
+    post:
+      tags: [Settings]
+      summary: Health check of the connected GitHub App or GitLab application (admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema: { type: string, enum: [github, gitlab] }
+      responses:
+        '200':
+          description: ok / error
+  /settings/integrations/{provider}/app:
+    delete:
+      tags: [Settings]
+      summary: Remove the stored App/application credentials (admin, MFA step-up)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema: { type: string, enum: [github, gitlab] }
+      responses:
+        '200':
+          description: Removed
   /settings/rotate-secrets:
     post:
       tags: [Settings]
@@ -641,6 +985,28 @@ paths:
       responses:
         '200':
           description: Projects
+  /projects/{projectId}/environments/{envId}/topology:
+    get:
+      tags: [Projects]
+      summary: Live read-only resource graph for one environment (Argo Application resources + namespace objects)
+      description: |
+        Nodes {id, kind, name, health, sync, info, events} and edges {from, to, type: owns|routes|selects}.
+        Scoped to the environment namespace. Secret/ConfigMap nodes carry names only.
+      security:
+        - bearerAuth: []
+        - agentTokenAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: envId, in: path, required: true, description: Environment UUID (or environment name), schema: { type: string } }
+      responses:
+        '200':
+          description: Graph (argo.found=false when the Application does not exist; warnings lists partial read failures)
+        '403':
+          description: No access to this project
+        '404':
+          description: Project or environment not found
+        '503':
+          description: Kubernetes unreachable
   /deploy:
     post:
       tags: [Deployments]
