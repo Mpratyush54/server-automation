@@ -98,6 +98,10 @@ def mfa_values(path):
     secret = state.get("secret")
     if isinstance(secret, str) and len(secret) >= MIN_LEN:
         out += [secret, secret.lower()]
+    session = state.get("session")
+    token = session.get("token") if isinstance(session, dict) else None
+    if isinstance(token, str) and len(token) >= MIN_LEN:
+        out.append(token)  # cached admin session (reused across checks)
     codes = state.get("recoveryCodes")
     for code in codes if isinstance(codes, list) else []:
         if isinstance(code, str) and len(code) >= MIN_LEN:

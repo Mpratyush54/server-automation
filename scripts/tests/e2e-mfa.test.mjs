@@ -8,7 +8,7 @@ import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  TOTP_STEP_MS, adminSession, base32Decode, decodeJwt, freshTotp, hotp, totp, totpStep,
+  TOTP_STEP_MS, adminSession, base32Decode, decodeJwt, freshTotp, hotp, totp, totpStep, writeMfaState,
 } from '../e2e/checks/common.mjs';
 
 // --- RFC 6238 appendix B -----------------------------------------------------------
@@ -227,4 +227,23 @@ test('adminSession: clear errors for missing state, no state file and bad passwo
     clock.t += TOTP_STEP_MS;
     await assert.rejects(adminSession(harness(fake, clock).opts), /no stored TOTP secret/);
   } finally { await fake.close(); }
+});
+
+// The platform rate-limits sign-ins per IP; checks reuse the cached admin
+// session from the state file until it is about to expire.
+test('adminSession reuses a cached session until expiry; fresh:true logs in again', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'e2e-mfa-cache-'));
+  const stateFile = path.join(dir, 'admin-mfa.json');
+  const jwt = (exp) => ['eyJhbGciOiJub25lIn0', Buffer.from(JSON.stringify({ exp, amr: ['pwd', 'otp', 'mfa'] })).toString('base64url'), 'sig'].join('.');
+  const now = () => 1_800_000_000_000;
+  const valid = jwt(now() / 1000 + 3600);
+  writeMfaState({ secret: 'JBSWY3DPEHPK3PXP', recoveryCodes: [], lastStep: 0, session: { token: valid, kind: 'challenge' } }, stateFile);
+  // An unreachable API: any network call would throw.
+  const opts = { api: 'http://127.0.0.1:9', email: 'a@e.test', password: 'x', stateFile, now, loginAttempts: 1, retryDelayMs: 1 };
+  const hit = await adminSession(opts);
+  assert.equal(hit.token, valid);
+  assert.equal(hit.kind, 'challenge');
+  await assert.rejects(adminSession({ ...opts, fresh: true }), 'fresh:true must not use the cache');
+  writeMfaState({ secret: 'JBSWY3DPEHPK3PXP', recoveryCodes: [], lastStep: 0, session: { token: jwt(now() / 1000 + 60), kind: 'challenge' } }, stateFile);
+  await assert.rejects(adminSession(opts), 'a session expiring within 2 minutes must not be reused');
 });

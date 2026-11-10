@@ -175,6 +175,20 @@ export async function adminSession(opts = {}) {
     log: opts.log ?? progress,
   };
   const post = (p, body, token) => request(`${o.api}${p}`, { method: 'POST', body, headers: token ? { authorization: `Bearer ${token}` } : {} });
+  // Reuse the session from an earlier check (each check is its own process).
+  // The platform limits sign-in attempts per IP (20 per 15 min), and logging
+  // in afresh in every check exhausted that. `fresh: true` forces a new login
+  // (break-glass, login-flow checks).
+  if (!opts.fresh && o.stateFile) {
+    const cached = readMfaState(o.stateFile)?.session;
+    const exp = Number(decodeJwt(cached?.token)?.exp) || 0;
+    if (cached?.token && exp * 1000 - o.now() > 120000) return { token: cached.token, kind: cached.kind || 'cached' };
+  }
+  const remember = (state, token, kind) => {
+    state.session = { token, kind };
+    writeMfaState(state, o.stateFile);
+    return { token, kind };
+  };
   const first = await retry(async () => {
     const res = await post('/api/auth/login', { email: o.email, password: o.password });
     if (res.status >= 500) throw new Error(`login HTTP ${res.status}`);
@@ -191,8 +205,7 @@ export async function adminSession(opts = {}) {
       const r = await post('/api/auth/mfa/challenge', { challengeToken: j.challengeToken, code });
       if (r.status === 200 && r.json?.token) {
         state.lastStep = step;
-        writeMfaState(state, o.stateFile);
-        return { token: r.json.token, kind: 'challenge' };
+        return remember(state, r.json.token, 'challenge');
       }
       if (r.status !== 401 || r.json?.error !== 'invalid_code') {
         throw new Error(`MFA challenge failed: HTTP ${r.status}${r.json?.error ? ` ${r.json.error}` : ''}`);
@@ -221,8 +234,7 @@ export async function adminSession(opts = {}) {
   state.recoveryCodes = Array.isArray(v.json.recoveryCodes) ? v.json.recoveryCodes : [];
   state.lastStep = step;
   state.enrolledAt = new Date(o.now()).toISOString();
-  writeMfaState(state, o.stateFile);
-  return { token: v.json.token, kind: 'enrolled' };
+  return remember(state, v.json.token, 'enrolled');
 }
 
 /** Admin session token, through the second factor (see adminSession). */

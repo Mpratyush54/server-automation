@@ -207,7 +207,8 @@ async function breakglass() {
   }
 
   // Re-enrol so the rest of the suite keeps working (replaces the stored secret).
-  const after = await adminSession();
+  // Fresh login: tokens issued before break-glass stay valid until they expire.
+  const after = await adminSession({ fresh: true });
   if (!expect(after.kind === 'enrolled', 'admin re-enrols; the stored TOTP secret is replaced', `session kind ${after.kind}`)) return;
   const reach = await call('GET', '/projects', after.token);
   expect(reach.status === 200, 'the re-enrolled admin reaches the API', detail(reach));
