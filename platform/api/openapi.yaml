@@ -20,6 +20,7 @@ tags:
   - name: StatusPages
   - name: Privacy
   - name: Telemetry
+  - name: Heatmaps
 paths:
   /privacy/defaults:
     get:
@@ -77,7 +78,7 @@ paths:
   /projects/{projectId}/privacy/retention:
     put:
       tags: [Privacy]
-      summary: Update per-type retention days (logs, traces, profiles, replays, errors)
+      summary: Update per-type retention days (logs, traces, profiles, replays, errors, heatmaps)
       security: [{ bearerAuth: [] }]
       parameters:
         - in: path
@@ -1493,6 +1494,78 @@ paths:
         - { name: checkId, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
         '201': { description: Recorded }
+  /sdk/heatmap/events:
+    post:
+      tags: [Heatmaps]
+      summary: Browser heatmap ingest (write-only; browser SDK tokens and RUM web ingest tokens allowed)
+      description: >
+        Batch of click positions (x/y as fractions 0..1 of the document width/height, viewport
+        bucket, element selector without text) and per-page-view max scroll depth (0..100).
+        Project comes from the credential. Aggregated into anonymous per page / viewport / grid
+        cell / day counts; no raw events or identifiers are stored. Dropped (202, accepted 0) when
+        the browser sends DNT / Sec-GPC or #47 analytics consent is denied. Body <= 64 KiB,
+        <= 500 events, <= 20 pages per batch; rate limited per IP and per project.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                subjectId: { type: string, description: Only used to resolve consent; never stored }
+                sessionId: { type: string, description: Only used to resolve consent; never stored }
+                events:
+                  type: array
+                  maxItems: 500
+                  items:
+                    type: object
+                    required: [type, page]
+                    properties:
+                      type: { type: string, enum: [click, scroll] }
+                      page: { type: string, description: Path; normalised like RUM view names (/orders/42 -> /orders/:id) }
+                      viewport: { type: string, enum: [mobile, tablet, desktop] }
+                      viewportWidth: { type: number, description: Alternative to viewport (<768 mobile, <1024 tablet) }
+                      x: { type: number, minimum: 0, maximum: 1 }
+                      y: { type: number, minimum: 0, maximum: 1 }
+                      selector: { type: string, maxLength: 256 }
+                      depth: { type: number, minimum: 0, maximum: 100 }
+      responses:
+        '202': { description: '{ accepted: <events stored>, consent?: false }' }
+        '400': { description: Invalid batch }
+        '401': { description: Missing or invalid token }
+        '403': { description: Origin not allowed for the browser ingest token }
+        '413': { description: Batch too large }
+        '429': { description: Rate limited }
+  /projects/{projectId}/heatmaps:
+    get:
+      tags: [Heatmaps]
+      summary: Click grid (100x100, sparse cells + top selectors) or scroll-depth histogram for one page (project members)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: page, in: query, required: true, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date }, description: Default 6 days before to }
+        - { name: to, in: query, schema: { type: string, format: date }, description: Default today (UTC) }
+        - { name: viewport, in: query, schema: { type: string, enum: [all, mobile, tablet, desktop] } }
+        - { name: type, in: query, schema: { type: string, enum: [click, scroll], default: click } }
+      responses:
+        '200': { description: 'click: { grid, total, maxCell, cells: [[x,y,count]], topTargets }; scroll: { views, buckets, reach }' }
+        '400': { description: Invalid query }
+        '403': { description: Not a project member }
+  /projects/{projectId}/heatmaps/pages:
+    get:
+      tags: [Heatmaps]
+      summary: Pages with heatmap data in the range, with click and page-view counts
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: viewport, in: query, schema: { type: string, enum: [all, mobile, tablet, desktop] } }
+      responses:
+        '200': { description: '{ from, to, viewport, pages: [{ page, clicks, views }] }' }
   /deploy:
     post:
       tags: [Deployments]

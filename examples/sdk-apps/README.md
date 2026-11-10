@@ -60,6 +60,25 @@ from `sdk-react-web` / `sdk-angular-web` whose children are the Node API server 
 
 Portal project: **sdk-demo-apps** → Metrics / API Latency.
 
+## Heatmaps
+
+Both frontends set `rum.heatmaps: true` and have a long **Features** page (`/features`) with
+buttons in fixed places. Heatmaps need RUM (above) plus a heatmap endpoint, and preferably a
+long-lived browser-kind SDK token (the RUM web ingest token expires):
+
+```bash
+# Browser-kind SDK token (write-only; ships in public JS)
+BROWSER_SDK_TOKEN=$(curl -fsS -X POST -H "Authorization: Bearer $ADMIN_JWT" -H 'Content-Type: application/json' \
+  -d '{"name":"demo-web-heatmaps","kind":"browser"}' "$PLATFORM_URL/api/projects/$PROJECT_ID/tokens" | jq -r .token)
+kubectl -n $NS patch secret sdk-demo-rum --type merge -p "$(jq -nc --arg e "$PLATFORM_URL/api/sdk/heatmap/events" \
+  --arg t "$BROWSER_SDK_TOKEN" '{stringData:{heatmapsEndpoint:$e,heatmapsToken:$t}}')"
+kubectl -n $NS rollout restart deploy/sdk-react-web deploy/sdk-angular-web
+curl -fsS "https://sdk-react.$DOMAIN/rum-config.json"   # now includes heatmapsEndpoint
+```
+
+Click around `/features` and scroll; after the next flush (5 s, or when the tab is hidden)
+Project → 🔥 Heatmaps shows `/features`. See [docs/guides/heatmaps.md](../../docs/guides/heatmaps.md).
+
 ## Deploy on VPS
 
 ```bash

@@ -1,0 +1,104 @@
+<div class="hm-head">
+  <div>
+    <a [routerLink]="['/projects', projectId]" class="back">← Project</a>
+    <h1>Heatmaps</h1>
+    <p class="muted">Where visitors click and how far they scroll, per page. Anonymous aggregates from the browser SDK (<code>rum.heatmaps</code>); click positions are relative to the full document.</p>
+  </div>
+</div>
+
+@if (error) { <div class="banner banner-error" role="alert">{{ error }}</div> }
+
+<div class="toolbar">
+  <div class="seg" role="group" aria-label="Viewport">
+    @for (v of viewports; track v) {
+      <button type="button" class="btn btn-sm" [class.btn-primary]="viewport === v" (click)="setViewport(v)">{{ v }}</button>
+    }
+  </div>
+  <div class="seg" role="group" aria-label="Date range">
+    @for (d of ranges; track d) {
+      <button type="button" class="btn btn-sm" [class.btn-primary]="rangeDays === d" (click)="setRange(d)">{{ d === 1 ? 'Today' : d + ' days' }}</button>
+    }
+  </div>
+  <label class="session">Replay session
+    <input [(ngModel)]="replaySession" placeholder="auto" maxlength="128" (keyup.enter)="useSession()">
+  </label>
+</div>
+
+<div class="layout">
+  <aside class="card pages">
+    <h2>Pages</h2>
+    @if (!pages.length) {
+      <p class="muted empty">No heatmap data in this range. Enable <code>heatmaps: true</code> in the SDK's <code>rum</code> options.</p>
+    }
+    <ul>
+      @for (p of pages; track p.page) {
+        <li [class.active]="p.page === page">
+          <button type="button" class="row" (click)="selectPage(p.page)" [title]="p.page">
+            <span class="name">{{ p.page }}</span>
+            <span class="counts muted">{{ p.clicks }} clicks · {{ p.views }} views</span>
+          </button>
+        </li>
+      }
+    </ul>
+  </aside>
+
+  <section class="main">
+    @if (page) {
+      <div class="card">
+        <div class="detail-head">
+          <h2>{{ page }}</h2>
+          <span class="muted">
+            {{ click?.total || 0 }} clicks · {{ scroll?.views || 0 }} page views
+            @if (loading) { · loading… }
+          </span>
+        </div>
+        @if (backgroundNote) { <p class="hint">{{ backgroundNote }}</p> }
+        <div class="stage-wrap">
+          <div #stage class="stage" [class.grid-bg]="background === 'grid'">
+            @if (background === 'snapshot') {
+              <!-- Read-only page snapshot from session replay: no scripts, no forms, CSP-restricted. -->
+              <iframe #frame class="snapshot" sandbox="allow-same-origin" referrerpolicy="no-referrer" title="Page snapshot" tabindex="-1" aria-hidden="true"></iframe>
+            }
+            <canvas #heat class="heat" role="img" [attr.aria-label]="'Click heatmap for ' + page"></canvas>
+          </div>
+        </div>
+        <div class="legend" aria-hidden="true"><span>fewer clicks</span><span class="ramp"></span><span>more clicks</span></div>
+      </div>
+
+      <div class="cols">
+        <div class="card">
+          <h2>Scroll depth</h2>
+          <p class="hint">Share of page views that reached each depth of the page.</p>
+          @if (scroll?.views) {
+            <svg class="chart" viewBox="0 0 100 50" preserveAspectRatio="none" role="img" aria-label="Scroll depth reach chart">
+              @for (b of bars; track b.depth) {
+                <rect [attr.x]="b.x" [attr.y]="50 - b.height / 2" [attr.width]="b.width" [attr.height]="b.height / 2" class="bar">
+                  <title>{{ b.depth }}% of page: {{ b.pct }}% of views</title>
+                </rect>
+              }
+            </svg>
+            <div class="axis muted"><span>top</span><span>50%</span><span>bottom</span></div>
+            <table class="reach">
+              <tr><th>Reached 25%</th><th>50%</th><th>75%</th><th>100%</th></tr>
+              <tr><td>{{ pct(reachAt(25)) }}</td><td>{{ pct(reachAt(50)) }}</td><td>{{ pct(reachAt(75)) }}</td><td>{{ pct(reachAt(100)) }}</td></tr>
+            </table>
+          } @else {
+            <p class="muted">No scroll data for this page yet.</p>
+          }
+        </div>
+        <div class="card">
+          <h2>Most clicked elements</h2>
+          @if (click?.topTargets?.length) {
+            <table class="targets">
+              @for (t of click!.topTargets; track t.selector) {
+                <tr><td><code>{{ t.selector }}</code></td><td class="num">{{ t.count }}</td></tr>
+              }
+            </table>
+          } @else {
+            <p class="muted">No element data yet.</p>
+          }
+        </div>
+      </div>
+    }
+  </section>
+</div>

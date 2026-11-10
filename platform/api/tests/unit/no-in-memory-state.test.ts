@@ -36,6 +36,8 @@ const ALLOWED: Record<string, string> = {
   'lib/github-app.ts': 'test double (Redis in deployments)',
   // Pure graph builder: call-scoped node/edge indexes for one topology response (#31).
   'lib/topology.ts': 'request-scoped',
+  // Folds one ingest batch into aggregate rows before the Postgres upsert (heatmaps).
+  'lib/heatmaps.ts': 'request-scoped',
 };
 
 function walk(dir: string): string[] {

@@ -8,7 +8,7 @@ import { PlatformRumService } from '@mpratyush54/sdk-angular';
   imports: [RouterOutlet, RouterLink],
   template: `
     <h1>Angular client → Node API (Platform SDK)</h1>
-    <nav><a routerLink="/">Home</a><a routerLink="/orders">Orders</a></nav>
+    <nav><a routerLink="/">Home</a><a routerLink="/orders">Orders</a><a routerLink="/features">Features</a></nav>
     <router-outlet />
   `,
 })
