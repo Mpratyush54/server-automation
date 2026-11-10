@@ -25,6 +25,12 @@ describe('telemetry lifecycle without network', () => {
     expect((telemetry as any).relay).toBeUndefined();
   });
 
+  it('prefers the injected release over application and config versions', () => {
+    process.env.PLATFORM_RELEASE = 'sha123';
+    process.env.APP_VERSION = 'old';
+    expect(resourceAttributes(options, { ...config(), resource: { 'service.version': 'stale' } })['service.version']).toBe('sha123');
+  });
+
   it('uses server resource scope and downward API fields', () => {
     process.env.K8S_POD_NAME = 'pod-test';
     expect(resourceAttributes(options, config())).toMatchObject({

@@ -64,6 +64,11 @@ function ensureDefaultHandlers(): void {
     await notifyUser(p as any);
   });
 
+  registerOutboxHandler('deploy.marker', async (p) => {
+    const { publishReleaseMarker } = await import('./release-markers');
+    await publishReleaseMarker(String(p.deploymentId));
+  });
+
   // Deployment result e-mail to DevOps users via the default SMTP config.
   registerOutboxHandler('deploy.email', async (p) => {
     const { getDb } = await import('../config/database');

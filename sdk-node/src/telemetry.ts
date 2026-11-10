@@ -15,7 +15,7 @@ export function telemetryAllowed(): boolean {
   return !['false', '0', 'off'].includes((process.env.PLATFORM_OTEL_ENABLED || '').toLowerCase());
 }
 export function resourceAttributes(options: PlatformOptions, config: TelemetryConfig): Record<string, string> {
-  let version = options.version || process.env.APP_VERSION || process.env.OTEL_SERVICE_VERSION;
+  let version = process.env.PLATFORM_RELEASE || options.version || process.env.APP_VERSION || process.env.OTEL_SERVICE_VERSION;
   if (!version) {
     try { version = require(require('path').join(process.cwd(), 'package.json')).version; } catch {}
   }
@@ -25,6 +25,7 @@ export function resourceAttributes(options: PlatformOptions, config: TelemetryCo
     'deployment.environment': options.environmentName || 'development',
     ...config.resource,
   };
+  if (process.env.PLATFORM_RELEASE) attrs['service.version'] = process.env.PLATFORM_RELEASE;
   for (const [key, env] of Object.entries({
     'k8s.namespace.name': 'K8S_NAMESPACE', 'k8s.pod.name': 'K8S_POD_NAME',
     'k8s.pod.uid': 'K8S_POD_UID', 'k8s.node.name': 'K8S_NODE_NAME',

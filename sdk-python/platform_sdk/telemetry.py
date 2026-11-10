@@ -23,10 +23,12 @@ def expires_at(config):
 def resource_attributes(options, config):
     attrs = {
         'service.name': os.getenv('OTEL_SERVICE_NAME') or options['project_name'],
-        'service.version': os.getenv('APP_VERSION') or os.getenv('OTEL_SERVICE_VERSION') or options.get('version') or options.get('commit_sha') or os.getenv('GIT_SHA') or 'unknown',
+        'service.version': os.getenv('PLATFORM_RELEASE') or os.getenv('APP_VERSION') or os.getenv('OTEL_SERVICE_VERSION') or options.get('version') or options.get('commit_sha') or os.getenv('GIT_SHA') or 'unknown',
         'deployment.environment': options.get('environment_name', 'development'),
         **config.get('resource', {}),
     }
+    if os.getenv('PLATFORM_RELEASE'):
+        attrs['service.version'] = os.environ['PLATFORM_RELEASE']
     for suffix, env in (('namespace.name', 'K8S_NAMESPACE'), ('pod.name', 'K8S_POD_NAME'),
                         ('pod.uid', 'K8S_POD_UID'), ('node.name', 'K8S_NODE_NAME'),
                         ('container.name', 'K8S_CONTAINER_NAME'), ('deployment.name', 'K8S_DEPLOYMENT_NAME')):

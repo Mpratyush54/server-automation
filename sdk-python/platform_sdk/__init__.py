@@ -48,7 +48,7 @@ class PlatformClient:
             "project_name": project_name,
             "platform_url": platform_url.rstrip("/"),
             "environment_name": environment_name,
-            "version": version or os.getenv('APP_VERSION') or os.getenv('OTEL_SERVICE_VERSION') or commit_sha or os.getenv('GIT_SHA') or '1.0.0',
+            "version": os.getenv('PLATFORM_RELEASE') or version or os.getenv('APP_VERSION') or os.getenv('OTEL_SERVICE_VERSION') or commit_sha or os.getenv('GIT_SHA') or '1.0.0',
             "branch": branch,
             "commit_sha": commit_sha,
             "namespace": namespace,
