@@ -13,7 +13,7 @@ export class ErrorIssue {
   @JoinColumn({ name: 'project_id', foreignKeyConstraintName: 'error_issues_project_id_fkey' }) project: Project;
   @Column({ type: 'text' }) environment: string;
   @Column({ type: 'text' }) fingerprint: string;
-  @Column({ type: 'jsonb', name: 'fingerprint_aliases', default: () => "'[]'::jsonb" }) fingerprintAliases: string[];
+  @Column({ type: 'jsonb', name: 'fingerprint_aliases', default: () => "'[]'" }) fingerprintAliases: string[];
   @Column({ type: 'text' }) title: string;
   @Column({ type: 'text', default: 'open' }) status: string;
   @Column({ type: 'uuid', nullable: true, name: 'assignee_id' }) assigneeId: string | null;
@@ -22,7 +22,7 @@ export class ErrorIssue {
   @Column({ type: 'timestamptz', name: 'first_seen', default: () => 'now()' }) firstSeen: Date;
   @Column({ type: 'timestamptz', name: 'last_seen', default: () => 'now()' }) lastSeen: Date;
   @Column({ type: 'bigint', default: 0 }) count: string;
-  @Column({ type: 'jsonb', name: 'release_counts', default: () => "'{}'::jsonb" }) releaseCounts: Record<string, number>;
+  @Column({ type: 'jsonb', name: 'release_counts', default: () => "'{}'" }) releaseCounts: Record<string, number>;
   @Column({ type: 'text', name: 'latest_release' }) latestRelease: string;
   @Column({ type: 'text', nullable: true, name: 'resolved_release' }) resolvedRelease: string | null;
   @Column({ type: 'boolean', default: false }) regression: boolean;
