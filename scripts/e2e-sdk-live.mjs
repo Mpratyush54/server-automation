@@ -9,10 +9,16 @@
  *   PLATFORM_URL       required API origin (PLATFORM_API_URL remains an alias)
  *   PROJECT_DOMAIN     required project base domain
  *   ADMIN_EMAIL
- *   ADMIN_PASSWORD
+ *   ADMIN_PASSWORD     (or E2E_ADMIN_PASSWORD_FILE, as scripts/e2e/run-checks.sh sets it)
+ *   E2E_WORK / E2E_MFA_STATE_FILE  where the admin's TOTP secret is kept (MFA, #24)
  *   PROJECT_NAME       default sdk-e2e-<timestamp>
  */
 import config from '../examples/sdk-apps/node-api/src/config.cjs';
+import { readFileSync } from 'fs';
+import { adminSession } from './e2e/checks/common.mjs';
+if (!process.env.ADMIN_PASSWORD && process.env.E2E_ADMIN_PASSWORD_FILE) {
+  process.env.ADMIN_PASSWORD = readFileSync(process.env.E2E_ADMIN_PASSWORD_FILE, 'utf8').trim();
+}
 const { platformUrl: API, projectDomain: PROJECT_DOMAIN, adminEmail: EMAIL, adminPassword: PASSWORD } = config.readE2EConfig();
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
@@ -71,20 +77,16 @@ async function main() {
     else fail('api reachable', `HTTP ${h.status} ${JSON.stringify(h.json)}`);
   }
 
-  // 1) Login
+  // 1) Login: admins complete the MFA challenge (or enrol once); see adminSession.
   console.log('\n■ Auth');
   let jwt = '';
-  {
-    const r = await api('POST', '/api/auth/login', {
-      body: { email: EMAIL, password: PASSWORD },
-    });
-    if (r.status === 200 && r.json?.token) {
-      jwt = r.json.token;
-      ok('admin login', `role=${r.json.user?.role || '?'}`);
-    } else {
-      fail('admin login', `${r.status} ${JSON.stringify(r.json)}`);
-      process.exit(1);
-    }
+  try {
+    const s = await adminSession({ api: API, email: EMAIL, password: PASSWORD });
+    jwt = s.token;
+    ok('admin login', `second factor: ${s.kind}`);
+  } catch (e) {
+    fail('admin login', e?.message || String(e));
+    process.exit(1);
   }
 
   // 2) Create project
