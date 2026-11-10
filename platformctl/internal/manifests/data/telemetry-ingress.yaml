@@ -76,9 +76,11 @@ spec:
     - host: otel.{{DOMAIN}}
       http:
         paths:
+          # Profiles go through the profile-ingest proxy, which sets identity
+          # labels from the auth headers; never route them to Alloy directly.
           - path: /pyroscope(/|$)(.*)
             pathType: ImplementationSpecific
             backend:
               service:
-                name: alloy
-                port: {number: 9999}
+                name: profile-ingest
+                port: {number: 8080}

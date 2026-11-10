@@ -81,7 +81,9 @@ In Gunicorn, initialize in each worker after the final fork; do not preload a ru
 
 The config's `resource` supplies `platform.project_id` and `deployment.environment`.
 The collector remains authoritative for both. Profilers use label-safe names
-`platform_project_id`, `deployment_environment`, `service_version`. Node's scoped profiling
+`platform_project_id`, `deployment_environment`, `service_version`; for profiles the
+ingest proxy replaces the first two from the token and stores the service as
+`<project-id>/<service>`. Node's scoped profiling
 bridge tags samples with `span_id` and spans with `pyroscope.profile.id`; Python uses
 `pyroscope-otel`. Node scoped labels cover execution in an active OTel context; asynchronous
 work may need an explicit child span for useful attribution. Profilers unsupported on an
