@@ -2,24 +2,23 @@ import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
-import { ActivatedRoute, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
-import { StepUpService } from '../../services/step-up.service';
 import { OperationProgressComponent } from '../../shared/operation-progress.component';
+import { EnvironmentTabComponent } from './environment-tab/environment-tab.component';
 import { TopologyGraphComponent } from './topology/topology-graph.component';
 
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, OperationProgressComponent, TopologyGraphComponent],
+  imports: [CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent],
   templateUrl: './project-detail.component.html',
   styleUrl: './project-detail.component.css'
 })
 export class ProjectDetailComponent implements OnInit, OnDestroy {
   project: any;
   deployments: any[] = [];
-  configs: Record<string, string> = {};
   files: any[] = [];
   logs: any[] = [];
   metrics: any[] = [];
@@ -75,34 +74,32 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   memberBusy = false;
   memberError = '';
   canManageAccess = false;
-  newConfig = { key: '', value: '', environmentId: '', isSecret: false };
   newFileCategoryRoute = { category: '', provider: 'local' };
   searchLogQuery = { level: '', search: '' };
 
-  // Secrets
-  secrets: any[] = [];
-  newSecret = { key: '', value: '', environmentId: '' };
-  activeSecretVersions: any[] = [];
-  activeSecretKey: string = '';
-  activeSecretId: string = '';
-  showVersionsModal: boolean = false;
-  bulkImportText: string = '';
-  showBulkImportModal: boolean = false;
-  bulkImportEnvId: string = '';
-  exportedEnvId: string = '';
-  exportedSecretsText: string = '';
-  showExportModal: boolean = false;
-  
   // Timer for logs & heartbeats refresh
   private refreshTimer?: any;
 
-  private stepUp = inject(StepUpService);
+  private router = inject(Router);
 
   constructor(private route: ActivatedRoute, private api: ApiService, private auth: AuthService) {}
+
+  /** ?tab= deep link; the old Config/Secrets tabs were merged into Environment (#29). */
+  private applyTabParam() {
+    const tab = this.route.snapshot?.queryParamMap?.get('tab');
+    if (!tab) return;
+    if (tab === 'config' || tab === 'secrets') {
+      this.activeTab = 'environment';
+      this.router.navigate([], { relativeTo: this.route, queryParams: { tab: 'environment' }, queryParamsHandling: 'merge', replaceUrl: true });
+      return;
+    }
+    this.activeTab = tab;
+  }
 
   async ngOnInit() {
     this.role = (this.auth.getRole() || 'developer').toLowerCase();
     this.canManageAccess = this.role === 'admin' || this.role === 'devops' || this.auth.canManageUsers?.() === true;
+    this.applyTabParam();
 
     await this.fetchData();
     this.refreshTimer = setInterval(() => this.pollData(), 5000);
@@ -128,7 +125,6 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     } catch { this.project = null; }
 
     await this.loadDeployments();
-    await this.loadConfigs();
     await this.loadFiles();
     await this.loadLogs();
     await this.loadMetrics();
@@ -136,7 +132,6 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     await this.loadTokens();
     await this.loadK8sPods();
     await this.loadArgoStatus();
-    await this.loadSecrets();
     await this.loadMembers();
   }
 
@@ -202,7 +197,6 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     if (this.activeTab === 'metrics') await this.loadMetrics();
     if (this.activeTab === 'api-metrics') await this.loadApiMetrics();
     if (this.activeTab === 'databases') await this.loadBackups();
-    if (this.activeTab === 'secrets') await this.loadSecrets();
     if (this.activeTab === 'gitops') {
       await this.loadK8sPods();
       await this.loadArgoStatus();
@@ -347,13 +341,6 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     } catch { this.deployments = []; }
   }
 
-  async loadConfigs() {
-    if (!this.project) return;
-    try {
-      this.configs = await firstValueFrom(this.api.getConfig(this.project.id));
-    } catch { this.configs = {}; }
-  }
-
   async loadFiles() {
     if (!this.project) return;
     try {
@@ -440,32 +427,6 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
       await firstValueFrom(this.api.restartDeployment(depId));
       await this.loadDeployments();
       alert('Restart initiated');
-    } catch (err: any) {
-      alert('Failed: ' + (err.error?.error || err.message));
-    }
-  }
-
-  async addConfig() {
-    try {
-      await firstValueFrom(this.api.setConfig({
-        projectId: this.project.id,
-        key: this.newConfig.key,
-        value: this.newConfig.value,
-        environmentId: this.newConfig.environmentId || null,
-        isSecret: this.newConfig.isSecret
-      }));
-      await this.loadConfigs();
-      this.newConfig = { key: '', value: '', environmentId: '', isSecret: false };
-    } catch (err: any) {
-      alert('Failed to set config: ' + (err.error?.error || err.message));
-    }
-  }
-
-  async deleteConfig(key: string) {
-    if (!confirm(`Delete config key "${key}"?`)) return;
-    try {
-      await firstValueFrom(this.api.deleteConfig(this.project.id, key));
-      await this.loadConfigs();
     } catch (err: any) {
       alert('Failed: ' + (err.error?.error || err.message));
     }
@@ -740,129 +701,5 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  }
-
-  getEnvName(envId: string | null): string {
-    if (!envId) return 'GLOBAL';
-    const env = this.project?.environments?.find((e: any) => e.id === envId);
-    return env ? env.name.toUpperCase() : envId.toUpperCase();
-  }
-
-  async loadSecrets() {
-    if (!this.project) return;
-    try {
-      this.secrets = await firstValueFrom(this.api.getSecrets(this.project.id));
-    } catch { this.secrets = []; }
-  }
-
-  async addSecret() {
-    if (!this.project) return;
-    try {
-      await firstValueFrom(this.api.createOrUpdateSecret(this.project.id, {
-        key: this.newSecret.key,
-        value: this.newSecret.value,
-        environmentId: this.newSecret.environmentId || null
-      }));
-      await this.loadSecrets();
-      this.newSecret = { key: '', value: '', environmentId: '' };
-    } catch (err: any) {
-      alert('Failed to save secret: ' + (err.error?.error || err.message));
-    }
-  }
-
-  async deleteSecret(secretId: string) {
-    if (!confirm('Are you sure you want to delete this secret?')) return;
-    try {
-      await firstValueFrom(this.api.deleteSecret(this.project.id, secretId));
-      await this.loadSecrets();
-    } catch (err: any) {
-      alert('Failed to delete secret: ' + (err.error?.error || err.message));
-    }
-  }
-
-  async revealSecret(secret: any) {
-    try {
-      // Needs a recent second factor: the step-up modal asks for a code and the reveal is retried (#24).
-      const res: any = await this.stepUp.run(() => firstValueFrom(this.api.revealSecret(this.project.id, {
-        environmentId: secret.environmentId,
-        key: secret.key
-      })), `Reveal ${secret.key}`);
-      secret.revealedValue = res.value;
-      secret.isRevealed = true;
-    } catch (err: any) {
-      alert('Failed to reveal secret: ' + (err.error?.error || err.message));
-    }
-  }
-
-  hideSecret(secret: any) {
-    secret.isRevealed = false;
-    secret.revealedValue = null;
-  }
-
-  async showSecretVersions(secret: any) {
-    this.activeSecretKey = secret.key;
-    this.activeSecretId = secret.id;
-    try {
-      const res = await firstValueFrom(this.api.getSecretVersions(this.project.id, secret.id));
-      this.activeSecretVersions = res.history;
-      this.showVersionsModal = true;
-    } catch (err: any) {
-      alert('Failed to load version history: ' + (err.error?.error || err.message));
-    }
-  }
-
-  async rollbackToVersion(version: number) {
-    if (!confirm(`Rollback secret "${this.activeSecretKey}" to version ${version}?`)) return;
-    try {
-      await firstValueFrom(this.api.rollbackSecret(this.project.id, this.activeSecretId, version));
-      this.showVersionsModal = false;
-      await this.loadSecrets();
-      alert('Secret successfully rolled back!');
-    } catch (err: any) {
-      alert('Failed to rollback secret: ' + (err.error?.error || err.message));
-    }
-  }
-
-  async doBulkImport() {
-    if (!this.bulkImportText) return;
-    try {
-      const lines = this.bulkImportText.split('\n');
-      const list: { key: string; value: string }[] = [];
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) continue;
-        const parts = trimmed.split('=');
-        if (parts.length >= 2) {
-          const key = parts[0].trim();
-          const value = parts.slice(1).join('=').trim().replace(/^['"]|['"]$/g, '');
-          list.push({ key, value });
-        }
-      }
-      if (list.length === 0) {
-        alert('No valid key-value pairs found. Format should be KEY=VALUE.');
-        return;
-      }
-      await firstValueFrom(this.api.bulkImportSecrets(this.project.id, {
-        environmentId: this.bulkImportEnvId || null,
-        secrets: list
-      }));
-      this.showBulkImportModal = false;
-      this.bulkImportText = '';
-      await this.loadSecrets();
-      alert(`Imported ${list.length} secrets!`);
-    } catch (err: any) {
-      alert('Failed to import secrets: ' + (err.error?.error || err.message));
-    }
-  }
-
-  async doExportSecrets(envId: string) {
-    try {
-      const res: any = await this.stepUp.run(() => firstValueFrom(this.api.exportSecrets(this.project.id, envId)), 'Export secrets');
-      this.exportedSecretsText = res.secrets;
-      this.exportedEnvId = envId;
-      this.showExportModal = true;
-    } catch (err: any) {
-      alert('Failed to export secrets: ' + (err.error?.error || err.message));
-    }
   }
 }

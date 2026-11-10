@@ -8,6 +8,7 @@ import projectRoutes from './projects';
 import deploymentRoutes from './deployments';
 import configRoutes from './config';
 import secretRoutes from './secrets';
+import environmentRoutes from './environment';
 import storageRoutes from './storage';
 import alertRoutes from './alerts';
 import dbConnectionRoutes from './db-connections';
@@ -39,6 +40,7 @@ router.use('/', projectRoutes);
 router.use('/', deploymentRoutes);
 router.use('/', configRoutes);
 router.use('/', secretRoutes);
+router.use('/', environmentRoutes); // merged config + secrets view for the Environment tab (#29)
 router.use('/', storageRoutes);
 router.use('/', alertRoutes);
 router.use('/', dbConnectionRoutes);
