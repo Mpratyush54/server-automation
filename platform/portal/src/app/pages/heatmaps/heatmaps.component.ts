@@ -160,7 +160,8 @@ export class HeatmapsComponent implements OnInit {
       if (!session) {
         const list: any = await firstValueFrom(this.http.get(`/api/projects/${pid}/replays`, { params: { page: this.page, limit: 1 } }));
         const items = Array.isArray(list) ? list : list?.sessions || list?.items || list?.replays || [];
-        session = items[0]?.sessionId || items[0]?.id || '';
+        // The replay list (#40) returns snake_case rows (session_id); accept camelCase too.
+        session = items[0]?.session_id || items[0]?.sessionId || items[0]?.id || '';
       }
       if (!session) {
         this.backgroundNote = 'No session replay for this page — showing a neutral grid.';
