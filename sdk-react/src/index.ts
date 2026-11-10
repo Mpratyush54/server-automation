@@ -25,3 +25,5 @@ export {
   RumEnvironment,
 } from './rum';
 export { useRumPageView, RumLocationLike } from './rum-react';
+
+export type { ErrorEvent, ErrorFrame } from './error-event';

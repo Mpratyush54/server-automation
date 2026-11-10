@@ -1,3 +1,4 @@
+import errorTrackingRoutes from './error-tracking';
 import { Router } from 'express';
 const router = Router();
 
@@ -34,6 +35,7 @@ import telemetryRoutes from './telemetry';
 import gitAppRoutes from './git-apps';
 import topologyRoutes from './topology';
 
+router.use('/', errorTrackingRoutes);
 router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB only; Redis reported, not gating)
 router.use('/', telemetryRoutes); // ingress-nginx external auth for the collector (#49); token-authenticated itself
 router.use('/', oidcRoutes); // before authRoutes: OIDC provider + GitHub/GitLab login (state cookie)
