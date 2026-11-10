@@ -1,4 +1,4 @@
-import { Pool, PoolClient, QueryResult } from 'pg';
+import type { Pool, PoolClient, QueryResult } from 'pg';
 
 export class PostgresManager {
   private pool: Pool | null = null;
@@ -35,7 +35,8 @@ export class PostgresManager {
     this.clearReconnectTimer();
     // Dispose any pool left over from a previous (failed) attempt before creating a new one.
     await this.disposePool();
-    const pool = new Pool(this.config);
+    const { Pool } = require('pg');
+    const pool: Pool = new Pool(this.config);
     pool.on('error', (err: Error) => {
       console.error('[platform] PostgreSQL error:', err.message);
     });

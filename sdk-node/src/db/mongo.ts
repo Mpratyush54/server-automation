@@ -1,4 +1,4 @@
-import mongoose, { Connection } from 'mongoose';
+import type { Connection } from 'mongoose';
 
 export class MongoManager {
   private conn: Connection | null = null;
@@ -18,7 +18,7 @@ export class MongoManager {
     this.clearReconnectTimer();
     // Dispose any connection left over from a previous attempt before creating a new one.
     await this.disposeConnection();
-    const pending = mongoose.createConnection(this.uri);
+    const pending = require('mongoose').createConnection(this.uri);
     pending.on('error', (err: Error) => {
       if (this.conn === pending) this.connected = false;
       console.error('[platform] MongoDB error:', err.message);

@@ -9,6 +9,7 @@ import { PostgresManager } from './db/postgres';
 import { MongoManager } from './db/mongo';
 import { RedisManager } from './db/redis';
 import { MetricsClient, metricsClient } from './metrics';
+import { Telemetry, telemetryAllowed } from './telemetry';
 import { captureConsole as _captureConsole } from './console-capture';
 import { createWinstonTransport, createPinoTransport } from './transports';
 
@@ -44,6 +45,7 @@ export class PlatformClient {
   private http: AxiosInstance;
   private options!: PlatformOptions;
   private initialized = false;
+  private telemetry?: Telemetry;
   private heartbeatInterval?: ReturnType<typeof setInterval>;
   private cpuSampleInterval?: ReturnType<typeof setInterval>;
   private cpuPct = 0;
@@ -69,7 +71,7 @@ export class PlatformClient {
   async init(options: PlatformOptions): Promise<void> {
     this.options = {
       environmentName: 'development',
-      version: '1.0.0',
+      version: options.version || process.env.APP_VERSION || process.env.OTEL_SERVICE_VERSION || options.commitSha || process.env.GIT_SHA,
       branch: 'main',
       hostname: os.hostname(),
       databases: [],
@@ -102,6 +104,22 @@ export class PlatformClient {
     this.configClient.configure(this.options.projectName, this.options.environmentName!);
     this.storage.configure(this.options.projectName);
 
+    // Fetch configuration before loading application/framework/database modules.
+    await this.telemetry?.shutdown();
+    this.telemetry = undefined;
+    await this.configClient.loadAll();
+    if (telemetryAllowed() && this.configClient.get('telemetry')?.enabled) {
+      this.telemetry = new Telemetry(this.options, async () => {
+        const { data } = await this.http.get('/api/sdk/config', {
+          params: { projectId: this.options.projectName, environmentId: this.options.environmentName },
+        });
+        return data;
+      });
+      try {
+        await this.telemetry.start(this.configClient.get('telemetry'));
+      } catch {} // Observability must never prevent startup.
+    }
+
     // Register Service
     let registrationData: any = null;
     try {
@@ -109,7 +127,7 @@ export class PlatformClient {
         projectName: this.options.projectName,
         environmentName: this.options.environmentName!,
         serviceName: this.options.serviceName || this.options.projectName,
-        version: this.options.version!,
+        version: this.options.version || '1.0.0',
         branch: this.options.branch,
         commitSha: this.options.commitSha,
         namespace: this.options.namespace,
@@ -131,8 +149,7 @@ export class PlatformClient {
     const metricsProjectId = registrationData?.projectId || this.options.projectName;
     this.metrics.configure(this.http, metricsProjectId, this.options.environmentName!);
 
-    // Load configs from API
-    await this.configClient.loadAll();
+    // Preserve legacy config refresh independently of observability.
     this.configClient.startBackgroundRefresh();
 
     // Heartbeat sending dynamic statuses
@@ -257,6 +274,7 @@ export class PlatformClient {
   async shutdown(): Promise<void> {
     if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
     if (this.cpuSampleInterval) clearInterval(this.cpuSampleInterval);
+    await this.telemetry?.shutdown();
     this.metrics.stop();
     this.configClient.stopBackgroundRefresh();
     this.logger.stop();

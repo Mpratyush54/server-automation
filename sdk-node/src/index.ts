@@ -12,3 +12,6 @@ export { LoggerClient, logger } from './logger';
 export { MetricsClient, metricsClient, normalizePath } from './metrics';
 export { captureConsole } from './console-capture';
 export { createWinstonTransport, createPinoTransport } from './transports';
+
+export { Telemetry, TelemetryConfig } from './telemetry';
+export { traceContext } from './telemetry-context';

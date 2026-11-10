@@ -1,4 +1,5 @@
 import { AxiosInstance } from 'axios';
+import { traceContext, telemetryLog } from './telemetry-context';
 import { runWithoutCapture } from './console-capture';
 
 /** Max log entries held in memory while the Platform API is unreachable (oldest dropped first). */
@@ -69,8 +70,12 @@ export class LoggerClient {
   }
 
   private enqueue(level: string, message: string, metadata?: any): void {
+    const context = traceContext();
+    metadata = { ...metadata, ...context };
+    telemetryLog(level, message, metadata);
     if (!this.http || !this.projectName) return;
     this.buffer.push({
+      ...(metadata.trace_id && metadata.span_id ? { trace_id: metadata.trace_id, span_id: metadata.span_id } : {}),
       projectId: this.projectName,
       environment: this.environmentName,
       serviceName: this.serviceName,

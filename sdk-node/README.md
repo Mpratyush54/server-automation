@@ -137,3 +137,10 @@ Docs: [Node quickstart](../docs/getting-started/node-sdk-quickstart.md) · [Plat
 ## License
 
 MIT
+
+## Optional OpenTelemetry and continuous profiling
+
+Await Node `init()` / call Python `init()` before framework or driver imports. Telemetry
+only starts when the platform SDK config explicitly enables it; `PLATFORM_OTEL_ENABLED=false`
+opts out. Install the optional telemetry peers (Node) or `[telemetry,profiling]` extras (Python).
+See [backend telemetry setup, flags and VM verification](../examples/sdk-apps/TELEMETRY.md).
