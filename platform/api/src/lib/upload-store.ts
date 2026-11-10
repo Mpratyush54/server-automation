@@ -82,6 +82,7 @@ export interface S3UploadStoreConfig {
   publicEndpoint?: string;
   /** Create the bucket on first use when missing (bundled MinIO). */
   ensureBucket?: boolean;
+  forcePathStyle?: boolean;
 }
 
 /** Minimal S3 client surface (an @aws-sdk/client-s3 S3Client); injectable for tests. */
@@ -114,9 +115,9 @@ export class S3UploadStore implements UploadStore {
         const cmd: any = await import('@aws-sdk/client-s3');
         const client = new cmd.S3Client({
           region: this.cfg.region || 'us-east-1',
-          endpoint: this.cfg.endpoint,
+          endpoint: this.cfg.endpoint || undefined,
           credentials: { accessKeyId: this.cfg.accessKeyId, secretAccessKey: this.cfg.secretAccessKey },
-          forcePathStyle: true,
+          forcePathStyle: this.cfg.forcePathStyle ?? true,
         });
         return { client, cmd };
       })();
@@ -215,12 +216,12 @@ export function uploadStoreFromEnv(env: NodeJS.ProcessEnv = process.env): Upload
   const bundled = !env.UPLOADS_S3_ENDPOINT;
   return new S3UploadStore({
     endpoint,
-    accessKeyId: env.UPLOADS_S3_ACCESS_KEY || env.MINIO_ACCESS_KEY || '',
-    secretAccessKey: env.UPLOADS_S3_SECRET_KEY || env.MINIO_SECRET_KEY || '',
+    accessKeyId: env.UPLOADS_S3_ACCESS_KEY || env.MINIO_API_ACCESS_KEY || env.MINIO_ACCESS_KEY || '',
+    secretAccessKey: env.UPLOADS_S3_SECRET_KEY || env.MINIO_API_SECRET_KEY || env.MINIO_SECRET_KEY || '',
     bucket: env.UPLOADS_BUCKET || DEFAULT_UPLOADS_BUCKET,
     region: env.UPLOADS_S3_REGION || 'us-east-1',
     publicEndpoint: env.UPLOADS_S3_PUBLIC_ENDPOINT || undefined,
-    ensureBucket: bundled || env.UPLOADS_S3_CREATE_BUCKET === 'true',
+    ensureBucket: (bundled && !env.MINIO_API_ACCESS_KEY) || env.UPLOADS_S3_CREATE_BUCKET === 'true',
   });
 }
 

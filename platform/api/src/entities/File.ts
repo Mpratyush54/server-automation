@@ -1,5 +1,6 @@
+import { StorageProvider } from './StorageProvider';
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn
+  Entity, ManyToOne, JoinColumn, PrimaryGeneratedColumn, Column, CreateDateColumn
 } from 'typeorm';
 
 export enum FileProvider {
@@ -19,6 +20,13 @@ export class File {
 
   @Column({ type: 'enum', enum: FileProvider })
   provider: FileProvider;
+
+  @ManyToOne(() => StorageProvider, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'storage_provider_id', foreignKeyConstraintName: 'storage_file_provider' })
+  storageProvider: StorageProvider | null;
+
+  @Column({ type: 'uuid', nullable: true, name: 'storage_provider_id' })
+  storageProviderId: string | null;
 
   @Column({ type: 'varchar', length: 200 })
   bucket: string;
