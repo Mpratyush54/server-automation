@@ -1066,10 +1066,14 @@ func InstallRouting(cfg *config.Config) error {
 // Grafana: iframe at /grafana.
 // Portainer: subdomain only — /portainer permanently redirects (no shared-host /api clash).
 func ApplyServiceRouting(cfg *config.Config) error {
-	d := cfg.Domain
-	if d == "" {
+	if cfg.Domain == "" {
 		return fmt.Errorf("DOMAIN is empty — set DOMAIN or ensure /etc/platform/.env exists")
 	}
+	return shell.RunBash(serviceRoutingScript(cfg.Domain))
+}
+
+// serviceRoutingScript renders the routing script (Services + Ingresses).
+func serviceRoutingScript(d string) string {
 	// Use __DOMAIN__ + ReplaceAll (not fmt.Sprintf) so nginx /$2 rewrite tokens
 	// and quoted heredocs are not mangled by bash set -u or fmt verbs.
 	script := strings.ReplaceAll(`
@@ -1138,9 +1142,9 @@ metadata:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     cert-manager.io/cluster-issuer: __ISSUER__
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      proxy_hide_header X-Frame-Options;
-      proxy_hide_header Content-Security-Policy;
+    # No header rewriting here: the portal and the API send their own
+    # X-Frame-Options and Content-Security-Policy, which must reach browsers.
+    # Only the embedded Grafana path relaxes framing (platform-grafana-embed).
 spec:
   ingressClassName: nginx
   tls:
@@ -1174,13 +1178,6 @@ spec:
             name: platform-api
             port:
               number: 3000
-      - path: /grafana
-        pathType: Prefix
-        backend:
-          service:
-            name: grafana-proxy
-            port:
-              number: 80
       - path: /minio
         pathType: Prefix
         backend:
@@ -1242,6 +1239,41 @@ spec:
             name: portainer-proxy
             port:
               number: 9000
+EOF
+
+# Grafana is embedded by the portal (same origin, /grafana/). Grafana's own
+# X-Frame-Options would block that, so on this path only it is replaced by a
+# same-origin policy: the portal can frame Grafana, other sites cannot.
+kubectl apply -n platform -f - <<'EOF'
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: platform-grafana-embed
+  namespace: platform
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_hide_header X-Frame-Options;
+      proxy_hide_header Content-Security-Policy;
+      add_header X-Frame-Options "SAMEORIGIN" always;
+      add_header Content-Security-Policy "frame-ancestors 'self'" always;
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - __DOMAIN__
+    secretName: platform-tls
+  rules:
+  - host: __DOMAIN__
+    http:
+      paths:
+      - path: /grafana
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana-proxy
+            port:
+              number: 80
 EOF
 
 # Argo CD is full-page at /argocd/. 3.x keeps <base href="/"> even with --basehref;
@@ -1314,7 +1346,7 @@ kubectl delete ingress argocd-ingress portainer-ingress -n platform --ignore-not
 `, "__DOMAIN__", d)
 	// Only the main Ingress requests the certificate; the others reuse platform-tls.
 	script = strings.ReplaceAll(script, "__ISSUER__", ActiveIssuer())
-	return shell.RunBash(script)
+	return script
 }
 
 func SeedAdmin(cfg *config.Config) error {
