@@ -60,7 +60,7 @@ interface ScrubRule {
     <section class="card">
       <h2>Retention (days)</h2>
       <p class="hint">
-        Defaults: logs/traces/profiles 30d, replays 7d, errors 90d. Cluster Loki/Tempo/Pyroscope
+        Defaults: logs/traces/profiles 30d, replays 7d, errors 90d, heatmaps 90d (anonymous aggregates). Cluster Loki/Tempo/Pyroscope
         use <code>TELEMETRY_RETENTION_DAYS</code>; stream retention applies for replays/errors labels.
       </p>
       <div class="grid">
@@ -131,7 +131,7 @@ export class PrivacyTabComponent implements OnChanges {
   settings: any = null;
   scrubIps = true;
   rules: ScrubRule[] = [];
-  retentionKeys = ['logs', 'traces', 'profiles', 'replays', 'errors'] as const;
+  retentionKeys = ['logs', 'traces', 'profiles', 'replays', 'errors', 'heatmaps'] as const;
   retention: Record<string, number> = {};
   consent = { replay: false, analytics: true };
   gdpr = { userId: '', sessionId: '', email: '' };
