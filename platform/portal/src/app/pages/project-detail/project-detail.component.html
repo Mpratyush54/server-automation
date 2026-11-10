@@ -1010,139 +1010,14 @@
       }
     </div>
   }
-  <!-- ArgoCD Visual Resource Tree Layout -->
-  <div class="card" style="padding: 24px; background: rgba(10, 15, 30, 0.4); border: 1px solid var(--border-glass);">
-    <h2>Application Resource Topology</h2>
-    <p style="color:var(--color-text-secondary); font-size:0.8rem; margin-top:0; margin-bottom:30px;">
-      Interactive diagram representing active Kubernetes manifests and container replicas.
-    </p>
-    <!-- ArgoCD Tree Diagram -->
-    <div style="display: flex; flex-direction: column; gap: 32px; align-items: center; position: relative;">
-      <!-- Level 1: Git Repo -> ArgoCD App -->
-      <div style="display: flex; gap: 40px; align-items: center; justify-content: center; width: 100%; flex-wrap: wrap;">
-        <!-- Git Source Node -->
-        <div class="card text-center" style="margin:0; padding:12px 20px; width:220px; border-color:rgba(255,255,255,0.08); background:rgba(0,0,0,0.3);">
-          <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:700;">Git Repository</div>
-          <div style="font-family:monospace; font-size:0.85rem; font-weight:600; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:4px;">
-            {{ project?.repositoryUrl || project?.name }}
-          </div>
-          <div style="font-size:0.75rem; color:var(--primary); font-family:monospace; margin-top:2px;">
-            {{ project?.deployments[0]?.branch || 'main' }}
-          </div>
-        </div>
-        <div style="font-size: 1.5rem; color: var(--color-text-muted);">➡️</div>
-        <!-- Argo Application Node -->
-        <div class="card text-center" style="margin:0; padding:12px 20px; width:220px; border-color:var(--primary); background:rgba(139,92,246,0.05); box-shadow:0 0 15px rgba(139,92,246,0.15);">
-          <div style="font-size:0.7rem; text-transform:uppercase; color:var(--primary); font-weight:800; letter-spacing:0.05em;">ArgoCD Application</div>
-          <div style="font-family:monospace; font-size:0.85rem; font-weight:600; color:#fff; margin-top:4px;">
-            {{ project?.name }}-app
-          </div>
-          <div style="font-size:0.7rem; color:#10b981; font-weight:600; margin-top:2px;">
-            ● Synced
-          </div>
-        </div>
-      </div>
-      <div style="font-size: 1.25rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
-      <!-- Level 2: K8s Infrastructure Services Split -->
-      <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 40px; width: 100%;">
-        <!-- Left Wing: Deployments -> Pods -->
-        <div style="display: flex; flex-direction: column; gap: 24px; align-items: center; border: 1px dashed rgba(255,255,255,0.05); border-radius: 12px; padding: 20px; flex: 1; min-width: 320px;">
-          <h4 style="margin: 0; font-size: 0.8rem; text-transform: uppercase; color: var(--color-text-secondary); letter-spacing: 0.05em;">Compute Resources</h4>
-          <!-- Deployment Node -->
-          <div class="card text-center" style="margin:0; padding:12px 20px; width:200px; border-color:#60a5fa; background:rgba(96,165,250,0.05);">
-            <div style="font-size:0.7rem; text-transform:uppercase; color:#60a5fa; font-weight:700;">K8s Deployment</div>
-            <div style="font-family:monospace; font-size:0.8rem; font-weight:600; color:#fff; margin-top:4px;">
-              {{ project?.name }}-dep
-            </div>
-            <div style="font-size:0.7rem; color:#10b981; margin-top:2px;">
-              Status: Healthy
-            </div>
-          </div>
-          <div style="font-size: 1rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
-          <!-- ReplicaSet Node -->
-          <div class="card text-center" style="margin:0; padding:12px 20px; width:200px; border-color:rgba(255,255,255,0.05); background:rgba(0,0,0,0.25);">
-            <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:700;">ReplicaSet</div>
-            <div style="font-family:monospace; font-size:0.75rem; color:#cbd5e1; margin-top:4px;">
-              {{ project?.name }}-dep-7bf9dc
-            </div>
-            <div style="font-size:0.7rem; color:var(--color-text-secondary); margin-top:2px;">
-              Replicas: {{ pods.length || 1 }} active
-            </div>
-          </div>
-          <div style="font-size: 1rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
-          <!-- Pods Leaf Nodes Grid -->
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; width: 100%;">
-            @for (pod of pods; track pod) {
-              <div class="card" style="margin:0; padding:12px; border:1px solid rgba(255,255,255,0.05); background:rgba(0,0,0,0.35); position:relative;"
-                [style.border-color]="pod.status === 'Running' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                  <span style="font-family:monospace; font-size:0.8rem; font-weight:600; color:#fff; max-width:70%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                    {{ pod.name }}
-                  </span>
-                  <span class="badge" [ngClass]="{'badge-active': pod.status === 'Running', 'badge-failed': pod.status !== 'Running'}">
-                    {{ pod.status }}
-                  </span>
-                </div>
-                <div style="font-size:0.75rem; color:var(--color-text-secondary); margin-bottom:10px;">
-                  Node: {{ pod.node }} &bull; Restarts: {{ pod.restarts }} &bull; Age: {{ pod.age }}
-                </div>
-                <div style="display:flex; gap:6px;">
-                  <button class="btn btn-sm" (click)="openPodLogs(pod)" style="flex:1; font-size:0.7rem; padding:4px 0;">
-                    Logs
-                  </button>
-                  @if (role === 'devops') {
-                    <button class="btn btn-sm btn-danger" (click)="restartPod(pod)" style="flex:1; font-size:0.7rem; padding:4px 0;">
-                      Restart
-                    </button>
-                  }
-                </div>
-              </div>
-            }
-            @if (pods.length === 0) {
-              <div class="card text-center" style="margin:0; padding:16px; color:var(--color-text-muted); font-size:0.8rem;">
-                No active pods found. Trigger a deployment first.
-              </div>
-            }
-          </div>
-        </div>
-        <!-- Right Wing: Ingress / Routing Services -->
-        <div style="display: flex; flex-direction: column; gap: 24px; align-items: center; border: 1px dashed rgba(255,255,255,0.05); border-radius: 12px; padding: 20px; flex: 1; min-width: 320px;">
-          <h4 style="margin: 0; font-size: 0.8rem; text-transform: uppercase; color: var(--color-text-secondary); letter-spacing: 0.05em;">Network Routing</h4>
-          <!-- Service Node -->
-          <div class="card text-center" style="margin:0; padding:12px 20px; width:200px; border-color:#34d399; background:rgba(52,211,153,0.05);">
-            <div style="font-size:0.7rem; text-transform:uppercase; color:#34d399; font-weight:700;">K8s Service</div>
-            <div style="font-family:monospace; font-size:0.8rem; font-weight:600; color:#fff; margin-top:4px;">
-              {{ project?.name }}-svc
-            </div>
-            <div style="font-size:0.7rem; color:var(--color-text-secondary); margin-top:2px;">
-              Type: ClusterIP
-            </div>
-          </div>
-          <div style="font-size: 1rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
-          <!-- Ingress Node -->
-          <div class="card text-center" style="margin:0; padding:12px 20px; width:200px; border-color:#fb7185; background:rgba(251,113,133,0.05);">
-            <div style="font-size:0.7rem; text-transform:uppercase; color:#fb7185; font-weight:700;">Ingress Controller</div>
-            <div style="font-family:monospace; font-size:0.75rem; color:#cbd5e1; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-              {{ project?.name }}-ingress
-            </div>
-            <div style="font-size:0.7rem; color:var(--color-text-secondary); margin-top:2px;">
-              SSL Redirect: active
-            </div>
-          </div>
-          <div style="font-size: 1rem; color: var(--color-text-muted); line-height: 0.5;">⬇️</div>
-          <!-- Target Router URL Card -->
-          <div class="card text-center" style="margin:0; padding:14px; width:100%; border-color:rgba(255,255,255,0.05); background:rgba(0,0,0,0.3);">
-            <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:600;">Ingress Route Domain</div>
-            <div style="font-family:monospace; font-size:0.85rem; font-weight:700; margin-top:4px;">
-              <a href="http://{{ project?.domain || project?.name + '.platform.dev' }}" target="_blank" style="color:var(--primary); text-decoration:none;">
-                {{ project?.domain || project?.name + '.platform.dev' }}
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+  <!-- Live resource topology (#31): lazy chunk, loaded when scrolled into view -->
+  @if (project?.id) {
+    @defer (on viewport) {
+      <app-topology-graph [projectId]="project.id" [environments]="project.environments || []" (podLogs)="openPodLogs($event)" />
+    } @placeholder {
+      <div class="card" style="margin-top:20px; min-height:160px;"></div>
+    }
+  }
 </div>
 }
 

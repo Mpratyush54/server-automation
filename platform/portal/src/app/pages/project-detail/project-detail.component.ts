@@ -7,11 +7,12 @@ import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { StepUpService } from '../../services/step-up.service';
 import { OperationProgressComponent } from '../../shared/operation-progress.component';
+import { TopologyGraphComponent } from './topology/topology-graph.component';
 
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, OperationProgressComponent],
+  imports: [CommonModule, FormsModule, RouterModule, OperationProgressComponent, TopologyGraphComponent],
   templateUrl: './project-detail.component.html',
   styleUrl: './project-detail.component.css'
 })

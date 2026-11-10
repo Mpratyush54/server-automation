@@ -28,6 +28,8 @@ const ALLOWED: Record<string, string> = {
   'lib/webhook-dedupe.ts': 'last-resort fallback',
   // MemoryIdempotencyStore: last fallback after Redis and Postgres (#23).
   'middleware/idempotency.ts': 'last-resort fallback',
+  // Pure graph builder: call-scoped node/edge indexes for one topology response (#31).
+  'lib/topology.ts': 'request-scoped',
 };
 
 function walk(dir: string): string[] {

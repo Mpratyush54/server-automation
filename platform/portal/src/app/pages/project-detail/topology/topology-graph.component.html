@@ -1,0 +1,175 @@
+<section class="topo card" aria-label="Application resource topology">
+  <header class="topo-head">
+    <div>
+      <h2 class="topo-title">Application Resource Topology</h2>
+      <p class="topo-sub">
+        Live resources in
+        <code>{{ data?.namespace || '…' }}</code>
+        @if (lastUpdated) { <span>· updated {{ lastUpdated.toLocaleTimeString() }}</span> }
+        <span>· refreshes every {{ refreshMs / 1000 }} s while this tab is visible</span>
+      </p>
+    </div>
+    <div class="topo-actions">
+      @if (environments.length > 1) {
+        <label class="topo-env">
+          <span>Environment</span>
+          <select [value]="envId" (change)="selectEnv($any($event.target).value)">
+            @for (e of environments; track e.id) {
+              <option [value]="e.id" [selected]="e.id === envId">{{ e.name }}</option>
+            }
+          </select>
+        </label>
+      }
+      <button type="button" class="btn btn-sm" (click)="refresh()" [disabled]="loading" data-test="refresh">
+        {{ loading ? 'Refreshing…' : 'Refresh' }}
+      </button>
+    </div>
+  </header>
+
+  @if (data && !data.argo.found) {
+    <div class="topo-banner warn" data-test="argo-missing">
+      ArgoCD Application <code>{{ data.appName }}</code> not found{{ data.argo.error ? ': ' + data.argo.error : '' }}.
+      Showing live namespace objects without sync status.
+    </div>
+  }
+  @if (data?.warnings?.length) {
+    <div class="topo-banner muted" data-test="warnings">
+      Partial data: {{ data!.warnings!.join(' · ') }}
+    </div>
+  }
+
+  @if (!environments.length) {
+    <div class="topo-state" data-test="no-env">This project has no environments yet.</div>
+  } @else if (error && !data) {
+    <div class="topo-state error" data-test="error">
+      <strong>Could not load the topology.</strong>
+      <span>{{ error }}</span>
+      <button type="button" class="btn btn-sm" (click)="refresh()">Retry</button>
+    </div>
+  } @else if (!data) {
+    <div class="topo-state" data-test="loading">Loading resources…</div>
+  } @else if (!nodes.length) {
+    <div class="topo-state" data-test="empty">
+      <strong>No resources in this environment yet.</strong>
+      <span>Deploy the application and its Deployments, Pods, Services and Ingresses appear here.</span>
+    </div>
+  } @else {
+    @if (error) {
+      <div class="topo-banner error" data-test="stale">Refresh failed ({{ error }}); showing the last good data.</div>
+    }
+    <div class="topo-summary" data-test="summary">
+      @for (c of countSummary; track c.kind) {
+        <span class="chip">{{ c.count }} {{ c.kind }}</span>
+      }
+      @if (degradedCount) { <span class="chip h-degraded-chip">{{ degradedCount }} degraded</span> }
+      @if (outOfSyncCount) { <span class="chip oos-chip">{{ outOfSyncCount }} out of sync</span> }
+    </div>
+
+    <div class="topo-stage">
+      <div #viewport class="topo-viewport"
+           (wheel)="onWheel($event)"
+           (pointerdown)="onPointerDown($event)"
+           (pointermove)="onPointerMove($event)"
+           (pointerup)="onPointerUp($event)"
+           (pointercancel)="onPointerUp($event)"
+           (click)="onBackgroundClick()">
+        <svg class="topo-svg" role="img" aria-label="Resource graph">
+          <defs>
+            <marker id="topo-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L8,4 L0,8 z" class="arrow-head" />
+            </marker>
+          </defs>
+          <g [attr.transform]="'translate(' + tx + ',' + ty + ') scale(' + scale + ')'">
+            @for (e of edges; track e.from + '>' + e.to; let i = $index) {
+              <path [class]="'edge edge-' + e.type" [attr.d]="edgePath(i)" marker-end="url(#topo-arrow)"
+                    [class.edge-active]="selectedId === e.from || selectedId === e.to" />
+            }
+            @for (n of nodes; track n.id) {
+              <g [class]="'node ' + healthClass(n)"
+                 [class.oos]="n.sync === 'OutOfSync'"
+                 [class.selected]="selectedId === n.id"
+                 [class.inactive]="n.info['inactive'] === true"
+                 [attr.transform]="'translate(' + x(n.id) + ',' + y(n.id) + ')'"
+                 [attr.data-node-id]="n.id"
+                 tabindex="0" role="button"
+                 [attr.aria-label]="n.kind + ' ' + n.name + ', health ' + (n.health || 'n/a') + (n.sync ? ', ' + n.sync : '')"
+                 (click)="select(n, $event)" (keydown)="onNodeKey(n, $event)">
+                <title>{{ n.kind }} {{ n.name }}</title>
+                <rect class="node-box" [attr.width]="nodeW" [attr.height]="nodeH" rx="8" ry="8" />
+                <rect class="node-stripe" x="0" y="0" width="5" [attr.height]="nodeH" rx="2" />
+                <text class="node-kind" x="14" y="17">{{ abbr(n.kind) }}</text>
+                @if (n.sync === 'OutOfSync') {
+                  <text class="node-oos" [attr.x]="nodeW - 10" y="17" text-anchor="end">⟳ OutOfSync</text>
+                } @else if (n.health) {
+                  <text class="node-health" [attr.x]="nodeW - 10" y="17" text-anchor="end">{{ n.health }}</text>
+                }
+                <text class="node-name" x="14" y="35">{{ short(n.name) }}</text>
+                <text class="node-status" x="14" y="50">{{ short(statusLine(n), 32) }}</text>
+              </g>
+            }
+          </g>
+        </svg>
+      </div>
+
+      <div class="topo-zoom" (click)="$event.stopPropagation()">
+        <button type="button" class="btn btn-sm" (click)="zoomBy(1.2)" aria-label="Zoom in">+</button>
+        <button type="button" class="btn btn-sm" (click)="zoomBy(1 / 1.2)" aria-label="Zoom out">−</button>
+        <button type="button" class="btn btn-sm" (click)="fit()" data-test="fit">Fit</button>
+      </div>
+
+      <div class="topo-legend" aria-hidden="true">
+        <span><i class="dot h-healthy"></i>Healthy</span>
+        <span><i class="dot h-progressing"></i>Progressing</span>
+        <span><i class="dot h-degraded"></i>Degraded</span>
+        <span><i class="dot h-missing"></i>Missing / Suspended</span>
+        <span><i class="dot oos-dot"></i>OutOfSync</span>
+        <span><svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" class="edge edge-owns" /></svg>owns</span>
+        <span><svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" class="edge edge-routes" /></svg>routes</span>
+        <span><svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" class="edge edge-selects" /></svg>selects</span>
+      </div>
+
+      @if (selected; as n) {
+        <aside class="topo-drawer" data-test="drawer" (click)="$event.stopPropagation()" aria-label="Resource details">
+          <div class="drawer-head">
+            <div>
+              <div class="drawer-kind">{{ n.kind }}</div>
+              <div class="drawer-name">{{ n.name }}</div>
+            </div>
+            <button type="button" class="btn btn-sm" (click)="closeDrawer()" aria-label="Close details">✕</button>
+          </div>
+          <div class="drawer-badges">
+            <span [class]="'pill ' + healthClass(n)">{{ n.health || 'no health' }}</span>
+            @if (n.sync) {
+              <span class="pill" [class.oos-pill]="n.sync === 'OutOfSync'">{{ n.sync }}</span>
+            }
+          </div>
+          @if (n.kind === 'Pod') {
+            <button type="button" class="btn btn-sm btn-primary drawer-logs" (click)="openLogs(n)" data-test="logs">View logs</button>
+          }
+          <dl class="drawer-info">
+            @for (e of infoEntries(n); track e.key) {
+              <dt>{{ e.key }}</dt><dd>{{ e.value }}</dd>
+            }
+          </dl>
+          <h3 class="drawer-h">Events</h3>
+          @if (n.events.length) {
+            <ul class="drawer-events">
+              @for (ev of n.events; track $index) {
+                <li [class.warn-ev]="ev.type === 'Warning'">
+                  <div class="ev-head">
+                    <strong>{{ ev.reason }}</strong>
+                    @if (ev.count > 1) { <span>×{{ ev.count }}</span> }
+                    @if (ev.lastTimestamp) { <span class="ev-time">{{ ev.lastTimestamp }}</span> }
+                  </div>
+                  <div class="ev-msg">{{ ev.message }}</div>
+                </li>
+              }
+            </ul>
+          } @else {
+            <p class="drawer-empty">No recent events.</p>
+          }
+        </aside>
+      }
+    </div>
+  }
+</section>

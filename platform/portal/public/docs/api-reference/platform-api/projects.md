@@ -233,6 +233,56 @@ Queries the ArgoCD application status for the project's staging environment.
 
 ---
 
+## Live Resource Topology
+
+### `GET` /api/projects/:projectId/environments/:envId/topology
+
+Read-only resource graph of one environment, shown on the portal's GitOps tab
+(refreshed every 10 s while the tab is visible). `envId` is the environment UUID
+(an environment name such as `staging` is accepted too).
+
+Combines the ArgoCD Application's `status.resources` (sync / health per managed
+resource, including `Missing` ones) with live objects listed in the environment
+namespace only: Deployments, ReplicaSets, Pods, Services, Ingresses, cert-manager
+Certificates, PVCs and Events. Secret and ConfigMap nodes are derived from the
+objects that reference them (names only); the API never lists or reads Secrets.
+
+**Auth:** Bearer token, project member (viewer or higher), or agent token with `projects:read`
+
+**Response `200`:**
+```json
+{
+  "namespace": "shop-staging-0123456789abcdef",
+  "appName": "shop-staging-0123456789abcdef",
+  "environmentId": "…",
+  "environment": "staging",
+  "argo": { "found": true, "error": null, "sync": "Synced", "health": "Healthy", "revision": "abc123" },
+  "nodes": [
+    { "id": "Deployment/web", "kind": "Deployment", "name": "web", "health": "Healthy", "sync": "Synced",
+      "info": { "replicas": 3, "readyReplicas": 3 }, "events": [] },
+    { "id": "Pod/web-7d9-a", "kind": "Pod", "name": "web-7d9-a", "health": "Degraded", "sync": null,
+      "info": { "ready": "0/1", "reason": "CrashLoopBackOff", "restarts": 7 }, "events": [] }
+  ],
+  "edges": [
+    { "from": "Deployment/web", "to": "ReplicaSet/web-7d9", "type": "owns" },
+    { "from": "Ingress/web", "to": "Service/web", "type": "routes" },
+    { "from": "Service/web", "to": "Pod/web-7d9-a", "type": "selects" }
+  ],
+  "counts": { "Deployment": 1, "ReplicaSet": 1, "Pod": 1 },
+  "warnings": [],
+  "generatedAt": "2026-11-10T12:00:00.000Z"
+}
+```
+
+Edges: `owns` (ownerReferences, and Application → managed resource), `routes`
+(Ingress backend → Service), `selects` (Service selector → Pod, Ingress TLS /
+Certificate `secretName`, Pod → PVC / ConfigMap / Secret it uses). `argo.found` is
+`false` when the Application does not exist; the live graph is still returned.
+`warnings` names reads that failed (for example missing RBAC in an older namespace).
+`503` when Kubernetes is unreachable.
+
+---
+
 ## Error Codes
 
 | Status | Error                           | Description                         |
