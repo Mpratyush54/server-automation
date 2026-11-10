@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Build from repo root:
 #   docker build -f examples/sdk-apps/react-web/Dockerfile --build-arg VITE_API_URL=https://... -t sdk-react-web:local .
-FROM node:22.23.4-alpine3.24 AS build
+FROM node:26.12.1-alpine3.24 AS build
 WORKDIR /app
 COPY examples/sdk-apps/react-web/package*.json ./
 # Reproducible install when a lockfile is committed; fall back until it is.
