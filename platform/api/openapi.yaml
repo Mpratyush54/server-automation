@@ -462,6 +462,130 @@ paths:
           description: .env lines
         '401':
           $ref: '#/components/responses/StepUpRequired'
+  /projects/{projectId}/environment:
+    get:
+      tags: [Projects]
+      summary: Merged environment variables (plain config + secrets) for the Environment tab
+      description: |
+        Rows `{key, type: plain|secret, value, masked, environmentId, scope, version, updatedBy, updatedAt, secretId, conflict}`.
+        Secret values are always null (reveal via POST /projects/{projectId}/secrets/reveal). Plain values are null for
+        viewers and agent tokens (keys and types only). `environmentId` omitted = every scope; `global` = global rows
+        only; an environment id or name = global rows plus rows for that environment. `conflict` marks a key stored as
+        both plain and secret in the same scope.
+      security:
+        - bearerAuth: []
+        - agentTokenAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: environmentId, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: '`{ projectId, environmentId, environment, capabilities, conflicts, variables }`'
+        '403':
+          description: Not a member of the project
+  /projects/{projectId}/environment/{key}:
+    put:
+      tags: [Projects]
+      summary: Set a variable as plain config or encrypted secret (moves it between stores in one transaction)
+      description: |
+        `secret: true` writes the secret store (secrets.create; config.update too when a plain value is moved) and deletes
+        the plain row in the same transaction. `secret: false` writes config (config.update); converting an existing
+        secret to plain also needs secrets.delete + secrets.reveal and a recent MFA step-up. Omit `value` to convert
+        while keeping the stored value. Audit-logged; values are never logged.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: key, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9_.-]{0,199}$' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [secret]
+              properties:
+                environmentId: { type: string, nullable: true, description: 'null / omitted = global (all environments)' }
+                value: { type: string }
+                secret: { type: boolean }
+      responses:
+        '200':
+          description: Updated `{ key, type, environmentId, status, convertedFrom, version, secretId }`
+        '201':
+          description: Created
+        '401':
+          $ref: '#/components/responses/StepUpRequired'
+        '403':
+          description: Missing permission or project role
+    delete:
+      tags: [Projects]
+      summary: Delete one variable from the plain or secret store (audit-logged)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: key, in: path, required: true, schema: { type: string } }
+        - { name: type, in: query, required: true, schema: { type: string, enum: [plain, secret] } }
+        - { name: environmentId, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: Deleted
+        '404':
+          description: Not found
+  /config:
+    get:
+      tags: [Projects]
+      deprecated: true
+      summary: Flat config map (deprecated; use GET /projects/{projectId}/environment). Kept for SDK/CLI compatibility.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: query, required: true, schema: { type: string } }
+        - { name: environmentId, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: '`{ KEY: value }` (secrets masked unless the caller holds secrets.reveal; reveals are audited)'
+    post:
+      tags: [Projects]
+      deprecated: true
+      summary: Upsert a plain config value (deprecated; use PUT /projects/{projectId}/environment/{key})
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Saved
+    delete:
+      tags: [Projects]
+      deprecated: true
+      summary: Delete a plain config value (deprecated; use DELETE /projects/{projectId}/environment/{key}?type=plain)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Deleted
+  /projects/{projectId}/secrets:
+    get:
+      tags: [Projects]
+      deprecated: true
+      summary: List secrets, values masked (deprecated; use GET /projects/{projectId}/environment)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Masked secrets
+    post:
+      tags: [Projects]
+      deprecated: true
+      summary: Create or update a secret (deprecated; use PUT /projects/{projectId}/environment/{key} with secret=true)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201':
+          description: Saved
   /auth/providers:
     get:
       tags: [Auth]
@@ -727,6 +851,28 @@ paths:
       responses:
         '200':
           description: Projects
+  /projects/{projectId}/environments/{envId}/topology:
+    get:
+      tags: [Projects]
+      summary: Live read-only resource graph for one environment (Argo Application resources + namespace objects)
+      description: |
+        Nodes {id, kind, name, health, sync, info, events} and edges {from, to, type: owns|routes|selects}.
+        Scoped to the environment namespace. Secret/ConfigMap nodes carry names only.
+      security:
+        - bearerAuth: []
+        - agentTokenAuth: []
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: envId, in: path, required: true, description: Environment UUID (or environment name), schema: { type: string } }
+      responses:
+        '200':
+          description: Graph (argo.found=false when the Application does not exist; warnings lists partial read failures)
+        '403':
+          description: No access to this project
+        '404':
+          description: Project or environment not found
+        '503':
+          description: Kubernetes unreachable
   /deploy:
     post:
       tags: [Deployments]

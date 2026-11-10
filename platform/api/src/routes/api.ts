@@ -9,6 +9,7 @@ import projectArgoRoutes from './project-argocd';
 import deploymentRoutes from './deployments';
 import configRoutes from './config';
 import secretRoutes from './secrets';
+import environmentRoutes from './environment';
 import storageRoutes from './storage';
 import alertRoutes from './alerts';
 import dbConnectionRoutes from './db-connections';
@@ -29,6 +30,7 @@ import { loadOpenApiJson, OpenApiUnavailableError } from '../lib/openapi-spec';
 import healthRoutes from './health';
 import operationRoutes from './operations';
 import backupRoutes from './backups';
+import topologyRoutes from './topology';
 
 router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB only; Redis reported, not gating)
 router.use('/', oidcRoutes); // before authRoutes: OIDC provider + GitHub/GitLab login (state cookie)
@@ -40,6 +42,7 @@ router.use('/', projectArgoRoutes);
 router.use('/', deploymentRoutes);
 router.use('/', configRoutes);
 router.use('/', secretRoutes);
+router.use('/', environmentRoutes); // merged config + secrets view for the Environment tab (#29)
 router.use('/', storageRoutes);
 router.use('/', alertRoutes);
 router.use('/', dbConnectionRoutes);
@@ -57,6 +60,7 @@ router.use('/', agentCommandRoutes);
 router.use('/', notificationRoutes);
 router.use('/', operationRoutes);
 router.use('/', backupRoutes);
+router.use('/', topologyRoutes); // GET /projects/:projectId/environments/:envId/topology (#31)
 
 /** GET /api/openapi.json — OpenAPI 3 spec derived from openapi.yaml (parsed once, cached). */
 router.get('/openapi.json', (_req, res) => {
