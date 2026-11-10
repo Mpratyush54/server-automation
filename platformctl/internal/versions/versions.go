@@ -128,7 +128,7 @@ var charts = map[string]Chart{
 	"alloy":                        {Name: "alloy", Repo: "grafana", RepoURL: "https://grafana.github.io/helm-charts", Chart: "alloy", Version: "1.15.0"},
 	"tempo":                        {Name: "tempo", Repo: "grafana", RepoURL: "https://grafana.github.io/helm-charts", Chart: "tempo", Version: "1.23.3"},
 	"pyroscope":                    {Name: "pyroscope", Repo: "grafana", RepoURL: "https://grafana.github.io/helm-charts", Chart: "pyroscope", Version: "2.4.3"},
-	"prometheus-blackbox-exporter": {Name: "prometheus-blackbox-exporter", Repo: "prometheus-community", RepoURL: "https://prometheus-community.github.io/helm-charts", Chart: "prometheus-blackbox-exporter", Version: "11.20.3"},
+	"prometheus-blackbox-exporter": {Name: "prometheus-blackbox-exporter", Repo: "prometheus-community", RepoURL: "https://prometheus-community.github.io/helm-charts", Chart: "prometheus-blackbox-exporter", Version: "11.21.1"},
 	"oauth2-proxy":                 {Name: "oauth2-proxy", Repo: "oauth2-proxy", RepoURL: "https://oauth2-proxy.github.io/manifests", Chart: "oauth2-proxy", Version: "10.7.2"},
 	"portainer":                    {Name: "portainer", Repo: "portainer", RepoURL: "https://portainer.github.io/k8s/", Chart: "portainer", Version: "245.3.0"},
 	// Kyverno is opt-in (full profile + INSTALL_KYVERNO); ~200 MB control plane.
