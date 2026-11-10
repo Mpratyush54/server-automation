@@ -81,6 +81,10 @@ func InstallTelemetry(c *config.Config) error {
 	if err != nil {
 		return err
 	}
+	proxyImage, err := ProfileIngestImage(c)
+	if err != nil {
+		return err
+	}
 	// Never replace a local Loki release implicitly. Its PVC may contain the
 	// only copy of historic logs; see the explicit migration procedure.
 	old, err := shell.Output("helm", "list", "-n", "monitoring", "-o", "json", "--filter", "^loki$")
@@ -156,26 +160,21 @@ func InstallTelemetry(c *config.Config) error {
 			return fmt.Errorf("telemetry %s: %w", name, err)
 		}
 	}
-	for _, name := range []string{"telemetry-ingress.yaml", "telemetry-rules.yaml", "telemetry-dashboard.yaml", alertingRBACManifest} {
-		p, err := temporaryManifest(name, c)
+	// The profile proxy is applied (and ready) before the Ingress routes to it.
+	for _, name := range []string{"telemetry-profile-ingest.yaml", "telemetry-ingress.yaml", "telemetry-rules.yaml", "telemetry-dashboard.yaml", alertingRBACManifest} {
+		p, err := telemetryManifest(name, c, proxyImage)
 		if err != nil {
 			return err
-		}
-		if name == "telemetry-ingress.yaml" {
-			b, readErr := os.ReadFile(p)
-			if readErr != nil {
-				os.Remove(p)
-				return readErr
-			}
-			if err := os.WriteFile(p, []byte(strings.ReplaceAll(string(b), "letsencrypt-prod", ActiveIssuer())), 0600); err != nil {
-				os.Remove(p)
-				return err
-			}
 		}
 		err = shell.Run("kubectl", "apply", "-f", p)
 		os.Remove(p)
 		if err != nil {
 			return err
+		}
+		if name == "telemetry-profile-ingest.yaml" {
+			if err := shell.Run("kubectl", "-n", "monitoring", "rollout", "status", "deployment/profile-ingest", "--timeout=180s"); err != nil {
+				return fmt.Errorf("telemetry profile-ingest: %w", err)
+			}
 		}
 	}
 	if err := publishTelemetryBackend(c, sampling); err != nil {
@@ -199,7 +198,8 @@ func telemetryStorage(c *config.Config) error {
 		return err
 	}
 	defer shell.RunSilent("kubectl", "-n", "monitoring", "delete", "secret", "telemetry-bootstrap", "--ignore-not-found")
-	for _, backend := range []string{"loki", "tempo", "pyroscope"} {
+	// loki/tempo/pyroscope: backend object storage. replays: #40 session chunks + #47 GDPR delete prefix.
+	for _, backend := range []string{"loki", "tempo", "pyroscope", "replays"} {
 		name := "telemetry-" + backend + "-s3"
 		existing, err := shell.Output("kubectl", "-n", "monitoring", "get", "secret", name, "--ignore-not-found", "-o", "name")
 		if err != nil {
@@ -234,6 +234,16 @@ const telemetryMCImage = "quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z"
 func telemetryBucketScript(bucket string) string {
 	// bucket is an internal constant, never operator input. Commands never print
 	// credentials; mc's private config is on the ephemeral job filesystem.
+	// Replays get a 7-day lifecycle rule (default retention; #47 / #40).
+	lifecycle := ""
+	if bucket == "replays" {
+		lifecycle = `
+cat >"$work/lifecycle.json" <<'LIFECYCLE'
+{"Rules":[{"ID":"replays-default-7d","Status":"Enabled","Filter":{"Prefix":"replays/"},"Expiration":{"Days":7}}]}
+LIFECYCLE
+mc ilm import local/replays <"$work/lifecycle.json" >/dev/null || mc ilm rule add --expire-days 7 local/replays >/dev/null
+`
+	}
 	return fmt.Sprintf(`set -eu
 umask 077
 work=$(mktemp -d "${TMPDIR:-/tmp}/telemetry-iam.XXXXXX")
@@ -247,7 +257,7 @@ POLICY
 mc admin user add local "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
 mc admin policy create local telemetry-%[1]s "$work/policy.json"
 mc admin policy attach local telemetry-%[1]s --user "$S3_ACCESS_KEY"
-`, bucket)
+%[2]s`, bucket, lifecycle)
 }
 
 // Existing MinIO chart defaults are too large for the 8 GB full-profile target.
@@ -266,4 +276,50 @@ func minioInstallValues(c *config.Config) map[string]any {
 func publishTelemetryBackend(c *config.Config, sampling float64) error {
 	endpoint := "https://otel." + c.Domain
 	return applyTelemetryJSON(map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]string{"name": "telemetry-backend", "namespace": "monitoring"}, "data": map[string]string{"enabled": "true", "otlpEndpoint": endpoint, "faroEndpoint": endpoint + "/collect", "profilesEndpoint": endpoint + "/pyroscope", "samplingRatio": strconv.FormatFloat(sampling/100, 'f', -1, 64)}})
+}
+
+// telemetryManifest writes a private temporary copy of a telemetry manifest
+// with installer substitutions applied; the caller removes it.
+func telemetryManifest(name string, c *config.Config, proxyImage string) (string, error) {
+	p, err := temporaryManifest(name, c)
+	if err != nil {
+		return "", err
+	}
+	var r *strings.Replacer
+	switch name {
+	case "telemetry-profile-ingest.yaml":
+		r = strings.NewReplacer("{{PROFILE_INGEST_IMAGE}}", proxyImage)
+	case "telemetry-ingress.yaml":
+		r = strings.NewReplacer("letsencrypt-prod", ActiveIssuer())
+	default:
+		return p, nil
+	}
+	b, err := os.ReadFile(p)
+	if err == nil {
+		err = os.WriteFile(p, []byte(r.Replace(string(b))), 0600)
+	}
+	if err != nil {
+		os.Remove(p)
+		return "", err
+	}
+	return p, nil
+}
+
+var imageRefRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._/:-]*$`)
+var imageTagRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$`)
+
+// ProfileIngestImage is the profile ingest proxy image of this release
+// (built with platform-api/portal by docker-build.yml; tag-dependent like them).
+func ProfileIngestImage(c *config.Config) (string, error) {
+	registry, tag := strings.TrimRight(strings.TrimSpace(c.ImageRegistry), "/"), strings.TrimSpace(c.ImageTag)
+	if registry == "" {
+		registry = "ghcr.io/mpratyush54"
+	}
+	if tag == "" {
+		tag = config.DefaultImageTag
+	}
+	if !imageRefRe.MatchString(registry) || !imageTagRe.MatchString(tag) {
+		return "", fmt.Errorf("invalid PLATFORM_IMAGE_REGISTRY/PLATFORM_IMAGE_TAG for the profile ingest image")
+	}
+	return registry + "/platform-profile-ingest:" + tag, nil
 }

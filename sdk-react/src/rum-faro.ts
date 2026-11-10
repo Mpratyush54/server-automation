@@ -186,11 +186,11 @@ export function buildFaroConfig(plan: RumPlan, view: { id: string; name: string 
     parseStacktrace,
     paused: false,
     preventGlobalExposure: true,
-    transports: [new PlatformTransport({ url: plan.faroEndpoint, token: plan.browserToken })],
+    transports: [new PlatformTransport({ url: plan.faroEndpoint, token: plan.browserToken, errorsUrl: plan.errorsEndpoint, release: plan.options.appVersion })],
     unpatchedConsole: defaultUnpatchedConsole,
     beforeSend,
     eventDomain: EVENT_DOMAIN,
-    ignoreUrls: [plan.faroEndpoint, /\/collect(?:\/[\w]*)?$/],
+    ignoreUrls: [plan.faroEndpoint, ...(plan.errorsEndpoint ? [plan.errorsEndpoint] : []), /\/collect(?:\/[\w]*)?$/],
     // Sampling already happened in planRum (unsampled sessions never load Faro).
     sessionTracking: {
       enabled: true,

@@ -77,6 +77,8 @@ export const routes: Routes = [
   { path: 'deployments', component: DeploymentsComponent, canActivate: [authGuard] },
   { path: 'services', component: ServicesComponent, canActivate: [authGuard] },
   { path: 'metrics', component: MetricsComponent, canActivate: [authGuard] },
+  { path: 'errors', loadComponent: () => import('./pages/errors/errors.component').then(m => m.ErrorsComponent), canActivate: [authGuard] },
+  { path: 'projects/:id/errors', loadComponent: () => import('./pages/errors/errors.component').then(m => m.ErrorsComponent), canActivate: [authGuard] },
   { path: 'alerts', component: AlertsComponent, canActivate: [authGuard] },
   { path: 'alerting', component: AlertingComponent, canActivate: [authGuard] }, // #43
   { path: 'logs', component: LogsComponent, canActivate: [authGuard] },
