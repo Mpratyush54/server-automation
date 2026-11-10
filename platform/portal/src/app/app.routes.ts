@@ -11,6 +11,7 @@ import { StorageComponent } from './pages/storage/storage.component';
 import { BootstrapComponent } from './pages/bootstrap/bootstrap.component';
 import { CicdComponent } from './pages/cicd/cicd.component';
 import { AlertsComponent } from './pages/alerts/alerts.component';
+import { AlertingComponent } from './pages/alerting/alerting.component';
 import { DbConnectionsComponent } from './pages/db-connections/db-connections.component';
 
 import { LoginComponent } from './pages/login/login.component';
@@ -77,6 +78,7 @@ export const routes: Routes = [
   { path: 'services', component: ServicesComponent, canActivate: [authGuard] },
   { path: 'metrics', component: MetricsComponent, canActivate: [authGuard] },
   { path: 'alerts', component: AlertsComponent, canActivate: [authGuard] },
+  { path: 'alerting', component: AlertingComponent, canActivate: [authGuard] }, // #43
   { path: 'logs', component: LogsComponent, canActivate: [authGuard] },
   { path: 'config', component: ConfigComponent, canActivate: [authGuard] },
   { path: 'storage', component: StorageComponent, canActivate: [authGuard] },

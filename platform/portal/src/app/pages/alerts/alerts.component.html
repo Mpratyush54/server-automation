@@ -1,4 +1,7 @@
 <div class="card">
+  <p style="margin:0;">Legacy alert rules. They are migrated to monitors automatically; manage monitors, SLOs, silences and channels on the <a routerLink="/alerting">Alerting</a> page.</p>
+</div>
+<div class="card">
   <h2>Create Alert Rule</h2>
   <div class="form-group"><label>Project ID</label><input [(ngModel)]="newAlert.projectId"></div>
   <div class="form-group"><label>Metric</label><select [(ngModel)]="newAlert.metric"><option>cpu</option><option>memory</option><option>latency</option><option>errorRate</option></select></div>

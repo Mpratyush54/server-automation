@@ -1,0 +1,283 @@
+<div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;">
+  <div>
+    <h2 style="margin:0;font-size:1.5rem;font-weight:700;">Alerting &amp; on-call</h2>
+    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:4px 0 0 0;">
+      Monitors, SLO burn-rate alerts, silences and notification routing
+      @if (mode) { <span class="badge badge-pending" style="margin-left:6px;">evaluation: {{ mode }}</span> }
+    </p>
+  </div>
+  <div class="form-group" style="margin:0;min-width:260px;">
+    <label>Project</label>
+    <select [(ngModel)]="projectId" (change)="selectProject()" data-testid="project-select">
+      <option value="">All projects (incidents only)</option>
+      @for (p of projects; track p.id) { <option [value]="p.id">{{ p.name }}</option> }
+    </select>
+  </div>
+</div>
+
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
+  @for (t of tabs; track t.id) {
+    <button class="btn btn-sm" [class.btn-primary]="tab === t.id" (click)="selectTab(t.id)">{{ t.label }}</button>
+  }
+</div>
+
+@if (error) { <div class="card" style="border-color:#d32f2f;color:#ff8a80;" data-testid="error">{{ error }}</div> }
+@if (notice) { <div class="card" style="border-color:#2e7d32;color:#a5d6a7;word-break:break-all;">{{ notice }} <button class="btn btn-sm" (click)="notice = ''">Dismiss</button></div> }
+
+@if (tab !== 'incidents' && !projectId) {
+  <div class="card">Select a project to manage its alerting configuration.</div>
+}
+
+<!-- Incidents -->
+@if (tab === 'incidents') {
+  <div class="card">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+      <select [(ngModel)]="incidentFilter" (change)="reload()" style="max-width:160px;">
+        <option value="open">Open</option><option value="resolved">Resolved</option><option value="all">All</option>
+      </select>
+      <button class="btn btn-sm" (click)="reload()">Refresh</button>
+      @if (projectId) {
+        <button class="btn btn-sm" (click)="testEvent('firing')">Raise test alert</button>
+        <button class="btn btn-sm" (click)="testEvent('resolved')">Resolve test alert</button>
+      }
+    </div>
+    <table>
+      <thead><tr><th>Status</th><th>Severity</th><th>Title</th><th>Project</th><th>Source</th><th>Events</th><th>First seen</th><th></th></tr></thead>
+      <tbody>
+        @for (i of incidents; track i.id) {
+          <tr>
+            <td><span class="badge" [class.badge-failed]="i.status === 'firing'" [class.badge-pending]="i.status === 'acknowledged'" [class.badge-success]="i.status === 'resolved'">{{ i.status }}</span>
+              @if (i.silencedBy) { <span class="badge badge-pending">silenced</span> }</td>
+            <td>{{ i.severity }}</td>
+            <td><div style="font-weight:600;">{{ i.title }}</div><div style="font-size:0.75rem;color:var(--color-text-secondary);">{{ i.body }}</div></td>
+            <td>{{ projectName(i.projectId) }}</td>
+            <td>{{ i.source }}</td>
+            <td>{{ i.eventCount }}</td>
+            <td>{{ i.firstSeenAt | date:'short' }}</td>
+            <td style="white-space:nowrap;">
+              @if (i.status === 'firing') { <button class="btn btn-sm" (click)="ack(i)">Acknowledge</button> }
+              @if (i.status !== 'resolved') { <button class="btn btn-sm" (click)="resolveIncident(i)">Resolve</button> }
+            </td>
+          </tr>
+        }
+        @if (!incidents.length && !loading) { <tr><td colspan="8" style="color:var(--color-text-muted);">No incidents.</td></tr> }
+      </tbody>
+    </table>
+  </div>
+}
+
+@if (projectId) {
+  <!-- Monitors -->
+  @if (tab === 'monitors') {
+    <div class="card">
+      <h3>New monitor</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;">
+        <div class="form-group"><label>Name</label><input [(ngModel)]="newMonitor.name"></div>
+        <div class="form-group"><label>Kind</label>
+          <select [(ngModel)]="newMonitor.kind">
+            <option value="metric">Metric (PromQL)</option><option value="log">Log (LogQL)</option>
+            <option value="trace">Trace (span metrics)</option><option value="resource">CPU / memory</option>
+          </select></div>
+        @if (newMonitor.kind === 'trace') {
+          <div class="form-group"><label>Signal</label><select [(ngModel)]="newMonitor.signal"><option value="error_rate">Error rate %</option><option value="latency_p95">p95 latency ms</option><option value="request_rate">Requests/s</option></select></div>
+          <div class="form-group"><label>Service (optional)</label><input [(ngModel)]="newMonitor.service"></div>
+        }
+        @if (newMonitor.kind === 'resource') {
+          <div class="form-group"><label>Resource</label><select [(ngModel)]="newMonitor.resource"><option value="cpu">CPU % of limits</option><option value="memory">Memory % of limits</option></select></div>
+        }
+        <div class="form-group"><label>Condition</label>
+          <div style="display:flex;gap:4px;">
+            <select [(ngModel)]="newMonitor.operator" style="max-width:70px;"><option>&gt;</option><option>&lt;</option><option>&gt;=</option><option>&lt;=</option><option>==</option><option>!=</option></select>
+            <input type="number" [(ngModel)]="newMonitor.threshold">
+          </div></div>
+        <div class="form-group"><label>For (seconds)</label><input type="number" [(ngModel)]="newMonitor.forSeconds"></div>
+        <div class="form-group"><label>Severity</label><select [(ngModel)]="newMonitor.severity"><option>info</option><option>warning</option><option>critical</option></select></div>
+        <div class="form-group"><label>Escalation policy</label><select [(ngModel)]="newMonitor.policyId"><option value="">Project default</option>@for (p of policies; track p.id) { <option [value]="p.id">{{ p.name }}</option> }</select></div>
+      </div>
+      @if (newMonitor.kind === 'metric' || newMonitor.kind === 'log') {
+        <div class="form-group"><label>Query</label><textarea rows="2" [(ngModel)]="newMonitor.query" style="font-family:monospace;width:100%;"
+          [placeholder]="newMonitor.kind === 'log' ? 'sum(count_over_time({service_name=&quot;web&quot;} |= &quot;error&quot; [5m]))' : 'sum(rate(http_requests_total{code=~&quot;5..&quot;}[5m]))'"></textarea></div>
+      }
+      <button class="btn btn-primary" (click)="createMonitor()" [disabled]="!newMonitor.name">Create monitor</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Name</th><th>Kind</th><th>Condition</th><th>Severity</th><th>State</th><th>Last value</th><th>Enabled</th><th></th></tr></thead>
+        <tbody>
+          @for (m of monitors; track m.id) {
+            <tr>
+              <td>{{ m.name }} @if (m.legacyAlertId) { <span class="badge badge-pending">legacy</span> }</td>
+              <td>{{ m.kind }}</td>
+              <td style="font-family:monospace;font-size:0.8rem;">{{ m.query || (m.params | json) }} {{ m.operator }} {{ m.threshold }}</td>
+              <td>{{ m.severity }}</td>
+              <td>{{ m.state }} @if (m.lastError) { <span title="{{ m.lastError }}" style="color:#ff8a80;">!</span> }</td>
+              <td>{{ m.lastValue ?? '—' }}</td>
+              <td><input type="checkbox" [checked]="m.enabled" (change)="toggleMonitor(m)"></td>
+              <td><button class="btn btn-danger btn-sm" (click)="deleteItem('monitors', m.id)">Delete</button></td>
+            </tr>
+          }
+          @if (!monitors.length) { <tr><td colspan="8" style="color:var(--color-text-muted);">No monitors yet.</td></tr> }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <!-- SLOs -->
+  @if (tab === 'slos') {
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:16px;">
+      @for (s of slos; track s.id) {
+        <div class="card" style="margin:0;">
+          <div style="display:flex;justify-content:space-between;"><strong>{{ s.name }}</strong><span>{{ s.target }}% / {{ s.windowDays }}d</span></div>
+          @if (budgetPercent(s) !== null) {
+            <div style="margin:10px 0 4px;font-size:0.8rem;">Error budget remaining: <strong>{{ budgetPercent(s) | number:'1.0-1' }}%</strong></div>
+            <div style="height:8px;background:#222;border-radius:4px;overflow:hidden;">
+              <div [style.width.%]="budgetPercent(s)! < 0 ? 0 : budgetPercent(s)" [style.background]="budgetPercent(s)! > 25 ? '#2e7d32' : '#d32f2f'" style="height:100%;"></div>
+            </div>
+            <div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:6px;">
+              SLI {{ (s.status.sli ?? 0) * 100 | number:'1.0-3' }}% · burn 1h {{ (s.status.burnRates?.['1h'] | number:'1.0-2') ?? '—' }} · 6h {{ (s.status.burnRates?.['6h'] | number:'1.0-2') ?? '—' }}
+              @if (s.status.alerts?.page) { <span class="badge badge-failed">page</span> }
+              @if (s.status.alerts?.ticket) { <span class="badge badge-pending">ticket</span> }
+            </div>
+          } @else {
+            <div style="margin:10px 0;font-size:0.8rem;color:var(--color-text-muted);">{{ s.status?.error || 'No data yet' }}</div>
+          }
+          <div style="margin-top:8px;display:flex;gap:6px;">
+            <button class="btn btn-sm" (click)="refreshSlo(s)">Refresh</button>
+            <button class="btn btn-danger btn-sm" (click)="deleteItem('slos', s.id)">Delete</button>
+          </div>
+        </div>
+      }
+    </div>
+    <div class="card">
+      <h3>New SLO</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;">
+        <div class="form-group"><label>Name</label><input [(ngModel)]="newSlo.name"></div>
+        <div class="form-group"><label>SLI</label><select [(ngModel)]="newSlo.sliType"><option value="availability">Availability (spans)</option><option value="latency">Latency (spans)</option><option value="ratio">Custom PromQL ratio</option></select></div>
+        @if (newSlo.sliType !== 'ratio') { <div class="form-group"><label>Service (optional)</label><input [(ngModel)]="newSlo.service"></div> }
+        @if (newSlo.sliType === 'latency') { <div class="form-group"><label>Faster than (ms)</label><select [(ngModel)]="newSlo.latencyMs">@for (b of [64,128,256,512,1024,2048,4096]; track b) { <option [ngValue]="b">{{ b }}</option> }</select></div> }
+        <div class="form-group"><label>Target %</label><input type="number" step="0.01" [(ngModel)]="newSlo.target"></div>
+        <div class="form-group"><label>Window (days)</label><input type="number" [(ngModel)]="newSlo.windowDays"></div>
+        <div class="form-group"><label>Escalation policy</label><select [(ngModel)]="newSlo.policyId"><option value="">Project default</option>@for (p of policies; track p.id) { <option [value]="p.id">{{ p.name }}</option> }</select></div>
+      </div>
+      @if (newSlo.sliType === 'ratio') {
+        <div class="form-group"><label>Error events query (use $window)</label><input style="font-family:monospace;" [(ngModel)]="newSlo.errorQuery" placeholder="sum(rate(http_requests_total{code=~&quot;5..&quot;}[$window]))"></div>
+        <div class="form-group"><label>Total events query (use $window)</label><input style="font-family:monospace;" [(ngModel)]="newSlo.totalQuery" placeholder="sum(rate(http_requests_total[$window]))"></div>
+      }
+      <button class="btn btn-primary" (click)="createSlo()" [disabled]="!newSlo.name">Create SLO</button>
+    </div>
+  }
+
+  <!-- Silences -->
+  @if (tab === 'silences') {
+    <div class="card">
+      <h3>New silence / maintenance window</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;">
+        <div class="form-group"><label>Kind</label><select [(ngModel)]="newSilence.kind"><option value="silence">Silence</option><option value="maintenance">Maintenance</option></select></div>
+        <div class="form-group"><label>Duration (minutes)</label><input type="number" [(ngModel)]="newSilence.durationMinutes"></div>
+        <div class="form-group"><label>Match label (blank = whole project)</label><input [(ngModel)]="newSilence.matcherName" placeholder="source, severity, dedupeKey..."></div>
+        <div class="form-group"><label>Value</label><input [(ngModel)]="newSilence.matcherValue"></div>
+        <div class="form-group"><label>Comment</label><input [(ngModel)]="newSilence.comment"></div>
+      </div>
+      <button class="btn btn-primary" (click)="createSilence()">Create</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>State</th><th>Kind</th><th>Matchers</th><th>Starts</th><th>Ends</th><th>Comment</th><th></th></tr></thead>
+        <tbody>
+          @for (s of silences; track s.id) {
+            <tr>
+              <td>{{ s.state }}</td><td>{{ s.kind }}</td>
+              <td style="font-family:monospace;font-size:0.8rem;">@for (m of s.matchers; track $index) { {{ m.name }}{{ m.isEqual === false ? '!' : '' }}{{ m.isRegex ? '=~' : '=' }}{{ m.value }} } @empty { whole project }</td>
+              <td>{{ s.startsAt | date:'short' }}</td><td>{{ s.endsAt | date:'short' }}</td><td>{{ s.comment }}</td>
+              <td>@if (s.state !== 'expired') { <button class="btn btn-sm" (click)="expireSilence(s.id)">Expire</button> }</td>
+            </tr>
+          }
+          @if (!silences.length) { <tr><td colspan="7" style="color:var(--color-text-muted);">No silences.</td></tr> }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <!-- Channels -->
+  @if (tab === 'channels') {
+    <div class="card">
+      <h3>New channel</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;">
+        <div class="form-group"><label>Type</label><select [(ngModel)]="newChannel.type">@for (t of channelTypes; track t) { <option [value]="t">{{ t }}</option> }</select></div>
+        <div class="form-group"><label>Name</label><input [(ngModel)]="newChannel.name"></div>
+        <div class="form-group"><label>Minimum severity</label><select [(ngModel)]="newChannel.minSeverity"><option>info</option><option>warning</option><option>critical</option></select></div>
+        @for (f of channelFields[newChannel.type]; track f.key) {
+          <div class="form-group"><label>{{ f.label }}</label><input [type]="f.secret ? 'password' : 'text'" autocomplete="off" [(ngModel)]="newChannel.fields[f.key]" [placeholder]="f.placeholder || ''"></div>
+        }
+      </div>
+      <p style="font-size:0.75rem;color:var(--color-text-secondary);">Secrets are stored encrypted and are never shown again.</p>
+      <button class="btn btn-primary" (click)="createChannel()" [disabled]="!newChannel.name">Create channel</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Name</th><th>Type</th><th>Destination</th><th>Min severity</th><th>Last delivery</th><th>Last error</th><th></th></tr></thead>
+        <tbody>
+          @for (c of channels; track c.id) {
+            <tr>
+              <td>{{ c.name }}</td><td>{{ c.type }}</td><td>{{ c.destination || (c.config?.to?.join(', ')) || '—' }}</td><td>{{ c.minSeverity }}</td>
+              <td>{{ c.lastDeliveryAt ? (c.lastDeliveryAt | date:'short') : '—' }}</td>
+              <td style="color:#ff8a80;font-size:0.8rem;">{{ c.lastError || c.secretError || '' }}</td>
+              <td style="white-space:nowrap;"><button class="btn btn-sm" (click)="testChannel(c)">Test</button> <button class="btn btn-danger btn-sm" (click)="deleteItem('channels', c.id)">Delete</button></td>
+            </tr>
+          }
+          @if (!channels.length) { <tr><td colspan="7" style="color:var(--color-text-muted);">No channels. Without a channel, incidents are only listed here.</td></tr> }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <!-- Escalation + on-call -->
+  @if (tab === 'oncall') {
+    <div class="card">
+      <h3>Escalation policies</h3>
+      <table>
+        <thead><tr><th>Name</th><th>Default</th><th>Steps</th><th></th></tr></thead>
+        <tbody>
+          @for (p of policies; track p.id) {
+            <tr>
+              <td>{{ p.name }}</td><td>{{ p.isDefault ? 'Yes' : '' }}</td>
+              <td>@for (s of p.steps; track $index) {
+                <div>+{{ s.delayMinutes }} min: @for (c of s.channelIds; track c) { {{ channelName(c) }} } @for (sc of s.scheduleIds; track sc) { on-call {{ scheduleName(sc) }} } @for (u of s.userIds; track u) { user {{ u }} }</div>
+              }</td>
+              <td><button class="btn btn-danger btn-sm" (click)="deleteItem('policies', p.id)">Delete</button></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+      <h4>New policy</h4>
+      <div class="form-group"><label>Name</label><input [(ngModel)]="newPolicy.name"></div>
+      <div class="form-group"><label><input type="checkbox" [(ngModel)]="newPolicy.isDefault"> Project default</label></div>
+      <div class="form-group"><label>Notify immediately</label>
+        @for (c of channels; track c.id) { <label style="margin-right:10px;"><input type="checkbox" [checked]="newPolicy.step0.includes(c.id)" (change)="toggleIn(newPolicy.step0, c.id)"> {{ c.name }}</label> }</div>
+      <div class="form-group"><label>If not acknowledged after (minutes)</label><input type="number" [(ngModel)]="newPolicy.delay" style="max-width:120px;"></div>
+      <div class="form-group"><label>…then notify</label>
+        @for (c of channels; track c.id) { <label style="margin-right:10px;"><input type="checkbox" [checked]="newPolicy.step1.includes(c.id)" (change)="toggleIn(newPolicy.step1, c.id)"> {{ c.name }}</label> }
+        <select [(ngModel)]="newPolicy.step1Schedule" style="max-width:220px;"><option value="">no on-call schedule</option>@for (s of schedules; track s.id) { <option [value]="s.id">on-call: {{ s.name }}</option> }</select></div>
+      <button class="btn btn-primary" (click)="createPolicy()" [disabled]="!newPolicy.name || !newPolicy.step0.length">Create policy</button>
+    </div>
+    <div class="card">
+      <h3>On-call schedules</h3>
+      <table>
+        <thead><tr><th>Name</th><th>Rotation</th><th>Users</th><th>On call now</th><th></th></tr></thead>
+        <tbody>
+          @for (s of schedules; track s.id) {
+            <tr><td>{{ s.name }}</td><td>every {{ s.rotationHours }} h</td><td style="font-size:0.75rem;">{{ s.userIds.join(', ') }}</td><td>{{ s.onCallUserId || '—' }}</td>
+              <td><button class="btn btn-danger btn-sm" (click)="deleteItem('schedules', s.id)">Delete</button></td></tr>
+          }
+        </tbody>
+      </table>
+      <h4>New schedule</h4>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;">
+        <div class="form-group"><label>Name</label><input [(ngModel)]="newSchedule.name"></div>
+        <div class="form-group"><label>User ids in rotation order (comma separated)</label><input [(ngModel)]="newSchedule.userIds"></div>
+        <div class="form-group"><label>Rotation (hours)</label><input type="number" [(ngModel)]="newSchedule.rotationHours"></div>
+      </div>
+      <button class="btn btn-primary" (click)="createSchedule()" [disabled]="!newSchedule.name">Create schedule</button>
+    </div>
+  }
+}
