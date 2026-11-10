@@ -38,6 +38,7 @@ import privacyRoutes from './privacy';
 import gitAppRoutes from './git-apps';
 import topologyRoutes from './topology';
 import syntheticRoutes from './synthetics';
+import heatmapRoutes from './heatmaps';
 
 router.use('/', errorTrackingRoutes);
 router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB only; Redis reported, not gating)
@@ -74,6 +75,7 @@ router.use('/', notificationRoutes);
 router.use('/', operationRoutes);
 router.use('/', backupRoutes);
 router.use('/', syntheticRoutes); // synthetic checks, results, status feed, browser runner (#42)
+router.use('/', heatmapRoutes); // click/scroll heatmaps: SDK ingest + project queries (Phase 4 B2)
 router.use('/', topologyRoutes); // GET /projects/:projectId/environments/:envId/topology (#31)
 
 /** GET /api/openapi.json — OpenAPI 3 spec derived from openapi.yaml (parsed once, cached). */

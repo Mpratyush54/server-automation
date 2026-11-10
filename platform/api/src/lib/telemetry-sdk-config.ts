@@ -14,6 +14,8 @@ import { issueIngestToken, normalizeOrigin } from './telemetry-tokens';
 export interface TelemetryBlock {
   enabled: boolean;
   errorsEndpoint?: string | null;
+  /** Browser heatmap ingest (`POST /api/sdk/heatmap/events`); accepts browserToken. */
+  heatmapsEndpoint?: string | null;
   otlpEndpoint: string | null;
   faroEndpoint: string | null;
   profilesEndpoint: string | null;
@@ -120,6 +122,7 @@ export async function buildTelemetryBlock(opts: {
     return {
       enabled: true,
       errorsEndpoint: errorIngestEndpoint(),
+      heatmapsEndpoint: errorIngestEndpoint()?.replace(/\/errors\/rum$/,'/sdk/heatmap/events') ?? null,
       ...endpoints,
       ingestToken: server.token,
       ingestTokenExpiresAt: server.expiresAt.toISOString(),

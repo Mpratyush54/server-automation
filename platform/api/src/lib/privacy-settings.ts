@@ -24,6 +24,7 @@ export function mergeRetention(partial?: TelemetryRetentionDays | null): Require
     profiles: clampRetentionDays(partial?.profiles, DEFAULT_RETENTION_DAYS.profiles),
     replays: clampRetentionDays(partial?.replays, DEFAULT_RETENTION_DAYS.replays),
     errors: clampRetentionDays(partial?.errors, DEFAULT_RETENTION_DAYS.errors),
+    heatmaps: clampRetentionDays(partial?.heatmaps, DEFAULT_RETENTION_DAYS.heatmaps),
   };
 }
 
@@ -31,7 +32,7 @@ export function parseRetentionPatch(body: unknown): { ok: true; value: Telemetry
   if (!body || typeof body !== 'object') return { ok: false, error: 'body required' };
   const src = body as Record<string, unknown>;
   const out: TelemetryRetentionDays = {};
-  for (const key of ['logs', 'traces', 'profiles', 'replays', 'errors'] as const) {
+  for (const key of ['logs', 'traces', 'profiles', 'replays', 'errors', 'heatmaps'] as const) {
     if (src[key] === undefined) continue;
     const n = Number(src[key]);
     if (!Number.isFinite(n) || n < DAY_MIN || n > DAY_MAX) {
