@@ -1,0 +1,182 @@
+<div class="synth-head">
+  <div>
+    <a [routerLink]="['/projects', projectId]" class="back">← Project</a>
+    <h1>Synthetic monitoring</h1>
+    <p class="muted">Checks run from this cluster (single location). HTTP, multi-step API and SSL checks run on every profile; browser checks need the full profile with browser checks enabled.</p>
+  </div>
+  <div class="head-actions">
+    <button class="btn btn-primary" (click)="newCheck()">New check</button>
+  </div>
+</div>
+
+@if (error) { <div class="banner banner-error" role="alert">{{ error }}</div> }
+@if (notice) { <div class="banner banner-ok" role="status">{{ notice }}</div> }
+
+@if (draft) {
+  <div class="card editor">
+    <h2>{{ draft.id ? 'Edit check' : 'New check' }}</h2>
+    @if (!draft.id && templates.length) {
+      <div class="templates">
+        <span class="muted">Templates:</span>
+        @for (t of templates; track t.id) {
+          <button class="btn btn-sm" type="button" (click)="newCheck(t)" [disabled]="t.check.type === 'browser' && !capabilities?.browser" [title]="t.description">{{ t.name }}</button>
+        }
+      </div>
+    }
+    <div class="grid">
+      <label>Name <input [(ngModel)]="draft.name" maxlength="100" required></label>
+      <label>Type
+        <select [ngModel]="draft.type" (ngModelChange)="changeType($event)" [disabled]="!!draft.id">
+          @for (t of types; track t) {
+            <option [value]="t" [disabled]="t === 'browser' && !capabilities?.browser">{{ t }}{{ t === 'browser' && !capabilities?.browser ? ' (full profile)' : '' }}</option>
+          }
+        </select>
+      </label>
+      <label>Interval (seconds)
+        @if (draft.type === 'browser') {
+          <select [(ngModel)]="draft.intervalSeconds">
+            @for (s of capabilities?.browserIntervals || [300, 600, 900, 1800, 3600]; track s) { <option [ngValue]="s">{{ interval(s) }}</option> }
+          </select>
+        } @else {
+          <input type="number" [(ngModel)]="draft.intervalSeconds" [min]="capabilities?.minIntervalSeconds?.[draft.type] || 60" max="86400">
+        }
+      </label>
+      <label>Timeout (ms) <input type="number" [(ngModel)]="draft.timeoutMs" min="1000" [max]="capabilities?.maxTimeoutMs?.[draft.type] || 30000"></label>
+      <label class="inline"><input type="checkbox" [(ngModel)]="draft.enabled"> Enabled</label>
+    </div>
+
+    <label class="block">Definition (JSON)
+      <textarea class="code" rows="14" spellcheck="false" [(ngModel)]="draft.configText"></textarea>
+    </label>
+    <p class="hint">
+      Assertions: <code>{{ '{' }} source: status|latency|header|body|json|ssl_days, property?, comparison: eq|neq|lt|lte|gt|gte|contains|not_contains|matches|exists|not_exists, target {{ '}' }}</code>.
+      Multi-step: extract variables with <code>extract: [{{ '{' }} name, source: json|header|body_regex|status, property {{ '}' }}]</code> and use them as <code>{{ varSyntax }}</code>.
+      Secrets: <code>{{ secretSyntax }}</code>. Private and cluster-internal targets are refused (your project's own ingress hosts are allowed).
+      Hide a check from status pages with <code>"statusPage": {{ '{' }} "visible": false {{ '}' }}</code>.
+    </p>
+
+    <fieldset>
+      <legend>Secrets (write-only)</legend>
+      @for (n of draft.secretNames; track n) {
+        <div class="secret-row">
+          <code [class.struck]="draft.removedSecrets.includes(n)">{{ n }}</code>
+          <span class="muted">stored, never shown</span>
+          <button class="btn btn-sm" type="button" (click)="toggleRemoveSecret(n)">{{ draft.removedSecrets.includes(n) ? 'Keep' : 'Remove' }}</button>
+        </div>
+      }
+      @for (s of draft.newSecrets; track $index; let i = $index) {
+        <div class="secret-row">
+          <input placeholder="NAME" [(ngModel)]="s.name" maxlength="64">
+          <input type="password" placeholder="value" autocomplete="new-password" [(ngModel)]="s.value">
+          <button class="btn btn-sm" type="button" (click)="removeNewSecret(i)">×</button>
+        </div>
+      }
+      <button class="btn btn-sm" type="button" (click)="addSecret()">Add secret</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Alerting</legend>
+      <div class="grid">
+        <label class="inline"><input type="checkbox" [(ngModel)]="draft.alertEnabled"> Raise alerts</label>
+        <label>Consecutive failures before alerting <input type="number" min="1" max="10" [(ngModel)]="draft.failureThreshold"></label>
+        <label>Severity
+          <select [(ngModel)]="draft.severity"><option value="critical">critical</option><option value="warning">warning</option></select>
+        </label>
+      </div>
+      <p class="hint">SSL checks warn (severity warning) when the certificate is within its warning window (default 14 days).</p>
+    </fieldset>
+
+    <div class="actions">
+      <button class="btn btn-primary" (click)="save()" [disabled]="saving || !draft.name.trim()">{{ saving ? 'Saving…' : 'Save' }}</button>
+      <button class="btn" (click)="cancel()" [disabled]="saving">Cancel</button>
+    </div>
+  </div>
+}
+
+<div class="layout">
+  <div class="card list">
+    <h2>Checks</h2>
+    @if (loading) { <p class="muted">Loading…</p> }
+    @if (!loading && checks.length === 0) { <p class="muted">No checks yet. Start from a template with “New check”.</p> }
+    <ul>
+      @for (c of checks; track c.id) {
+        <li [class.active]="selected?.id === c.id">
+          <button class="row" type="button" (click)="select(c)">
+            <span class="dot" [class]="statusClass(c.lastStatus)" [attr.aria-label]="c.lastStatus"></span>
+            <span class="name">{{ c.name }}</span>
+            <span class="tag">{{ c.type }}</span>
+            @if (!c.enabled) { <span class="tag">paused</span> }
+            @if (c.alertState !== 'ok') { <span class="tag tag-alert">{{ c.alertState }}</span> }
+          </button>
+          <div class="sub muted">{{ target(c) }} · every {{ interval(c.intervalSeconds) }}@if (c.lastLatencyMs !== null) { · {{ c.lastLatencyMs }} ms }</div>
+        </li>
+      }
+    </ul>
+  </div>
+
+  <div class="card detail">
+    @if (!selected) {
+      <p class="muted">Select a check to see its results.</p>
+    } @else {
+      <div class="detail-head">
+        <div>
+          <h2>{{ selected.name }}</h2>
+          <div class="muted">
+            <span [class]="statusClass(selected.lastStatus)">{{ selected.lastStatus }}</span>
+            @if (selected.lastRunAt) { · last run {{ selected.lastRunAt }} }
+            @if (selected.consecutiveFailures) { · {{ selected.consecutiveFailures }} consecutive failure(s) }
+            @if (selected.sslExpiresAt) { · certificate expires {{ selected.sslExpiresAt.slice(0, 10) }} }
+          </div>
+          @if (selected.lastError) { <div class="err">{{ selected.lastError }}</div> }
+        </div>
+        <div class="head-actions">
+          @if (selected.type !== 'browser') { <button class="btn btn-sm" (click)="runNow(selected)">Run now</button> }
+          <button class="btn btn-sm" (click)="editCheck(selected)">Edit</button>
+          <button class="btn btn-sm btn-danger" (click)="remove(selected)">Delete</button>
+        </div>
+      </div>
+
+      <h3>Timeline <span class="muted">(last {{ bars.length }} runs, height = latency)</span></h3>
+      <div class="timeline" role="list">
+        @for (b of bars; track b.id) {
+          <button type="button" role="listitem" class="bar" [class]="statusClass(b.status)" [style.height.%]="b.height" [title]="b.title" [attr.aria-label]="b.title" (click)="showResult(b.id)"></button>
+        }
+        @if (bars.length === 0) { <span class="muted">No runs yet.</span> }
+      </div>
+
+      @if (detail) {
+        <div class="result">
+          <h3>Run {{ detail.startedAt }} — <span [class]="statusClass(detail.status)">{{ detail.status }}</span></h3>
+          <div class="muted">
+            @if (detail.latencyMs !== null) { {{ detail.latencyMs }} ms }
+            @if (detail.statusCode !== null) { · HTTP {{ detail.statusCode }} }
+          </div>
+          @if (detail.error) { <div class="err">{{ detail.error }}</div> }
+          @if (detail.assertions?.length) {
+            <table>
+              <thead><tr><th>Assertion</th><th>Actual</th><th></th></tr></thead>
+              <tbody>
+                @for (a of detail.assertions; track $index) {
+                  <tr><td><code>{{ a.source }}{{ a.property ? ' ' + a.property : '' }} {{ a.comparison }} {{ a.target ?? '' }}</code></td><td>{{ a.actual ?? '—' }}</td><td [class]="a.passed ? 'st-ok' : 'st-bad'">{{ a.passed ? 'pass' : (a.message || 'fail') }}</td></tr>
+                }
+              </tbody>
+            </table>
+          }
+          @if (detail.steps?.length) {
+            <table>
+              <thead><tr><th>Step</th><th>Status</th><th>Time</th><th>Detail</th></tr></thead>
+              <tbody>
+                @for (s of detail.steps; track $index) {
+                  <tr><td>{{ s.name }}</td><td [class]="statusClass(s.status)">{{ s.status }}</td><td>{{ s.latencyMs ?? '—' }}@if (s.latencyMs !== null) { ms }</td><td>{{ s.error || (s.statusCode ? 'HTTP ' + s.statusCode : '') }}</td></tr>
+                }
+              </tbody>
+            </table>
+          }
+          @if (screenshotUrl) {
+            <figure><img [src]="screenshotUrl" alt="Screenshot of the failed browser run"><figcaption class="muted">Screenshot at failure</figcaption></figure>
+          }
+        </div>
+      }
+    }
+  </div>
+</div>

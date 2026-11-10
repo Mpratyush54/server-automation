@@ -1,0 +1,13 @@
+{
+  "name": "platform-synthetics-runner",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser synthetic check runner (headless Chromium via playwright-core), run as a CronJob in the synthetics namespace.",
+  "scripts": {
+    "test": "node --test runner.test.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "1.49.1"
+  }
+}
