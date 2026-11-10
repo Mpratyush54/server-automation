@@ -319,21 +319,21 @@ func installOf(c *Config) installSet {
 	return installSet{c.InstallArgoCD, c.InstallMonitoring, c.InstallPortainer, c.InstallCertManager}
 }
 
-func TestProfileDefaultIsFull(t *testing.T) {
+func TestProfileDefaultIsStandard(t *testing.T) {
 	profileEnv(t, "")
 	c := Load()
-	if c.Profile != ProfileFull {
-		t.Fatalf("Profile = %q, want full", c.Profile)
+	if c.Profile != ProfileStandard {
+		t.Fatalf("Profile = %q, want standard", c.Profile)
 	}
 	if got := installOf(c); got != (installSet{true, true, true, true}) {
-		t.Fatalf("full install set = %+v", got)
+		t.Fatalf("standard install set = %+v", got)
 	}
 }
 
 func TestProfilesFromEnv(t *testing.T) {
 	cases := map[string]installSet{
 		"minimal":  {false, false, false, true},
-		"standard": {true, true, true, true}, // same as full since Infisical was removed
+		"standard": {true, true, true, true}, // heavy full telemetry is selected separately
 		"full":     {true, true, true, true},
 		"Minimal":  {false, false, false, true},
 	}
@@ -373,17 +373,17 @@ func TestApplyProfileUnknown(t *testing.T) {
 	if err := c.ApplyProfile("huge"); err == nil {
 		t.Fatal("expected error for unknown profile")
 	}
-	if c.Profile != ProfileFull || !c.InstallMonitoring {
+	if c.Profile != ProfileStandard || !c.InstallMonitoring {
 		t.Fatal("failed ApplyProfile must not change config")
 	}
 }
 
-func TestUnknownEnvProfileFallsBackToFull(t *testing.T) {
+func TestUnknownEnvProfileFallsBackToStandard(t *testing.T) {
 	profileEnv(t, "")
 	t.Setenv("PLATFORM_PROFILE", "bogus")
 	c := Load()
-	if c.Profile != ProfileFull || !c.InstallMonitoring {
-		t.Fatalf("expected fallback to full, got %q %+v", c.Profile, installOf(c))
+	if c.Profile != ProfileStandard || !c.InstallMonitoring {
+		t.Fatalf("expected fallback to standard, got %q %+v", c.Profile, installOf(c))
 	}
 }
 
@@ -440,7 +440,7 @@ func TestSavedProfileAndChoicesHonoured(t *testing.T) {
 func TestLegacyEnvWithoutProfile(t *testing.T) {
 	profileEnv(t, "INSTALL_PORTAINER=false\n")
 	c := Load()
-	if c.Profile != ProfileFull || c.InstallPortainer || !c.InstallArgoCD {
+	if c.Profile != ProfileStandard || c.InstallPortainer || !c.InstallArgoCD {
 		t.Fatalf("got %q %+v", c.Profile, installOf(c))
 	}
 }
@@ -613,5 +613,22 @@ func TestAutoUpgradeOptInAndPersistence(t *testing.T) {
 				t.Fatalf("missing %s", want)
 			}
 		})
+	}
+}
+
+func TestTelemetrySettingsPersistForProvisionChildren(t *testing.T) {
+	c := &Config{TelemetryRetentionDays: "14", TelemetrySamplingPercentage: "75"}
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := c.SaveEnvFile(path); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"TELEMETRY_RETENTION_DAYS=14", "TELEMETRY_SAMPLING_PERCENTAGE=75"} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("missing %s", want)
+		}
 	}
 }

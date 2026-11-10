@@ -1,0 +1,52 @@
+fullnameOverride: loki
+deploymentMode: SingleBinary
+loki:
+  auth_enabled: false
+  commonConfig:
+    replication_factor: 1
+  schemaConfig:
+    configs:
+      - from: "2024-04-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index: {prefix: index_, period: 24h}
+  storage:
+    type: s3
+    bucketNames: {chunks: loki, ruler: loki, admin: loki}
+    s3:
+      endpoint: http://minio.storage.svc.cluster.local:9000
+      accessKeyId: ${S3_ACCESS_KEY}
+      secretAccessKey: ${S3_SECRET_KEY}
+      s3ForcePathStyle: true
+      insecure: true
+  limits_config:
+    retention_period: RETENTION_HOURS
+    ingestion_rate_mb: 2
+    ingestion_burst_size_mb: 4
+    max_query_parallelism: 2
+  compactor:
+    retention_enabled: true
+    delete_request_store: s3
+singleBinary:
+  replicas: 1
+  extraArgs: [-config.expand-env=true]
+  extraEnvFrom: [{secretRef: {name: telemetry-loki-s3}}]
+  resources:
+    requests: {cpu: 100m, memory: 192Mi}
+    limits: {cpu: "1", memory: 512Mi}
+  persistence: {enabled: true, size: 5Gi}
+read: {replicas: 0}
+write: {replicas: 0}
+backend: {replicas: 0}
+gateway: {enabled: false}
+chunksCache: {enabled: false}
+resultsCache: {enabled: false}
+lokiCanary: {enabled: false}
+test: {enabled: false}
+monitoring:
+  serviceMonitor:
+    enabled: true
+    labels: {release: kube-prometheus}
+sidecar:
+  rules: {enabled: false}

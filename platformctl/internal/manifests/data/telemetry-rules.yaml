@@ -1,0 +1,46 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: telemetry
+  namespace: monitoring
+  labels: {release: kube-prometheus}
+spec:
+  groups:
+    - name: telemetry
+      rules:
+        - alert: TelemetryDiskAlmostFull
+          expr: kubelet_volume_stats_available_bytes{namespace=~"monitoring|storage"} / kubelet_volume_stats_capacity_bytes{namespace=~"monitoring|storage"} < 0.15
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: Telemetry or object storage volume has less than 15 percent free
+        - alert: TelemetryNodeDiskAlmostFull
+          expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.15
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: Single-node storage has less than 15 percent free
+        - alert: TelemetryIngestionErrors
+          expr: sum(rate(otelcol_exporter_send_failed_spans_total[5m])) > 0 or sum(rate(otelcol_exporter_send_failed_log_records_total[5m])) > 0
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: Collector cannot export telemetry
+        - alert: TelemetryDroppedSpans
+          expr: sum(rate(otelcol_processor_refused_spans_total[5m])) > 0 or sum(rate(tempo_discarded_spans_total[5m])) > 0
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: Telemetry spans are being dropped
+        - alert: TelemetryCompactionFailures
+          expr: sum(increase(loki_boltdb_shipper_compactor_compaction_failures_total[1h])) > 0 or sum(increase(tempo_compactor_compaction_errors_total[1h])) > 0 or sum(increase(pyroscope_compactor_runs_failed_total[1h])) > 0
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: Telemetry compactor failures threaten retention enforcement
+        - alert: TelemetryObjectStoreErrors
+          expr: sum(rate(loki_request_duration_seconds_count{status_code=~"5.."}[5m])) > 0 or sum(rate(tempo_tempodb_backend_request_duration_seconds_count{status_code=~"5.."}[5m])) > 0
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: Telemetry backend requests are failing

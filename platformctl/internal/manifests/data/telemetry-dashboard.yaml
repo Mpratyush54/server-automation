@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: telemetry-dashboard
+  namespace: monitoring
+  labels: {grafana_dashboard: "1"}
+data:
+  platform-telemetry.json: |
+    {"uid":"platform-telemetry","title":"Platform Telemetry","schemaVersion":39,"version":1,"time":{"from":"now-1h","to":"now"},"refresh":"30s","panels":[{"id":1,"title":"RED request rate","type":"timeseries","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":0,"y":0,"w":12,"h":8},"targets":[{"expr":"sum by (service) (rate(traces_spanmetrics_calls_total[5m]))","refId":"A"}]},{"id":2,"title":"RED error rate","type":"timeseries","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":12,"y":0,"w":12,"h":8},"targets":[{"expr":"sum by (service) (rate(traces_spanmetrics_calls_total{status_code=\"STATUS_CODE_ERROR\"}[5m]))","refId":"A"}]},{"id":3,"title":"Service graph request rate","type":"timeseries","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":0,"y":8,"w":12,"h":8},"targets":[{"expr":"sum by (client, server) (rate(traces_service_graph_request_total[5m]))","refId":"A"}]},{"id":4,"title":"Telemetry volume free bytes","type":"timeseries","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":12,"y":8,"w":12,"h":8},"targets":[{"expr":"kubelet_volume_stats_available_bytes{namespace=~\"monitoring|storage\"}","refId":"A"}]},{"id":5,"title":"Dropped spans","type":"timeseries","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":0,"y":16,"w":12,"h":8},"targets":[{"expr":"sum(rate(tempo_discarded_spans_total[5m]))","refId":"A"}]},{"id":6,"title":"Collector export failures","type":"timeseries","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":12,"y":16,"w":12,"h":8},"targets":[{"expr":"sum(rate(otelcol_exporter_send_failed_spans_total[5m]))","refId":"A"}]}]}

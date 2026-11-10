@@ -1,0 +1,84 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: telemetry
+  namespace: monitoring
+  annotations:
+
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/auth-url: http://platform-api.platform.svc.cluster.local:3000/api/telemetry/ingest-auth
+    nginx.ingress.kubernetes.io/auth-response-headers: X-Platform-Project-Id,X-Platform-Environment
+    nginx.ingress.kubernetes.io/auth-cache-key: '$http_authorization|$http_origin|$request_uri'
+    nginx.ingress.kubernetes.io/auth-cache-duration: '200 60s'
+    nginx.ingress.kubernetes.io/limit-rps: '20'
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: '2'
+    nginx.ingress.kubernetes.io/proxy-body-size: 4m
+    nginx.ingress.kubernetes.io/ssl-redirect: 'true'
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [otel.{{DOMAIN}}]
+      secretName: telemetry-tls
+  rules:
+    - host: otel.{{DOMAIN}}
+      http:
+        paths:
+          - path: /v1/traces
+            pathType: Exact
+            backend:
+              service:
+                name: alloy
+                port: {number: 4318}
+          - path: /v1/logs
+            pathType: Exact
+            backend:
+              service:
+                name: alloy
+                port: {number: 4318}
+          - path: /v1/metrics
+            pathType: Exact
+            backend:
+              service:
+                name: alloy
+                port: {number: 4318}
+          - path: /collect
+            pathType: Exact
+            backend:
+              service:
+                name: alloy
+                port: {number: 12347}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: telemetry-profiles
+  namespace: monitoring
+  annotations:
+
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/auth-url: http://platform-api.platform.svc.cluster.local:3000/api/telemetry/ingest-auth
+    nginx.ingress.kubernetes.io/auth-response-headers: X-Platform-Project-Id,X-Platform-Environment
+    nginx.ingress.kubernetes.io/auth-cache-key: '$http_authorization|$http_origin|$request_uri'
+    nginx.ingress.kubernetes.io/auth-cache-duration: '200 60s'
+    nginx.ingress.kubernetes.io/limit-rps: '20'
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: '2'
+    nginx.ingress.kubernetes.io/proxy-body-size: 4m
+    nginx.ingress.kubernetes.io/ssl-redirect: 'true'
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [otel.{{DOMAIN}}]
+      secretName: telemetry-tls
+  rules:
+    - host: otel.{{DOMAIN}}
+      http:
+        paths:
+          - path: /pyroscope(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: alloy
+                port: {number: 9999}

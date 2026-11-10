@@ -58,7 +58,10 @@ type Config struct {
 
 	// Profile is the install profile (minimal|standard|full) that set the
 	// Install* defaults. See ApplyProfile.
-	Profile string
+	Profile                     string
+	TelemetryRetentionDays      string
+	TelemetryLokiDatasourceUID  string
+	TelemetrySamplingPercentage string
 	// explicitInstall holds INSTALL_* values set in the real process
 	// environment (not loaded from /etc/platform/.env); they always win over
 	// the profile.
@@ -108,34 +111,37 @@ func Load() *Config {
 	_ = loadDotEnv(envFilePath)
 
 	c := &Config{
-		PlatformName:         getEnv("PLATFORM_NAME", "Platform"),
-		ImageRegistry:        getEnv("PLATFORM_IMAGE_REGISTRY", "ghcr.io/mpratyush54"),
-		ImageTag:             getEnv("PLATFORM_IMAGE_TAG", tagDefault),
-		RepoURL:              getEnv("PLATFORM_REPO_URL", "https://github.com/Mpratyush54/SERVER-automation"),
-		GitHubToken:          getEnv("GITHUB_TOKEN", ""),
-		Domain:               firstNonEmpty(os.Getenv("DOMAIN"), os.Getenv("PLATFORM_DOMAIN")),
-		AdminEmail:           os.Getenv("ADMIN_EMAIL"), // empty → prompt will ask
-		AdminPassword:        getEnv("ADMIN_PASSWORD", ""),
-		NonInteractive:       os.Getenv("NON_INTERACTIVE") == "true" || os.Getenv("PLATFORMCTL_AUTO") == "true",
-		SkipK8s:              os.Getenv("SKIP_K8S") == "true",
-		SkipPreflight:        os.Getenv("SKIP_PREFLIGHT") == "true",
-		AutoUpdate:           getEnvBool("AUTO_UPDATE", true),
-		AutoUpgrade:          getEnvBool("AUTO_UPGRADE", false),
-		SkipHardening:        !getEnvBool("PLATFORM_HARDEN", true),
-		WAF:                  getEnvBool("PLATFORM_WAF", false),
-		NginxAuthJail:         getEnvBool("PLATFORM_NGINX_AUTH_JAIL", false),
-		MinioAccessKey:       getEnv("MINIO_ACCESS_KEY", "platformadmin"),
-		PostgresPassword:     os.Getenv("POSTGRES_PASSWORD"),
-		MongoPassword:        os.Getenv("MONGO_PASSWORD"),
-		RedisPassword:        os.Getenv("REDIS_PASSWORD"),
-		MinioSecretKey:       os.Getenv("MINIO_SECRET_KEY"),
-		JWTSecret:            os.Getenv("JWT_SECRET"),
-		SecretsEncryptionKey: os.Getenv("SECRETS_ENCRYPTION_KEY"),
-		WebhookSecret:        os.Getenv("PLATFORM_WEBHOOK_SECRET"),
-		ArgoCDPassword:       os.Getenv("ARGOCD_PASSWORD"),
-		GrafanaPassword:      os.Getenv("GRAFANA_PASSWORD"),
-		PortainerPassword:    firstNonEmpty(os.Getenv("PORTAINER_ADMIN_PASSWORD"), os.Getenv("PORTAINER_PASSWORD")),
-		LEEmail:              firstNonEmpty(os.Getenv("LE_EMAIL"), os.Getenv("ADMIN_EMAIL")),
+		TelemetrySamplingPercentage: getEnv("TELEMETRY_SAMPLING_PERCENTAGE", "100"),
+		TelemetryLokiDatasourceUID:  getEnv("TELEMETRY_LOKI_DATASOURCE_UID", "loki"),
+		TelemetryRetentionDays:      getEnv("TELEMETRY_RETENTION_DAYS", "30"),
+		PlatformName:                getEnv("PLATFORM_NAME", "Platform"),
+		ImageRegistry:               getEnv("PLATFORM_IMAGE_REGISTRY", "ghcr.io/mpratyush54"),
+		ImageTag:                    getEnv("PLATFORM_IMAGE_TAG", tagDefault),
+		RepoURL:                     getEnv("PLATFORM_REPO_URL", "https://github.com/Mpratyush54/SERVER-automation"),
+		GitHubToken:                 getEnv("GITHUB_TOKEN", ""),
+		Domain:                      firstNonEmpty(os.Getenv("DOMAIN"), os.Getenv("PLATFORM_DOMAIN")),
+		AdminEmail:                  os.Getenv("ADMIN_EMAIL"), // empty → prompt will ask
+		AdminPassword:               getEnv("ADMIN_PASSWORD", ""),
+		NonInteractive:              os.Getenv("NON_INTERACTIVE") == "true" || os.Getenv("PLATFORMCTL_AUTO") == "true",
+		SkipK8s:                     os.Getenv("SKIP_K8S") == "true",
+		SkipPreflight:               os.Getenv("SKIP_PREFLIGHT") == "true",
+		AutoUpdate:                  getEnvBool("AUTO_UPDATE", true),
+		AutoUpgrade:                 getEnvBool("AUTO_UPGRADE", false),
+		SkipHardening:               !getEnvBool("PLATFORM_HARDEN", true),
+		WAF:                         getEnvBool("PLATFORM_WAF", false),
+		NginxAuthJail:               getEnvBool("PLATFORM_NGINX_AUTH_JAIL", false),
+		MinioAccessKey:              getEnv("MINIO_ACCESS_KEY", "platformadmin"),
+		PostgresPassword:            os.Getenv("POSTGRES_PASSWORD"),
+		MongoPassword:               os.Getenv("MONGO_PASSWORD"),
+		RedisPassword:               os.Getenv("REDIS_PASSWORD"),
+		MinioSecretKey:              os.Getenv("MINIO_SECRET_KEY"),
+		JWTSecret:                   os.Getenv("JWT_SECRET"),
+		SecretsEncryptionKey:        os.Getenv("SECRETS_ENCRYPTION_KEY"),
+		WebhookSecret:               os.Getenv("PLATFORM_WEBHOOK_SECRET"),
+		ArgoCDPassword:              os.Getenv("ARGOCD_PASSWORD"),
+		GrafanaPassword:             os.Getenv("GRAFANA_PASSWORD"),
+		PortainerPassword:           firstNonEmpty(os.Getenv("PORTAINER_ADMIN_PASSWORD"), os.Getenv("PORTAINER_PASSWORD")),
+		LEEmail:                     firstNonEmpty(os.Getenv("LE_EMAIL"), os.Getenv("ADMIN_EMAIL")),
 
 		OIDCSecretGrafana:     os.Getenv("OIDC_SECRET_GRAFANA"),
 		OIDCSecretArgoCD:      os.Getenv("OIDC_SECRET_ARGOCD"),
@@ -503,6 +509,13 @@ func (c *Config) GenerateSecrets() {
 }
 
 func (c *Config) SaveEnvFile(path string) error {
+	// These numeric settings cross the parent/child boundary through .env.
+	for _, value := range []string{c.TelemetryRetentionDays, c.TelemetrySamplingPercentage, c.TelemetryLokiDatasourceUID} {
+		if strings.ContainsAny(value, "\r\n") {
+			return fmt.Errorf("telemetry settings cannot contain line breaks")
+		}
+	}
+
 	if idx := strings.LastIndexAny(path, "/\\"); idx != -1 {
 		dir := path[:idx]
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -538,6 +551,15 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("PLATFORM_HARDEN=%t\nPLATFORM_WAF=%t\n", !c.SkipHardening, c.WAF))
 	b.WriteString(fmt.Sprintf("PLATFORM_NGINX_AUTH_JAIL=%t\n", c.NginxAuthJail))
 	b.WriteString(fmt.Sprintf("PLATFORM_PROFILE=%s\n", c.profileName()))
+	if c.TelemetrySamplingPercentage != "" {
+		b.WriteString(fmt.Sprintf("TELEMETRY_SAMPLING_PERCENTAGE=%s\n", c.TelemetrySamplingPercentage))
+	}
+	if c.TelemetryLokiDatasourceUID != "" {
+		b.WriteString(fmt.Sprintf("TELEMETRY_LOKI_DATASOURCE_UID=%s\n", c.TelemetryLokiDatasourceUID))
+	}
+	if c.TelemetryRetentionDays != "" {
+		b.WriteString(fmt.Sprintf("TELEMETRY_RETENTION_DAYS=%s\n", c.TelemetryRetentionDays))
+	}
 	if c.APIReplicas > 0 {
 		b.WriteString(fmt.Sprintf("API_REPLICAS=%d\n", c.APIReplicas))
 	}
@@ -576,8 +598,8 @@ func generatePassword(length int) string {
 // the profile's defaults.
 const (
 	ProfileMinimal  = "minimal"  // core only: no monitoring, Portainer, ArgoCD
-	ProfileStandard = "standard" // same components as full (Infisical was removed; kept for compatibility)
-	ProfileFull     = "full"     // everything (default; matches pre-profile behaviour)
+	ProfileStandard = "standard" // default: existing light monitoring stack
+	ProfileFull     = "full"     // full telemetry backend (explicit opt-in)
 )
 
 // Profiles lists the valid profile names.
@@ -594,12 +616,12 @@ func profileDefaults(name string) (map[string]bool, error) {
 			"INSTALL_ARGOCD": false, "INSTALL_MONITORING": false, "INSTALL_PORTAINER": false,
 			"INSTALL_CERTMANAGER": true,
 		}, nil
-	case ProfileStandard:
+	case "", ProfileStandard:
 		return map[string]bool{
 			"INSTALL_ARGOCD": true, "INSTALL_MONITORING": true, "INSTALL_PORTAINER": true,
 			"INSTALL_CERTMANAGER": true,
 		}, nil
-	case "", ProfileFull:
+	case ProfileFull:
 		return map[string]bool{
 			"INSTALL_ARGOCD": true, "INSTALL_MONITORING": true, "INSTALL_PORTAINER": true,
 			"INSTALL_CERTMANAGER": true,
@@ -635,7 +657,7 @@ func explicitEnv() map[string]string {
 //     set explicitly, saved INSTALL_* values are ignored so a newly chosen
 //     profile is not silently overridden by a previous SaveEnvFile.
 //  3. The profile's defaults (explicit PLATFORM_PROFILE, else the saved one,
-//     else "full").
+//     else "standard").
 func (c *Config) resolveProfile(explicit map[string]string) {
 	c.explicitInstall = map[string]bool{}
 	for _, k := range installKeys {
@@ -650,8 +672,8 @@ func (c *Config) resolveProfile(explicit map[string]string) {
 	}
 	defaults, err := profileDefaults(name)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "platformctl: %v; using %q\n", err, ProfileFull)
-		name = ProfileFull
+		fmt.Fprintf(os.Stderr, "platformctl: %v; using %q\n", err, ProfileStandard)
+		name = ProfileStandard
 		defaults, _ = profileDefaults(name)
 	}
 	c.Profile = normalizeProfile(name)
@@ -771,7 +793,7 @@ func (c *Config) setInstall(defaults map[string]bool) {
 
 func (c *Config) profileName() string {
 	if c.Profile == "" {
-		return ProfileFull
+		return ProfileStandard
 	}
 	return c.Profile
 }
@@ -779,7 +801,7 @@ func (c *Config) profileName() string {
 func normalizeProfile(name string) string {
 	n := strings.ToLower(strings.TrimSpace(name))
 	if n == "" {
-		return ProfileFull
+		return ProfileStandard
 	}
 	return n
 }

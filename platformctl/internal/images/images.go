@@ -85,10 +85,14 @@ func parse(s string) []string {
 // stops new work and aborts in-flight pulls. PrePull never panics on pull
 // errors; they are returned in Result.Failed.
 func PrePull(ctx context.Context, concurrency int, extra ...string) Result {
+	return prePullList(ctx, concurrency, List(), extra...)
+}
+
+func prePullList(ctx context.Context, concurrency int, selected []string, extra ...string) Result {
 	if concurrency < 1 {
 		concurrency = DefaultConcurrency
 	}
-	all := List()
+	all := append([]string(nil), selected...)
 	seen := map[string]bool{}
 	for _, img := range all {
 		seen[img] = true

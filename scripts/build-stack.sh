@@ -39,6 +39,9 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 # 1. Images, charts and k3s airgap images (shared with the offline bundle).
+# build-bundle enumerates versions.All: includes full-profile Alloy/Tempo/Loki/
+# Pyroscope/blackbox charts as well as legacy standard-profile loki-stack.
+# gen-images.sh includes the scoped MinIO IAM bootstrap Job image too.
 ALLOW_MISSING_ARCH=1 STAGE_ONLY="$WORK/stage" IMAGE_GROUPS="${IMAGE_GROUPS:-8}" "$ROOT/scripts/build-bundle.sh" "stack-$STACK_VERSION" "$ARCH"
 manifest="$WORK/stage/manifest.json"
 k3s_version="$(jq -er .k3s "$manifest")"

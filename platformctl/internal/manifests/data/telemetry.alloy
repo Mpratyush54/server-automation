@@ -1,0 +1,195 @@
+logging { level = "info" }
+local.file "origins" {
+  filename = "/etc/telemetry-origins/origins.json"
+  poll_frequency = "10s"
+}
+otelcol.receiver.otlp "ingest" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+    include_metadata = true
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+    include_metadata = true
+  }
+  output {
+    traces = [otelcol.processor.transform.sanitize.input]
+    logs = [otelcol.processor.transform.sanitize.input]
+    metrics = [otelcol.processor.transform.sanitize.input]
+  }
+}
+otelcol.receiver.faro "browser" {
+  endpoint = "0.0.0.0:12347"
+  include_metadata = true
+  cors {
+    allowed_origins = encoding.from_json(local.file.origins.content)
+    allowed_headers = ["Authorization", "Content-Type", "Traceparent"]
+    exposed_headers = ["Retry-After"]
+  }
+  output {
+    traces = [otelcol.processor.transform.sanitize.input]
+    logs = [otelcol.processor.transform.sanitize.input]
+  }
+}
+// Clear untrusted resource identity before associating the connection with a pod.
+otelcol.processor.transform "sanitize" {
+  error_mode = "propagate"
+  trace_statements {
+    context = "span"
+    statements = [
+      `delete_key(resource.attributes, "platform.project_id")`,
+      `delete_key(resource.attributes, "deployment.environment")`,
+      `delete_key(resource.attributes, "k8s.namespace.name")`,
+    ]
+  }
+  log_statements {
+    context = "log"
+    statements = [
+      `delete_key(resource.attributes, "platform.project_id")`,
+      `delete_key(resource.attributes, "deployment.environment")`,
+      `delete_key(resource.attributes, "k8s.namespace.name")`,
+    ]
+  }
+  metric_statements {
+    context = "datapoint"
+    statements = [
+      `delete_key(resource.attributes, "platform.project_id")`,
+      `delete_key(resource.attributes, "deployment.environment")`,
+      `delete_key(resource.attributes, "k8s.namespace.name")`,
+    ]
+  }
+  output {
+    traces = [otelcol.processor.k8sattributes.namespace.input]
+    logs = [otelcol.processor.k8sattributes.namespace.input]
+    metrics = [otelcol.processor.k8sattributes.namespace.input]
+  }
+}
+otelcol.processor.k8sattributes "namespace" {
+  auth_type = "serviceAccount"
+  extract {
+    metadata = ["k8s.namespace.name", "k8s.pod.name"]
+    label {
+      from = "namespace"
+      key = "platform.io/project"
+      tag_name = "platform.project_id"
+    }
+    label {
+      from = "namespace"
+      key = "platform.io/env"
+      tag_name = "deployment.environment"
+    }
+  }
+  pod_association {
+    source { from = "connection" }
+  }
+  output {
+    traces = [otelcol.processor.attributes.identity.input]
+    logs = [otelcol.processor.attributes.identity.input]
+    metrics = [otelcol.processor.attributes.identity.input]
+  }
+}
+// Erase client-supplied identity before reading trusted ingress metadata.
+// This processor runs before batching, while request context is available.
+otelcol.processor.attributes "identity" {
+  action {
+    key = "platform.project_id"
+    action = "delete"
+  }
+  action {
+    key = "deployment.environment"
+    action = "delete"
+  }
+  action {
+    key = "platform.project_id"
+    from_context = "metadata.x-platform-project-id"
+    action = "upsert"
+  }
+  action {
+    key = "deployment.environment"
+    from_context = "metadata.x-platform-environment"
+    action = "upsert"
+  }
+  output {
+    traces = [otelcol.processor.transform.identity.input]
+    logs = [otelcol.processor.transform.identity.input]
+    metrics = [otelcol.processor.transform.identity.input]
+  }
+}
+otelcol.processor.transform "identity" {
+  error_mode = "propagate"
+  trace_statements {
+    context = "span"
+    statements = [
+      `set(resource.attributes["platform.project_id"], attributes["platform.project_id"])`,
+      `set(resource.attributes["deployment.environment"], attributes["deployment.environment"])`,
+    ]
+  }
+  log_statements {
+    context = "log"
+    statements = [
+      `set(resource.attributes["platform.project_id"], attributes["platform.project_id"])`,
+      `set(resource.attributes["deployment.environment"], attributes["deployment.environment"])`,
+    ]
+  }
+  metric_statements {
+    context = "datapoint"
+    statements = [
+      `set(resource.attributes["platform.project_id"], attributes["platform.project_id"])`,
+      `set(resource.attributes["deployment.environment"], attributes["deployment.environment"])`,
+    ]
+  }
+  output {
+    traces = [otelcol.processor.batch.ingest.input]
+    logs = [otelcol.processor.batch.ingest.input]
+    metrics = [otelcol.processor.batch.ingest.input]
+  }
+}
+otelcol.processor.batch "ingest" {
+  timeout = "1s"
+  send_batch_size = 512
+  send_batch_max_size = 1024
+  output {
+    traces = [otelcol.processor.probabilistic_sampler.traces.input]
+    logs = [otelcol.exporter.otlphttp.loki.input]
+    metrics = [otelcol.exporter.prometheus.metrics.input]
+  }
+}
+// 100 percent by default: retain every trace. Operators may explicitly reduce it.
+otelcol.processor.probabilistic_sampler "traces" {
+  sampling_percentage = SAMPLING_PERCENTAGE
+  output { traces = [otelcol.exporter.otlp.tempo.input] }
+}
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo.monitoring.svc:4317"
+    tls { insecure = true }
+  }
+}
+otelcol.exporter.otlphttp "loki" {
+  client { endpoint = "http://loki.monitoring.svc:3100/otlp" }
+}
+otelcol.exporter.prometheus "metrics" {
+  forward_to = [prometheus.remote_write.local.receiver]
+}
+prometheus.remote_write "local" {
+  endpoint { url = "http://kube-prometheus-kube-prome-prometheus.monitoring.svc:9090/api/v1/write" }
+}
+pyroscope.receive_http "profiles" {
+  http {
+    listen_address = "0.0.0.0"
+    listen_port = 9999
+  }
+  forward_to = [pyroscope.write.local.receiver]
+}
+pyroscope.write "local" {
+  endpoint { url = "http://pyroscope.monitoring.svc:4040" }
+}
+// Preserve Kubernetes pod logs previously collected by loki-stack/promtail.
+discovery.kubernetes "pods" { role = "pod" }
+loki.source.kubernetes "pods" {
+  targets = discovery.kubernetes.pods.targets
+  forward_to = [loki.write.local.receiver]
+}
+loki.write "local" {
+  endpoint { url = "http://loki.monitoring.svc:3100/loki/api/v1/push" }
+}

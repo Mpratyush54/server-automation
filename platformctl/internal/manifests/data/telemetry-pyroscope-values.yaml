@@ -1,0 +1,38 @@
+pyroscope:
+  fullnameOverride: pyroscope
+  replicaCount: 1
+  extraArgs:
+    config.expand-env: "true"
+    log.level: info
+  extraEnvFrom: [{secretRef: {name: telemetry-pyroscope-s3}}]
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: "1", memory: 384Mi}
+  persistence: {enabled: true, size: 5Gi}
+  structuredConfig:
+    multitenancy_enabled: false
+    storage:
+      backend: s3
+      s3:
+        endpoint: minio.storage.svc.cluster.local:9000
+        bucket_name: pyroscope
+        access_key_id: ${S3_ACCESS_KEY}
+        secret_access_key: ${S3_SECRET_KEY}
+        insecure: true
+    pyroscopedb:
+      max_block_duration: 30m
+      min_free_disk_gb: 1
+      row_group_target_size: 67108864
+    compactor:
+      compaction_concurrency: 1
+    limits:
+      compactor_blocks_retention_period: RETENTION_HOURS
+architecture:
+  storage: {v1: true, v2: false}
+  microservices: {enabled: false}
+alloy: {enabled: false}
+agent: {enabled: false}
+minio: {enabled: false}
+serviceMonitor:
+  enabled: true
+  labels: {release: kube-prometheus}

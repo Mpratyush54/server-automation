@@ -1,0 +1,61 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: telemetry-ingest
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: alloy}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+          podSelector:
+            matchLabels: {app.kubernetes.io/component: controller}
+      ports:
+        - {port: 4318, protocol: TCP}
+        - {port: 12347, protocol: TCP}
+        - {port: 9999, protocol: TCP}
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: platform}
+          podSelector:
+            matchLabels: {app: platform-api}
+      ports:
+        - {port: 4317, protocol: TCP}
+        - {port: 4318, protocol: TCP}
+        - {port: 9999, protocol: TCP}
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: prometheus}
+      ports: [{port: 12345, protocol: TCP}]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: telemetry-origins-writer
+  namespace: monitoring
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [telemetry-origins]
+    verbs: [get, patch, update]
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [telemetry-backend]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: telemetry-origins-writer
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: telemetry-origins-writer
+subjects:
+  - kind: ServiceAccount
+    name: platform-api
+    namespace: platform

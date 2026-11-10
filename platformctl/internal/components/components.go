@@ -54,6 +54,7 @@ func All() []Component {
 		{"minio", "S3-compatible object storage", InstallMinIO},
 		{"argocd", "ArgoCD GitOps", InstallArgoCD},
 		{"monitoring", "Grafana + Prometheus + Loki", InstallMonitoring},
+		{"telemetry", "Full profile telemetry backends and collector", InstallTelemetry},
 		{"oauth2-proxy", "OAuth2 authentication proxy", InstallOAuthProxy},
 		{"portainer", "Container management UI (subdomain + Platform SSO)", InstallPortainer},
 		{"platform", "Platform API + Portal", InstallPlatform},
@@ -225,7 +226,7 @@ func InstallMinIO(cfg *config.Config) error {
 	}
 	defer os.Remove(tmpFile)
 
-	err = helmValues("minio", "minio", "storage", map[string]any{"auth": map[string]string{"rootUser": cfg.MinioAccessKey, "rootPassword": cfg.MinioSecretKey}}, "-f", tmpFile, "--set", "persistence.size=50Gi", "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser", "--set", `defaultBuckets=platform-backups\,platform-logs\,platform-uploads`, "--wait", "--timeout", "10m")
+	err = helmValues("minio", "minio", "storage", minioInstallValues(cfg), "-f", tmpFile, "--set", "persistence.size=50Gi", "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser", "--set", `defaultBuckets=platform-backups\,platform-logs\,platform-uploads`, "--wait", "--timeout", "10m")
 	if err != nil {
 		return err
 	}
@@ -368,6 +369,13 @@ func patchArgoCDSubpath(cfg *config.Config) error {
 }
 
 func InstallMonitoring(cfg *config.Config) error {
+	if !cfg.InstallMonitoring {
+		return nil
+	}
+	if FullTelemetry(cfg) {
+		return nil
+	} // installed after platform by telemetry
+
 	if doneOrSkip("monitoring", "monitoring") {
 		return nil
 	}
@@ -798,6 +806,8 @@ func InstallPlatform(cfg *config.Config) error {
 		"SECRETS_ENCRYPTION_KEY": cfg.SecretsEncryptionKey, "PLATFORM_WEBHOOK_SECRET": cfg.WebhookSecret,
 		"POSTGRES_HOST": "postgresql.databases", "POSTGRES_PORT": "5432", "POSTGRES_DB": "platform", "POSTGRES_USER": "postgres",
 		"REDIS_HOST": "redis-master.databases", "REDIS_PORT": "6379",
+		// Telemetry block in /api/sdk/config (#49): on only when the full-profile backend (#37) is installed.
+		"PLATFORM_OBSERVABILITY": observabilityFlag(cfg),
 		"MINIO_ENDPOINT": "http://minio.storage:9000",
 		"MINIO_API_ACCESS_KEY": kubeSecretValue("platform", "platform-storage", "MINIO_API_ACCESS_KEY"),
 		"MINIO_API_SECRET_KEY": kubeSecretValue("platform", "platform-storage", "MINIO_API_SECRET_KEY"),
