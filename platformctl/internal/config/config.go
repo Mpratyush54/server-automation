@@ -55,6 +55,9 @@ type Config struct {
 	InstallKyvernoCVEPolicy bool
 	// KyvernoPolicyMode is Audit (default) or Enforce for Kyverno policies.
 	KyvernoPolicyMode string
+	// SyntheticsBrowser enables browser synthetic checks (headless Chromium
+	// CronJobs, #42). Only honored on the full profile with SYNTHETICS_BROWSER=true.
+	SyntheticsBrowser bool
 
 	// Profile is the install profile (minimal|standard|full) that set the
 	// Install* defaults. See ApplyProfile.
@@ -712,6 +715,8 @@ func (c *Config) ApplyProfile(name string) error {
 // profile default: it requires an explicit INSTALL_KYVERNO=true and a full
 // profile so single-server installs stay light.
 func (c *Config) resolveKyverno() {
+	// Browser synthetic checks (#42) follow the same rule: explicit opt-in, full profile only.
+	c.SyntheticsBrowser = normalizeProfile(c.Profile) == ProfileFull && getEnvBool("SYNTHETICS_BROWSER", false)
 	c.InstallKyverno = normalizeProfile(c.Profile) == ProfileFull && getEnvBool("INSTALL_KYVERNO", false)
 	c.InstallKyvernoCVEPolicy = getEnvBool("INSTALL_KYVERNO_CVE_POLICY", false)
 	mode := strings.TrimSpace(getEnv("KYVERNO_POLICY_MODE", "Audit"))

@@ -7,6 +7,7 @@ import { expressAuthenticate, expressRequireRole, AuthenticatedRequest } from '.
 import { UserRole } from '../entities/User';
 import { renderJobMetrics } from '../lib/job-metrics';
 import { renderTelemetryMetrics } from '../lib/telemetry-queue';
+import { renderSyntheticMetrics } from '../lib/synthetic-metrics';
 import { projectIdMongoFilter, resolveProjectRef } from '../lib/project-resolve';
 
 const router = Router();
@@ -87,7 +88,13 @@ router.get('/metrics/jobs', expressAuthenticate, expressRequireRole([UserRole.DE
   } catch {
     /* never fail the scrape */
   }
-  res.type('text/plain; version=0.0.4').send(renderJobMetrics() + telemetry);
+  let synthetics = '';
+  try {
+    synthetics = await renderSyntheticMetrics(); // #42: per-check gauges from the leader only
+  } catch {
+    /* never fail the scrape */
+  }
+  res.type('text/plain; version=0.0.4').send(renderJobMetrics() + telemetry + synthetics);
 });
 
 export default router;

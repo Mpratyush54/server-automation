@@ -1,0 +1,155 @@
+# Synthetic monitoring (#42), full profile only. Applied by the "synthetics"
+# provision step after "telemetry" (blackbox-exporter + Prometheus CRDs).
+#
+# - Namespace "synthetics" for browser-check CronJobs (Pod Security "restricted").
+# - ResourceQuota: at most 2 browser pods at once, bounded CPU/memory/storage.
+# - Egress NetworkPolicies: browser runners and blackbox-exporter may reach the
+#   public internet only (no RFC 1918 / CGNAT / link-local / loopback ranges, so no
+#   pod, service, node-internal or cloud-metadata addresses); runners may also
+#   reach the platform API to fetch their definition and report results.
+# - IPv4 only (k3s default single-stack); blackbox modules prefer ip4.
+# - RBAC: the platform API manages Probes in monitoring and CronJobs + their token
+#   Secrets in synthetics, and reads the synthetics-runner ConfigMap. Nothing else.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: synthetics
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: synthetics-browser
+  namespace: synthetics
+spec:
+  hard:
+    pods: "2"
+    requests.cpu: "1"
+    requests.memory: 1536Mi
+    limits.cpu: "2"
+    limits.memory: 2Gi
+    limits.ephemeral-storage: 2Gi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: synthetics-defaults
+  namespace: synthetics
+spec:
+  limits:
+    - type: Container
+      default: {cpu: "1", memory: 1Gi, ephemeral-storage: 1Gi}
+      defaultRequest: {cpu: 250m, memory: 512Mi, ephemeral-storage: 256Mi}
+      max: {cpu: "1", memory: 1Gi, ephemeral-storage: 1Gi}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: synthetics-runner
+  namespace: synthetics
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: platform}
+          podSelector:
+            matchLabels: {app: platform-api}
+      ports:
+        - {port: 3000, protocol: TCP}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: blackbox-exporter-egress
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: prometheus-blackbox-exporter}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-api-synthetics
+  namespace: synthetics
+rules:
+  - apiGroups: ["batch"]
+    resources: [cronjobs]
+    verbs: [get, list, create, update, delete]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, create, update, delete]
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [synthetics-runner]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-api-synthetics
+  namespace: synthetics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-api-synthetics
+subjects:
+  - kind: ServiceAccount
+    name: platform-api
+    namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-api-synthetic-probes
+  namespace: monitoring
+rules:
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: [probes]
+    verbs: [get, list, create, update, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-api-synthetic-probes
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-api-synthetic-probes
+subjects:
+  - kind: ServiceAccount
+    name: platform-api
+    namespace: platform
