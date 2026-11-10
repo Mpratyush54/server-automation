@@ -28,6 +28,12 @@ export class Project {
   @Column({ type: 'text', nullable: true, name: 'repository_url' })
   repositoryUrl: string | null;
 
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'default_branch' })
+  defaultBranch: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'git_revision' })
+  gitRevision: string | null;
+
   @Column({ type: 'text', nullable: true })
   domain: string | null;
 

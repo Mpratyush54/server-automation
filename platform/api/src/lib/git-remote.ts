@@ -62,7 +62,7 @@ export async function fetchRepoBranches(repositoryUrl: string): Promise<{
       throw new Error(`GitHub repo lookup failed (${repoRes.status}): ${body.slice(0, 200)}`);
     }
     const repoInfo: any = await repoRes.json();
-    const defaultBranch = repoInfo.default_branch || 'main';
+    const defaultBranch = repoInfo.default_branch || 'HEAD';
 
     const brRes = await fetch(
       `${parsed.apiBase}/repos/${parsed.owner}/${parsed.repo}/branches?per_page=100`,
@@ -104,7 +104,7 @@ export async function fetchRepoBranches(repositoryUrl: string): Promise<{
       throw new Error(`GitLab project lookup failed (${projRes.status}): ${body.slice(0, 200)}`);
     }
     const proj: any = await projRes.json();
-    const defaultBranch = proj.default_branch || 'main';
+    const defaultBranch = proj.default_branch || 'HEAD';
     const brRes = await fetch(
       `${parsed.apiBase}/projects/${projectPath}/repository/branches?per_page=100`,
       { headers, redirect: 'error' }
@@ -246,3 +246,5 @@ export async function fetchRepoReleases(
     body: (r.description || '').slice(0, 500),
   }));
 }
+
+export { resolveDefaultBranch } from './git-default-branch';
