@@ -32,8 +32,8 @@ import { OperationProgressComponent } from '../../shared/operation-progress.comp
         <div class="form-group"><label for="storage-key">Access key ID</label><input id="storage-key" name="key" [(ngModel)]="form.credentials.accessKeyId" required autocomplete="off"></div>
         <div class="form-group"><label for="storage-secret">Secret access key</label><input id="storage-secret" name="secret" type="password" [(ngModel)]="form.credentials.secretAccessKey" required autocomplete="new-password"></div>
         <div class="form-group"><label for="storage-bucket">Bucket</label><input id="storage-bucket" name="bucket" [(ngModel)]="form.bucketName" required></div>
-        <label><input name="default" type="checkbox" [(ngModel)]="form.isDefault"> Use as default for new uploads and backups</label>
-        <button class="btn btn-primary" type="submit" [disabled]="busy">Save provider</button>
+        <label class="check-row"><input name="default" type="checkbox" [(ngModel)]="form.isDefault"> Use as default for new uploads and backups</label>
+        <div><button class="btn btn-primary" type="submit" [disabled]="busy">Save provider</button></div>
       </form>
       <div class="card" style="padding:20px">
         <h2>Storage providers</h2>
@@ -58,7 +58,9 @@ import { OperationProgressComponent } from '../../shared/operation-progress.comp
       </div>
     </div>
   `,
-  styles: [`input:not([type=checkbox]), select { width:100%; } label { color:var(--text-secondary); } strong { color:var(--text-primary); }`],
+  styles: [`input:not([type=checkbox]), select { width:100%; } label { color:var(--text-secondary); } strong { color:var(--text-primary); }
+    .check-row { display:flex; align-items:center; gap:8px; margin:12px 0 16px; cursor:pointer; }
+    .check-row input { width:auto; margin:0; flex:none; }`],
 })
 export class StorageSettingsComponent implements OnInit, OnDestroy {
   private http = inject(HttpClient);
