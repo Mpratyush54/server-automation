@@ -792,12 +792,17 @@ func InstallPlatform(cfg *config.Config) error {
 	if err := MigrateHostState(cfg); err != nil {
 		return err
 	}
+	if err := SetupBundledStorage(cfg); err != nil {
+		return err
+	}
 	if err := applySecret("platform", "platform-env", map[string]string{
 		"NODE_ENV": "production", "PORT": "3000", "JWT_SECRET": cfg.JWTSecret,
 		"SECRETS_ENCRYPTION_KEY": cfg.SecretsEncryptionKey, "PLATFORM_WEBHOOK_SECRET": cfg.WebhookSecret,
 		"POSTGRES_HOST": "postgresql.databases", "POSTGRES_PORT": "5432", "POSTGRES_DB": "platform", "POSTGRES_USER": "postgres",
 		"REDIS_HOST": "redis-master.databases", "REDIS_PORT": "6379",
 		"MINIO_ENDPOINT": "http://minio.storage:9000",
+		"MINIO_API_ACCESS_KEY": kubeSecretValue("platform", "platform-storage", "MINIO_API_ACCESS_KEY"),
+		"MINIO_API_SECRET_KEY": kubeSecretValue("platform", "platform-storage", "MINIO_API_SECRET_KEY"),
 		"UPLOADS_BUCKET": "platform-uploads", "BACKUP_BUCKET": "platform-backups",
 		"PLATFORM_NAME": cfg.PlatformName, "DOMAIN": cfg.Domain, "ADMIN_EMAIL": cfg.AdminEmail,
 		"OIDC_ISSUER": cfg.OIDCIssuer(), "OIDC_CLIENTS": cfg.OIDCClientsJSON(),

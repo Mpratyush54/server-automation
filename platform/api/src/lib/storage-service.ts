@@ -52,84 +52,75 @@ export class LocalAdapter implements StorageAdapter {
 }
 
 // ──── S3 Adapter ────────────────────────────────────────────────────────────
+export function storageConnectionError(err: any): string {
+  const name = err?.name || err?.Code || '';
+  if (/NoSuchBucket|NotFound/.test(name)) return 'Bucket not found. Check the bucket name and region.';
+  if (/InvalidAccessKeyId|SignatureDoesNotMatch|InvalidToken/.test(name)) return 'Authentication failed. Check the access key, secret and region.';
+  if (/AccessDenied|Forbidden/.test(name) || err?.$metadata?.httpStatusCode === 403) return 'Access denied. Grant put, get and delete permissions on this bucket.';
+  if (/ENOTFOUND|ECONNREFUSED|Timeout|Abort|Networking|EAI_AGAIN/.test(name + ' ' + (err?.code || '') + ' ' + (err?.cause?.code || ''))) return 'Endpoint unreachable or timed out. Check the endpoint and network.';
+  if (/PermanentRedirect|AuthorizationHeaderMalformed/.test(name)) return 'Wrong endpoint or region. Check the bucket region.';
+  return 'Storage request failed. Check endpoint, TLS, region and bucket permissions.';
+}
+
 export class S3Adapter implements StorageAdapter {
-  private config: Record<string, string>;
-  private bucketName: string;
-
-  constructor(config: Record<string, string>, bucketName: string) {
-    this.config = config;
-    this.bucketName = bucketName;
+  constructor(private config: Record<string, string>, private bucketName: string) {}
+  private async sdk() {
+    const cmd = await import('@aws-sdk/client-s3');
+    const client = new cmd.S3Client({
+      region: this.config.region || 'us-east-1', endpoint: this.config.endpoint || undefined,
+      credentials: { accessKeyId: this.config.accessKeyId, secretAccessKey: this.config.secretAccessKey },
+      forcePathStyle: this.config.forcePathStyle ? this.config.forcePathStyle === 'true' : !!this.config.endpoint,
+      maxAttempts: 1,
+    });
+    return { cmd, client };
   }
-
   async upload(filePath: string, remoteName: string): Promise<UploadResult> {
+    const { cmd, client } = await this.sdk();
     try {
-      // Lazy-load S3 SDK to avoid requiring it if not configured
-      const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3' as any);
-      const client = new S3Client({
-        region: this.config.region || 'us-east-1',
-        endpoint: this.config.endpoint,
-        credentials: {
-          accessKeyId: this.config.accessKeyId,
-          secretAccessKey: this.config.secretAccessKey,
-        },
-        forcePathStyle: !!this.config.endpoint,
-      });
-      const fileStream = fs.createReadStream(filePath);
-      await client.send(new PutObjectCommand({
-        Bucket: this.bucketName,
-        Key: remoteName,
-        Body: fileStream,
-      }));
+      await client.send(new cmd.PutObjectCommand({ Bucket: this.bucketName, Key: remoteName, Body: fs.createReadStream(filePath) }));
       return { fileId: remoteName, url: `s3://${this.bucketName}/${remoteName}` };
-    } catch (err: any) {
-      throw new Error(`S3 upload failed: ${err.message}`);
-    }
+    } finally { client.destroy(); }
   }
-
   async download(fileId: string, destPath: string): Promise<void> {
-    const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3' as any);
-    const client = new S3Client({
-      region: this.config.region || 'us-east-1',
-      endpoint: this.config.endpoint,
-      credentials: { accessKeyId: this.config.accessKeyId, secretAccessKey: this.config.secretAccessKey },
-      forcePathStyle: !!this.config.endpoint,
-    });
-    const res = await client.send(new GetObjectCommand({ Bucket: this.bucketName, Key: fileId }));
-    await new Promise<void>((resolve, reject) => {
-      const writer = fs.createWriteStream(destPath);
-      (res.Body as stream.Readable).pipe(writer);
-      writer.on('finish', resolve);
-      writer.on('error', reject);
-    });
-  }
-
-  async delete(fileId: string): Promise<void> {
-    const { S3Client, DeleteObjectCommand } = await import('@aws-sdk/client-s3' as any);
-    const client = new S3Client({
-      region: this.config.region || 'us-east-1',
-      endpoint: this.config.endpoint,
-      credentials: { accessKeyId: this.config.accessKeyId, secretAccessKey: this.config.secretAccessKey },
-      forcePathStyle: !!this.config.endpoint,
-    });
-    await client.send(new DeleteObjectCommand({ Bucket: this.bucketName, Key: fileId }));
-  }
-
-  async testConnection(): Promise<boolean> {
+    const { cmd, client } = await this.sdk();
     try {
-      const { S3Client, ListBucketsCommand } = await import('@aws-sdk/client-s3' as any);
-      const client = new S3Client({
-        region: this.config.region || 'us-east-1',
-        endpoint: this.config.endpoint,
-        credentials: { accessKeyId: this.config.accessKeyId, secretAccessKey: this.config.secretAccessKey },
-        forcePathStyle: !!this.config.endpoint,
-      });
-      await client.send(new ListBucketsCommand({}));
-      return true;
-    } catch { return false; }
+      const res = await client.send(new cmd.GetObjectCommand({ Bucket: this.bucketName, Key: fileId }));
+      const { pipeline } = await import('stream/promises');
+      await pipeline(res.Body as stream.Readable, fs.createWriteStream(destPath));
+    } finally { client.destroy(); }
+  }
+  async delete(fileId: string): Promise<void> {
+    const { cmd, client } = await this.sdk();
+    try { await client.send(new cmd.DeleteObjectCommand({ Bucket: this.bucketName, Key: fileId })); }
+    finally { client.destroy(); }
+  }
+  async testConnection(): Promise<boolean> {
+    const { cmd, client } = await this.sdk();
+    const key = `__platform_probe/${require('crypto').randomUUID()}`;
+    const payload = require('crypto').randomUUID();
+    let stage = 'put';
+    let failure: Error | undefined;
+    let written = false;
+    try {
+      await client.send(new cmd.PutObjectCommand({ Bucket: this.bucketName, Key: key, Body: payload }), { abortSignal: AbortSignal.timeout(10000) });
+      written = true;
+      stage = 'get';
+      const result = await client.send(new cmd.GetObjectCommand({ Bucket: this.bucketName, Key: key }), { abortSignal: AbortSignal.timeout(10000) });
+      if (await result.Body?.transformToString() !== payload) throw new Error('ProbeMismatch');
+    } catch (err) { failure = new Error(`${stage}: ${storageConnectionError(err)}`); }
+    finally {
+      try {
+        await client.send(new cmd.DeleteObjectCommand({ Bucket: this.bucketName, Key: key }), { abortSignal: AbortSignal.timeout(10000) });
+      } catch (err) {
+        if (written || !failure) failure = new Error(`${failure ? failure.message + ' ' : ''}delete: ${storageConnectionError(err)} Probe cleanup failed.`);
+      }
+      client.destroy();
+    }
+    if (failure) throw failure;
+    return true;
   }
 }
 
-// ──── Google Drive Adapter ───────────────────────────────────────────────────
 export class GoogleDriveAdapter implements StorageAdapter {
   private config: Record<string, string>;
 
@@ -233,8 +224,8 @@ export function createDefaultBackupAdapter(env: NodeJS.ProcessEnv = process.env)
     {
       endpoint,
       region: (s3 ? env.BACKUP_S3_REGION : '') || 'us-east-1',
-      accessKeyId: (s3 ? env.BACKUP_S3_ACCESS_KEY : env.MINIO_ACCESS_KEY) || '',
-      secretAccessKey: (s3 ? env.BACKUP_S3_SECRET_KEY : env.MINIO_SECRET_KEY) || '',
+      accessKeyId: (s3 ? env.BACKUP_S3_ACCESS_KEY : (env.MINIO_API_ACCESS_KEY || env.MINIO_ACCESS_KEY)) || '',
+      secretAccessKey: (s3 ? env.BACKUP_S3_SECRET_KEY : (env.MINIO_API_SECRET_KEY || env.MINIO_SECRET_KEY)) || '',
     },
     env.BACKUP_BUCKET || DEFAULT_BACKUP_BUCKET,
   );
