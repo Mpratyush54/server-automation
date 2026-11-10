@@ -28,6 +28,7 @@ import { loadOpenApiJson, OpenApiUnavailableError } from '../lib/openapi-spec';
 import healthRoutes from './health';
 import operationRoutes from './operations';
 import backupRoutes from './backups';
+import gitAppRoutes from './git-apps';
 
 router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB only; Redis reported, not gating)
 router.use('/', oidcRoutes); // before authRoutes: OIDC provider + GitHub/GitLab login (state cookie)
@@ -47,6 +48,7 @@ router.use('/', cicdRoutes);
 router.use('/', sdkRoutes);
 router.use('/', metricRoutes);
 router.use('/', settingRoutes);
+router.use('/', gitAppRoutes); // GitHub App manifest flow + GitLab OAuth app automation (#35)
 router.use('/', auditLogRoutes);
 router.use('/', bugReportRoutes);
 router.use('/', dbProvisionRoutes);

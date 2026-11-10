@@ -1,3 +1,25 @@
+import { githubAuthorizationFor } from './github-app';
+import { gitlabApiToken } from './gitlab-app';
+
+/**
+ * GitHub API headers for `owner/repo`: a GitHub App installation token when the App is
+ * installed on the repository (#35), else the legacy GITHUB_TOKEN, else anonymous.
+ */
+async function githubHeaders(owner: string, repo: string): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { Accept: 'application/vnd.github+json', 'User-Agent': 'platform-api' };
+  const auth = await githubAuthorizationFor(owner, repo);
+  if (auth) headers.Authorization = auth;
+  return headers;
+}
+
+/** GitLab API headers: the kept connect token (#35) or GITLAB_TOKEN, else anonymous. */
+async function gitlabHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { 'User-Agent': 'platform-api' };
+  const token = await gitlabApiToken().catch(() => process.env.GITLAB_TOKEN || '');
+  if (token) headers['PRIVATE-TOKEN'] = token;
+  return headers;
+}
+
 /** Only configured provider origins may receive platform credentials. */
 export function parseGitRemote(repositoryUrl: string | null | undefined): {
   provider: 'github' | 'gitlab' | 'unknown'; owner: string; repo: string; apiBase: string;
@@ -32,13 +54,7 @@ export async function fetchRepoBranches(repositoryUrl: string): Promise<{
   if (!parsed) throw new Error('Unsupported repository URL — use a GitHub or GitLab HTTPS/SSH URL');
 
   if (parsed.provider === 'github') {
-    const headers: Record<string, string> = {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'platform-api',
-    };
-    if (process.env.GITHUB_TOKEN) {
-      headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-    }
+    const headers = await githubHeaders(parsed.owner, parsed.repo);
 
     const repoRes = await fetch(`${parsed.apiBase}/repos/${parsed.owner}/${parsed.repo}`, { headers, redirect: 'error' });
     if (!repoRes.ok) {
@@ -80,10 +96,7 @@ export async function fetchRepoBranches(repositoryUrl: string): Promise<{
 
   // GitLab
   {
-    const headers: Record<string, string> = { 'User-Agent': 'platform-api' };
-    if (process.env.GITLAB_TOKEN) {
-      headers['PRIVATE-TOKEN'] = process.env.GITLAB_TOKEN;
-    }
+    const headers = await gitlabHeaders();
     const projectPath = encodeURIComponent(`${parsed.owner}/${parsed.repo}`);
     const projRes = await fetch(`${parsed.apiBase}/projects/${projectPath}`, { headers, redirect: 'error' });
     if (!projRes.ok) {
@@ -129,13 +142,7 @@ export async function fetchBranchCommits(
   if (!parsed) throw new Error('Unsupported repository URL');
 
   if (parsed.provider === 'github') {
-    const headers: Record<string, string> = {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'platform-api',
-    };
-    if (process.env.GITHUB_TOKEN) {
-      headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-    }
+    const headers = await githubHeaders(parsed.owner, parsed.repo);
     const res = await fetch(
       `${parsed.apiBase}/repos/${parsed.owner}/${parsed.repo}/commits?sha=${encodeURIComponent(branch)}&per_page=${limit}`,
       { headers, redirect: 'error' }
@@ -153,8 +160,7 @@ export async function fetchBranchCommits(
     }));
   }
 
-  const headers: Record<string, string> = { 'User-Agent': 'platform-api' };
-  if (process.env.GITLAB_TOKEN) headers['PRIVATE-TOKEN'] = process.env.GITLAB_TOKEN;
+  const headers = await gitlabHeaders();
   const projectPath = encodeURIComponent(`${parsed.owner}/${parsed.repo}`);
   const res = await fetch(
     `${parsed.apiBase}/projects/${projectPath}/repository/commits?ref_name=${encodeURIComponent(branch)}&per_page=${limit}`,
@@ -190,13 +196,7 @@ export async function fetchRepoReleases(
   if (!parsed) throw new Error('Unsupported repository URL');
 
   if (parsed.provider === 'github') {
-    const headers: Record<string, string> = {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'platform-api',
-    };
-    if (process.env.GITHUB_TOKEN) {
-      headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-    }
+    const headers = await githubHeaders(parsed.owner, parsed.repo);
     const res = await fetch(
       `${parsed.apiBase}/repos/${parsed.owner}/${parsed.repo}/releases?per_page=${limit}`,
       { headers, redirect: 'error' }
@@ -223,8 +223,7 @@ export async function fetchRepoReleases(
   }
 
   // GitLab releases
-  const headers: Record<string, string> = { 'User-Agent': 'platform-api' };
-  if (process.env.GITLAB_TOKEN) headers['PRIVATE-TOKEN'] = process.env.GITLAB_TOKEN;
+  const headers = await gitlabHeaders();
   const projectPath = encodeURIComponent(`${parsed.owner}/${parsed.repo}`);
   const res = await fetch(
     `${parsed.apiBase}/projects/${projectPath}/releases?per_page=${limit}`,

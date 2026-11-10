@@ -28,6 +28,8 @@ const ALLOWED: Record<string, string> = {
   'lib/webhook-dedupe.ts': 'last-resort fallback',
   // MemoryIdempotencyStore: last fallback after Redis and Postgres (#23).
   'middleware/idempotency.ts': 'last-resort fallback',
+  // Installation-token cache memory backend: tests / PLATFORM_STATE_STORE=memory only; Redis otherwise (#35).
+  'lib/github-app.ts': 'test double (Redis in deployments)',
 };
 
 function walk(dir: string): string[] {

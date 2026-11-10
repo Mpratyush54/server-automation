@@ -443,6 +443,136 @@ paths:
       responses:
         '200':
           description: Saved
+  /settings/integrations/git:
+    get:
+      tags: [Settings]
+      summary: GitHub App / GitLab OAuth app connection status and health (never returns secrets)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Per-provider status, callback/webhook URLs, reachability warnings
+  /settings/integrations/github/manifest:
+    post:
+      tags: [Settings]
+      summary: Start the GitHub App Manifest flow (admin, MFA step-up); returns the manifest, a one-time state and the GitHub URL to post it to
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ownerType: { type: string, enum: [user, org] }
+                org: { type: string }
+                name: { type: string, maxLength: 34 }
+      responses:
+        '200':
+          description: manifest, state, postUrl, expiresInSec
+        '401':
+          $ref: '#/components/responses/StepUpRequired'
+  /settings/integrations/github/manifest/complete:
+    post:
+      tags: [Settings]
+      summary: Finish the manifest flow; converts the code and stores the App credentials encrypted (admin, MFA step-up)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, state]
+              properties:
+                code: { type: string }
+                state: { type: string }
+      responses:
+        '200':
+          description: Connected; includes the installation URL
+        '400':
+          description: Unknown, expired or reused state
+        '403':
+          description: State issued to a different user
+  /settings/integrations/github/installations:
+    get:
+      tags: [Settings]
+      summary: GitHub App installations with their repositories and mapped projects
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Installations
+  /settings/integrations/github/installations/sync:
+    post:
+      tags: [Settings]
+      summary: Re-read installations from GitHub (admin)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Installations
+  /settings/integrations/github/repositories:
+    get:
+      tags: [Settings]
+      summary: Repositories the GitHub App can access (installation tokens)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Repositories
+  /settings/integrations/gitlab/connect:
+    post:
+      tags: [Settings]
+      summary: Create the GitLab OAuth application from an api-scoped token (admin, MFA step-up)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                baseUrl: { type: string, example: 'https://gitlab.com' }
+                token: { type: string }
+                groupPath: { type: string }
+                keepToken: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Connected
+        '422':
+          description: Group applications cannot be created through this GitLab's API; manual entry required
+  /settings/integrations/{provider}/check:
+    post:
+      tags: [Settings]
+      summary: Health check of the connected GitHub App or GitLab application (admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema: { type: string, enum: [github, gitlab] }
+      responses:
+        '200':
+          description: ok / error
+  /settings/integrations/{provider}/app:
+    delete:
+      tags: [Settings]
+      summary: Remove the stored App/application credentials (admin, MFA step-up)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema: { type: string, enum: [github, gitlab] }
+      responses:
+        '200':
+          description: Removed
   /settings/rotate-secrets:
     post:
       tags: [Settings]
