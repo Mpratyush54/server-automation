@@ -178,13 +178,14 @@ export async function submitLokiDeletes(
   sessionId: string | null,
 ): Promise<{ requests: number; warning?: string }> {
   const lokiUrl = (process.env.LOKI_URL || 'http://loki.monitoring.svc:3100').replace(/\/+$/, '');
-  const start = process.env.GDPR_LOKI_DELETE_START || '0';
+  // Loki rejects start=0; an RFC3339 date before any retained data deletes everything older too.
+  const start = process.env.GDPR_LOKI_DELETE_START || '2020-01-01T00:00:00Z';
   const queries: string[] = [];
   if (userId) {
-    queries.push(`{project_id="${projectId}"} |= "${userId.replace(/"/g, '')}"`);
+    queries.push(`{platform_project_id="${projectId}"} |= "${lokiLiteral(userId)}"`);
   }
   if (sessionId) {
-    queries.push(`{project_id="${projectId}"} |= "${sessionId.replace(/"/g, '')}"`);
+    queries.push(`{platform_project_id="${projectId}"} |= "${lokiLiteral(sessionId)}"`);
   }
   if (!queries.length) return { requests: 0 };
 
@@ -218,6 +219,8 @@ export async function runGdprDelete(
   const hash = email ? emailHash(email) : null;
 
   const mongo = await deleteMongoBySubject(req.projectId, userId, sessionId);
+  // Error events from error tracking (#41) live in Postgres with the subject in the payload.
+  const pgErrors = await deletePostgresErrorEvents(ds, req.projectId, userId, sessionId);
   const consents = await deleteConsents(ds, req.projectId, userId, sessionId);
   const replays = await deleteReplayObjects(req.projectId, userId, sessionId);
   if (replays.warning) warnings.push(replays.warning);
@@ -231,11 +234,37 @@ export async function runGdprDelete(
     emailHash: hash,
     deleted: {
       logs: mongo.logs,
-      errors: mongo.errors,
+      errors: mongo.errors + pgErrors,
       consents,
       replayObjects: replays.count,
       lokiRequests: loki.requests,
     },
     warnings,
   };
+}
+
+/** Loki line-filter literal: strip quotes and backslashes so the value cannot break out of the string. */
+function lokiLiteral(v: string): string {
+  return v.replace(/["\\]/g, '');
+}
+
+/** Delete #41 error events whose payload names the subject; issue aggregates keep only counts. */
+export async function deletePostgresErrorEvents(
+  ds: { query: (sql: string, params?: unknown[]) => Promise<any> },
+  projectId: string,
+  userId: string | null,
+  sessionId: string | null,
+): Promise<number> {
+  if (!userId && !sessionId) return 0;
+  try {
+    const rows = await ds.query(
+      `DELETE FROM error_events WHERE project_id = $1 AND (($2::text IS NOT NULL AND payload->>'userId' = $2) OR ($3::text IS NOT NULL AND payload->>'sessionId' = $3)) RETURNING id`,
+      [projectId, userId, sessionId],
+    );
+    // TypeORM/pg returns [rows, affected] for DELETE ... RETURNING (or rows on other drivers).
+    const list = Array.isArray(rows) && Array.isArray(rows[0]) ? rows[0] : rows;
+    return Array.isArray(list) ? list.length : 0;
+  } catch {
+    return 0; // table absent on installs without error tracking
+  }
 }
