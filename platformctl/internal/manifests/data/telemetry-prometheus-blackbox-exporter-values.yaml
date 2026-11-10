@@ -10,6 +10,23 @@ config:
       http:
         follow_redirects: true
         preferred_ip_protocol: ip4
+    # Synthetic checks (#42): Probes rendered by the platform API. Egress is
+    # limited to public addresses by the blackbox-exporter-egress NetworkPolicy.
+    synthetic_http:
+      prober: http
+      timeout: 10s
+      http:
+        follow_redirects: true
+        preferred_ip_protocol: ip4
+        ip_protocol_fallback: false
+        body_size_limit: 1MB
+    synthetic_tls:
+      prober: tcp
+      timeout: 10s
+      tcp:
+        tls: true
+        preferred_ip_protocol: ip4
+        ip_protocol_fallback: false
 serviceMonitor:
   selfMonitor:
     enabled: true
