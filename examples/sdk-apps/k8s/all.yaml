@@ -122,6 +122,9 @@ spec:
             - name: RUM_HEATMAP_TOKEN
               valueFrom:
                 secretKeyRef: { name: sdk-demo-rum, key: heatmapsToken, optional: true }
+            - name: RUM_REPLAY_ENDPOINT
+              valueFrom:
+                secretKeyRef: { name: sdk-demo-rum, key: replayEndpoint, optional: true }
           ports:
             - containerPort: 8080
           resources:

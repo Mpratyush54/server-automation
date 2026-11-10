@@ -3,6 +3,7 @@ import { Environment } from '../entities/Environment';
 import { Project } from '../entities/Project';
 import { samplingRatio, telemetryEndpoints } from './telemetry-config';
 import { issueIngestToken, normalizeOrigin } from './telemetry-tokens';
+import { replayIngestEnabled } from './replay-ingest';
 
 /**
  * The `telemetry` block of GET /api/sdk/config (shared Wave A telemetry contract, #49).
@@ -16,6 +17,8 @@ export interface TelemetryBlock {
   errorsEndpoint?: string | null;
   /** Browser heatmap ingest (`POST /api/sdk/heatmap/events`); accepts browserToken. */
   heatmapsEndpoint?: string | null;
+  /** Session replay API base (#40): `<API>/api/sdk/replay`; null when replay ingest is off. */
+  replayEndpoint?: string | null;
   otlpEndpoint: string | null;
   faroEndpoint: string | null;
   profilesEndpoint: string | null;
@@ -30,6 +33,12 @@ export interface TelemetryBlock {
 function errorIngestEndpoint(): string | null {
   const base = process.env.API_PUBLIC_URL || process.env.API_URL || (process.env.DOMAIN ? `https://${process.env.DOMAIN}` : '');
   return base ? base.replace(/\/+$/, '') + '/api/errors/rum' : null;
+}
+
+/** Session replay ingest base (#40), when enabled for this install. */
+function replayIngestEndpoint(): string | null {
+  const errors = errorIngestEndpoint();
+  return errors && replayIngestEnabled() ? errors.replace(/\/api\/errors\/rum$/, '/api/sdk/replay') : null;
 }
 
 /** Project config key listing extra browser origins for the Faro token (comma/space separated). */
@@ -123,6 +132,7 @@ export async function buildTelemetryBlock(opts: {
       enabled: true,
       errorsEndpoint: errorIngestEndpoint(),
       heatmapsEndpoint: errorIngestEndpoint()?.replace(/\/errors\/rum$/,'/sdk/heatmap/events') ?? null,
+      replayEndpoint: replayIngestEndpoint(),
       ...endpoints,
       ingestToken: server.token,
       ingestTokenExpiresAt: server.expiresAt.toISOString(),

@@ -115,14 +115,82 @@ Measured with `npm run size` in each SDK (esbuild, minified, gzip -9):
 
 | | sdk-react | sdk-angular |
 |---|---|---|
-| Initial chunk added by RUM | +1.0 KB | +1.0 KB |
-| Lazy Faro chunk (only when enabled + sampled) | 18.0 KB | 18.0 KB |
-| Total when enabled (budget < 30 KB) | 19.0 KB | 19.0 KB |
+| Initial chunk added by RUM | +0.9 KB | +0.9 KB |
+| Lazy Faro chunk (only when enabled + sampled) | 18.5 KB | 18.5 KB |
+| Total when enabled (budget < 30 KB) | 19.4 KB | 19.4 KB |
+| Lazy replay controller (only when `rum.replay` is set; budget < 8 KB) | 5.5 KB | 5.5 KB |
+| Lazy rrweb recorder + gzip (only after sampling + consent; budget < 40 KB) | 26.5 KB | 26.5 KB |
 
 In the demo apps the lazy chunk is 21.9 KB (Vite, ES2020 target) and 19.2 KB (Angular CLI).
 Apps that never use RUM (no provider/module/`initRum`) contain no Faro code at all; apps that
 use the provider/module without `rum` get the lazy chunk emitted but never download it.
 The size check fails if Faro reaches the initial chunks.
+
+## Session replay (#40)
+
+Opt-in, privacy-first replay recorded with rrweb. Add `replay` to the `rum` options:
+
+```ts
+rum: {
+  telemetryUrl: '/rum-config.json',
+  replay: { sampleRate: 0.1, onErrorSampleRate: 1 }, // defaults
+}
+// when the visitor agrees (consent banner):
+import { setConsent } from '@mpratyush54/sdk-react'; // or sdk-angular
+setConsent({ replay: true });   // false stops a running recording at once
+```
+
+- **Consent.** `requireConsent` defaults to `true`: nothing is recorded, and rrweb is not even
+  downloaded, until `setConsent({ replay: true })` is called on the device or consent is
+  recorded server-side for the subject (`PUT /api/sdk/privacy/consent`, #47). An explicit
+  `setConsent({ replay: false })` always wins, and the API refuses further chunks of a subject
+  whose recorded consent is withdrawn. doNotTrack / Global Privacy Control disable replay.
+- **Masking.** All input, textarea and select values are masked (`maskAllInputs`, passwords
+  always). Visible text goes through the RUM redaction (`maskText: 'pii'`: e-mails, tokens,
+  credentials); `maskText: 'all'` stars every character. Elements with class `platform-mask` /
+  `rr-mask` or `[data-platform-mask]` (and the `SENSITIVE_INPUT_SELECTOR` fields) are fully
+  masked; `platform-block` / `rr-block` / `[data-platform-block]` are not recorded at all
+  (a grey box of the same size). Canvas, fonts, images, cross-origin iframes and scripts are
+  never captured; URLs lose query values.
+- **Sampling.** Per session (sticky per tab, 30 min idle / 4 h max): `sampleRate` records the
+  whole session; otherwise `onErrorSampleRate` keeps only the last `bufferSeconds` (60) in
+  memory and uploads them when an error happens, then keeps recording.
+- **Upload.** Chunks of 64 KiB raw JSON or 5 s, gzip (fflate), `POST <replayEndpoint>/chunks`
+  with the telemetry block's browser token (`telemetry.replayEndpoint`, present when the platform
+  runs the full profile) or `PlatformConfig.apiBase` + SDK token. Retries with backoff and
+  `Retry-After`, bounded 4 MiB queue, `keepalive` on page hide.
+- **Markers.** Errors (uncaught, and framework-caught via `reportRumError`), SPA navigations and
+  network calls (method, redacted URL, status, duration, trace id from RUM client spans) are
+  recorded as rrweb custom events. RUM error events carry `replayId`, so an error issue links
+  to its replay.
+- **Portal.** Project -> Replays lists sessions (filters: page, errors, duration, environment);
+  the player (rrweb-player, lazy-loaded) shows the markers on the timeline with links to the
+  error issue and the Tempo trace. Project members only; every view is audited
+  (`replay.view`, `replay.snapshot_view`, `replay.delete`).
+- **Storage and retention.** MinIO bucket `replays`, `replays/<projectId>/<sessionId>/<seq>.json.gz`,
+  plus `replay_sessions` / `replay_chunks` rows. An hourly job deletes sessions older than the
+  project's replay retention (privacy settings, default 7 days); the bucket lifecycle rule is the
+  backstop. GDPR delete removes a subject's replays by user id, consent subject or session id.
+- **API switch.** On by default with the full profile (`PLATFORM_OBSERVABILITY`);
+  `REPLAY_INGEST=off|on` overrides. Limits: `REPLAY_MAX_CHUNK_BYTES` (2 MiB compressed),
+  `REPLAY_MAX_RAW_BYTES` (16 MiB decompressed), `REPLAY_MAX_CHUNKS_PER_SESSION` (3000),
+  `REPLAY_MAX_SESSION_BYTES` (100 MiB), `REPLAY_RATE_LIMIT` (600/min per IP).
+- **Heatmap backgrounds.** `GET /api/projects/:projectId/replays/:sessionId|latest/snapshot?page=/orders/:id`
+  returns the first full DOM snapshot of that page as inert HTML (no scripts, CSP prepended) for a
+  sandboxed iframe, plus the rrweb events.
+
+| Replay option | Default | Meaning |
+|---------------|---------|---------|
+| `sampleRate` | 0.1 | Share of sessions recorded in full |
+| `onErrorSampleRate` | 1 | Share of the rest that buffer and upload on error |
+| `bufferSeconds` | 60 | On-error buffer length (10..300) |
+| `requireConsent` | `true` | Record only after consent |
+| `maskAllInputs` | `true` | Mask every input value |
+| `maskText` | `pii` | `pii` / `all` / `none` |
+| `blockClass`, `blockSelector`, `maskTextClass`, `maskTextSelector` | `platform-block`, `[data-platform-block]`, `platform-mask`, `[data-platform-mask]` | Extra classes/selectors |
+| `captureNetwork` | `true` | Network markers |
+| `snapshotOnNavigation` | `true` | DOM snapshot after SPA route changes |
+| `endpoint`, `userId`, `flushIntervalMs`, `maxChunkBytes` | — / — / 5000 / 65536 | |
 
 ## Backpressure
 

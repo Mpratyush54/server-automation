@@ -10,6 +10,9 @@ import { startTelemetryConsumer } from './telemetry-queue';
 import { startAlerting } from './alerting';
 import { startSyntheticsScheduler } from './synthetic-scheduler';
 import { startHeatmapRetention } from './heatmap-jobs';
+import { runReplayRetention } from './replay-sessions';
+import { getReplayStore } from './replay-store';
+import { getDb } from '../config/database';
 
 /**
  * Background work inventory (every timer/loop in platform/api/src):
@@ -27,6 +30,7 @@ import { startHeatmapRetention } from './heatmap-jobs';
  * | alerting-*      | leader loop (see lib/alerting.ts) | 1 s .. 5 min (#43) |
  * | synthetics-runner / -retention / -reconcile | leader loop | 5 s / hourly / 10 min (#42) |
  * | heatmaps-retention | leader loop             | hourly (heatmaps)            |
+ * | replay-retention | leader loop             | hourly (#40: per-project retentionDays.replays) |
  *
  * Any leader-loop job can instead run as a Kubernetes CronJob
  * (`node dist/jobs/<name>.js`) by listing it in JOBS_EXTERNAL.
@@ -64,6 +68,16 @@ export function startBackgroundWork(): void {
   startSyntheticsScheduler();
   startStorageHealth();
   startHeatmapRetention(); // heatmaps: prune aggregates past #47 `heatmaps` retention
+  // Session replay (#40): delete sessions (objects + rows) past the project's replay retention.
+  registerLeaderJob({
+    name: 'replay-retention',
+    intervalMs: 60 * 60 * 1000,
+    initialDelayMs: 10 * 60 * 1000,
+    run: async () => {
+      const r = await runReplayRetention(await getDb(), getReplayStore());
+      if (r.sessions) console.log(`[replay] retention removed ${r.sessions} session(s), ${r.objects} object(s)`);
+    },
+  });
 
   leadership.start();
   installReleaseOnShutdown();

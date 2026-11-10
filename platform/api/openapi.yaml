@@ -221,6 +221,140 @@ paths:
                 properties:
                   replayAllowed: { type: boolean }
 
+  /sdk/replay/chunks:
+    post:
+      tags: [Replay]
+      summary: Upload one session replay chunk (#40; browser tokens allowed, write-only)
+      description: >-
+        Body is a gzip-compressed JSON envelope `{ v: 1, sessionId, seq, events: [rrweb events], ... }`.
+        Auth is the origin-bound browser ingest token from the telemetry block (Origin must match)
+        or an SDK token. Limits: REPLAY_MAX_CHUNK_BYTES (2 MiB compressed), REPLAY_MAX_RAW_BYTES
+        (16 MiB decompressed), per-session chunk/byte caps. Re-sent chunks (same seq) answer 200.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '202': { description: Stored }
+        '200': { description: Duplicate chunk (already stored) }
+        '400': { description: Invalid chunk }
+        '403': { description: Origin not allowed or replay consent withdrawn }
+        '404': { description: Session replay not enabled on this platform }
+        '413': { description: Chunk or session size limit exceeded }
+  /sdk/replay/allowed:
+    get:
+      tags: [Replay]
+      summary: Replay consent gate for the browser SDK (ingest or SDK token)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: subjectId, required: true, schema: { type: string } }
+        - { in: query, name: sessionId, schema: { type: string } }
+      responses:
+        '200':
+          description: Whether recording may start
+          content:
+            application/json:
+              schema: { type: object, properties: { replayAllowed: { type: boolean } } }
+  /sdk/replay/consent:
+    put:
+      tags: [Replay]
+      summary: Record replay consent from the browser SDK (setConsent)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectId, replayAllowed]
+              properties:
+                subjectId: { type: string }
+                sessionId: { type: string }
+                replayAllowed: { type: boolean }
+      responses:
+        '200': { description: Stored decision }
+  /projects/{projectId}/replays:
+    get:
+      tags: [Replay]
+      summary: List session replays (project members)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: projectId, required: true, schema: { type: string, format: uuid } }
+        - { in: query, name: page, schema: { type: string }, description: Substring of a visited path }
+        - { in: query, name: errors, schema: { type: boolean } }
+        - { in: query, name: minDurationMs, schema: { type: integer } }
+        - { in: query, name: maxDurationMs, schema: { type: integer } }
+        - { in: query, name: userId, schema: { type: string } }
+        - { in: query, name: environment, schema: { type: string } }
+        - { in: query, name: from, schema: { type: string, format: date-time } }
+        - { in: query, name: to, schema: { type: string, format: date-time } }
+        - { in: query, name: limit, schema: { type: integer, maximum: 200 } }
+        - { in: query, name: offset, schema: { type: integer } }
+      responses:
+        '200': { description: '{ enabled, sessions[] } newest first' }
+  /projects/{projectId}/replays/{sessionId}:
+    get:
+      tags: [Replay]
+      summary: Session metadata, ordered chunk list and linked errors (audited as replay.view)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: projectId, required: true, schema: { type: string, format: uuid } }
+        - { in: path, name: sessionId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: '{ session, chunks[], errors[] }' }
+        '404': { description: Not found }
+    delete:
+      tags: [Replay]
+      summary: Delete a session replay (devops+, audited)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: projectId, required: true, schema: { type: string, format: uuid } }
+        - { in: path, name: sessionId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Deleted }
+  /projects/{projectId}/replays/{sessionId}/chunks/{seq}:
+    get:
+      tags: [Replay]
+      summary: One stored chunk (JSON envelope, Content-Encoding gzip)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: projectId, required: true, schema: { type: string, format: uuid } }
+        - { in: path, name: sessionId, required: true, schema: { type: string } }
+        - { in: path, name: seq, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Chunk envelope with rrweb events }
+  /projects/{projectId}/replays/{sessionId}/snapshot:
+    get:
+      tags: [Replay]
+      summary: First full DOM snapshot of a page (heatmap background; audited)
+      description: >-
+        `sessionId` may be `latest` (most recent session with a snapshot of the page). `page` is a
+        path (`/orders/42`) or route name (`/orders/:id`). Returns inert HTML for a sandboxed
+        iframe (`html`) plus the rrweb Meta + FullSnapshot events.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: projectId, required: true, schema: { type: string, format: uuid } }
+        - { in: path, name: sessionId, required: true, schema: { type: string } }
+        - { in: query, name: page, schema: { type: string } }
+      responses:
+        '200':
+          description: Snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId: { type: string }
+                  seq: { type: integer }
+                  page: { type: string }
+                  timestamp: { type: number }
+                  width: { type: integer, nullable: true }
+                  height: { type: integer, nullable: true }
+                  html: { type: string }
+                  events: { type: array, items: { type: object } }
+        '404': { description: No snapshot for this page }
+
   /projects/{projectId}/argocd/refresh:
     post:
       tags: [Projects]

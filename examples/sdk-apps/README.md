@@ -179,3 +179,18 @@ The changed SDK/MCP doc pages are mirrored in the portal and checked for equalit
 
 See [TELEMETRY.md](TELEMETRY.md) for optional dependencies, startup ordering, the Python
 Flask/PostgreSQL example, resource attributes and full-profile collector verification.
+
+## Session replay (#40)
+
+`react-web` enables `rum.replay` (every session sampled, consent required): nothing is
+recorded until "Allow session replay" is clicked. The Checkout page has name / e-mail /
+password / card / notes fields and a `platform-mask` paragraph to verify masking. Add the
+replay endpoint to the `sdk-demo-rum` Secret (`replayEndpoint`, the `telemetry.replayEndpoint`
+value, e.g. `https://$DOMAIN/api/sdk/replay`) and restart the deployment.
+
+A real-browser check (Playwright) records a session and verifies it through the portal API:
+
+```bash
+cd react-web && npm i --no-save playwright@1.59.1 && npx playwright install --with-deps chromium
+REACT_URL=https://sdk-react.$DOMAIN PLATFORM_URL=https://$DOMAIN PLATFORM_TOKEN=<portal JWT> PROJECT_ID=<project id> node e2e/replay.mjs
+```

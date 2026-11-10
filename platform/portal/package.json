@@ -26,6 +26,7 @@
     "highlight.js": "^11.11.1",
     "marked": "^18.0.5",
     "mermaid": "^12.3.0",
+    "rrweb-player": "2.2.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "zone.js": "~0.15.0"
@@ -46,5 +47,14 @@
     "postcss": "^8.5.15",
     "tailwindcss": "^3.4.19",
     "typescript": "~5.9.3"
+  },
+  "overrides": {
+    "rrweb": "2.2.0",
+    "rrdom": "2.2.0",
+    "rrweb-snapshot": "2.2.0",
+    "@rrweb/types": "2.2.0",
+    "@rrweb/utils": "2.2.0",
+    "@rrweb/replay": "2.2.0",
+    "@rrweb/packer": "2.2.0"
   }
 }

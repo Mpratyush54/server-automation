@@ -36,6 +36,7 @@ import operationRoutes from './operations';
 import backupRoutes from './backups';
 import telemetryRoutes from './telemetry';
 import privacyRoutes from './privacy';
+import replayRoutes from './replays';
 import gitAppRoutes from './git-apps';
 import topologyRoutes from './topology';
 import syntheticRoutes from './synthetics';
@@ -47,6 +48,7 @@ router.use('/', errorTrackingRoutes);
 router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB only; Redis reported, not gating)
 router.use('/', telemetryRoutes); // ingress-nginx external auth for the collector (#49); token-authenticated itself
 router.use('/', privacyRoutes); // PII scrubbing, retention, consent hooks, GDPR delete (#47)
+router.use('/', replayRoutes); // session replay: SDK chunk ingest + portal sessions/player (#40)
 router.use('/', oidcRoutes); // before authRoutes: OIDC provider + GitHub/GitLab login (state cookie)
 router.use('/', authRoutes);
 router.use('/', mfaRoutes); // TOTP MFA: enrolment, login challenge, step-up (#24)
