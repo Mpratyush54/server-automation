@@ -99,20 +99,26 @@ export function redactSensitive(text: string): string {
 }
 
 /**
+ * Elements that hold secrets or payment data (password / credit-card / one-time-code
+ * fields and anything marked `data-platform-mask`). Used by `maskSensitiveInputs`
+ * and by RUM click tracking.
+ */
+export const SENSITIVE_INPUT_SELECTOR = [
+  'input[type="password"]',
+  'input[autocomplete^="cc-"]',
+  'input[autocomplete="one-time-code"]',
+  'input[autocomplete="current-password"]',
+  'input[autocomplete="new-password"]',
+  '[data-platform-mask]',
+].join(',');
+
+/**
  * Blank out sensitive form fields in a (cloned) document before it is rendered
  * to a screenshot: password inputs, credit-card/one-time-code autocomplete
  * fields, and anything marked `data-platform-mask`.
  */
 export function maskSensitiveInputs(doc: Pick<Document, 'querySelectorAll'>): number {
-  const selector = [
-    'input[type="password"]',
-    'input[autocomplete^="cc-"]',
-    'input[autocomplete="one-time-code"]',
-    'input[autocomplete="current-password"]',
-    'input[autocomplete="new-password"]',
-    '[data-platform-mask]',
-  ].join(',');
-  const nodes = doc.querySelectorAll(selector);
+  const nodes = doc.querySelectorAll(SENSITIVE_INPUT_SELECTOR);
   nodes.forEach((node: any) => {
     if ('value' in node) {
       node.value = '';

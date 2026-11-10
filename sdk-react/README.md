@@ -60,6 +60,8 @@ function Dashboard() {
 | `usePlatform()` | `{ config, api }` — must be under the provider |
 | `ErrorBoundary` | Catches render errors and reports them (`config` prop, or the enclosing provider's) |
 | `BugReporterWidget` | Floating 🐛 UI; attaches redacted console + request-URL history; screenshot only with `captureScreenshot` |
+| `useRumPageView(location)` | One RUM view per route change (react-router v6/v7 `useLocation()`) |
+| `initRum` / `setRumView` / `stopRum` / `reportRumError` | RUM runtime without the provider |
 
 ## `PlatformConfig`
 
@@ -70,6 +72,17 @@ function Dashboard() {
 | `projectId` | yes | Project id used when posting metrics |
 | `environment` | no | Default `production` in metric payloads |
 | `appName` | no | App label |
+| `rum` | no | Frontend RUM via Grafana Faro (web vitals, errors, resources, clicks, routes, `traceparent`). Off when omitted: nothing is loaded |
+
+## Frontend RUM
+
+```tsx
+<PlatformProvider config={{ ...config, rum: { telemetryUrl: '/rum-config.json', propagateTo: ['https://api.example.com'] } }}>
+```
+
+Faro is a lazy chunk (about 18 KB gzip, +1 KB in the initial chunk), fetched only when RUM is
+enabled by the platform, allowed by Do-Not-Track and sampled in. No PII by default. Measure with
+`npm run size`. Full guide: [docs/guides/frontend-rum.md](../docs/guides/frontend-rum.md).
 
 ## Examples
 
