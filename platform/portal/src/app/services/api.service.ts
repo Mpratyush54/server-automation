@@ -156,6 +156,21 @@ export class ApiService {
     return this.http.post(`${this.base}/auth/set-password`, data);
   }
 
+  // Privacy / GDPR (#47)
+  getProjectPrivacy(projectId: string): Observable<any> { return this.http.get(`${this.base}/projects/${projectId}/privacy`); }
+  updateProjectPrivacyScrubbing(projectId: string, data: { scrubIps?: boolean; rules?: any[] }): Observable<any> {
+    return this.http.put(`${this.base}/projects/${projectId}/privacy/scrubbing`, data);
+  }
+  updateProjectPrivacyRetention(projectId: string, data: Record<string, number>): Observable<any> {
+    return this.http.put(`${this.base}/projects/${projectId}/privacy/retention`, data);
+  }
+  updateProjectPrivacyConsentDefaults(projectId: string, data: { replay?: boolean; analytics?: boolean }): Observable<any> {
+    return this.http.put(`${this.base}/projects/${projectId}/privacy/consent-defaults`, data);
+  }
+  gdprDelete(projectId: string, data: { userId?: string; sessionId?: string; email?: string }): Observable<any> {
+    return this.http.post(`${this.base}/projects/${projectId}/privacy/gdpr-delete`, data);
+  }
+
   // Bug Reporting
   submitBugReport(data: any): Observable<any> { return this.http.post(`${this.base}/sdk/bug-report`, data); }
 

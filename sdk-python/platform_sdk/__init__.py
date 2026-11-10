@@ -205,6 +205,23 @@ class PlatformClient:
         })
 
     # --- Logging ---
+    def capture_exception(self, error: BaseException, **context):
+        """Version 1 error event: inner frame first, lines 1-based, columns 0-based."""
+        import traceback
+        import uuid
+        frames = [{"file": f.filename, "function": f.name, "line": f.lineno, "column": 0}
+                  for f in reversed(traceback.extract_tb(error.__traceback__)[-100:])]
+        trace = self._telemetry.trace_context() if self._telemetry else {}
+        event = {"eventId": str(uuid.uuid4()), "type": type(error).__name__,
+                 "message": str(error)[:8000] or type(error).__name__, "frames": frames,
+                 "release": self.options.get("version", "unknown"),
+                 "environment": self.options.get("environment_name", "development")}
+        if trace.get("trace_id"):
+            event["traceId"] = trace["trace_id"]
+        event.update({k: v for k, v in context.items() if k in {
+            "release", "environment", "userId", "sessionId", "traceId", "replayId", "breadcrumbs"}})
+        return self._request("POST", "/api/sdk/errors", event)
+
     def log(self, level: str, message: str, metadata: Optional[Dict] = None):
         context = self._telemetry.trace_context() if self._telemetry else {}
         metadata = {**(metadata or {}), **context}

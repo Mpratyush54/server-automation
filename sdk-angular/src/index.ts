@@ -41,3 +41,5 @@ export {
   providePlatformRum,
   PlatformRumErrorHandler,
 } from './rum.service';
+
+export type { ErrorEvent, ErrorFrame } from './error-event';

@@ -41,6 +41,9 @@ WORKDIR /app
 # Application files stay root-owned, i.e. read-only for the app user.
 COPY package.json ./
 COPY --from=deps /app/node_modules ./node_modules
+# source-map 0.6.1 is already pinned in the immutable lockfile (dev tree).
+# Preserve it in production for error symbolication without changing the lockfile.
+COPY --from=build /app/node_modules/source-map ./node_modules/source-map
 COPY --from=build /app/dist ./dist
 # Served by GET /api/openapi.json (read relative to dist/routes).
 COPY openapi.yaml openapi.json ./

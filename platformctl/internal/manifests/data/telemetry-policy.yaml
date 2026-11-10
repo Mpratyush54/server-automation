@@ -16,6 +16,11 @@ spec:
       ports:
         - {port: 4318, protocol: TCP}
         - {port: 12347, protocol: TCP}
+    # Profiles reach the receiver only through the label-setting proxy.
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: profile-ingest}
+      ports:
         - {port: 9999, protocol: TCP}
     - from:
         - namespaceSelector:

@@ -17,6 +17,7 @@ export interface PlatformTelemetryConfig {
   enabled?: boolean;
   /** Faro receiver, e.g. `https://otel.<DOMAIN>/collect`. */
   faroEndpoint?: string | null;
+  errorsEndpoint?: string | null;
   /** Public, project/env scoped browser ingest token (`plat_ingest_web_...`). */
   browserToken?: string | null;
   samplingRatio?: number;
@@ -73,6 +74,7 @@ export type RumSkipReason =
 
 export interface RumPlan {
   faroEndpoint: string;
+  errorsEndpoint?: string | null;
   browserToken: string;
   samplingRatio: number;
   resource: Record<string, string>;
@@ -294,6 +296,7 @@ export function planRum(
   return {
     plan: {
       faroEndpoint: telemetry.faroEndpoint,
+      errorsEndpoint: telemetry.errorsEndpoint,
       browserToken: telemetry.browserToken,
       samplingRatio: ratio,
       resource,

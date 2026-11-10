@@ -13,6 +13,7 @@ import { issueIngestToken, normalizeOrigin } from './telemetry-tokens';
  */
 export interface TelemetryBlock {
   enabled: boolean;
+  errorsEndpoint?: string | null;
   otlpEndpoint: string | null;
   faroEndpoint: string | null;
   profilesEndpoint: string | null;
@@ -21,6 +22,12 @@ export interface TelemetryBlock {
   browserToken: string | null;
   samplingRatio: number;
   resource: { 'platform.project_id': string; 'deployment.environment': string };
+}
+
+/** Explicit public API origin is required when DOMAIN is absent (custom collector setups). */
+function errorIngestEndpoint(): string | null {
+  const base = process.env.API_PUBLIC_URL || process.env.API_URL || (process.env.DOMAIN ? `https://${process.env.DOMAIN}` : '');
+  return base ? base.replace(/\/+$/, '') + '/api/errors/rum' : null;
 }
 
 /** Project config key listing extra browser origins for the Faro token (comma/space separated). */
@@ -112,6 +119,7 @@ export async function buildTelemetryBlock(opts: {
       : null;
     return {
       enabled: true,
+      errorsEndpoint: errorIngestEndpoint(),
       ...endpoints,
       ingestToken: server.token,
       ingestTokenExpiresAt: server.expiresAt.toISOString(),

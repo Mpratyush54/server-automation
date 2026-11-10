@@ -39,24 +39,33 @@ to #42, not the installer.
 valid values are 1..365. Loki retention and Tempo compaction are enabled;
 Pyroscope uses `limits.compactor_blocks_retention_period`. Deletion is asynchronous
 and includes the backend's compaction/deletion delay. Do not configure an S3
-lifecycle policy that independently removes live index/WAL objects.
+lifecycle policy that independently removes live index/WAL objects (the separate
+`replays` bucket may use lifecycle — see [telemetry-privacy.md](./telemetry-privacy.md)).
+Loki also applies per-stream retention for `telemetry_type=replays` (7d) and
+`telemetry_type=errors` (90d). Project overrides and GDPR delete live in the API
+Privacy settings (#47).
 `TELEMETRY_SAMPLING_PERCENTAGE=100` retains every trace by default. Operators can
 explicitly select 0..100 for a smaller server. Both settings persist to the
 installer .env so parallel child steps and reruns see the same values.
 
 The default S3 endpoint is bundled MinIO. To use an external compatible S3
-service, supply backend Helm overrides for endpoint/region/TLS and the three
-scoped Secrets; the installer currently provisions bundled MinIO, not external
-cloud IAM. Keep each backend's bucket and credentials separate.
+service, supply backend Helm overrides for endpoint/region/TLS and the scoped
+Secrets; the installer currently provisions bundled MinIO, not external
+cloud IAM. Keep each backend's bucket and credentials separate. Full profile also
+creates a `replays` bucket (7d lifecycle) for session replay (#40) and GDPR delete.
 
 ## Ingest contract and API integration (#49)
 
 DNS `otel.<DOMAIN>` must resolve to the ingress. TLS uses cert-manager and the
 same active issuer/CA fallback as the main platform host. Public OTLP uses HTTP
 at `/v1/traces`, `/v1/logs`, `/v1/metrics`; Faro uses `/collect`. Alloy also listens
-on in-cluster OTLP gRPC 4317. `/pyroscope/ingest` and
-`/pyroscope/push.v1.PusherService/Push` strip the `/pyroscope` prefix and go to
-Alloy's profiling receiver. SDKs receive `/pyroscope` as their base URL.
+on in-cluster OTLP gRPC 4317. `/pyroscope/ingest` strips the `/pyroscope` prefix
+and goes to the `profile-ingest` proxy (Deployment/Service/NetworkPolicy in
+`monitoring`, image `<PLATFORM_IMAGE_REGISTRY>/platform-profile-ingest:<PLATFORM_IMAGE_TAG>`),
+which forwards to Alloy's profiling receiver. SDKs receive `/pyroscope` as their
+base URL. Only the Pyroscope `/ingest` API is accepted for profiles; other receiver
+APIs (for example `push.v1.PusherService/Push`) return 404 because their labels
+travel inside the request body.
 
 All public routes use ingress-nginx external auth at
 `http://platform-api.platform.svc.cluster.local:3000/api/telemetry/ingest-auth`,
@@ -70,8 +79,11 @@ Alloy clears untrusted resource identities, associates the connection with
 Kubernetes pods and their namespace's `platform.io/project` / `platform.io/env`
 labels, then overwrites project/environment from the authenticated headers on
 traces, logs and metric datapoints BEFORE batching. Incoming client identity
-attributes are removed before metadata extraction. The stack uses a single
-Loki/Tempo tenant; it deliberately does not derive `X-Scope-OrgID` from a project.
+attributes are removed before metadata extraction. After identity, the
+`pii_scrub` transform redacts emails, tokens, card-like numbers and IPs on
+traces and logs (not on `/pyroscope`). Pod logs use `loki.process "pii_scrub"`.
+The stack uses a single Loki/Tempo tenant; it deliberately does not derive
+`X-Scope-OrgID` from a project.
 API query proxies must enforce project scoping (#48). Never expose backend query
 ports directly to project workloads. A NetworkPolicy restricts Alloy ingress
 to the ingress controller, platform API, and Prometheus metrics scraping.
@@ -96,13 +108,32 @@ on that ConfigMap. #49 should treat an absent marker as disabled and check
 backend availability, then issue/refresh ingest/browser tokens and expose the
 SDK config from the shared Wave 4 contract. No API files are changed here.
 
-Known integration gap: Alloy's Pyroscope HTTP receiver forwards profiles but
-cannot use request-context headers to rewrite arbitrary profiling label sets.
-Project/environment labels in incoming profiles are therefore not authoritative.
-Before exposing project-scoped profile queries, #49 needs a sanitizing profile
-proxy or a supported collector processor that overwrites those labels. The
-current ingress authenticates/rate-limits uploads, but that alone does not
-establish trustworthy profile ownership. This part of #37 is **not complete**.
+Profile identity: Alloy's `pyroscope.receive_http` (v1.21) builds series labels
+only from the `name` query parameter and cannot read request headers, and
+`pyroscope.relabel` has no access to request metadata. The `profile-ingest`
+proxy therefore sets profile identity from the authenticated collector identity:
+
+* Requests without exactly one valid `X-Platform-Project-Id` and
+  `X-Platform-Environment` header (set by ingress external auth) get 401.
+* `platform_project_id` and `deployment_environment` are always the header
+  values; client values for these, `service_name`, `platform_service`, `app_name` and `__*` labels are
+  discarded. Invalid label names/values are dropped; at most 32 client labels.
+* The service name is prefixed with the project id (`<project-id>/<service>`), and
+  `service_name` is set to the same value, so services of different projects never
+  share a name. `platform_service` keeps the unprefixed name; Grafana's
+  trace-to-profile link matches `platform.project_id` and `service.name` against
+  `platform_project_id` and `platform_service`.
+* Only the `/ingest` query parameters `name`, `from`, `until`, `format`,
+  `sampleRate`, `spyName`, `units`, `aggregationType` are forwarded, with the
+  body and `Content-Type`; credentials and identity headers are not.
+* Pyroscope gives series labels precedence over pprof sample labels, so labels
+  embedded in a profile body cannot replace the identity labels.
+
+A NetworkPolicy allows only the ingress controller to reach the proxy, and the
+Alloy receiver (port 9999) accepts the proxy and the platform API, not the
+ingress controller. Existing installs switch to the proxy on the next full
+`platformctl provision` run of the telemetry step. Project-scoped profile
+queries should filter on `platform_project_id`.
 
 ## Memory and disk budget (estimates, not measured RSS)
 
@@ -210,8 +241,13 @@ On a fresh Ubuntu 24.04 VM (4 vCPU / 8 GB), still required:
    to the public HTTP endpoint. Verify trace IDs in Tempo via Grafana Explore;
    check RED/service-graph series in Prometheus. Exercise invalid tokens,
    spoofed identity attributes, browser allowed/disallowed origins and preflight.
-3. Upload a profile using the SDK's Pyroscope push API. Verify label ownership
-   after the profile scoping integration gap above is resolved.
+3. Upload a profile with the SDK (Pyroscope `/ingest`) using project A's ingest
+   token while the client labels name project B. In Grafana Explore (Pyroscope)
+   the series must have `platform_project_id=<A>`, the environment from A's token
+   `service_name=<A>/<service>` and `platform_service=<service>`; the Tempo span's
+   "Profiles" link must open that series. Requests without a token must get 401 from
+   ingress; `kubectl -n monitoring logs deploy/profile-ingest` must show no
+   upstream errors.
 4. Use bucket-scoped credentials to list each backend bucket and verify writes.
    On an isolated test stack shorten retention to one day, inject historical
    blocks accepted by the backend, and observe compaction/deletion after grace

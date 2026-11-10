@@ -1,0 +1,83 @@
+# Profile ingest proxy (full telemetry profile): the only route from the
+# otel.<DOMAIN> ingress to the collector's Pyroscope receiver. It sets the
+# project/environment/service labels of each profile from the authenticated
+# collector identity (ingress external-auth headers). {{PROFILE_INGEST_IMAGE}}
+# is substituted by platformctl (internal/components/telemetry.go).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: profile-ingest
+  namespace: monitoring
+  labels: {app.kubernetes.io/name: profile-ingest}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: profile-ingest}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: profile-ingest}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: proxy
+          image: {{PROFILE_INGEST_IMAGE}}
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: UPSTREAM_URL, value: "http://alloy.monitoring.svc:9999"}
+            - {name: LISTEN_ADDR, value: ":8080"}
+            - {name: HEALTH_ADDR, value: ":8081"}
+          ports:
+            - {name: http, containerPort: 8080, protocol: TCP}
+            - {name: health, containerPort: 8081, protocol: TCP}
+          readinessProbe:
+            httpGet: {path: /healthz, port: health}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: health}
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 200m, memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: profile-ingest
+  namespace: monitoring
+  labels: {app.kubernetes.io/name: profile-ingest}
+spec:
+  selector: {app.kubernetes.io/name: profile-ingest}
+  ports:
+    - {name: http, port: 8080, targetPort: http, protocol: TCP}
+---
+# Identity headers are trusted only because nothing but the ingress controller
+# can reach the proxy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: profile-ingest
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: profile-ingest}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+          podSelector:
+            matchLabels: {app.kubernetes.io/component: controller}
+      ports:
+        - {port: 8080, protocol: TCP}
+    - ports:
+        - {port: 8081, protocol: TCP}

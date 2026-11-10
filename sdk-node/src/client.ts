@@ -1,3 +1,6 @@
+import { ErrorEvent } from './error-event';
+import { traceContext } from './telemetry-context';
+import { randomUUID } from 'crypto';
 import axios, { AxiosInstance } from 'axios';
 import os from 'os';
 import { RegistrationClient } from './registration';
@@ -264,6 +267,18 @@ export class PlatformClient {
     }
 
     this.initialized = true;
+  }
+
+  /** Explicit exception capture. Never installs process exit handlers. */
+  async captureException(error: Error, context: Partial<ErrorEvent> = {}): Promise<void> {
+    const frames = String(error.stack || '').split('\n').slice(1, 101).flatMap(line => {
+      const m = /^\s*at (?:(.*?) \()?(.+?):(\d+):(\d+)\)?$/.exec(line);
+      return m ? [{ file: m[2], function: m[1], line: Number(m[3]), column: Math.max(0, Number(m[4]) - 1) }] : [];
+    });
+    const event: ErrorEvent = { eventId: randomUUID(), type: error.name || 'Error', message: error.message || error.name || 'Error',
+      frames, release: this.options?.version || 'unknown', environment: this.options?.environmentName || 'development',
+      traceId: traceContext().trace_id, ...context };
+    try { await this.http.post('/api/sdk/errors', event, { timeout: 5000 }); } catch { /* best effort */ }
   }
 
   // Synchronous config getter

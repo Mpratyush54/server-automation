@@ -72,6 +72,13 @@ func TestTelemetryValues(t *testing.T) {
 				}
 			}
 		}
+		if name == "loki" {
+			for _, want := range []string{`telemetry_type="replays"`, `telemetry_type="errors"`, "retention_stream:"} {
+				if !strings.Contains(v, want) {
+					t.Fatalf("loki missing per-type retention %s", want)
+				}
+			}
+		}
 		c := versions.Get(name)
 		if c.Version == "" || !strings.Contains(c.MirrorPullArgs(), c.Version) {
 			t.Fatal("chart missing from offline inventory", name)
@@ -98,10 +105,13 @@ func TestAlloyPipelineAndStandaloneConfigStayInSync(t *testing.T) {
 			t.Fatalf("config drift: %s", line)
 		}
 	}
-	for _, want := range []string{"include_metadata = true", "metadata.x-platform-project-id", "metadata.x-platform-environment", "context = \"datapoint\"", "platform.io/project", "platform.io/env", "sampling_percentage = 100", "send_batch_max_size = 1024", "encoding.from_json(local.file.origins.content)"} {
+	for _, want := range []string{"include_metadata = true", "metadata.x-platform-project-id", "metadata.x-platform-environment", "context = \"datapoint\"", "platform.io/project", "platform.io/env", "sampling_percentage = 100", "send_batch_max_size = 1024", "encoding.from_json(local.file.origins.content)", "otelcol.processor.transform \"pii_scrub\"", "loki.process \"pii_scrub\"", "[EMAIL]", "[CARD]", "[IP]"} {
 		if !strings.Contains(v, want) {
 			t.Fatal("Alloy missing", want)
 		}
+	}
+	if strings.Contains(v, "pyroscope.receive_http") && strings.Index(v, "otelcol.processor.transform \"pii_scrub\"") > strings.Index(v, "pyroscope.receive_http \"profiles\"") {
+		t.Fatal("pii_scrub must not be wired into the /pyroscope receive path")
 	}
 	if strings.Contains(v, "allowed_origins = [\"*\"]") {
 		t.Fatal("wildcard browser origins")
@@ -130,7 +140,7 @@ func TestTelemetryIngestContract(t *testing.T) {
 }
 
 func TestTelemetryIAMShellQuotingAndFailure(t *testing.T) {
-	for _, bucket := range []string{"loki", "tempo", "pyroscope"} {
+	for _, bucket := range []string{"loki", "tempo", "pyroscope", "replays"} {
 		t.Run(bucket, func(t *testing.T) {
 			dir := filepath.ToSlash(t.TempDir())
 			secret := "test ' dollar $() ; spaces"
@@ -163,6 +173,7 @@ const telemetryFakeMC = `mc() {
     else
       [[ "$3" == attach && "$5" == "telemetry-$BUCKET" && "$7" == "$S3_ACCESS_KEY" ]] || return 97
     fi;;
+  'ilm import'|'ilm rule') return 0;;
   *) return 98;;
  esac
 }
@@ -261,8 +272,8 @@ func TestInstallTelemetryWithFakeTools(t *testing.T) {
 			marker = i
 		}
 	}
-	if len(buckets) != 3 || jobs != 3 || waits != 3 {
-		t.Fatalf("buckets=%d jobs=%d waits=%d", len(buckets), jobs, waits)
+	if len(buckets) != 4 || jobs != 4 || waits != 4 {
+		t.Fatalf("buckets=%d jobs=%d waits=%d (expected loki/tempo/pyroscope/replays)", len(buckets), jobs, waits)
 	}
 	if marker < lastChart || marker < 0 {
 		t.Fatal("enabled marker published before backends installed")
