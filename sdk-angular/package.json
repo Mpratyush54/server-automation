@@ -1,7 +1,7 @@
 {
   "name": "@mpratyush54/sdk-angular",
   "version": "1.0.1",
-  "description": "Platform Angular SDK - HTTP interceptor, error handler, bug reporter component",
+  "description": "Platform Angular SDK - HTTP interceptor, error handler, bug reporter component, RUM (Grafana Faro)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "author": "Platform Team",
@@ -15,9 +15,10 @@
   },
   "homepage": "https://github.com/Mpratyush54/server-automation/tree/main/sdk-angular#readme",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && tsc -p tsconfig.esm.json",
     "prepublishOnly": "npm run build",
-    "test": "npm run build && node --test tests/*.test.cjs"
+    "test": "npm run build && node --test tests/*.test.cjs",
+    "size": "node scripts/bundle-size.mjs PlatformModule"
   },
   "peerDependencies": {
     "@angular/common": ">=16.0.0",
@@ -29,10 +30,20 @@
     "@angular/compiler": "^18.2.14",
     "@angular/core": "^18.0.0",
     "@angular/forms": "^18.0.0",
+    "esbuild": "^0.25.12",
     "rxjs": "^7.8.0",
     "typescript": "^5.3.0",
     "zone.js": "^0.14.0"
   },
-  "files": ["dist"],
-  "license": "MIT"
+  "files": [
+    "dist"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@grafana/faro-core": "2.13.0",
+    "@grafana/faro-web-sdk": "2.13.0",
+    "web-vitals": "6.2.3"
+  },
+  "module": "dist/esm/index.js",
+  "sideEffects": false
 }
