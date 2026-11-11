@@ -6,6 +6,8 @@ import fs from 'fs';
 import path from 'path';
 
 const ALLOWED: Record<string, string> = {
+  // Bounded 30-second monitoring response cache; database engines remain authoritative.
+  'lib/database-insights.ts': '200-entry performance cache / coalesced reads',
   // Bounded immutable source-map cache; Postgres/MinIO remain authoritative (#41).
   'lib/error-sourcemaps.ts': '16-entry content-addressed performance cache',
   // In-memory OneTimeCodeStore: test double / PLATFORM_STATE_STORE=memory only.
@@ -37,6 +39,9 @@ const ALLOWED: Record<string, string> = {
   'lib/github-app.ts': 'test double (Redis in deployments)',
   // Pure graph builder: call-scoped node/edge indexes for one topology response (#31).
   'lib/topology.ts': 'request-scoped',
+  // Public status-page payload cache used only when Redis is not the state backend
+  // (memory mode, single replica); bounded, TTL'd (#46).
+  'lib/status-page.ts': 'memory-mode fallback (Redis in deployments)',
 };
 
 function walk(dir: string): string[] {

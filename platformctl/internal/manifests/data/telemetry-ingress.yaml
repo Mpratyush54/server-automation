@@ -7,7 +7,7 @@ metadata:
   annotations:
 
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/auth-url: http://platform-api.platform.svc.cluster.local:3000/api/telemetry/ingest-auth
+    nginx.ingress.kubernetes.io/auth-url: http://platform-api.platform.svc.cluster.local:3000/api/telemetry/ingest-auth?errors=mapped
     nginx.ingress.kubernetes.io/auth-response-headers: X-Platform-Project-Id,X-Platform-Environment
     nginx.ingress.kubernetes.io/auth-cache-key: '$http_authorization|$http_origin|$request_uri'
     nginx.ingress.kubernetes.io/auth-cache-duration: '200 60s'
@@ -15,6 +15,28 @@ metadata:
     nginx.ingress.kubernetes.io/limit-burst-multiplier: '2'
     nginx.ingress.kubernetes.io/proxy-body-size: 4m
     nginx.ingress.kubernetes.io/ssl-redirect: 'true'
+    # auth_request passes only 401/403 through (anything else becomes a 500).
+    # With ?errors=mapped the API answers throttling / key outages as 403 +
+    # X-Platform-Auth-Status; @telemetry_auth_retry (server-snippet on the
+    # "telemetry" Ingress) turns that back into 429/503 with Retry-After.
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      auth_request_set $telemetry_auth_status $upstream_http_x_platform_auth_status;
+      auth_request_set $telemetry_retry_after $upstream_http_retry_after;
+      auth_request_set $telemetry_cors_origin $upstream_http_x_platform_allowed_origin;
+      error_page 403 = @telemetry_auth_retry;
+    # One server block serves otel.<domain>: only this Ingress defines it.
+    # The CORS origin is set only for a browser token the API verified.
+    nginx.ingress.kubernetes.io/server-snippet: |
+      location @telemetry_auth_retry {
+        default_type application/json;
+        add_header Retry-After $telemetry_retry_after always;
+        add_header Access-Control-Allow-Origin $telemetry_cors_origin always;
+        add_header Access-Control-Expose-Headers Retry-After always;
+        add_header Vary Origin always;
+        if ($telemetry_auth_status = 429) { return 429 '{"error":"Too many telemetry requests for this token. Retry later."}'; }
+        if ($telemetry_auth_status = 503) { return 503 '{"error":"Telemetry auth temporarily unavailable"}'; }
+        return 403 '{"error":"Forbidden"}';
+      }
 spec:
   ingressClassName: nginx
   tls:
@@ -57,7 +79,7 @@ metadata:
   annotations:
 
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/auth-url: http://platform-api.platform.svc.cluster.local:3000/api/telemetry/ingest-auth
+    nginx.ingress.kubernetes.io/auth-url: http://platform-api.platform.svc.cluster.local:3000/api/telemetry/ingest-auth?errors=mapped
     nginx.ingress.kubernetes.io/auth-response-headers: X-Platform-Project-Id,X-Platform-Environment
     nginx.ingress.kubernetes.io/auth-cache-key: '$http_authorization|$http_origin|$request_uri'
     nginx.ingress.kubernetes.io/auth-cache-duration: '200 60s'
@@ -67,6 +89,15 @@ metadata:
     nginx.ingress.kubernetes.io/ssl-redirect: 'true'
     nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/rewrite-target: /$2
+    # auth_request passes only 401/403 through (anything else becomes a 500).
+    # With ?errors=mapped the API answers throttling / key outages as 403 +
+    # X-Platform-Auth-Status; @telemetry_auth_retry (server-snippet on the
+    # "telemetry" Ingress) turns that back into 429/503 with Retry-After.
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      auth_request_set $telemetry_auth_status $upstream_http_x_platform_auth_status;
+      auth_request_set $telemetry_retry_after $upstream_http_retry_after;
+      auth_request_set $telemetry_cors_origin $upstream_http_x_platform_allowed_origin;
+      error_page 403 = @telemetry_auth_retry;
 spec:
   ingressClassName: nginx
   tls:

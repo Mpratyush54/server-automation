@@ -6,7 +6,7 @@ Use this section when running as a **Cloud Agent** (remote VM), not on a develop
 
 ### Environment
 
-- Node 22, Go 1.22, Docker, and `gh` are pre-installed via [`.cursor/Dockerfile`](.cursor/Dockerfile).
+- Node 22, Go 1.26 (matching `platformctl/go.mod`), Docker, and `gh` are pre-installed via [`.cursor/Dockerfile`](.cursor/Dockerfile).
 - Dependencies are installed by [`.cursor/install.sh`](.cursor/install.sh) during Cloud Builds.
 - Do **not** use Windows paths or PowerShell — the cloud VM is Ubuntu.
 

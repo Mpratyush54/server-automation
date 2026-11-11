@@ -663,7 +663,47 @@ describe('Settings — SMTP', () => {
         .post('/api/settings/smtp')
         .set('Authorization', `Bearer ${T.devops}`)
         .send({ name: 'Test', provider: 'postmark', fromEmail: 'a@b.io' });
-      expect([400, 201]).toContain(r.status);
+      expect(r.status).toBe(400);
+    });
+
+    it('ignores server-controlled fields (id, createdAt) and unknown keys', async () => {
+      smtpRepo.create.mockClear();
+      smtpRepo.save.mockImplementation((s: any) => Promise.resolve({ id: 'smtp-new', ...s }));
+      const r = await request(app)
+        .post('/api/settings/smtp')
+        .set('Authorization', `Bearer ${T.devops}`)
+        .send({
+          id: SMTP_ID, createdAt: '2001-01-01T00:00:00Z', updatedAt: '2001-01-01T00:00:00Z', extra: 'x',
+          name: 'Primary', provider: 'custom', host: 'smtp.example.com', port: 465,
+          password: 'real-password-123', fromEmail: 'noreply@platform.io',
+        });
+      expect(r.status).toBe(201);
+      const created = smtpRepo.create.mock.calls[0][0];
+      expect(created).not.toHaveProperty('id');
+      expect(created).not.toHaveProperty('createdAt');
+      expect(created).not.toHaveProperty('updatedAt');
+      expect(created).not.toHaveProperty('extra');
+      expect(created).toMatchObject({ host: 'smtp.example.com', port: 465, secure: true, isDefault: false });
+      expect(r.body.password).toBe('***');
+      expect(JSON.stringify(r.body)).not.toContain('real-password-123');
+    });
+
+    it.each([
+      [{ port: 70000 }, /port/],
+      [{ port: 'abc' }, /port/],
+      [{ host: 'bad host!' }, /host/],
+      [{ host: '' }, /host/],
+      [{ secure: 'yes' }, /secure/],
+      [{ fromEmail: 'not-an-email' }, /fromEmail/],
+      [{ fromEmail: 'a@b.io\r\nBcc: x@y.io' }, /fromEmail/],
+      [{ fromName: 'X"\r\nBcc: y' }, /fromName/],
+    ])('400 — invalid field %j', async (patch, msg) => {
+      const r = await request(app)
+        .post('/api/settings/smtp')
+        .set('Authorization', `Bearer ${T.devops}`)
+        .send({ name: 'Primary', provider: 'custom', host: 'smtp.example.com', port: 587, fromEmail: 'noreply@platform.io', ...patch });
+      expect(r.status).toBe(400);
+      expect(r.body.error).toMatch(msg);
     });
 
     it('403 — developer cannot create SMTP config', async () => {

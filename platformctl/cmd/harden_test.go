@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"io"
 	"strings"
 	"testing"
@@ -39,5 +40,36 @@ func TestHardeningFlags(t *testing.T) {
 	}
 	if cmd, _, err := rootCmd.Find([]string{"harden"}); err != nil || cmd != hardenCmd {
 		t.Fatal("missing harden command")
+	}
+}
+
+// Provision on an already provisioned server applies host hardening: say so,
+// and let an interactive operator decline.
+func TestConfirmHardeningOnExistingServer(t *testing.T) {
+	oldExisting, oldSkip := existingInstall, cfg.SkipHardening
+	defer func() { existingInstall, cfg.SkipHardening = oldExisting, oldSkip }()
+	existingInstall = func() bool { return true }
+
+	cfg.SkipHardening = false
+	var out bytes.Buffer
+	confirmHardening(strings.NewReader(""), &out, false)
+	if !strings.Contains(out.String(), "SKIP_HARDENING=true") || cfg.SkipHardening {
+		t.Fatalf("non-interactive: %q skip=%v", out.String(), cfg.SkipHardening)
+	}
+	out.Reset()
+	confirmHardening(strings.NewReader("n\n"), &out, true)
+	if !cfg.SkipHardening {
+		t.Fatal("interactive decline ignored")
+	}
+	cfg.SkipHardening = false
+	confirmHardening(strings.NewReader("\n"), &out, true)
+	if cfg.SkipHardening {
+		t.Fatal("default answer must keep hardening")
+	}
+	existingInstall = func() bool { return false }
+	out.Reset()
+	confirmHardening(strings.NewReader(""), &out, true)
+	if out.Len() != 0 {
+		t.Fatal("fresh install must not prompt")
 	}
 }

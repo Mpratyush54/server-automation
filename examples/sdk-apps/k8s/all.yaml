@@ -115,6 +115,12 @@ spec:
             - name: RUM_BROWSER_TOKEN
               valueFrom:
                 secretKeyRef: { name: sdk-demo-rum, key: browserToken, optional: true }
+            - name: RUM_REPLAY_ENDPOINT
+              valueFrom:
+                secretKeyRef: { name: sdk-demo-rum, key: replayEndpoint, optional: true }
+            - name: RUM_ERRORS_ENDPOINT
+              valueFrom:
+                secretKeyRef: { name: sdk-demo-rum, key: errorsEndpoint, optional: true }
           ports:
             - containerPort: 8080
           resources:
@@ -169,6 +175,12 @@ spec:
             - name: RUM_BROWSER_TOKEN
               valueFrom:
                 secretKeyRef: { name: sdk-demo-rum, key: browserToken, optional: true }
+            - name: RUM_REPLAY_ENDPOINT
+              valueFrom:
+                secretKeyRef: { name: sdk-demo-rum, key: replayEndpoint, optional: true }
+            - name: RUM_ERRORS_ENDPOINT
+              valueFrom:
+                secretKeyRef: { name: sdk-demo-rum, key: errorsEndpoint, optional: true }
           ports:
             - containerPort: 8080
           resources:

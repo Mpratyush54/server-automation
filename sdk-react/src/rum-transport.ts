@@ -16,6 +16,8 @@ export interface PlatformTransportOptions {
   token: string;
   errorsUrl?: string | null;
   release?: string;
+  /** Current session replay id, attached to error events (`replayId`, #40). */
+  replayId?: () => string | undefined;
   /** Max batches waiting while the collector is unavailable (default 30). */
   maxQueue?: number;
   /** Backoff cap in ms (default 60 s). */
@@ -80,7 +82,7 @@ export class PlatformTransport extends BaseTransport {
           message: String(p.value || p.message || 'Unknown error').slice(0, 8000),
           release: this.opts.release || meta.app?.version || 'unknown',
           environment: meta.app?.environment || 'production',
-          sessionId: meta.session?.id, userId: meta.user?.id, breadcrumbs: [...this.breadcrumbs],
+          sessionId: meta.session?.id, userId: meta.user?.id, replayId: this.opts.replayId?.(), breadcrumbs: [...this.breadcrumbs],
           traceId: p.trace?.trace_id,
           frames: (p.stacktrace?.frames || []).slice(0, 100).map((f: any) => ({
             file: String(f.filename || f.file || '<unknown>'), function: f.function,

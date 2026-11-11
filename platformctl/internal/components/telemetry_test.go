@@ -73,10 +73,13 @@ func TestTelemetryValues(t *testing.T) {
 			}
 		}
 		if name == "loki" {
-			for _, want := range []string{`telemetry_type="replays"`, `telemetry_type="errors"`, "retention_stream:"} {
-				if !strings.Contains(v, want) {
-					t.Fatalf("loki missing per-type retention %s", want)
-				}
+			// Per-project stream retention is written by the API into the runtime
+			// overrides; static rules on labels that no stream carries must not return.
+			if strings.Contains(v, "telemetry_type") || strings.Contains(v, "retention_stream:") {
+				t.Fatal("loki values must not carry static retention_stream rules")
+			}
+			if !strings.Contains(v, "retention_enabled: true") {
+				t.Fatal("loki compactor retention disabled")
 			}
 		}
 		c := versions.Get(name)

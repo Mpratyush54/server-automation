@@ -6,10 +6,18 @@
 # - Egress NetworkPolicies: browser runners and blackbox-exporter may reach the
 #   public internet only (no RFC 1918 / CGNAT / link-local / loopback ranges, so no
 #   pod, service, node-internal or cloud-metadata addresses); runners may also
-#   reach the platform API to fetch their definition and report results.
+#   reach the platform API's dedicated runner port (3001: the runner endpoints
+#   only, never the rest of the API) to fetch their definition and report results,
+#   and the ingress controller (ports 80/443) for the project's own env hosts and
+#   the platform's own domain and its subdomains (#152).
+# - ConfigMap "platform-ca" (written by platformctl: the internal CA certificate,
+#   never its key) lets runners, and the API's own HTTP/SSL checks, trust env and
+#   platform hosts served by the internal CA.
 # - IPv4 only (k3s default single-stack); blackbox modules prefer ip4.
 # - RBAC: the platform API manages Probes in monitoring and CronJobs + their token
-#   Secrets in synthetics, and reads the synthetics-runner ConfigMap. Nothing else.
+#   Secrets in synthetics, reads the synthetics-runner and platform-ca ConfigMaps
+#   (the latter is a public certificate), and reads runner
+#   Jobs/Pods (status only) to explain missing reports. Nothing else.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -70,11 +78,35 @@ spec:
           podSelector:
             matchLabels: {app: platform-api}
       ports:
-        - {port: 3000, protocol: TCP}
+        # Runner endpoints only (SYNTHETICS_RUNNER_PORT); the main API port stays closed.
+        - {port: 3001, protocol: TCP}
+    # The project's own environment hosts: the runner maps exactly those names to the
+    # ingress controller (Chromium host-resolver-rules) and refuses every other
+    # platform name, so only routed Ingress traffic for those hosts reaches these pods.
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+          podSelector:
+            matchLabels: {app.kubernetes.io/component: controller}
+      ports:
+        - {port: 80, protocol: TCP}
+        - {port: 443, protocol: TCP}
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
             except: [0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4]
+---
+# Runner endpoints of the platform API (GET definition, POST result) on their own port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-api-synthetics
+  namespace: platform
+  labels: {app.kubernetes.io/managed-by: platformctl}
+spec:
+  selector: {app: platform-api}
+  ports:
+    - {name: runner, port: 3001, targetPort: 3001, protocol: TCP}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -108,12 +140,19 @@ rules:
   - apiGroups: ["batch"]
     resources: [cronjobs]
     verbs: [get, list, create, update, delete]
+  # Read-only: why a browser run did not report (job deadline, image pull, OOM).
+  - apiGroups: ["batch"]
+    resources: [jobs]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
   - apiGroups: [""]
     resources: [secrets]
     verbs: [get, create, update, delete]
   - apiGroups: [""]
     resources: [configmaps]
-    resourceNames: [synthetics-runner]
+    resourceNames: [synthetics-runner, platform-ca]
     verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

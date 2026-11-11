@@ -22,6 +22,7 @@ This file provides a machine-readable index of all documentation pages for LLM c
 - `docs/guides/monitoring.md` — Grafana, Loki, Prometheus
 - `docs/guides/observability.md` — Portal fleet and project observability views: RED/APM, traces (TraceQL, waterfall), logs (LogQL, live tail), RUM, infra, profiles; project scoping, limits, API
 - `docs/guides/frontend-rum.md` — React/Angular SDK RUM (Faro): web vitals, errors, routes, traceparent, privacy, bundle size
+- `docs/guides/status-pages.md` — Public project status pages: components from synthetic checks, incidents/maintenance, branding, JSON/Atom/RSS feeds
 - `docs/guides/database-backups.md` — Automated pg_dump, restore workflow
 - `docs/guides/local-development.md` — Running everything locally
 - `docs/guides/testing.md` — Unit, integration, deployment tests

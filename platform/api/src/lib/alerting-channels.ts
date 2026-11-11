@@ -276,6 +276,14 @@ export function pagerDutyPayload(m: AlertMessage, routingKey: string) {
   };
 }
 
+/** Adaptive Card text colour: info (and tests) use the neutral accent, not Warning. */
+export function teamsColor(m: Pick<AlertMessage, 'event' | 'severity'>): 'Good' | 'Attention' | 'Warning' | 'Accent' {
+  if (m.event === 'resolved') return 'Good';
+  if (m.severity === 'critical') return 'Attention';
+  if (m.severity === 'warning') return 'Warning';
+  return 'Accent';
+}
+
 export function teamsPayload(m: AlertMessage) {
   return {
     type: 'message',
@@ -287,7 +295,7 @@ export function teamsPayload(m: AlertMessage) {
         type: 'AdaptiveCard',
         version: '1.4',
         body: [
-          { type: 'TextBlock', size: 'Medium', weight: 'Bolder', wrap: true, text: clip(headline(m), 300), color: m.event === 'resolved' ? 'Good' : m.severity === 'critical' ? 'Attention' : 'Warning' },
+          { type: 'TextBlock', size: 'Medium', weight: 'Bolder', wrap: true, text: clip(headline(m), 300), color: teamsColor(m) },
           ...(m.body ? [{ type: 'TextBlock', wrap: true, text: clip(m.body, 2000) }] : []),
           { type: 'FactSet', facts: facts(m).map((f) => ({ title: f.name, value: f.value })) },
         ],

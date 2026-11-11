@@ -1,3 +1,4 @@
+import { DatabaseInsightsPanelComponent } from './database-insights-panel.component';
 import { ReleasesPanelComponent } from './releases-panel.component';
 import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -15,7 +16,7 @@ import { TopologyGraphComponent } from './topology/topology-graph.component';
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [ReleasesPanelComponent, CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, PrivacyTabComponent, TopologyGraphComponent, ArgocdPanelComponent],
+  imports: [DatabaseInsightsPanelComponent, ReleasesPanelComponent, CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, PrivacyTabComponent, TopologyGraphComponent, ArgocdPanelComponent],
   templateUrl: './project-detail.component.html',
   styleUrl: './project-detail.component.css'
 })
@@ -251,7 +252,10 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     this.updateAvailable = false;
     this.currentDeployedVersion = null;
     this.gitMeta = {};
-    if (!this.project?.repositoryUrl && !this.projectSettings.repositoryUrl) {
+    // #155: only call /git/branches when the project actually has a saved repository URL.
+    // Unsaved projectSettings.repositoryUrl must not trigger provider API traffic.
+    const repositoryUrl = (this.project?.repositoryUrl || '').trim();
+    if (!repositoryUrl) {
       this.deployDto.branch = '';
       this.deployDto.commitSha = '';
       this.deployDto.version = '';
