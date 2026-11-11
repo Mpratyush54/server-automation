@@ -80,11 +80,11 @@ chart_args() {
     cert-manager)
       echo "--set installCRDs=true" ;;
     postgresql)
-      echo "--set auth.postgresPassword=x --set auth.database=platform" ;;
+      echo "--set auth.postgresPassword=x --set auth.database=platform --set metrics.enabled=true" ;;
     mongodb)
-      echo "--set auth.rootPassword=x" ;;
+      echo "--set auth.rootPassword=x --set metrics.enabled=true" ;;
     redis)
-      echo "--set auth.password=x" ;;
+      echo "--set auth.password=x --set metrics.enabled=true" ;;
     minio)
       echo "-f $(values minio-values.yaml) --set auth.rootUser=x --set auth.rootPassword=xxxxxxxx" \
            "--set image.repository=bitnamilegacy/minio" \

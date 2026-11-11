@@ -158,7 +158,7 @@ func InstallTelemetry(c *config.Config) error {
 		}
 	}
 	// The profile proxy is applied (and ready) before the Ingress routes to it.
-	for _, name := range []string{"telemetry-profile-ingest.yaml", "telemetry-ingress.yaml", "telemetry-rules.yaml", "telemetry-dashboard.yaml"} {
+	for _, name := range []string{"telemetry-profile-ingest.yaml", "telemetry-ingress.yaml", "telemetry-rules.yaml", "telemetry-dashboard.yaml", "database-monitoring.yaml"} {
 		p, err := telemetryManifest(name, c, proxyImage)
 		if err != nil {
 			return err

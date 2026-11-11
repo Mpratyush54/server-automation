@@ -6,6 +6,8 @@ import fs from 'fs';
 import path from 'path';
 
 const ALLOWED: Record<string, string> = {
+  // Bounded 30-second monitoring response cache; database engines remain authoritative.
+  'lib/database-insights.ts': '200-entry performance cache / coalesced reads',
   // Bounded immutable source-map cache; Postgres/MinIO remain authoritative (#41).
   'lib/error-sourcemaps.ts': '16-entry content-addressed performance cache',
   // In-memory OneTimeCodeStore: test double / PLATFORM_STATE_STORE=memory only.

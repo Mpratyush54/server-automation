@@ -116,21 +116,21 @@ func (r helmRelease) reconcile(extraArgs ...string) error {
 
 func postgresqlRelease(cfg *config.Config) helmRelease {
 	return helmRelease{Step: "postgresql", Label: "PostgreSQL", Release: "postgresql", Chart: "postgresql", Namespace: "databases",
-		Values:   map[string]any{"auth": map[string]string{"postgresPassword": cfg.PostgresPassword, "database": "platform"}},
+		Values:   databaseMonitoringValues(cfg, "postgres", map[string]string{"postgresPassword": cfg.PostgresPassword, "database": "platform"}),
 		Args:     []string{"--set", "primary.persistence.size=10Gi"},
 		Restarts: "postgresql-0 (connections drop for ~30s; the API reconnects)"}
 }
 
 func mongodbRelease(cfg *config.Config) helmRelease {
 	return helmRelease{Step: "mongodb", Label: "MongoDB", Release: "mongodb", Chart: "mongodb", Namespace: "databases",
-		Values:   map[string]any{"auth": map[string]string{"rootPassword": cfg.MongoPassword}},
+		Values:   databaseMonitoringValues(cfg, "mongo", map[string]string{"rootPassword": cfg.MongoPassword}),
 		Args:     []string{"--set", "persistence.size=10Gi"},
 		Restarts: "mongodb (project databases unavailable for ~30s)"}
 }
 
 func redisRelease(cfg *config.Config) helmRelease {
 	return helmRelease{Step: "redis", Label: "Redis", Release: "redis", Chart: "redis", Namespace: "databases",
-		Values: map[string]any{"auth": map[string]string{"password": cfg.RedisPassword}},
+		Values: databaseMonitoringValues(cfg, "redis", map[string]string{"password": cfg.RedisPassword}),
 		// Single server: one read replica. The chart default (3, started one at a
 		// time) added ~1.5 minutes to every install for no redundancy.
 		Args:     []string{"--set", "master.persistence.size=5Gi", "--set", "replica.replicaCount=1"},

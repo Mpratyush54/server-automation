@@ -823,6 +823,7 @@
 
 <!-- DATABASES TAB -->
 @if (activeTab === 'databases') {
+  <app-database-insights-panel [project]="project" />
   <div>
     <div class="grid-2">
       <!-- Provision New Database (DevOps Only) -->
