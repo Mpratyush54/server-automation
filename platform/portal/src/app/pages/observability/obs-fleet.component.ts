@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { DEFAULT_SINCE, FleetRow, fmtMs, fmtPct, fmtRate, healthLabel, isSince, SINCE_OPTIONS } from './observability-api';
+import { DEFAULT_SINCE, FleetRow, fmtMs, fmtPct, fmtRate, healthLabel, humanizeStatus, isSince, SINCE_OPTIONS } from './observability-api';
 
 type SortKey = 'health' | 'name' | 'requestRate' | 'errorRate' | 'p95Ms' | 'activeAlerts';
 const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown: 2, healthy: 3 };
@@ -76,7 +76,7 @@ const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown
                 <td class="obs-num">{{ ms(r.p95Ms) }}</td>
                 <td class="obs-num" [class.obs-bad]="r.criticalAlerts > 0">{{ r.activeAlerts }}</td>
                 <td class="obs-num">{{ r.openErrors }}</td>
-                <td>{{ r.synthetics || '—' }}</td>
+                <td>{{ humanize(r.synthetics) || '—' }}</td>
                 <td>@if (r.slos.total) { <span [class.obs-bad]="r.slos.breaching > 0">{{ r.slos.total - r.slos.breaching }}/{{ r.slos.total }} met</span> } @else { — }</td>
               </tr>
             }
@@ -93,6 +93,7 @@ export class ObsFleetComponent implements OnInit {
   private router = inject(Router);
 
   readonly sinceOptions = SINCE_OPTIONS;
+  readonly humanize = humanizeStatus;
   since = DEFAULT_SINCE;
   rows: FleetRow[] = [];
   scope: 'all' | 'member' = 'member';

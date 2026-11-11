@@ -1,4 +1,4 @@
-import { buildWaterfall, chartPaths, flameRects, fmtMs, fmtPct, fmtRate, isProjectTab, isSince, layoutGraph, nsToDate, Span } from './observability-api';
+import { buildWaterfall, chartPaths, flameRects, fmtMs, fmtPct, fmtRate, humanizeStatus, isProjectTab, isSince, layoutGraph, nsToDate, Span } from './observability-api';
 
 function span(id: string, parent: string | null, start: number, end: number, extra: Partial<Span> = {}): Span {
   return {
@@ -76,5 +76,13 @@ describe('observability helpers (#48)', () => {
     expect(isProjectTab('evil')).toBeFalse();
     expect(isSince('7d')).toBeTrue();
     expect(isSince('100y')).toBeFalse();
+  });
+
+  it('humanizes status enums', () => {
+    expect(humanizeStatus('major_outage')).toBe('Major outage');
+    expect(humanizeStatus('operational')).toBe('Operational');
+    expect(humanizeStatus('partial-outage')).toBe('Partial outage');
+    expect(humanizeStatus(null)).toBe('');
+    expect(humanizeStatus('')).toBe('');
   });
 });

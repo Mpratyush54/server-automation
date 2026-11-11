@@ -49,7 +49,7 @@
       <div class="obs-stat"><div class="label">Apdex (T=0.5 s)</div><div class="value">{{ summary.red?.apdex != null ? (summary.red.apdex | number: '1.2-2') : '—' }}</div></div>
       <div class="obs-stat"><div class="label">Active alerts</div><div class="value" [class.obs-bad]="summary.incidents.critical > 0">{{ summary.incidents.active }}</div></div>
       <div class="obs-stat"><div class="label">Open errors</div><div class="value">{{ summary.errors.open }}</div></div>
-      <div class="obs-stat"><div class="label">Synthetics</div><div class="value" style="font-size:1rem">{{ summary.synthetics || '—' }}</div></div>
+      <div class="obs-stat"><div class="label">Synthetics</div><div class="value" style="font-size:1rem">{{ humanize(summary.synthetics) || '—' }}</div></div>
     </div>
     @if (summary.telemetryError) { <div class="obs-banner error">{{ summary.telemetryError }}</div> }
   }
@@ -220,7 +220,7 @@
 @if (tab === 'synthetics') {
   <div class="obs-card">
     <h3>Synthetics</h3>
-    @if (summary) { <p>Overall status: <strong>{{ summary.synthetics || 'no checks' }}</strong></p> }
+    @if (summary) { <p>Overall status: <strong>{{ humanize(summary.synthetics) || 'No checks' }}</strong></p> }
     <a class="obs-btn primary" [routerLink]="['/projects', projectId, 'synthetics']">Open synthetic checks</a>
     <a class="obs-btn" routerLink="/alerting" [queryParams]="{ projectId }" style="margin-left:8px">Alerting ({{ summary?.incidents?.active ?? 0 }} active)</a>
   </div>

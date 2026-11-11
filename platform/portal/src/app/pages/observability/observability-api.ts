@@ -262,3 +262,10 @@ export function flameRects(fb: Flamebearer, minWidth = 0.002): FlameRect[] {
   });
   return out;
 }
+
+/** Human label for a status enum: "major_outage" -> "Major outage". */
+export function humanizeStatus(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '';
+  const text = String(value).replace(/[_-]+/g, ' ').trim().toLowerCase();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : '';
+}

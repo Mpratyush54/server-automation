@@ -45,7 +45,7 @@
 .obs-table td { padding: 8px; border-bottom: 1px solid var(--obs-border); vertical-align: top; }
 .obs-table tr.clickable { cursor: pointer; }
 .obs-table tr.clickable:hover, .obs-table tr.selected { background: var(--obs-hover); }
-.obs-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.obs-num, .obs-table th.obs-num, .obs-table td.obs-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .obs-input, .obs-select { background: var(--obs-elevated); color: var(--obs-text); border: 1px solid var(--obs-border); border-radius: 6px; padding: 6px 8px; font: inherit; }
 .obs-input.code, textarea.obs-input { font-family: var(--font-code, ui-monospace, monospace); font-size: 0.82rem; }
 .obs-btn { background: transparent; color: var(--obs-text); border: 1px solid var(--obs-border); border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }

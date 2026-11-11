@@ -7,6 +7,7 @@ import { firstValueFrom, Subscription } from 'rxjs';
 import {
   DEFAULT_SINCE, Flamebearer, fmtBytes, fmtMs, fmtPct, fmtRate, GraphEdge, GraphNode, healthLabel, isProjectTab, isSince, nsToDate, Point,
   PROJECT_TABS, projectBase, ProjectTab, SINCE_OPTIONS,
+  humanizeStatus,
 } from './observability-api';
 import { ChartMarker, ChartSeries, ObsLineChartComponent } from './obs-line-chart.component';
 import { ObsTraceViewComponent } from './obs-trace-view.component';
@@ -47,6 +48,7 @@ export class ObsProjectComponent implements OnInit, OnDestroy {
 
   readonly tabs = PROJECT_TABS;
   readonly sinceOptions = SINCE_OPTIONS;
+  readonly humanize = humanizeStatus;
   readonly vitals = WEB_VITALS;
   readonly rate = fmtRate;
   readonly pct = fmtPct;
