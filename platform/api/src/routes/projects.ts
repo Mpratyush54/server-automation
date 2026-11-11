@@ -394,16 +394,29 @@ router.get('/projects/:projectId/git/branches', expressAuthenticate, async (req:
     const ds = await getDb();
     const project = await ds.getRepository(Project).findOne({ where: { id: req.params.projectId } });
     if (!project) return res.status(404).json({ error: 'Project not found' });
-    if (!project.repositoryUrl) {
-      return res.status(400).json({ error: 'Project has no repositoryUrl — set a GitHub/GitLab URL first' });
+    // #155: projects without a repo must not hit the provider (anonymous rate limits → 400).
+    const repositoryUrl = (project.repositoryUrl || '').trim();
+    if (!repositoryUrl) {
+      return res.json({
+        repositoryUrl: null,
+        defaultBranch: project.defaultBranch || 'HEAD',
+        branches: [],
+        provider: null,
+        ownerRepo: null,
+      });
     }
-    const data = await fetchRepoBranches(project.repositoryUrl);
+    const data = await fetchRepoBranches(repositoryUrl);
     return res.json({
-      repositoryUrl: project.repositoryUrl,
+      repositoryUrl,
       ...data,
     });
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    const msg = String(err?.message || err);
+    if (/rate.?limit/i.test(msg)) {
+      res.setHeader('Retry-After', '60');
+      return res.status(429).json({ error: msg });
+    }
+    return res.status(400).json({ error: msg });
   }
 });
 
