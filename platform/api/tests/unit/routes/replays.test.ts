@@ -34,7 +34,13 @@ jest.mock('../../../src/middleware/auth', () => ({
     return s.status(401).json({ error: 'Unauthorized' });
   },
   expressAuthenticate: (r: any, s: any, next: any) => {
-    if (!r.header('Authorization')) return s.sendStatus(401);
+    const auth = r.header('Authorization');
+    if (!auth) return s.sendStatus(401);
+    // Agent tokens: 'Bearer agent:<scope,scope>'.
+    if (auth.startsWith('Bearer agent:')) {
+      r.agentToken = { id: 'agent-1', name: 'mcp', tokenPrefix: 'plat_agent_x', scopes: auth.slice('Bearer agent:'.length).split(',') };
+      return next();
+    }
     r.user = { id: 'user-1' }; next();
   },
 }));
@@ -200,7 +206,23 @@ describe('portal replay routes', () => {
     expect(snap.body.html).toContain('Hello');
     expect(snap.body.html).toContain("script-src 'none'");
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'replay.snapshot_view' }));
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'replay.chunk_view', userId: 'user-1', metadata: { sessionId: SID, seq: 0 } }));
     expect((await request(app).get(`/projects/${P}/replays/${SID}/snapshot?page=/missing`).set('Authorization', 'Bearer human')).status).toBe(404);
+  });
+
+  it('agent tokens need the replays:read scope and are named in the audit log', async () => {
+    for (const path of [`/projects/${P}/replays`, `/projects/${P}/replays/${SID}`, `/projects/${P}/replays/${SID}/chunks/0`, `/projects/${P}/replays/latest/snapshot?page=/orders/42`]) {
+      const res = await request(app).get(path).set('Authorization', 'Bearer agent:projects:read,deployments:read');
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('replays:read');
+    }
+    expect(requireProjectAccess).not.toHaveBeenCalled();
+    expect(logAudit).not.toHaveBeenCalled();
+    const ok = await request(app).get(`/projects/${P}/replays/${SID}`).set('Authorization', 'Bearer agent:projects:read,replays:read');
+    expect(ok.status).toBe(200);
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'replay.view', userId: undefined, metadata: { sessionId: SID, agentTokenId: 'agent-1', agentTokenName: 'mcp' },
+    }));
   });
 
   it('delete requires devops and removes objects and rows', async () => {

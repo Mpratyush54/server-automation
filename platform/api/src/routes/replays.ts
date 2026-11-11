@@ -184,12 +184,32 @@ async function memberAccess(req: Request, res: Response, role: ProjectAccessRole
     res.status(400).json({ error: 'Invalid session id' });
     return false;
   }
+  // Recordings hold personal data: agent tokens need an explicit replays:read scope
+  // (not part of the default agent scopes), on top of project access.
+  const agent = (req as AuthenticatedRequest).agentToken;
+  if (agent && !agent.scopes.includes('*') && !agent.scopes.includes('replays:read')) {
+    res.status(403).json({ error: 'Forbidden: agent token needs the replays:read scope' });
+    return false;
+  }
   const access = await requireProjectAccess(req as AuthenticatedRequest, projectId, role);
   if (access.ok === false) {
     res.status(access.status).json({ error: access.error });
     return false;
   }
   return true;
+}
+
+/** Audit a replay access by the human user or agent token that made it. */
+async function auditReplay(req: Request, action: string, metadata: Record<string, unknown>) {
+  const r = req as AuthenticatedRequest;
+  await logAudit({
+    userId: r.user?.id,
+    action,
+    targetType: 'Project',
+    targetId: req.params.projectId,
+    metadata: r.agentToken ? { ...metadata, agentTokenId: r.agentToken.id, agentTokenName: r.agentToken.name } : metadata,
+    ip: req.ip,
+  });
 }
 
 function optNumber(v: unknown): number | undefined {
@@ -238,14 +258,7 @@ router.get('/projects/:projectId/replays/:sessionId', expressAuthenticate, async
     if (req.params.sessionId === 'latest') return res.status(400).json({ error: 'Invalid session id' });
     const out = await getReplaySession(await getDb(), req.params.projectId, req.params.sessionId);
     if (!out) return res.status(404).json({ error: 'Replay not found' });
-    await logAudit({
-      userId: (req as AuthenticatedRequest).user?.id,
-      action: 'replay.view',
-      targetType: 'Project',
-      targetId: req.params.projectId,
-      metadata: { sessionId: req.params.sessionId },
-      ip: req.ip,
-    });
+    await auditReplay(req, 'replay.view', { sessionId: req.params.sessionId });
     return res.json(out);
   } catch (err) {
     return failed(res, err);
@@ -263,6 +276,8 @@ router.get('/projects/:projectId/replays/:sessionId/chunks/:seq', expressAuthent
     if (!key) return res.status(404).json({ error: 'Chunk not found' });
     const body = await store.get(key);
     if (!body) return res.status(404).json({ error: 'Chunk expired' });
+    // Chunks carry the recording itself: audited like the session view, per chunk.
+    await auditReplay(req, 'replay.chunk_view', { sessionId: req.params.sessionId, seq });
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Encoding', 'gzip');
     res.setHeader('Cache-Control', 'private, no-store');
@@ -288,14 +303,7 @@ router.get('/projects/:projectId/replays/:sessionId/snapshot', expressAuthentica
       maxRawBytes: replayLimits().maxRawBytes,
     });
     if (!snap) return res.status(404).json({ error: 'No DOM snapshot recorded for this page' });
-    await logAudit({
-      userId: (req as AuthenticatedRequest).user?.id,
-      action: 'replay.snapshot_view',
-      targetType: 'Project',
-      targetId: req.params.projectId,
-      metadata: { sessionId: snap.sessionId, page: snap.page },
-      ip: req.ip,
-    });
+    await auditReplay(req, 'replay.snapshot_view', { sessionId: snap.sessionId, page: snap.page });
     res.setHeader('Cache-Control', 'private, no-store');
     return res.json(snap);
   } catch (err) {
@@ -308,14 +316,7 @@ router.delete('/projects/:projectId/replays/:sessionId', expressAuthenticate, as
     if (!(await memberAccess(req, res, ProjectAccessRole.DEVOPS))) return;
     if (req.params.sessionId === 'latest') return res.status(400).json({ error: 'Invalid session id' });
     const out = await deleteReplaySession(await getDb(), getReplayStore(), req.params.projectId, req.params.sessionId);
-    await logAudit({
-      userId: (req as AuthenticatedRequest).user?.id,
-      action: 'replay.delete',
-      targetType: 'Project',
-      targetId: req.params.projectId,
-      metadata: { sessionId: req.params.sessionId, objects: out.objects },
-      ip: req.ip,
-    });
+    await auditReplay(req, 'replay.delete', { sessionId: req.params.sessionId, objects: out.objects });
     return res.json({ deleted: true, objects: out.objects });
   } catch (err) {
     return failed(res, err);
