@@ -1,4 +1,4 @@
-import { IsNull, LessThan, LessThanOrEqual, Not, Repository } from 'typeorm';
+import { In, IsNull, LessThan, LessThanOrEqual, Not, Repository } from 'typeorm';
 import { getDb } from '../config/database';
 import { Environment } from '../entities/Environment';
 import { SyntheticAlertPolicy, SyntheticAlertState, SyntheticCheck, SyntheticStatus } from '../entities/SyntheticCheck';
@@ -117,8 +117,12 @@ export interface SyntheticStore {
   updateCheck(id: string, patch: Partial<SyntheticCheck>): Promise<void>;
   saveResult(result: Partial<SyntheticResult>): Promise<SyntheticResult>;
   ingressHosts(projectId: string): Promise<string[]>;
-  /** Delete results started before `before`; returns screenshot keys of deleted rows. */
-  pruneResults(before: Date): Promise<string[]>;
+  /** Delete results started before `before` that have no screenshot; returns how many. */
+  pruneResultsWithoutScreenshot(before: Date): Promise<number>;
+  /** Oldest results started before `before` that still reference a screenshot. */
+  listExpiredScreenshots(before: Date, limit: number): Promise<Array<{ id: string; screenshotKey: string }>>;
+  /** Delete these result rows (their screenshots are already gone). */
+  deleteResults(ids: string[]): Promise<void>;
 }
 
 export class TypeormSyntheticStore implements SyntheticStore {
@@ -158,11 +162,27 @@ export class TypeormSyntheticStore implements SyntheticStore {
     return projectIngressHosts(await envs.find({ where: { projectId } }));
   }
 
-  async pruneResults(before: Date): Promise<string[]> {
+  async pruneResultsWithoutScreenshot(before: Date): Promise<number> {
     const { results } = await this.repos();
-    const withShots = await results.find({ where: { startedAt: LessThan(before), screenshotKey: Not(IsNull()) }, select: { id: true, screenshotKey: true }, take: 1000 });
-    await results.delete({ startedAt: LessThan(before) });
-    return withShots.map((r) => r.screenshotKey!).filter(Boolean);
+    const res = await results.delete({ startedAt: LessThan(before), screenshotKey: IsNull() });
+    return res.affected ?? 0;
+  }
+
+  async listExpiredScreenshots(before: Date, limit: number): Promise<Array<{ id: string; screenshotKey: string }>> {
+    const { results } = await this.repos();
+    const rows = await results.find({
+      where: { startedAt: LessThan(before), screenshotKey: Not(IsNull()) },
+      select: { id: true, screenshotKey: true },
+      order: { startedAt: 'ASC' },
+      take: limit,
+    });
+    return rows.map((r) => ({ id: r.id, screenshotKey: r.screenshotKey! }));
+  }
+
+  async deleteResults(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const { results } = await this.repos();
+    await results.delete({ id: In(ids) });
   }
 }
 
@@ -273,13 +293,45 @@ export function initialNextRun(intervalSeconds: number, now = Date.now(), rand =
   return new Date(now + Math.floor(rand() * Math.min(intervalSeconds, 60)) * 1000 + 5_000);
 }
 
-export async function pruneSyntheticResults(store: SyntheticStore = syntheticStore(), now = Date.now()): Promise<number> {
+export interface PruneOptions {
+  batchSize?: number;
+  /** Stop starting new batches after this long; the next run continues. */
+  budgetMs?: number;
+  deleteObject?: (key: string) => Promise<void>;
+  clock?: () => number;
+}
+
+/**
+ * Retention: rows without a screenshot are deleted in one statement; rows with one are
+ * deleted in batches, and only once their screenshot object is deleted, so no object is
+ * ever left without a row pointing at it. A row whose object cannot be deleted stays for
+ * the next run; a batch where nothing could be deleted (store down) ends the run.
+ */
+export async function pruneSyntheticResults(store: SyntheticStore = syntheticStore(), now = Date.now(), opts: PruneOptions = {}): Promise<number> {
   const before = new Date(now - schedulerSettings().retentionDays * 86_400_000);
-  const keys = await store.pruneResults(before);
-  for (const key of keys) {
-    try { await getUploadStore().delete(key); } catch { /* best effort */ }
+  const batchSize = opts.batchSize ?? 500;
+  const budgetMs = opts.budgetMs ?? 5 * 60_000;
+  const clock = opts.clock || Date.now;
+  const deleteObject = opts.deleteObject || ((key: string) => getUploadStore().delete(key));
+  let removed = await store.pruneResultsWithoutScreenshot(before);
+  const started = clock();
+  while (clock() - started < budgetMs) {
+    const batch = await store.listExpiredScreenshots(before, batchSize);
+    if (batch.length === 0) break;
+    const done: string[] = [];
+    for (const row of batch) {
+      try {
+        await deleteObject(row.screenshotKey);
+        done.push(row.id);
+      } catch {
+        /* keep the row: retried next run */
+      }
+    }
+    await store.deleteResults(done);
+    removed += done.length;
+    if (done.length === 0 || batch.length < batchSize) break;
   }
-  return keys.length;
+  return removed;
 }
 
 let lastWarn = 0;

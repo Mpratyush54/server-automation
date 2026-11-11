@@ -26,10 +26,17 @@ class MemStore implements SyntheticStore {
   async updateCheck(id: string, patch: any) { Object.assign(this.checks.find((x) => x.id === id), patch); }
   async saveResult(r: any) { const row = { id: `r${this.results.length + 1}`, ...r }; this.results.push(row); return row; }
   async ingressHosts() { return ['app.example.com']; }
-  async pruneResults(before: Date) {
-    const old = this.results.filter((r) => r.startedAt < before);
-    this.results = this.results.filter((r) => r.startedAt >= before);
-    return old.map((r) => r.screenshotKey).filter(Boolean);
+  async pruneResultsWithoutScreenshot(before: Date) {
+    const n = this.results.length;
+    this.results = this.results.filter((r) => !(r.startedAt < before && !r.screenshotKey));
+    return n - this.results.length;
+  }
+  async listExpiredScreenshots(before: Date, limit: number) {
+    return this.results.filter((r) => r.startedAt < before && r.screenshotKey)
+      .sort((a, b) => a.startedAt - b.startedAt).slice(0, limit).map((r) => ({ id: r.id, screenshotKey: r.screenshotKey }));
+  }
+  async deleteResults(ids: string[]) {
+    this.results = this.results.filter((r) => !ids.includes(r.id));
   }
 }
 
@@ -173,9 +180,41 @@ describe('scheduler tick', () => {
   it('prunes old results', async () => {
     const store = new MemStore();
     const old = new Date(Date.now() - 40 * 86_400_000);
-    store.results.push({ startedAt: old, screenshotKey: null }, { startedAt: new Date(), screenshotKey: null });
-    await pruneSyntheticResults(store);
+    store.results.push({ id: 'a', startedAt: old, screenshotKey: null }, { id: 'b', startedAt: new Date(), screenshotKey: null });
+    await pruneSyntheticResults(store, Date.now(), { deleteObject: async () => {} });
     expect(store.results).toHaveLength(1);
+  });
+
+  it('prunes screenshot rows in batches, only after their object is deleted', async () => {
+    const store = new MemStore();
+    const old = (i: number) => new Date(Date.now() - 40 * 86_400_000 + i);
+    for (let i = 0; i < 25; i++) store.results.push({ id: `s${i}`, startedAt: old(i), screenshotKey: `shots/${i}.png` });
+    store.results.push({ id: 'n1', startedAt: old(99), screenshotKey: null }, { id: 'fresh', startedAt: new Date(), screenshotKey: 'shots/fresh.png' });
+    const objects = new Set(store.results.map((r) => r.screenshotKey).filter(Boolean));
+    const failing = new Set(['shots/3.png', 'shots/17.png']);
+    const removed = await pruneSyntheticResults(store, Date.now(), {
+      batchSize: 10,
+      deleteObject: async (key) => { if (failing.has(key)) throw new Error('store unavailable'); objects.delete(key); },
+    });
+    expect(removed).toBe(1 + 23);
+    // Every remaining row still has its object; every deleted object's row is gone.
+    expect(store.results.map((r) => r.id).sort()).toEqual(['fresh', 's17', 's3']);
+    for (const r of store.results) expect(objects.has(r.screenshotKey)).toBe(true);
+    expect([...objects].sort()).toEqual(['shots/17.png', 'shots/3.png', 'shots/fresh.png']);
+  });
+
+  it('stops when nothing in a batch can be deleted, and within its time budget', async () => {
+    const store = new MemStore();
+    const old = new Date(Date.now() - 40 * 86_400_000);
+    for (let i = 0; i < 30; i++) store.results.push({ id: `s${i}`, startedAt: old, screenshotKey: `k${i}` });
+    let calls = 0;
+    expect(await pruneSyntheticResults(store, Date.now(), { batchSize: 10, deleteObject: async () => { calls++; throw new Error('down'); } })).toBe(0);
+    expect(calls).toBe(10);
+    expect(store.results).toHaveLength(30);
+    let t = 0;
+    const removed = await pruneSyntheticResults(store, Date.now(), { batchSize: 10, budgetMs: 1000, clock: () => (t += 600), deleteObject: async () => {} });
+    expect(removed).toBe(10);
+    expect(store.results).toHaveLength(20);
   });
 
   it('first run is jittered within a minute', () => {
