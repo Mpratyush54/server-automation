@@ -41,9 +41,13 @@ Pyroscope uses `limits.compactor_blocks_retention_period`. Deletion is asynchron
 and includes the backend's compaction/deletion delay. Do not configure an S3
 lifecycle policy that independently removes live index/WAL objects (the separate
 `replays` bucket may use lifecycle — see [telemetry-privacy.md](./telemetry-privacy.md)).
-Loki also applies per-stream retention for `telemetry_type=replays` (7d) and
-`telemetry_type=errors` (90d). Project overrides and GDPR delete live in the API
-Privacy settings (#47).
+Per-project **logs** retention set in the API Privacy settings (#47) is applied
+by the API as Loki runtime overrides (`retention_stream` on the project id labels
+in the `loki-runtime` ConfigMap, re-applied every 10 minutes). Traces and profiles
+have no per-project retention (single-tenant Tempo/Pyroscope). Error-tracking
+events live in Postgres and are pruned by the API's hourly `error-retention` job
+(project `errors` setting, default 90 days); replays are not stored in Loki. See
+[telemetry-privacy.md](./telemetry-privacy.md#retention-what-actually-applies).
 `TELEMETRY_SAMPLING_PERCENTAGE=100` retains every trace by default. Operators can
 explicitly select 0..100 for a smaller server. Both settings persist to the
 installer .env so parallel child steps and reruns see the same values.
