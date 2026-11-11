@@ -410,7 +410,8 @@ export function verifyRunnerToken(checkId: string, token: string, key?: string):
 /**
  * Ingress hosts that belong to the project: the hosts of its active environments. These
  * (and only these) may resolve to a private address (see synthetic-ssrf). The platform's
- * own DOMAIN is never treated as a project host.
+ * own DOMAIN is not listed here: it and its subdomains are platform hosts, always
+ * connected through the ingress controller Service (synthetic-ssrf, #152).
  */
 export function projectIngressHosts(environments: Array<{ domain?: string | null; isActive?: boolean }>, platformDomain = process.env.DOMAIN || ''): string[] {
   const hosts = new Set<string>();

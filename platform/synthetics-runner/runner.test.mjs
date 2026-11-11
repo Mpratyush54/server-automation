@@ -2,8 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addressBlocked, firstDisallowedHop, hopGuard, hostResolverRules, nssTrustCommands, privateIpv4Patterns, redirectChain, render,
-  requestAllowed, resolveIngressAddress, runStep,
+  addressBlocked, firstDisallowedHop, hopGuard, hostResolverRules, isPlatformHost, nssTrustCommands, platformDomains, privateIpv4Patterns,
+  redirectChain, render, requestAllowed, resolveIngressAddress, runStep,
 } from './runner.mjs';
 
 test('blocks internal and non-HTTP requests', () => {
@@ -79,12 +79,10 @@ test('addressBlocked covers private, loopback, link-local and mapped forms', () 
   for (const ip of ['93.184.216.34', '2606:4700::1111']) assert.equal(addressBlocked(ip), false, ip);
 });
 
-test('host resolver rules: project hosts first, then platform domain, internal names and private literals refused', () => {
-  const rules = hostResolverRules({ allowedHosts: ['shop.apps.example.com', 'bad host,MAP * 1.2.3.4'], blockedDomains: ['apps.example.com'] }).split(', ');
+test('host resolver rules: project hosts first, internal names and private literals refused', () => {
+  const rules = hostResolverRules({ allowedHosts: ['shop.apps.example.com', 'bad host,MAP * 1.2.3.4'] }).split(', ');
   assert.equal(rules[0], 'EXCLUDE shop.apps.example.com', 'project host resolves normally without an ingress address');
   assert.ok(!rules.some((r) => r.includes('bad host') || r === 'MAP * 1.2.3.4'), 'invalid host names are dropped');
-  assert.ok(rules.indexOf('MAP *.apps.example.com ~NOTFOUND') > 0);
-  assert.ok(rules.includes('MAP apps.example.com ~NOTFOUND'));
   for (const r of ['MAP localhost ~NOTFOUND', 'MAP *.svc ~NOTFOUND', 'MAP *.cluster.local ~NOTFOUND', 'MAP 10.*.*.* ~NOTFOUND', 'MAP 169.254.*.* ~NOTFOUND', 'MAP 172.31.*.* ~NOTFOUND', 'MAP 100.127.*.* ~NOTFOUND']) {
     assert.ok(rules.includes(r), r);
   }
@@ -92,15 +90,69 @@ test('host resolver rules: project hosts first, then platform domain, internal n
   assert.equal(privateIpv4Patterns().length, 5 + 16 + 64 + 32);
 });
 
-test('env hosts: exactly the project hosts are mapped to the ingress controller, before the platform-domain block', () => {
-  const rules = hostResolverRules({
-    allowedHosts: ['shop.apps.example.com', 'shop-staging.apps.example.com'], ingressIp: '10.43.12.7', blockedDomains: ['apps.example.com'],
-  }).split(', ');
-  assert.deepEqual(rules.slice(0, 2), ['MAP shop.apps.example.com 10.43.12.7', 'MAP shop-staging.apps.example.com 10.43.12.7']);
-  assert.ok(rules.indexOf('MAP *.apps.example.com ~NOTFOUND') > 1, 'other platform names stay refused');
-  assert.ok(!rules.some((r) => r.startsWith('MAP *') && r.endsWith('10.43.12.7')), 'no wildcard is mapped to the ingress');
+test('env hosts: exactly the project hosts are mapped to the ingress controller', () => {
+  const rules = hostResolverRules({ allowedHosts: ['shop.customer.example', 'shop-staging.customer.example'], ingressIp: '10.43.12.7' }).split(', ');
+  assert.deepEqual(rules.slice(0, 2), ['MAP shop.customer.example 10.43.12.7', 'MAP shop-staging.customer.example 10.43.12.7']);
+  assert.ok(!rules.some((r) => r.startsWith('MAP *') && r.endsWith('10.43.12.7')), 'no wildcard without a platform domain');
   // A non-IPv4 ingress answer is never used as a mapping target.
   assert.equal(hostResolverRules({ allowedHosts: ['a.example.com'], ingressIp: 'evil.example' }).split(', ')[0], 'EXCLUDE a.example.com');
+});
+
+test('platform domain: DOMAIN and *.DOMAIN are mapped to the ingress controller, never blocked or resolved elsewhere (#152)', () => {
+  const rules = hostResolverRules({ allowedHosts: ['shop.apps.example.com'], ingressIp: '10.43.12.7', ingressDomains: ['apps.example.com'] }).split(', ');
+  assert.deepEqual(rules.slice(0, 3), ['MAP shop.apps.example.com 10.43.12.7', 'MAP apps.example.com 10.43.12.7', 'MAP *.apps.example.com 10.43.12.7']);
+  assert.ok(!rules.some((r) => r.includes('apps.example.com ~NOTFOUND')), 'no block rule for platform hosts');
+  assert.ok(!rules.some((r) => r.startsWith('EXCLUDE') && r.includes('apps.example.com') && r !== 'EXCLUDE shop.apps.example.com'));
+  // Platform rules come before the internal-name / private-literal refusals.
+  assert.ok(rules.indexOf('MAP *.apps.example.com 10.43.12.7') < rules.indexOf('MAP *.svc ~NOTFOUND'));
+  assert.ok(rules.includes('MAP *.svc ~NOTFOUND') && rules.includes('MAP 10.*.*.* ~NOTFOUND'));
+  // A .local platform domain (LAN installs) still maps to the ingress before *.local is refused.
+  const lan = hostResolverRules({ ingressIp: '10.43.12.7', ingressDomains: ['platform.local'] }).split(', ');
+  assert.ok(lan.indexOf('MAP *.platform.local 10.43.12.7') < lan.indexOf('MAP *.local ~NOTFOUND'));
+});
+
+test('platform domain without a known ingress address is refused, not resolved', () => {
+  const rules = hostResolverRules({ ingressDomains: ['apps.example.com'] }).split(', ');
+  assert.deepEqual(rules.slice(0, 2), ['MAP apps.example.com ~NOTFOUND', 'MAP *.apps.example.com ~NOTFOUND']);
+  assert.ok(!rules.some((r) => r.startsWith('EXCLUDE')));
+});
+
+test('platform domains: cluster-internal or malformed values are ignored', () => {
+  assert.deepEqual(platformDomains(['Apps.Example.com.', 'apps.example.com', 'svc', 'cluster.local', 'default.svc.cluster.local', 'x.svc',
+    'localhost', 'com', '10.0.0.1', 'bad host', 'MAP * 1.2.3.4']), ['apps.example.com']);
+  assert.deepEqual(platformDomains('apps.example.com'), []);
+  const rules = hostResolverRules({ ingressIp: '10.43.12.7', ingressDomains: ['cluster.local', 'svc'] }).split(', ');
+  assert.ok(!rules.some((r) => r.endsWith('10.43.12.7')), 'an internal "domain" never maps cluster names to the ingress');
+});
+
+test('request rules: platform hosts allowed, other internal targets still refused', () => {
+  const domains = ['apps.example.com'];
+  for (const url of ['https://apps.example.com/', 'https://api.apps.example.com/v1', 'http://grafana.apps.example.com/login']) {
+    assert.equal(requestAllowed(url, [], domains), true, url);
+    assert.equal(requestAllowed(url), true, `${url} (no domain: public-looking name, DNS check decides)`);
+  }
+  for (const url of ['http://10.43.0.1/', 'http://169.254.169.254/latest', 'http://platform-api.platform.svc:3000/', 'http://kubernetes.default.svc.cluster.local/',
+    'http://localhost/', 'https://user:pw@apps.example.com/', 'ftp://apps.example.com/']) {
+    assert.equal(requestAllowed(url, [], domains), false, url);
+  }
+  assert.equal(isPlatformHost('evilapps.example.com', domains), false, 'suffix must be a label boundary');
+  assert.equal(isPlatformHost('apps.example.com.evil.example', domains), false);
+  // Redirect from a platform host to a private / cluster target is still refused.
+  for (const target of ['http://10.43.0.10:3000/', 'http://169.254.169.254/latest/meta-data', 'http://platform-api.platform.svc:3000/api/health', 'http://192.168.1.1/']) {
+    assert.equal(firstDisallowedHop(['https://apps.example.com/', 'https://api.apps.example.com/next', target], [], domains), target, target);
+  }
+  assert.equal(firstDisallowedHop(['https://public.example/', 'https://apps.example.com/', 'https://api.apps.example.com/'], [], domains), null);
+});
+
+test('hopGuard: platform hosts skip the DNS check (pinned to the ingress), others do not', async () => {
+  const lookup = async () => [{ address: '10.43.12.7', family: 4 }];
+  const g = hopGuard([], lookup, ['apps.example.com']);
+  assert.equal(await g.resolvesPublic('https://api.apps.example.com/'), true);
+  assert.equal(await g.resolvesPublic('https://apps.example.com/'), true);
+  assert.equal(g.check(['https://apps.example.com/', 'https://api.apps.example.com/']), true);
+  assert.equal(await g.resolvesPublic('https://other.example/'), false);
+  assert.equal(g.check(['https://apps.example.com/', 'http://10.0.0.5/']), false);
+  assert.match(g.error(), /other\.example: resolves to a private address/);
 });
 
 test('resolveIngressAddress returns an IPv4 address or null', async () => {

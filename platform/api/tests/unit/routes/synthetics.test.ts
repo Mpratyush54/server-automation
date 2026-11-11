@@ -348,7 +348,7 @@ describe('runner-only listener', () => {
     expect((await request(runnerApp).get(`/api/synthetics/runner/checks/${id}`)).status).toBe(401);
   });
 
-  it('runner definition lists the platform domain as blocked', async () => {
+  it('runner definition lists the platform domain as reachable via the ingress', async () => {
     const prev = process.env.DOMAIN;
     process.env.DOMAIN = 'Platform.Example.COM';
     try {
@@ -356,7 +356,8 @@ describe('runner-only listener', () => {
       const created = await create({ name: 'Shop', type: 'browser', intervalSeconds: 900, config: { steps: [{ action: 'goto', url: 'https://shop.example.com/' }] } });
       const id = created.body.check.id;
       const def = await request(app).get(`/api/synthetics/runner/checks/${id}`).set('Authorization', `Bearer ${runnerToken(id)}`);
-      expect(def.body.blockedDomains).toEqual(['platform.example.com']);
+      expect(def.body.ingressDomains).toEqual(['platform.example.com']);
+      expect(def.body.blockedDomains).toBeUndefined();
       expect(def.body.allowedIngressHosts).toEqual(['app.customer.example']);
     } finally {
       if (prev === undefined) delete process.env.DOMAIN; else process.env.DOMAIN = prev;

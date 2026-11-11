@@ -41,6 +41,7 @@ import {
 import { redactSecrets } from '../lib/synthetic-assertions';
 import { browserRuntime, deleteCheckResources, probesEnabled, syncCheckResources } from '../lib/synthetic-k8s';
 import { executeCheck, initialNextRun, recordResult, resolveCheckAlert, syntheticStore } from '../lib/synthetic-scheduler';
+import { platformDomainOf } from '../lib/synthetic-ssrf';
 import { getProjectStatusFeed } from '../lib/synthetic-status';
 import { SYNTHETIC_TEMPLATES } from '../lib/synthetic-templates';
 import { getUploadStore } from '../lib/upload-store';
@@ -345,17 +346,18 @@ runnerRouter.get('/synthetics/runner/checks/:checkId', async (req: Request, res:
       steps: check.config.steps || [],
       secrets: decryptCheckSecrets(check.secretsEncrypted),
       allowedIngressHosts: projectIngressHosts(await ds.getRepository(Environment).find({ where: { projectId: check.projectId } })),
-      // The runner refuses these names (and their subdomains) except allowedIngressHosts.
-      blockedDomains: runnerBlockedDomains(),
+      // The platform domain and its subdomains: reached only through the ingress
+      // controller (the runner maps them to it, or refuses them when it cannot) (#152).
+      ingressDomains: runnerIngressDomains(),
     });
   } catch (err) {
     handleError(res, err, 'load runner check');
   }
 });
 
-/** The platform's own domain: browser checks never reach it, except the project's env hosts. */
-export function runnerBlockedDomains(env: NodeJS.ProcessEnv = process.env): string[] {
-  const d = String(env.DOMAIN || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/[/:].*$/, '');
+/** The platform's own domain: browser checks reach it and its subdomains via the ingress controller only. */
+export function runnerIngressDomains(env: NodeJS.ProcessEnv = process.env): string[] {
+  const d = platformDomainOf(env.DOMAIN);
   return d ? [d] : [];
 }
 

@@ -2,7 +2,7 @@ import type { SyntheticCheck } from '../entities/SyntheticCheck';
 import { referencedSecrets } from './synthetic-assertions';
 import { runnerToken } from './synthetic-checks';
 import { loadKubeConfig } from './kube-config';
-import { resolveTarget } from './synthetic-ssrf';
+import { INGRESS_SERVICE, isPlatformHost, platformDomainOf, resolveTarget } from './synthetic-ssrf';
 import { cronSchedule } from './synthetic-cron';
 
 /**
@@ -31,8 +31,8 @@ export const CHECK_LABEL = 'platform.io/synthetic-check';
 export const RUNNER_CONFIGMAP = 'synthetics-runner';
 /** The API's runner-only listener (SYNTHETICS_RUNNER_PORT) behind the platform-api-synthetics Service. */
 export const DEFAULT_API_URL = 'http://platform-api-synthetics.platform.svc:3001';
-/** Ingress controller Service; the CoreDNS rewrite sends *.DOMAIN there as well. */
-export const INGRESS_SERVICE = 'ingress-nginx-controller.ingress-nginx.svc.cluster.local';
+/** Ingress controller Service; the CoreDNS rewrite sends DOMAIN and *.DOMAIN there as well. */
+export { INGRESS_SERVICE };
 /** ConfigMap (synthetics namespace) with the internal CA certificate, written by platformctl. */
 export const PLATFORM_CA_CONFIGMAP = 'platform-ca';
 export const PLATFORM_CA_MOUNT = '/etc/platform-ca';
@@ -198,6 +198,8 @@ export function renderBrowserCronJob(
 
 export interface SyntheticK8sOps {
   readRunnerConfig(): Promise<Record<string, string> | null>;
+  /** ca.crt of the synthetics/platform-ca ConfigMap (public certificate only), or null. */
+  readPlatformCa?(): Promise<string | null>;
   applyProbe(probe: Record<string, any>): Promise<void>;
   deleteProbe(name: string): Promise<void>;
   listProbeNames(): Promise<string[]>;
@@ -260,6 +262,16 @@ function kubeOps(): SyntheticK8sOps {
         throw err;
       }
     },
+    async readPlatformCa() {
+      try {
+        const cm: any = await core.readNamespacedConfigMap({ name: PLATFORM_CA_CONFIGMAP, namespace: SYNTHETICS_NAMESPACE });
+        const pem = String((cm.body || cm)?.data?.['ca.crt'] || '');
+        return pem.includes('BEGIN CERTIFICATE') ? pem : null;
+      } catch (err) {
+        if (notFound(err)) return null;
+        throw err;
+      }
+    },
     async applyProbe(body) {
       const name = body.metadata.name;
       await upsert(
@@ -315,6 +327,29 @@ function getOps(): SyntheticK8sOps {
 export function setSyntheticK8sOpsForTests(o: SyntheticK8sOps | null): void {
   ops = o;
   runtimeCache = null;
+  caCache = null;
+}
+
+let caCache: { at: number; value: string | null } | null = null;
+
+/**
+ * The platform CA certificate (PEM) for API-side checks against platform hosts (#152):
+ * the synthetics/platform-ca ConfigMap platformctl writes (full profile), cached 5 min.
+ * Null without a DOMAIN, outside a cluster, without RBAC or when the copy is missing.
+ * Never throws.
+ */
+export async function platformCaCertificate(env: NodeJS.ProcessEnv = process.env, now = Date.now()): Promise<string | null> {
+  if (!platformDomainOf(env.DOMAIN)) return null;
+  if (caCache && now - caCache.at < 300_000) return caCache.value;
+  let value: string | null = null;
+  try {
+    const o = getOps();
+    value = o.readPlatformCa ? await o.readPlatformCa() : null;
+  } catch {
+    value = null;
+  }
+  caCache = { at: now, value };
+  return value;
 }
 
 let runtimeCache: { at: number; value: BrowserRuntime } | null = null;
@@ -356,10 +391,13 @@ export async function syncCheckResources(
     } else if (probesEnabled(env)) {
       let eligible = probeEligible(check);
       if (eligible) {
-        // Only public targets: a target allowed via the ingress exception is not mirrored.
+        // Only public targets: a target allowed via the ingress exception (project env
+        // hosts, platform hosts) is not mirrored; blackbox-exporter may not reach the ingress.
         try {
           const url = check.type === 'ssl' ? `https://${check.config.host}:${check.config.port || 443}/` : String(check.config.url);
-          const t = await resolveTarget(url, { allowedIngressHosts: [] });
+          const domain = platformDomainOf(env.DOMAIN);
+          if (isPlatformHost(new URL(url).hostname.replace(/\.$/, '').toLowerCase(), domain)) throw new Error('platform host');
+          const t = await resolveTarget(url, { allowedIngressHosts: [], platformDomain: domain });
           eligible = !t.ingressException;
         } catch {
           eligible = false;

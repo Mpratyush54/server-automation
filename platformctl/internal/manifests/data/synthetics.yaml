@@ -8,12 +8,15 @@
 #   pod, service, node-internal or cloud-metadata addresses); runners may also
 #   reach the platform API's dedicated runner port (3001: the runner endpoints
 #   only, never the rest of the API) to fetch their definition and report results,
-#   and the ingress controller (ports 80/443) for the project's own env hosts.
+#   and the ingress controller (ports 80/443) for the project's own env hosts and
+#   the platform's own domain and its subdomains (#152).
 # - ConfigMap "platform-ca" (written by platformctl: the internal CA certificate,
-#   never its key) lets runners trust env hosts served by the internal CA.
+#   never its key) lets runners, and the API's own HTTP/SSL checks, trust env and
+#   platform hosts served by the internal CA.
 # - IPv4 only (k3s default single-stack); blackbox modules prefer ip4.
 # - RBAC: the platform API manages Probes in monitoring and CronJobs + their token
-#   Secrets in synthetics, reads the synthetics-runner ConfigMap, and reads runner
+#   Secrets in synthetics, reads the synthetics-runner and platform-ca ConfigMaps
+#   (the latter is a public certificate), and reads runner
 #   Jobs/Pods (status only) to explain missing reports. Nothing else.
 apiVersion: v1
 kind: Namespace
@@ -149,7 +152,7 @@ rules:
     verbs: [get, create, update, delete]
   - apiGroups: [""]
     resources: [configmaps]
-    resourceNames: [synthetics-runner]
+    resourceNames: [synthetics-runner, platform-ca]
     verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

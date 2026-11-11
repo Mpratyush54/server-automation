@@ -1,7 +1,7 @@
 import { buildStatusFeed, overallStatus } from '../../../src/lib/synthetic-status';
 import {
   BROWSER_RESOURCES, cronSchedule, probeEligible, reconcileSyntheticResources, renderBrowserCronJob, renderProbe,
-  resourceName, setSyntheticK8sOpsForTests, SyntheticK8sOps, syncCheckResources,
+  platformCaCertificate, resourceName, setSyntheticK8sOpsForTests, SyntheticK8sOps, syncCheckResources,
 } from '../../../src/lib/synthetic-k8s';
 import { runnerToken, verifyRunnerToken } from '../../../src/lib/synthetic-checks';
 
@@ -128,10 +128,11 @@ describe('browser CronJob rendering', () => {
 });
 
 describe('resource sync', () => {
-  function fakeOps(runnerCfg: Record<string, string> | null = null) {
+  function fakeOps(runnerCfg: Record<string, string> | null = null, ca: string | null = null) {
     const calls: string[] = [];
     const ops: SyntheticK8sOps = {
       readRunnerConfig: async () => runnerCfg,
+      readPlatformCa: async () => { calls.push('ca'); return ca; },
       applyProbe: async (p) => { calls.push(`probe:${p.metadata.name}`); },
       deleteProbe: async (n) => { calls.push(`-probe:${n}`); },
       listProbeNames: async () => ['synthetic-orphan', resourceName(ID)],
@@ -159,6 +160,29 @@ describe('resource sync', () => {
     expect(await syncCheckResources(http, { env })).toMatchObject({ probe: 'applied' });
     expect(await syncCheckResources({ ...http, config: { url: 'https://10.0.0.1/' } }, { env })).toMatchObject({ probe: 'deleted' });
     expect(calls).toEqual([`probe:${resourceName(ID)}`, `-probe:${resourceName(ID)}`]);
+  });
+
+  it('platform hosts (DOMAIN / *.DOMAIN) are never mirrored as Probes (#152)', async () => {
+    const calls = fakeOps();
+    const env = { PLATFORM_OBSERVABILITY: 'enabled', DOMAIN: 'apps.example.com' };
+    for (const url of ['https://apps.example.com/', 'https://api.apps.example.com/api/health']) {
+      expect(await syncCheckResources({ ...http, config: { url } }, { env })).toMatchObject({ probe: 'deleted' });
+    }
+    expect(await syncCheckResources({ ...http, type: 'ssl', config: { host: 'api.apps.example.com' } }, { env })).toMatchObject({ probe: 'deleted' });
+    expect(calls.every((c) => c.startsWith('-probe:'))).toBe(true);
+  });
+
+  it('platform CA: read from the synthetics/platform-ca copy only with a DOMAIN, cached', async () => {
+    const pem = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n';
+    const calls = fakeOps(null, pem);
+    expect(await platformCaCertificate({}, 1_000)).toBeNull();
+    expect(calls).toEqual([]);
+    expect(await platformCaCertificate({ DOMAIN: 'apps.example.com' }, 1_000)).toBe(pem);
+    expect(await platformCaCertificate({ DOMAIN: 'apps.example.com' }, 2_000)).toBe(pem);
+    expect(calls).toEqual(['ca']);
+    // No RBAC / API error: null, never a throw.
+    setSyntheticK8sOpsForTests({ readRunnerConfig: async () => null, readPlatformCa: async () => { throw new Error('forbidden'); } } as any);
+    expect(await platformCaCertificate({ DOMAIN: 'apps.example.com' }, 1_000)).toBeNull();
   });
 
   it('browser checks get a CronJob + token Secret only when the runner is enabled', async () => {

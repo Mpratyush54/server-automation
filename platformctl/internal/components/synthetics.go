@@ -59,8 +59,9 @@ func syntheticsRunnerConfigMap(c *config.Config) map[string]any {
 }
 
 // SyntheticsCAConfigMap is the synthetics-namespace copy of the platform CA
-// certificate (public part only), mounted by browser runners so they trust the
-// project's environment hosts when those are served by the internal CA.
+// certificate (public part only), mounted by browser runners (and read by the
+// API's own checks) so they trust the project's environment hosts and the
+// platform's own hosts when those are served by the internal CA.
 const SyntheticsCAConfigMap = "platform-ca"
 
 // caCertificatePEM returns only the CERTIFICATE blocks of pemData (never a key),

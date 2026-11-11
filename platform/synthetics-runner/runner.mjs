@@ -6,10 +6,12 @@
 // Network safety (layered):
 //   1. The pod's egress NetworkPolicy allows the public internet, cluster DNS, the
 //      platform API's dedicated runner port and the ingress controller only. The
-//      project's own env hosts (allowedIngressHosts) are mapped to the ingress
-//      controller inside Chromium; every other platform name is refused.
-//   2. Chromium's host resolver refuses cluster-internal names, the platform's own
-//      domain and literal private addresses on EVERY connection, redirect hops included.
+//      project's own env hosts (allowedIngressHosts) and the platform's own domain and
+//      its subdomains (ingressDomains, #152) are mapped to the ingress controller
+//      inside Chromium (refused when its address is unknown); they never resolve to
+//      anything else.
+//   2. Chromium's host resolver refuses cluster-internal names and literal private
+//      addresses on EVERY connection, redirect hops included.
 //   3. Requests the page issues are checked here before they leave (scheme, host,
 //      resolved addresses); redirect hops, which Playwright cannot hold back, are
 //      re-validated as they happen and after every step; any disallowed hop fails the
@@ -24,8 +26,9 @@ const API = (process.env.PLATFORM_API_URL || 'http://platform-api-synthetics.pla
 const CHECK_ID = process.env.CHECK_ID || '';
 const TOKEN = process.env.RUN_TOKEN || '';
 const USER_AGENT_SUFFIX = ' platform-synthetics/1.0';
-// The project's own env hosts are routed to this Service (the ingress controller) and,
-// when they use the platform's internal CA, verified against PLATFORM_CA_FILE.
+// The project's own env hosts and the platform's domain are routed to this Service (the
+// ingress controller) and, when they use the platform's internal CA, verified against
+// PLATFORM_CA_FILE.
 const INGRESS_SERVICE = process.env.INGRESS_SERVICE || '';
 const PLATFORM_CA_FILE = process.env.PLATFORM_CA_FILE || '';
 
@@ -37,15 +40,37 @@ const blocked = new net.BlockList();
 for (const [a, p] of PRIVATE_V4) blocked.addSubnet(a, p, 'ipv4');
 for (const [a, p] of [['::1', 128], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]]) blocked.addSubnet(a, p, 'ipv6');
 const INTERNAL = ['localhost', '.localhost', '.local', '.internal', '.svc', '.cluster.local'];
+// A platform domain may itself end in e.g. .local or .lan (LAN installs), but never be a
+// cluster-internal service name.
+const CLUSTER_NAMES = ['localhost', '.localhost', '.svc', '.cluster.local', 'cluster.local'];
 
-export function requestAllowed(rawUrl, allowedHosts = []) {
+const HOST_RE = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+export const validHostname = (h) => typeof h === 'string' && HOST_RE.test(h);
+
+/**
+ * Usable platform domains: multi-label host names that are not themselves
+ * cluster-internal names (a bogus value never widens what is reachable).
+ */
+export function platformDomains(list = []) {
+  return [...new Set((Array.isArray(list) ? list : []).map((d) => String(d).toLowerCase().replace(/\.$/, '')))]
+    .filter((d) => validHostname(d) && d.includes('.') && net.isIP(d) === 0
+      && !CLUSTER_NAMES.some((s) => d === s.replace(/^\./, '') || d.endsWith(s)));
+}
+
+/** Whether a host is a platform domain or one of its subdomains (reached via the ingress only). */
+export function isPlatformHost(host, ingressDomains = []) {
+  if (!host || net.isIP(host)) return false;
+  return platformDomains(ingressDomains).some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+export function requestAllowed(rawUrl, allowedHosts = [], ingressDomains = []) {
   let u;
   try { u = new URL(rawUrl); } catch { return false; }
   if (u.protocol === 'data:' || u.protocol === 'blob:' || u.protocol === 'about:') return true;
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
   if (u.username || u.password) return false;
   const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  if (allowedHosts.includes(host)) return true;
+  if (allowedHosts.includes(host) || isPlatformHost(host, ingressDomains)) return true;
   if (INTERNAL.some((s) => host === s.replace(/^\./, '') || host.endsWith(s))) return false;
   const fam = net.isIP(host);
   if (fam === 4 && blocked.check(host, 'ipv4')) return false;
@@ -70,8 +95,8 @@ export function redirectChain(request) {
 }
 
 /** First URL in a hop chain that fails the request rules, or null. */
-export function firstDisallowedHop(urls, allowedHosts = []) {
-  return urls.find((u) => !requestAllowed(u, allowedHosts)) ?? null;
+export function firstDisallowedHop(urls, allowedHosts = [], ingressDomains = []) {
+  return urls.find((u) => !requestAllowed(u, allowedHosts, ingressDomains)) ?? null;
 }
 
 /** Wildcard patterns covering the literal private IPv4 ranges (Chromium host-resolver-rules syntax). */
@@ -84,22 +109,22 @@ export function privateIpv4Patterns() {
   return out;
 }
 
-const HOST_RE = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
-export const validHostname = (h) => typeof h === 'string' && HOST_RE.test(h);
-
 /**
  * Chromium --host-resolver-rules: the first matching rule wins, so the project's own
- * hosts come first (mapped to `ingressIp` when known, else resolved normally), then
- * the platform's domains, cluster-internal suffixes and private literal addresses are
- * refused. These rules apply to every connection the browser makes, redirects included.
+ * hosts come first (mapped to `ingressIp` when known, else resolved normally), then the
+ * platform's domains and their subdomains (mapped to `ingressIp`; refused when it is
+ * unknown, so they never resolve to anything but the ingress controller), then
+ * cluster-internal suffixes and private literal addresses are refused. These rules apply
+ * to every connection the browser makes, redirects included.
  */
-export function hostResolverRules({ allowedHosts = [], ingressIp = null, blockedDomains = [] } = {}) {
+export function hostResolverRules({ allowedHosts = [], ingressIp = null, ingressDomains = [] } = {}) {
   const rules = [];
   const allowed = allowedHosts.map((h) => String(h).toLowerCase()).filter(validHostname);
   const mapTo = ingressIp && net.isIPv4(ingressIp) ? ingressIp : null;
   for (const h of allowed) rules.push(mapTo ? `MAP ${h} ${mapTo}` : `EXCLUDE ${h}`);
-  for (const d of blockedDomains.map((x) => String(x).toLowerCase()).filter(validHostname)) {
-    rules.push(`MAP ${d} ~NOTFOUND`, `MAP *.${d} ~NOTFOUND`);
+  for (const d of platformDomains(ingressDomains)) {
+    const to = mapTo || '~NOTFOUND';
+    rules.push(`MAP ${d} ${to}`, `MAP *.${d} ${to}`);
   }
   rules.push('MAP localhost ~NOTFOUND');
   for (const sfx of INTERNAL) if (sfx.startsWith('.')) rules.push(`MAP *${sfx} ~NOTFOUND`);
@@ -112,7 +137,7 @@ export function hostResolverRules({ allowedHosts = [], ingressIp = null, blocked
  * rules synchronously; `resolvesPublic(url)` adds a DNS check so a public-looking name
  * that resolves to a private address is caught as well.
  */
-export function hopGuard(allowedHosts = [], lookup = (h) => dns.promises.lookup(h, { all: true, verbatim: true })) {
+export function hopGuard(allowedHosts = [], lookup = (h) => dns.promises.lookup(h, { all: true, verbatim: true }), ingressDomains = []) {
   const violations = [];
   const cache = new Map();
   const note = (url, reason) => {
@@ -124,7 +149,7 @@ export function hopGuard(allowedHosts = [], lookup = (h) => dns.promises.lookup(
     violations,
     /** Record a disallowed hop; browser error pages (failed loads) are not hops. */
     check(urls) {
-      const bad = firstDisallowedHop(urls.filter((u) => !String(u).startsWith('chrome-error:')), allowedHosts);
+      const bad = firstDisallowedHop(urls.filter((u) => !String(u).startsWith('chrome-error:')), allowedHosts, ingressDomains);
       if (bad) note(bad, 'disallowed target');
       return !bad;
     },
@@ -133,7 +158,9 @@ export function hopGuard(allowedHosts = [], lookup = (h) => dns.promises.lookup(
       try { u = new URL(rawUrl); } catch { return false; }
       if (u.protocol !== 'http:' && u.protocol !== 'https:') return true;
       const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-      if (allowedHosts.includes(host) || net.isIP(host)) return true; // literals: requestAllowed already decided
+      // Project / platform hosts are pinned to the ingress controller by the resolver
+      // rules; literals: requestAllowed already decided.
+      if (allowedHosts.includes(host) || isPlatformHost(host, ingressDomains) || net.isIP(host)) return true;
       if (!cache.has(host)) {
         cache.set(host, Promise.resolve().then(() => lookup(host)).then(
           (addrs) => !Array.isArray(addrs) || addrs.every((a) => !addressBlocked(a.address)),
@@ -252,24 +279,26 @@ export async function main() {
   if (!def.enabled) { console.log('check disabled; nothing to do'); return; }
   const secrets = def.secrets || {};
   const allowed = (def.allowedIngressHosts || []).map((h) => String(h).toLowerCase());
-  const blockedDomains = (def.blockedDomains || []).map((h) => String(h).toLowerCase());
+  const ingressDomains = platformDomains(def.ingressDomains || []);
   const startedAt = new Date();
   const deadline = Date.now() + (Number(def.timeoutMs) || 60_000);
   const steps = [];
   let status = 'pass';
   let error = null;
   let screenshot = null;
-  const guard = hopGuard(allowed);
-  // Env hosts: exactly those names go to the ingress controller (CoreDNS answers for
-  // them are not usable by Chromium), and the internal CA is trusted for this run.
-  const ingressIp = allowed.length > 0 ? await resolveIngressAddress(INGRESS_SERVICE) : null;
-  if (allowed.length > 0) trustPlatformCa(process.env.HOME, PLATFORM_CA_FILE);
+  const guard = hopGuard(allowed, undefined, ingressDomains);
+  // Env hosts and platform hosts: exactly those names go to the ingress controller
+  // (CoreDNS answers for them are not usable by Chromium), and the internal CA is
+  // trusted for this run.
+  const viaIngress = allowed.length > 0 || ingressDomains.length > 0;
+  const ingressIp = viaIngress ? await resolveIngressAddress(INGRESS_SERVICE) : null;
+  if (viaIngress) trustPlatformCa(process.env.HOME, PLATFORM_CA_FILE);
   const { chromium } = await import('playwright-core');
   const browser = await chromium.launch({
     headless: true,
     args: [
       '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
-      `--host-resolver-rules=${hostResolverRules({ allowedHosts: allowed, ingressIp, blockedDomains })}`,
+      `--host-resolver-rules=${hostResolverRules({ allowedHosts: allowed, ingressIp, ingressDomains })}`,
       '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
     ],
   });
@@ -282,7 +311,7 @@ export async function main() {
     // sent and aborted when disallowed (a blocked sub-resource does not fail the check).
     await ctx.route('**/*', async (route) => {
       const url = route.request().url();
-      const ok = firstDisallowedHop(redirectChain(route.request()), allowed) === null && await guard.resolvesPublic(url, { record: false });
+      const ok = firstDisallowedHop(redirectChain(route.request()), allowed, ingressDomains) === null && await guard.resolvesPublic(url, { record: false });
       return ok ? route.continue() : route.abort('blockedbyclient');
     });
     // Redirect hops are followed by the browser without reaching the route handler:

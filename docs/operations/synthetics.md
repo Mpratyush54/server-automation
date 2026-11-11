@@ -70,7 +70,11 @@ cannot redirect it). Refused: loopback, link-local / cloud metadata, private (RF
 CGNAT, IPv6 ULA, multicast/reserved ranges, IPv4-mapped/NAT64 forms of those,
 `*.svc` / `*.cluster.local` / `localhost` / single-label names, URLs with credentials and
 non-HTTP(S) schemes. A project's **own ingress hosts** (its environments' domains) may
-resolve to a private address, on ports 80/443 only. Responses are capped at 1 MiB, redirects
+resolve to a private address, on ports 80/443 only. The **platform's own domain** (`DOMAIN`)
+and every name under it (`api.DOMAIN`, `grafana.DOMAIN`, ...) are allowed targets too, but
+they are never resolved on their own: the connection always goes to the ingress controller
+Service address (see "Platform hosts" below), on ports 80/443 only. Responses are capped at
+1 MiB, redirects
 at 5; check-defined headers are dropped when a redirect leaves the original origin; the
 platform never adds its own cookies or credentials.
 
@@ -78,13 +82,14 @@ Browser runners and blackbox-exporter are additionally confined by egress Networ
 (public addresses only). Browser runners may also reach cluster DNS, the platform API's
 **runner-only port** (3001, Service `platform-api-synthetics`: only the two runner endpoints
 are served there, never the rest of the API) and the ingress controller (80/443, for the
-project's own env hosts, see below).
+project's own env hosts and the platform's own domain, see below).
 
 Inside the browser runner every navigation hop is validated, not just the first request:
 
-- Chromium's host resolver refuses cluster-internal names (`*.svc`, `*.cluster.local`,
-  `localhost`, …), the platform's own domain and its subdomains (except the project's env
-  hosts) and literal private addresses, for every connection including redirects;
+- Chromium's host resolver maps the project's env hosts, the platform's own domain and its
+  subdomains to the ingress controller, and refuses cluster-internal names (`*.svc`,
+  `*.cluster.local`, `localhost`, …) and literal private addresses, for every connection
+  including redirects;
 - requests the page starts are checked (scheme, host, resolved addresses) before they are
   sent and aborted when disallowed;
 - redirect hops are re-checked as they happen and after every step (redirect chain and the
@@ -171,8 +176,7 @@ A browser check may open its project's environment hosts (the same ingress excep
 checks) — and only those:
 
 - the runner maps exactly those host names to the ingress controller Service
-  (`ingress-nginx-controller.ingress-nginx`) with Chromium `--host-resolver-rules`; every
-  other name under the platform domain stays refused;
+  (`ingress-nginx-controller.ingress-nginx`) with Chromium `--host-resolver-rules`;
 - the runner NetworkPolicy allows the ingress controller pods on 80/443;
 - when env hosts use the platform's internal CA (Let's Encrypt fallback), the runner trusts
   that CA in the run's own browser profile (NSS, TLS server certificates only). platformctl
@@ -182,6 +186,35 @@ checks) — and only those:
 
 HTTP checks to env hosts run in the API and resolve them through the cluster's CoreDNS
 rewrite; they verify TLS against the public roots (use `tlsInsecure` for internal-CA hosts).
+
+### Platform hosts (`DOMAIN` and `*.DOMAIN`)
+
+The platform's own endpoints (`DOMAIN`, `api.DOMAIN`, the portal, Grafana, any other
+`*.DOMAIN` host that is not one of the project's env hosts) are public endpoints served by
+the ingress controller, and checks may target them. They are reached **only through the
+ingress controller**, exactly like env hosts:
+
+- HTTP, multi-step and SSL checks (run by the API) never resolve the host name itself: the
+  connection goes to the address of the Service
+  `ingress-nginx-controller.ingress-nginx.svc.cluster.local`, with the original host name
+  as `Host` / SNI. Only ports 80 and 443 are accepted. If that address cannot be resolved
+  the run fails (it does not fall back to the host's own DNS answer);
+- browser checks map `DOMAIN` and `*.DOMAIN` to the ingress controller with
+  `--host-resolver-rules` (and refuse them when the ingress address is unknown);
+- every other private or cluster address stays refused: IP literals (`10.x`, `169.254.x`,
+  ...), `*.svc` / `*.cluster.local` names, other names resolving to private addresses, and
+  redirects to any of them (each redirect hop is validated again);
+- platform hosts are never mirrored as blackbox Probes (blackbox-exporter cannot reach the
+  ingress controller).
+
+**TLS.** Platform hosts may use a Let's Encrypt certificate (verified normally) or the
+platform's internal CA. Browser runners trust the internal CA (see above). The API's own
+HTTP/SSL checks trust it **for platform hosts only** when the ConfigMap
+`synthetics/platform-ca` exists (full profile, written by platformctl; the API reads it
+through a read-only Role, cached 5 minutes). Without it (default profile, or before
+`platformctl provision` has published it) HTTP checks against internal-CA platform hosts
+fail TLS verification: set `tlsInsecure: true` on the check, or use a publicly trusted
+certificate. Env hosts on custom domains still verify against the public roots only.
 
 ## Verify on a VM
 
