@@ -29,6 +29,8 @@ import { DocsComponent } from './pages/docs/docs.component';
 import { ProfileComponent } from './pages/profile/profile.component';
 import { MfaEnrollComponent } from './pages/mfa-enroll/mfa-enroll.component';
 import { SyntheticsComponent } from './pages/synthetics/synthetics.component';
+import { StatusPageEditorComponent } from './pages/status-page/status-page-editor.component';
+import { PublicStatusComponent } from './pages/status-page/public-status.component';
 
 import { authGuard } from './guards/auth.guard';
 import { docsMatcher } from './guards/docs.matcher';
@@ -76,6 +78,8 @@ export const routes: Routes = [
   { path: 'projects', component: ProjectsComponent, canActivate: [authGuard] },
   { path: 'projects/:id', component: ProjectDetailComponent, canActivate: [authGuard] },
   { path: 'projects/:id/synthetics', component: SyntheticsComponent, canActivate: [authGuard] }, // #42
+  { path: 'projects/:id/status', component: StatusPageEditorComponent, canActivate: [authGuard] }, // #46
+  { path: 'status/:slug', component: PublicStatusComponent }, // #46 public, no auth
   { path: 'deployments', component: DeploymentsComponent, canActivate: [authGuard] },
   { path: 'services', component: ServicesComponent, canActivate: [authGuard] },
   { path: 'metrics', component: MetricsComponent, canActivate: [authGuard] },

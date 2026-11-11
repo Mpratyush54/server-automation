@@ -40,6 +40,8 @@ error tracking, synthetics, deploys, ... ──► Redis stream plat:api:alerts:
   SMTP server or webhook holds one slot for at most the timeout and other channels keep flowing.
 * **Resolution messages** use the title of the resolving event when the source sends one (for
   example `Synthetic check "api" recovered`); manual resolves keep the incident title.
+* **Status pages**: on a published [status page](../guides/status-pages.md), a new `major` / `critical`
+  incident (not maintenance) sends a `status-page` event; resolving it sends the resolution.
 
 ## Monitors
 
