@@ -32,6 +32,7 @@ import { getDb } from '../../../src/config/database';
 import { requireProjectAccess } from '../../../src/lib/project-access';
 import { resolveConsent } from '../../../src/lib/privacy-consent';
 import { verifyIngestToken, originAllowed } from '../../../src/lib/telemetry-tokens';
+import { resetHeatmapBufferForTests } from '../../../src/lib/heatmap-buffer';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -51,6 +52,8 @@ beforeEach(() => {
   (resolveConsent as jest.Mock).mockResolvedValue({ analyticsAllowed: true });
   (requireProjectAccess as jest.Mock).mockResolvedValue({ ok: true });
 });
+
+afterEach(() => resetHeatmapBufferForTests());
 
 describe('POST /sdk/heatmap/events', () => {
   it('accepts a browser SDK token (explicit opt-in), scopes to the token project and is write-only', async () => {

@@ -214,39 +214,45 @@ export function utcDay(now: Date = new Date()): string {
 
 type Queryable = Pick<DataSource, 'query'>;
 
+export interface PersistOptions {
+  day?: string;
+  maxPages?: number;
+}
+
 /**
- * Upsert one batch of aggregates. Pages new to the project are accepted only while the project
- * stays under `maxPages` distinct pages (bounds table growth from crafted paths); events for
- * refused pages are dropped. Returns the number of events stored.
+ * Page admission (synchronous at request time, so responses stay accurate): pages new to the
+ * project are accepted only while the project stays under `maxPages` distinct pages (bounds
+ * table growth from crafted paths). Inserts new pages / bumps `last_day` and returns the
+ * refused pages, whose events must be dropped.
  */
-export async function persistHeatmapAggregates(
+export async function admitHeatmapPages(
   db: Queryable,
   projectId: string,
-  agg: HeatmapAggregates,
-  opts: { day?: string; maxPages?: number } = {},
-): Promise<{ stored: number; refusedPages: string[] }> {
+  pages: string[],
+  opts: PersistOptions = {},
+): Promise<{ day: string; refused: Set<string> }> {
   const day = opts.day || utcDay();
   const maxPages = opts.maxPages ?? maxPagesPerProject();
-  if (!agg.pages.length) return { stored: 0, refusedPages: [] };
+  const refused = new Set<string>();
+  if (!pages.length) return { day, refused };
 
   const existing: Array<{ page: string; last_day: string | Date }> = await db.query(
     'SELECT page, last_day FROM heatmap_pages WHERE project_id = $1 AND page = ANY($2::text[])',
-    [projectId, agg.pages],
+    [projectId, pages],
   );
   const known = new Set(existing.map((r) => r.page));
   const dayOf = (v: string | Date) => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10));
   // Pages seen earlier today need no write: rewriting the same heatmap_pages row on every
   // request serialised concurrent ingests on that row's lock.
   const stale = existing.filter((r) => dayOf(r.last_day) < day).map((r) => r.page).sort();
-  const fresh = agg.pages.filter((p) => !known.has(p));
-  const refused = new Set<string>();
+  const fresh = pages.filter((p) => !known.has(p));
   if (fresh.length) {
     const [{ n }] = await db.query('SELECT count(*)::int AS n FROM heatmap_pages WHERE project_id = $1', [projectId]);
     const room = Math.max(0, maxPages - Number(n));
     fresh.slice(room).forEach((p) => refused.add(p));
   }
-  const allowed = agg.pages.filter((p) => !refused.has(p));
-  if (!allowed.length) return { stored: 0, refusedPages: [...refused] };
+  const allowed = pages.filter((p) => !refused.has(p));
+  if (!allowed.length) return { day, refused };
 
   const inserts = allowed.filter((p) => !known.has(p)).sort();
   if (inserts.length) {
@@ -265,46 +271,100 @@ export async function persistHeatmapAggregates(
       [projectId, day, stale],
     );
   }
+  return { day, refused };
+}
 
-  // Rows sorted by their conflict key: concurrent multi-row upserts then lock rows in the
-  // same order and cannot deadlock each other.
-  const keep = <T extends { page: string }>(rows: T[], key: (r: T) => string) =>
-    rows.filter((r) => !refused.has(r.page)).sort((x, y) => (key(x) < key(y) ? -1 : key(x) > key(y) ? 1 : 0));
-  const clicks = keep(agg.clicks, (r) => `${r.page} ${r.viewport} ${String(r.x).padStart(6, '0')} ${String(r.y).padStart(6, '0')}`);
-  const targets = keep(agg.targets, (r) => `${r.page} ${r.viewport} ${r.selector}`);
-  const scrolls = keep(agg.scrolls, (r) => `${r.page} ${r.viewport} ${String(r.depth).padStart(6, '0')}`);
+/** One additive count increment, fully keyed (project + day + the table's own key). */
+export type HeatmapCountRow =
+  | { table: 'clicks'; projectId: string; day: string; page: string; viewport: string; x: number; y: number; count: number }
+  | { table: 'targets'; projectId: string; day: string; page: string; viewport: string; selector: string; count: number }
+  | { table: 'scrolls'; projectId: string; day: string; page: string; viewport: string; depth: number; count: number };
+
+const pad6 = (n: number) => String(n).padStart(6, '0');
+
+/** Stable key matching each table's conflict key; sorting by it locks rows in one global order. */
+export function heatmapRowKey(r: HeatmapCountRow): string {
+  const head = `${r.table} ${r.projectId} ${r.page} ${r.viewport} ${r.day}`;
+  if (r.table === 'clicks') return `${head} ${pad6(r.x)} ${pad6(r.y)}`;
+  if (r.table === 'targets') return `${head} ${r.selector}`;
+  return `${head} ${pad6(r.depth)}`;
+}
+
+/** One batch's aggregates -> keyed count rows, without refused pages. */
+export function heatmapCountRows(projectId: string, day: string, agg: HeatmapAggregates, refused: Set<string> = new Set()): HeatmapCountRow[] {
+  const rows: HeatmapCountRow[] = [];
+  for (const r of agg.clicks) if (!refused.has(r.page)) rows.push({ table: 'clicks', projectId, day, ...r });
+  for (const r of agg.targets) if (!refused.has(r.page)) rows.push({ table: 'targets', projectId, day, ...r });
+  for (const r of agg.scrolls) if (!refused.has(r.page)) rows.push({ table: 'scrolls', projectId, day, ...r });
+  return rows;
+}
+
+/** Events represented by count rows (clicks + scroll views; targets duplicate clicks). */
+export function storedEvents(rows: HeatmapCountRow[]): number {
+  return rows.reduce((a, r) => (r.table === 'targets' ? a : a + r.count), 0);
+}
+
+/**
+ * Write count rows with additive upserts (`count = count + EXCLUDED.count`), one statement per
+ * table, rows sorted by conflict key: concurrent multi-row upserts (other replicas, other
+ * flushes) lock rows in the same order and cannot deadlock. Additive upserts keep totals exact
+ * with any number of API replicas buffering independently.
+ */
+export async function writeHeatmapCounts(db: Queryable, input: HeatmapCountRow[]): Promise<void> {
+  const rows = input
+    .map((r) => [heatmapRowKey(r), r] as const)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([, r]) => r);
+  const clicks = rows.filter((r): r is Extract<HeatmapCountRow, { table: 'clicks' }> => r.table === 'clicks');
+  const targets = rows.filter((r): r is Extract<HeatmapCountRow, { table: 'targets' }> => r.table === 'targets');
+  const scrolls = rows.filter((r): r is Extract<HeatmapCountRow, { table: 'scrolls' }> => r.table === 'scrolls');
   if (clicks.length) {
     await db.query(
       `INSERT INTO heatmap_click_cells (project_id, day, page, viewport, cell_x, cell_y, count)
-       SELECT $1::uuid, $2::date, t.page, t.viewport, t.x, t.y, t.n
-       FROM unnest($3::text[], $4::text[], $5::int[], $6::int[], $7::int[]) AS t(page, viewport, x, y, n)
+       SELECT t.project_id, t.day, t.page, t.viewport, t.x, t.y, t.n
+       FROM unnest($1::uuid[], $2::date[], $3::text[], $4::text[], $5::int[], $6::int[], $7::int[]) AS t(project_id, day, page, viewport, x, y, n)
        ON CONFLICT (project_id, page, viewport, day, cell_x, cell_y)
        DO UPDATE SET count = heatmap_click_cells.count + EXCLUDED.count`,
-      [projectId, day, clicks.map((r) => r.page), clicks.map((r) => r.viewport), clicks.map((r) => r.x), clicks.map((r) => r.y), clicks.map((r) => r.count)],
+      [clicks.map((r) => r.projectId), clicks.map((r) => r.day), clicks.map((r) => r.page), clicks.map((r) => r.viewport), clicks.map((r) => r.x), clicks.map((r) => r.y), clicks.map((r) => r.count)],
     );
   }
   if (targets.length) {
     await db.query(
       `INSERT INTO heatmap_click_targets (project_id, day, page, viewport, selector, count)
-       SELECT $1::uuid, $2::date, t.page, t.viewport, t.selector, t.n
-       FROM unnest($3::text[], $4::text[], $5::text[], $6::int[]) AS t(page, viewport, selector, n)
+       SELECT t.project_id, t.day, t.page, t.viewport, t.selector, t.n
+       FROM unnest($1::uuid[], $2::date[], $3::text[], $4::text[], $5::text[], $6::int[]) AS t(project_id, day, page, viewport, selector, n)
        ON CONFLICT (project_id, page, viewport, day, selector)
        DO UPDATE SET count = heatmap_click_targets.count + EXCLUDED.count`,
-      [projectId, day, targets.map((r) => r.page), targets.map((r) => r.viewport), targets.map((r) => r.selector), targets.map((r) => r.count)],
+      [targets.map((r) => r.projectId), targets.map((r) => r.day), targets.map((r) => r.page), targets.map((r) => r.viewport), targets.map((r) => r.selector), targets.map((r) => r.count)],
     );
   }
   if (scrolls.length) {
     await db.query(
       `INSERT INTO heatmap_scroll_depth (project_id, day, page, viewport, depth, count)
-       SELECT $1::uuid, $2::date, t.page, t.viewport, t.depth, t.n
-       FROM unnest($3::text[], $4::text[], $5::int[], $6::int[]) AS t(page, viewport, depth, n)
+       SELECT t.project_id, t.day, t.page, t.viewport, t.depth, t.n
+       FROM unnest($1::uuid[], $2::date[], $3::text[], $4::text[], $5::int[], $6::int[]) AS t(project_id, day, page, viewport, depth, n)
        ON CONFLICT (project_id, page, viewport, day, depth)
        DO UPDATE SET count = heatmap_scroll_depth.count + EXCLUDED.count`,
-      [projectId, day, scrolls.map((r) => r.page), scrolls.map((r) => r.viewport), scrolls.map((r) => r.depth), scrolls.map((r) => r.count)],
+      [scrolls.map((r) => r.projectId), scrolls.map((r) => r.day), scrolls.map((r) => r.page), scrolls.map((r) => r.viewport), scrolls.map((r) => r.depth), scrolls.map((r) => r.count)],
     );
   }
-  const stored = clicks.reduce((a, r) => a + r.count, 0) + scrolls.reduce((a, r) => a + r.count, 0);
-  return { stored, refusedPages: [...refused] };
+}
+
+/**
+ * Admit pages and write one batch's counts directly (unbuffered). The ingest route buffers
+ * instead (`heatmap-buffer.ts`). Returns the number of events stored.
+ */
+export async function persistHeatmapAggregates(
+  db: Queryable,
+  projectId: string,
+  agg: HeatmapAggregates,
+  opts: PersistOptions = {},
+): Promise<{ stored: number; refusedPages: string[] }> {
+  if (!agg.pages.length) return { stored: 0, refusedPages: [] };
+  const { day, refused } = await admitHeatmapPages(db, projectId, agg.pages, opts);
+  const rows = heatmapCountRows(projectId, day, agg, refused);
+  if (rows.length) await writeHeatmapCounts(db, rows);
+  return { stored: storedEvents(rows), refusedPages: [...refused] };
 }
 
 // ------------------------------------------------------------------ queries
