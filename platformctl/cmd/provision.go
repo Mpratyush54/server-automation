@@ -176,6 +176,8 @@ func runProvision() error {
 		color.Yellow("  · non-interactive (--auto): using /etc/platform/.env and environment\n")
 	}
 
+	confirmHardening(os.Stdin, os.Stdout, !cfg.NonInteractive)
+
 	cfg.GenerateSecrets()
 	if cfg.PasswordGenerated {
 		color.Green("  ✓ Admin password auto-generated (saved to /etc/platform/.env)")

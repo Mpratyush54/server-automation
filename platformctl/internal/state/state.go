@@ -205,3 +205,20 @@ func writeLockMeta(f *os.File, owner string) {
 	_, _ = f.WriteString(meta)
 	_ = f.Sync()
 }
+
+// Get returns the raw value recorded for key ("" when absent). Besides step
+// markers ("done"/"in_progress") the state file holds auxiliary records such
+// as "<step>.values=<fingerprint>".
+func Get(key string) string {
+	mu.Lock()
+	defer mu.Unlock()
+	return loadMap()[key]
+}
+
+// Set records key=value (value must not contain a newline).
+func Set(key, value string) error {
+	if strings.ContainsAny(key, "=\n") || strings.Contains(value, "\n") {
+		return fmt.Errorf("invalid state record %q", key)
+	}
+	return update(func(m map[string]string) bool { m[key] = value; return true })
+}

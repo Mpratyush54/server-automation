@@ -135,7 +135,7 @@ func Load() *Config {
 		SkipPreflight:               os.Getenv("SKIP_PREFLIGHT") == "true",
 		AutoUpdate:                  getEnvBool("AUTO_UPDATE", true),
 		AutoUpgrade:                 getEnvBool("AUTO_UPGRADE", false),
-		SkipHardening:               !getEnvBool("PLATFORM_HARDEN", true),
+		SkipHardening:               !getEnvBool("PLATFORM_HARDEN", true) || getEnvBool("SKIP_HARDENING", false),
 		WAF:                         getEnvBool("PLATFORM_WAF", false),
 		NginxAuthJail:               getEnvBool("PLATFORM_NGINX_AUTH_JAIL", false),
 		IngressIPRateLimit:          getEnvIngressLimit("INGRESS_IP_RATE_LIMIT", 1000, 1000000),
