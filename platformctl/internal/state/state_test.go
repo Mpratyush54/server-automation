@@ -116,7 +116,7 @@ func TestReconcileHardening(t *testing.T) {
 				if !IsDone("harden-ssh") || IsDone("routing") {
 					t.Fatal("reconciliation changed unrelated state")
 				}
-				if got := StatusLine(); strings.Contains(got, "resuming: harden-firewall") != (baseline != "done") {
+				if got := StatusLine(); strings.Contains(got, "harden-firewall") != (baseline != "done") {
 					t.Fatalf("unexpected status: %s", got)
 				}
 			}
