@@ -67,6 +67,28 @@ describe('check validation', () => {
   });
 });
 
+describe('platform hosts (#152)', () => {
+  const withDomain = (fn: () => void) => {
+    const prev = process.env.DOMAIN;
+    process.env.DOMAIN = 'platform.lan';
+    try { fn(); } finally { if (prev === undefined) delete process.env.DOMAIN; else process.env.DOMAIN = prev; }
+  };
+
+  it('accepts DOMAIN and *.DOMAIN targets for HTTP, SSL and browser checks', () => withDomain(() => {
+    expect(validateCheckInput(http({ url: 'https://platform.lan/' }), []).config.url).toBe('https://platform.lan/');
+    expect(validateCheckInput(http({ url: 'https://api.platform.lan/api/health' }), []).config.url).toBe('https://api.platform.lan/api/health');
+    expect(validateCheckInput({ name: 's', type: 'ssl', config: { host: 'api.platform.lan' } }, []).config.host).toBe('api.platform.lan');
+    expect(() => validateCheckInput({ name: 'b', type: 'browser', intervalSeconds: 900, config: { steps: [{ action: 'goto', url: 'https://grafana.platform.lan/' }] } }, [])).not.toThrow();
+  }));
+
+  it('still refuses private literals, metadata and cluster-internal names', () => withDomain(() => {
+    for (const url of ['http://10.43.0.1/', 'http://169.254.169.254/latest/meta-data/', 'http://192.168.1.1/', 'http://platform-api.platform.svc:3000/',
+      'http://kubernetes.default.svc.cluster.local/', 'http://other.lan/']) {
+      bad(http({ url }), /config\.url/);
+    }
+  }));
+});
+
 describe('secrets', () => {
   it('are encrypted, merged (set / delete) and never exposed', () => {
     const enc = mergeCheckSecrets(null, { TOKEN: 'abc123', OTHER: 'x' });

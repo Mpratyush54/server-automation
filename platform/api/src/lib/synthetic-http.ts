@@ -97,7 +97,16 @@ interface OneHop {
   tls: TlsInfo | null;
 }
 
-function requestOnce(target: ResolvedTarget, spec: { method: string; headers: Record<string, string>; body?: string; deadline: number; maxBodyBytes: number; tlsInsecure: boolean }): Promise<OneHop> {
+/**
+ * Trust store for a target: public roots, plus the platform CA for platform hosts
+ * (DOMAIN / *.DOMAIN, reached via the ingress controller) when it is known.
+ */
+export function trustFor(target: Pick<ResolvedTarget, 'platformHost'>, platformCa?: string | null): string[] | undefined {
+  if (!target.platformHost || !platformCa) return undefined;
+  return [...tls.rootCertificates, platformCa];
+}
+
+function requestOnce(target: ResolvedTarget, spec: { method: string; headers: Record<string, string>; body?: string; deadline: number; maxBodyBytes: number; tlsInsecure: boolean; platformCa?: string | null }): Promise<OneHop> {
   return new Promise((resolve, reject) => {
     const remaining = spec.deadline - Date.now();
     if (remaining <= 0) return reject(new SyntheticRequestError('Timed out', 'timeout'));
@@ -105,6 +114,7 @@ function requestOnce(target: ResolvedTarget, spec: { method: string; headers: Re
     const lib = isHttps ? https : http;
     const headers: Record<string, string> = { ...spec.headers };
     const hostHeader = target.url.port ? `${target.hostname}:${target.url.port}` : target.hostname;
+    const ca = isHttps ? trustFor(target, spec.platformCa) : undefined;
     const options: https.RequestOptions = {
       method: spec.method,
       host: target.hostname,
@@ -113,7 +123,7 @@ function requestOnce(target: ResolvedTarget, spec: { method: string; headers: Re
       headers: { host: hostHeader, 'user-agent': USER_AGENT, accept: '*/*', ...headers },
       lookup: pinnedLookup(target) as any,
       agent: false,
-      ...(isHttps ? { servername: /^[\d.]+$|:/.test(target.hostname) ? undefined : target.hostname, rejectUnauthorized: !spec.tlsInsecure } : {}),
+      ...(isHttps ? { servername: /^[\d.]+$|:/.test(target.hostname) ? undefined : target.hostname, rejectUnauthorized: !spec.tlsInsecure, ...(ca ? { ca } : {}) } : {}),
     };
     let settled = false;
     const finish = (fn: () => void) => { if (!settled) { settled = true; clearTimeout(timer); fn(); } };
@@ -167,7 +177,7 @@ export async function syntheticHttpRequest(spec: HttpRequestSpec, guard: GuardOp
   let redirects = 0;
   for (;;) {
     const target = await resolveTarget(url, guard);
-    const hop = await requestOnce(target, { method, headers, body, deadline, maxBodyBytes, tlsInsecure: !!spec.tlsInsecure });
+    const hop = await requestOnce(target, { method, headers, body, deadline, maxBodyBytes, tlsInsecure: !!spec.tlsInsecure, platformCa: guard.platformCa });
     const location = hop.headers.location;
     if (spec.followRedirects !== false && hop.status >= 300 && hop.status < 400 && location) {
       if (redirects >= maxRedirects) throw new SyntheticRequestError(`More than ${maxRedirects} redirects`, 'redirects');
@@ -201,12 +211,14 @@ export async function syntheticHttpRequest(spec: HttpRequestSpec, guard: GuardOp
 export async function syntheticTlsProbe(host: string, port: number, timeoutMs: number, guard: GuardOptions = {}): Promise<TlsInfo & { latencyMs: number; address: string }> {
   const started = Date.now();
   const target = await resolveTarget(`https://${host.includes(':') && !host.startsWith('[') ? `[${host}]` : host}:${port}/`, guard);
+  const ca = trustFor(target, guard.platformCa);
   return new Promise((resolve, reject) => {
     const socket = tls.connect({
       host: target.address,
       port: target.port,
       servername: /^[\d.]+$|:/.test(target.hostname) ? undefined : target.hostname,
       rejectUnauthorized: false, // reported via authorized/authorizationError instead
+      ...(ca ? { ca } : {}),
       timeout: timeoutMs,
     });
     const timer = setTimeout(() => { socket.destroy(); reject(new SyntheticRequestError(`Timed out after ${timeoutMs} ms`, 'timeout')); }, timeoutMs);

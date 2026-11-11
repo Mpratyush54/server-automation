@@ -172,6 +172,18 @@ describe('scheduler tick', () => {
     expect(r).toMatchObject({ status: 'fail', error: 'Runner error: boom' });
   });
 
+  it('executeCheck hands the platform CA to the guard for API-side checks (#152)', async () => {
+    const store = new MemStore();
+    store.checks.push(check());
+    let seen: any = null;
+    await executeCheck(store.checks[0], {
+      store, platformCa: async () => 'PEM', publish: async () => {},
+      run: async (_c, deps) => { seen = deps.guard; return outcome('pass'); },
+    });
+    expect(seen).toMatchObject({ platformCa: 'PEM' });
+    expect(Array.isArray(seen.allowedIngressHosts)).toBe(true);
+  });
+
   it('recordResult stores screenshot keys and the SSL expiry', async () => {
     const store = new MemStore();
     store.checks.push(check({ type: 'browser' }));

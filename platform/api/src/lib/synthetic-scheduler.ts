@@ -9,7 +9,7 @@ import { recordRun } from './synthetic-metrics';
 import { runCheck, RunDeps, RunOutcome } from './synthetic-runner';
 import { registerLeaderJob } from './scheduler';
 import { getUploadStore } from './upload-store';
-import { browserJobDeadlineSeconds, browserRuntime, lastBrowserJobFailure, reconcileSyntheticResources } from './synthetic-k8s';
+import { browserJobDeadlineSeconds, browserRuntime, lastBrowserJobFailure, platformCaCertificate, reconcileSyntheticResources } from './synthetic-k8s';
 
 /**
  * Scheduling, result recording and alerting for synthetic checks (#42).
@@ -263,6 +263,8 @@ export interface TickDeps {
   run?: (check: SyntheticCheck, deps: RunDeps) => Promise<RunOutcome>;
   publish?: (e: AlertEvent) => Promise<void>;
   concurrency?: number;
+  /** Platform CA lookup (default: the synthetics/platform-ca ConfigMap). */
+  platformCa?: () => Promise<string | null>;
 }
 
 /** Run one check now (also used by POST .../run). */
@@ -272,7 +274,12 @@ export async function executeCheck(check: SyntheticCheck, deps: TickDeps = {}): 
   let outcome: RunOutcome;
   try {
     const secrets = decryptCheckSecrets(check.secretsEncrypted);
-    const guard = { allowedIngressHosts: await store.ingressHosts(check.projectId) };
+    // Platform hosts (DOMAIN / *.DOMAIN) go to the ingress controller; their certificate
+    // may come from the platform CA (#152).
+    const guard = {
+      allowedIngressHosts: await store.ingressHosts(check.projectId),
+      platformCa: check.type === 'browser' ? null : await (deps.platformCa || platformCaCertificate)(),
+    };
     outcome = await (deps.run || runCheck)(check, { guard, secrets });
   } catch (err: any) {
     outcome = { status: 'fail', latencyMs: null, statusCode: null, error: `Runner error: ${String(err?.message || err).slice(0, 300)}`, assertions: null, steps: null, sslExpiresAt: null, sslDaysRemaining: null };

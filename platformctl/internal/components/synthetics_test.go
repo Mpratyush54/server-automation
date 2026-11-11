@@ -102,8 +102,8 @@ func TestSyntheticsRBACIsScoped(t *testing.T) {
 		t.Fatal("probe role must be limited to probes in monitoring")
 	}
 	runner := syntheticsDoc(t, "Role", "platform-api-synthetics")
-	if !strings.Contains(runner, "resourceNames: [synthetics-runner]") {
-		t.Fatal("configmap access must be limited to synthetics-runner")
+	if !strings.Contains(runner, "resourceNames: [synthetics-runner, platform-ca]") || strings.Count(runner, "resources: [configmaps]") != 1 {
+		t.Fatal("configmap access must be limited to synthetics-runner and platform-ca")
 	}
 	// Jobs and pods are read-only (diagnosing runs that did not report).
 	for _, res := range []string{"jobs", "pods"} {
