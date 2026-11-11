@@ -117,6 +117,42 @@ describe('ObsProjectComponent (#48)', () => {
     expect(el.querySelector('app-obs-service-map')).not.toBeNull();
     expect(el.textContent).toContain('POST /pay');
   });
+
+  it('labels Apdex with the threshold the API uses (512 ms)', async () => {
+    const { fixture, http } = setup({ tab: 'overview' });
+    await boot(fixture, http, true);
+    (await next(http, `${BASE}/summary`)).flush({ ...EMPTY_SUMMARY, red: { requestRate: 1, errorRate: 0, p95Ms: 10, apdex: 0.9, apdexThresholdMs: 512 } });
+    (await next(http, `${BASE}/red`)).flush({});
+    (await next(http, `/api/projects/${PID}/releases`)).flush([]);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const text: string = fixture.nativeElement.textContent;
+    expect(text).toContain('T = 512 ms');
+    expect(text).not.toContain('0.5 s');
+  });
+
+  it('profiles: service list uses the same range as the flame graph', async () => {
+    const { fixture, http } = setup({ tab: 'profiles', since: '15m' });
+    await boot(fixture, http, true);
+    const meta = await next(http, `${BASE}/profiles/meta`);
+    expect(meta.request.params.get('since')).toBe('15m');
+    meta.flush({ range: { start: 0, end: 900, clamped: false }, services: ['api'], profileTypes: ['cpu'] });
+    const flame = await next(http, `${BASE}/query/pyroscope`);
+    expect(flame.request.params.get('since')).toBe('15m');
+    flame.flush({ range: { start: 0, end: 900, clamped: false }, flamebearer: null, metadata: null });
+    await fixture.whenStable();
+  });
+
+  it('shows a notice when the API shortened the range', async () => {
+    const { fixture, c, http } = setup({ tab: 'profiles', since: '7d' });
+    await boot(fixture, http, true);
+    (await next(http, `${BASE}/profiles/meta`)).flush({ range: { start: 0, end: 86_340, clamped: true }, services: ['api'], profileTypes: ['cpu'] });
+    (await next(http, `${BASE}/query/pyroscope`)).flush({ range: { start: 0, end: 86_340, clamped: true }, flamebearer: null, metadata: null });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(c.rangeNote).toBe('Range shortened to 23 h 59 min');
+    expect(fixture.nativeElement.textContent).toContain('Range shortened to 23 h 59 min');
+  });
 });
 
 describe('webVitalQuery (#48)', () => {

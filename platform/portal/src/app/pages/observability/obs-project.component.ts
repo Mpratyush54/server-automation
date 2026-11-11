@@ -6,7 +6,7 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { firstValueFrom, Subscription } from 'rxjs';
 import {
   DEFAULT_SINCE, Flamebearer, fmtBytes, fmtMs, fmtPct, fmtRate, GraphEdge, GraphNode, healthLabel, isProjectTab, isSince, nsToDate, Point,
-  PROJECT_TABS, projectBase, ProjectTab, SINCE_OPTIONS,
+  PROJECT_TABS, projectBase, ProjectTab, rangeNotice, SINCE_OPTIONS, SINCE_SECONDS,
 } from './observability-api';
 import { ChartMarker, ChartSeries, ObsLineChartComponent } from './obs-line-chart.component';
 import { ObsTraceViewComponent } from './obs-trace-view.component';
@@ -22,7 +22,6 @@ export function webVitalQuery(vital: string, seconds: number): string {
   return `quantile_over_time(0.75, {} | logfmt | kind="measurement" | ${vital}!="" | unwrap ${vital} | __error__="" [${Math.max(60, Math.floor(seconds))}s]) by (page_url)`;
 }
 
-const SINCE_SECONDS: Record<string, number> = { '15m': 900, '1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800 };
 
 /**
  * Per-project Observability (#48): Overview (RED + Apdex, deploy markers),
@@ -62,6 +61,8 @@ export class ObsProjectComponent implements OnInit, OnDestroy {
   environments: string[] = [];
   enabled: boolean | null = null;
   error = '';
+  /** "Range shortened to N" when the API clamped the range of the current tab. */
+  rangeNote = '';
   loading = false;
 
   summary: any = null;
@@ -168,8 +169,15 @@ export class ObsProjectComponent implements OnInit, OnDestroy {
     } catch { /* name is cosmetic */ }
   }
 
+  /** Show a notice when the API reports it shortened the requested range. */
+  noteRange(range: any) {
+    const note = rangeNotice(range, SINCE_SECONDS[this.since]);
+    if (note) this.rangeNote = note;
+  }
+
   async loadTab() {
     this.error = '';
+    this.rangeNote = '';
     this.loading = true;
     try {
       switch (this.tab) {
@@ -191,6 +199,7 @@ export class ObsProjectComponent implements OnInit, OnDestroy {
 
   async loadSummary() {
     this.summary = await this.get('/summary', this.params());
+    this.noteRange(this.summary?.range);
   }
 
   async loadOverview() {
@@ -200,6 +209,7 @@ export class ObsProjectComponent implements OnInit, OnDestroy {
       this.get('/red', this.params()),
       firstValueFrom(this.http.get<any[]>(`/api/projects/${encodeURIComponent(this.projectId)}/releases`)).catch(() => [] as any[]),
     ]);
+    this.noteRange(red?.range);
     this.redSeries = {
       rate: [{ name: 'Requests', points: red.requestRate || [] }],
       errors: [{ name: 'Error rate', points: red.errorRate || [], color: 'var(--obs-bad)' }],
@@ -232,6 +242,7 @@ export class ObsProjectComponent implements OnInit, OnDestroy {
       : this.params(Object.fromEntries(Object.entries({ service: this.traceForm.service, name: this.traceForm.name, minDuration: this.traceForm.minDuration, status: this.traceForm.status, limit: '50' }).filter(([, v]) => v)) as Record<string, string>);
     try {
       const res = await this.get('/query/tempo', p);
+      this.noteRange(res?.range);
       this.traces = res.traces || [];
     } finally {
       this.tracesLoaded = true;
@@ -252,12 +263,15 @@ export class ObsProjectComponent implements OnInit, OnDestroy {
 
   async loadInfra() {
     const res = await this.get('/infra', this.params());
+    this.noteRange(res?.range);
     const top = (list: any[]) => list.slice(0, 8).map((s: any) => ({ name: s.pod, points: s.values as Point[] }));
     this.infra = { cpu: top(res.cpu || []), memory: top(res.memory || []), restarts: res.restarts || [], namespaces: res.namespaces || [] };
   }
 
   async loadProfiles() {
-    const meta = await this.get('/profiles/meta', { since: this.since === '15m' || this.since === '1h' ? '24h' : this.since });
+    // Same range as the flame graph, so the service list matches what can be drawn.
+    const meta = await this.get('/profiles/meta', { since: this.since });
+    this.noteRange(meta?.range);
     this.profileMeta = { services: meta.services || [], profileTypes: meta.profileTypes || [] };
     if (!this.profileType) this.profileType = this.profileMeta.profileTypes[0] || '';
     if (!this.profileService && this.profileMeta.services.length) this.profileService = this.profileMeta.services[0];
@@ -267,6 +281,7 @@ export class ObsProjectComponent implements OnInit, OnDestroy {
   async loadFlame() {
     if (!this.profileService) { this.flame = { flamebearer: null, units: null }; return; }
     const res = await this.get('/query/pyroscope', this.params({ service: this.profileService, profileType: this.profileType }));
+    this.noteRange(res?.range);
     this.flame = { flamebearer: res.flamebearer || null, units: res.metadata?.units || null };
   }
 

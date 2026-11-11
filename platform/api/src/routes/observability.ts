@@ -54,7 +54,13 @@ const GRAPH_TOTAL = 'traces_service_graph_request_total';
 const GRAPH_FAILED = 'traces_service_graph_request_failed_total';
 const SERVER_KINDS = 'span_kind=~"SPAN_KIND_SERVER|SPAN_KIND_CONSUMER"';
 const ERROR_STATUS = 'status_code="STATUS_CODE_ERROR"';
-/** Apdex threshold T = 0.512 s (a default Tempo span-metrics bucket); 4T = 2.048 s. */
+/**
+ * Apdex threshold T = 512 ms, 4T = 2048 ms. Apdex is computed from histogram
+ * buckets, so T must be a bucket boundary: 0.512 s and 2.048 s are default Tempo
+ * span-metrics buckets (0.5 s is not). The value is returned as apdexThresholdMs
+ * so the portal labels it accurately.
+ */
+export const APDEX_T_MS = 512;
 const APDEX_T = '0.512';
 const APDEX_4T = '2.048';
 
@@ -140,6 +146,8 @@ interface Red {
   p95Ms: number | null;
   p99Ms: number | null;
   apdex: number | null;
+  /** Apdex threshold T in milliseconds (satisfied ≤ T, tolerating ≤ 4T). */
+  apdexThresholdMs: number;
 }
 
 async function projectRed(projectId: string, range: TimeRange, filters: { service?: string | null; environment?: string | null } = {}): Promise<Red> {
@@ -164,6 +172,7 @@ async function projectRed(projectId: string, range: TimeRange, filters: { servic
     p95Ms: nanOrNull(scalarOf(p95)),
     p99Ms: nanOrNull(scalarOf(p99)),
     apdex: nanOrNull(scalarOf(apdex)),
+    apdexThresholdMs: APDEX_T_MS,
   };
 }
 

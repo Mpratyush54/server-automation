@@ -388,3 +388,33 @@ describe('fleet', () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe('apdex, profile ranges and limits', () => {
+  it('apdex uses the 512 ms / 2048 ms histogram buckets and reports T in the summary', async () => {
+    const res = await as(request(app()).get(`${base}/summary`), DEV_A);
+    expect(res.status).toBe(200);
+    expect(res.body.red.apdexThresholdMs).toBe(512);
+    const apdexQuery = upstreamQueries().find((q) => q.includes('le="0.512"'));
+    expect(apdexQuery).toBeDefined();
+    expect(apdexQuery).toContain('le="2.048"');
+    expect(apdexQuery).toContain('le="+Inf"');
+  });
+
+  it('profile metadata follows the requested range (no widening to 24h)', async () => {
+    responder = () => ({ status: 200, data: { names: [] } });
+    const res = await as(request(app()).get(`${base}/profiles/meta`).query({ since: '1h' }), DEV_A);
+    expect(res.status).toBe(200);
+    expect(res.body.range.end - res.body.range.start).toBeLessThanOrEqual(3601);
+    expect(res.body.range.clamped).toBe(false);
+  });
+
+  it('defaults to 600 requests per minute per user, overridable by OBSERVABILITY_RATE_LIMIT', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { observabilityLimits, DEFAULT_OBSERVABILITY_RATE_LIMIT } = require('../../../src/lib/observability-config');
+    expect(DEFAULT_OBSERVABILITY_RATE_LIMIT).toBe(600);
+    delete process.env.OBSERVABILITY_RATE_LIMIT;
+    expect(observabilityLimits().rateLimitPerMinute).toBe(600);
+    process.env.OBSERVABILITY_RATE_LIMIT = '1200';
+    expect(observabilityLimits().rateLimitPerMinute).toBe(1200);
+  });
+});

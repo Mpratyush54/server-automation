@@ -228,6 +228,11 @@ from Faro's batch executor, `keepalive` for page-hide flushes, `Retry-After` hon
 whose overflow is dropped and counted, and no retries for other 4xx. It never throws into
 the app.
 
+## Where the data shows up
+
+Web vitals appear per page (p75) in **Project → Observability → RUM**, and browser spans join
+backend traces in Tempo. See [Observability views](observability.md).
+
 ## Collector notes
 
 - CORS on the Faro receiver must allow the app origins and the `Authorization` and

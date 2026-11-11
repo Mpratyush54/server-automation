@@ -37,6 +37,7 @@
   </div>
 }
 @if (error) { <div class="obs-banner error" role="alert">{{ error }}</div> }
+@if (rangeNote) { <div class="obs-banner" role="status">{{ rangeNote }}</div> }
 
 <!-- OVERVIEW -->
 @if (tab === 'overview') {
@@ -46,7 +47,7 @@
       <div class="obs-stat"><div class="label">Requests</div><div class="value">{{ rate(summary.red?.requestRate) }}</div></div>
       <div class="obs-stat"><div class="label">Error rate</div><div class="value" [class.obs-bad]="(summary.red?.errorRate ?? 0) >= 5">{{ pct(summary.red?.errorRate) }}</div></div>
       <div class="obs-stat"><div class="label">p95 latency</div><div class="value">{{ ms(summary.red?.p95Ms) }}</div></div>
-      <div class="obs-stat"><div class="label">Apdex (T=0.5 s)</div><div class="value">{{ summary.red?.apdex != null ? (summary.red.apdex | number: '1.2-2') : '—' }}</div></div>
+      <div class="obs-stat"><div class="label">Apdex (T = {{ summary.red?.apdexThresholdMs || 512 }} ms)</div><div class="value">{{ summary.red?.apdex != null ? (summary.red.apdex | number: '1.2-2') : '—' }}</div></div>
       <div class="obs-stat"><div class="label">Active alerts</div><div class="value" [class.obs-bad]="summary.incidents.critical > 0">{{ summary.incidents.active }}</div></div>
       <div class="obs-stat"><div class="label">Open errors</div><div class="value">{{ summary.errors.open }}</div></div>
       <div class="obs-stat"><div class="label">Synthetics</div><div class="value" style="font-size:1rem">{{ summary.synthetics || '—' }}</div></div>
