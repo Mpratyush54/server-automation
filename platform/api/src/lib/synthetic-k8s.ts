@@ -21,7 +21,7 @@ import { resolveTarget } from './synthetic-ssrf';
  * image (platform/synthetics-runner), restricted securityContext, explicit requests/limits,
  * concurrencyPolicy Forbid, plus a per-check Secret with its runner token. The namespace has
  * a ResourceQuota (global browser concurrency) and an egress NetworkPolicy (public internet +
- * the platform API only). Enabled only when platformctl wrote the `synthetics-runner`
+ * the API's runner-only port). Enabled only when platformctl wrote the `synthetics-runner`
  * ConfigMap (full profile + SYNTHETICS_BROWSER=true).
  */
 
@@ -29,7 +29,8 @@ export const PROBE_NAMESPACE = 'monitoring';
 export const SYNTHETICS_NAMESPACE = 'synthetics';
 export const CHECK_LABEL = 'platform.io/synthetic-check';
 export const RUNNER_CONFIGMAP = 'synthetics-runner';
-export const DEFAULT_API_URL = 'http://platform-api.platform.svc:3000';
+/** The API's runner-only listener (SYNTHETICS_RUNNER_PORT) behind the platform-api-synthetics Service. */
+export const DEFAULT_API_URL = 'http://platform-api-synthetics.platform.svc:3001';
 export const BROWSER_RESOURCES = {
   requests: { cpu: '250m', memory: '512Mi', 'ephemeral-storage': '256Mi' },
   limits: { cpu: '1', memory: '1Gi', 'ephemeral-storage': '1Gi' },

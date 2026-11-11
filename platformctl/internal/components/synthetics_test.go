@@ -65,8 +65,18 @@ func TestSyntheticsEgressExcludesPrivateRanges(t *testing.T) {
 		}
 	}
 	runner := syntheticsDoc(t, "NetworkPolicy", "synthetics-runner")
-	if !strings.Contains(runner, "app: platform-api") || !strings.Contains(runner, "port: 3000") {
-		t.Fatal("runners must reach the platform API (and nothing else inside the cluster)")
+	if !strings.Contains(runner, "app: platform-api") || !strings.Contains(runner, "port: 3001") {
+		t.Fatal("runners must reach the platform API's runner port")
+	}
+	if strings.Contains(runner, "port: 3000") {
+		t.Fatal("runners must not reach the main API port (only the runner-only listener)")
+	}
+	svc := syntheticsDoc(t, "Service", "platform-api-synthetics")
+	if !strings.Contains(svc, "namespace: platform") || !strings.Contains(svc, "targetPort: 3001") || !strings.Contains(svc, "selector: {app: platform-api}") {
+		t.Fatalf("runner Service must expose only the API's runner port: %s", svc)
+	}
+	if cm := syntheticsRunnerConfigMap(&config.Config{}); cm["data"].(map[string]string)["apiUrl"] != "http://platform-api-synthetics.platform.svc:3001" {
+		t.Fatalf("runner apiUrl must target the runner-only Service, got %v", cm["data"])
 	}
 	if !strings.Contains(runner, "ingress: []") {
 		t.Fatal("runner pods accept no ingress")

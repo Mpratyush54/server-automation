@@ -84,7 +84,7 @@ describe('blackbox Probe rendering', () => {
 });
 
 describe('browser CronJob rendering', () => {
-  const cj = renderBrowserCronJob({ id: ID, projectId: PROJ, intervalSeconds: 900, timeoutMs: 60_000, enabled: true }, { image: 'ghcr.io/example/platform-synthetics-runner:1.0.0', apiUrl: 'http://platform-api.platform.svc:3000' });
+  const cj = renderBrowserCronJob({ id: ID, projectId: PROJ, intervalSeconds: 900, timeoutMs: 60_000, enabled: true }, { image: 'ghcr.io/example/platform-synthetics-runner:1.0.0', apiUrl: 'http://platform-api-synthetics.platform.svc:3001' });
   const pod = cj.spec.jobTemplate.spec.template.spec;
   const c = pod.containers[0];
 

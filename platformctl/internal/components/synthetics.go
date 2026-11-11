@@ -21,6 +21,11 @@ import (
 // workload: they run inside the API (every profile) and, on the full profile,
 // are mirrored as blackbox-exporter Probes.
 
+// SyntheticsRunnerAPIURL is where browser runners fetch definitions and report
+// results: the platform-api-synthetics Service, which exposes only the runner
+// endpoints (the API's SYNTHETICS_RUNNER_PORT).
+const SyntheticsRunnerAPIURL = "http://platform-api-synthetics.platform.svc:3001"
+
 // SyntheticsRunnerImage is the browser runner image for this release.
 func SyntheticsRunnerImage(c *config.Config) string {
 	return fmt.Sprintf("%s/platform-synthetics-runner:%s", c.ImageRegistry, c.ImageTag)
@@ -30,7 +35,8 @@ func SyntheticsRunnerImage(c *config.Config) string {
 func syntheticsRunnerConfigMap(c *config.Config) map[string]any {
 	data := map[string]string{
 		"browser": "disabled",
-		"apiUrl":  "http://platform-api.platform.svc:3000",
+		// Dedicated runner port of the API (runner endpoints only; see synthetics.yaml).
+		"apiUrl": SyntheticsRunnerAPIURL,
 	}
 	if c.SyntheticsBrowser {
 		data["browser"] = "enabled"
