@@ -10,6 +10,8 @@ import { startTelemetryConsumer } from './telemetry-queue';
 import { startAlerting } from './alerting';
 import { startSyntheticsScheduler } from './synthetic-scheduler';
 import { ORIGINS_SYNC_JOB, syncTelemetryOrigins } from './telemetry-origins';
+import { startErrorRetention } from './error-retention';
+import { startLokiRetentionReconcile } from './loki-retention';
 
 /**
  * Background work inventory (every timer/loop in platform/api/src):
@@ -27,6 +29,8 @@ import { ORIGINS_SYNC_JOB, syncTelemetryOrigins } from './telemetry-origins';
  * | alerting-*      | leader loop (see lib/alerting.ts) | 1 s .. 5 min (#43) |
  * | synthetics-runner / -retention / -reconcile | leader loop | 5 s / hourly / 10 min (#42) |
  * | telemetry-origins-sync | leader loop (+ debounced on change) | 5 min, 5 s after gain |
+ * | error-retention | leader loop              | hourly: error_events past the project's errors retention (#47) |
+ * | loki-retention-reconcile | leader loop (full profile) | 10 min: per-project logs retention -> Loki runtime overrides (#47) |
  *
  * Any leader-loop job can instead run as a Kubernetes CronJob
  * (`node dist/jobs/<name>.js`) by listing it in JOBS_EXTERNAL.
@@ -62,6 +66,9 @@ export function startBackgroundWork(): void {
   startAlerting(); // alerting + on-call (#43): events, delivery, escalation, evaluation
   // Synthetic checks (#42): run due checks, prune results, reconcile Probes/CronJobs.
   startSyntheticsScheduler();
+  // Retention (#47): error events (Postgres) and per-project logs retention (Loki overrides).
+  startErrorRetention();
+  startLokiRetentionReconcile();
   startStorageHealth();
   // Faro CORS allow-list (monitoring/telemetry-origins); also triggered on change.
   registerLeaderJob({

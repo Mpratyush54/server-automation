@@ -29,8 +29,17 @@ error tracking, synthetics, deploys, ... ──► Redis stream plat:api:alerts:
   if it is still firing and not acknowledged. Steps target channels, on-call schedules (the user on
   call gets an in-app notification) and users. Without a policy, every enabled channel of the project
   is notified. Acknowledging stops escalation (PagerDuty gets `acknowledge`).
-* **Delivery** is retried with backoff (30 s doubling, up to `ALERTING_MAX_DELIVERY_ATTEMPTS`, default
-  5) for network errors, HTTP 5xx, 408 and 429. Other 4xx fail at once and are shown on the channel.
+* **Delivery** is retried with backoff (30 s doubling: 30, 60, 120, 240 s, up to
+  `ALERTING_MAX_DELIVERY_ATTEMPTS`, default 5) for network errors, timeouts, HTTP 5xx, 408 and 429.
+  Other 4xx fail at once and are shown on the channel. E-mail: connection problems, timeouts and
+  SMTP 4xx replies are retried; SMTP 5xx replies and authentication failures fail at once.
+* **Timeouts and concurrency**: every send is bounded by `ALERTING_DELIVERY_TIMEOUT_MS` (default
+  10 s, 1..60 s), including e-mail (SMTP connect, greeting and socket inactivity, and the whole
+  send; nodemailer's own 2-minute connect default no longer applies). The dispatcher sends up to
+  `ALERTING_DELIVERY_CONCURRENCY` deliveries in parallel (default 4, 1..32), so an unreachable
+  SMTP server or webhook holds one slot for at most the timeout and other channels keep flowing.
+* **Resolution messages** use the title of the resolving event when the source sends one (for
+  example `Synthetic check "api" recovered`); manual resolves keep the incident title.
 
 ## Monitors
 
@@ -41,14 +50,16 @@ error tracking, synthetics, deploys, ... ──► Redis stream plat:api:alerts:
 | `trace`    | `params.signal`: `error_rate` (%), `latency_p95` (ms), `request_rate` | from Tempo span metrics, always scoped to the project |
 | `resource` | `params.resource`: `cpu` / `memory` (% of limits) | scoped to the project's namespaces |
 
-Only platform admins and devops can create monitors; PromQL / LogQL is not rewritten, so these
-roles are trusted with cross-project queries. Trace and resource monitors are always project-scoped.
+`trace` and `resource` monitors are built and scoped to the project by the platform, so project
+devops/owners can manage them. `metric` and `log` queries are user PromQL / LogQL that is **not**
+rewritten to the project's scope, so only platform admins and devops can create them, edit them, or
+change another monitor's kind to `metric` / `log` (others get `403`).
 
 ## SLOs
 
 `sliType` `availability` (non-error share of spans), `latency` (share of spans faster than
 `params.latencyMs`, a span-metrics bucket boundary) or `ratio` (`errorQuery` / `totalQuery`, both
-using `$window`). Each SLO renders Sloth-style recording rules (`slo:sli_error:ratio_rate<window>`
+using `$window`; raw PromQL, so platform admin / devops only, like `metric` monitors). Each SLO renders Sloth-style recording rules (`slo:sli_error:ratio_rate<window>`
 for 5m, 30m, 1h, 2h, 6h, 1d, 3d and the SLO period) and two multi-window, multi-burn-rate alerts:
 
 * **page** (critical): 1h and 5m burn > 14.4, or 6h and 30m burn > 6
@@ -68,7 +79,15 @@ budget remaining for the period (refreshed every minute by the leader, `?refresh
 | `webhook`   | `url`, `signingSecret` (generated if empty, shown once) | signed, see below |
 | `email`     | none (`config.to`)                     | default SMTP configuration |
 
-Secrets are encrypted with `SECRETS_ENCRYPTION_KEY` and never returned; `GET` shows only which
+E-mail uses the default SMTP configuration (**Settings → SMTP**). Its password / API key is
+encrypted with `SECRETS_ENCRYPTION_KEY` like channel secrets and never returned (`GET` shows `***`);
+configurations saved by older versions in plain text stay readable and are encrypted at the next
+API start. Only the documented fields are accepted (`name`, `provider`, `host`, `port`, `secure`,
+`username`, `password`, `apiKey`, `fromEmail`, `fromName`, `isDefault`); `host`, `port`, `secure`
+and `fromEmail` are validated. There is no update endpoint: delete and re-create a configuration to
+change it. Other SMTP users (deploy and backup e-mails) are bounded by a 15 s timeout.
+
+Channel secrets are encrypted with `SECRETS_ENCRYPTION_KEY` and never returned; `GET` shows only which
 fields are set and the destination host. Outbound requests refuse loopback, private, CGNAT,
 link-local (including cloud metadata), multicast and internal host names, checked before the request
 and again at connect time; redirects are not followed. Only a platform admin can set
@@ -100,8 +119,35 @@ The Loki ruler is not enabled by the installer. To evaluate log monitors in Loki
 
 * Read (incidents, monitors, SLOs, silences, channels without secrets): project members (viewer+).
 * Acknowledge / resolve incidents: project developer+.
-* Configuration (channels, monitors, SLOs, silences, policies, schedules, test events): platform
-  admin or devops. Every change is written to the audit log (never with secret values).
+* Configuration of a project's alerting: project **devops** or **owner** (and platform admin /
+  devops, who can configure every project):
+
+  | What | Project devops / owner | Platform admin / devops |
+  |------|------------------------|-------------------------|
+  | Channels (incl. test send), escalation policies, on-call schedules, silences, test events | yes | yes |
+  | SLOs `availability` / `latency` | yes | yes |
+  | SLOs `ratio` (raw PromQL) | no | yes |
+  | Monitors `trace` / `resource` (platform-scoped) | yes | yes |
+  | Monitors `metric` / `log` (raw PromQL / LogQL), incl. editing them or switching a monitor to them | no | yes |
+  | `allowPrivateNetwork` on a channel | no | admin only |
+
+  Project devops / owners can page (in policies and schedules) only users who can see the project
+  (its members and platform admins / devops); platform admins / devops can page any user.
+* Agent tokens are read-only on alerting.
+* Every change is written to the audit log (never with secret values).
+
+## Retention
+
+The leader's hourly `alerting-retention` job prunes history:
+
+| Data | Kept | Setting |
+|------|------|---------|
+| `alert_deliveries` (sent / failed / skipped) | 30 days after creation | `ALERTING_DELIVERY_RETENTION_DAYS` |
+| resolved `alert_incidents` (and their deliveries) | 180 days after resolution | `ALERTING_INCIDENT_RETENTION_DAYS` |
+
+Pending deliveries and open or acknowledged incidents are never pruned. The audit log
+(`audit_logs`, including `alerting.*` actions) is not pruned by the platform: it is the compliance
+record; archive or trim it with your own database tooling if your policy requires it.
 
 ## Legacy `/api/alerts`
 

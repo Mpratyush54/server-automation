@@ -161,7 +161,7 @@ export class ApiService {
   updateProjectPrivacyScrubbing(projectId: string, data: { scrubIps?: boolean; rules?: any[] }): Observable<any> {
     return this.http.put(`${this.base}/projects/${projectId}/privacy/scrubbing`, data);
   }
-  updateProjectPrivacyRetention(projectId: string, data: Record<string, number>): Observable<any> {
+  updateProjectPrivacyRetention(projectId: string, data: Record<string, number | null>): Observable<any> {
     return this.http.put(`${this.base}/projects/${projectId}/privacy/retention`, data);
   }
   updateProjectPrivacyConsentDefaults(projectId: string, data: { replay?: boolean; analytics?: boolean }): Observable<any> {

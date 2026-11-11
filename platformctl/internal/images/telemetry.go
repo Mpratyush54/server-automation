@@ -12,7 +12,7 @@ func ListForTelemetry(full bool) []string {
 	for _, img := range List() {
 		normalized := strings.TrimPrefix(img, "docker.io/")
 		telemetry := false
-		for _, prefix := range []string{"grafana/alloy:", "grafana/tempo:", "grafana/pyroscope:", "grafana/loki:3.", "quay.io/prometheus/blackbox-exporter:", "quay.io/minio/mc:"} {
+		for _, prefix := range []string{"grafana/alloy:", "grafana/tempo:", "grafana/pyroscope:", "grafana/loki:3.", "quay.io/prometheus/blackbox-exporter:"} {
 			if strings.HasPrefix(normalized, prefix) {
 				telemetry = true
 				break

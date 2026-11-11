@@ -49,7 +49,7 @@ done
 step "create bucket platform-uploads" mc mb --ignore-existing bundled/platform-uploads
 step "create bucket platform-backups" mc mb --ignore-existing bundled/platform-backups
 cat > "$work/policy.json" <<'POLICY'
-{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:ListBucket","s3:GetBucketLocation"],"Resource":["arn:aws:s3:::platform-uploads","arn:aws:s3:::platform-backups"]},{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload","s3:ListMultipartUploadParts"],"Resource":["arn:aws:s3:::platform-uploads/*","arn:aws:s3:::platform-backups/*"]}]}
+{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:ListBucket","s3:GetBucketLocation"],"Resource":["arn:aws:s3:::platform-uploads","arn:aws:s3:::platform-backups","arn:aws:s3:::replays"]},{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload","s3:ListMultipartUploadParts"],"Resource":["arn:aws:s3:::platform-uploads/*","arn:aws:s3:::platform-backups/*","arn:aws:s3:::replays/*"]}]}
 POLICY
 step "create policy" mc admin policy create bundled platform-api-storage "$work/policy.json"
 step "add user" mc admin user add bundled "$API_ACCESS" "$API_SECRET"
