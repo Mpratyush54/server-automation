@@ -459,88 +459,137 @@ export function retryDelayMs(attempts: number): number {
   return Math.min(30 * 60_000, 30_000 * 2 ** Math.max(0, attempts - 1));
 }
 
+/**
+ * nodemailer errors: SMTP 5xx replies (bad recipient, auth rejected) and auth failures will
+ * not succeed on retry; connection problems, timeouts and 4xx replies are retried.
+ */
+export function classifySmtpError(err: any): DeliveryError {
+  const code = Number(err?.responseCode);
+  const message = `SMTP: ${String(err?.message || err).slice(0, 300)}`;
+  if (err?.code === 'EAUTH' || (Number.isFinite(code) && code >= 500)) return new DeliveryError(message, false);
+  return new DeliveryError(message, true);
+}
+
 async function defaultSendEmail(to: string[], subject: string, html: string): Promise<void> {
   const smtp = await (await getDb()).getRepository(SmtpConfig).findOne({ where: { isDefault: true } });
   if (!smtp) throw new DeliveryError('No default SMTP configuration', false);
   const { sendMail } = await import('./smtp-service');
-  await sendMail(smtp as any, to, subject, html);
+  try {
+    // Bounded like the HTTP channels: an unreachable server fails within the delivery
+    // timeout (and is retried with backoff) instead of nodemailer's 2-minute default.
+    await sendMail(smtp as any, to, subject, html, { timeoutMs: alertingSettings().deliveryTimeoutMs });
+  } catch (err) {
+    throw classifySmtpError(err);
+  }
 }
 
 export function defaultChannelDeps(): ChannelDeps {
   return { http: axiosHttpPost, sendEmail: defaultSendEmail, timeoutMs: alertingSettings().deliveryTimeoutMs };
 }
 
-/** Send due deliveries (oldest first, bounded batch). */
-export async function dispatchDeliveries(now: Date = new Date(), deps: ChannelDeps = defaultChannelDeps(), batch = 50): Promise<{ sent: number; failed: number; retried: number }> {
+/** Run `fn` over `items` with at most `limit` in flight; preserves start order. */
+export async function mapWithConcurrency<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (next < items.length) {
+      const item = items[next++];
+      await fn(item);
+    }
+  });
+  await Promise.all(workers);
+}
+
+type DispatchResult = { sent: number; failed: number; retried: number };
+
+async function deliverOne(d: AlertDelivery, now: Date, deps: ChannelDeps, maxAttempts: number, result: DispatchResult): Promise<void> {
   const ds = await getDb();
   const repo = ds.getRepository(AlertDelivery);
+  const incident = await ds.getRepository(AlertIncident).findOne({ where: { id: d.incidentId } });
+  if (!incident) {
+    d.status = 'skipped';
+    d.lastError = 'incident deleted';
+    await repo.save(d);
+    return;
+  }
+  const project = await ds.getRepository(Project).findOne({ where: { id: incident.projectId } });
+  const msg = messageFor(incident, d.event, project?.name);
+  d.attempts += 1;
+  try {
+    if (d.channelId) {
+      const channels = ds.getRepository(AlertChannel);
+      const channel = await channels.findOne({ where: { id: d.channelId } });
+      if (!channel || channel.projectId !== incident.projectId || !channel.enabled) {
+        d.status = 'skipped';
+        d.lastError = 'channel missing or disabled';
+        await repo.save(d);
+        return;
+      }
+      if (!severityAllowed(channel.minSeverity, incident.severity)) {
+        d.status = 'skipped';
+        d.lastError = `below channel minimum severity ${channel.minSeverity}`;
+        await repo.save(d);
+        return;
+      }
+      try {
+        await sendToChannel(channel, msg, { ...deps, now: deps.now || (() => now) });
+        // Status columns only: deliveries run in parallel and must not overwrite an edit.
+        await channels.update({ id: channel.id }, { lastDeliveryAt: now, lastError: null }).catch(() => {});
+      } catch (err: any) {
+        await channels.update({ id: channel.id }, { lastError: String(err?.message || err).slice(0, 500) }).catch(() => {});
+        throw err;
+      }
+    } else if (d.userId) {
+      await notifyUser({
+        userId: d.userId,
+        title: msg.event === 'resolved' ? `Resolved: ${msg.title}` : `On-call: ${msg.title}`,
+        body: msg.body || undefined,
+        kind: msg.event === 'resolved' ? 'success' : 'error',
+        link: incident.url || `/alerting?projectId=${incident.projectId}&incident=${incident.id}`,
+        metadata: { incidentId: incident.id, projectId: incident.projectId, event: msg.event },
+      });
+    }
+    d.status = 'sent';
+    d.sentAt = now;
+    d.lastError = null;
+    result.sent++;
+  } catch (err: any) {
+    const retryable = !(err instanceof DeliveryError) || err.retryable;
+    d.lastError = String(err?.message || err).slice(0, 500);
+    if (retryable && d.attempts < maxAttempts) {
+      d.nextAttemptAt = new Date(now.getTime() + retryDelayMs(d.attempts));
+      result.retried++;
+    } else {
+      d.status = 'failed';
+      result.failed++;
+    }
+  }
+  await repo.save(d);
+}
+
+/**
+ * Send due deliveries (oldest first, bounded batch) with bounded concurrency
+ * (ALERTING_DELIVERY_CONCURRENCY, default 4): every send is bounded by the delivery timeout,
+ * so one unreachable channel or SMTP server holds a single slot for at most that long.
+ */
+export async function dispatchDeliveries(
+  now: Date = new Date(),
+  deps: ChannelDeps = defaultChannelDeps(),
+  batch = 50,
+  concurrency: number = alertingSettings().deliveryConcurrency,
+): Promise<DispatchResult> {
+  const repo = (await getDb()).getRepository(AlertDelivery);
   const due = (await repo.find({ where: { status: 'pending' }, order: { nextAttemptAt: 'ASC' } as any, take: batch * 4 }))
     .filter((d) => new Date(d.nextAttemptAt).getTime() <= now.getTime())
     .slice(0, batch);
-  const result = { sent: 0, failed: 0, retried: 0 };
+  const result: DispatchResult = { sent: 0, failed: 0, retried: 0 };
   const maxAttempts = alertingSettings().maxDeliveryAttempts;
-  for (const d of due) {
-    const incident = await ds.getRepository(AlertIncident).findOne({ where: { id: d.incidentId } });
-    if (!incident) {
-      d.status = 'skipped';
-      d.lastError = 'incident deleted';
-      await repo.save(d);
-      continue;
-    }
-    const project = await ds.getRepository(Project).findOne({ where: { id: incident.projectId } });
-    const msg = messageFor(incident, d.event, project?.name);
-    d.attempts += 1;
+  await mapWithConcurrency(due, concurrency, async (d) => {
     try {
-      if (d.channelId) {
-        const channel = await ds.getRepository(AlertChannel).findOne({ where: { id: d.channelId } });
-        if (!channel || channel.projectId !== incident.projectId || !channel.enabled) {
-          d.status = 'skipped';
-          d.lastError = 'channel missing or disabled';
-          await repo.save(d);
-          continue;
-        }
-        if (!severityAllowed(channel.minSeverity, incident.severity)) {
-          d.status = 'skipped';
-          d.lastError = `below channel minimum severity ${channel.minSeverity}`;
-          await repo.save(d);
-          continue;
-        }
-        try {
-          await sendToChannel(channel, msg, { ...deps, now: deps.now || (() => now) });
-          channel.lastDeliveryAt = now;
-          channel.lastError = null;
-        } catch (err: any) {
-          channel.lastError = String(err?.message || err).slice(0, 500);
-          throw err;
-        } finally {
-          await ds.getRepository(AlertChannel).save(channel).catch(() => {});
-        }
-      } else if (d.userId) {
-        await notifyUser({
-          userId: d.userId,
-          title: msg.event === 'resolved' ? `Resolved: ${msg.title}` : `On-call: ${msg.title}`,
-          body: msg.body || undefined,
-          kind: msg.event === 'resolved' ? 'success' : 'error',
-          link: incident.url || `/alerting?projectId=${incident.projectId}&incident=${incident.id}`,
-          metadata: { incidentId: incident.id, projectId: incident.projectId, event: msg.event },
-        });
-      }
-      d.status = 'sent';
-      d.sentAt = now;
-      d.lastError = null;
-      result.sent++;
+      await deliverOne(d, now, deps, maxAttempts, result);
     } catch (err: any) {
-      const retryable = !(err instanceof DeliveryError) || err.retryable;
-      d.lastError = String(err?.message || err).slice(0, 500);
-      if (retryable && d.attempts < maxAttempts) {
-        d.nextAttemptAt = new Date(now.getTime() + retryDelayMs(d.attempts));
-        result.retried++;
-      } else {
-        d.status = 'failed';
-        result.failed++;
-      }
+      // A database error on one row must not abort the others; the row stays pending.
+      console.warn(`[alerting] delivery ${d.id} failed to process: ${err?.message || err}`);
     }
-    await repo.save(d);
-  }
+  });
   return result;
 }
