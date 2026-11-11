@@ -27,8 +27,17 @@ func TestIngressSecurityValues(t *testing.T) {
 		if controller["allowSnippetAnnotations"] != true || conf["annotations-risk-level"] != "Critical" {
 			t.Fatal("platform routing snippets broken")
 		}
-		if controller["service"].(map[string]any)["allocateLoadBalancerNodePorts"] != false {
-			t.Fatal("nodeports exposed")
+		service := controller["service"].(map[string]any)
+		// Real client IPs for per-IP limits: Local keeps the source address;
+		// svclb needs node ports under Local (host firewall blocks them externally).
+		if service["externalTrafficPolicy"] != "Local" || service["allocateLoadBalancerNodePorts"] != true || service["type"] != "LoadBalancer" {
+			t.Fatalf("client source IP not preserved: %v", service)
+		}
+		// Forwarding headers from clients must never be trusted (no proxy in front).
+		for _, k := range []string{"use-forwarded-headers", "compute-full-forwarded-for", "use-proxy-protocol"} {
+			if conf[k] != "false" {
+				t.Fatalf("%s must be false, got %q", k, conf[k])
+			}
 		}
 		security := controller["containerSecurityContext"].(map[string]any)
 		if security["allowPrivilegeEscalation"] != false || security["runAsNonRoot"] != true {
