@@ -175,45 +175,15 @@ func InstallCertManager(cfg *config.Config) error {
 }
 
 func InstallPostgreSQL(cfg *config.Config) error {
-	if doneOrSkip("postgresql", "PostgreSQL") {
-		return nil
-	}
-	color.Cyan("\n  ■ Installing PostgreSQL...")
-	err := helmValues("postgresql", "postgresql", "databases", databaseMonitoringValues(cfg, "postgres", map[string]string{"postgresPassword": cfg.PostgresPassword, "database": "platform"}), "--set", "primary.persistence.size=10Gi", "--wait", "--timeout", "10m")
-	if err != nil {
-		return err
-	}
-	color.Green("  ✓ PostgreSQL installed")
-	return state.MarkDone("postgresql")
+	return postgresqlRelease(cfg).reconcile("--wait", "--timeout", "10m")
 }
 
 func InstallMongoDB(cfg *config.Config) error {
-	if doneOrSkip("mongodb", "MongoDB") {
-		return nil
-	}
-	color.Cyan("\n  ■ Installing MongoDB...")
-	err := helmValues("mongodb", "mongodb", "databases", databaseMonitoringValues(cfg, "mongo", map[string]string{"rootPassword": cfg.MongoPassword}), "--set", "persistence.size=10Gi", "--wait", "--timeout", "10m")
-	if err != nil {
-		return err
-	}
-	color.Green("  ✓ MongoDB installed")
-	return state.MarkDone("mongodb")
+	return mongodbRelease(cfg).reconcile("--wait", "--timeout", "10m")
 }
 
 func InstallRedis(cfg *config.Config) error {
-	if doneOrSkip("redis", "Redis") {
-		return nil
-	}
-	color.Cyan("\n  ■ Installing Redis...")
-	err := helmValues("redis", "redis", "databases", databaseMonitoringValues(cfg, "redis", map[string]string{"password": cfg.RedisPassword}), "--set", "master.persistence.size=5Gi",
-		// Single server: one read replica. The chart default (3, started one at a
-		// time) added ~1.5 minutes to every install for no redundancy.
-		"--set", "replica.replicaCount=1", "--wait", "--timeout", "10m")
-	if err != nil {
-		return err
-	}
-	color.Green("  ✓ Redis installed")
-	return state.MarkDone("redis")
+	return redisRelease(cfg).reconcile("--wait", "--timeout", "10m")
 }
 
 func InstallMinIO(cfg *config.Config) error {
@@ -781,6 +751,15 @@ func deploymentReadyCheck(ns, name string) string {
 	return fmt.Sprintf(`k3s kubectl get deployment -n %s %s -o jsonpath='{.status.readyReplicas} {.spec.replicas}' 2>/dev/null | awk '$1 != "" && $1 == $2 { ok = 1 } END { exit !ok }'`, ns, name)
 }
 
+// platformImages, when set, are the exact (digest-pinned) images InstallPlatform
+// deploys instead of <registry>/<name>:<tag>. upgrade sets them to the images
+// its transaction verified, so re-applying the platform step afterwards keeps
+// digest pins (needed for the next rollback) and does not change the images.
+var platformImages struct{ api, portal string }
+
+// UsePlatformImages pins the images InstallPlatform deploys in this process.
+func UsePlatformImages(api, portal string) { platformImages.api, platformImages.portal = api, portal }
+
 func InstallPlatform(cfg *config.Config) error {
 	// Always reconcile security settings on existing installations as well.
 	color.Cyan("\n  ■ Deploying Platform API + Portal...")
@@ -794,6 +773,9 @@ func InstallPlatform(cfg *config.Config) error {
 
 	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
 	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
+	if platformImages.api != "" && platformImages.portal != "" {
+		apiImg, portalImg = platformImages.api, platformImages.portal
+	}
 
 	// Credentials (incl. ones the API rotated at runtime) → platform-credentials,
 	// OIDC signing key → platform-oidc-signing-key; /etc/platform becomes a

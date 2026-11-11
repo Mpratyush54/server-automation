@@ -3,6 +3,7 @@ import { getDb } from '../config/database';
 import { pingRedis } from '../lib/redis';
 import { isShuttingDown } from '../lib/shutdown';
 import { withTimeout } from '../lib/with-timeout';
+import { classifyDrift, pendingSchemaChanges } from '../lib/migrations';
 
 const router = Router();
 const CHECK_TIMEOUT_MS = 2000;
@@ -43,6 +44,50 @@ router.get('/health/ready', async (_req: Request, res: Response) => {
   if (redis === 'unavailable') console.warn(`[health] redis unavailable (readiness unaffected): ${redisRaw}`);
   const ok = db === 'ok';
   return res.status(ok ? 200 : 503).json({ status: ok ? 'ready' : 'not_ready', checks: { db, redis } });
+});
+
+const SCHEMA_TTL_MS = 30_000;
+const SCHEMA_TIMEOUT_MS = 15_000;
+let schemaCache: { at: number; missing: number } | undefined;
+let schemaInflight: Promise<{ at: number; missing: number } | undefined> | undefined;
+
+/** Test hook: forget the cached schema result. */
+export function resetSchemaCheckForTests(): void {
+  schemaCache = undefined;
+  schemaInflight = undefined;
+}
+
+async function checkSchema(): Promise<{ at: number; missing: number } | undefined> {
+  if (schemaCache && Date.now() - schemaCache.at < SCHEMA_TTL_MS) return schemaCache;
+  // One comparison at a time per replica, cached: the endpoint is public.
+  schemaInflight ??= withTimeout(
+    (async () => {
+      const ds = await getDb();
+      const { additive } = classifyDrift(await pendingSchemaChanges(ds));
+      schemaCache = { at: Date.now(), missing: additive.length };
+      return schemaCache;
+    })(),
+    SCHEMA_TIMEOUT_MS,
+    undefined,
+  ).finally(() => {
+    schemaInflight = undefined;
+  });
+  return schemaInflight;
+}
+
+/**
+ * GET /api/health/schema — 200 when every table, column, index and constraint the
+ * entities need exists; 503 `drift` when objects are missing (e.g. an older API that
+ * synchronized its schema on boot dropped them after a rollback). Used by the
+ * `platformctl upgrade` health gate; NOT a Kubernetes probe. Reports a count only.
+ */
+router.get('/health/schema', async (_req: Request, res: Response) => {
+  res.set('Cache-Control', 'no-store');
+  const result = await checkSchema().catch(() => undefined);
+  if (!result) return res.status(503).json({ status: 'unavailable' });
+  const ok = result.missing === 0;
+  if (!ok) console.warn(`[health] schema drift: ${result.missing} missing object(s); run the platform-api migrations`);
+  return res.status(ok ? 200 : 503).json({ status: ok ? 'ok' : 'drift', missing: result.missing });
 });
 
 export default router;

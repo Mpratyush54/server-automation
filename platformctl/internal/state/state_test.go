@@ -68,3 +68,25 @@ func countSub(s, sub string) int {
 	}
 	return n
 }
+
+func TestGetSetAuxiliaryRecords(t *testing.T) {
+	SetPath(filepath.Join(t.TempDir(), "state"))
+	defer SetPath(DefaultPath)
+	if err := MarkDone("postgresql"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Set("postgresql.values", "abc123"); err != nil {
+		t.Fatal(err)
+	}
+	if Get("postgresql.values") != "abc123" || !IsDone("postgresql") {
+		t.Fatal("record lost")
+	}
+	for _, s := range DoneSteps() {
+		if s == "postgresql.values" {
+			t.Fatal("auxiliary record listed as a done step")
+		}
+	}
+	if Set("bad\nkey", "x") == nil || Set("k", "a\nb") == nil {
+		t.Fatal("accepted a newline")
+	}
+}

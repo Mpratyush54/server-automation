@@ -13,6 +13,7 @@ import (
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/backup"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/helm"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/upgrade"
@@ -21,7 +22,7 @@ import (
 )
 
 var upgradeTo, applyFrom string
-var upgradeYes, upgradeDry, upgradeHistory, upgradePatch, upgradeRestore bool
+var upgradeYes, upgradeDry, upgradeHistory, upgradePatch, upgradeRestore, upgradeUnreleased bool
 
 const upgradeState = "/var/lib/platformctl/state/upgrade-history.json"
 
@@ -48,6 +49,7 @@ func init() {
 	c.Flags().BoolVar(&upgradeDry, "dry-run", false, "show plan without changing the install")
 	c.Flags().BoolVar(&upgradePatch, "patch-only", false, "allow stable patches in the installed minor only")
 	c.Flags().BoolVar(&upgradeHistory, "history", false, "print local upgrade history")
+	c.Flags().BoolVar(&upgradeUnreleased, "allow-unreleased", false, "accept a --to release that is not published (testing a local build whose binary and images are on this host)")
 	c.Flags().BoolVar(&upgradeRestore, "restore-failed-migration", false, "explicitly permit restoring configured PostgreSQL backup after an irreversible migration fails; age identity on stdin")
 	rootCmd.AddCommand(c)
 }
@@ -81,6 +83,7 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	if applyFrom != "" {
 		current = applyFrom
 	}
+	upgrade.AllowUnreleased = upgradeUnreleased
 	var r upgrade.Release
 	if upgradePatch && upgradeTo == "" {
 		r, e = upgrade.PatchMetadata(current)
@@ -117,6 +120,9 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		if upgradeRestore {
 			args = append(args, "--restore-failed-migration")
 		}
+		if upgradeUnreleased {
+			args = append(args, "--allow-unreleased")
+		}
 		child := exec.Command(binary, args...)
 		child.Stdin = cmd.InOrStdin()
 		child.Stdout = cmd.OutOrStdout()
@@ -148,16 +154,35 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	}
 	b, _ := json.MarshalIndent(plan, "", "  ")
 	fmt.Fprintf(cmd.OutOrStdout(), "Plan: backup -> target migrations -> changed charts (atomic) -> images -> health gates\n%s\n", b)
+	compPlan := componentPlan(cfg)
+	printComponentPlan(cmd.OutOrStdout(), profileLabel(cfg), compPlan)
 	if upgradeDry {
 		return nil
 	}
+	reader := bufio.NewReader(cmd.InOrStdin())
 	if len(plan.Charts) == 0 && len(plan.Images) == 0 && strings.TrimPrefix(current, "v") == strings.TrimPrefix(r.Tag, "v") {
 		fmt.Fprintln(cmd.OutOrStdout(), "Already at the requested release and pins.")
+		if len(compPlan) > 0 && !upgradeYes {
+			fmt.Fprint(cmd.OutOrStdout(), "Reconcile these components? [y/N] ")
+			line, _ := reader.ReadString('\n')
+			if strings.TrimSpace(strings.ToLower(line)) != "y" {
+				return fmt.Errorf("upgrade cancelled")
+			}
+		}
+		// Also repairs installs upgraded by a platformctl that kept the tag in memory only.
+		if e := persistUpgradedTag(cfg.ImageTag); e != nil {
+			return e
+		}
 		resume, e := suspendUpgradeUpdater()
 		if e != nil {
 			return e
 		}
-		if e = finishUpgradeInstallation(); e != nil {
+		components.UsePlatformImages(api, portal)
+		e = applyComponentPlan(cfg, r.Tag, compPlan)
+		if e == nil {
+			e = finishUpgradeInstallation()
+		}
+		if e != nil {
 			if re := resume(); re != nil {
 				return fmt.Errorf("%w; resume updater: %v", e, re)
 			}
@@ -165,7 +190,6 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		}
 		return resume()
 	}
-	reader := bufio.NewReader(cmd.InOrStdin())
 	if !upgradeYes {
 		fmt.Fprint(cmd.OutOrStdout(), "Apply this upgrade? [y/N] ")
 		line, _ := reader.ReadString('\n')
@@ -259,8 +283,20 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		},
 		Health: upgradeHealth,
 		Save:   saveUpgradeHistory,
+		Commit: func() error { return persistUpgradedTag(cfg.ImageTag) },
+	}
+	backupContainerUploads(cmd.ErrOrStderr(), os.Getenv("PLATFORMCTL_BACKUP_ROOT"))
+	// Re-applying the platform step after the transaction keeps these exact images.
+	components.UsePlatformImages(api, portal)
+	// RBAC the new API needs (alerting, synthetics) exists before it starts,
+	// so its first requests do not fail with 403 until the telemetry step runs.
+	if e = components.ApplyFullProfileAPIAccess(cfg); e != nil {
+		return fmt.Errorf("apply API RBAC before the rollout (nothing changed yet): %w", e)
 	}
 	if e = upgrade.Apply(upgrade.Record{From: current, To: r.Tag, Plan: plan}, h); e != nil {
+		return e
+	}
+	if e = applyComponentPlan(cfg, r.Tag, compPlan); e != nil {
 		return e
 	}
 	if e = finishUpgradeInstallation(); e != nil {
@@ -270,6 +306,25 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("release is healthy; resume digest-refresh schedule: %w", e)
 	}
 	completed = true
+	return nil
+}
+
+// upgradeEnvFile is the saved host configuration (tests override it).
+var upgradeEnvFile = "/etc/platform/.env"
+
+// persistUpgradedTag records the release in /etc/platform/.env (atomic
+// write-and-rename) so later `install`/`provision` runs use the upgraded images
+// instead of rolling the API back or pulling images that do not exist for the
+// old tag. It runs only after the health gate passed; a rolled-back upgrade
+// never changes the file, so it keeps the previous tag.
+func persistUpgradedTag(tag string) error {
+	tag = strings.TrimPrefix(tag, "v")
+	if _, e := upgrade.Parse(tag); e != nil {
+		return fmt.Errorf("refusing to persist image tag %q: %w", tag, e)
+	}
+	if e := config.UpsertEnvKey(upgradeEnvFile, "PLATFORM_IMAGE_TAG", tag); e != nil {
+		return fmt.Errorf("record PLATFORM_IMAGE_TAG=%s in %s: %w", tag, upgradeEnvFile, e)
+	}
 	return nil
 }
 
@@ -354,14 +409,19 @@ func upgradePlan(api, portal string) (upgrade.Plan, error) {
 	for _, p := range versions.All() {
 		pins[p.Name] = p.Version
 		for _, r := range releases {
-			prefix := p.BaseName() + "-"
-			if strings.HasPrefix(r.Chart, prefix) {
-				rev, e := strconv.Atoi(r.Revision)
-				if e != nil || rev < 1 {
-					return upgrade.Plan{}, fmt.Errorf("invalid Helm revision")
-				}
-				installed = append(installed, upgrade.Chart{Name: r.Name, Namespace: r.Namespace, Chart: p.Name, Version: strings.TrimPrefix(r.Chart, prefix), Revision: rev})
+			// Exact chart-name match: a "loki-" prefix also matches
+			// "loki-stack-2.10.3", and upgrading that release to the loki chart
+			// with --reuse-values fails (and would discard its data). The
+			// loki-stack -> loki move is a migration done by the telemetry step.
+			name, version, ok := versions.SplitChartRef(r.Chart)
+			if !ok || name != p.BaseName() {
+				continue
 			}
+			rev, e := strconv.Atoi(r.Revision)
+			if e != nil || rev < 1 {
+				return upgrade.Plan{}, fmt.Errorf("invalid Helm revision")
+			}
+			installed = append(installed, upgrade.Chart{Name: r.Name, Namespace: r.Namespace, Chart: p.Name, Version: version, Revision: rev})
 		}
 	}
 	var images []upgrade.Image
@@ -373,7 +433,9 @@ func upgradePlan(api, portal string) (upgrade.Plan, error) {
 		if old == "" {
 			return upgrade.Plan{}, fmt.Errorf("missing %s image", x.d)
 		}
-		if !strings.Contains(old, "@sha256:") {
+		// Local test builds (--allow-unreleased) have no registry digest: the
+		// deployed target tag itself is accepted, nothing else.
+		if !strings.Contains(old, "@sha256:") && !(upgrade.AllowUnreleased && old == x.target) {
 			return upgrade.Plan{}, fmt.Errorf("%s uses a mutable tag; run platformctl update to pin images before a release upgrade", x.d)
 		}
 		images = append(images, upgrade.Image{Deployment: x.d, Container: x.c, Before: old, After: x.target})
@@ -485,33 +547,49 @@ func upgradeHealth() error {
 	if e != nil {
 		return e
 	}
-	urls := upgradeHealthURLs(installed != "")
-	for _, url := range urls {
-		script := `(async()=>{const r=await fetch(process.argv[1],{signal:AbortSignal.timeout(15000)});if(r.status!==200)process.exit(1)})().catch(()=>process.exit(1))`
+	for _, probe := range upgradeHealthProbes(installed != "") {
 		var last error
 		for i := 0; i < 12; i++ {
-			_, last = uk("-n", "platform", "exec", "deploy/platform-api", "-c", "api", "--", "node", "-e", script, url)
+			_, last = uk("-n", "platform", "exec", "deploy/platform-api", "-c", "api", "--", "node", "-e", healthProbeScript, probe.URL, probe.On404)
 			if last == nil {
 				break
 			}
 			time.Sleep(5 * time.Second)
 		}
 		if last != nil {
-			return fmt.Errorf("endpoint %s: %w", url, last)
+			return fmt.Errorf("endpoint %s: %w", probe.URL, last)
 		}
 	}
 	return nil
 }
 
-// upgradeHealthURLs lists the in-cluster endpoints that must answer 200 after an
-// upgrade (and after a rollback). Argo CD is served under a root path
-// (/argocd), so its "/" is 404; /healthz answers regardless of the root path.
-func upgradeHealthURLs(argoInstalled bool) []string {
-	urls := []string{"http://platform-api.platform.svc.cluster.local:3000/api/health/ready", "http://platform-portal.platform.svc.cluster.local", "http://platform-api.platform.svc.cluster.local:3000/api/oauth/.well-known/openid-configuration"}
-	if argoInstalled {
-		urls = append(urls, "http://argocd-server.argocd.svc.cluster.local/healthz")
+// healthProbe is one in-cluster endpoint that must answer 200 after an upgrade
+// and after a rollback. On404 handles endpoints an older release lacks (the
+// rollback target, e.g. v1.2.0): "" means 404 fails, "skip" accepts it, and a
+// URL is probed instead (and must answer 200).
+type healthProbe struct{ URL, On404 string }
+
+// healthProbeScript runs inside the API container (node is always there):
+// argv[1] = URL, argv[2] = On404.
+const healthProbeScript = `(async()=>{const get=u=>fetch(u,{signal:AbortSignal.timeout(15000)});let r=await get(process.argv[1]);const f=process.argv[2]||"";if(r.status===404&&f==="skip")return;if(r.status===404&&f)r=await get(f);if(r.status!==200){console.error(r.url+" answered "+r.status);process.exit(1)}})().catch(e=>{console.error(String(e));process.exit(1)})`
+
+const apiInternal = "http://platform-api.platform.svc.cluster.local:3000"
+
+// upgradeHealthProbes lists the gate endpoints. /api/health/schema proves the
+// database schema matches the API (a rolled-back schema with dropped columns
+// passes /api/health/ready but fails every project query). Argo CD is served
+// under a root path (/argocd), so its "/" is 404; /healthz answers regardless.
+func upgradeHealthProbes(argoInstalled bool) []healthProbe {
+	probes := []healthProbe{
+		{URL: apiInternal + "/api/health/ready", On404: apiInternal + "/api/health"},
+		{URL: apiInternal + "/api/health/schema", On404: "skip"},
+		{URL: "http://platform-portal.platform.svc.cluster.local"},
+		{URL: apiInternal + "/api/oauth/.well-known/openid-configuration"},
 	}
-	return urls
+	if argoInstalled {
+		probes = append(probes, healthProbe{URL: "http://argocd-server.argocd.svc.cluster.local/healthz"})
+	}
+	return probes
 }
 
 func saveUpgradeHistory(r upgrade.Record) error {

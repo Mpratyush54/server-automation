@@ -35,6 +35,15 @@ export class RedisManager {
       if (this.client === client) this.connected = false;
       console.error('[platform] Redis error:', err.message);
     });
+    // ioredis reconnects on its own after an established connection drops (Redis restart);
+    // without this the manager kept reporting "disconnected" after the client recovered.
+    client.on('ready', () => {
+      if (this.client === client && !this.connected) {
+        this.connected = true;
+        this.retryCount = 0;
+        console.log('[platform] Redis reconnected');
+      }
+    });
     this.client = client;
     try {
       await client.connect();

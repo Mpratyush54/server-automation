@@ -16,6 +16,7 @@ import { getDb } from '../config/database';
 import { startErrorRetention } from './error-retention';
 import { startLokiRetentionReconcile } from './loki-retention';
 import { ORIGINS_SYNC_JOB, syncTelemetryOrigins } from './telemetry-origins';
+import { startRedisAclReconcile } from './redis-acl-reconcile';
 
 /**
  * Background work inventory (every timer/loop in platform/api/src):
@@ -37,6 +38,7 @@ import { ORIGINS_SYNC_JOB, syncTelemetryOrigins } from './telemetry-origins';
  * | error-retention | leader loop              | hourly: error_events past the project's errors retention (#47) |
  * | loki-retention-reconcile | leader loop (full profile) | 10 min: per-project logs retention -> Loki runtime overrides (#47) |
  * | telemetry-origins-sync | leader loop (+ debounced on change) | 5 min, 5 s after gain |
+ * | redis-acl-reconcile | leader loop            | 15 s (re-creates project Redis users after a Redis restart) |
  *
  * Any leader-loop job can instead run as a Kubernetes CronJob
  * (`node dist/jobs/<name>.js`) by listing it in JOBS_EXTERNAL.
@@ -94,6 +96,8 @@ export function startBackgroundWork(): void {
     initialDelayMs: 5_000,
     run: async () => ((await syncTelemetryOrigins()) === 'disabled' ? 'skipped' : undefined),
   });
+  // Project Redis ACL users survive Redis restarts (no aclfile): re-created from stored secrets.
+  startRedisAclReconcile();
 
   leadership.start();
   installReleaseOnShutdown();

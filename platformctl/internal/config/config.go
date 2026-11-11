@@ -130,7 +130,7 @@ func Load() *Config {
 		SkipPreflight:               os.Getenv("SKIP_PREFLIGHT") == "true",
 		AutoUpdate:                  getEnvBool("AUTO_UPDATE", true),
 		AutoUpgrade:                 getEnvBool("AUTO_UPGRADE", false),
-		SkipHardening:               !getEnvBool("PLATFORM_HARDEN", true),
+		SkipHardening:               !getEnvBool("PLATFORM_HARDEN", true) || getEnvBool("SKIP_HARDENING", false),
 		WAF:                         getEnvBool("PLATFORM_WAF", false),
 		NginxAuthJail:               getEnvBool("PLATFORM_NGINX_AUTH_JAIL", false),
 		MinioAccessKey:              getEnv("MINIO_ACCESS_KEY", "platformadmin"),

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 )
 
@@ -163,4 +164,21 @@ func Repos() map[string]string {
 		}
 	}
 	return out
+}
+
+// chartVersionRE matches the version suffix Helm appends to a chart name in
+// `helm list` ("<name>-<version>"), with an optional "v" and pre-release/build.
+var chartVersionRE = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]*)?$`)
+
+// SplitChartRef splits the CHART column of `helm list` ("loki-stack-2.10.3")
+// into the chart name and version. It splits on the first '-' whose remainder is
+// a semantic version, so a chart whose name extends another ("loki-stack" vs
+// "loki") is never mistaken for it, and pre-releases ("1.0.0-rc-1") stay whole.
+func SplitChartRef(ref string) (name, version string, ok bool) {
+	for i := 0; i < len(ref); i++ {
+		if ref[i] == '-' && i > 0 && chartVersionRE.MatchString(ref[i+1:]) {
+			return ref[:i], ref[i+1:], true
+		}
+	}
+	return "", "", false
 }
