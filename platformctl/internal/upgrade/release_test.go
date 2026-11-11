@@ -114,3 +114,40 @@ func TestMirrorLayerDigests(t *testing.T) {
 		t.Fatal(string(s), string(a), e)
 	}
 }
+
+// Regression: a typo in --to (404) was accepted with "notes unavailable".
+func TestMetadataRequiresPublishedRelease(t *testing.T) {
+	fakeHTTP(t, func(r *http.Request) (int, string) { return 404, "" })
+	if _, e := Metadata("1.3.9"); e == nil || !strings.Contains(e.Error(), "--allow-unreleased") {
+		t.Fatalf("missing release accepted: %v", e)
+	}
+	AllowUnreleased = true
+	defer func() { AllowUnreleased = false }()
+	r, e := Metadata("1.3.9")
+	if e != nil || r.Tag != "v1.3.9" || !strings.Contains(r.Notes, "UNRELEASED") {
+		t.Fatal(r, e)
+	}
+}
+
+func TestMetadataOutageNeedsMirror(t *testing.T) {
+	fakeHTTP(t, func(r *http.Request) (int, string) {
+		if r.URL.Host == "ghcr.io" && strings.HasPrefix(r.URL.Path, "/token") {
+			return 200, `{"token":"t"}`
+		}
+		if r.URL.Host == "ghcr.io" {
+			return 404, ""
+		}
+		return 503, ""
+	})
+	if _, e := Metadata("1.3.0"); e == nil {
+		t.Fatal("accepted a release neither GitHub nor GHCR could confirm")
+	}
+}
+
+func TestPatchMetadataOfflineKeepsInstalledRelease(t *testing.T) {
+	fakeHTTP(t, func(r *http.Request) (int, string) { return 503, "" })
+	r, e := PatchMetadata("1.2.3")
+	if e != nil || r.Tag != "v1.2.3" {
+		t.Fatal(r, e)
+	}
+}

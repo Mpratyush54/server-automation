@@ -7,25 +7,30 @@ import { publishAlertEvent } from './alert-events';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function validateErrorEvent(body: any): ErrorEvent {
-  const text = (v: unknown, max: number, required = false): string => {
+  const text = (name: string, v: unknown, max: number, required = false): string => {
     if (v == null && !required) return undefined;
-    if (typeof v !== 'string' || (required && !v.trim()) || v.length > max) throw new Error('Invalid error event field');
+    if (v == null || (typeof v === 'string' && required && !v.trim())) throw new Error(`Missing error event field: ${name}`);
+    if (typeof v !== 'string') throw new Error(`Invalid error event field: ${name} must be a string`);
+    if (v.length > max) throw new Error(`Invalid error event field: ${name} exceeds ${max} characters`);
     return v;
   };
   if (!body || !Array.isArray(body.frames) || body.frames.length > 100) throw new Error('Expected at most 100 frames');
+  // Every SDK (Node, Python, React/Angular RUM) sends "unknown" when no app
+  // version is configured; accept an omitted release the same way.
+  const release = body.release == null || (typeof body.release === 'string' && !body.release.trim()) ? 'unknown' : body.release;
   const event: ErrorEvent = {
-    eventId: body.eventId || randomUUID(), type: text(body.type, 200, true), message: text(body.message, 8000, true),
-    release: text(body.release, 200, true), environment: text(body.environment, 100, true),
-    traceId: text(body.traceId, 32), userId: text(body.userId, 200), sessionId: text(body.sessionId, 200), replayId: text(body.replayId, 200),
-    frames: body.frames.map((f: any) => {
-      if (!Number.isSafeInteger(f.line) || f.line < 1 || f.line > 10000000 || !Number.isSafeInteger(f.column) || f.column < 0 || f.column > 10000000) throw new Error('Invalid frame coordinates');
-      return { file: text(f.file, 2048, true), line: f.line, column: f.column, function: text(f.function, 300) };
+    eventId: body.eventId || randomUUID(), type: text('type', body.type, 200, true), message: text('message', body.message, 8000, true),
+    release: text('release', release, 200, true), environment: text('environment', body.environment, 100, true),
+    traceId: text('traceId', body.traceId, 32), userId: text('userId', body.userId, 200), sessionId: text('sessionId', body.sessionId, 200), replayId: text('replayId', body.replayId, 200),
+    frames: body.frames.map((f: any, i: number) => {
+      if (!Number.isSafeInteger(f.line) || f.line < 1 || f.line > 10000000 || !Number.isSafeInteger(f.column) || f.column < 0 || f.column > 10000000) throw new Error(`Invalid frame coordinates: frames[${i}]`);
+      return { file: text(`frames[${i}].file`, f.file, 2048, true), line: f.line, column: f.column, function: text(`frames[${i}].function`, f.function, 300) };
     }),
   };
   if (!uuid.test(event.eventId) || (event.traceId && !/^[0-9a-f]{32}$/i.test(event.traceId))) throw new Error('Invalid event/trace id');
   if (body.breadcrumbs !== undefined) {
     if (!Array.isArray(body.breadcrumbs) || body.breadcrumbs.length > 100) throw new Error('Expected at most 100 breadcrumbs');
-    event.breadcrumbs = body.breadcrumbs.map((b: any) => ({ message: text(b.message, 1000, true), timestamp: text(b.timestamp, 40), category: text(b.category, 100) }));
+    event.breadcrumbs = body.breadcrumbs.map((b: any) => ({ message: text('breadcrumbs.message', b.message, 1000, true), timestamp: text('breadcrumbs.timestamp', b.timestamp, 40), category: text('breadcrumbs.category', b.category, 100) }));
   }
   return event;
 }

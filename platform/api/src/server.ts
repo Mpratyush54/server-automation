@@ -16,6 +16,7 @@ import { configuredAdminEmail, ensureAdminUser } from './lib/seed-admin';
 import { createLimiterStore } from './lib/rate-limit-store';
 import { closeRedis } from './lib/redis';
 import { drainingConnectionClose, installGracefulShutdown } from './lib/shutdown';
+import { flushHeatmapBuffer } from './lib/heatmap-buffer';
 
 /** Paths called cross-origin by browser SDKs (bearer SDK token, no cookies). */
 const SDK_PUBLIC_PATH = /^\/api\/(sdk\/|errors\/rum$|logs\/ingest$)/;
@@ -233,6 +234,8 @@ async function bootstrap() {
       preDrain: [{ name: 'released leadership', run: stopBackgroundWork }],
       closers: [
         ...(runnerServer ? [{ name: 'synthetics runner listener', close: () => new Promise<void>((resolve) => { runnerServer.close(() => resolve()); }) }] : []),
+        // Before Postgres closes: write buffered heatmap counts (heatmap-buffer.ts).
+        { name: 'heatmap buffer', close: flushHeatmapBuffer },
         { name: 'redis', close: closeRedis },
         { name: 'postgres', close: () => (ds.isInitialized ? ds.destroy() : undefined) },
         { name: 'mongodb', close: () => import('mongoose').then((m) => m.default.disconnect()) },

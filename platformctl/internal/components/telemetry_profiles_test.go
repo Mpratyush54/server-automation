@@ -125,7 +125,7 @@ func TestInstallTelemetryDeploysProfileProxyBeforeIngress(t *testing.T) {
 			applies++
 		}
 	}
-	if rollout < 0 || applies != 7 { // policy, profile-ingest, ingress, rules, dashboard, database monitor, alerting RBAC
+	if rollout < 0 || applies != 8 { // policy, profile-ingest, ingress, rules, dashboard, database monitor, alerting RBAC (#43), synthetics RBAC
 		t.Fatalf("rollout=%d file applies=%d", rollout, applies)
 	}
 }
