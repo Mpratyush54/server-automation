@@ -22,7 +22,7 @@ import (
 )
 
 var upgradeTo, applyFrom string
-var upgradeYes, upgradeDry, upgradeHistory, upgradePatch, upgradeRestore bool
+var upgradeYes, upgradeDry, upgradeHistory, upgradePatch, upgradeRestore, upgradeUnreleased bool
 
 const upgradeState = "/var/lib/platformctl/state/upgrade-history.json"
 
@@ -49,6 +49,7 @@ func init() {
 	c.Flags().BoolVar(&upgradeDry, "dry-run", false, "show plan without changing the install")
 	c.Flags().BoolVar(&upgradePatch, "patch-only", false, "allow stable patches in the installed minor only")
 	c.Flags().BoolVar(&upgradeHistory, "history", false, "print local upgrade history")
+	c.Flags().BoolVar(&upgradeUnreleased, "allow-unreleased", false, "accept a --to release that is not published (testing a local build whose binary and images are on this host)")
 	c.Flags().BoolVar(&upgradeRestore, "restore-failed-migration", false, "explicitly permit restoring configured PostgreSQL backup after an irreversible migration fails; age identity on stdin")
 	rootCmd.AddCommand(c)
 }
@@ -82,6 +83,7 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	if applyFrom != "" {
 		current = applyFrom
 	}
+	upgrade.AllowUnreleased = upgradeUnreleased
 	var r upgrade.Release
 	if upgradePatch && upgradeTo == "" {
 		r, e = upgrade.PatchMetadata(current)
@@ -117,6 +119,9 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		}
 		if upgradeRestore {
 			args = append(args, "--restore-failed-migration")
+		}
+		if upgradeUnreleased {
+			args = append(args, "--allow-unreleased")
 		}
 		child := exec.Command(binary, args...)
 		child.Stdin = cmd.InOrStdin()

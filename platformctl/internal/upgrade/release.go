@@ -2,6 +2,7 @@ package upgrade
 
 import (
 	"archive/tar"
+	"errors"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -33,7 +34,8 @@ func PatchMetadata(current string) (Release, error) {
 	}
 	b, e := get(Repository + "/releases?per_page=100")
 	if e != nil {
-		return Metadata(current)
+		// Offline: stay on the installed release (local images keep working).
+		return Release{Tag: "v" + strings.TrimPrefix(current, "v"), Notes: "GitHub release list unavailable; keeping the installed release."}, nil
 	}
 	var releases []struct {
 		Tag        string `json:"tag_name"`
@@ -57,6 +59,12 @@ func PatchMetadata(current string) (Release, error) {
 
 var client = &http.Client{Timeout: 60 * time.Second}
 
+var errNotFound = errors.New("HTTP 404")
+
+// AllowUnreleased accepts a --to release that is not published (testing a
+// local build whose binary and images are already on the host).
+var AllowUnreleased bool
+
 func get(url string) ([]byte, error) {
 	req, e := http.NewRequest("GET", url, nil)
 	if e != nil {
@@ -68,6 +76,9 @@ func get(url string) ([]byte, error) {
 		return nil, e
 	}
 	defer res.Body.Close()
+	if res.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("GET %s: %w", url, errNotFound)
+	}
 	if res.StatusCode != 200 {
 		return nil, fmt.Errorf("GET %s: HTTP %d", url, res.StatusCode)
 	}
@@ -105,7 +116,18 @@ func Metadata(target string) (Release, error) {
 			}
 			return Release{}, fmt.Errorf("no stable release version in GHCR checksums")
 		}
-		return Release{Tag: "v" + strings.TrimPrefix(target, "v"), Notes: "GitHub release notes unavailable; inspect the release before proceeding."}, nil
+		tag := "v" + strings.TrimPrefix(target, "v")
+		// A typo in --to must not start an upgrade. 404 means the release does
+		// not exist; on other errors (GitHub outage) the GHCR mirror must have it.
+		if !errors.Is(e, errNotFound) {
+			if _, _, me := mirror(strings.TrimPrefix(target, "v"), "checksums.txt"); me == nil {
+				return Release{Tag: tag, Notes: "GitHub release notes unavailable; using the GHCR release mirror."}, nil
+			}
+		}
+		if AllowUnreleased {
+			return Release{Tag: tag, Notes: "UNRELEASED: no published release " + tag + " (--allow-unreleased); the target binary and images must already be on this host."}, nil
+		}
+		return Release{}, fmt.Errorf("release %s not found (%v); check --to, or pass --allow-unreleased to test a local build", tag, e)
 	}
 	var r Release
 	if e = json.Unmarshal(b, &r); e != nil {
