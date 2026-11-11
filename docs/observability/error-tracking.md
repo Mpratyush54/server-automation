@@ -86,7 +86,10 @@ Open **Errors** in the sidebar, or `/projects/PROJECT_UUID/errors`. Filter by
 release, environment or status. Select an issue for original/raw stacks, recent
 events, breadcrumbs, first/last seen, counts per release, assignee and trace link.
 Developer access is required to assign, resolve, ignore or reopen. Viewers can
-read. The trace opens Grafana Explore using the Tempo datasource; replay links
+read. The API is `PATCH /api/projects/:projectId/errors/:issueId` with `status`
+(`open`, `resolved`, `ignored`) and/or `assigneeId` (a user with project access, or
+`null`); it returns the updated issue, or `404` when the issue does not exist in
+that project. The trace opens Grafana Explore using the Tempo datasource; replay links
 target the future #40 replay route and will work when that feature is installed.
 
 The fingerprint hashes exception type and the first five frames (normalized URL
