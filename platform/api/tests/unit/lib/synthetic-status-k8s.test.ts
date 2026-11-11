@@ -84,7 +84,7 @@ describe('blackbox Probe rendering', () => {
 });
 
 describe('browser CronJob rendering', () => {
-  const cj = renderBrowserCronJob({ id: ID, projectId: PROJ, intervalSeconds: 900, timeoutMs: 60_000, enabled: true }, { image: 'ghcr.io/example/platform-synthetics-runner:1.0.0', apiUrl: 'http://platform-api.platform.svc:3000' });
+  const cj = renderBrowserCronJob({ id: ID, projectId: PROJ, intervalSeconds: 900, timeoutMs: 60_000, enabled: true }, { image: 'ghcr.io/example/platform-synthetics-runner:1.0.0', apiUrl: 'http://platform-api-synthetics.platform.svc:3001' });
   const pod = cj.spec.jobTemplate.spec.template.spec;
   const c = pod.containers[0];
 
@@ -104,6 +104,16 @@ describe('browser CronJob rendering', () => {
     // The run token comes from the per-check Secret, never inline.
     expect(c.env.find((e: any) => e.name === 'RUN_TOKEN')).toEqual({ name: 'RUN_TOKEN', valueFrom: { secretKeyRef: { name: resourceName(ID), key: 'RUN_TOKEN' } } });
     expect(JSON.stringify(cj)).not.toContain('synr_');
+  });
+
+  it('mounts the internal CA (optional, read-only) and names the ingress Service for env hosts', () => {
+    expect(c.env).toEqual(expect.arrayContaining([
+      { name: 'INGRESS_SERVICE', value: 'ingress-nginx-controller.ingress-nginx.svc.cluster.local' },
+      { name: 'PLATFORM_CA_FILE', value: '/etc/platform-ca/ca.crt' },
+    ]));
+    expect(c.volumeMounts).toContainEqual({ name: 'platform-ca', mountPath: '/etc/platform-ca', readOnly: true });
+    expect(pod.volumes).toContainEqual({ name: 'platform-ca', configMap: { name: 'platform-ca', optional: true, items: [{ key: 'ca.crt', path: 'ca.crt' }] } });
+    expect(pod.volumes.some((v: any) => v.secret)).toBe(false);
   });
 
   it('cron schedules spread checks and respect the interval', () => {
@@ -177,5 +187,21 @@ describe('runner tokens', () => {
     expect(verifyRunnerToken(PROJ, t, key)).toBe(false);
     expect(verifyRunnerToken(ID, t.slice(0, -1), key)).toBe(false);
     expect(verifyRunnerToken(ID, t, 'other-key')).toBe(false);
+  });
+});
+
+describe('runner job diagnosis', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { describeJobFailure } = require('../../../src/lib/synthetic-k8s');
+  const pod = (state: any, extra: any = {}) => ({ status: { containerStatuses: [{ name: 'runner', state }], ...extra } });
+
+  it('explains image pull failures, OOM kills, exit codes, scheduling and job deadlines', () => {
+    expect(describeJobFailure({}, [pod({ waiting: { reason: 'ImagePullBackOff', message: 'secret-ish detail' } })])).toBe('runner pod: ImagePullBackOff');
+    expect(describeJobFailure({}, [pod({ terminated: { reason: 'OOMKilled', exitCode: 137 } })])).toBe('runner pod: OOMKilled (memory limit)');
+    expect(describeJobFailure({}, [pod({ terminated: { reason: 'Error', exitCode: 1 } })])).toBe('runner exited with code 1 (Error)');
+    expect(describeJobFailure({}, [{ status: { conditions: [{ type: 'PodScheduled', status: 'False', reason: 'Unschedulable' }] } }])).toBe('runner pod not scheduled: Unschedulable');
+    expect(describeJobFailure({ status: { conditions: [{ type: 'Failed', status: 'True', reason: 'DeadlineExceeded', message: 'Job was active longer than specified deadline' }] } }, []))
+      .toBe('runner job failed: DeadlineExceeded - Job was active longer than specified deadline');
+    expect(describeJobFailure({ status: { conditions: [{ type: 'Complete', status: 'True' }] } }, [pod({ terminated: { reason: 'Completed', exitCode: 0 } })])).toBeNull();
   });
 });

@@ -323,3 +323,50 @@ describe('browser runner endpoints', () => {
     expect(o.steps![0].name).toHaveLength(100);
   });
 });
+
+describe('runner-only listener', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { buildSyntheticsRunnerApp, syntheticsRunnerPort } = require('../../../src/synthetics-runner-app');
+
+  it('serves the runner endpoints and nothing else of the API', async () => {
+    enableRunner();
+    const created = await create({
+      name: 'Shop', type: 'browser', intervalSeconds: 900, timeoutMs: 60_000,
+      config: { steps: [{ action: 'goto', url: 'https://shop.example.com/' }] },
+    });
+    const id = created.body.check.id;
+    const runnerApp = buildSyntheticsRunnerApp();
+    const def = await request(runnerApp).get(`/api/synthetics/runner/checks/${id}`).set('Authorization', `Bearer ${runnerToken(id)}`);
+    expect(def.status).toBe(200);
+    expect(def.body.id).toBe(id);
+    const report = await request(runnerApp).post(`/api/synthetics/runner/checks/${id}/results`).set('Authorization', `Bearer ${runnerToken(id)}`)
+      .send({ status: 'pass', latencyMs: 10, steps: [] });
+    expect(report.status).toBe(201);
+    for (const path of ['/api/synthetics/capabilities', `/api/projects/${PROJ}/synthetics/checks`, '/api/health', '/api/telemetry/ingest-auth']) {
+      expect((await request(runnerApp).get(path).set(as('uid-admin'))).status).toBe(404);
+    }
+    expect((await request(runnerApp).get(`/api/synthetics/runner/checks/${id}`)).status).toBe(401);
+  });
+
+  it('runner definition lists the platform domain as blocked', async () => {
+    const prev = process.env.DOMAIN;
+    process.env.DOMAIN = 'Platform.Example.COM';
+    try {
+      enableRunner();
+      const created = await create({ name: 'Shop', type: 'browser', intervalSeconds: 900, config: { steps: [{ action: 'goto', url: 'https://shop.example.com/' }] } });
+      const id = created.body.check.id;
+      const def = await request(app).get(`/api/synthetics/runner/checks/${id}`).set('Authorization', `Bearer ${runnerToken(id)}`);
+      expect(def.body.blockedDomains).toEqual(['platform.example.com']);
+      expect(def.body.allowedIngressHosts).toEqual(['app.customer.example']);
+    } finally {
+      if (prev === undefined) delete process.env.DOMAIN; else process.env.DOMAIN = prev;
+    }
+  });
+
+  it('port: default 3001, configurable, can be turned off', () => {
+    expect(syntheticsRunnerPort({})).toBe(3001);
+    expect(syntheticsRunnerPort({ SYNTHETICS_RUNNER_PORT: '3105' })).toBe(3105);
+    expect(syntheticsRunnerPort({ SYNTHETICS_RUNNER_PORT: 'off' })).toBeNull();
+    expect(syntheticsRunnerPort({ SYNTHETICS_RUNNER_PORT: 'junk' })).toBe(3001);
+  });
+});

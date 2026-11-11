@@ -3,15 +3,31 @@
 // per-check run token, drive headless Chromium through the declared steps (no
 // arbitrary scripts), and report the result (+ a PNG screenshot on failure).
 //
-// Network safety: the pod's egress NetworkPolicy only allows the public internet and
-// the platform API. Requests to cluster-internal names, literal private addresses and
-// non-HTTP(S) schemes are additionally aborted here (defence in depth).
+// Network safety (layered):
+//   1. The pod's egress NetworkPolicy allows the public internet, cluster DNS, the
+//      platform API's dedicated runner port and the ingress controller only. The
+//      project's own env hosts (allowedIngressHosts) are mapped to the ingress
+//      controller inside Chromium; every other platform name is refused.
+//   2. Chromium's host resolver refuses cluster-internal names, the platform's own
+//      domain and literal private addresses on EVERY connection, redirect hops included.
+//   3. Requests the page issues are checked here before they leave (scheme, host,
+//      resolved addresses); redirect hops, which Playwright cannot hold back, are
+//      re-validated as they happen and after every step; any disallowed hop fails the
+//      check and no screenshot of the resulting page is taken.
+import { execFileSync } from 'node:child_process';
+import dns from 'node:dns';
+import fs from 'node:fs';
 import net from 'node:net';
+import path from 'node:path';
 
-const API = (process.env.PLATFORM_API_URL || 'http://platform-api.platform.svc:3000').replace(/\/+$/, '');
+const API = (process.env.PLATFORM_API_URL || 'http://platform-api-synthetics.platform.svc:3001').replace(/\/+$/, '');
 const CHECK_ID = process.env.CHECK_ID || '';
 const TOKEN = process.env.RUN_TOKEN || '';
 const USER_AGENT_SUFFIX = ' platform-synthetics/1.0';
+// The project's own env hosts are routed to this Service (the ingress controller) and,
+// when they use the platform's internal CA, verified against PLATFORM_CA_FILE.
+const INGRESS_SERVICE = process.env.INGRESS_SERVICE || '';
+const PLATFORM_CA_FILE = process.env.PLATFORM_CA_FILE || '';
 
 const PRIVATE_V4 = [
   ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16],
@@ -38,6 +54,142 @@ export function requestAllowed(rawUrl, allowedHosts = []) {
   return true;
 }
 
+/** Whether an address is one the runner must never connect to (private, loopback, link-local, ...). */
+export function addressBlocked(ip) {
+  const fam = net.isIP(ip);
+  if (fam === 4) return blocked.check(ip, 'ipv4');
+  if (fam === 6) return blocked.check(ip, 'ipv6') || /^::ffff:/i.test(ip) || /^64:ff9b::/i.test(ip) || /^::(\d|$)/.test(ip);
+  return true;
+}
+
+/** URLs of a request and every hop before it, oldest first (Playwright `redirectedFrom()` chain). */
+export function redirectChain(request) {
+  const urls = [];
+  for (let r = request; r && urls.length < 50; r = typeof r.redirectedFrom === 'function' ? r.redirectedFrom() : null) urls.unshift(r.url());
+  return urls;
+}
+
+/** First URL in a hop chain that fails the request rules, or null. */
+export function firstDisallowedHop(urls, allowedHosts = []) {
+  return urls.find((u) => !requestAllowed(u, allowedHosts)) ?? null;
+}
+
+/** Wildcard patterns covering the literal private IPv4 ranges (Chromium host-resolver-rules syntax). */
+export function privateIpv4Patterns() {
+  // Four labels, so ordinary names such as 10.example.com are not caught.
+  const out = ['0.*.*.*', '10.*.*.*', '127.*.*.*', '169.254.*.*', '192.168.*.*'];
+  for (let b = 16; b <= 31; b++) out.push(`172.${b}.*.*`);
+  for (let b = 64; b <= 127; b++) out.push(`100.${b}.*.*`);
+  for (let a = 224; a <= 255; a++) out.push(`${a}.*.*.*`);
+  return out;
+}
+
+const HOST_RE = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+export const validHostname = (h) => typeof h === 'string' && HOST_RE.test(h);
+
+/**
+ * Chromium --host-resolver-rules: the first matching rule wins, so the project's own
+ * hosts come first (mapped to `ingressIp` when known, else resolved normally), then
+ * the platform's domains, cluster-internal suffixes and private literal addresses are
+ * refused. These rules apply to every connection the browser makes, redirects included.
+ */
+export function hostResolverRules({ allowedHosts = [], ingressIp = null, blockedDomains = [] } = {}) {
+  const rules = [];
+  const allowed = allowedHosts.map((h) => String(h).toLowerCase()).filter(validHostname);
+  const mapTo = ingressIp && net.isIPv4(ingressIp) ? ingressIp : null;
+  for (const h of allowed) rules.push(mapTo ? `MAP ${h} ${mapTo}` : `EXCLUDE ${h}`);
+  for (const d of blockedDomains.map((x) => String(x).toLowerCase()).filter(validHostname)) {
+    rules.push(`MAP ${d} ~NOTFOUND`, `MAP *.${d} ~NOTFOUND`);
+  }
+  rules.push('MAP localhost ~NOTFOUND');
+  for (const sfx of INTERNAL) if (sfx.startsWith('.')) rules.push(`MAP *${sfx} ~NOTFOUND`);
+  for (const p of privateIpv4Patterns()) rules.push(`MAP ${p} ~NOTFOUND`);
+  return rules.join(', ');
+}
+
+/**
+ * Tracks hop violations for one browser context. `check(urls)` applies the request
+ * rules synchronously; `resolvesPublic(url)` adds a DNS check so a public-looking name
+ * that resolves to a private address is caught as well.
+ */
+export function hopGuard(allowedHosts = [], lookup = (h) => dns.promises.lookup(h, { all: true, verbatim: true })) {
+  const violations = [];
+  const cache = new Map();
+  const note = (url, reason) => {
+    let host = '';
+    try { host = new URL(url).hostname; } catch { /* unparsable */ }
+    if (!violations.some((v) => v.host === host)) violations.push({ host, reason });
+  };
+  return {
+    violations,
+    /** Record a disallowed hop; browser error pages (failed loads) are not hops. */
+    check(urls) {
+      const bad = firstDisallowedHop(urls.filter((u) => !String(u).startsWith('chrome-error:')), allowedHosts);
+      if (bad) note(bad, 'disallowed target');
+      return !bad;
+    },
+    async resolvesPublic(rawUrl, { record = true } = {}) {
+      let u;
+      try { u = new URL(rawUrl); } catch { return false; }
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return true;
+      const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+      if (allowedHosts.includes(host) || net.isIP(host)) return true; // literals: requestAllowed already decided
+      if (!cache.has(host)) {
+        cache.set(host, Promise.resolve().then(() => lookup(host)).then(
+          (addrs) => !Array.isArray(addrs) || addrs.every((a) => !addressBlocked(a.address)),
+          () => true, // unresolvable here: the browser cannot connect either
+        ));
+      }
+      const ok = await cache.get(host);
+      if (!ok && record) note(rawUrl, 'resolves to a private address');
+      return ok;
+    },
+    error() {
+      if (violations.length === 0) return null;
+      const v = violations[0];
+      return `navigation to a disallowed target was blocked (${v.host || 'unknown host'}: ${v.reason})`;
+    },
+  };
+}
+
+/** IPv4 address of the ingress controller Service (cluster DNS), or null. */
+export async function resolveIngressAddress(name, lookup = (h) => dns.promises.lookup(h, { family: 4 })) {
+  if (!name) return null;
+  try {
+    const r = await lookup(name);
+    const address = Array.isArray(r) ? r[0]?.address : r?.address;
+    return net.isIPv4(address || '') ? address : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * certutil invocations that create the browser's NSS database under `home` and trust
+ * the platform CA for TLS server certificates only ("C,,": no e-mail / code signing).
+ */
+export function nssTrustCommands(home, caFile) {
+  const db = `sql:${path.posix.join(home, '.pki', 'nssdb')}`;
+  return [
+    ['certutil', ['-d', db, '-N', '--empty-password']],
+    ['certutil', ['-d', db, '-A', '-t', 'C,,', '-n', 'platform-internal-ca', '-i', caFile]],
+  ];
+}
+
+/** Trust the platform CA in this run's browser profile (HOME is a per-run emptyDir). */
+function trustPlatformCa(home, caFile) {
+  if (!home || !caFile) return false;
+  try {
+    if (!fs.readFileSync(caFile, 'utf8').includes('BEGIN CERTIFICATE')) return false;
+    fs.mkdirSync(path.join(home, '.pki', 'nssdb'), { recursive: true, mode: 0o700 });
+    for (const [cmd, args] of nssTrustCommands(home, caFile)) execFileSync(cmd, args, { stdio: 'ignore', timeout: 15_000 });
+    return true;
+  } catch (err) {
+    console.warn(`platform CA not trusted (${err?.code || err?.message || err}); env hosts using it will fail TLS`);
+    return false;
+  }
+}
+
 export function render(value, secrets) {
   return String(value ?? '').replace(/\{\{\s*secret\.([A-Za-z_][A-Za-z0-9_]{0,63})\s*\}\}/g, (whole, name) =>
     (Object.prototype.hasOwnProperty.call(secrets, name) ? secrets[name] : whole));
@@ -53,7 +205,7 @@ function describe(step) {
   return [step.action, step.selector, step.action === 'goto' ? step.url : null].filter(Boolean).join(' ').slice(0, 100);
 }
 
-async function runStep(page, step, secrets, timeout) {
+export async function runStep(page, step, secrets, timeout) {
   switch (step.action) {
     case 'goto': {
       const res = await page.goto(render(step.url, secrets), { timeout, waitUntil: 'load' });
@@ -71,11 +223,12 @@ async function runStep(page, step, secrets, timeout) {
     }
     case 'assert_title': {
       const title = await page.title();
-      if (!title.includes(step.value)) throw new Error(`title "${title.slice(0, 100)}" does not contain "${step.value}"`);
+      // Messages carry the template, never the rendered value (it may contain a secret).
+      if (!title.includes(render(step.value, secrets))) throw new Error(`title "${title.slice(0, 100)}" does not contain "${step.value}"`);
       return;
     }
     case 'assert_url': {
-      if (!page.url().includes(step.value)) throw new Error(`URL does not contain "${step.value}"`);
+      if (!page.url().includes(render(step.value, secrets))) throw new Error(`URL does not contain "${step.value}"`);
       return;
     }
     case 'wait': return page.waitForTimeout(Math.min(30_000, Number(step.ms) || 0));
@@ -99,21 +252,55 @@ export async function main() {
   if (!def.enabled) { console.log('check disabled; nothing to do'); return; }
   const secrets = def.secrets || {};
   const allowed = (def.allowedIngressHosts || []).map((h) => String(h).toLowerCase());
+  const blockedDomains = (def.blockedDomains || []).map((h) => String(h).toLowerCase());
   const startedAt = new Date();
   const deadline = Date.now() + (Number(def.timeoutMs) || 60_000);
   const steps = [];
   let status = 'pass';
   let error = null;
   let screenshot = null;
+  const guard = hopGuard(allowed);
+  // Env hosts: exactly those names go to the ingress controller (CoreDNS answers for
+  // them are not usable by Chromium), and the internal CA is trusted for this run.
+  const ingressIp = allowed.length > 0 ? await resolveIngressAddress(INGRESS_SERVICE) : null;
+  if (allowed.length > 0) trustPlatformCa(process.env.HOME, PLATFORM_CA_FILE);
   const { chromium } = await import('playwright-core');
-  const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] });
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
+      `--host-resolver-rules=${hostResolverRules({ allowedHosts: allowed, ingressIp, blockedDomains })}`,
+      '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+    ],
+  });
   try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: false, serviceWorkers: 'block' });
     const ua = await (await context.newPage()).evaluate(() => navigator.userAgent).catch(() => '');
     await context.close();
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: false, serviceWorkers: 'block', userAgent: `${ua}${USER_AGENT_SUFFIX}` });
-    await ctx.route('**/*', (route) => (requestAllowed(route.request().url(), allowed) ? route.continue() : route.abort('blockedbyclient')));
+    // Requests the page starts: validated (rules + resolved addresses) before they are
+    // sent and aborted when disallowed (a blocked sub-resource does not fail the check).
+    await ctx.route('**/*', async (route) => {
+      const url = route.request().url();
+      const ok = firstDisallowedHop(redirectChain(route.request()), allowed) === null && await guard.resolvesPublic(url, { record: false });
+      return ok ? route.continue() : route.abort('blockedbyclient');
+    });
+    // Redirect hops are followed by the browser without reaching the route handler:
+    // re-validate each one as it is issued (the resolver rules above refuse internal
+    // targets at connect time; this records the violation and fails the check).
+    ctx.on('request', (request) => {
+      if (!request.redirectedFrom()) return;
+      if (guard.check(redirectChain(request))) guard.resolvesPublic(request.url()).catch(() => {});
+    });
+    ctx.on('response', (response) => { guard.check(redirectChain(response.request())); });
     const page = await ctx.newPage();
+    page.on('framenavigated', (frame) => { if (frame === page.mainFrame()) guard.check([frame.url()]); });
+    const assertHops = async () => {
+      guard.check([page.url()]);
+      await guard.resolvesPublic(page.url());
+      const msg = guard.error();
+      if (msg) throw new Error(msg);
+    };
     for (const step of def.steps || []) {
       const name = describe(step);
       if (status === 'fail') { steps.push({ name, status: 'skipped' }); continue; }
@@ -121,7 +308,13 @@ export async function main() {
       const remaining = deadline - t0;
       try {
         if (remaining <= 0) throw new Error('check timeout');
-        await runStep(page, step, secrets, Math.min(remaining, 30_000));
+        try {
+          await runStep(page, step, secrets, Math.min(remaining, 30_000));
+        } catch (err) {
+          await assertHops(); // a blocked hop explains the failure better than the step error
+          throw err;
+        }
+        await assertHops();
         steps.push({ name, status: 'pass', latencyMs: Date.now() - t0 });
       } catch (err) {
         status = 'fail';
@@ -129,7 +322,8 @@ export async function main() {
         steps.push({ name, status: 'fail', latencyMs: Date.now() - t0, error: redact(err?.message || err, secrets) });
       }
     }
-    if (status === 'fail') {
+    // Never capture a page reached through a disallowed hop.
+    if (status === 'fail' && guard.violations.length === 0) {
       try { screenshot = (await page.screenshot({ type: 'png', timeout: 10_000 })).toString('base64'); } catch { /* best effort */ }
     }
   } finally {
