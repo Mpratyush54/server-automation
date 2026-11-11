@@ -45,6 +45,9 @@ server or browser SDK bearer credential and the version 1 ErrorEvent JSON:
 Frames are innermost first, lines one-based, columns zero-based. Optional
 `replayId` reserves the link for #40. The server generates an event UUID if
 omitted; integrations retrying a request should retain the original UUID.
+`release` is optional and defaults to `unknown` (as the SDKs send when no app
+version is configured); `type`, `message`, `environment` and each frame `file`
+are required. A rejected event returns 400 naming the offending field.
 At most 100 frames/breadcrumbs are accepted, with bounded string fields. Only
 `{accepted:true}` is returned. `/api/errors/rum` accepts short-lived `web` ingest
 tokens with origin checks; it derives project and environment from claims.
