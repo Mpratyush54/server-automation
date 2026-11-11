@@ -71,4 +71,26 @@ const enabled = process.env.MIGRATION_TEST_PG_HOST;
     expect(await deleteReplaysForSubject(db, store, project, { userId: 'user-2' })).toEqual({ sessions: 1, objects: 1 });
     expect(await db.query('SELECT count(*)::int AS n FROM replay_chunks')).toEqual([{ n: 0 }]);
   });
+
+  test('parallel chunks of one session: the per-session lock keeps pages, counters and limits exact', async () => {
+    const sid = 'sess-pg-race01';
+    const tight = { ...limits, maxChunksPerSession: 5 };
+    const send = (seq: number) => {
+      const t0 = now - 60_000 + seq * 1000;
+      const body = gzipSync(Buffer.from(JSON.stringify({ v: 1, sessionId: sid, seq, page: `/p${seq}`, pages: [`/p${seq}`], events: [
+        { type: 4, timestamp: t0, data: { href: `https://app.test/p${seq}`, width: 800, height: 600 } },
+        { type: 3, timestamp: t0 + 1, data: {} },
+      ] })));
+      return storeReplayChunk(db, store, { projectId: project, chunk: parseReplayChunk(body, tight), body, limits: tight });
+    };
+    const results = await Promise.allSettled([0, 1, 2, 3, 4, 5, 6, 7, 2, 3].map(send));
+    const stored = results.filter((r) => r.status === 'fulfilled' && !r.value.duplicate).length;
+    expect(stored).toBe(5);
+    expect(results.every((r) => r.status === 'fulfilled' || (r.reason as any).status === 413)).toBe(true);
+    const [row] = await db.query('SELECT chunk_count, pages FROM replay_sessions WHERE project_id = $1 AND session_id = $2', [project, sid]);
+    const seqs: number[] = (await db.query('SELECT seq FROM replay_chunks WHERE project_id = $1 AND session_id = $2', [project, sid])).map((r: any) => r.seq);
+    expect(row.chunk_count).toBe(5);
+    expect(seqs.length).toBe(5);
+    expect([...row.pages].sort()).toEqual(seqs.map((s) => `/p${s}`).sort());
+  });
 });

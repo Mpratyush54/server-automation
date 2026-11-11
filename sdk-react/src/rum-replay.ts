@@ -383,7 +383,12 @@ export class ReplayChunker {
     return this.cur.events.length;
   }
 
-  flush(): void {
+  /**
+   * Emit the open chunk. `maxPieceBytes` splits it into several chunks of at most
+   * that many raw bytes (page hide: each piece must fit a keepalive request); the
+   * metadata travels with the first piece, a single oversized event stays whole.
+   */
+  flush(maxPieceBytes?: number): void {
     const chunk = this.cur;
     if (chunk.timer) this.clearTimer(chunk.timer);
     if (!chunk.events.length) {
@@ -392,7 +397,20 @@ export class ReplayChunker {
     }
     this.cur = emptyChunk();
     const { timer: _t, ...out } = chunk;
-    this.onChunk(out);
+    if (!maxPieceBytes || out.bytes <= maxPieceBytes) {
+      this.onChunk(out);
+      return;
+    }
+    let piece: ReplayChunk = { ...out, events: [], bytes: 0 };
+    for (const ev of out.events) {
+      if (piece.events.length && piece.bytes + ev.length + 1 > maxPieceBytes) {
+        this.onChunk(piece);
+        piece = { events: [], startedAt: out.startedAt, endedAt: out.endedAt, bytes: 0, pages: [], errors: 0, networkErrors: 0, traceIds: [] };
+      }
+      piece.events.push(ev);
+      piece.bytes += ev.length + 1;
+    }
+    this.onChunk(piece);
   }
 }
 
@@ -472,6 +490,14 @@ export interface ReplayUploaderOptions {
 }
 
 const KEEPALIVE_BUDGET = 60_000; // browsers cap in-flight keepalive bodies at 64 KiB per page
+/** Raw bytes per chunk flushed on page hide, so each compressed piece fits a keepalive request. */
+export const UNLOAD_PIECE_BYTES = 48 * 1024;
+
+interface QueuedChunk {
+  seq: number;
+  body: Uint8Array;
+  delivered?: boolean;
+}
 
 function retryAfter(value: string | null | undefined, now: number): number | null {
   if (!value) return null;
@@ -485,12 +511,22 @@ function retryAfter(value: string | null | undefined, now: number): number | nul
  * Sequential uploader: one request in flight, retry with exponential backoff and
  * jitter (honours `Retry-After` on 429/503), bounded queue (oldest dropped and
  * counted), `keepalive` for the final flush on page hide. Never throws.
+ *
+ * Page hide: the final chunks are enqueued without starting a normal fetch
+ * (`enqueue(.., { pump: false })`) and `flushUnload()` sends every queued chunk -
+ * including one whose normal fetch is still in flight, which an unload may cancel -
+ * with `fetch(.., { keepalive: true })`. The server answers a re-sent chunk with 200
+ * and stores it once. `navigator.sendBeacon` is not used: it cannot send the
+ * `Authorization` header the replay API requires. Keepalive bodies share a 64 KiB
+ * per-page budget; chunks that do not fit stay queued and get a best-effort normal
+ * fetch (delivered if the page survives, e.g. it was only hidden).
  */
 export class ReplayUploader {
   dropped = 0;
   sent = 0;
   stopped = false;
-  private queue: Array<{ seq: number; body: Uint8Array }> = [];
+  private queue: QueuedChunk[] = [];
+  private keepaliveBytes = 0;
   private queuedBytes = 0;
   private inFlight = false;
   private failures = 0;
@@ -513,7 +549,8 @@ export class ReplayUploader {
     return this.queue.length;
   }
 
-  enqueue(seq: number, envelope: string): void {
+  /** `pump: false` queues without starting a normal request (page hide: `flushUnload` follows). */
+  enqueue(seq: number, envelope: string, opts: { pump?: boolean } = {}): void {
     if (this.stopped) return;
     let body: Uint8Array;
     try {
@@ -530,20 +567,26 @@ export class ReplayUploader {
     }
     this.queue.push({ seq, body });
     this.queuedBytes += body.length;
-    this.pump();
+    if (opts.pump !== false) this.pump();
   }
 
-  /** Page is going away: send what fits the keepalive budget, now. */
+  /**
+   * Page is going away: send every queued chunk that fits the keepalive budget with
+   * `keepalive`, now - the in-flight head too (its normal fetch may die with the page).
+   * What does not fit stays queued and gets a best-effort normal request.
+   */
   flushUnload(): void {
     if (this.stopped) return;
-    let budget = KEEPALIVE_BUDGET;
-    const start = this.inFlight ? 1 : 0; // the in-flight head is already being sent
-    while (this.queue.length > start) {
-      const item = this.queue[start];
-      if (item.body.length > budget) break;
-      budget -= item.body.length;
-      this.queue.splice(start, 1);
-      this.queuedBytes -= item.body.length;
+    for (let i = 0; i < this.queue.length; ) {
+      const item = this.queue[i];
+      const size = item.body.length;
+      if (this.keepaliveBytes + size > KEEPALIVE_BUDGET) {
+        i++; // too big for what is left of the budget; a smaller one may still fit
+        continue;
+      }
+      this.queue.splice(i, 1);
+      this.queuedBytes -= size;
+      this.keepaliveBytes += size;
       // If the browser refuses the keepalive request (e.g. no keepalive preflight support),
       // put the chunk back: the page may only be hidden, and the normal path retries it.
       let req: Promise<{ status: number }>;
@@ -552,18 +595,30 @@ export class ReplayUploader {
       } catch (err) {
         req = Promise.reject(err);
       }
-      req.then(
-        (res) => {
-          if (res && res.status >= 200 && res.status < 300) this.sent++;
-          else if (res && (res.status === 0 || res.status >= 500 || res.status === 429)) this.requeue(item);
-        },
-        () => this.requeue(item),
-      );
+      req
+        .then(
+          (res) => {
+            const status = res?.status ?? 0;
+            if ((status >= 200 && status < 300) || status === 409) this.delivered(item);
+            else if (status === 0 || status >= 500 || status === 429) this.requeue(item);
+          },
+          () => this.requeue(item),
+        )
+        .then(() => {
+          this.keepaliveBytes -= size;
+        });
     }
+    this.pump(); // leftovers (over the keepalive budget): best effort
   }
 
-  private requeue(item: { seq: number; body: Uint8Array }): void {
-    if (this.stopped) return;
+  private delivered(item: QueuedChunk): void {
+    if (item.delivered) return;
+    item.delivered = true;
+    this.sent++;
+  }
+
+  private requeue(item: QueuedChunk): void {
+    if (this.stopped || item.delivered || this.queue.includes(item)) return;
     this.queue.unshift(item);
     this.queuedBytes += item.body.length;
     this.schedule(1000);
@@ -631,8 +686,9 @@ export class ReplayUploader {
           } else {
             // 2xx delivered (409 = already stored); other 4xx (400/413) are permanent for this chunk.
             this.shiftHead(head);
-            if (status >= 400 && status !== 409) this.dropped++;
-            else this.sent++;
+            if (status >= 400 && status !== 409) {
+              if (!head.delivered) this.dropped++;
+            } else this.delivered(head);
             this.failures = 0;
           }
         },
@@ -807,6 +863,7 @@ function record(c: Context, mod: ReplayRecorderModule, session: ReplaySessionSta
     onFatal: () => handle.stop(),
   });
   let page = currentPath(win);
+  let hiding = false;
   const meta = (): Omit<EnvelopeMeta, 'seq'> => ({
     sessionId: session.id,
     mode,
@@ -823,7 +880,7 @@ function record(c: Context, mod: ReplayRecorderModule, session: ReplaySessionSta
       const seq = session.seq++;
       session.lastActivity = env.now();
       saveReplaySession(env.session, session);
-      uploader.enqueue(seq, buildEnvelope({ ...meta(), seq }, chunk));
+      uploader.enqueue(seq, buildEnvelope({ ...meta(), seq }, chunk), { pump: !hiding });
     },
     { maxBytes: options.maxChunkBytes, flushIntervalMs: options.flushIntervalMs, setTimer: env.setTimer, clearTimer: env.clearTimer },
   );
@@ -973,11 +1030,19 @@ function record(c: Context, mod: ReplayRecorderModule, session: ReplaySessionSta
     cleanups.push(() => (win as any).removeEventListener('popstate', onPop));
   }
 
-  // Unload: flush the open chunk and send it with keepalive.
+  // Unload (pagehide, or visibilitychange -> hidden, whichever fires first): flush the
+  // open chunk in keepalive-sized pieces without starting normal fetches, then send
+  // everything queued with keepalive. A normal fetch started here would often be
+  // cancelled by the unload, losing the last page (or a whole short session).
   const onHide = () => {
     if (stopped) return;
     if (mode === 'session') {
-      chunker.flush();
+      hiding = true;
+      try {
+        chunker.flush(UNLOAD_PIECE_BYTES);
+      } finally {
+        hiding = false;
+      }
       uploader.flushUnload();
     }
   };

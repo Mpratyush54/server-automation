@@ -182,15 +182,25 @@ Flask/PostgreSQL example, resource attributes and full-profile collector verific
 
 ## Session replay (#40)
 
-`react-web` enables `rum.replay` (every session sampled, consent required): nothing is
-recorded until "Allow session replay" is clicked. The Checkout page has name / e-mail /
-password / card / notes fields and a `platform-mask` paragraph to verify masking. Add the
-replay endpoint to the `sdk-demo-rum` Secret (`replayEndpoint`, the `telemetry.replayEndpoint`
-value, e.g. `https://$DOMAIN/api/sdk/replay`) and restart the deployment.
+`react-web` and `angular-web` enable `rum.replay` (every session sampled, consent required):
+nothing is recorded until "Allow session replay" is clicked. The Checkout page has name /
+e-mail / password / card / notes fields and a `platform-mask` paragraph to verify masking.
+Add the replay endpoint to the `sdk-demo-rum` Secret (`replayEndpoint`, the
+`telemetry.replayEndpoint` value, e.g. `https://$DOMAIN/api/sdk/replay`) and restart both
+deployments (`RUM_REPLAY_ENDPOINT`).
 
 A real-browser check (Playwright) records a session and verifies it through the portal API:
 
 ```bash
 cd react-web && npm i --no-save playwright@1.59.1 && npx playwright install --with-deps chromium
 REACT_URL=https://sdk-react.$DOMAIN PLATFORM_URL=https://$DOMAIN PLATFORM_TOKEN=<portal JWT> PROJECT_ID=<project id> node e2e/replay.mjs
+```
+
+Angular: the same flow, plus a short final page closed within the 5 s flush interval (the
+last chunk must arrive through the keepalive unload path) and error-to-replay linking.
+`BROWSER=chromium|firefox|webkit`:
+
+```bash
+cd angular-web && npm i --no-save playwright@1.59.1 && npx playwright install --with-deps chromium
+ANGULAR_URL=https://sdk-angular.$DOMAIN PLATFORM_URL=https://$DOMAIN PLATFORM_TOKEN=<portal JWT> PROJECT_ID=<project id> node e2e/replay.mjs
 ```

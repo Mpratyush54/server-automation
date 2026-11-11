@@ -414,6 +414,99 @@ test('a refused keepalive request puts the chunk back for the normal retry path'
   assert.equal(calls, 2);
 });
 
+// Regression (Playwright, #40): the final chunk on page hide was sent with a normal fetch that
+// the unload cancelled (last page lost; sessions shorter than the 5 s flush vanished entirely).
+test('page hide sends the final chunk with keepalive only, on visibilitychange or pagehide', async () => {
+  const f = fakeEnv({ serverAllows: true });
+  const docListeners = {};
+  f.env.win.document.addEventListener = (t, fn) => ((docListeners[t] = docListeners[t] || []).push(fn));
+  f.env.win.document.removeEventListener = (t, fn) => (docListeners[t] = (docListeners[t] || []).filter((x) => x !== fn));
+  const rec = fakeRecorder();
+  const h = await replay.startReplay({ sampleRate: 1 }, TELEMETRY, {}, { env: f.env, load: rec.load });
+  rec.state.emit({ type: 2, timestamp: 1, data: { node: {} } });
+  assert.equal(uploads(f.calls).length, 0, 'short session: nothing uploaded before hide');
+  f.env.win.document.visibilityState = 'hidden';
+  for (const fn of docListeners.visibilitychange || []) fn();
+  await flushMicro();
+  let up = uploads(f.calls);
+  assert.equal(up.length, 1);
+  assert.equal(up[0].init.keepalive, true, 'final chunk uses keepalive');
+  assert.equal(up[0].init.headers.Authorization, `Bearer ${TELEMETRY.browserToken}`);
+  assert.equal(decode(up[0]).seq, 0);
+  // pagehide after visibilitychange: nothing new to send, no duplicate
+  for (const fn of f.listeners.pagehide || []) fn();
+  await flushMicro();
+  assert.equal(uploads(f.calls).length, 1);
+  // pagehide alone (e.g. bfcache navigation without a visibility change) also flushes
+  rec.state.emit({ type: 3, timestamp: 2, data: {} });
+  for (const fn of f.listeners.pagehide || []) fn();
+  await flushMicro();
+  up = uploads(f.calls);
+  assert.equal(up.length, 2);
+  assert.ok(up.every((c) => c.init.keepalive === true), 'no normal fetch on hide');
+  assert.equal(h._uploader.sent, 2);
+});
+
+test('unload re-sends the in-flight chunk with keepalive and counts each chunk once', async () => {
+  const sent = [];
+  let releaseNormal;
+  const up = new replay.ReplayUploader({
+    url: 'u', token: 't', compress: (s) => Buffer.from(s), setTimer: () => {},
+    fetchImpl: (url, init) => {
+      sent.push({ body: Buffer.from(init.body).toString(), keepalive: init.keepalive });
+      if (!init.keepalive) return new Promise((r) => { releaseNormal = () => r({ status: 202, headers: { get: () => null } }); });
+      return Promise.resolve({ status: 200, headers: { get: () => null } }); // duplicate answer
+    },
+  });
+  up.enqueue(0, 'first'); // normal fetch in flight
+  up.enqueue(1, 'last', { pump: false });
+  assert.equal(sent.length, 1, 'pump: false starts no request');
+  up.flushUnload();
+  const keep = sent.filter((s) => s.keepalive).map((s) => s.body);
+  assert.deepEqual(keep, ['first', 'last'], 'in-flight head re-sent with keepalive');
+  await flushMicro();
+  releaseNormal(); // the normal fetch survived too: server deduplicates
+  await flushMicro();
+  assert.equal(up.sent, 2);
+  assert.equal(up.pending, 0);
+  assert.equal(sent.filter((s) => !s.keepalive).length, 1, 'no further normal requests');
+});
+
+test('unload skips chunks over the keepalive budget, sends smaller ones and tries the rest normally', async () => {
+  const sent = [];
+  const up = new replay.ReplayUploader({
+    url: 'u', token: 't', compress: (s) => Buffer.from(s), setTimer: () => {},
+    fetchImpl: (url, init) => { sent.push({ len: init.body.length, keepalive: init.keepalive }); return new Promise(() => {}); },
+  });
+  up.enqueue(0, 'a'.repeat(50_000), { pump: false });
+  up.enqueue(1, 'b'.repeat(30_000), { pump: false });
+  up.enqueue(2, 'c'.repeat(5_000), { pump: false });
+  up.flushUnload();
+  const keep = sent.filter((s) => s.keepalive);
+  assert.deepEqual(keep.map((s) => s.len), [50_000, 5_000]);
+  assert.ok(keep.reduce((a, s) => a + s.len, 0) <= 60_000);
+  assert.deepEqual(sent.filter((s) => !s.keepalive).map((s) => s.len), [30_000], 'leftover: best-effort normal fetch');
+  // a second hide while keepalive requests are pending does not exceed the budget
+  up.flushUnload();
+  assert.equal(sent.filter((s) => s.keepalive).length, 2);
+});
+
+test('chunker splits the unload flush into keepalive-sized pieces', () => {
+  const out = [];
+  const c = new replay.ReplayChunker((ch) => out.push(ch), { maxBytes: 512 * 1024, setTimer: () => ({}), clearTimer: () => {} });
+  c.note('page', '/a');
+  c.note('error');
+  for (let i = 0; i < 10; i++) c.add(JSON.stringify({ type: 3, timestamp: i, data: 'x'.repeat(10_000) }), i);
+  c.flush(replay.UNLOAD_PIECE_BYTES);
+  assert.ok(out.length >= 3);
+  assert.ok(out.every((p) => p.bytes <= replay.UNLOAD_PIECE_BYTES));
+  assert.equal(out.reduce((a, p) => a + p.events.length, 0), 10);
+  assert.deepEqual(out[0].pages, ['/a']);
+  assert.equal(out[0].errors, 1);
+  assert.equal(out[1].errors, 0);
+});
+
+
 test('errors carry the replay id; exports are lazy wrappers', async () => {
   rum.setReplayIdForErrors('sess-1');
   assert.equal(rum.getReplayId(), 'sess-1');

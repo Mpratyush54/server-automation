@@ -159,14 +159,33 @@ setConsent({ replay: true });   // false stops a running recording at once
   with the telemetry block's browser token (`telemetry.replayEndpoint`, present when the platform
   runs the full profile) or `PlatformConfig.apiBase` + SDK token. Retries with backoff and
   `Retry-After`, bounded 4 MiB queue, `keepalive` on page hide.
+- **Unload delivery.** On `pagehide` or `visibilitychange` -> `hidden` (whichever fires first)
+  the open chunk is cut into pieces of at most 48 KiB raw JSON and every queued chunk is sent
+  with `fetch(..., { keepalive: true })` - including one whose normal upload is still in
+  flight, because an unload may cancel it. No normal fetch is started for the final chunk, so
+  the last page of a session, and sessions shorter than the 5 s flush interval, survive tab
+  close and navigation away. The server answers a re-sent chunk with 200 and stores it once.
+  Limits: browsers allow at most 64 KiB of keepalive bodies in flight per page; chunks that do
+  not fit stay queued and get a best-effort normal request (delivered when the page was only
+  hidden, possibly lost on a real unload; the queue is per page, not persisted).
+  `navigator.sendBeacon` is not used: it cannot send the `Authorization` header the replay API
+  requires. A keepalive request carrying that header needs a CORS preflight; if a browser
+  refuses such a request, the chunk is requeued for the normal path.
+- **Ordering.** The API derives a chunk's pages from its Meta hrefs and navigation markers in
+  timestamp order (then the SDK's page list, then the page when the chunk was cut), so the
+  session's `first_page` is where recording started even when the only chunk is the final one.
+  Chunks of one session are stored under a per-session lock (duplicate check, limits, page
+  merge and counters are atomic), so parallel uploads cannot drop pages or exceed the limits.
 - **Markers.** Errors (uncaught, and framework-caught via `reportRumError`), SPA navigations and
   network calls (method, redacted URL, status, duration, trace id from RUM client spans) are
   recorded as rrweb custom events. RUM error events carry `replayId`, so an error issue links
   to its replay.
 - **Portal.** Project -> Replays lists sessions (filters: page, errors, duration, environment);
   the player (rrweb-player, lazy-loaded) shows the markers on the timeline with links to the
-  error issue and the Tempo trace. Project members only; every view is audited
-  (`replay.view`, `replay.snapshot_view`, `replay.delete`).
+  error issue and the Tempo trace. Project members only; every access is audited
+  (`replay.view`, `replay.chunk_view` per downloaded chunk, `replay.snapshot_view`,
+  `replay.delete`). Agent tokens (MCP) additionally need the `replays:read` scope, which is not
+  in the default agent scopes; their audit entries carry the agent token id and name.
 - **Storage and retention.** MinIO bucket `replays`, `replays/<projectId>/<sessionId>/<seq>.json.gz`,
   plus `replay_sessions` / `replay_chunks` rows. An hourly job deletes sessions older than the
   project's replay retention (privacy settings, default 7 days); the bucket lifecycle rule is the
@@ -177,7 +196,9 @@ setConsent({ replay: true });   // false stops a running recording at once
   `REPLAY_MAX_SESSION_BYTES` (100 MiB), `REPLAY_RATE_LIMIT` (600/min per IP).
 - **Heatmap backgrounds.** `GET /api/projects/:projectId/replays/:sessionId|latest/snapshot?page=/orders/:id`
   returns the first full DOM snapshot of that page as inert HTML (no scripts, CSP prepended) for a
-  sandboxed iframe, plus the rrweb events.
+  sandboxed iframe, plus the rrweb events. With `latest` it is the newest snapshot of that page
+  (path or route name) from any session. A page that was left within 300 ms of navigating to it
+  (before it rendered) gets no snapshot.
 
 | Replay option | Default | Meaning |
 |---------------|---------|---------|
@@ -191,6 +212,13 @@ setConsent({ replay: true });   // false stops a running recording at once
 | `captureNetwork` | `true` | Network markers |
 | `snapshotOnNavigation` | `true` | DOM snapshot after SPA route changes |
 | `endpoint`, `userId`, `flushIntervalMs`, `maxChunkBytes` | — / — / 5000 / 65536 | |
+
+**Demo apps.** `examples/sdk-apps/react-web` and `examples/sdk-apps/angular-web` both enable
+replay with a consent banner (`Allow session replay` / `Decline`), a Checkout form with personal
+data and a `platform-mask` paragraph; set `RUM_REPLAY_ENDPOINT` (k8s Secret `sdk-demo-rum`, key
+`replayEndpoint`). Each has a Playwright check, `e2e/replay.mjs` (Angular: `ANGULAR_URL`,
+`BROWSER=chromium|firefox|webkit`; it also verifies the final short page and error linking).
+See [examples/sdk-apps/README.md](../../examples/sdk-apps/README.md#session-replay-40).
 
 ## Backpressure
 
