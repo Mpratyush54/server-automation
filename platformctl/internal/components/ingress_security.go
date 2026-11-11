@@ -1,6 +1,11 @@
 package components
 
-import "github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
+)
 
 // IngressSecurityValues uses actual nginx directives: ingress-nginx does not
 // have ConfigMap keys named limit-rps/limit-connections (those are annotations).
@@ -9,6 +14,20 @@ func IngressSecurityValues(c *config.Config) map[string]any {
 	memory, cpu := "512Mi", "1000m"
 	if c.WAF {
 		memory, cpu = "1Gi", "2000m"
+	}
+	var limits []string
+	if c.IngressIPRateLimit > 0 {
+		limits = append(limits, fmt.Sprintf("limit_req_zone $binary_remote_addr zone=platform_requests:10m rate=%dr/s;", c.IngressIPRateLimit))
+		requestLimit := "limit_req zone=platform_requests"
+		if c.IngressIPBurst > 0 {
+			requestLimit += fmt.Sprintf(" burst=%d nodelay", c.IngressIPBurst)
+		}
+		limits = append(limits, requestLimit+";")
+	}
+	if c.IngressIPConnections > 0 {
+		limits = append(limits,
+			"limit_conn_zone $binary_remote_addr zone=platform_connections:10m;",
+			fmt.Sprintf("limit_conn platform_connections %d;", c.IngressIPConnections))
 	}
 	return map[string]any{"controller": map[string]any{
 		// externalTrafficPolicy Local keeps the client source IP: k3s routes
@@ -51,10 +70,7 @@ func IngressSecurityValues(c *config.Config) map[string]any {
 			"compute-full-forwarded-for": "false",
 			"use-proxy-protocol":         "false",
 			"hsts":                       "true", "hsts-include-subdomains": "false", "hsts-max-age": "31536000",
-			"http-snippet": `limit_req_zone $binary_remote_addr zone=platform_requests:10m rate=100r/s;
-limit_conn_zone $binary_remote_addr zone=platform_connections:10m;
-limit_req zone=platform_requests burst=200 nodelay;
-limit_conn platform_connections 100;`,
+			"http-snippet": strings.Join(limits, "\n"),
 			// The controller template emits these directives at http scope.
 			// Repeating them in http-snippet makes nginx reject its config.
 			"limit-req-status-code": "429", "limit-conn-status-code": "429",

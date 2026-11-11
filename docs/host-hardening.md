@@ -99,9 +99,35 @@ external reachability: retain console access during the first install.
 ## Ingress defaults and optional WAF
 
 The controller ConfigMap's `http-snippet` creates per-client request and
-connection zones: 100 requests/second, burst 200, and 100 simultaneous requests;
-rejections return 429. Limits apply per controller replica. These are actual
-nginx directives, not unsupported ConfigMap `limit-rps` keys. See the upstream
+connection zones: 1,000 requests/second, burst 2,000, and 2,000 concurrent connections
+per client IP by default; rejections return 429. Limits apply per controller
+replica to **all ingress traffic**, including customer applications. These higher
+defaults accommodate users sharing office or carrier NAT addresses.
+
+| Environment variable | Default | Allowed values |
+| --- | --- | --- |
+| `INGRESS_IP_RATE_LIMIT` | `1000` requests/second | `0` or `1-1000000` |
+| `INGRESS_IP_BURST` | `2000` requests | `0` or `1-1000000` |
+| `INGRESS_IP_CONNECTIONS` | `2000` concurrent connections | `0` or `1-65535` |
+
+Invalid values produce a warning and fall back to the corresponding default.
+Set `INGRESS_IP_RATE_LIMIT=0` to omit the request limiter and its zone;
+`INGRESS_IP_CONNECTIONS=0` omits the connection limiter and its zone.
+`INGRESS_IP_BURST=0` omits the burst allowance (`burst` and `nodelay`), keeping
+request rate limiting active without a burst. Burst has no effect when the
+request rate limit is disabled.
+
+Settings are saved in `/etc/platform/.env` and loaded again on subsequent runs.
+Edit that file or override it with environment variables, then reconcile:
+
+```bash
+sudo INGRESS_IP_RATE_LIMIT=5000 INGRESS_IP_BURST=10000 INGRESS_IP_CONNECTIONS=4000 platformctl install ingress-nginx
+```
+
+The command saves these settings for future reconciliations. The controller
+continues to use `externalTrafficPolicy: Local`, ignore forwarding headers,
+and reject excess traffic with status 429. Limits use actual nginx directives,
+not unsupported ConfigMap `limit-rps` keys. See the upstream
 [ConfigMap reference](https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/).
 
 ### Client source IPs
