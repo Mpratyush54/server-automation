@@ -21,6 +21,7 @@ import {
   expressAuthenticate, getUserPermissions, logAudit, requireRecentMfa, AuthenticatedRequest,
 } from '../middleware/auth';
 import { requireProjectAccess } from '../lib/project-access';
+import { affectsTelemetryOrigins, requestTelemetryOriginsSync } from '../lib/telemetry-origins';
 import {
   buildEnvironmentRows, deleteEnvironmentVariable, setEnvironmentVariable, findVariable,
   isValidEnvKey, EnvVarError, ScopeFilter, EnvVarType,
@@ -190,6 +191,7 @@ router.put('/projects/:projectId/environment/:key', expressAuthenticate, async (
       projectId, environmentId: env.value, key, value: body.value, secret, userId: authReq.user.id, masterKey,
     });
 
+    if (affectsTelemetryOrigins(key)) requestTelemetryOriginsSync();
     const action = secret ? (result.status === 'created' ? 'secrets.create' : 'secrets.update') : 'config.update';
     await logAudit({
       userId: authReq.user.id,
@@ -229,6 +231,7 @@ router.delete('/projects/:projectId/environment/:key', expressAuthenticate, asyn
     const ds = await getDb();
     const result = await deleteEnvironmentVariable(ds, { projectId, environmentId: env.value, key, type });
     if (!result.deleted) return res.status(404).json({ error: 'Variable not found' });
+    if (affectsTelemetryOrigins(key)) requestTelemetryOriginsSync();
 
     await logAudit({
       userId: authReq.user.id,
