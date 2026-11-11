@@ -175,45 +175,15 @@ func InstallCertManager(cfg *config.Config) error {
 }
 
 func InstallPostgreSQL(cfg *config.Config) error {
-	if doneOrSkip("postgresql", "PostgreSQL") {
-		return nil
-	}
-	color.Cyan("\n  ■ Installing PostgreSQL...")
-	err := helmValues("postgresql", "postgresql", "databases", map[string]any{"auth": map[string]string{"postgresPassword": cfg.PostgresPassword, "database": "platform"}}, "--set", "primary.persistence.size=10Gi", "--wait", "--timeout", "10m")
-	if err != nil {
-		return err
-	}
-	color.Green("  ✓ PostgreSQL installed")
-	return state.MarkDone("postgresql")
+	return postgresqlRelease(cfg).reconcile("--wait", "--timeout", "10m")
 }
 
 func InstallMongoDB(cfg *config.Config) error {
-	if doneOrSkip("mongodb", "MongoDB") {
-		return nil
-	}
-	color.Cyan("\n  ■ Installing MongoDB...")
-	err := helmValues("mongodb", "mongodb", "databases", map[string]any{"auth": map[string]string{"rootPassword": cfg.MongoPassword}}, "--set", "persistence.size=10Gi", "--wait", "--timeout", "10m")
-	if err != nil {
-		return err
-	}
-	color.Green("  ✓ MongoDB installed")
-	return state.MarkDone("mongodb")
+	return mongodbRelease(cfg).reconcile("--wait", "--timeout", "10m")
 }
 
 func InstallRedis(cfg *config.Config) error {
-	if doneOrSkip("redis", "Redis") {
-		return nil
-	}
-	color.Cyan("\n  ■ Installing Redis...")
-	err := helmValues("redis", "redis", "databases", map[string]any{"auth": map[string]string{"password": cfg.RedisPassword}}, "--set", "master.persistence.size=5Gi",
-		// Single server: one read replica. The chart default (3, started one at a
-		// time) added ~1.5 minutes to every install for no redundancy.
-		"--set", "replica.replicaCount=1", "--wait", "--timeout", "10m")
-	if err != nil {
-		return err
-	}
-	color.Green("  ✓ Redis installed")
-	return state.MarkDone("redis")
+	return redisRelease(cfg).reconcile("--wait", "--timeout", "10m")
 }
 
 func InstallMinIO(cfg *config.Config) error {
