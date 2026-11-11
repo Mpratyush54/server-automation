@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
 	"strings"
 	"testing"
 
@@ -88,5 +89,33 @@ func TestUpgradePlanAndPreflightUseInjectedCommands(t *testing.T) {
 	upgradeRun = func(string, ...string) (string, error) { return "", errors.New("offline") }
 	if e = upgradePreflight(); e == nil {
 		t.Fatal("expected failure")
+	}
+}
+
+// Regression (v1.2.0 -> Phase 4 upgrade): release "loki" running chart
+// loki-stack-2.10.3 was planned as an upgrade to the loki 6.x chart because
+// "loki-" prefixes "loki-stack-". Charts must match by exact name.
+func TestUpgradePlanMatchesChartNamesExactly(t *testing.T) {
+	old := upgradeRun
+	defer func() { upgradeRun = old }()
+	digest := "ghcr.io/test/image@sha256:" + strings.Repeat("a", 64)
+	upgradeRun = func(name string, args ...string) (string, error) {
+		if name == "helm" {
+			return `[{"name":"loki","namespace":"monitoring","chart":"loki-stack-2.10.3","revision":"1"},` +
+				`{"name":"kube-prometheus","namespace":"monitoring","chart":"kube-prometheus-stack-1.0.0","revision":"2"}]`, nil
+		}
+		return digest, nil
+	}
+	p, e := upgradePlan(digest, digest)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, c := range p.Charts {
+		if c.Name == "loki" {
+			t.Fatalf("loki-stack release planned as %s %s", c.Chart, c.Version)
+		}
+	}
+	if len(p.Charts) != 1 || p.Charts[0].Chart != "kube-prometheus-stack" || p.Charts[0].Version != versions.Get("kube-prometheus-stack").Version {
+		t.Fatalf("plan = %+v", p.Charts)
 	}
 }

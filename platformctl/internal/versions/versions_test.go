@@ -53,3 +53,37 @@ func TestEveryChartHasAMirrorReference(t *testing.T) {
 		t.Fatal("MirrorTag must replace '+' (not valid in OCI tags)")
 	}
 }
+
+func TestSplitChartRef(t *testing.T) {
+	cases := []struct{ in, name, version string }{
+		{"loki-stack-2.10.3", "loki-stack", "2.10.3"},
+		{"loki-6.30.1", "loki", "6.30.1"},
+		{"cert-manager-v1.21.3", "cert-manager", "v1.21.3"},
+		{"prometheus-blackbox-exporter-11.21.1", "prometheus-blackbox-exporter", "11.21.1"},
+		{"argocd-image-updater-1.4.2", "argocd-image-updater", "1.4.2"},
+		{"foo-1.0.0-rc-1", "foo", "1.0.0-rc-1"},
+		{"bar-2.0.0+build.5", "bar", "2.0.0+build.5"},
+	}
+	for _, c := range cases {
+		n, v, ok := SplitChartRef(c.in)
+		if !ok || n != c.name || v != c.version {
+			t.Errorf("SplitChartRef(%q) = %q %q %v; want %q %q", c.in, n, v, ok, c.name, c.version)
+		}
+	}
+	for _, bad := range []string{"", "loki", "loki-stack", "-1.2.3", "loki-1.2"} {
+		if _, _, ok := SplitChartRef(bad); ok {
+			t.Errorf("SplitChartRef(%q) should fail", bad)
+		}
+	}
+}
+
+// The "loki" pin must never match a loki-stack release (prefix "loki-").
+func TestSplitChartRefNeverConfusesLokiStack(t *testing.T) {
+	n, _, _ := SplitChartRef("loki-stack-2.10.3")
+	if n == Get("loki").BaseName() {
+		t.Fatal("loki-stack release parsed as the loki chart")
+	}
+	if n != Get("loki-stack").BaseName() {
+		t.Fatalf("got %q", n)
+	}
+}

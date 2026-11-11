@@ -354,14 +354,19 @@ func upgradePlan(api, portal string) (upgrade.Plan, error) {
 	for _, p := range versions.All() {
 		pins[p.Name] = p.Version
 		for _, r := range releases {
-			prefix := p.BaseName() + "-"
-			if strings.HasPrefix(r.Chart, prefix) {
-				rev, e := strconv.Atoi(r.Revision)
-				if e != nil || rev < 1 {
-					return upgrade.Plan{}, fmt.Errorf("invalid Helm revision")
-				}
-				installed = append(installed, upgrade.Chart{Name: r.Name, Namespace: r.Namespace, Chart: p.Name, Version: strings.TrimPrefix(r.Chart, prefix), Revision: rev})
+			// Exact chart-name match: a "loki-" prefix also matches
+			// "loki-stack-2.10.3", and upgrading that release to the loki chart
+			// with --reuse-values fails (and would discard its data). The
+			// loki-stack -> loki move is a migration done by the telemetry step.
+			name, version, ok := versions.SplitChartRef(r.Chart)
+			if !ok || name != p.BaseName() {
+				continue
 			}
+			rev, e := strconv.Atoi(r.Revision)
+			if e != nil || rev < 1 {
+				return upgrade.Plan{}, fmt.Errorf("invalid Helm revision")
+			}
+			installed = append(installed, upgrade.Chart{Name: r.Name, Namespace: r.Namespace, Chart: p.Name, Version: version, Revision: rev})
 		}
 	}
 	var images []upgrade.Image

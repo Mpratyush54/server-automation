@@ -181,9 +181,23 @@ Verify that each pinned backend exposes the referenced metric series on the VM.
 
 ## Upgrade from loki-stack
 
-This is a storage/schema migration, not an in-place chart rename. The installer
-stops before changing anything when Helm release `loki` still uses loki-stack.
-It never deletes a PVC, uninstalls the legacy release, or rewrites old logs.
+This is a storage/schema migration, not an in-place chart rename. `platformctl
+upgrade` never changes the legacy release (it matches charts by exact name, so
+loki-stack is not "upgraded" to the loki chart). The telemetry step handles it:
+
+- **No persistent volume** (the platformctl default before the full profile:
+  loki-stack was installed without persistence, so its logs live only in the
+  pod and are already lost on any pod restart): the step logs
+  `Removing legacy Helm release "loki" (loki-stack-…)`, runs
+  `helm uninstall loki -n monitoring` (which also removes Promtail and the old
+  datasource ConfigMap) and installs Loki on MinIO under the same release name.
+  Old log lines are not copied.
+- **Persistent volume** (StatefulSet claim template, mounted claim, or a
+  `storage-loki-*` PVC): the step stops before changing anything and names the
+  volume. It never deletes a PVC, uninstalls that release, or rewrites old logs.
+  Follow the steps below, then run `sudo platformctl provision --profile full`.
+
+To keep the old logs of a volume-backed release:
 
 1. Export the legacy Helm values/manifests and Grafana datasource/dashboard JSON
    to a private backup location. Record the existing Loki datasource UID.
