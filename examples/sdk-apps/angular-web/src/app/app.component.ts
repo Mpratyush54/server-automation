@@ -9,7 +9,7 @@ import { ConsentBannerComponent } from './consent-banner.component';
   imports: [RouterOutlet, RouterLink, ConsentBannerComponent],
   template: `
     <h1>Angular client → Node API (Platform SDK)</h1>
-    <nav><a routerLink="/">Home</a><a routerLink="/orders">Orders</a><a routerLink="/checkout">Checkout</a></nav>
+    <nav><a routerLink="/">Home</a><a routerLink="/orders">Orders</a><a routerLink="/features">Features</a><a routerLink="/checkout">Checkout</a></nav>
     <app-consent-banner />
     <router-outlet />
   `,

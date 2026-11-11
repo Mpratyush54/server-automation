@@ -27,6 +27,7 @@ export {
   RumTransportItem,
   RumEnvironment,
 } from './rum';
+export type { PlatformHeatmapOptions } from './rum-heatmap';
 export { useRumPageView, RumLocationLike } from './rum-react';
 export type { PlatformReplayOptions, ReplayHandle, ReplayMode, ReplaySkipReason } from './rum-replay';
 

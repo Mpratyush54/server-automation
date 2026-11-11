@@ -20,6 +20,9 @@ export interface PlatformTelemetryConfig {
   /** Faro receiver, e.g. `https://otel.<DOMAIN>/collect`. */
   faroEndpoint?: string | null;
   errorsEndpoint?: string | null;
+  /** Heatmap ingest (`POST /api/sdk/heatmap/events`) and optional token (default: browserToken). */
+  heatmapsEndpoint?: string | null;
+  heatmapsToken?: string | null;
   /** Public, project/env scoped browser ingest token (`plat_ingest_web_...`). */
   browserToken?: string | null;
   samplingRatio?: number;
@@ -65,6 +68,8 @@ export interface PlatformRumOptions {
   appName?: string;
   appVersion?: string;
   environment?: string;
+  /** Click / scroll-depth heatmaps (lazy-loaded `rum-heatmap`). Default off. */
+  heatmaps?: boolean | import('./rum-heatmap').PlatformHeatmapOptions;
   /** Extra filter/scrubber run after the built-in redaction; return null to drop the item. */
   beforeSend?: (item: RumTransportItem) => RumTransportItem | null;
   /**
@@ -362,6 +367,7 @@ export function initRum(
       const mod = await (deps.load ?? defaultLoader)();
       const initialView = pendingView ?? normalizeRouteName(env.win.location?.pathname || '/');
       active = mod.startFaro(decision.plan, initialView);
+      if (options.heatmaps) void import('./rum-heatmap').then((h) => h.startHeatmaps(decision.plan, telemetry, env, active)).catch(() => null);
       pendingView = null;
       return active;
     } catch {

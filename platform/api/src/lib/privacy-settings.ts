@@ -22,10 +22,11 @@ export function clampRetentionDays(raw: unknown, fallback: number): number {
  *  - errors   per project (error-retention leader job, Postgres error_events)
  *  - logs     per project (Loki runtime overrides, lib/loki-retention); default = cluster
  *  - replays  per project setting (applied by the session-replay store)
+ *  - heatmaps per project (heatmaps-retention leader job, Postgres heatmap aggregates)
  *  - traces / profiles: cluster-wide only (TELEMETRY_RETENTION_DAYS on Tempo / Pyroscope).
  *    Both run single-tenant, so there is no per-project retention to apply.
  */
-export const PROJECT_RETENTION_KEYS = ['logs', 'replays', 'errors'] as const;
+export const PROJECT_RETENTION_KEYS = ['logs', 'replays', 'errors', 'heatmaps'] as const;
 export const CLUSTER_RETENTION_KEYS = ['traces', 'profiles'] as const;
 export type ProjectRetentionKey = typeof PROJECT_RETENTION_KEYS[number];
 
@@ -36,7 +37,7 @@ export function clusterRetentionDays(env: NodeJS.ProcessEnv = process.env): numb
 
 export function defaultRetentionDays(env: NodeJS.ProcessEnv = process.env): Required<TelemetryRetentionDays> {
   const cluster = clusterRetentionDays(env);
-  return { logs: cluster, traces: cluster, profiles: cluster, replays: DEFAULT_RETENTION_DAYS.replays, errors: DEFAULT_RETENTION_DAYS.errors };
+  return { logs: cluster, traces: cluster, profiles: cluster, replays: DEFAULT_RETENTION_DAYS.replays, errors: DEFAULT_RETENTION_DAYS.errors, heatmaps: DEFAULT_RETENTION_DAYS.heatmaps };
 }
 
 /** Effective retention: project overrides where supported, defaults elsewhere. */
@@ -48,6 +49,7 @@ export function mergeRetention(partial?: TelemetryRetentionDays | null, env: Nod
     profiles: d.profiles,
     replays: clampRetentionDays(partial?.replays, d.replays),
     errors: clampRetentionDays(partial?.errors, d.errors),
+    heatmaps: clampRetentionDays(partial?.heatmaps, d.heatmaps),
   };
 }
 
@@ -169,7 +171,7 @@ export function publicPrivacySettings(row: TelemetryPrivacySettings) {
     retentionDays: mergeRetention(row.retentionDays),
     /** Project overrides only; a missing key means the default applies. */
     retentionOverrides: retentionOverrides(row.retentionDays),
-    retentionScope: { logs: 'project', replays: 'project', errors: 'project', traces: 'cluster', profiles: 'cluster' },
+    retentionScope: { logs: 'project', replays: 'project', errors: 'project', heatmaps: 'project', traces: 'cluster', profiles: 'cluster' },
     consentDefaults: {
       replay: row.consentDefaults?.replay ?? DEFAULT_CONSENT.replay,
       analytics: row.consentDefaults?.analytics ?? DEFAULT_CONSENT.analytics,

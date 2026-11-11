@@ -10,6 +10,8 @@ export interface TelemetryRetentionDays {
   profiles?: number;
   replays?: number;
   errors?: number;
+  /** Aggregated click/scroll heatmap rows (anonymous; no per-user data). */
+  heatmaps?: number;
 }
 
 /** Defaults used when a subject has not recorded consent (#40 session replay). */
@@ -26,6 +28,7 @@ export const DEFAULT_RETENTION_DAYS: Required<TelemetryRetentionDays> = {
   profiles: 30,
   replays: 7,
   errors: 90,
+  heatmaps: 90,
 };
 
 export const DEFAULT_CONSENT: PrivacyConsentDefaults = {

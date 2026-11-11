@@ -18,6 +18,8 @@ export const appConfig: ApplicationConfig = {
     providePlatformRum(
       {
         telemetryUrl: '/rum-config.json',
+        // Click + scroll-depth heatmaps (rum-config.json heatmapsEndpoint/heatmapsToken); lazy-loaded.
+        heatmaps: true,
         // traceparent goes to this app and the demo Node API only.
         propagateTo: [window.location.origin, ...(API_BASE ? [new URL(API_BASE, window.location.href).origin] : [])],
         // Session replay (#40): every session is sampled in this demo; nothing is recorded until the

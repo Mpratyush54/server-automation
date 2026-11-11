@@ -36,6 +36,7 @@ export {
   RumEnvironment,
 } from './rum';
 export type { PlatformReplayOptions, ReplayHandle, ReplayMode, ReplaySkipReason } from './rum-replay';
+export type { PlatformHeatmapOptions } from './rum-heatmap';
 export {
   PlatformRumService,
   RumRouterLike,

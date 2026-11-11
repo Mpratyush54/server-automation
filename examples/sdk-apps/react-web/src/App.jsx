@@ -102,6 +102,35 @@ function OrderDetail() {
   );
 }
 
+const SECTIONS = ['deploys', 'databases', 'observability', 'security', 'pricing'];
+
+// Heatmap demo page: a long landing-style page with buttons in fixed places, so clicks
+// (x/y normalised to the document) and scroll depth produce a recognisable heatmap.
+function Features() {
+  const [clicked, setClicked] = useState('');
+  return (
+    <>
+      <section style={{ padding: '48px 16px', textAlign: 'center', background: '#eef2ff', borderRadius: 8 }}>
+        <h2>Ship faster with the Platform SDK</h2>
+        <p>Clicks and scroll depth on this page feed the project's Heatmaps view.</p>
+        <button id="cta-primary" data-rum-name="cta-primary" style={{ margin: 8, padding: '12px 20px' }} onClick={() => setClicked('primary')}>Start free trial</button>
+        <button id="cta-secondary" style={{ margin: 8, padding: '12px 20px' }} onClick={() => setClicked('secondary')}>Book a demo</button>
+      </section>
+      {SECTIONS.map((id) => (
+        <section key={id} id={'section-' + id} style={{ minHeight: 360, padding: '24px 16px', borderBottom: '1px solid #e5e7eb' }}>
+          <h3>{id[0].toUpperCase() + id.slice(1)}</h3>
+          <p>Placeholder copy for the heatmap demo. Scroll down to increase the recorded scroll depth.</p>
+          <button className="learn" data-rum-name={'learn-' + id} onClick={() => setClicked(id)}>Learn more</button>
+        </section>
+      ))}
+      <footer style={{ padding: '48px 16px', textAlign: 'center' }}>
+        <button id="cta-footer" data-rum-name="cta-footer" onClick={() => setClicked('footer')}>Get started</button>
+        <p>Last clicked: {clicked || '—'}</p>
+      </footer>
+    </>
+  );
+}
+
 export default function App() {
   // One RUM view per route (react-router v6/v7): /orders/101 is recorded as /orders/:id.
   useRumPageView(useLocation());
@@ -112,6 +141,7 @@ export default function App() {
         <Link to="/">Home</Link>
         <Link to="/orders">Orders</Link>
         <Link to="/checkout">Checkout</Link>
+        <Link to="/features">Features</Link>
       </nav>
       <ConsentBanner />
       <Routes>
@@ -119,6 +149,7 @@ export default function App() {
         <Route path="/orders" element={<Orders />} />
         <Route path="/orders/:id" element={<OrderDetail />} />
         <Route path="/checkout" element={<Checkout />} />
+        <Route path="/features" element={<Features />} />
       </Routes>
     </div>
   );

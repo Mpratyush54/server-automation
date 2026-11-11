@@ -60,7 +60,8 @@ interface ScrubRule {
     <section class="card">
       <h2>Retention (days)</h2>
       <p class="hint">
-        Leave a field empty to use the default. Traces and profiles use the cluster-wide
+        Leave a field empty to use the default (logs 30d or the cluster value, replays 7d, errors 90d,
+        heatmaps 90d of anonymous aggregates). Traces and profiles use the cluster-wide
         retention (<code>TELEMETRY_RETENTION_DAYS</code>) and cannot be set per project.
       </p>
       <div class="grid">
@@ -136,7 +137,7 @@ export class PrivacyTabComponent implements OnChanges {
   settings: any = null;
   scrubIps = true;
   rules: ScrubRule[] = [];
-  retentionKeys = ['logs', 'replays', 'errors'] as const;
+  retentionKeys = ['logs', 'replays', 'errors', 'heatmaps'] as const;
   /** Project overrides only; empty = default. */
   retention: Record<string, number | null> = {};
   consent = { replay: false, analytics: true };
