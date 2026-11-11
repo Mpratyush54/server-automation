@@ -180,6 +180,9 @@ immediately so the change takes effect on the next request.
 
 **Auth:** `devops`
 
+Deletes the user and all of their project memberships in one transaction.
+You cannot delete your own account (`400`). Audit-logged as `user.deleted`.
+
 **Response `200`:**
 ```json
 { "success": true }
