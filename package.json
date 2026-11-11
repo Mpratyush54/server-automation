@@ -20,6 +20,6 @@
     "platform-sourcemaps": "node scripts/platform-sourcemaps.mjs"
   },
   "devDependencies": {
-    "concurrently": "^8.2.0"
+    "concurrently": "^10.0.6"
   }
 }
