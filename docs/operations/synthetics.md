@@ -105,6 +105,8 @@ Routing, silences and channels are handled by the alerting service.
 30 daily bars. No URLs, hosts, errors or assertion details. Checks with
 `statusPage.visible: false` are omitted.
 
+This feed powers the public [status pages](../guides/status-pages.md) (`/status/<slug>`).
+
 ## Browser checks (full profile)
 
 Enable with `SYNTHETICS_BROWSER=true` and `--profile full`, then re-run provision. The

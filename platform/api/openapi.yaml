@@ -1494,7 +1494,8 @@ paths:
   /projects/{projectId}/status-page:
     get:
       tags: [StatusPages]
-      summary: Get or create the project's status page settings (#46)
+      summary: Get the project's status page settings (#46)
+      description: Read-only. Before the first save it returns unsaved defaults (id null); the row is created on the first PUT or incident.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -1526,7 +1527,7 @@ paths:
       responses:
         '200': { description: Updated settings }
         '400': { description: Validation error }
-        '409': { description: Slug already in use }
+        '409': { description: Slug or domain already in use by another status page }
   /projects/{projectId}/status-page/incidents:
     get:
       tags: [StatusPages]
@@ -1570,7 +1571,10 @@ paths:
       summary: Public published status page (no auth, cached)
       description: |
         Built only from #42's status feed plus published incidents. Exposes
-        { slug, title, domain, branding, generatedAt, status, components, incidents }.
+        { slug, title, branding, generatedAt, status, components, incidents }.
+        Each incident carries `phase` (upcoming | active | resolved); maintenance
+        is active only between scheduledStart and scheduledEnd and reported as
+        resolved after scheduledEnd if nobody resolved it.
         Never includes URLs, hosts, errors, assertion details or secret names.
       security: []
       parameters:
