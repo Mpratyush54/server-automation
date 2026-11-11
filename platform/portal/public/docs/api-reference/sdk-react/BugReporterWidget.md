@@ -1,6 +1,6 @@
 # BugReporterWidget
 
-A floating bug-report button (bottom-right corner) that opens a drawer for users to describe issues. Automatically captures **console logs**, **network timeline**, and a **screenshot** (via `html2canvas`).
+A floating bug-report button (bottom-right corner) that opens a drawer for users to describe issues. Attaches recent **console logs** and the **request timeline** (credentials redacted). A **screenshot** (via `html2canvas`) is attached only when you opt in with `captureScreenshot`.
 
 ---
 
@@ -16,7 +16,8 @@ import { BugReporterWidget } from '@mpratyush54/sdk-react';
 
 ```typescript
 interface BugReporterWidgetProps {
-  config: PlatformConfig;
+  config?: PlatformConfig;        // defaults to the enclosing <PlatformProvider>'s config
+  captureScreenshot?: boolean;    // default false
 }
 ```
 
@@ -29,17 +30,17 @@ See [`PlatformProvider`](PlatformProvider.md) for the `PlatformConfig` shape.
 - Renders a red 🐛 **floating action button** (fixed, `z-index: 99999`, bottom-right).
 - Clicking toggles a dark-themed drawer:
   - **Textarea** for the user's description.
-  - Hint that console logs, network history, and a screenshot will be attached automatically.
+  - Hint describing what is attached; with `captureScreenshot`, a checkbox the user can untick to skip the screenshot.
   - **Cancel** and **Submit Report** buttons.
 - On submit:
-  1. Captures a full-page screenshot via `html2canvas` (lazy-imported).
-  2. POSTs to `POST /api/sdk/bug-report` with:
+  1. Only if `captureScreenshot` is set and the box is ticked: captures the page via `html2canvas` (lazy-imported). Password, payment (`autocomplete="cc-*"`), one-time-code and `data-platform-mask` fields are blanked in the cloned DOM first, and the widget itself is excluded.
+  2. POSTs to `POST /api/sdk/bug-report` (`Authorization: Bearer <token>`) with:
      - `description`
      - `category: 'user-report'`
-     - `consoleLogs` — captured from patched `console.log/warn/error` (max 100 entries)
-     - `networkTimeline` — captured from patched `window.fetch` (max 100 entries)
-     - `screenshotBase64` — base64-encoded PNG
-     - `browserInfo` — `userAgent`, `url`, `viewport`
+     - `consoleLogs` — captured from patched `console.log/warn/error` (max 100 entries), with Authorization/Bearer values, SDK tokens, JWTs, cookies and password-like fields redacted
+     - `networkTimeline` — method, redacted URL, status and duration from patched `window.fetch` (max 100 entries; no headers or bodies)
+     - `screenshotBase64` — base64-encoded PNG, or `null` when not opted in
+     - `browserInfo` — `userAgent`, `url` (redacted), `viewport`
      - `appState` — empty object (extendable)
 - On success: shows a green "Bug report submitted" message for 2 s and closes.
 - On failure: shows `alert('Failed to submit bug report.')`.
@@ -73,5 +74,5 @@ export default function App() {
 ## Notes
 
 - Console and `fetch` patching begins when the component mounts and is restored on unmount.
-- A screenshot is taken **only at submit time** (not continuously).
+- Screenshots are **off by default**. When enabled, one is taken **only at submit time** (not continuously). Mark any other sensitive element with `data-platform-mask` to blank it.
 - `html2canvas` (~40 KB gzipped) is lazy-loaded via dynamic `import()` on first submit.

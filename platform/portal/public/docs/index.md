@@ -15,8 +15,10 @@ applications on Kubernetes (k3s).
 | [SDK Reference](api-reference/sdk-node/PlatformClient.md) | Node.js, Python, React, Angular SDKs |
 | [Architecture](architecture/overview.md) | System design, data flow, auth flow |
 | [Deployment Guide](deployment/bootstrap.md) | Production deployment on k3s |
+| [Host hardening](host-hardening.md) | SSH safeguards, firewall rollback, security updates, ingress limits and WAF |
+| [Image signing](operations/image-signing.md) | Trivy, cosign, Kyverno admission |
 | [Troubleshooting](troubleshooting/dns-ipv6-timeout.md) | Solutions to known issues |
-| [Guides](guides/authentication.md) | Authentication, [MFA](guides/mfa.md), secrets, monitoring, CI/CD |
+| [Guides](guides/authentication.md) | Authentication, [MFA](guides/mfa.md), secrets, monitoring, [observability views](guides/observability.md), [status pages](guides/status-pages.md), CI/CD |
 | [Contributing](contribution-guide.md) | How to contribute to Platform |
 
 ## What is Platform?

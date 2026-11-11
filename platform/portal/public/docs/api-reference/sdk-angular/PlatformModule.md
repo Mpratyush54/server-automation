@@ -71,7 +71,7 @@ import { AppComponent } from './app.component';
     HttpClientModule,
     PlatformModule.forRoot({
       apiBase: 'https://platform.example.com',
-      token: 'sk-xxxx',
+      token: 'sdk_live_xxxx',
       projectId: 'my-angular-app',
       environment: 'production',
     }),

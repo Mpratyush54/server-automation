@@ -19,6 +19,7 @@ client = PlatformClient()
 client.init(
     project_name="my-python-service",
     platform_url=os.environ["PLATFORM_URL"],
+    sdk_token=os.environ["PLATFORM_SDK_TOKEN"],  # sdk_live_... from Project -> Tokens
     environment_name="development",
 )
 
@@ -32,6 +33,7 @@ Or use the module singleton:
 ```python
 from platform_sdk import platform
 
+# sdk_token defaults to $PLATFORM_SDK_TOKEN
 platform.init(project_name="my-service", platform_url="https://api.example.sslip.io")
 platform.log("INFO", "hello")
 ```
@@ -42,8 +44,10 @@ platform.log("INFO", "hello")
 client.init(
     project_name="my-service",
     platform_url=os.environ["PLATFORM_URL"],
+    sdk_token=os.environ["PLATFORM_SDK_TOKEN"],
     databases=["postgres", "mongo", "redis"],
 )
+# Postgres needs PLATFORM_PG_PASSWORD (there is no default password).
 
 rows = client.db["postgres"].execute("SELECT 1")
 ```
