@@ -14,7 +14,7 @@ consent hooks, object-key contract and retention defaults that #40 must honour.
 | Prometheus | Metrics | project/env dimensions from Tempo generators | 30d | Prometheus retention |
 | MongoDB `logs` | API-path SDK logs | `projectId`, optional `userId` / `sessionId` | TTL index 30d | GDPR delete + TTL |
 | MongoDB `errors` | Aggregated error docs | `projectId`, optional `userId` / `sessionId` | Project setting default 90d | GDPR delete |
-| MinIO `replays` | Session replay chunks (#40) | `replays/{projectId}/user/{userId}/…` or `…/session/{sessionId}/…` | 7d lifecycle rule | GDPR delete + lifecycle |
+| MinIO `replays` | Session replay chunks (#40) | `replays/{projectId}/{sessionId}/{seq}.json.gz` | per-project retention job (default 7 d) + 365 d lifecycle backstop | GDPR delete + lifecycle |
 | Postgres `telemetry_consents` | Subject consent | `project_id`, `subject_id`, `session_id` | Until withdrawn / GDPR delete | GDPR delete |
 | Postgres `telemetry_privacy_settings` | Per-project rules | `project_id` | N/A (config) | Project delete (manual) |
 | Postgres `audit_logs` | `privacy.*` actions | actor user id; email only as SHA-256 | Platform audit retention | Not purged by GDPR delete |

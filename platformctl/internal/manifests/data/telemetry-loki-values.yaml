@@ -22,6 +22,14 @@ loki:
       insecure: true
   limits_config:
     retention_period: RETENTION_HOURS
+    # Promote the authenticated project/environment (set by Alloy from the ingress
+    # external-auth headers) to stream labels, so project-scoped queries (#48), GDPR
+    # deletes (#47) and per-project retention select by stream. One value per project.
+    otlp_config:
+      resource_attributes:
+        attributes_config:
+          - action: index_label
+            attributes: [platform.project_id, deployment.environment, service.name]
     # Per-type stream retention (#47). Global RETENTION_HOURS remains the default;
     # replays/errors use shorter/longer periods. Project overrides live in the API.
     retention_stream:
