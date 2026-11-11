@@ -112,6 +112,28 @@ func MarkDone(step string) error {
 	return update(func(m map[string]string) bool { m[step] = "done"; return true })
 }
 
+// MarkHardeningDone records both the provision step and the baseline status
+// atomically, so a completed firewall cannot remain in progress.
+func MarkHardeningDone() error {
+	return update(func(m map[string]string) bool {
+		m["harden-firewall"] = "done"
+		m["harden"] = "done"
+		return true
+	})
+}
+
+// ReconcileHardening repairs state from versions that only marked harden done.
+// An incomplete baseline is not evidence that the firewall succeeded.
+func ReconcileHardening() error {
+	return update(func(m map[string]string) bool {
+		if m["harden"] != "done" || m["harden-firewall"] != "in_progress" {
+			return false
+		}
+		m["harden-firewall"] = "done"
+		return true
+	})
+}
+
 func MarkInProgress(step string) error {
 	return update(func(m map[string]string) bool {
 		if m[step] == "done" {

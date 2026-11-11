@@ -129,7 +129,7 @@ func hardenFirewall() error {
 	} else {
 		_ = state.Clear("harden-ssh")
 	}
-	return state.MarkDone("harden")
+	return state.MarkHardeningDone()
 }
 
 // startHardenPrepare runs hardenPrepare in the background (provision).
