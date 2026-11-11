@@ -23,6 +23,7 @@ import { In } from 'typeorm';
 import * as k8s from '@kubernetes/client-node';
 import { v4 as uuidv4 } from 'uuid';
 import { loadKubeConfig } from '../lib/kube-config';
+import { requestTelemetryOriginsSync } from '../lib/telemetry-origins';
 
 const router = Router();
 
@@ -116,6 +117,7 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
       where: { id: saved.id },
       relations: ['environments', 'deployments'],
     });
+    requestTelemetryOriginsSync(); // environment hosts are browser origins
     return res.status(201).json(withRelations || saved);
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
@@ -196,6 +198,7 @@ router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
       ip: req.ip,
     });
 
+    requestTelemetryOriginsSync(); // the domain may have changed
     const fresh = await repo.findOne({ where: { id: updated.id }, relations: ['environments', 'deployments'] });
     return res.json(fresh || updated);
   } catch (err: any) {
@@ -227,6 +230,7 @@ router.delete('/projects/:id', expressAuthenticate, expressRequireRole([UserRole
       ip: req.ip,
     });
 
+    requestTelemetryOriginsSync();
     return res.json({ message: 'Project soft-deleted' });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });

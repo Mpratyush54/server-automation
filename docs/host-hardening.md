@@ -100,13 +100,46 @@ external reachability: retain console access during the first install.
 
 The controller ConfigMap's `http-snippet` creates per-client request and
 connection zones: 100 requests/second, burst 200, and 100 simultaneous requests;
-rejections return 429. Limits apply per controller replica. With proxies/LBs,
-review the observed source address before changing real-IP trust: a shared proxy
-address can share a bucket. These are actual nginx directives, not unsupported
-ConfigMap `limit-rps` keys. See the upstream
+rejections return 429. Limits apply per controller replica. These are actual
+nginx directives, not unsupported ConfigMap `limit-rps` keys. See the upstream
 [ConfigMap reference](https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/).
 
-LoadBalancer NodePort allocation is disabled. The controller runs as non-root
+### Client source IPs
+
+Per-IP limits only work when nginx sees the real client address. The controller
+Service uses `externalTrafficPolicy: Local`: k3s routes traffic for the
+LoadBalancer address (the node IP) straight to the local controller pod without
+SNAT. With the previous `Cluster` policy every request arrived from the CNI
+gateway (`10.42.0.1`), so the nginx zones above and the API's per-IP limiters
+(login, credentials, ingest endpoints) were one bucket shared by all clients.
+
+* Forwarding headers are not trusted: `use-forwarded-headers`,
+  `compute-full-forwarded-for` and `use-proxy-protocol` are `false`. nginx sets
+  `X-Forwarded-For` to the TCP peer, overwriting anything the client sent, and the
+  API trusts exactly one proxy hop (`trust proxy = 1`). Clients cannot spoof their
+  address to dodge limits.
+* Under `Local`, k3s ServiceLB (svclb) forwards to `<node IP>:<node port>`
+  instead of the ClusterIP, so node ports are allocated again. Without them
+  host-local access such as `https://127.0.0.1` (used by the `harden` readiness
+  check) fails. The host firewall's forward chain only admits connections whose
+  original destination port is 80/443, so node ports stay closed externally on
+  hardened hosts; on `--skip-hardening` hosts, block 30000-32767 yourself.
+  Host-local requests reach nginx from the svclb pod address, not 127.0.0.1.
+* Clients must connect to an address k3s lists in the Service status (the node's
+  InternalIP/ExternalIP). For a floating or secondary IP not known to k3s, set it
+  with the k3s `node-external-ip` option.
+* If you put a CDN or load balancer in front, nginx sees its addresses and all
+  clients behind it share a bucket. Enable real-IP handling
+  (`use-forwarded-headers` plus `proxy-real-ip-cidr` restricted to that proxy's
+  ranges) only for a proxy you control.
+
+Existing installs get the Service change on the next
+`sudo platformctl install ingress-nginx` (a Helm upgrade that always reconciles
+these values). Check it with
+`kubectl -n ingress-nginx get svc ingress-nginx-controller -o jsonpath='{.spec.externalTrafficPolicy}'`
+and confirm the controller log shows public client addresses.
+
+The controller runs as non-root
 with RuntimeDefault seccomp, no privilege escalation, and only NET_BIND_SERVICE.
 Requests are 100m CPU / 128Mi memory; limits are 1 CPU / 512Mi. Routing needs
 configuration snippets for iframe header handling, so snippet annotations and

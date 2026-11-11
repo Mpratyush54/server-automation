@@ -9,6 +9,7 @@ import { startOperationWorker } from './operation-worker';
 import { startTelemetryConsumer } from './telemetry-queue';
 import { startAlerting } from './alerting';
 import { startSyntheticsScheduler } from './synthetic-scheduler';
+import { ORIGINS_SYNC_JOB, syncTelemetryOrigins } from './telemetry-origins';
 import { startErrorRetention } from './error-retention';
 import { startLokiRetentionReconcile } from './loki-retention';
 
@@ -27,6 +28,7 @@ import { startLokiRetentionReconcile } from './loki-retention';
  * | telemetry-consumer | leader loop (Redis Streams consumer group) | 1 s (#49) |
  * | alerting-*      | leader loop (see lib/alerting.ts) | 1 s .. 5 min (#43) |
  * | synthetics-runner / -retention / -reconcile | leader loop | 5 s / hourly / 10 min (#42) |
+ * | telemetry-origins-sync | leader loop (+ debounced on change) | 5 min, 5 s after gain |
  * | error-retention | leader loop              | hourly: error_events past the project's errors retention (#47) |
  * | loki-retention-reconcile | leader loop (full profile) | 10 min: per-project logs retention -> Loki runtime overrides (#47) |
  *
@@ -68,6 +70,13 @@ export function startBackgroundWork(): void {
   startErrorRetention();
   startLokiRetentionReconcile();
   startStorageHealth();
+  // Faro CORS allow-list (monitoring/telemetry-origins); also triggered on change.
+  registerLeaderJob({
+    name: ORIGINS_SYNC_JOB,
+    intervalMs: 5 * 60 * 1000,
+    initialDelayMs: 5_000,
+    run: async () => ((await syncTelemetryOrigins()) === 'disabled' ? 'skipped' : undefined),
+  });
 
   leadership.start();
   installReleaseOnShutdown();
