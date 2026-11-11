@@ -490,33 +490,49 @@ func upgradeHealth() error {
 	if e != nil {
 		return e
 	}
-	urls := upgradeHealthURLs(installed != "")
-	for _, url := range urls {
-		script := `(async()=>{const r=await fetch(process.argv[1],{signal:AbortSignal.timeout(15000)});if(r.status!==200)process.exit(1)})().catch(()=>process.exit(1))`
+	for _, probe := range upgradeHealthProbes(installed != "") {
 		var last error
 		for i := 0; i < 12; i++ {
-			_, last = uk("-n", "platform", "exec", "deploy/platform-api", "-c", "api", "--", "node", "-e", script, url)
+			_, last = uk("-n", "platform", "exec", "deploy/platform-api", "-c", "api", "--", "node", "-e", healthProbeScript, probe.URL, probe.On404)
 			if last == nil {
 				break
 			}
 			time.Sleep(5 * time.Second)
 		}
 		if last != nil {
-			return fmt.Errorf("endpoint %s: %w", url, last)
+			return fmt.Errorf("endpoint %s: %w", probe.URL, last)
 		}
 	}
 	return nil
 }
 
-// upgradeHealthURLs lists the in-cluster endpoints that must answer 200 after an
-// upgrade (and after a rollback). Argo CD is served under a root path
-// (/argocd), so its "/" is 404; /healthz answers regardless of the root path.
-func upgradeHealthURLs(argoInstalled bool) []string {
-	urls := []string{"http://platform-api.platform.svc.cluster.local:3000/api/health/ready", "http://platform-portal.platform.svc.cluster.local", "http://platform-api.platform.svc.cluster.local:3000/api/oauth/.well-known/openid-configuration"}
-	if argoInstalled {
-		urls = append(urls, "http://argocd-server.argocd.svc.cluster.local/healthz")
+// healthProbe is one in-cluster endpoint that must answer 200 after an upgrade
+// and after a rollback. On404 handles endpoints an older release lacks (the
+// rollback target, e.g. v1.2.0): "" means 404 fails, "skip" accepts it, and a
+// URL is probed instead (and must answer 200).
+type healthProbe struct{ URL, On404 string }
+
+// healthProbeScript runs inside the API container (node is always there):
+// argv[1] = URL, argv[2] = On404.
+const healthProbeScript = `(async()=>{const get=u=>fetch(u,{signal:AbortSignal.timeout(15000)});let r=await get(process.argv[1]);const f=process.argv[2]||"";if(r.status===404&&f==="skip")return;if(r.status===404&&f)r=await get(f);if(r.status!==200){console.error(r.url+" answered "+r.status);process.exit(1)}})().catch(e=>{console.error(String(e));process.exit(1)})`
+
+const apiInternal = "http://platform-api.platform.svc.cluster.local:3000"
+
+// upgradeHealthProbes lists the gate endpoints. /api/health/schema proves the
+// database schema matches the API (a rolled-back schema with dropped columns
+// passes /api/health/ready but fails every project query). Argo CD is served
+// under a root path (/argocd), so its "/" is 404; /healthz answers regardless.
+func upgradeHealthProbes(argoInstalled bool) []healthProbe {
+	probes := []healthProbe{
+		{URL: apiInternal + "/api/health/ready", On404: apiInternal + "/api/health"},
+		{URL: apiInternal + "/api/health/schema", On404: "skip"},
+		{URL: "http://platform-portal.platform.svc.cluster.local"},
+		{URL: apiInternal + "/api/oauth/.well-known/openid-configuration"},
 	}
-	return urls
+	if argoInstalled {
+		probes = append(probes, healthProbe{URL: "http://argocd-server.argocd.svc.cluster.local/healthz"})
+	}
+	return probes
 }
 
 func saveUpgradeHistory(r upgrade.Record) error {
