@@ -39,3 +39,14 @@ func TestHardeningConfiguration(t *testing.T) {
 		}
 	}
 }
+
+func TestSkipHardeningEnvironment(t *testing.T) {
+	oldPath := envFilePath
+	envFilePath = filepath.Join(t.TempDir(), "absent.env")
+	defer func() { envFilePath = oldPath }()
+	t.Setenv("PLATFORM_HARDEN", "")
+	t.Setenv("SKIP_HARDENING", "true")
+	if !Load().SkipHardening {
+		t.Fatal("SKIP_HARDENING=true ignored")
+	}
+}
