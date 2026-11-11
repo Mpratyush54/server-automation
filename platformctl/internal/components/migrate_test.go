@@ -18,6 +18,7 @@ kubectl() {
  case "$*" in
   "-n platform get job "*"{.status.succeeded}/{.status.failed}"*) printf '%s' "${JOB_STATE:-1/}" ;;
   "-n platform get job "*"{.status.succeeded}"*) printf '%s' "${ALREADY:-}" ;;
+  "-n platform get deployment platform-api "*) printf '%s' "${CURRENT:-}" ;;
   "-n platform get configmap "*) printf '%s' "${TEMPLATE-$TPL}" ;;
   "-n platform delete job "*) echo deleted >> "$APPLIED.deletes" ;;
   "-n platform logs "*) echo "migration error detail" ;;
@@ -62,13 +63,36 @@ func TestRunAPIMigrationsRendersAndWaitsForJob(t *testing.T) {
 	}
 }
 
-func TestRunAPIMigrationsSkipsReleaseAlreadyMigrated(t *testing.T) {
-	out, manifest, err := runMigrateScript(t, "ALREADY=1")
+// The periodic auto-update tick skips the Job only when nothing changed: the
+// API already runs this image and its Job succeeded.
+func TestRunAPIMigrationsCronSkipsNoOpTick(t *testing.T) {
+	out, manifest, err := runMigrateScript(t, "ALREADY=1 CURRENT=ghcr.io/test/platform-api@sha256:abc")
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
 	if manifest != "" {
-		t.Fatal("re-ran a Job that already succeeded for this image")
+		t.Fatal("re-ran the Job on a no-op auto-update tick")
+	}
+}
+
+// Regression (rollback to v1.2.0, then upgrade again): the v1.2.0 API dropped
+// the new columns on boot, but the Job for the target image had succeeded
+// before, so "migrations already applied" skipped the repair and the upgrade
+// reported success with a broken schema.
+func TestRunAPIMigrationsRerunsAfterRollback(t *testing.T) {
+	for name, env := range map[string]string{
+		"upgrade/provision always run": "ALREADY=1 CURRENT=ghcr.io/test/platform-api@sha256:abc MIGRATE_FORCE=1",
+		"api runs another image":       "ALREADY=1 CURRENT=ghcr.io/test/platform-api@sha256:old",
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, manifest, err := runMigrateScript(t, env)
+			if err != nil {
+				t.Fatalf("%v: %s", err, out)
+			}
+			if !strings.Contains(manifest, "kind: Job") {
+				t.Fatalf("migration Job not re-run: %s", out)
+			}
+		})
 	}
 }
 
