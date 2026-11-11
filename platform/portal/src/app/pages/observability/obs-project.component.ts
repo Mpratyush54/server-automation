@@ -36,7 +36,7 @@ const SINCE_SECONDS: Record<string, number> = { '15m': 900, '1h': 3600, '6h': 21
   standalone: true,
   imports: [CommonModule, FormsModule, RouterModule, ObsLineChartComponent, ObsTraceViewComponent, ObsLogsComponent, ObsServiceMapComponent, ObsFlamegraphComponent],
   styleUrls: ['./obs-theme.css'],
-  styles: [`:host { padding: 24px; } h1 { margin: 0; font-size: 1.5rem; } .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; } .back { font-size: 0.85rem; } .search { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: end; } .search label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--obs-muted); } textarea.obs-input { width: 100%; box-sizing: border-box; min-height: 48px; }`],
+  styles: [`h1 { margin: 0; } .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; } .back { font-size: 0.85rem; } .search { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: end; } .search label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--obs-muted); } textarea.obs-input { width: 100%; box-sizing: border-box; min-height: 48px; }`],
   templateUrl: './obs-project.component.html',
 })
 export class ObsProjectComponent implements OnInit, OnDestroy {

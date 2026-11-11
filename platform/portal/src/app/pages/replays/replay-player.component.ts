@@ -48,7 +48,7 @@ const CONCURRENCY = 4;
   styleUrls: ['../../../../node_modules/rrweb-player/dist/style.css'],
   styles: [`
     app-replay-player { display: block; padding: 24px; color: #e4e4e7; }
-    app-replay-player h1 { font-size: 20px; margin: 8px 0 4px; }
+    app-replay-player h1 { margin: 8px 0 4px; overflow-wrap: anywhere; }
     app-replay-player .muted { color: #a1a1aa; font-size: 13px; }
     app-replay-player .layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; margin-top: 16px; }
     app-replay-player .stage { flex: 1 1 720px; min-width: 320px; }
@@ -69,7 +69,7 @@ const CONCURRENCY = 4;
   template: `
     <a class="btn" [routerLink]="['/projects', projectId, 'replays']">&larr; Sessions</a>
     @if (detail; as d) {
-      <h1>Session {{ d.session.session_id }}</h1>
+      <h1 class="page-title">Session {{ d.session.session_id }}</h1>
       <p class="muted">
         {{ d.session.started_at | date:'medium' }} · {{ duration(d.session.duration_ms) }} · {{ d.session.pages.length }} page(s)
         · {{ browser(d.session.user_agent) }} · user {{ d.session.user_id || 'anonymous' }}

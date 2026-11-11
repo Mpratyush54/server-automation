@@ -15,11 +15,11 @@ const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown
   standalone: true,
   imports: [CommonModule, FormsModule, RouterModule],
   styleUrls: ['./obs-theme.css'],
-  styles: [`:host { padding: 24px; } h1 { margin: 0 0 4px; font-size: 1.5rem; } .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; } th button { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 0; }`],
+  styles: [`h1 { margin: 0 0 4px; } .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; } th button { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 0; }`],
   template: `
     <div class="head">
       <div>
-        <h1>Observability</h1>
+        <h1 class="page-title">Observability</h1>
         <p class="obs-muted" style="margin:0">Health, traffic, errors and latency across {{ scope === 'all' ? 'all projects' : 'your projects' }}.</p>
       </div>
       <div class="obs-row">

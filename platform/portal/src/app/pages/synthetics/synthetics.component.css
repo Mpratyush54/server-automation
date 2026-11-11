@@ -1,5 +1,4 @@
 .synth-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
-.synth-head h1 { margin: 4px 0; }
 .back { font-size: 0.9em; }
 .muted { color: var(--text-muted, #888); }
 .head-actions { display: flex; gap: 8px; flex-wrap: wrap; }

@@ -13,7 +13,6 @@ import { browserLabel, formatDuration, listParams, ReplayFilters, ReplaySessionR
   imports: [FormsModule, RouterLink, DatePipe],
   styles: [`
     :host { display: block; padding: 24px; color: #e4e4e7; }
-    h1 { font-size: 22px; margin: 0 0 4px; }
     .muted { color: #a1a1aa; font-size: 13px; }
     form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin: 16px 0; }
     label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #a1a1aa; }
@@ -31,7 +30,7 @@ import { browserLabel, formatDuration, listParams, ReplayFilters, ReplaySessionR
   `],
   template: `
     <a class="btn" [routerLink]="['/projects', projectId]">&larr; Project</a>
-    <h1>Session replays</h1>
+    <h1 class="page-title">Session replays</h1>
     <p class="muted">Recorded with inputs masked. Replays are kept for the project's replay retention and every view is audited.</p>
 
     @if (!enabled && loaded) {
