@@ -108,6 +108,29 @@ describe('replay chunk validation', () => {
     expect(() => parseReplayChunk(many, { ...limits, maxEvents: 100 }, NOW)).toThrow(expect.objectContaining({ status: 413 }));
   });
 
+  // Regression (#40 Playwright): a session whose only chunk is the final one (sent on page hide)
+  // started on its LAST page because `page` (the page when the chunk was cut) was put first.
+  it('derives pages in visit order from Meta hrefs and navigation markers, not the current page first', () => {
+    const t0 = NOW - 60_000;
+    const evs = [
+      { type: 4, timestamp: t0, data: { href: 'https://app.example.test/?utm=x', width: 1, height: 1 } },
+      { type: 2, timestamp: t0 + 1, data: { node: SNAPSHOT_NODE, initialOffset: { top: 0, left: 0 } } },
+      // out of timestamp order on purpose: sorted by time
+      { type: 5, timestamp: t0 + 900, data: { tag: 'navigation', payload: { path: '/checkout', route: '/checkout' } } },
+      { type: 5, timestamp: t0 + 400, data: { tag: 'navigation', payload: { path: '/orders/42', route: '/orders/:id' } } },
+      { type: 5, timestamp: t0 + 500, data: { tag: 'network', payload: { url: 'https://api.test/x' } } },
+      { type: 3, timestamp: t0 + 950, data: { source: 1 } },
+    ];
+    const c = parseReplayChunk(gz(envelope({ page: '/checkout', pages: ['/', '/orders/42', '/checkout'] }, evs)), limits, NOW);
+    expect(c.pages).toEqual(['/', '/orders/42', '/checkout']);
+    expect(c.page).toBe('/checkout');
+    // without the SDK list, the events alone give the order; `page` comes last
+    const bare = parseReplayChunk(gz(envelope({ page: '/checkout', pages: undefined }, evs)), limits, NOW);
+    expect(bare.pages).toEqual(['/', '/orders/42', '/checkout']);
+    const noEvents = parseReplayChunk(gz(envelope({ page: '/b', pages: ['/a', '/b'] }, events({ full: false }))), limits, NOW);
+    expect(noEvents.pages).toEqual(['/a', '/b']);
+  });
+
   it('normalises page keys (no query, no e-mails) and route names', () => {
     expect(normalizePagePath('https://u:p@x.test/a/b?q=1#h')).toBe('/a/b');
     expect(normalizePagePath('/users/jane@example.com/x')).toBe('/users/[EMAIL]/x');
@@ -142,12 +165,66 @@ describe('replay storage, metadata and lifecycle', () => {
     expect(out!.session.error_count).toBe(2);
     expect(out!.session.network_error_count).toBe(1);
     expect(out!.session.first_page).toBe('/orders/42'); // from seq 0 even though it arrived second
-    expect(out!.session.pages).toEqual(['/checkout', '/orders/42']);
+    expect(out!.session.pages).toEqual(['/orders/42', '/checkout']); // visit order: seq 0 started first
     expect(out!.session.trace_ids).toEqual(['a'.repeat(32)]);
     expect(out!.session.user_agent).toBe('Mozilla/5.0 test');
     expect(out!.session.duration_ms).toBe(30_000 + 12);
     expect(out!.chunks.map((c: any) => c.seq)).toEqual([0, 1]); // ordered by seq
     expect(out!.errors).toEqual([]); // #41 tables absent: still plays
+  });
+
+  it('a session whose only chunk is the final one starts on its first page', async () => {
+    const t0 = NOW - 20_000;
+    const finalChunk = [
+      { type: 4, timestamp: t0, data: { href: 'https://app.example.test/', width: 1, height: 1 } },
+      { type: 2, timestamp: t0 + 1, data: { node: SNAPSHOT_NODE, initialOffset: { top: 0, left: 0 } } },
+      { type: 5, timestamp: t0 + 300, data: { tag: 'navigation', payload: { path: '/checkout' } } },
+    ];
+    const db = new FakeReplayDb();
+    const s = new MemoryReplayStore();
+    await store(db, s, { seq: 0, page: '/checkout', pages: ['/', '/checkout'] }, finalChunk);
+    expect(db.sessions[0].first_page).toBe('/');
+    expect(db.sessions[0].pages).toEqual(['/', '/checkout']);
+    await store(db, s, { seq: 1, page: '/done', pages: ['/done'] }, events({ t0: NOW - 10_000, page: '/done' }));
+    expect(db.sessions[0].pages).toEqual(['/', '/checkout', '/done']); // later chunk appends
+
+    // seq 0 arriving after seq 1 still provides the first page and goes first
+    const db2 = new FakeReplayDb();
+    await store(db2, s, { seq: 1, page: '/done', pages: ['/done'] }, events({ t0: NOW - 10_000, page: '/done' }));
+    await store(db2, s, { seq: 0, page: '/checkout', pages: ['/', '/checkout'] }, finalChunk);
+    expect(db2.sessions[0].first_page).toBe('/');
+    expect(db2.sessions[0].pages).toEqual(['/', '/checkout', '/done']);
+  });
+
+  // Concurrent chunks of one session (keepalive re-send on page hide, parallel tabs of the
+  // uploader) used to read pages/counters, await the object write and then overwrite them.
+  it('stores concurrent chunks of one session atomically: no lost pages, limits hold, duplicates once', async () => {
+    const db = new FakeReplayDb();
+    const s = new MemoryReplayStore();
+    const pages = ['/a', '/b', '/c', '/d', '/e', '/f'];
+    const results = await Promise.allSettled(pages.map((pg, i) => {
+      const body = gz(envelope({ seq: i, page: pg, pages: [pg] }, events({ t0: NOW - 60_000 + i * 1000, page: pg })));
+      return storeReplayChunk(db as any, s, { projectId: P, chunk: parseReplayChunk(body, limits, NOW), body, limits: { ...limits, maxChunksPerSession: 4 } });
+    }));
+    expect(results.filter((r) => r.status === 'fulfilled').length).toBe(4);
+    const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    expect(rejected.map((r) => r.reason.status)).toEqual([413, 413]);
+    const row = db.sessions[0];
+    expect(row.chunk_count).toBe(4);
+    expect(db.chunks.length).toBe(4);
+    const stored = db.chunks.map((c) => pages[c.seq]);
+    expect([...row.pages].sort()).toEqual([...stored].sort()); // every stored chunk's page kept
+    expect(row.pages).toEqual(pages.filter((pg) => stored.includes(pg))); // in visit order
+    expect(db.transactions).toBeGreaterThanOrEqual(4);
+
+    const db2 = new FakeReplayDb();
+    const twice = await Promise.all([0, 0, 0].map(() => {
+      const body = gz(envelope({ seq: 0 }));
+      return storeReplayChunk(db2 as any, s, { projectId: P, chunk: parseReplayChunk(body, limits, NOW), body, limits });
+    }));
+    expect(twice.filter((r) => r.duplicate).length).toBe(2);
+    expect(db2.sessions[0].chunk_count).toBe(1);
+    expect(db2.sessions[0].bytes).toBe(db2.chunks[0].bytes);
   });
 
   it('acknowledges duplicate chunks once and enforces per-session limits', async () => {

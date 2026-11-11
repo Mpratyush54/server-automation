@@ -15,8 +15,13 @@ type Queryable = Pick<DataSource, 'query'>;
 const MAX_PAGES = 50;
 const MAX_TRACES = 200;
 
+function toList(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+}
+
+/** Ordered union: `current` first, then the new values of `extra`, capped at `max`. */
 function mergeList(current: unknown, extra: string[], max: number): string[] {
-  const out = Array.isArray(current) ? current.filter((v) => typeof v === 'string') : [];
+  const out = toList(current).slice(0, max);
   for (const v of extra) if (!out.includes(v) && out.length < max) out.push(v);
   return out;
 }
@@ -26,13 +31,48 @@ export interface StoreChunkResult {
   objectKey: string;
 }
 
+/** `query` plus a transaction (TypeORM DataSource; FakeReplayDb in unit tests). */
+export type TxQueryable = Queryable & { transaction<T>(run: (tx: Queryable) => Promise<T>): Promise<T> };
+
+interface SessionState {
+  row: { chunk_count: unknown; bytes: unknown; pages: unknown; trace_ids: unknown; first_page: string | null; started_at: unknown } | undefined;
+  duplicate: boolean;
+}
+
+async function readSessionState(q: Queryable, projectId: string, chunk: ParsedReplayChunk): Promise<SessionState> {
+  const existing = await q.query(
+    `SELECT chunk_count, bytes, pages, trace_ids, first_page, started_at FROM replay_sessions WHERE project_id = $1 AND session_id = $2`,
+    [projectId, chunk.sessionId],
+  );
+  const row = existing?.[0];
+  if (!row) return { row, duplicate: false };
+  const dup = await q.query(
+    `SELECT 1 FROM replay_chunks WHERE project_id = $1 AND session_id = $2 AND seq = $3`,
+    [projectId, chunk.sessionId, chunk.seq],
+  );
+  return { row, duplicate: !!dup?.length };
+}
+
+function checkLimits(state: SessionState, body: Buffer, limits: ReplayLimits): void {
+  if (!state.row) return;
+  if (Number(state.row.chunk_count) >= limits.maxChunksPerSession) throw new ReplayValidationError('session chunk limit reached', 413);
+  if (Number(state.row.bytes) + body.length > limits.maxSessionBytes) throw new ReplayValidationError('session size limit reached', 413);
+}
+
 /**
  * Persist one validated chunk: object first (`replays/<project>/<session>/<seq>.json.gz`),
  * then the session aggregate and the chunk row. Re-sent chunks (same seq) are
  * acknowledged without being stored twice. Enforces per-session chunk/byte limits.
+ *
+ * Concurrency: chunks of one session can arrive in parallel (the SDK re-sends the
+ * in-flight chunk with keepalive on page hide). The duplicate check, limit checks,
+ * page/trace merge and counter updates run in one transaction under a per-session
+ * advisory lock, so parallel chunks cannot drop pages or slip past the limits. A
+ * cheap unlocked pre-check skips the object write for most duplicates and
+ * over-limit chunks; the locked check is the authoritative one.
  */
 export async function storeReplayChunk(
-  ds: Queryable,
+  ds: TxQueryable,
   store: ReplayObjectStore,
   opts: {
     projectId: string;
@@ -45,71 +85,74 @@ export async function storeReplayChunk(
 ): Promise<StoreChunkResult> {
   const { projectId, chunk, body, limits } = opts;
   const objectKey = replayChunkKey(projectId, chunk.sessionId, chunk.seq);
-  const existing = await ds.query(
-    `SELECT chunk_count, bytes, pages, trace_ids FROM replay_sessions WHERE project_id = $1 AND session_id = $2`,
-    [projectId, chunk.sessionId],
-  );
-  const row = existing?.[0];
-  if (row) {
-    const dup = await ds.query(
-      `SELECT 1 FROM replay_chunks WHERE project_id = $1 AND session_id = $2 AND seq = $3`,
-      [projectId, chunk.sessionId, chunk.seq],
-    );
-    if (dup?.length) return { duplicate: true, objectKey };
-    if (Number(row.chunk_count) >= limits.maxChunksPerSession) throw new ReplayValidationError('session chunk limit reached', 413);
-    if (Number(row.bytes) + body.length > limits.maxSessionBytes) throw new ReplayValidationError('session size limit reached', 413);
-  }
+  const pre = await readSessionState(ds, projectId, chunk);
+  if (pre.duplicate) return { duplicate: true, objectKey };
+  checkLimits(pre, body, limits);
 
+  // Same key for a re-sent seq, so a racing duplicate overwrites identical bytes.
   await store.put(objectKey, body);
 
-  const pages = mergeList(row?.pages, chunk.pages, MAX_PAGES);
-  const traces = mergeList(row?.trace_ids, chunk.traceIds, MAX_TRACES);
   const environment = opts.environment || chunk.environment;
   const userAgent = opts.userAgent ? String(opts.userAgent).slice(0, 512) : null;
-  await ds.query(
-    `INSERT INTO replay_sessions (project_id, session_id, environment, release, app, user_id, subject_id, user_agent,
-        first_page, pages, trace_ids, started_at, ended_at, duration_ms, chunk_count, event_count, bytes,
-        error_count, network_error_count, viewport_width, viewport_height)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,$13,
-        GREATEST(0, (EXTRACT(EPOCH FROM ($13::timestamptz - $12::timestamptz)) * 1000)::bigint),
-        1,$14,$15,$16,$17,$18,$19)
-      ON CONFLICT (project_id, session_id) DO UPDATE SET
-        environment = COALESCE(replay_sessions.environment, EXCLUDED.environment),
-        release = COALESCE(EXCLUDED.release, replay_sessions.release),
-        app = COALESCE(replay_sessions.app, EXCLUDED.app),
-        user_id = COALESCE(EXCLUDED.user_id, replay_sessions.user_id),
-        subject_id = COALESCE(replay_sessions.subject_id, EXCLUDED.subject_id),
-        user_agent = COALESCE(replay_sessions.user_agent, EXCLUDED.user_agent),
-        first_page = CASE WHEN $20 = 0 THEN EXCLUDED.first_page ELSE COALESCE(replay_sessions.first_page, EXCLUDED.first_page) END,
-        pages = EXCLUDED.pages,
-        trace_ids = EXCLUDED.trace_ids,
-        started_at = LEAST(replay_sessions.started_at, EXCLUDED.started_at),
-        ended_at = GREATEST(replay_sessions.ended_at, EXCLUDED.ended_at),
-        duration_ms = GREATEST(0, (EXTRACT(EPOCH FROM (GREATEST(replay_sessions.ended_at, EXCLUDED.ended_at)
-          - LEAST(replay_sessions.started_at, EXCLUDED.started_at))) * 1000)::bigint),
-        chunk_count = replay_sessions.chunk_count + 1,
-        event_count = replay_sessions.event_count + EXCLUDED.event_count,
-        bytes = replay_sessions.bytes + EXCLUDED.bytes,
-        error_count = replay_sessions.error_count + EXCLUDED.error_count,
-        network_error_count = replay_sessions.network_error_count + EXCLUDED.network_error_count,
-        viewport_width = COALESCE(replay_sessions.viewport_width, EXCLUDED.viewport_width),
-        viewport_height = COALESCE(replay_sessions.viewport_height, EXCLUDED.viewport_height),
-        updated_at = now()`,
-    [
-      projectId, chunk.sessionId, environment, chunk.release, chunk.app, chunk.userId, chunk.subjectId, userAgent,
-      chunk.page || chunk.pages[0] || null, JSON.stringify(pages), JSON.stringify(traces),
-      chunk.startedAt.toISOString(), chunk.endedAt.toISOString(),
-      chunk.eventCount, body.length, chunk.errors, chunk.networkErrors,
-      chunk.viewport?.w ?? null, chunk.viewport?.h ?? null, chunk.seq,
-    ],
-  );
-  await ds.query(
-    `INSERT INTO replay_chunks (project_id, session_id, seq, object_key, bytes, event_count, started_at, ended_at, snapshot_pages)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb) ON CONFLICT (project_id, session_id, seq) DO NOTHING`,
-    [projectId, chunk.sessionId, chunk.seq, objectKey, body.length, chunk.eventCount,
-      chunk.startedAt.toISOString(), chunk.endedAt.toISOString(), JSON.stringify(chunk.snapshotPages)],
-  );
-  return { duplicate: false, objectKey };
+  return ds.transaction(async (tx) => {
+    await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [JSON.stringify(['replay-session', projectId, chunk.sessionId])]);
+    const state = await readSessionState(tx, projectId, chunk);
+    if (state.duplicate) return { duplicate: true, objectKey };
+    // Lost a race to the limit: the object stays under the session prefix and is deleted with the session.
+    checkLimits(state, body, limits);
+    const row = state.row;
+    // A chunk that started before everything stored so far (out-of-order arrival)
+    // provides the session's first page and goes first in the page list.
+    const earlier = !row || chunk.seq === 0 || chunk.startedAt.getTime() < new Date(row.started_at as string).getTime();
+    const chunkFirst = chunk.pages[0] || chunk.page || null;
+    const firstPage = earlier ? chunkFirst ?? row?.first_page ?? null : row.first_page ?? chunkFirst;
+    const pages = earlier && row ? mergeList(chunk.pages, toList(row.pages), MAX_PAGES) : mergeList(row?.pages, chunk.pages, MAX_PAGES);
+    const traces = mergeList(row?.trace_ids, chunk.traceIds, MAX_TRACES);
+    await tx.query(
+      `INSERT INTO replay_sessions (project_id, session_id, environment, release, app, user_id, subject_id, user_agent,
+          first_page, pages, trace_ids, started_at, ended_at, duration_ms, chunk_count, event_count, bytes,
+          error_count, network_error_count, viewport_width, viewport_height)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,$13,
+          GREATEST(0, (EXTRACT(EPOCH FROM ($13::timestamptz - $12::timestamptz)) * 1000)::bigint),
+          1,$14,$15,$16,$17,$18,$19)
+        ON CONFLICT (project_id, session_id) DO UPDATE SET
+          environment = COALESCE(replay_sessions.environment, EXCLUDED.environment),
+          release = COALESCE(EXCLUDED.release, replay_sessions.release),
+          app = COALESCE(replay_sessions.app, EXCLUDED.app),
+          user_id = COALESCE(EXCLUDED.user_id, replay_sessions.user_id),
+          subject_id = COALESCE(replay_sessions.subject_id, EXCLUDED.subject_id),
+          user_agent = COALESCE(replay_sessions.user_agent, EXCLUDED.user_agent),
+          first_page = EXCLUDED.first_page,
+          pages = EXCLUDED.pages,
+          trace_ids = EXCLUDED.trace_ids,
+          started_at = LEAST(replay_sessions.started_at, EXCLUDED.started_at),
+          ended_at = GREATEST(replay_sessions.ended_at, EXCLUDED.ended_at),
+          duration_ms = GREATEST(0, (EXTRACT(EPOCH FROM (GREATEST(replay_sessions.ended_at, EXCLUDED.ended_at)
+            - LEAST(replay_sessions.started_at, EXCLUDED.started_at))) * 1000)::bigint),
+          chunk_count = replay_sessions.chunk_count + 1,
+          event_count = replay_sessions.event_count + EXCLUDED.event_count,
+          bytes = replay_sessions.bytes + EXCLUDED.bytes,
+          error_count = replay_sessions.error_count + EXCLUDED.error_count,
+          network_error_count = replay_sessions.network_error_count + EXCLUDED.network_error_count,
+          viewport_width = COALESCE(replay_sessions.viewport_width, EXCLUDED.viewport_width),
+          viewport_height = COALESCE(replay_sessions.viewport_height, EXCLUDED.viewport_height),
+          updated_at = now()`,
+      [
+        projectId, chunk.sessionId, environment, chunk.release, chunk.app, chunk.userId, chunk.subjectId, userAgent,
+        firstPage, JSON.stringify(pages), JSON.stringify(traces),
+        chunk.startedAt.toISOString(), chunk.endedAt.toISOString(),
+        chunk.eventCount, body.length, chunk.errors, chunk.networkErrors,
+        chunk.viewport?.w ?? null, chunk.viewport?.h ?? null,
+      ],
+    );
+    await tx.query(
+      `INSERT INTO replay_chunks (project_id, session_id, seq, object_key, bytes, event_count, started_at, ended_at, snapshot_pages)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb) ON CONFLICT (project_id, session_id, seq) DO NOTHING`,
+      [projectId, chunk.sessionId, chunk.seq, objectKey, body.length, chunk.eventCount,
+        chunk.startedAt.toISOString(), chunk.endedAt.toISOString(), JSON.stringify(chunk.snapshotPages)],
+    );
+    return { duplicate: false, objectKey };
+  });
 }
 
 export interface ReplayListFilters {
