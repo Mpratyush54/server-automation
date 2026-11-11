@@ -13,7 +13,9 @@
  *   GET    /projects/:projectId/synthetics/results/:resultId/screenshot  failure screenshot (viewer+)
  *   GET    /projects/:projectId/synthetics/status-feed      public-safe aggregate for status pages (#46)
  *
- * Browser runner (CronJob pods; per-check HMAC run token, no user session):
+ * Browser runner (CronJob pods; per-check HMAC run token, no user session). Served by
+ * `runnerRouter`, which the API also exposes alone on SYNTHETICS_RUNNER_PORT (3001) so the
+ * runner pods' NetworkPolicy can allow that port and nothing else of the API:
  *   GET    /synthetics/runner/checks/:checkId               definition + decrypted secrets for the runner
  *   POST   /synthetics/runner/checks/:checkId/results       report a run (+ optional PNG screenshot)
  *
@@ -45,6 +47,8 @@ import { getUploadStore } from '../lib/upload-store';
 import type { RunOutcome, StepOutcome } from '../lib/synthetic-runner';
 
 const router = Router();
+/** Runner endpoints only (token per check). Mounted on the main API and on the runner port. */
+export const runnerRouter = Router();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const MAX_SCREENSHOT_BYTES = 2 * 1024 * 1024;
 
@@ -119,7 +123,7 @@ router.get('/projects/:projectId/synthetics/checks', expressAuthenticate, async 
   try {
     const ds = await getDb();
     const checks = await ds.getRepository(SyntheticCheck).find({ where: { projectId: req.params.projectId }, order: { name: 'ASC' } });
-    res.json({ checks: checks.map(publicCheck) });
+    res.json({ checks: checks.map((c) => publicCheck(c)) });
   } catch (err) {
     handleError(res, err, 'list checks');
   }
@@ -326,7 +330,7 @@ async function runnerCheck(req: Request, res: Response): Promise<SyntheticCheck 
   return check;
 }
 
-router.get('/synthetics/runner/checks/:checkId', async (req: Request, res: Response) => {
+runnerRouter.get('/synthetics/runner/checks/:checkId', async (req: Request, res: Response) => {
   try {
     const check = await runnerCheck(req, res);
     if (!check) return;
@@ -341,11 +345,19 @@ router.get('/synthetics/runner/checks/:checkId', async (req: Request, res: Respo
       steps: check.config.steps || [],
       secrets: decryptCheckSecrets(check.secretsEncrypted),
       allowedIngressHosts: projectIngressHosts(await ds.getRepository(Environment).find({ where: { projectId: check.projectId } })),
+      // The runner refuses these names (and their subdomains) except allowedIngressHosts.
+      blockedDomains: runnerBlockedDomains(),
     });
   } catch (err) {
     handleError(res, err, 'load runner check');
   }
 });
+
+/** The platform's own domain: browser checks never reach it, except the project's env hosts. */
+export function runnerBlockedDomains(env: NodeJS.ProcessEnv = process.env): string[] {
+  const d = String(env.DOMAIN || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/[/:].*$/, '');
+  return d ? [d] : [];
+}
 
 const STEP_STATUSES = new Set(['pass', 'fail', 'skipped']);
 
@@ -375,7 +387,7 @@ export function runnerOutcome(body: any, secrets: Record<string, string>): RunOu
   };
 }
 
-router.post('/synthetics/runner/checks/:checkId/results', async (req: Request, res: Response) => {
+runnerRouter.post('/synthetics/runner/checks/:checkId/results', async (req: Request, res: Response) => {
   try {
     const check = await runnerCheck(req, res);
     if (!check) return;
@@ -407,5 +419,7 @@ router.post('/synthetics/runner/checks/:checkId/results', async (req: Request, r
     handleError(res, err, 'record runner result');
   }
 });
+
+router.use(runnerRouter);
 
 export default router;

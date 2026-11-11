@@ -91,3 +91,30 @@ it('project ingress hosts: active environment hosts only, never the platform dom
     { domain: null },
   ], 'platform.example.com')).toEqual(['app.example.com']);
 });
+
+describe('templates', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { SYNTHETIC_TEMPLATES } = require('../../../src/lib/synthetic-templates');
+  const smoke = SYNTHETIC_TEMPLATES.find((t: any) => t.id === 'browser-smoke');
+
+  it('browser-smoke is target-agnostic: no heading/text assumptions, waits for the body', () => {
+    const steps = smoke.check.config.steps;
+    expect(steps[0]).toEqual({ action: 'goto', url: '' });
+    expect(steps.some((s: any) => s.selector === 'h1' || s.action === 'assert_text')).toBe(false);
+    expect(steps).toContainEqual({ action: 'wait_for', selector: 'body' });
+    expect(smoke.requiredFields).toEqual(['config.steps[0].url']);
+  });
+
+  it('browser-smoke cannot be saved until the user enters a URL, then validates', () => {
+    const body = { name: smoke.name, ...smoke.check };
+    bad(body, /steps\[0\]\.url is required/);
+    const withUrl = { ...body, config: { steps: [{ action: 'goto', url: 'https://shop.customer.example/' }, ...body.config.steps.slice(1)] } };
+    expect(validateCheckInput(withUrl, []).config.steps).toHaveLength(2);
+  });
+
+  it('every other template validates as shipped', () => {
+    for (const t of SYNTHETIC_TEMPLATES.filter((x: any) => !x.requiredFields)) {
+      expect(() => validateCheckInput({ name: t.name, ...t.check }, [])).not.toThrow();
+    }
+  });
+});

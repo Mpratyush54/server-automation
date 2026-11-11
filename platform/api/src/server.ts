@@ -10,6 +10,7 @@ import { getDb } from './config/database';
 import { connectMongo } from './config/mongoose';
 import { User } from './entities/User';
 import apiRouter from './routes/api';
+import { buildSyntheticsRunnerApp, syntheticsRunnerPort } from './synthetics-runner-app';
 import { startBackgroundWork, stopBackgroundWork } from './lib/background';
 import { configuredAdminEmail, ensureAdminUser } from './lib/seed-admin';
 import { createLimiterStore } from './lib/rate-limit-store';
@@ -221,11 +222,17 @@ async function bootstrap() {
     const server = app.listen(port, () => {
       console.log(`[server] Platform Express backend running on http://localhost:${port}`);
     });
+    // Runner-only listener for browser synthetic checks (see synthetics-runner-app.ts).
+    const runnerPort = syntheticsRunnerPort();
+    const runnerServer = runnerPort && String(runnerPort) !== String(port)
+      ? buildSyntheticsRunnerApp().listen(runnerPort, () => console.log(`[server] Synthetics runner endpoints on port ${runnerPort}`))
+      : null;
     installGracefulShutdown(server, {
       // Release the leader Lease first and wait for it: if the process exits
       // before the release lands, peers wait for the lease to expire (#19).
       preDrain: [{ name: 'released leadership', run: stopBackgroundWork }],
       closers: [
+        ...(runnerServer ? [{ name: 'synthetics runner listener', close: () => new Promise<void>((resolve) => { runnerServer.close(() => resolve()); }) }] : []),
         { name: 'redis', close: closeRedis },
         { name: 'postgres', close: () => (ds.isInitialized ? ds.destroy() : undefined) },
         { name: 'mongodb', close: () => import('mongoose').then((m) => m.default.disconnect()) },
