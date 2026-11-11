@@ -1,8 +1,8 @@
 # Telemetry privacy, retention and GDPR delete
 
 Issue #47. Server-side scrubbing is authoritative; SDK client masking is defence-in-depth.
-Session replay storage and the portal player ship in #40 — this document defines the
-consent hooks, object-key contract and retention defaults that #40 must honour.
+Session replay (#40) stores chunks in MinIO with metadata in Postgres and honours the
+consent hooks, object-key layout and retention described here.
 
 ## Data inventory
 
@@ -14,8 +14,9 @@ consent hooks, object-key contract and retention defaults that #40 must honour.
 | Prometheus | Metrics | project/env dimensions from Tempo generators | 30d | Prometheus retention |
 | MongoDB `logs` | API-path SDK logs | `projectId`, optional `userId` / `sessionId` | TTL index 30d | GDPR delete + TTL |
 | MongoDB `errors` | Aggregated error docs | `projectId`, optional `userId` / `sessionId` | Not pruned automatically | GDPR delete |
-| Postgres `error_events` / `error_issues` | Error tracking (#41) events and issues | `project_id`, event payload | Project `errors` setting, default 90d (`error-retention` job) | Retention job; project delete |
-| MinIO `replays` | Session replay chunks (#40) | `replays/{projectId}/{sessionId}/{seq}.json.gz` | per-project retention job (default 7 d) + 365 d lifecycle backstop | GDPR delete + lifecycle |
+| Postgres `error_events` / `error_issues` | Error tracking (#41) events and issues | `project_id`, event payload | Project `errors` setting, default 90d (`error-retention` job) | Retention job; GDPR delete (events); project delete |
+| MinIO `replays` + Postgres `replay_sessions` / `replay_chunks` | Session replay chunks (#40) | `replays/{projectId}/{sessionId}/{seq}.json.gz`; `user_id` / `subject_id` on `replay_sessions` | Project `replays` setting, default 7d (`replay-retention` job) + 365d bucket lifecycle backstop | GDPR delete; retention job; lifecycle |
+| Postgres `heatmap_*` | Click / scroll-depth aggregates per page, viewport and day | `project_id` only (anonymous: no user, session or IP) | Project `heatmaps` setting, default 90d (`heatmaps-retention` job) | Retention job; project delete (nothing to remove for GDPR) |
 | Postgres `telemetry_consents` | Subject consent | `project_id`, `subject_id`, `session_id` | Until withdrawn / GDPR delete | GDPR delete |
 | Postgres `telemetry_privacy_settings` | Per-project rules | `project_id` | N/A (config) | Project delete (manual) |
 | Postgres `audit_logs` | `privacy.*` actions | actor user id; email only as SHA-256 | Platform audit retention | Not purged by GDPR delete |
@@ -57,9 +58,9 @@ defaults, and runs GDPR delete.
 | `PUT /api/projects/:id/privacy/consent-defaults` | Project devops | Default when no row exists |
 
 Helpers: `isReplayAllowed`, `resolveConsent`, `upsertConsent` in
-`platform/api/src/lib/privacy-consent.ts`. Replay upload must use object keys under
-`replays/{projectId}/user/{userId}/` or `replays/{projectId}/session/{sessionId}/`
-so GDPR delete can remove them.
+`platform/api/src/lib/privacy-consent.ts`. Replay chunks are stored under
+`replays/{projectId}/{sessionId}/`; the session's `user_id` / `subject_id` are kept in
+`replay_sessions`, so GDPR delete and retention can find and remove every session of a subject.
 
 Default consent: **replay off**, analytics on.
 
@@ -69,12 +70,13 @@ Default consent: **replay off**, analytics on.
 |------|---------|----------------------|-------------|
 | errors | 90 days | yes | API leader job `error-retention` (hourly) on Postgres `error_events` |
 | logs | `TELEMETRY_RETENTION_DAYS` (30) | yes | Loki compactor; the API writes the override into Loki's runtime overrides (full profile) |
-| replays | 7 days | stored | MinIO lifecycle rule on `replays/` (7 days); per-project values are for the replay store (#40) |
+| replays | 7 days | yes | API leader job `replay-retention` (hourly): sessions that ended before the cutoff (objects + `replay_sessions` rows); a 365-day bucket lifecycle rule on `replays/` removes orphaned objects |
+| heatmaps | 90 days | yes | API leader job `heatmaps-retention` (hourly) on the Postgres `heatmap_*` aggregates |
 | traces | `TELEMETRY_RETENTION_DAYS` (30) | **no** | Tempo compactor, cluster-wide |
 | profiles | `TELEMETRY_RETENTION_DAYS` (30) | **no** | Pyroscope, cluster-wide |
 
-`PUT /api/projects/:id/privacy/retention` takes integers 1..365 for `logs`, `replays` and
-`errors`; `null` clears an override (back to the default); omitted keys are unchanged. Tempo and
+`PUT /api/projects/:id/privacy/retention` takes integers 1..365 for `logs`, `replays`,
+`errors` and `heatmaps`; `null` clears an override (back to the default); omitted keys are unchanged. Tempo and
 Pyroscope run single-tenant, so a per-project period cannot be enforced: `traces` / `profiles`
 values are rejected with `400` (send `null` or omit them) and older stored values are ignored.
 `GET /api/projects/:id/privacy` returns the effective `retentionDays`, the stored
@@ -99,8 +101,9 @@ ConfigMap, and immediately after a project's logs setting changes. Other keys in
 are kept. RBAC: `get`/`update` on that one ConfigMap (Role `platform-alerting`, full profile only).
 Set `LOKI_RETENTION_OVERRIDES=disabled` to stop managing it. Without the full profile there is no
 Loki and only the stored value changes. Earlier versions shipped static `retention_stream` rules on a
-`telemetry_type` label; Alloy streams do not carry it and errors / replays are not stored in Loki,
-so those rules were removed.
+`telemetry_type` label; Alloy streams do not carry it, error events live in Postgres and replays in
+MinIO, so those rules were removed. (API-forwarded SDK lines at level `ERROR` still carry
+`telemetry_type="errors"`; they are log lines and follow the logs retention.)
 
 ## GDPR delete
 
@@ -109,7 +112,9 @@ so those rules were removed.
 1. Mongo `logs` / `errors` matching `userId` / `sessionId` (fields or message)
 2. Postgres `error_events` (error tracking) whose payload carries the `userId` / `sessionId`
 3. `telemetry_consents` rows + Redis consent cache
-4. MinIO objects under the replay prefixes (when `REPLAYS_*` / MinIO env is set)
+4. Session replays of the subject (sessions found through `replay_sessions` by user / subject id,
+   or the given session): MinIO objects under `replays/{projectId}/{sessionId}/` and the rows
+   (when `REPLAYS_*` / MinIO env is set)
 5. One Loki delete request per identifier: `{platform_project_id="<project>"} |= "<userId>"`
    (and the same for `sessionId`), from the start of the data
 6. Audit `privacy.gdpr_delete` with counts, warnings and optional `emailHash`

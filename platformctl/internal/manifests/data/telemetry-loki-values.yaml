@@ -37,6 +37,10 @@ loki:
     ingestion_rate_mb: 2
     ingestion_burst_size_mb: 4
     max_query_parallelism: 2
+  # Runtime overrides file (chart ConfigMap `loki-runtime`, key runtime-config.yaml). Left
+  # empty here: the platform API owns overrides.fake.retention_stream (lib/loki-retention.ts)
+  # and re-applies it after a helm upgrade resets the ConfigMap.
+  runtimeConfig: {}
   compactor:
     retention_enabled: true
     delete_request_store: s3
