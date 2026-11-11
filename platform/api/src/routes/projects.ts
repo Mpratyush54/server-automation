@@ -309,7 +309,8 @@ router.post('/projects/:projectId/tokens', expressAuthenticate, expressRequireRo
   }
 });
 
-router.delete('/projects/:projectId/tokens/:tokenId', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+// Same platform roles as token creation: whoever can mint an SDK token can revoke it.
+router.delete('/projects/:projectId/tokens/:tokenId', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
   try {
     const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, ProjectAccessRole.DEVOPS);
     if (access.ok === false) return res.status(access.status).json({ error: access.error });
