@@ -62,8 +62,10 @@ The rows contain no personal data and cannot be linked to a person, so a GDPR su
 cascades. Retention uses the #47 per-type setting `heatmaps` (default 90 days, Project →
 Privacy → Retention); the leader runs `heatmaps-retention` hourly.
 
-Limits (env on the API): `HEATMAP_IP_RATE_LIMIT` (300 requests/min per IP),
-`HEATMAP_PROJECT_RATE_LIMIT` (3000 requests/min per project), `HEATMAP_MAX_PAGES` (1000
+Limits (env on the API): `HEATMAP_IP_RATE_LIMIT` (6000 requests/min per IP — high on
+purpose, because many visitors can share one NAT address; the ingress also caps one IP at
+100 requests/s), `HEATMAP_PROJECT_RATE_LIMIT` (30000 requests/min per project; writes are
+buffered, see below), `HEATMAP_MAX_PAGES` (1000
 distinct pages per project; events for further new pages are dropped). Batches are limited
 to 64 KiB, 500 events and 20 distinct pages.
 

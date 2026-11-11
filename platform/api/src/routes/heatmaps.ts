@@ -35,10 +35,14 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
-/** Per client IP, before authentication (cheap rejection of floods / token guessing). */
+/**
+ * Per client IP, before authentication (cheap rejection of floods / token guessing).
+ * Generous by default: thousands of visitors can share one office or carrier NAT address,
+ * and the ingress already caps a single IP at 100 req/s. Per-project limits bound DB load.
+ */
 const ipLimiter = rateLimit({
   windowMs: 60_000,
-  limit: envInt('HEATMAP_IP_RATE_LIMIT', 300),
+  limit: envInt('HEATMAP_IP_RATE_LIMIT', 6000),
   store: createLimiterStore('heatmap-ip'),
   standardHeaders: true,
   legacyHeaders: false,
@@ -47,7 +51,7 @@ const ipLimiter = rateLimit({
 /** Per project (from the credential), after authentication: bounds DB write load per project. */
 const projectLimiter = rateLimit({
   windowMs: 60_000,
-  limit: envInt('HEATMAP_PROJECT_RATE_LIMIT', 3000),
+  limit: envInt('HEATMAP_PROJECT_RATE_LIMIT', 30000),
   store: createLimiterStore('heatmap-project'),
   keyGenerator: (req) => `p:${(req as AuthenticatedRequest).projectId}`,
   standardHeaders: true,
