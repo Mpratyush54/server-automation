@@ -42,7 +42,10 @@ func TestComponentPlanBringsOldInstallToProfile(t *testing.T) {
 			t.Errorf("%s: %+v", s, p[s])
 		}
 	}
-	for _, s := range []string{"platform", "seed", "minio", "routing", "argocd", "auto-update"} {
+	if p["platform"].Action != "re-apply" || p["storage-scoped"].Action != "re-apply" {
+		t.Errorf("platform configuration not re-applied: %+v %+v", p["platform"], p["storage-scoped"])
+	}
+	for _, s := range []string{"seed", "minio", "routing", "argocd", "auto-update"} {
 		if _, ok := p[s]; ok {
 			t.Errorf("%s re-run by the component reconcile", s)
 		}

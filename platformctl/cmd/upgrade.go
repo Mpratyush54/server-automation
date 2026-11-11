@@ -172,6 +172,7 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		if e != nil {
 			return e
 		}
+		components.UsePlatformImages(api, portal)
 		e = applyComponentPlan(cfg, r.Tag, compPlan)
 		if e == nil {
 			e = finishUpgradeInstallation()
@@ -279,6 +280,9 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		Save:   saveUpgradeHistory,
 		Commit: func() error { return persistUpgradedTag(cfg.ImageTag) },
 	}
+	backupContainerUploads(cmd.ErrOrStderr(), os.Getenv("PLATFORMCTL_BACKUP_ROOT"))
+	// Re-applying the platform step after the transaction keeps these exact images.
+	components.UsePlatformImages(api, portal)
 	// RBAC the new API needs (alerting, synthetics) exists before it starts,
 	// so its first requests do not fail with 403 until the telemetry step runs.
 	if e = components.ApplyFullProfileAPIAccess(cfg); e != nil {

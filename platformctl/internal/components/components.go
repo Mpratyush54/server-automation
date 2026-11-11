@@ -751,6 +751,15 @@ func deploymentReadyCheck(ns, name string) string {
 	return fmt.Sprintf(`k3s kubectl get deployment -n %s %s -o jsonpath='{.status.readyReplicas} {.spec.replicas}' 2>/dev/null | awk '$1 != "" && $1 == $2 { ok = 1 } END { exit !ok }'`, ns, name)
 }
 
+// platformImages, when set, are the exact (digest-pinned) images InstallPlatform
+// deploys instead of <registry>/<name>:<tag>. upgrade sets them to the images
+// its transaction verified, so re-applying the platform step afterwards keeps
+// digest pins (needed for the next rollback) and does not change the images.
+var platformImages struct{ api, portal string }
+
+// UsePlatformImages pins the images InstallPlatform deploys in this process.
+func UsePlatformImages(api, portal string) { platformImages.api, platformImages.portal = api, portal }
+
 func InstallPlatform(cfg *config.Config) error {
 	// Always reconcile security settings on existing installations as well.
 	color.Cyan("\n  ■ Deploying Platform API + Portal...")
@@ -764,6 +773,9 @@ func InstallPlatform(cfg *config.Config) error {
 
 	apiImg := fmt.Sprintf("%s/platform-api:%s", cfg.ImageRegistry, cfg.ImageTag)
 	portalImg := fmt.Sprintf("%s/platform-portal:%s", cfg.ImageRegistry, cfg.ImageTag)
+	if platformImages.api != "" && platformImages.portal != "" {
+		apiImg, portalImg = platformImages.api, platformImages.portal
+	}
 
 	// Credentials (incl. ones the API rotated at runtime) → platform-credentials,
 	// OIDC signing key → platform-oidc-signing-key; /etc/platform becomes a

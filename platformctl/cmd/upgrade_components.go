@@ -34,6 +34,10 @@ var stepMarker = map[string]string{"ingress-nginx": "ingress", "ingress": "", "s
 // changes in a release reach existing installs; Helm/kubectl only restart
 // workloads whose rendered templates changed.
 var reappliedSteps = map[string]string{
+	// Secrets, RBAC and Deployment spec of the target release (the transaction
+	// only swaps images); same digest-pinned images, migrations re-run.
+	"platform":       "platform-api and platform-portal (rolling, one pod at a time) when the Deployment spec or configuration changed",
+	"storage-scoped": "platform-api, only when scoped MinIO credentials are created",
 	"ingress-nginx": "ingress-nginx controller, only if its values changed",
 	"telemetry":     "Grafana/Prometheus/Loki/Tempo/Pyroscope/Alloy/profile-ingest, only where values changed",
 	"synthetics":    "none (namespace, policies and runner config)",
