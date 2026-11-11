@@ -1,11 +1,13 @@
 import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 export interface StatusPageSettings {
-  id: string;
+  /** null until the first save creates the page. */
+  id: string | null;
   projectId: string;
   slug: string;
   title: string;
@@ -20,6 +22,8 @@ export interface StatusIncidentView {
   id: string;
   title: string;
   status: string;
+  /** upcoming (maintenance before its window) | active | resolved (incl. window ended). */
+  phase?: 'upcoming' | 'active' | 'resolved';
   impact: string;
   isMaintenance: boolean;
   updates: Array<{ at: string; status: string; body: string }>;
@@ -43,6 +47,29 @@ export function componentLabel(c: SyntheticCheckOption): string {
   return String(c.config?.statusPage?.name || c.name);
 }
 
+/** Lifecycle statuses an operator can post as an update. */
+export const UPDATE_STATUSES = ['investigating', 'identified', 'monitoring', 'resolved'] as const;
+
+/** `<input type="datetime-local">` value (local time) → ISO string, or null when empty/invalid. */
+export function localInputToIso(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** Editor label for where an incident sits on the timeline. */
+export function phaseLabel(inc: Pick<StatusIncidentView, 'phase' | 'status' | 'isMaintenance'>): string {
+  if (inc.phase === 'upcoming') return 'upcoming';
+  if (inc.phase === 'resolved' && inc.status !== 'resolved') return 'completed (window ended)';
+  if (inc.isMaintenance && inc.phase === 'active' && inc.status !== 'resolved') return 'in progress';
+  return '';
+}
+
+/** Whether the editor should still offer updates/resolve for this incident. */
+export function isOpenIncident(inc: Pick<StatusIncidentView, 'status'>): boolean {
+  return inc.status !== 'resolved';
+}
+
 /**
  * Project status-page editor (#46): publish toggle, slug/branding, component
  * selection (mapped to synthetic checks), and incident / maintenance notes.
@@ -51,7 +78,7 @@ export function componentLabel(c: SyntheticCheckOption): string {
 @Component({
   selector: 'app-status-page-editor',
   standalone: true,
-  imports: [FormsModule, RouterLink],
+  imports: [DatePipe, FormsModule, RouterLink],
   templateUrl: './status-page-editor.component.html',
   styleUrl: './status-page-editor.component.css',
 })
@@ -77,9 +104,17 @@ export class StatusPageEditorComponent implements OnInit {
     status: 'investigating',
     isMaintenance: false,
     body: '',
+    scheduledStart: '',
+    scheduledEnd: '',
   };
 
+  /** Per-incident "post update" drafts, keyed by incident id. */
+  updateDrafts: Record<string, { status: string; body: string }> = {};
+
   readonly componentLabel = componentLabel;
+  readonly phaseLabel = phaseLabel;
+  readonly isOpenIncident = isOpenIncident;
+  readonly updateStatuses = UPDATE_STATUSES;
 
   async ngOnInit(): Promise<void> {
     this.projectId = this.route.snapshot.paramMap.get('id') || '';
@@ -104,6 +139,14 @@ export class StatusPageEditorComponent implements OnInit {
       };
       this.checks = checksRes.checks || [];
       this.incidents = incidentsRes.incidents || [];
+      const drafts: Record<string, { status: string; body: string }> = {};
+      for (const inc of this.incidents) {
+        drafts[inc.id] = this.updateDrafts[inc.id] || {
+          status: inc.status === 'scheduled' ? 'monitoring' : inc.status,
+          body: '',
+        };
+      }
+      this.updateDrafts = drafts;
       this.useAllComponents = page.componentIds === null;
       this.selectedIds = new Set(page.componentIds || []);
     } catch (err: any) {
@@ -155,6 +198,14 @@ export class StatusPageEditorComponent implements OnInit {
 
   async createIncident(): Promise<void> {
     if (!this.draftIncident.title.trim()) return;
+    const maint = this.draftIncident.isMaintenance;
+    const scheduledStart = maint ? localInputToIso(this.draftIncident.scheduledStart) : null;
+    const scheduledEnd = maint ? localInputToIso(this.draftIncident.scheduledEnd) : null;
+    if (scheduledStart && scheduledEnd && scheduledEnd <= scheduledStart) {
+      this.error = 'Maintenance end must be after its start';
+      this.cdr.markForCheck();
+      return;
+    }
     this.busy = true;
     this.error = '';
     try {
@@ -162,12 +213,17 @@ export class StatusPageEditorComponent implements OnInit {
         this.http.post(`/api/projects/${this.projectId}/status-page/incidents`, {
           title: this.draftIncident.title.trim(),
           impact: this.draftIncident.impact,
-          status: this.draftIncident.isMaintenance ? 'scheduled' : this.draftIncident.status,
-          isMaintenance: this.draftIncident.isMaintenance,
+          status: maint ? 'scheduled' : this.draftIncident.status,
+          isMaintenance: maint,
           body: this.draftIncident.body.trim() || undefined,
+          scheduledStart: scheduledStart || undefined,
+          scheduledEnd: scheduledEnd || undefined,
         }),
       );
-      this.draftIncident = { title: '', impact: 'minor', status: 'investigating', isMaintenance: false, body: '' };
+      this.draftIncident = {
+        title: '', impact: 'minor', status: 'investigating', isMaintenance: false, body: '',
+        scheduledStart: '', scheduledEnd: '',
+      };
       await this.reload();
       this.notice = 'Incident created';
     } catch (err: any) {
@@ -191,6 +247,29 @@ export class StatusPageEditorComponent implements OnInit {
       await this.reload();
     } catch (err: any) {
       this.error = err?.error?.error || err?.message || 'Failed to resolve';
+    } finally {
+      this.busy = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  async postUpdate(inc: StatusIncidentView): Promise<void> {
+    const draft = this.updateDrafts[inc.id];
+    if (!draft || !draft.body.trim()) return;
+    this.busy = true;
+    this.error = '';
+    try {
+      await firstValueFrom(
+        this.http.post(`/api/projects/${this.projectId}/status-page/incidents/${inc.id}/updates`, {
+          status: draft.status,
+          body: draft.body.trim(),
+        }),
+      );
+      delete this.updateDrafts[inc.id];
+      await this.reload();
+      this.notice = 'Update posted';
+    } catch (err: any) {
+      this.error = err?.error?.error || err?.message || 'Failed to post update';
     } finally {
       this.busy = false;
       this.cdr.markForCheck();
