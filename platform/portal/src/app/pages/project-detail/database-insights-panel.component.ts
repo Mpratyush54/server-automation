@@ -64,9 +64,15 @@ import { firstValueFrom } from 'rxjs';
       <div class="dbi-engine">
         <h3>PostgreSQL connections during this visit</h3>
         <p class="dbi-muted">30-second samples, up to 30 minutes. Switching environments clears samples.</p>
-        <svg viewBox="0 0 600 100" role="img" aria-label="PostgreSQL connection trend" class="dbi-trend">
-          <polyline [attr.points]="points" fill="none" stroke="currentColor" stroke-width="2" />
-        </svg>
+        @if (samples.length >= 2) {
+          <svg viewBox="0 0 600 100" role="img" aria-label="PostgreSQL connection trend" class="dbi-trend">
+            <polyline [attr.points]="points" fill="none" stroke="currentColor" stroke-width="2" />
+          </svg>
+        } @else {
+          <p class="dbi-trend-empty" data-testid="dbi-trend-empty">
+            {{ samples.length ? 'Collecting samples — the trend appears after the next sample.' : 'No connection samples yet. The trend appears once PostgreSQL reports connections.' }}
+          </p>
+        }
       </div>
     }
   </section>`,
@@ -79,6 +85,7 @@ import { firstValueFrom } from 'rxjs';
     .dbi-env select { min-width: 160px; }
     .dbi-msg { color: var(--text-secondary); }
     .dbi-muted { color: var(--text-muted); font-size: 0.82rem; margin: 4px 0 8px; }
+    .dbi-trend-empty { color: var(--text-muted); font-size: 0.82rem; border: 1px dashed #333; border-radius: 6px; padding: 20px; text-align: center; margin: 0; }
     .dbi-engine { border-top: 1px solid #222; padding-top: 16px; margin-top: 16px; }
     .dbi-engine-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
     .dbi-engine h3 { margin: 0; font-size: 0.95rem; }

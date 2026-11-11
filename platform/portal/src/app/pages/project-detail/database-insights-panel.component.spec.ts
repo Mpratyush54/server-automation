@@ -37,4 +37,19 @@ describe('DatabaseInsightsPanelComponent', () => {
     expect(c.bytes(8091327)).toBe('7.7 MB');
     fixture.destroy();
   });
+  it('shows a placeholder instead of an empty chart until two samples exist', () => {
+    const fixture = TestBed.createComponent(DatabaseInsightsPanelComponent);
+    const c = fixture.componentInstance;
+    c.data = { enabled: true, collectedAt: new Date().toISOString(), postgres: { status: 'ready', connections: 3, topQueries: [] }, mongo: { status: 'ready', slowQueries: [] }, redis: { status: 'ready', keyCount: 0 }, slowMs: 100 };
+    c.samples = [];
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="dbi-trend-empty"]')).toBeTruthy();
+    expect(el.querySelector('svg.dbi-trend')).toBeNull();
+    c.samples = [3, 4];
+    fixture.detectChanges();
+    expect(el.querySelector('[data-testid="dbi-trend-empty"]')).toBeNull();
+    expect(el.querySelector('svg.dbi-trend')).toBeTruthy();
+    fixture.destroy();
+  });
 });
