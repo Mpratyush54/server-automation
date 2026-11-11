@@ -610,10 +610,21 @@ router.get('/projects/:projectId/observability/traces/:traceId', expressAuthenti
   res.json({ traceId: traceId.toLowerCase(), spans, hiddenSpans, truncated });
 }));
 
+/**
+ * Pyroscope refuses queries longer than its max_query_length (1d by default), and
+ * parseRange rounds outwards, so a 24h request arrives as 24h0m1s. Clamp profile
+ * queries to just under a day, keeping the end.
+ */
+export const PYROSCOPE_MAX_RANGE_SECONDS = 86_400 - 60;
+export function profileRange(range: TimeRange): TimeRange {
+  if (range.end - range.start <= PYROSCOPE_MAX_RANGE_SECONDS) return range;
+  return { start: range.end - PYROSCOPE_MAX_RANGE_SECONDS, end: range.end, clamped: true };
+}
+
 router.get('/projects/:projectId/observability/profiles/meta', expressAuthenticate, limiter, wrap(async (req, res) => {
   const projectId = await projectFor(req, res);
   if (!projectId || disabled(res)) return;
-  const range = rangeOf(req, 86_400);
+  const range = profileRange(rangeOf(req, 86_400));
   const matcher = promSelector(projectId);
   const values = (name: string) => obsRequest({
     backend: 'pyroscope',
@@ -630,7 +641,7 @@ router.get('/projects/:projectId/observability/profiles/meta', expressAuthentica
 router.get('/projects/:projectId/observability/query/pyroscope', expressAuthenticate, limiter, wrap(async (req, res) => {
   const projectId = await projectFor(req, res);
   if (!projectId || disabled(res)) return;
-  const range = rangeOf(req);
+  const range = profileRange(rangeOf(req));
   const profileType = q(req, 'profileType') || DEFAULT_PROFILE_TYPES[0];
   const query = pyroscopeQuery(projectId, profileType, labelValue(q(req, 'service'), 'service'), labelValue(q(req, 'environment'), 'environment'));
   const maxNodes = intParam(req, 'maxNodes', 1024, 8192);

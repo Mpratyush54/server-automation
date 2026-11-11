@@ -281,6 +281,20 @@ describe('Pyroscope proxy', () => {
     const res = await as(request(app()).get(`${base}/profiles/meta`), DEV_A);
     expect(res.body).toMatchObject({ services: ['api'], profileTypes: ['process_cpu:cpu:nanoseconds:cpu:nanoseconds'] });
     for (const c of calls) expect((c.req.body as any).matchers).toEqual([`{${OWN}}`]);
+    // Pyroscope's max_query_length is 1d: the default 24h window must stay under it.
+    for (const c of calls) {
+      const body = c.req.body as any;
+      expect(body.end - body.start).toBeLessThan(86_400_000);
+    }
+  });
+
+  it('clamps flamegraph ranges longer than a day under the Pyroscope limit', async () => {
+    responder = () => ({ status: 200, data: { flamebearer: null, metadata: null } });
+    const res = await as(request(app()).get(`${base}/query/pyroscope`).query({ since: '7d' }), DEV_A);
+    expect(res.status).toBe(200);
+    expect(res.body.range.clamped).toBe(true);
+    const p = calls[0].req.params as any;
+    expect(Number(p.until) - Number(p.from)).toBeLessThan(86_400);
   });
 });
 
