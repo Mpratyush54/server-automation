@@ -123,7 +123,7 @@ router.get('/projects/:projectId/synthetics/checks', expressAuthenticate, async 
   try {
     const ds = await getDb();
     const checks = await ds.getRepository(SyntheticCheck).find({ where: { projectId: req.params.projectId }, order: { name: 'ASC' } });
-    res.json({ checks: checks.map(publicCheck) });
+    res.json({ checks: checks.map((c) => publicCheck(c)) });
   } catch (err) {
     handleError(res, err, 'list checks');
   }

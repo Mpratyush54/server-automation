@@ -1,9 +1,9 @@
-import crypto from 'crypto';
 import type { SyntheticCheck } from '../entities/SyntheticCheck';
 import { referencedSecrets } from './synthetic-assertions';
 import { runnerToken } from './synthetic-checks';
 import { loadKubeConfig } from './kube-config';
 import { resolveTarget } from './synthetic-ssrf';
+import { cronSchedule } from './synthetic-cron';
 
 /**
  * Kubernetes resources for synthetic checks (#42, full profile).
@@ -96,21 +96,7 @@ export function renderProbe(check: Pick<SyntheticCheck, 'id' | 'projectId' | 'ty
   };
 }
 
-/** Cron schedule for a browser interval, offset by a per-check minute so jobs spread out. */
-export function cronSchedule(intervalSeconds: number, checkId: string): string {
-  const minutes = Math.max(5, Math.round(intervalSeconds / 60));
-  const hash = crypto.createHash('sha256').update(checkId).digest();
-  if (minutes < 60) {
-    const offset = hash[0] % minutes;
-    const list: number[] = [];
-    for (let m = offset; m < 60; m += minutes) list.push(m);
-    return `${list.join(',')} * * * *`;
-  }
-  const hours = Math.max(1, Math.round(minutes / 60));
-  const minute = hash[0] % 60;
-  if (hours >= 24) return `${minute} ${hash[1] % 24} * * *`;
-  return `${minute} ${hash[1] % hours}-23/${hours} * * *`;
-}
+export { cronSchedule };
 
 export interface BrowserRuntime {
   enabled: boolean;
@@ -145,6 +131,8 @@ export function renderBrowserCronJob(
     metadata: { name, namespace: SYNTHETICS_NAMESPACE, labels },
     spec: {
       schedule: cronSchedule(check.intervalSeconds, check.id),
+      // Fixed zone so the API can show the next run (synthetic-cron.ts).
+      timeZone: 'Etc/UTC',
       suspend: !check.enabled,
       concurrencyPolicy: 'Forbid',
       startingDeadlineSeconds: 120,
