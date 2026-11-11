@@ -53,7 +53,7 @@ function describe(step) {
   return [step.action, step.selector, step.action === 'goto' ? step.url : null].filter(Boolean).join(' ').slice(0, 100);
 }
 
-async function runStep(page, step, secrets, timeout) {
+export async function runStep(page, step, secrets, timeout) {
   switch (step.action) {
     case 'goto': {
       const res = await page.goto(render(step.url, secrets), { timeout, waitUntil: 'load' });
@@ -71,11 +71,12 @@ async function runStep(page, step, secrets, timeout) {
     }
     case 'assert_title': {
       const title = await page.title();
-      if (!title.includes(step.value)) throw new Error(`title "${title.slice(0, 100)}" does not contain "${step.value}"`);
+      // Messages carry the template, never the rendered value (it may contain a secret).
+      if (!title.includes(render(step.value, secrets))) throw new Error(`title "${title.slice(0, 100)}" does not contain "${step.value}"`);
       return;
     }
     case 'assert_url': {
-      if (!page.url().includes(step.value)) throw new Error(`URL does not contain "${step.value}"`);
+      if (!page.url().includes(render(step.value, secrets))) throw new Error(`URL does not contain "${step.value}"`);
       return;
     }
     case 'wait': return page.waitForTimeout(Math.min(30_000, Number(step.ms) || 0));

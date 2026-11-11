@@ -1,7 +1,7 @@
 // node --test runner.test.mjs (no browser needed: only the pure helpers are tested).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { render, requestAllowed } from './runner.mjs';
+import { render, requestAllowed, runStep } from './runner.mjs';
 
 test('blocks internal and non-HTTP requests', () => {
   for (const url of [
@@ -20,4 +20,15 @@ test('allows public pages, inline resources and the project ingress host', () =>
 
 test('renders secrets and leaves unknown names untouched', () => {
   assert.equal(render('pw={{secret.PW}} x={{secret.NOPE}}', { PW: 'p1' }), 'pw=p1 x={{secret.NOPE}}');
+});
+
+test('assert_title and assert_url substitute secrets like goto/fill/assert_text', async () => {
+  const page = { title: async () => 'Welcome, acme-user', url: () => 'https://app.example.com/t/acme-tenant/home' };
+  const secrets = { USER: 'acme-user', TENANT: 'acme-tenant' };
+  await runStep(page, { action: 'assert_title', value: 'Welcome, {{secret.USER}}' }, secrets, 1000);
+  await runStep(page, { action: 'assert_url', value: '/t/{{secret.TENANT}}/' }, secrets, 1000);
+  await assert.rejects(runStep(page, { action: 'assert_title', value: '{{secret.TENANT}}' }, secrets, 1000), (err) => {
+    assert.ok(!err.message.includes('acme-tenant'), 'failure message must not contain the rendered secret');
+    return true;
+  });
 });
