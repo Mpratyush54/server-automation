@@ -37,5 +37,5 @@ function useBugReporter() {
 
 | Component | Purpose |
 |---|---|
-| [`BugReporterWidget`](BugReporterWidget.md) | Floating bug-report button + drawer with screenshot / console / network capture |
+| [`BugReporterWidget`](BugReporterWidget.md) | Floating bug-report button + drawer with redacted console / network capture and opt-in screenshot |
 | [`ErrorBoundary`](ErrorBoundary.md) | Catches React render errors and auto-submits a bug report |

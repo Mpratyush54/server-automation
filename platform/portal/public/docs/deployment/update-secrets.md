@@ -1,6 +1,6 @@
 # Updating Kubernetes Secrets
 
-Platform stores all environment configuration in a Kubernetes secret named `platform-env` in the `caps` namespace (or `platform-env` in the `platform` namespace, depending on the deployment version). This document covers how to update those secrets and propagate changes.
+Platform stores all environment configuration in a Kubernetes secret named `caps-platform-env` in the `caps` namespace (or `platform-env` in the `platform` namespace, depending on the deployment version). This document covers how to update those secrets and propagate changes.
 
 ---
 
@@ -10,9 +10,54 @@ The relevant secrets in the cluster:
 
 | Secret | Namespace | Purpose |
 |---|---|---|
-| `platform-env` | `platform` | Platform API environment variables |
+| `platform-env` | `platform` | Platform API configuration (non-credential: domain, OIDC clients, JWT/encryption keys, webhook secret) |
+| `platform-credentials` | `platform` | Admin and datastore credentials (`ADMIN_PASSWORD`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `MONGODB_URI`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`) plus rotation write-ahead copies (`*_PREV`, `*_NEXT`) |
+| `platform-oidc-signing-key` | `platform` | Built-in OIDC provider signing key (`private.pem`, `kid`; `previous.pem` / `previous-kid` after a rotation) |
 | `argocd-secret` | `argocd` | ArgoCD admin password |
 | `platform-tls` | `platform` | Let's Encrypt TLS certificate |
+
+### Where configuration lives (no host state)
+
+The API reads configuration **only** from these Secrets. The Deployment has no
+`hostPath` volume, so the pod can be rescheduled to any node and several
+replicas sign OIDC tokens with the same key. The API may `get`/`update`
+only the Secrets named above (RBAC `resourceNames`).
+
+`/etc/platform/.env`, `/etc/platform/credentials/` and
+`/etc/platform/oidc-signing-key.pem` are an operator-side, root-only
+**break-glass copy**. platformctl refreshes it on `provision`, `update`,
+`repair` and `recover`, and `recover` uses it when the cluster is unhealthy.
+Rotating secrets from the portal updates the Secrets only; the next
+`platformctl update` copies the new values back to the host.
+
+**Upgrading an existing install:** `platformctl update` (or `provision`)
+reads the live Secrets first and adopts any password rotated at runtime,
+writes `platform-credentials`, seeds `platform-oidc-signing-key` from the old
+`/etc/platform/oidc-signing-key.pem` (so existing SSO sessions stay valid),
+removes the `hostPath` from the API Deployment, and only then removes the
+credential keys from `platform-env`. No password changes. If the Secrets
+cannot be read, the update stops before writing anything.
+
+k3s runs with `secrets-encryption: true`, so these Secrets are encrypted at
+rest. Secrets written before the upgrade are encrypted the next time they are
+written; to re-encrypt everything at once run `sudo k3s secrets-encrypt reencrypt`.
+
+Rotate the OIDC signing key (admin, password login) with
+`POST /api/oauth/signing-key/rotate`. The previous key stays in JWKS until the
+next rotation, and the API restarts so every replica loads the new key.
+
+### Uploads and backups
+
+Uploaded files go to the bundled MinIO bucket `platform-uploads`; database
+backups without a configured storage provider go to the bucket
+`platform-backups`. Point either at another S3-compatible store with
+`UPLOADS_S3_ENDPOINT` / `UPLOADS_S3_ACCESS_KEY` / `UPLOADS_S3_SECRET_KEY` /
+`UPLOADS_BUCKET` and `BACKUP_S3_ENDPOINT` / `BACKUP_S3_ACCESS_KEY` /
+`BACKUP_S3_SECRET_KEY` / `BACKUP_BUCKET` in `platform-env`. Set
+`UPLOADS_S3_PUBLIC_ENDPOINT` to an externally reachable S3 URL to also return
+presigned PUT/GET URLs (`presignedUrl` from `POST /api/storage/upload-url`,
+`GET /api/storage/file/:id?presigned=1`). The local-directory adapters are for
+development only (`STORAGE_UPLOADS_BACKEND=local`, `BACKUP_STORAGE=local`).
 
 ---
 
@@ -63,7 +108,7 @@ del b64.tmp
 
 ```bash
 # Using data (base64 encoded)
-kubectl patch secret platform-env -n caps \
+kubectl patch secret caps-platform-env -n caps \
   --type merge \
   -p "$(cat patch.json)"
 ```
@@ -73,7 +118,7 @@ kubectl patch secret platform-env -n caps \
 `stringData` allows you to pass plaintext values and Kubernetes handles the encoding:
 
 ```bash
-kubectl patch secret platform-env -n caps --type merge -p '{
+kubectl patch secret caps-platform-env -n caps --type merge -p '{
   "stringData": {
     "POSTGRES_PASSWORD": "new-password-1234",
     "JWT_SECRET": "new-jwt-secret-value"
@@ -116,7 +161,7 @@ helm upgrade --install postgresql bitnami/postgresql \
 
 ---
 
-## Update `/etc/platform/.env` on Server
+## Update `/etc/caps/.env` on Server
 
 The bootstrap script generates a `.env` file on the server at `/etc/platform/.env`. You must also update this file for future re-runs of the bootstrap script:
 
