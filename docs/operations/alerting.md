@@ -50,14 +50,16 @@ error tracking, synthetics, deploys, ... ──► Redis stream plat:api:alerts:
 | `trace`    | `params.signal`: `error_rate` (%), `latency_p95` (ms), `request_rate` | from Tempo span metrics, always scoped to the project |
 | `resource` | `params.resource`: `cpu` / `memory` (% of limits) | scoped to the project's namespaces |
 
-Only platform admins and devops can create monitors; PromQL / LogQL is not rewritten, so these
-roles are trusted with cross-project queries. Trace and resource monitors are always project-scoped.
+`trace` and `resource` monitors are built and scoped to the project by the platform, so project
+devops/owners can manage them. `metric` and `log` queries are user PromQL / LogQL that is **not**
+rewritten to the project's scope, so only platform admins and devops can create them, edit them, or
+change another monitor's kind to `metric` / `log` (others get `403`).
 
 ## SLOs
 
 `sliType` `availability` (non-error share of spans), `latency` (share of spans faster than
 `params.latencyMs`, a span-metrics bucket boundary) or `ratio` (`errorQuery` / `totalQuery`, both
-using `$window`). Each SLO renders Sloth-style recording rules (`slo:sli_error:ratio_rate<window>`
+using `$window`; raw PromQL, so platform admin / devops only, like `metric` monitors). Each SLO renders Sloth-style recording rules (`slo:sli_error:ratio_rate<window>`
 for 5m, 30m, 1h, 2h, 6h, 1d, 3d and the SLO period) and two multi-window, multi-burn-rate alerts:
 
 * **page** (critical): 1h and 5m burn > 14.4, or 6h and 30m burn > 6
@@ -117,8 +119,22 @@ The Loki ruler is not enabled by the installer. To evaluate log monitors in Loki
 
 * Read (incidents, monitors, SLOs, silences, channels without secrets): project members (viewer+).
 * Acknowledge / resolve incidents: project developer+.
-* Configuration (channels, monitors, SLOs, silences, policies, schedules, test events): platform
-  admin or devops. Every change is written to the audit log (never with secret values).
+* Configuration of a project's alerting: project **devops** or **owner** (and platform admin /
+  devops, who can configure every project):
+
+  | What | Project devops / owner | Platform admin / devops |
+  |------|------------------------|-------------------------|
+  | Channels (incl. test send), escalation policies, on-call schedules, silences, test events | yes | yes |
+  | SLOs `availability` / `latency` | yes | yes |
+  | SLOs `ratio` (raw PromQL) | no | yes |
+  | Monitors `trace` / `resource` (platform-scoped) | yes | yes |
+  | Monitors `metric` / `log` (raw PromQL / LogQL), incl. editing them or switching a monitor to them | no | yes |
+  | `allowPrivateNetwork` on a channel | no | admin only |
+
+  Project devops / owners can page (in policies and schedules) only users who can see the project
+  (its members and platform admins / devops); platform admins / devops can page any user.
+* Agent tokens are read-only on alerting.
+* Every change is written to the audit log (never with secret values).
 
 ## Retention
 

@@ -75,7 +75,7 @@
         <div class="form-group"><label>Name</label><input [(ngModel)]="newMonitor.name"></div>
         <div class="form-group"><label>Kind</label>
           <select [(ngModel)]="newMonitor.kind">
-            <option value="metric">Metric (PromQL)</option><option value="log">Log (LogQL)</option>
+            @if (rawQueryAllowed) { <option value="metric">Metric (PromQL)</option><option value="log">Log (LogQL)</option> }
             <option value="trace">Trace (span metrics)</option><option value="resource">CPU / memory</option>
           </select></div>
         @if (newMonitor.kind === 'trace') {
@@ -99,6 +99,7 @@
           [placeholder]="newMonitor.kind === 'log' ? 'sum(count_over_time({service_name=&quot;web&quot;} |= &quot;error&quot; [5m]))' : 'sum(rate(http_requests_total{code=~&quot;5..&quot;}[5m]))'"></textarea></div>
       }
       <button class="btn btn-primary" (click)="createMonitor()" [disabled]="!newMonitor.name">Create monitor</button>
+      @if (!rawQueryAllowed) { <p style="font-size:0.75rem;color:var(--color-text-muted);margin-top:6px;">Custom PromQL / LogQL monitors are set up by a platform admin or devops.</p> }
     </div>
     <div class="card">
       <table>
@@ -112,7 +113,7 @@
               <td>{{ m.severity }}</td>
               <td>{{ m.state }} @if (m.lastError) { <span title="{{ m.lastError }}" style="color:#ff8a80;">!</span> }</td>
               <td>{{ m.lastValue ?? '—' }}</td>
-              <td><input type="checkbox" [checked]="m.enabled" (change)="toggleMonitor(m)"></td>
+              <td><input type="checkbox" [checked]="m.enabled" [disabled]="isRawMonitor(m) && !rawQueryAllowed" (change)="toggleMonitor(m)"></td>
               <td><button class="btn btn-danger btn-sm" (click)="deleteItem('monitors', m.id)">Delete</button></td>
             </tr>
           }
@@ -152,7 +153,7 @@
       <h3>New SLO</h3>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;">
         <div class="form-group"><label>Name</label><input [(ngModel)]="newSlo.name"></div>
-        <div class="form-group"><label>SLI</label><select [(ngModel)]="newSlo.sliType"><option value="availability">Availability (spans)</option><option value="latency">Latency (spans)</option><option value="ratio">Custom PromQL ratio</option></select></div>
+        <div class="form-group"><label>SLI</label><select [(ngModel)]="newSlo.sliType"><option value="availability">Availability (spans)</option><option value="latency">Latency (spans)</option>@if (rawQueryAllowed) { <option value="ratio">Custom PromQL ratio</option> }</select></div>
         @if (newSlo.sliType !== 'ratio') { <div class="form-group"><label>Service (optional)</label><input [(ngModel)]="newSlo.service"></div> }
         @if (newSlo.sliType === 'latency') { <div class="form-group"><label>Faster than (ms)</label><select [(ngModel)]="newSlo.latencyMs">@for (b of [64,128,256,512,1024,2048,4096]; track b) { <option [ngValue]="b">{{ b }}</option> }</select></div> }
         <div class="form-group"><label>Target %</label><input type="number" step="0.01" [(ngModel)]="newSlo.target"></div>
