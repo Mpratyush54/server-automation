@@ -168,11 +168,11 @@ describe('persistHeatmapAggregates', () => {
     expect(r).toEqual({ stored: 3, refusedPages: [] });
     const cells = db.calls.find((c) => c.sql.includes('INSERT INTO heatmap_click_cells'))!;
     expect(cells.sql).toMatch(/count = heatmap_click_cells\.count \+ EXCLUDED\.count/);
-    expect(cells.params).toEqual([PROJECT, '2026-11-10', ['/known', '/new1'], ['desktop', 'desktop'], [10, 10], [10, 10], [1, 1]]);
+    expect(cells.params).toEqual([[PROJECT, PROJECT], ['2026-11-10', '2026-11-10'], ['/known', '/new1'], ['desktop', 'desktop'], [10, 10], [10, 10], [1, 1]]);
     const targets = db.calls.find((c) => c.sql.includes('INSERT INTO heatmap_click_targets'))!;
     expect(targets.params[4]).toEqual(['a#x']);
     const scroll = db.calls.find((c) => c.sql.includes('INSERT INTO heatmap_scroll_depth'))!;
-    expect(scroll.params).toEqual([PROJECT, '2026-11-10', ['/new2'], ['desktop'], [50], [1]]);
+    expect(scroll.params).toEqual([[PROJECT], ['2026-11-10'], ['/new2'], ['desktop'], [50], [1]]);
     for (const c of db.calls) expect(JSON.stringify(c.params)).not.toMatch(/subject|session|ip/i);
   });
 

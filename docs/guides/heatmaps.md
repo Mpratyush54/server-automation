@@ -67,6 +67,22 @@ Limits (env on the API): `HEATMAP_IP_RATE_LIMIT` (300 requests/min per IP),
 distinct pages per project; events for further new pages are dropped). Batches are limited
 to 64 KiB, 500 events and 20 distinct pages.
 
+### Buffered writes
+
+To keep ingest fast under load, each API replica does not commit an upsert per request. The
+per-project page cap is checked (and new pages recorded) synchronously, so the `accepted`
+count in the response is exact; the click-cell, click-target and scroll-depth increments are
+then folded in process memory per key and written every `HEATMAP_FLUSH_MS` (default 2000 ms),
+or as soon as `HEATMAP_BUFFER_MAX_KEYS` (default 20000) distinct keys are pending, in one
+transaction with rows sorted by key. The upserts are additive (`count = count + n`), so any
+number of replicas stay correct. The buffer is flushed on graceful shutdown (SIGTERM).
+
+Trade-off: if an API process is killed hard (SIGKILL, OOM, node loss), up to one flush interval
+of that process's heatmap counts is lost. Heatmaps are statistical, so this is acceptable;
+lower `HEATMAP_FLUSH_MS` to shrink the window at the cost of more writes. Queries can lag
+ingest by up to one flush interval. A failed flush keeps the counts for the next attempt (up
+to the key cap).
+
 ## Query API (project members)
 
 - `GET /api/projects/:projectId/heatmaps/pages?from=&to=&viewport=` → `{ pages: [{ page, clicks, views }] }`

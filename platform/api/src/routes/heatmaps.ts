@@ -7,6 +7,7 @@ import { ProjectAccessRole } from '../entities/ProjectMember';
 import { createLimiterStore } from '../lib/rate-limit-store';
 import { looksLikeIngestToken, originAllowed, verifyIngestToken } from '../lib/telemetry-tokens';
 import { resolveConsent } from '../lib/privacy-consent';
+import { bufferHeatmapAggregates } from '../lib/heatmap-buffer';
 import {
   MAX_BATCH_BYTES,
   aggregateHeatmapEvents,
@@ -14,7 +15,6 @@ import {
   listHeatmapPages,
   normalizeHeatmapPage,
   parseHeatmapRange,
-  persistHeatmapAggregates,
   queryClickHeatmap,
   queryScrollHeatmap,
   validateHeatmapBatch,
@@ -99,7 +99,8 @@ router.post('/sdk/heatmap/events', ipLimiter, allowBrowserSdkToken, heatmapAuth,
     // #47 consent: per-subject record, else the project's analytics default.
     const consent = await resolveConsent(ds, { projectId, subjectId: batch.subjectId || '', sessionId: batch.sessionId });
     if (!consent.analyticsAllowed) return res.status(202).json({ accepted: 0, consent: false });
-    const { stored } = await persistHeatmapAggregates(ds, projectId, aggregateHeatmapEvents(batch.events));
+    // Page cap is enforced now; counts are buffered and flushed in batches (heatmap-buffer.ts).
+    const { stored } = await bufferHeatmapAggregates(ds, projectId, aggregateHeatmapEvents(batch.events));
     // Write-only: never return aggregates, config or project data to the browser.
     return res.status(202).json({ accepted: stored });
   } catch (err: any) {
