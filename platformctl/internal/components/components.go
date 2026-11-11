@@ -791,6 +791,8 @@ func InstallPlatform(cfg *config.Config) error {
 		"REDIS_HOST": "redis-master.databases", "REDIS_PORT": "6379",
 		// Telemetry block in /api/sdk/config (#49): on only when the full-profile backend (#37) is installed.
 		"PLATFORM_OBSERVABILITY": observabilityFlag(cfg),
+		// Global Loki/Tempo/Pyroscope retention: the API reports it as the logs/traces/profiles default.
+		"TELEMETRY_RETENTION_DAYS": cfg.TelemetryRetentionDays,
 		"MINIO_ENDPOINT": "http://minio.storage:9000",
 		"MINIO_API_ACCESS_KEY": kubeSecretValue("platform", "platform-storage", "MINIO_API_ACCESS_KEY"),
 		"MINIO_API_SECRET_KEY": kubeSecretValue("platform", "platform-storage", "MINIO_API_SECRET_KEY"),

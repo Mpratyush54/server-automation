@@ -39,3 +39,14 @@ test('CI project read grant cannot upload source maps; denied project cannot lis
   expect((await request(app).patch(`/projects/${project}/errors/${project}`).set('Authorization', 'Bearer human').send({ status: 'resolved' })).status).toBe(403);
   expect(getDb).not.toHaveBeenCalled();
 });
+test('triage of an unknown issue is 404; a real update returns the issue row', async () => {
+  const issueId = '22222222-2222-4222-8222-222222222222';
+  // TypeORM answers UPDATE … RETURNING with [rows, affectedCount].
+  const query = jest.fn().mockResolvedValueOnce([[], 0]);
+  (getDb as jest.Mock).mockResolvedValue({ query });
+  expect((await request(app).patch(`/projects/${project}/errors/${issueId}`).set('Authorization', 'Bearer human').send({ status: 'open' })).status).toBe(404);
+  query.mockResolvedValueOnce([[{ id: issueId, status: 'ignored', environment: 'prod', fingerprint: 'f', title: 't' }], 1]);
+  const ok = await request(app).patch(`/projects/${project}/errors/${issueId}`).set('Authorization', 'Bearer human').send({ status: 'ignored' });
+  expect(ok.status).toBe(200);
+  expect(ok.body).toMatchObject({ id: issueId, status: 'ignored' });
+});

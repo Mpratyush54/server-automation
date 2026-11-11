@@ -18,6 +18,12 @@ import net from 'net';
  * Exception: a host that is one of the project's own ingress hosts may resolve to a
  * private address (single-server installs on a LAN), but only on ports 80/443 and never
  * to loopback / link-local / unspecified / multicast addresses.
+ *
+ * Platform hosts (#152): the platform's own DOMAIN and every name under it are public
+ * endpoints served by the ingress controller (in-cluster CoreDNS rewrites them to the
+ * ingress Service). They are never resolved on their own: the connection always goes to
+ * the ingress controller Service address (ports 80/443 only), so no other cluster or
+ * private address becomes reachable through them.
  */
 
 export type AddressClass = 'public' | 'private' | 'forbidden';
@@ -72,6 +78,9 @@ export function classifyAddress(ip: string): AddressClass {
   return 'public';
 }
 
+/** Ingress controller Service; the CoreDNS rewrite sends DOMAIN and *.DOMAIN there. */
+export const INGRESS_SERVICE = 'ingress-nginx-controller.ingress-nginx.svc.cluster.local';
+
 const INTERNAL_SUFFIXES = ['.localhost', '.local', '.internal', '.svc', '.cluster.local', '.localdomain', '.home.arpa', '.lan'];
 
 export class SsrfError extends Error {
@@ -89,8 +98,10 @@ export interface ResolvedTarget {
   /** The validated address the connection must use. */
   address: string;
   family: 4 | 6;
-  /** True when allowed only because the host is one of the project's ingress hosts. */
+  /** True when allowed only because the host is one of the project's ingress hosts or a platform host. */
   ingressException: boolean;
+  /** True when the host is the platform's DOMAIN or under it (connected via the ingress Service). */
+  platformHost: boolean;
 }
 
 export type Resolver = (hostname: string) => Promise<Array<{ address: string; family: number }>>;
@@ -102,14 +113,47 @@ export interface GuardOptions {
   /** Lower-cased ingress hosts owned by the check's project. */
   allowedIngressHosts?: string[];
   resolver?: Resolver;
+  /**
+   * The platform's own domain (DOMAIN and *.DOMAIN are reached via the ingress Service).
+   * Defaults to process.env.DOMAIN; null disables platform hosts.
+   */
+  platformDomain?: string | null;
+  /** Addresses of the ingress controller Service (default: cluster DNS for INGRESS_SERVICE). */
+  ingressResolver?: () => Promise<string[]>;
+  /** Platform CA certificate (PEM), trusted in addition to the public roots for platform hosts. */
+  platformCa?: string | null;
 }
 
 function normaliseHost(hostname: string): string {
   return hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase();
 }
 
+const HOST_RE = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+
+/**
+ * The platform domain as a bare lower-case host name, or null. A value that is not a
+ * multi-label host name, or that is itself a cluster-internal name, is ignored.
+ */
+export function platformDomainOf(raw: string | null | undefined = process.env.DOMAIN): string | null {
+  const d = normaliseHost(String(raw || '').trim().replace(/^https?:\/\//i, '').replace(/[/:].*$/, ''));
+  if (!d || !HOST_RE.test(d) || net.isIP(d) !== 0) return null;
+  if (d === 'cluster.local' || d.endsWith('.svc') || d.endsWith('.cluster.local') || d.endsWith('.localhost')) return null;
+  return d;
+}
+
+/** Whether a (normalised) host is the platform domain or one of its subdomains. */
+export function isPlatformHost(host: string, domain: string | null): boolean {
+  if (!domain || net.isIP(host) !== 0) return false;
+  return host === domain || host.endsWith(`.${domain}`);
+}
+
+const resolvePlatformDomain = (v: string | null | undefined) => (v === null ? null : platformDomainOf(v === undefined ? process.env.DOMAIN : v));
+
+export const systemIngressResolver = async (): Promise<string[]> =>
+  (await systemResolver(INGRESS_SERVICE)).map((a) => a.address);
+
 /** Static URL checks (no DNS): scheme, credentials, internal names, literal addresses. */
-export function validateUrlSyntax(raw: string, opts: { allowedIngressHosts?: string[]; schemes?: string[] } = {}): URL {
+export function validateUrlSyntax(raw: string, opts: { allowedIngressHosts?: string[]; schemes?: string[]; platformDomain?: string | null } = {}): URL {
   let url: URL;
   try {
     url = new URL(raw);
@@ -121,7 +165,7 @@ export function validateUrlSyntax(raw: string, opts: { allowedIngressHosts?: str
   if (url.username || url.password) throw new SsrfError('Credentials in the URL are not allowed; use a secret header', 'credentials');
   const host = normaliseHost(url.hostname);
   if (!host) throw new SsrfError('Target host is required', 'invalid_url');
-  const allowed = (opts.allowedIngressHosts || []).includes(host);
+  const allowed = (opts.allowedIngressHosts || []).includes(host) || isPlatformHost(host, resolvePlatformDomain(opts.platformDomain));
   if (!allowed) {
     if (host === 'localhost' || INTERNAL_SUFFIXES.some((s) => host.endsWith(s))) {
       throw new SsrfError('Cluster-internal and local host names are not allowed', 'internal_host');
@@ -148,10 +192,26 @@ function portOf(url: URL): number {
  */
 export async function resolveTarget(raw: string, opts: GuardOptions = {}, schemes?: string[]): Promise<ResolvedTarget> {
   const allowedHosts = (opts.allowedIngressHosts || []).map(normaliseHost);
-  const url = validateUrlSyntax(raw, { allowedIngressHosts: allowedHosts, schemes });
+  const platformDomain = resolvePlatformDomain(opts.platformDomain);
+  const url = validateUrlSyntax(raw, { allowedIngressHosts: allowedHosts, schemes, platformDomain });
   const hostname = normaliseHost(url.hostname);
   const port = portOf(url);
   const isOwnIngress = allowedHosts.includes(hostname);
+
+  if (isPlatformHost(hostname, platformDomain)) {
+    // Never resolved on its own: always the ingress controller Service, nothing else.
+    if (port !== 80 && port !== 443) throw new SsrfError('Platform hosts are only reachable on ports 80 and 443', 'port');
+    let ingress: string[];
+    try {
+      ingress = await (opts.ingressResolver || systemIngressResolver)();
+    } catch (err: any) {
+      throw new SsrfError(`The ingress controller address for ${hostname} could not be resolved (${err?.code || 'error'})`, 'dns');
+    }
+    const usable = (ingress || []).filter((a) => net.isIP(a) !== 0 && classifyAddress(a) !== 'forbidden');
+    if (usable.length === 0) throw new SsrfError(`No usable ingress controller address for ${hostname}`, 'dns');
+    const address = usable.find((a) => net.isIP(a) === 4) || usable[0];
+    return { url, hostname, port, address, family: net.isIP(address) === 6 ? 6 : 4, ingressException: true, platformHost: true };
+  }
 
   let answers: Array<{ address: string; family: number }>;
   if (net.isIP(hostname) !== 0) {
@@ -185,6 +245,7 @@ export async function resolveTarget(raw: string, opts: GuardOptions = {}, scheme
     address: chosen.address,
     family: (net.isIP(chosen.address) === 6 ? 6 : 4),
     ingressException: usesPrivate,
+    platformHost: false,
   };
 }
 

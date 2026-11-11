@@ -218,18 +218,46 @@ func telemetryStorage(c *config.Config) error {
 		if err := shell.Run("kubectl", "-n", "monitoring", "delete", "job", job, "--ignore-not-found", "--wait=true"); err != nil {
 			return err
 		}
-		container := map[string]any{"name": "mc", "image": telemetryMCImage, "command": []string{"/bin/sh", "-ec", telemetryBucketScript(backend)}, "envFrom": []any{map[string]any{"secretRef": map[string]string{"name": "telemetry-bootstrap"}}, map[string]any{"secretRef": map[string]string{"name": name}}}, "resources": map[string]any{"requests": map[string]string{"cpu": "25m", "memory": "32Mi"}, "limits": map[string]string{"cpu": "200m", "memory": "128Mi"}}}
-		if err := applyTelemetryJSON(map[string]any{"apiVersion": "batch/v1", "kind": "Job", "metadata": map[string]string{"name": job, "namespace": "monitoring"}, "spec": map[string]any{"backoffLimit": 3, "activeDeadlineSeconds": 300, "ttlSecondsAfterFinished": 600, "template": map[string]any{"spec": map[string]any{"restartPolicy": "Never", "containers": []any{container}}}}}); err != nil {
+		container := map[string]any{"name": "mc", "image": telemetryMCImage, "command": []string{"/bin/sh", "-ec", telemetryBucketScript(backend)}, "envFrom": []any{map[string]any{"secretRef": map[string]string{"name": "telemetry-bootstrap"}}, map[string]any{"secretRef": map[string]string{"name": name}}}, "resources": map[string]any{"requests": map[string]string{"cpu": "25m", "memory": "64Mi"}, "limits": map[string]string{"cpu": "200m", "memory": "256Mi"}}}
+		if err := applyTelemetryJSON(map[string]any{"apiVersion": "batch/v1", "kind": "Job", "metadata": map[string]string{"name": job, "namespace": "monitoring"}, "spec": map[string]any{"backoffLimit": 3, "activeDeadlineSeconds": 900, "ttlSecondsAfterFinished": 3600, "template": map[string]any{"spec": map[string]any{"restartPolicy": "Never", "containers": []any{container}}}}}); err != nil {
 			return err
 		}
-		if err := shell.Run("kubectl", "-n", "monitoring", "wait", "--for=condition=complete", "job/"+job, "--timeout=330s"); err != nil {
-			return fmt.Errorf("MinIO IAM job %s failed (inspect job logs): %w", job, err)
+		// Wait for Complete OR Failed: `kubectl wait --for=condition=complete` would
+		// sit out the whole timeout on a failed Job. On failure print the pod log.
+		if err := shell.RunBash(telemetryJobWaitScript(job, 930)); err != nil {
+			return fmt.Errorf("MinIO IAM job %s failed: %w", job, err)
 		}
 	}
 	return nil
 }
 
-const telemetryMCImage = "quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z"
+// telemetryJobWaitScript waits until the Job completes (exit 0) or fails (exit 1,
+// printing the newest pod's log), or the timeout passes.
+func telemetryJobWaitScript(job string, timeoutSec int) string {
+	return fmt.Sprintf(`set -uo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+job=%s
+for _ in $(seq 1 %d); do
+  conds="$(kubectl -n monitoring get job "$job" -o jsonpath='{range .status.conditions[*]}{.type}={.status} {end}' 2>/dev/null || true)"
+  case " $conds " in
+    *" Complete=True "*) exit 0 ;;
+    *" Failed=True "*)
+      pod="$(kubectl -n monitoring get pods -l job-name="$job" --sort-by=.metadata.creationTimestamp -o name 2>/dev/null | tail -1)"
+      echo "job $job failed; last pod log:" >&2
+      [ -n "$pod" ] && kubectl -n monitoring logs "$pod" --tail=30 >&2 || true
+      exit 1 ;;
+  esac
+  sleep 1
+done
+echo "job $job did not finish within %ds" >&2
+exit 1
+`, shellQuote(job), timeoutSec, timeoutSec)
+}
+
+// The MinIO server image already used by the minio chart (and in the platform
+// stack) ships the mc client; upstream quay.io/minio/mc tags are not reliably
+// available, so no separate client image is pulled.
+const telemetryMCImage = "docker.io/bitnamilegacy/minio:2025.7.23-debian-12-r3"
 
 func telemetryBucketScript(bucket string) string {
 	// bucket is an internal constant, never operator input. Commands never print
@@ -239,9 +267,9 @@ func telemetryBucketScript(bucket string) string {
 	if bucket == "replays" {
 		lifecycle = `
 cat >"$work/lifecycle.json" <<'LIFECYCLE'
-{"Rules":[{"ID":"replays-default-7d","Status":"Enabled","Filter":{"Prefix":"replays/"},"Expiration":{"Days":7}}]}
+{"Rules":[{"ID":"replays-max-365d","Status":"Enabled","Filter":{"Prefix":"replays/"},"Expiration":{"Days":365}}]}
 LIFECYCLE
-mc ilm import local/replays <"$work/lifecycle.json" >/dev/null || mc ilm rule add --expire-days 7 local/replays >/dev/null
+mc ilm import local/replays <"$work/lifecycle.json" >/dev/null || mc ilm rule add --expire-days 365 local/replays >/dev/null
 `
 	}
 	return fmt.Sprintf(`set -eu
@@ -250,13 +278,22 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/telemetry-iam.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 export MC_CONFIG_DIR="$work/mc"
 mc alias set local http://minio.storage.svc.cluster.local:9000 "$ROOT_USER" "$ROOT_PASSWORD" >/dev/null
+# MinIO IAM answers "Server not initialized" until its OpenID issuer (platform API) is reachable.
+waited=0
+until mc admin policy list local >/dev/null 2>&1; do
+  [ "$waited" -ge 600 ] && { echo "MinIO admin API not ready after 600s" >&2; exit 1; }
+  sleep 5; waited=$((waited + 5))
+done
 mc mb --ignore-existing local/%[1]s
 cat >"$work/policy.json" <<'POLICY'
 {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:ListBucket","s3:GetBucketLocation","s3:ListBucketMultipartUploads"],"Resource":["arn:aws:s3:::%[1]s"]},{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload","s3:ListMultipartUploadParts"],"Resource":["arn:aws:s3:::%[1]s/*"]}]}
 POLICY
 mc admin user add local "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
 mc admin policy create local telemetry-%[1]s "$work/policy.json"
-mc admin policy attach local telemetry-%[1]s --user "$S3_ACCESS_KEY"
+# attach fails when already attached (re-run): accept an existing mapping.
+if ! mc admin policy attach local telemetry-%[1]s --user "$S3_ACCESS_KEY" >/dev/null 2>&1; then
+  mc admin user info local "$S3_ACCESS_KEY" 2>/dev/null | grep -q "telemetry-%[1]s" || { echo "attach policy telemetry-%[1]s failed" >&2; exit 1; }
+fi
 %[2]s`, bucket, lifecycle)
 }
 

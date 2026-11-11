@@ -190,9 +190,11 @@ Creates a new SDK token. The plaintext token is returned only once. Requires DEV
 
 ### `DELETE` /api/projects/:projectId/tokens/:tokenId
 
-Revokes an SDK token by deleting it. Requires DEVOPS role. Audit-logged.
+Revokes an SDK token by deleting it. Requires DEVOPS or TECH_LEAD role (the same roles that can create tokens) and project devops access. Audit-logged.
 
-**Auth:** Bearer token (DEVOPS)
+**Auth:** Bearer token (DEVOPS, TECH_LEAD)
+
+**Error `404`:** `SDK Token not found` (unknown id, or a token of another project).
 
 **Response `200`:**
 ```json

@@ -155,6 +155,8 @@ otelcol.processor.transform "pii_scrub" {
       `replace_all_patterns(attributes, "value", "(?i)(authorization\\s*[:=]\\s*)(bearer|basic)?\\s*[^\\s]+", "$1[REDACTED]")`,
       `replace_all_patterns(attributes, "value", "(?i)\\b(bearer|basic)\\s+[A-Za-z0-9._~+/=\\-]+", "$1 [REDACTED]")`,
       `replace_all_patterns(attributes, "value", "\\b(sdk_(?:live|test)_|plat_agent_|plat_ingest_(?:web_)?)[A-Za-z0-9._\\-]+", "$1[REDACTED]")`,
+      `replace_all_patterns(attributes, "value", "(?i)(\\b(?:password|passwd|pwd|secret|client[_-]?secret|token|api[_-]?key|access[_-]?(?:key|token)|refresh[_-]?token)\\s*[:=]\\s*)[^\\s,;&}]+", "$1[REDACTED]")`,
+      `replace_all_patterns(attributes, "value", "\\b(?:(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abposr]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\\b", "[REDACTED]")`,
       `replace_all_patterns(attributes, "value", "\\beyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+", "[REDACTED_JWT]")`,
       `replace_all_patterns(attributes, "value", "\\b(?:\\d[ -]*?){13,19}\\b", "[CARD]")`,
       `replace_all_patterns(attributes, "value", "\\b(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\b", "[IP]")`,
@@ -169,6 +171,8 @@ otelcol.processor.transform "pii_scrub" {
       `replace_all_patterns(attributes, "value", "(?i)(authorization\\s*[:=]\\s*)(bearer|basic)?\\s*[^\\s]+", "$1[REDACTED]")`,
       `replace_pattern(body, "(?i)\\b(bearer|basic)\\s+[A-Za-z0-9._~+/=\\-]+", "$1 [REDACTED]")`,
       `replace_pattern(body, "\\b(sdk_(?:live|test)_|plat_agent_|plat_ingest_(?:web_)?)[A-Za-z0-9._\\-]+", "$1[REDACTED]")`,
+      `replace_pattern(body, "(?i)(\\b(?:password|passwd|pwd|secret|client[_-]?secret|token|api[_-]?key|access[_-]?(?:key|token)|refresh[_-]?token)\\s*[:=]\\s*)[^\\s,;&}]+", "$1[REDACTED]")`,
+      `replace_pattern(body, "\\b(?:(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abposr]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\\b", "[REDACTED]")`,
       `replace_pattern(body, "\\beyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+", "[REDACTED_JWT]")`,
       `replace_all_patterns(attributes, "value", "\\beyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+", "[REDACTED_JWT]")`,
       `replace_pattern(body, "\\b(?:\\d[ -]*?){13,19}\\b", "[CARD]")`,
@@ -241,6 +245,14 @@ loki.process "pii_scrub" {
   stage.replace {
     expression = "\\b(sdk_(?:live|test)_|plat_agent_|plat_ingest_(?:web_)?)[A-Za-z0-9._\\-]+"
     replace = "${1}[REDACTED]"
+  }
+  stage.replace {
+    expression = "(?i)\\b(?:password|passwd|pwd|secret|client[_-]?secret|token|api[_-]?key|access[_-]?(?:key|token)|refresh[_-]?token)\\s*[:=]\\s*([^\\s,;&}]+)"
+    replace = "[REDACTED]"
+  }
+  stage.replace {
+    expression = "(\\b(?:(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abposr]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\\b)"
+    replace = "[REDACTED]"
   }
   stage.replace {
     expression = "\\beyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+"

@@ -12,7 +12,7 @@ func TestFullOnlyTelemetryImages(t *testing.T) {
 		t.Fatal("offline inventory changed")
 	}
 	for _, img := range full {
-		for _, backend := range []string{"grafana/alloy:", "grafana/tempo:", "grafana/pyroscope:", "grafana/loki:3.", "blackbox-exporter:", "minio/mc:"} {
+		for _, backend := range []string{"grafana/alloy:", "grafana/tempo:", "grafana/pyroscope:", "grafana/loki:3.", "blackbox-exporter:"} {
 			if strings.Contains(img, backend) && slices.Contains(light, img) {
 				t.Fatal("full image in light profile", img)
 			}
@@ -21,7 +21,7 @@ func TestFullOnlyTelemetryImages(t *testing.T) {
 	if !slices.Contains(light, "grafana/loki:2.6.1") {
 		t.Fatal("removed standard Loki")
 	}
-	if len(full)-len(light) != 6 {
+	if len(full)-len(light) != 5 { // alloy, tempo, pyroscope, loki 3, blackbox-exporter (mc comes from the MinIO image)
 		t.Fatal("missing telemetry images")
 	}
 }

@@ -6,6 +6,7 @@ import { expressAuthenticate, requirePermission, requireRecentMfa, logAudit, Aut
 import { encryptValue, decryptValue } from '../lib/secrets-encryption';
 import { ProjectAccessRole } from '../entities/ProjectMember';
 import { requireProjectAccess } from '../lib/project-access';
+import { affectsTelemetryOrigins, requestTelemetryOriginsSync } from '../lib/telemetry-origins';
 
 const MASTER_KEY = () => process.env.SECRETS_ENCRYPTION_KEY || '';
 const router = Router();
@@ -134,6 +135,7 @@ router.post('/projects/:projectId/secrets', expressAuthenticate, requirePermissi
       await repo.save(secret);
     }
 
+    if (affectsTelemetryOrigins(key)) requestTelemetryOriginsSync();
     logAudit({ userId, action: secret.version === 1 ? 'secrets.create' : 'secrets.update', targetType: 'Secret', targetId: secret.id, metadata: { key, environmentId, version: secret.version } });
 
     return res.status(201).json({ id: secret.id, key: secret.key, environmentId: secret.environmentId, version: secret.version });
@@ -156,6 +158,7 @@ router.delete('/projects/:projectId/secrets/:secretId', expressAuthenticate, req
     secret.isActive = false;
     await repo.save(secret);
 
+    if (affectsTelemetryOrigins(secret.key)) requestTelemetryOriginsSync();
     logAudit({ userId, action: 'secrets.delete', targetType: 'Secret', targetId: secret.id, metadata: { key: secret.key, environmentId: secret.environmentId } });
 
     return res.json({ success: true });
@@ -249,6 +252,7 @@ router.post('/projects/:projectId/secrets/bulk', expressAuthenticate, requirePer
       }
     }
 
+    if (results.some((r: any) => affectsTelemetryOrigins(r.key))) requestTelemetryOriginsSync();
     logAudit({ userId, action: 'secrets.import', targetType: 'Project', targetId: projectId, metadata: { environmentId, count: results.length } });
 
     return res.status(201).json({ imported: results.length, results });
@@ -329,6 +333,7 @@ router.post('/projects/:projectId/secrets/:secretId/rollback/:version', expressA
     secret.version += 1;
     await secretRepo.save(secret);
 
+    if (affectsTelemetryOrigins(secret.key)) requestTelemetryOriginsSync();
     logAudit({ userId, action: 'secrets.rollback', targetType: 'Secret', targetId: secret.id, metadata: { key: secret.key, rolledBackTo: targetVersion, newVersion: secret.version } });
 
     return res.json({ success: true, key: secret.key, version: secret.version, rolledBackTo: targetVersion });

@@ -13,7 +13,8 @@ jest.mock('../../../src/lib/synthetic-ssrf', () => {
   return { ...actual, resolveTarget: (...args: any[]) => mockResolve(...args) };
 });
 
-import { syntheticHttpRequest, USER_AGENT } from '../../../src/lib/synthetic-http';
+import tls from 'tls';
+import { syntheticHttpRequest, trustFor, USER_AGENT } from '../../../src/lib/synthetic-http';
 import { SsrfError } from '../../../src/lib/synthetic-ssrf';
 
 let server: http.Server;
@@ -28,6 +29,9 @@ beforeAll(async () => {
     if (u.pathname === '/redirect') { res.statusCode = 302; res.setHeader('Location', '/ok'); res.end(); return; }
     if (u.pathname === '/cross') { res.statusCode = 302; res.setHeader('Location', `http://other.test:${port}/ok`); res.end(); return; }
     if (u.pathname === '/internal') { res.statusCode = 302; res.setHeader('Location', 'http://internal.test/'); res.end(); return; }
+    if (u.pathname === '/to-private') { res.statusCode = 302; res.setHeader('Location', 'http://10.43.0.10:3000/'); res.end(); return; }
+    if (u.pathname === '/to-svc') { res.statusCode = 302; res.setHeader('Location', 'http://platform-api.platform.svc:3000/api'); res.end(); return; }
+    if (u.pathname === '/to-metadata') { res.statusCode = 302; res.setHeader('Location', 'http://169.254.169.254/latest/meta-data/'); res.end(); return; }
     if (u.pathname === '/loop') { res.statusCode = 302; res.setHeader('Location', '/loop'); res.end(); return; }
     if (u.pathname === '/post303') { res.statusCode = 303; res.setHeader('Location', '/ok'); res.end(); return; }
     if (u.pathname === '/big') { res.write('x'.repeat(1024 * 1024)); res.end('y'.repeat(4096)); return; }
@@ -106,4 +110,35 @@ it('truncates large bodies at the cap', async () => {
 
 it('times out', async () => {
   await expect(syntheticHttpRequest({ method: 'GET', url: `${base()}/slow`, timeoutMs: 300 })).rejects.toMatchObject({ code: 'timeout' });
+});
+
+describe('platform hosts (#152)', () => {
+  const actual = jest.requireActual('../../../src/lib/synthetic-ssrf');
+  // api.apps.example.com stands in for a platform host (pinned to the local server);
+  // every other hop goes through the REAL guard with the platform domain configured.
+  const guard = { platformDomain: 'apps.example.com', ingressResolver: async () => ['10.43.12.7'] };
+  beforeEach(() => {
+    mockResolve.mockImplementation(async (raw: string, g: any) => {
+      const url = new URL(raw);
+      if (url.hostname === 'api.apps.example.com') {
+        return { url, hostname: url.hostname, port: Number(url.port) || 80, address: '127.0.0.1', family: 4, ingressException: true, platformHost: true };
+      }
+      return actual.resolveTarget(raw, g);
+    });
+  });
+
+  it.each(['/to-private', '/to-svc', '/to-metadata'])('a redirect from a platform host to an internal target is refused (%s)', async (path) => {
+    await expect(syntheticHttpRequest({ method: 'GET', url: `http://api.apps.example.com:${port}${path}`, timeoutMs: 3000 }, guard))
+      .rejects.toBeInstanceOf(SsrfError);
+    expect(mockResolve).toHaveBeenCalledTimes(2);
+  });
+
+  it('the platform CA is added to the public roots for platform hosts only', () => {
+    const ca = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n';
+    const trust = trustFor({ platformHost: true }, ca);
+    expect(trust).toHaveLength(tls.rootCertificates.length + 1);
+    expect(trust![trust!.length - 1]).toBe(ca);
+    expect(trustFor({ platformHost: false }, ca)).toBeUndefined();
+    expect(trustFor({ platformHost: true }, null)).toBeUndefined();
+  });
 });

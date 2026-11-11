@@ -1,4 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { smtpSecretTransformer } from '../lib/smtp-secrets';
 
 export enum SmtpProvider {
   CUSTOM = 'custom',
@@ -30,10 +31,11 @@ export class SmtpConfig {
   @Column({ type: 'varchar', length: 255, nullable: true })
   username: string | null;
 
-  @Column({ type: 'text', nullable: true })
+  /** Encrypted at rest (lib/smtp-secrets); legacy plaintext rows are still readable. */
+  @Column({ type: 'text', nullable: true, transformer: smtpSecretTransformer })
   password: string | null;
 
-  @Column({ type: 'text', nullable: true, name: 'api_key' })
+  @Column({ type: 'text', nullable: true, name: 'api_key', transformer: smtpSecretTransformer })
   apiKey: string | null;
 
   @Column({ type: 'varchar', length: 255, name: 'from_email' })

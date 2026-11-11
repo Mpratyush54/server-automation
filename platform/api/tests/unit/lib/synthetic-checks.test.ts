@@ -67,6 +67,28 @@ describe('check validation', () => {
   });
 });
 
+describe('platform hosts (#152)', () => {
+  const withDomain = (fn: () => void) => {
+    const prev = process.env.DOMAIN;
+    process.env.DOMAIN = 'platform.lan';
+    try { fn(); } finally { if (prev === undefined) delete process.env.DOMAIN; else process.env.DOMAIN = prev; }
+  };
+
+  it('accepts DOMAIN and *.DOMAIN targets for HTTP, SSL and browser checks', () => withDomain(() => {
+    expect(validateCheckInput(http({ url: 'https://platform.lan/' }), []).config.url).toBe('https://platform.lan/');
+    expect(validateCheckInput(http({ url: 'https://api.platform.lan/api/health' }), []).config.url).toBe('https://api.platform.lan/api/health');
+    expect(validateCheckInput({ name: 's', type: 'ssl', config: { host: 'api.platform.lan' } }, []).config.host).toBe('api.platform.lan');
+    expect(() => validateCheckInput({ name: 'b', type: 'browser', intervalSeconds: 900, config: { steps: [{ action: 'goto', url: 'https://grafana.platform.lan/' }] } }, [])).not.toThrow();
+  }));
+
+  it('still refuses private literals, metadata and cluster-internal names', () => withDomain(() => {
+    for (const url of ['http://10.43.0.1/', 'http://169.254.169.254/latest/meta-data/', 'http://192.168.1.1/', 'http://platform-api.platform.svc:3000/',
+      'http://kubernetes.default.svc.cluster.local/', 'http://other.lan/']) {
+      bad(http({ url }), /config\.url/);
+    }
+  }));
+});
+
 describe('secrets', () => {
   it('are encrypted, merged (set / delete) and never exposed', () => {
     const enc = mergeCheckSecrets(null, { TOKEN: 'abc123', OTHER: 'x' });
@@ -90,4 +112,31 @@ it('project ingress hosts: active environment hosts only, never the platform dom
     { domain: 'platform.example.com' },
     { domain: null },
   ], 'platform.example.com')).toEqual(['app.example.com']);
+});
+
+describe('templates', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { SYNTHETIC_TEMPLATES } = require('../../../src/lib/synthetic-templates');
+  const smoke = SYNTHETIC_TEMPLATES.find((t: any) => t.id === 'browser-smoke');
+
+  it('browser-smoke is target-agnostic: no heading/text assumptions, waits for the body', () => {
+    const steps = smoke.check.config.steps;
+    expect(steps[0]).toEqual({ action: 'goto', url: '' });
+    expect(steps.some((s: any) => s.selector === 'h1' || s.action === 'assert_text')).toBe(false);
+    expect(steps).toContainEqual({ action: 'wait_for', selector: 'body' });
+    expect(smoke.requiredFields).toEqual(['config.steps[0].url']);
+  });
+
+  it('browser-smoke cannot be saved until the user enters a URL, then validates', () => {
+    const body = { name: smoke.name, ...smoke.check };
+    bad(body, /steps\[0\]\.url is required/);
+    const withUrl = { ...body, config: { steps: [{ action: 'goto', url: 'https://shop.customer.example/' }, ...body.config.steps.slice(1)] } };
+    expect(validateCheckInput(withUrl, []).config.steps).toHaveLength(2);
+  });
+
+  it('every other template validates as shipped', () => {
+    for (const t of SYNTHETIC_TEMPLATES.filter((x: any) => !x.requiredFields)) {
+      expect(() => validateCheckInput({ name: t.name, ...t.check }, [])).not.toThrow();
+    }
+  });
 });
