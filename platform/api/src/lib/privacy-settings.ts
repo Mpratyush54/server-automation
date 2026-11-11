@@ -163,6 +163,11 @@ export function scrubOptionsFromSettings(settings: TelemetryPrivacySettings | nu
   };
 }
 
+/** Where each retention type is enforced: per project, or cluster-wide only. */
+export const RETENTION_SCOPE = {
+  logs: 'project', replays: 'project', errors: 'project', heatmaps: 'project', traces: 'cluster', profiles: 'cluster',
+} as const;
+
 export function publicPrivacySettings(row: TelemetryPrivacySettings) {
   return {
     projectId: row.projectId,
@@ -171,7 +176,7 @@ export function publicPrivacySettings(row: TelemetryPrivacySettings) {
     retentionDays: mergeRetention(row.retentionDays),
     /** Project overrides only; a missing key means the default applies. */
     retentionOverrides: retentionOverrides(row.retentionDays),
-    retentionScope: { logs: 'project', replays: 'project', errors: 'project', heatmaps: 'project', traces: 'cluster', profiles: 'cluster' },
+    retentionScope: RETENTION_SCOPE,
     consentDefaults: {
       replay: row.consentDefaults?.replay ?? DEFAULT_CONSENT.replay,
       analytics: row.consentDefaults?.analytics ?? DEFAULT_CONSENT.analytics,

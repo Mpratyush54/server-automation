@@ -22,6 +22,7 @@ import {
   publicPrivacySettings,
   applyRetentionPatch,
   defaultRetentionDays,
+  RETENTION_SCOPE,
 } from '../lib/privacy-settings';
 import { requestLokiRetentionReconcile } from '../lib/loki-retention';
 import {
@@ -47,7 +48,7 @@ const safe = (handler: RequestHandler): RequestHandler => (req, res, next) => {
 router.get('/privacy/defaults', (_req, res) => {
   res.json({
     retentionDays: defaultRetentionDays(),
-    retentionScope: { logs: 'project', replays: 'project', errors: 'project', traces: 'cluster', profiles: 'cluster' },
+    retentionScope: RETENTION_SCOPE,
     consent: { ...DEFAULT_CONSENT },
     builtinScrubRules: builtinRulesPublic(true),
     replayObjectPrefix: 'replays/{projectId}/{sessionId}/ (bucket replays; user deletes resolve sessions via replay_sessions)',
