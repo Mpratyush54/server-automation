@@ -158,7 +158,7 @@ func InstallTelemetry(c *config.Config) error {
 		}
 	}
 	// The profile proxy is applied (and ready) before the Ingress routes to it.
-	for _, name := range []string{"telemetry-profile-ingest.yaml", "telemetry-ingress.yaml", "telemetry-rules.yaml", "telemetry-dashboard.yaml", alertingRBACManifest} {
+	for _, name := range []string{"telemetry-profile-ingest.yaml", "telemetry-ingress.yaml", "telemetry-rules.yaml", "telemetry-dashboard.yaml"} {
 		p, err := telemetryManifest(name, c, proxyImage)
 		if err != nil {
 			return err
@@ -173,6 +173,9 @@ func InstallTelemetry(c *config.Config) error {
 				return fmt.Errorf("telemetry profile-ingest: %w", err)
 			}
 		}
+	}
+	if err := ApplyFullProfileAPIAccess(c); err != nil {
+		return err
 	}
 	if err := publishTelemetryBackend(c, sampling); err != nil {
 		return err
@@ -394,6 +397,36 @@ func migrateLegacyLokiStack() error {
 	color.Yellow("  ⚠ Removing legacy Helm release \"loki\" (%s): it has no persistent volume, so its logs exist only in the running pod and are not migrated. Loki %s on MinIO replaces it.", legacy, versions.Get("loki").Version)
 	if err := lokiRun("helm", "uninstall", "loki", "-n", "monitoring", "--wait", "--timeout", "5m"); err != nil {
 		return fmt.Errorf("uninstall legacy loki-stack release: %w", err)
+	}
+	return nil
+}
+
+// ApplyFullProfileAPIAccess applies what the platform API's full-profile
+// features need from Kubernetes (alerting RBAC in monitoring; the synthetics
+// namespace, quotas, policies and RBAC). `upgrade` calls it before rolling the
+// API so the new release does not answer 403 until the telemetry and
+// synthetics steps run; both steps re-apply it. No-op below the full profile.
+func ApplyFullProfileAPIAccess(c *config.Config) error {
+	if !FullTelemetry(c) {
+		return nil
+	}
+	p, err := telemetryManifest(alertingRBACManifest, c, "")
+	if err != nil {
+		return err
+	}
+	err = shell.Run("kubectl", "apply", "-f", p)
+	os.Remove(p)
+	if err != nil {
+		return fmt.Errorf("alerting RBAC: %w", err)
+	}
+	p, err = temporaryManifest("synthetics.yaml", c)
+	if err != nil {
+		return err
+	}
+	err = shell.Run("kubectl", "apply", "-f", p)
+	os.Remove(p)
+	if err != nil {
+		return fmt.Errorf("synthetics RBAC: %w", err)
 	}
 	return nil
 }

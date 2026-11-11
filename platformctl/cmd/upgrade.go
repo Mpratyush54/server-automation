@@ -149,11 +149,21 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	}
 	b, _ := json.MarshalIndent(plan, "", "  ")
 	fmt.Fprintf(cmd.OutOrStdout(), "Plan: backup -> target migrations -> changed charts (atomic) -> images -> health gates\n%s\n", b)
+	compPlan := componentPlan(cfg)
+	printComponentPlan(cmd.OutOrStdout(), profileLabel(cfg), compPlan)
 	if upgradeDry {
 		return nil
 	}
+	reader := bufio.NewReader(cmd.InOrStdin())
 	if len(plan.Charts) == 0 && len(plan.Images) == 0 && strings.TrimPrefix(current, "v") == strings.TrimPrefix(r.Tag, "v") {
 		fmt.Fprintln(cmd.OutOrStdout(), "Already at the requested release and pins.")
+		if len(compPlan) > 0 && !upgradeYes {
+			fmt.Fprint(cmd.OutOrStdout(), "Reconcile these components? [y/N] ")
+			line, _ := reader.ReadString('\n')
+			if strings.TrimSpace(strings.ToLower(line)) != "y" {
+				return fmt.Errorf("upgrade cancelled")
+			}
+		}
 		// Also repairs installs upgraded by a platformctl that kept the tag in memory only.
 		if e := persistUpgradedTag(cfg.ImageTag); e != nil {
 			return e
@@ -162,7 +172,11 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		if e != nil {
 			return e
 		}
-		if e = finishUpgradeInstallation(); e != nil {
+		e = applyComponentPlan(cfg, r.Tag, compPlan)
+		if e == nil {
+			e = finishUpgradeInstallation()
+		}
+		if e != nil {
 			if re := resume(); re != nil {
 				return fmt.Errorf("%w; resume updater: %v", e, re)
 			}
@@ -170,7 +184,6 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		}
 		return resume()
 	}
-	reader := bufio.NewReader(cmd.InOrStdin())
 	if !upgradeYes {
 		fmt.Fprint(cmd.OutOrStdout(), "Apply this upgrade? [y/N] ")
 		line, _ := reader.ReadString('\n')
@@ -266,7 +279,15 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		Save:   saveUpgradeHistory,
 		Commit: func() error { return persistUpgradedTag(cfg.ImageTag) },
 	}
+	// RBAC the new API needs (alerting, synthetics) exists before it starts,
+	// so its first requests do not fail with 403 until the telemetry step runs.
+	if e = components.ApplyFullProfileAPIAccess(cfg); e != nil {
+		return fmt.Errorf("apply API RBAC before the rollout (nothing changed yet): %w", e)
+	}
 	if e = upgrade.Apply(upgrade.Record{From: current, To: r.Tag, Plan: plan}, h); e != nil {
+		return e
+	}
+	if e = applyComponentPlan(cfg, r.Tag, compPlan); e != nil {
 		return e
 	}
 	if e = finishUpgradeInstallation(); e != nil {
