@@ -53,19 +53,18 @@ export async function storedRedisUsers(): Promise<StoredRedisUser[]> {
     .where('s.isActive = true')
     .andWhere('s.key IN (:...keys)', { keys: ['REDIS_USERNAME', 'REDIS_PASSWORD', 'REDIS_KEY_PREFIX'] })
     .getMany();
-  const byEnv = new Map<string, Record<string, string>>();
+  // Grouped per call (a local object, not process state).
+  const byEnv: Record<string, Record<string, string>> = {};
   for (const r of rows) {
     const id = `${r.projectId}\u0000${r.environmentId ?? ''}`;
-    const values = byEnv.get(id) ?? {};
     try {
-      values[r.key] = decryptStoredSecret(r.encryptedValue);
+      (byEnv[id] ??= {})[r.key] = decryptStoredSecret(r.encryptedValue);
     } catch {
       continue; // undecryptable: leave the user to the next /sdk/db-credentials call
     }
-    byEnv.set(id, values);
   }
   const out: StoredRedisUser[] = [];
-  for (const [id, v] of byEnv) {
+  for (const [id, v] of Object.entries(byEnv)) {
     const [projectId, environment] = id.split('\u0000');
     if (v.REDIS_USERNAME?.startsWith('plat_') && v.REDIS_PASSWORD && v.REDIS_KEY_PREFIX) {
       out.push({ projectId, environment, username: v.REDIS_USERNAME, password: v.REDIS_PASSWORD, keyPrefix: v.REDIS_KEY_PREFIX });
