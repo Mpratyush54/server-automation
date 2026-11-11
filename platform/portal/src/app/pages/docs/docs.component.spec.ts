@@ -43,6 +43,16 @@ describe('DocsComponent', () => {
       .toBe('https://platform.pratyushes.dev/docs/api-reference/configuration/environment-variables');
   });
 
+  it('lists the operations and Phase 4 guides, with root-level pages at /docs/<page>', () => {
+    const pages = component.flatPages;
+    for (const page of ['upgrades', 'telemetry-privacy', 'alerting', 'synthetics', 'database-monitoring', 'status-pages', 'heatmaps', 'frontend-rum', 'observability']) {
+      expect(pages.some((p) => p.page === page)).withContext(page).toBeTrue();
+    }
+    const root = pages.find((p) => p.page === 'host-hardening')!;
+    expect(component.docUrl(root)).toBe('/docs/host-hardening');
+    expect(pages.every((p) => !component.docUrl(p).includes('//'))).toBeTrue();
+  });
+
   it('renders crawlable hrefs for nested navigation entries', () => {
     expect(fixture.nativeElement.querySelector('a[href="/docs/api-reference/configuration/environment-variables"]')).toBeTruthy();
   });

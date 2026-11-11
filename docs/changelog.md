@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased — Phase 4: observability, session replay, heatmaps, status pages
+
+### New
+- **Session replay** (opt-in, consent-based) for the React and Angular SDKs: rrweb recording with input masking, unload delivery via `sendBeacon` / keepalive, portal player with error/navigation/network markers, audited access (`replay.view`, `replay.chunk_view`, `replay.snapshot_view`); agent tokens need the `replays:read` scope. See [guides/frontend-rum.md](guides/frontend-rum.md).
+- **Heatmaps**: per-page click and scroll-depth aggregates with the newest replay snapshot of each page as the background; buffered, exact aggregation. See [guides/heatmaps.md](guides/heatmaps.md).
+- **Status pages**: public `/status/<slug>` pages fed by synthetic checks, incidents and scheduled maintenance, JSON/Atom/RSS feeds, light/dark themes. See [guides/status-pages.md](guides/status-pages.md).
+- **Observability views**: fleet and per-project views (RED, services, logs, traces, RUM, sessions, synthetics, infrastructure, profiles), every query forced to the project scope. See [guides/observability.md](guides/observability.md).
+- **Database insights**: PostgreSQL/MongoDB/Redis exporters on the full profile and a per-project Database tab with normalised top queries and slow operations. See [operations/database-monitoring.md](operations/database-monitoring.md).
+- **Dashboard** shows live data instead of placeholders.
+- **GDPR delete** also removes error-tracking events, replay objects/sessions and submits Loki delete requests. See [operations/telemetry-privacy.md](operations/telemetry-privacy.md).
+
+### Fixed (found by full-profile VM testing)
+- Browser RUM was blocked by CORS on every install: the API now publishes the Faro allow-list (`monitoring/telemetry-origins`).
+- Collector ingress returns 429/503 with `Retry-After` for throttling (was 500); ingress-nginx preserves real client IPs (`externalTrafficPolicy: Local`), so per-IP limits are per client again.
+- Upgrades from v1.2.0: loki-stack is migrated instead of failing; schema drift after a rollback is repaired; `PLATFORM_IMAGE_TAG` is persisted; new components and changed database values are reconciled by `platformctl upgrade`; project Redis users are re-created after a Redis restart. See [operations/upgrades.md](operations/upgrades.md).
+- Alerting: bounded SMTP sends and concurrent delivery (one unreachable mail server no longer stalls every channel); SMTP secrets encrypted at rest; recovery titles on resolved notifications.
+- Retention that actually applies: error events, per-project logs (Loki runtime overrides), replays, heatmaps, alert deliveries and resolved incidents.
+- Browser synthetic checks: every navigation hop re-validated, dedicated runner API listener, missing runner reports become failed results, project env hosts reachable with the platform CA.
+- MongoDB standalone uses the `Recreate` strategy (rolling updates deadlocked on `mongod.lock`).
+- Portal: responsive layout (mobile drawer, tablet), readable Observability, checkbox/disabled-button styling, Errors page restyle, all docs pages available in the in-portal docs viewer.
+- Go toolchain 1.26.11 (GO-2026-6859).
+- **Alerting per project (#151):** project owners and devops configure their own project's channels, escalation policies, on-call schedules, silences, availability/latency SLOs and trace/resource monitors; raw PromQL/LogQL monitors and ratio SLOs stay with platform admin/devops. See [operations/alerting.md](operations/alerting.md).
+- **Synthetics against the platform's own domain (#152):** HTTP and browser checks of `DOMAIN` / `*.DOMAIN` no longer fail as private addresses; they are reached only through the ingress controller, trusting the platform CA.
+- **NAT-friendly limits (#153):** per-IP ingress limits are configurable (`INGRESS_IP_RATE_LIMIT`, `INGRESS_IP_BURST`, `INGRESS_IP_CONNECTIONS`; defaults 1000 r/s, burst 2000, 2000 connections) and the heatmap ingest limits are raised, so many visitors behind one office or carrier address are not throttled.
+- **Replay on Firefox (#154):** the page-hide upload is sent as a CORS simple request (`sendBeacon`, keepalive fallback), so the last chunk of short sessions is no longer lost.
+- **Git branches (#155):** the project page looks up branches through the API (authenticated, cached) and skips the lookup when the project has no repository.
+- **Error grouping (#156):** the same browser error is grouped into one issue across engines and builds (normalised v2 fingerprint; existing issues keep receiving events).
+- **Firewall status (#157):** `platformctl` marks `harden-firewall` done after hardening instead of reporting it as in progress.
+
 ## Unreleased — end-to-end VM suite and release gate
 
 - **Release gate:** every tag is now published as a GitHub pre-release. A stable `vX.Y.Z` becomes the Latest release (what `install.sh` and `releases/latest` install, and the GHCR `platformctl:latest` copy) only after the e2e VM suite passes on the `minimal` and `full` profiles. Until then stable installs keep the previous release. See [operations/e2e-ci.md](operations/e2e-ci.md).

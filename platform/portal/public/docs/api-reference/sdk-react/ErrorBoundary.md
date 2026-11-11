@@ -16,7 +16,7 @@ import { ErrorBoundary } from '@mpratyush54/sdk-react';
 
 ```typescript
 interface ErrorBoundaryProps {
-  config: PlatformConfig;
+  config?: PlatformConfig;
   children: ReactNode;
   fallback?: ReactNode;
 }
@@ -24,7 +24,7 @@ interface ErrorBoundaryProps {
 
 | Prop | Type | Description |
 |---|---|---|
-| `config` | `PlatformConfig` | Platform configuration (see [`PlatformProvider`](PlatformProvider.md)) |
+| `config?` | `PlatformConfig` | Platform configuration (see [`PlatformProvider`](PlatformProvider.md)). Defaults to the enclosing `<PlatformProvider>`'s config; with neither, crashes are not reported and a warning is logged. |
 | `children` | `ReactNode` | Component tree to wrap |
 | `fallback?` | `ReactNode` | Custom error UI (defaults to a red "Something went wrong" message) |
 
@@ -33,10 +33,10 @@ interface ErrorBoundaryProps {
 ## Behaviour
 
 1. Catches errors via `componentDidCatch(error, errorInfo)`.
-2. POSTs a bug report to `POST /api/sdk/bug-report` with:
+2. POSTs a bug report to `POST /api/sdk/bug-report` (`Authorization: Bearer <token>`) with:
    - `category: 'react-crash'`
    - `description`: `error.message`
-   - `consoleLogs`: error message, stack trace, and component stack
+   - `consoleLogs`: error message, stack trace (credential-like values redacted), and component stack
    - `browserInfo`: `userAgent` and current URL
 3. Renders the `fallback` prop if provided, or a default error message.
 

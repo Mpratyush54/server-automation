@@ -21,7 +21,7 @@ export function clampRetentionDays(raw: unknown, fallback: number): number {
  * Retention that actually applies per data type:
  *  - errors   per project (error-retention leader job, Postgres error_events)
  *  - logs     per project (Loki runtime overrides, lib/loki-retention); default = cluster
- *  - replays  per project setting (applied by the session-replay store)
+ *  - replays  per project (replay-retention leader job: replay_sessions rows + MinIO objects)
  *  - heatmaps per project (heatmaps-retention leader job, Postgres heatmap aggregates)
  *  - traces / profiles: cluster-wide only (TELEMETRY_RETENTION_DAYS on Tempo / Pyroscope).
  *    Both run single-tenant, so there is no per-project retention to apply.

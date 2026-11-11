@@ -262,7 +262,8 @@ const telemetryMCImage = "docker.io/bitnamilegacy/minio:2025.7.23-debian-12-r3"
 func telemetryBucketScript(bucket string) string {
 	// bucket is an internal constant, never operator input. Commands never print
 	// credentials; mc's private config is on the ephemeral job filesystem.
-	// Replays get a 7-day lifecycle rule (default retention; #47 / #40).
+	// Replays get a 365-day lifecycle backstop; per-project retention (default 7 days) is
+	// applied by the API replay-retention job (#47 / #40).
 	lifecycle := ""
 	if bucket == "replays" {
 		lifecycle = `

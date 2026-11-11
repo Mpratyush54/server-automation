@@ -77,9 +77,36 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
         { label: 'Authentication & RBAC', section: 'guides', page: 'authentication' },
         { label: 'Secrets Management', section: 'guides', page: 'secrets-management' },
         { label: 'Preview Environments', section: 'guides', page: 'preview-environments' },
+        { label: 'MFA', section: 'guides', page: 'mfa' },
+        { label: 'Git Providers', section: 'guides', page: 'git-providers' },
         { label: 'Monitoring', section: 'guides', page: 'monitoring' },
+        { label: 'Observability Views', section: 'guides', page: 'observability' },
+        { label: 'Frontend RUM & Session Replay', section: 'guides', page: 'frontend-rum' },
+        { label: 'Heatmaps', section: 'guides', page: 'heatmaps' },
+        { label: 'Status Pages', section: 'guides', page: 'status-pages' },
         { label: 'Testing', section: 'guides', page: 'testing' },
         { label: 'Production Checklist', section: 'guides', page: 'production-checklist' },
+      ],
+    },
+    {
+      label: 'Operations', id: 'operations',
+      pages: [
+        { label: 'Upgrades', section: 'operations', page: 'upgrades' },
+        { label: 'Backups', section: 'operations', page: 'backups' },
+        { label: 'Telemetry', section: 'operations', page: 'telemetry' },
+        { label: 'Telemetry Privacy & GDPR', section: 'operations', page: 'telemetry-privacy' },
+        { label: 'Alerting', section: 'operations', page: 'alerting' },
+        { label: 'Synthetic Checks', section: 'operations', page: 'synthetics' },
+        { label: 'Database Monitoring', section: 'operations', page: 'database-monitoring' },
+        { label: 'Error Tracking', section: 'observability', page: 'error-tracking' },
+        { label: 'Releases & Deploy Markers', section: '', page: 'observability-releases' },
+        { label: 'Storage Providers', section: 'operations', page: 'storage-providers' },
+        { label: 'Platform Stack', section: 'operations', page: 'platform-stack' },
+        { label: 'Image Signing', section: 'operations', page: 'image-signing' },
+        { label: 'Host Hardening', section: '', page: 'host-hardening' },
+        { label: 'Namespace Isolation', section: '', page: 'namespace-isolation' },
+        { label: 'GitOps Branches', section: '', page: 'gitops-branches' },
+        { label: 'E2E CI', section: 'operations', page: 'e2e-ci' },
       ],
     },
     {
@@ -165,6 +192,8 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
         { label: 'K8s Infrastructure', section: 'architecture', page: 'k8s-infrastructure' },
         { label: 'Database Schema', section: 'architecture', page: 'database-schema' },
         { label: 'Network Topology', section: 'architecture', page: 'network-topology' },
+        { label: 'Background Jobs', section: 'architecture', page: 'background-jobs' },
+        { label: 'Telemetry Ingestion', section: 'architecture', page: 'telemetry-ingestion' },
       ],
     },
     {
@@ -189,6 +218,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
         { label: 'k3s port conflict', section: 'troubleshooting', page: 'k3s-port-conflict' },
         { label: 'Docker Hub rate limit', section: 'troubleshooting', page: 'dockerhub-rate-limit' },
         { label: 'Disk pressure', section: 'troubleshooting', page: 'disk-pressure' },
+        { label: 'GitHub Releases outage', section: 'troubleshooting', page: 'github-releases-outage' },
         { label: 'ImagePullBackOff', section: 'troubleshooting', page: 'image-pull-backoff' },
         { label: 'Helm name reuse', section: 'troubleshooting', page: 'helm-name-reuse' },
         { label: 'TypeScript build errors', section: 'troubleshooting', page: 'typescript-build-errors' },
@@ -476,7 +506,8 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   docUrl(page: DocPage): string {
-    return `/docs/${page.section}/${page.page}`;
+    // Pages at the docs root (e.g. host-hardening.md) have no section.
+    return page.section ? `/docs/${page.section}/${page.page}` : `/docs/${page.page}`;
   }
 
   private updateMetadata(title: string, description: string, canonical: string) {

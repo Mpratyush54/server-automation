@@ -179,7 +179,7 @@ Content-Type: application/json
 ### Assigning to a User
 
 ```http
-PATCH /api/users/:id/role HTTP/1.1
+PATCH /api/users/:id/role
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -311,7 +311,7 @@ sequenceDiagram
 ### JWKS Endpoint
 
 ```http
-GET /api/oauth/jwks HTTP/1.1
+GET /api/oauth/jwks
 ```
 
 Returns the RSA public key in JWK format for token verification by relying parties.
@@ -319,7 +319,7 @@ Returns the RSA public key in JWK format for token verification by relying parti
 ### OpenID Configuration
 
 ```http
-GET /api/oauth/.well-known/openid-configuration HTTP/1.1
+GET /api/oauth/.well-known/openid-configuration
 ```
 
 Returns standard OIDC discovery document.
