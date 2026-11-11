@@ -3,6 +3,8 @@ package cmd
 import (
 	"errors"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -117,5 +119,31 @@ func TestUpgradePlanMatchesChartNamesExactly(t *testing.T) {
 	}
 	if len(p.Charts) != 1 || p.Charts[0].Chart != "kube-prometheus-stack" || p.Charts[0].Version != versions.Get("kube-prometheus-stack").Version {
 		t.Fatalf("plan = %+v", p.Charts)
+	}
+}
+
+// Regression: upgrade left PLATFORM_IMAGE_TAG at the old release in
+// /etc/platform/.env, so `install telemetry` pulled non-existent images and
+// `provision` would roll the API back.
+func TestPersistUpgradedTagRewritesEnvAtomically(t *testing.T) {
+	dir := t.TempDir()
+	old := upgradeEnvFile
+	upgradeEnvFile = filepath.Join(dir, ".env")
+	defer func() { upgradeEnvFile = old }()
+	if e := os.WriteFile(upgradeEnvFile, []byte("DOMAIN=x.test\nPLATFORM_IMAGE_TAG=1.2.0\nADMIN_EMAIL=a@x.test\n"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	if e := persistUpgradedTag("v1.3.0"); e != nil {
+		t.Fatal(e)
+	}
+	b, _ := os.ReadFile(upgradeEnvFile)
+	if string(b) != "DOMAIN=x.test\nPLATFORM_IMAGE_TAG=1.3.0\nADMIN_EMAIL=a@x.test\n" {
+		t.Fatalf("env = %q", b)
+	}
+	if e := persistUpgradedTag("latest; rm -rf /"); e == nil {
+		t.Fatal("persisted an invalid tag")
+	}
+	if _, e := os.Stat(upgradeEnvFile + ".tmp"); !os.IsNotExist(e) {
+		t.Fatal("temporary file left behind")
 	}
 }

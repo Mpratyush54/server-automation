@@ -13,6 +13,7 @@ import (
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/backup"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/helm"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/upgrade"
@@ -153,6 +154,10 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	}
 	if len(plan.Charts) == 0 && len(plan.Images) == 0 && strings.TrimPrefix(current, "v") == strings.TrimPrefix(r.Tag, "v") {
 		fmt.Fprintln(cmd.OutOrStdout(), "Already at the requested release and pins.")
+		// Also repairs installs upgraded by a platformctl that kept the tag in memory only.
+		if e := persistUpgradedTag(cfg.ImageTag); e != nil {
+			return e
+		}
 		resume, e := suspendUpgradeUpdater()
 		if e != nil {
 			return e
@@ -259,6 +264,7 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		},
 		Health: upgradeHealth,
 		Save:   saveUpgradeHistory,
+		Commit: func() error { return persistUpgradedTag(cfg.ImageTag) },
 	}
 	if e = upgrade.Apply(upgrade.Record{From: current, To: r.Tag, Plan: plan}, h); e != nil {
 		return e
@@ -270,6 +276,25 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("release is healthy; resume digest-refresh schedule: %w", e)
 	}
 	completed = true
+	return nil
+}
+
+// upgradeEnvFile is the saved host configuration (tests override it).
+var upgradeEnvFile = "/etc/platform/.env"
+
+// persistUpgradedTag records the release in /etc/platform/.env (atomic
+// write-and-rename) so later `install`/`provision` runs use the upgraded images
+// instead of rolling the API back or pulling images that do not exist for the
+// old tag. It runs only after the health gate passed; a rolled-back upgrade
+// never changes the file, so it keeps the previous tag.
+func persistUpgradedTag(tag string) error {
+	tag = strings.TrimPrefix(tag, "v")
+	if _, e := upgrade.Parse(tag); e != nil {
+		return fmt.Errorf("refusing to persist image tag %q: %w", tag, e)
+	}
+	if e := config.UpsertEnvKey(upgradeEnvFile, "PLATFORM_IMAGE_TAG", tag); e != nil {
+		return fmt.Errorf("record PLATFORM_IMAGE_TAG=%s in %s: %w", tag, upgradeEnvFile, e)
+	}
 	return nil
 }
 
