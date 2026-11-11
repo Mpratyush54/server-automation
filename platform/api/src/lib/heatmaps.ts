@@ -229,11 +229,15 @@ export async function persistHeatmapAggregates(
   const maxPages = opts.maxPages ?? maxPagesPerProject();
   if (!agg.pages.length) return { stored: 0, refusedPages: [] };
 
-  const existing: Array<{ page: string }> = await db.query(
-    'SELECT page FROM heatmap_pages WHERE project_id = $1 AND page = ANY($2::text[])',
+  const existing: Array<{ page: string; last_day: string | Date }> = await db.query(
+    'SELECT page, last_day FROM heatmap_pages WHERE project_id = $1 AND page = ANY($2::text[])',
     [projectId, agg.pages],
   );
   const known = new Set(existing.map((r) => r.page));
+  const dayOf = (v: string | Date) => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10));
+  // Pages seen earlier today need no write: rewriting the same heatmap_pages row on every
+  // request serialised concurrent ingests on that row's lock.
+  const stale = existing.filter((r) => dayOf(r.last_day) < day).map((r) => r.page).sort();
   const fresh = agg.pages.filter((p) => !known.has(p));
   const refused = new Set<string>();
   if (fresh.length) {
@@ -244,17 +248,31 @@ export async function persistHeatmapAggregates(
   const allowed = agg.pages.filter((p) => !refused.has(p));
   if (!allowed.length) return { stored: 0, refusedPages: [...refused] };
 
-  await db.query(
-    `INSERT INTO heatmap_pages (project_id, page, first_day, last_day)
-     SELECT $1::uuid, p, $2::date, $2::date FROM unnest($3::text[]) AS p
-     ON CONFLICT (project_id, page) DO UPDATE SET last_day = GREATEST(heatmap_pages.last_day, EXCLUDED.last_day)`,
-    [projectId, day, allowed],
-  );
+  const inserts = allowed.filter((p) => !known.has(p)).sort();
+  if (inserts.length) {
+    await db.query(
+      `INSERT INTO heatmap_pages (project_id, page, first_day, last_day)
+       SELECT $1::uuid, p, $2::date, $2::date FROM unnest($3::text[]) AS p
+       ON CONFLICT (project_id, page) DO UPDATE SET last_day = GREATEST(heatmap_pages.last_day, EXCLUDED.last_day)
+       WHERE heatmap_pages.last_day < EXCLUDED.last_day`,
+      [projectId, day, inserts],
+    );
+  }
+  if (stale.length) {
+    await db.query(
+      `UPDATE heatmap_pages SET last_day = $2::date
+       WHERE project_id = $1 AND page = ANY($3::text[]) AND last_day < $2::date`,
+      [projectId, day, stale],
+    );
+  }
 
-  const keep = <T extends { page: string }>(rows: T[]) => rows.filter((r) => !refused.has(r.page));
-  const clicks = keep(agg.clicks);
-  const targets = keep(agg.targets);
-  const scrolls = keep(agg.scrolls);
+  // Rows sorted by their conflict key: concurrent multi-row upserts then lock rows in the
+  // same order and cannot deadlock each other.
+  const keep = <T extends { page: string }>(rows: T[], key: (r: T) => string) =>
+    rows.filter((r) => !refused.has(r.page)).sort((x, y) => (key(x) < key(y) ? -1 : key(x) > key(y) ? 1 : 0));
+  const clicks = keep(agg.clicks, (r) => `${r.page} ${r.viewport} ${String(r.x).padStart(6, '0')} ${String(r.y).padStart(6, '0')}`);
+  const targets = keep(agg.targets, (r) => `${r.page} ${r.viewport} ${r.selector}`);
+  const scrolls = keep(agg.scrolls, (r) => `${r.page} ${r.viewport} ${String(r.depth).padStart(6, '0')}`);
   if (clicks.length) {
     await db.query(
       `INSERT INTO heatmap_click_cells (project_id, day, page, viewport, cell_x, cell_y, count)
