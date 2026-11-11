@@ -133,8 +133,9 @@ describe('HeatmapsComponent', () => {
     http.expectOne((r) => r.url === `/api/projects/${PID}/heatmaps` && r.params.get('type') === 'scroll')
       .flush({ views: 4, buckets: [], reach: [{ depth: 0, pct: 100 }, { depth: 50, pct: 50 }, { depth: 100, pct: 25 }] });
     await settle();
-    // Session replay (#40) not installed: list 404 -> neutral grid.
-    http.expectOne((r) => r.url === `/api/projects/${PID}/replays`).flush({ error: 'not found' }, { status: 404, statusText: 'Not Found' });
+    // No replay has recorded this page: latest snapshot 404 -> neutral grid with a hint.
+    http.expectOne((r) => r.url === `/api/projects/${PID}/replays/latest/snapshot` && r.params.get('page') === '/features')
+      .flush({ error: 'No DOM snapshot recorded for this page' }, { status: 404, statusText: 'Not Found' });
     await settle();
     fixture.detectChanges();
     await settle();
@@ -145,6 +146,7 @@ describe('HeatmapsComponent', () => {
     expect(comp.background).toBe('grid');
     expect(el.querySelector('.stage.grid-bg')).not.toBeNull();
     expect(el.querySelector('iframe')).toBeNull();
+    expect(el.textContent).toContain('No session replay has recorded this page yet');
     expect(el.textContent).toContain('button#cta-primary');
     expect(el.textContent).toContain('/features');
     const c = el.querySelector('canvas.heat') as HTMLCanvasElement;
@@ -172,9 +174,8 @@ describe('HeatmapsComponent', () => {
     http.expectOne((r) => r.params.get('type') === 'click').flush({ ...FIXTURE, page: '/features', topTargets: [] });
     http.expectOne((r) => r.params.get('type') === 'scroll').flush({ views: 0, buckets: [], reach: [] });
     await settle();
-    http.expectOne((r) => r.url === `/api/projects/${PID}/replays`).flush({ enabled: true, sessions: [{ session_id: 'sess-1', pages: ['/features'] }] });
-    await settle();
-    http.expectOne((r) => r.url === `/api/projects/${PID}/replays/sess-1/snapshot` && r.params.get('page') === '/features')
+    // Newest snapshot of this page from any session (sessionId = latest).
+    http.expectOne((r) => r.url === `/api/projects/${PID}/replays/latest/snapshot` && r.params.get('page') === '/features')
       .flush({ html: '<html><head></head><body><h1>Hi</h1><script>alert(1)</script><img src=x onerror=alert(2)></body></html>' });
     await settle();
     fixture.detectChanges();
