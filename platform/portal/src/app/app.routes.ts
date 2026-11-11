@@ -29,6 +29,8 @@ import { DocsComponent } from './pages/docs/docs.component';
 import { ProfileComponent } from './pages/profile/profile.component';
 import { MfaEnrollComponent } from './pages/mfa-enroll/mfa-enroll.component';
 import { SyntheticsComponent } from './pages/synthetics/synthetics.component';
+import { StatusPageEditorComponent } from './pages/status-page/status-page-editor.component';
+import { PublicStatusComponent } from './pages/status-page/public-status.component';
 import { HeatmapsComponent } from './pages/heatmaps/heatmaps.component';
 
 import { authGuard } from './guards/auth.guard';
@@ -77,6 +79,12 @@ export const routes: Routes = [
   { path: 'projects', component: ProjectsComponent, canActivate: [authGuard] },
   { path: 'projects/:id', component: ProjectDetailComponent, canActivate: [authGuard] },
   { path: 'projects/:id/synthetics', component: SyntheticsComponent, canActivate: [authGuard] }, // #42
+  { path: 'projects/:id/observability', loadComponent: () => import('./pages/observability/obs-project.component').then(m => m.ObsProjectComponent), canActivate: [authGuard] }, // #48
+  { path: 'observability', loadComponent: () => import('./pages/observability/obs-fleet.component').then(m => m.ObsFleetComponent), canActivate: [authGuard] }, // #48
+  { path: 'projects/:id/replays', loadComponent: () => import('./pages/replays/replays.component').then(m => m.ReplaysComponent), canActivate: [authGuard] }, // #40
+  { path: 'projects/:id/replays/:sessionId', loadComponent: () => import('./pages/replays/replay-player.component').then(m => m.ReplayPlayerComponent), canActivate: [authGuard] }, // #40
+  { path: 'projects/:id/status', component: StatusPageEditorComponent, canActivate: [authGuard] }, // #46
+  { path: 'status/:slug', component: PublicStatusComponent }, // #46 public, no auth
   { path: 'projects/:id/heatmaps', component: HeatmapsComponent, canActivate: [authGuard] }, // heatmaps (Phase 4 B2)
   { path: 'deployments', component: DeploymentsComponent, canActivate: [authGuard] },
   { path: 'services', component: ServicesComponent, canActivate: [authGuard] },

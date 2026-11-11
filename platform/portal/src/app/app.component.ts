@@ -18,6 +18,8 @@ export class AppComponent {
   isLoginPage = false;
   isLandingPage = false;
   isDocsPage = false;
+  /** Public status page (#46) — no app chrome. */
+  isPublicStatusPage = false;
   isSidebarCollapsed = false;
 
   private titles: Record<string, string> = {
@@ -50,6 +52,7 @@ export class AppComponent {
       this.isLoginPage = segment === 'login' || segment === 'oauth' || segment === 'mfa';
       this.isLandingPage = segment === '' || segment === 'landing';
       this.isDocsPage = segment === 'docs';
+      this.isPublicStatusPage = segment === 'status';
       this.pageTitle = this.titles[segment] || 'Platform';
     });
   }

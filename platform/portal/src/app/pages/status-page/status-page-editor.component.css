@@ -1,0 +1,24 @@
+.sp-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+.sp-head h1 { margin: 4px 0; }
+.back { font-size: 0.9em; }
+.muted { color: var(--text-muted, #888); }
+.head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.banner { padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; }
+.banner-error { background: rgba(220, 38, 38, 0.12); color: #dc2626; }
+.banner-ok { background: rgba(22, 163, 74, 0.12); color: #16a34a; }
+.card { margin-bottom: 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; align-items: end; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9em; }
+label.inline { flex-direction: row; align-items: center; gap: 8px; }
+/* The global form rule makes inputs full width; keep checkboxes next to their label. */
+label.inline input[type="checkbox"] { width: auto; flex: 0 0 auto; margin: 0; }
+.check-list label.inline { justify-content: flex-start; }
+label.block { grid-column: 1 / -1; }
+.hint { font-size: 0.82em; color: var(--text-muted, #888); }
+.tag { font-size: 0.72em; padding: 1px 6px; border-radius: 8px; border: 1px solid var(--border, #3335); }
+.tag-warn { color: #d97706; border-color: #d97706; }
+.check-list, .incident-list { list-style: none; padding: 0; margin: 12px 0 0; }
+.check-list li, .incident-list li { padding: 8px 0; border-bottom: 1px solid var(--border, #3332); }
+.inc-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.actions { display: flex; gap: 8px; margin-top: 8px; }
+textarea, input, select { font: inherit; }

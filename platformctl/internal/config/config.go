@@ -33,6 +33,11 @@ type Config struct {
 	WAF            bool
 	NginxAuthJail  bool
 
+	// Ingress per-client-IP limits. Zero disables the corresponding limit.
+	IngressIPRateLimit   int
+	IngressIPBurst       int
+	IngressIPConnections int
+
 	ImageRegistry string
 	ImageTag      string
 	RepoURL       string
@@ -130,9 +135,12 @@ func Load() *Config {
 		SkipPreflight:               os.Getenv("SKIP_PREFLIGHT") == "true",
 		AutoUpdate:                  getEnvBool("AUTO_UPDATE", true),
 		AutoUpgrade:                 getEnvBool("AUTO_UPGRADE", false),
-		SkipHardening:               !getEnvBool("PLATFORM_HARDEN", true),
+		SkipHardening:               !getEnvBool("PLATFORM_HARDEN", true) || getEnvBool("SKIP_HARDENING", false),
 		WAF:                         getEnvBool("PLATFORM_WAF", false),
 		NginxAuthJail:               getEnvBool("PLATFORM_NGINX_AUTH_JAIL", false),
+		IngressIPRateLimit:          getEnvIngressLimit("INGRESS_IP_RATE_LIMIT", 1000, 1000000),
+		IngressIPBurst:              getEnvIngressLimit("INGRESS_IP_BURST", 2000, 1000000),
+		IngressIPConnections:        getEnvIngressLimit("INGRESS_IP_CONNECTIONS", 2000, 65535),
 		MinioAccessKey:              getEnv("MINIO_ACCESS_KEY", "platformadmin"),
 		PostgresPassword:            os.Getenv("POSTGRES_PASSWORD"),
 		MongoPassword:               os.Getenv("MONGO_PASSWORD"),
@@ -553,6 +561,9 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("AUTO_UPGRADE=%t\n", c.AutoUpgrade))
 	b.WriteString(fmt.Sprintf("PLATFORM_HARDEN=%t\nPLATFORM_WAF=%t\n", !c.SkipHardening, c.WAF))
 	b.WriteString(fmt.Sprintf("PLATFORM_NGINX_AUTH_JAIL=%t\n", c.NginxAuthJail))
+	b.WriteString(fmt.Sprintf("INGRESS_IP_RATE_LIMIT=%d\n", c.IngressIPRateLimit))
+	b.WriteString(fmt.Sprintf("INGRESS_IP_BURST=%d\n", c.IngressIPBurst))
+	b.WriteString(fmt.Sprintf("INGRESS_IP_CONNECTIONS=%d\n", c.IngressIPConnections))
 	b.WriteString(fmt.Sprintf("PLATFORM_PROFILE=%s\n", c.profileName()))
 	if c.TelemetrySamplingPercentage != "" {
 		b.WriteString(fmt.Sprintf("TELEMETRY_SAMPLING_PERCENTAGE=%s\n", c.TelemetrySamplingPercentage))
@@ -581,6 +592,21 @@ func getEnv(key, defaultVal string) string {
 		return v
 	}
 	return defaultVal
+}
+
+// getEnvIngressLimit accepts zero as an explicit opt-out. The connection bound
+// matches nginx's limit_conn maximum; rate and burst are capped at one million.
+func getEnvIngressLimit(key string, defaultVal, max int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return defaultVal
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 0 || n > max {
+		fmt.Fprintf(os.Stderr, "platformctl: warning: invalid %s=%q (want 0-%d); using default %d\n", key, v, max, defaultVal)
+		return defaultVal
+	}
+	return n
 }
 
 func getEnvBool(key string, defaultVal bool) bool {

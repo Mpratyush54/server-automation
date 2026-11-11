@@ -37,7 +37,9 @@ func checkActiveOperations() error {
 	if strings.TrimSpace(pod) == "" {
 		return fmt.Errorf("no PostgreSQL pod for active-operation check")
 	}
-	raw, err := uk("-n", "databases", "exec", pod, "--", "bash", "-ec", operationsShell, "--", operationsSQL)
+	// -c: the full profile adds a metrics sidecar, and kubectl then prints
+	// "Defaulted container ..." into the combined output this parses.
+	raw, err := uk("-n", "databases", "exec", pod, "-c", "postgresql", "--", "bash", "-ec", operationsShell, "--", operationsSQL)
 	if err != nil {
 		return fmt.Errorf("query active operations: %w", err)
 	}

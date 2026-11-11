@@ -5,6 +5,7 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
+import { averageDeployTime, projectGrowth } from './dashboard-stats';
 
 @Component({
   selector: 'app-dashboard',
@@ -14,7 +15,10 @@ import { AuthService } from '../../services/auth.service';
   styleUrl: './dashboard.component.css'
 })
 export class DashboardComponent implements OnInit, OnDestroy {
-  stats = { projects: 0, deployments: 0, services: 0, namespaces: 6, podsText: '0 / 0', podsProgress: 0 };
+  stats = { projects: null as number | null, deployments: null as number | null, services: 0, namespaces: 0, podsText: '—', podsProgress: 0 };
+  platformName = '';
+  projectTrend: number | null = null;
+  avgDeployTime = '—';
   recentDeployments: any[] = [];
   systemHealth: any[] = [];
   projectsList: any[] = [];
@@ -57,15 +61,18 @@ export class DashboardComponent implements OnInit, OnDestroy {
       const projects = await firstValueFrom(this.api.getProjects()) as any[];
       this.projectsList = projects;
       this.stats.projects = projects.length;
+      this.projectTrend = projectGrowth(projects);
 
-      this.recentDeployments = projects
+      const deployments = projects
         .flatMap((p: any) => (p.deployments || []).map((d: any) => ({ ...d, projectName: p.name })))
-        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, 10);
+        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      this.recentDeployments = deployments.slice(0, 10);
 
-      this.stats.deployments = this.recentDeployments.filter((d: any) => d.status === 'active' || d.status === 'success').length;
+      this.stats.deployments = deployments.length;
+      this.avgDeployTime = averageDeployTime(deployments);
     } catch {
-      this.stats.projects = 0;
+      this.stats.projects = null;
+      this.stats.deployments = null;
       this.projectsList = [];
     }
 
@@ -89,6 +96,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     if ((this.auth.isDevOps() || this.auth.isAdmin()) && this.projectsList.length > 0) {
       try {
         const podsRes = await firstValueFrom(this.api.getPods());
+        if (!podsRes.k8sConnected) throw new Error('Kubernetes unavailable');
         const pods = podsRes.pods || [];
         const filteredPods = pods.filter((pod: any) => {
           const podNs = pod.namespace.toLowerCase();
@@ -101,13 +109,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
         });
         totalPods = filteredPods.length;
         runningPods = filteredPods.filter((p: any) => p.status === 'Running' || p.status === 'running').length;
+        this.stats.podsText = `${runningPods} / ${totalPods}`;
+        this.stats.podsProgress = totalPods > 0 ? Math.round((runningPods / totalPods) * 100) : 0;
       } catch {}
     }
-    this.stats.podsText = `${runningPods} / ${totalPods}`;
-    this.stats.podsProgress = totalPods > 0 ? Math.round((runningPods / totalPods) * 100) : 0;
 
     try {
       const status = await firstValueFrom(this.api.getBootstrapStatus()) as any;
+      this.platformName = status.platformName || '';
       this.systemHealth = Object.entries(status.services || {}).map(([name, s]) => ({ name, status: s }));
       this.stats.services = this.systemHealth.filter(s => s.status === 'running').length;
     } catch {

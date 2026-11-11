@@ -2,6 +2,10 @@ package cmd
 
 import (
 	"errors"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/upgrade"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -88,5 +92,81 @@ func TestUpgradePlanAndPreflightUseInjectedCommands(t *testing.T) {
 	upgradeRun = func(string, ...string) (string, error) { return "", errors.New("offline") }
 	if e = upgradePreflight(); e == nil {
 		t.Fatal("expected failure")
+	}
+}
+
+// Regression (v1.2.0 -> Phase 4 upgrade): release "loki" running chart
+// loki-stack-2.10.3 was planned as an upgrade to the loki 6.x chart because
+// "loki-" prefixes "loki-stack-". Charts must match by exact name.
+func TestUpgradePlanMatchesChartNamesExactly(t *testing.T) {
+	old := upgradeRun
+	defer func() { upgradeRun = old }()
+	digest := "ghcr.io/test/image@sha256:" + strings.Repeat("a", 64)
+	upgradeRun = func(name string, args ...string) (string, error) {
+		if name == "helm" {
+			return `[{"name":"loki","namespace":"monitoring","chart":"loki-stack-2.10.3","revision":"1"},` +
+				`{"name":"kube-prometheus","namespace":"monitoring","chart":"kube-prometheus-stack-1.0.0","revision":"2"}]`, nil
+		}
+		return digest, nil
+	}
+	p, e := upgradePlan(digest, digest)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, c := range p.Charts {
+		if c.Name == "loki" {
+			t.Fatalf("loki-stack release planned as %s %s", c.Chart, c.Version)
+		}
+	}
+	if len(p.Charts) != 1 || p.Charts[0].Chart != "kube-prometheus-stack" || p.Charts[0].Version != versions.Get("kube-prometheus-stack").Version {
+		t.Fatalf("plan = %+v", p.Charts)
+	}
+}
+
+// Regression: upgrade left PLATFORM_IMAGE_TAG at the old release in
+// /etc/platform/.env, so `install telemetry` pulled non-existent images and
+// `provision` would roll the API back.
+func TestPersistUpgradedTagRewritesEnvAtomically(t *testing.T) {
+	dir := t.TempDir()
+	old := upgradeEnvFile
+	upgradeEnvFile = filepath.Join(dir, ".env")
+	defer func() { upgradeEnvFile = old }()
+	if e := os.WriteFile(upgradeEnvFile, []byte("DOMAIN=x.test\nPLATFORM_IMAGE_TAG=1.2.0\nADMIN_EMAIL=a@x.test\n"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	if e := persistUpgradedTag("v1.3.0"); e != nil {
+		t.Fatal(e)
+	}
+	b, _ := os.ReadFile(upgradeEnvFile)
+	if string(b) != "DOMAIN=x.test\nPLATFORM_IMAGE_TAG=1.3.0\nADMIN_EMAIL=a@x.test\n" {
+		t.Fatalf("env = %q", b)
+	}
+	if e := persistUpgradedTag("latest; rm -rf /"); e == nil {
+		t.Fatal("persisted an invalid tag")
+	}
+	if _, e := os.Stat(upgradeEnvFile + ".tmp"); !os.IsNotExist(e) {
+		t.Fatal("temporary file left behind")
+	}
+}
+
+func TestUpgradePlanMutableTagOnlyForUnreleasedTarget(t *testing.T) {
+	old := upgradeRun
+	defer func() { upgradeRun, upgrade.AllowUnreleased = old, false }()
+	target := "ghcr.io/test/platform-api:1.3.0"
+	upgradeRun = func(name string, args ...string) (string, error) {
+		if name == "helm" {
+			return "[]", nil
+		}
+		return target, nil
+	}
+	if _, e := upgradePlan(target, target); e == nil {
+		t.Fatal("mutable tag accepted without --allow-unreleased")
+	}
+	upgrade.AllowUnreleased = true
+	if _, e := upgradePlan(target, target); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := upgradePlan("ghcr.io/test/platform-api:1.3.1", target); e == nil {
+		t.Fatal("a different mutable tag accepted")
 	}
 }

@@ -11,6 +11,8 @@
  * the copies identical (framework specifics live in `rum-deps.ts`).
  */
 import { redactSensitive } from './rum-deps';
+import type { PlatformReplayOptions } from './rum-replay';
+import type { ClientSpan } from './rum-propagation';
 
 /** The `telemetry` block of `GET /api/sdk/config` (only the fields the browser needs). */
 export interface PlatformTelemetryConfig {
@@ -25,6 +27,8 @@ export interface PlatformTelemetryConfig {
   browserToken?: string | null;
   samplingRatio?: number;
   resource?: Record<string, string>;
+  /** Session replay API base (`.../api/sdk/replay`); null when replay ingest is off (#40). */
+  replayEndpoint?: string | null;
 }
 
 /** A Faro transport item as seen by `beforeSend` (kept structural to avoid a Faro type import). */
@@ -68,6 +72,11 @@ export interface PlatformRumOptions {
   heatmaps?: boolean | import('./rum-heatmap').PlatformHeatmapOptions;
   /** Extra filter/scrubber run after the built-in redaction; return null to drop the item. */
   beforeSend?: (item: RumTransportItem) => RumTransportItem | null;
+  /**
+   * Privacy-first session replay (rrweb). Off when omitted. Loaded lazily; rrweb is
+   * downloaded only for sampled sessions after consent. See `PlatformReplayOptions`.
+   */
+  replay?: PlatformReplayOptions | false;
 }
 
 export type RumSkipReason =
@@ -343,7 +352,7 @@ async function loadTelemetry(options: PlatformRumOptions, win: any): Promise<Pla
  */
 export function initRum(
   options: PlatformRumOptions | false | null | undefined,
-  defaults: { appName?: string; environment?: string } = {},
+  defaults: { appName?: string; environment?: string; apiBase?: string; token?: string } = {},
   deps: { load?: FaroLoader; env?: RumEnvironment } = {},
 ): Promise<RumHandle | null> {
   if (!options) return Promise.resolve(null);
@@ -352,6 +361,7 @@ export function initRum(
   starting = (async () => {
     try {
       const telemetry = await loadTelemetry(options, env.win);
+      if (options.replay) void import('./rum-replay').then((m) => m.startReplay(options.replay, telemetry, { ...defaults, appVersion: options.appVersion, respectDoNotTrack: options.respectDoNotTrack })).catch(() => null);
       const decision = planRum(options, telemetry, defaults, env);
       if ('skip' in decision) return null;
       const mod = await (deps.load ?? defaultLoader)();
@@ -376,6 +386,7 @@ export function setRumView(name: string): void {
 /** Forward a caught error to RUM (with stack; redacted before sending). No-op when RUM is off. */
 export function reportRumError(error: unknown, context?: Record<string, string>): void {
   try {
+    for (const h of addonHooks) h.onError?.(error);
     active?.pushError(error, context);
   } catch {
     /* never throw from error reporting */
@@ -396,4 +407,60 @@ export function stopRum(): void {
     starting = null;
     pendingView = null;
   }
+}
+
+// ---------------------------------------------------------------- add-on hooks
+
+/** Listener for lazily loaded RUM add-ons (session replay): caught errors and client spans. */
+export interface RumAddonHook {
+  onError?(error: unknown): void;
+  onSpan?(span: ClientSpan): void;
+}
+
+const addonHooks: RumAddonHook[] = [];
+
+/** Subscribe an add-on; returns the unsubscribe function. */
+export function addRumHook(hook: RumAddonHook): () => void {
+  addonHooks.push(hook);
+  return () => {
+    const i = addonHooks.indexOf(hook);
+    if (i >= 0) addonHooks.splice(i, 1);
+  };
+}
+
+/** Called by the RUM propagation layer for every finished client span. */
+export function emitRumSpan(span: ClientSpan): void {
+  for (const h of addonHooks) {
+    try {
+      h.onSpan?.(span);
+    } catch {
+      /* add-ons never break RUM */
+    }
+  }
+}
+
+let replayId: string | undefined;
+
+/** Session replay id attached to error events (`replayId`), set while a replay records. */
+export function setReplayIdForErrors(id: string | undefined): void {
+  replayId = id;
+}
+
+/** The recording replay session id, if any (links errors to replays). */
+export function getReplayId(): string | undefined {
+  return replayId;
+}
+
+/**
+ * Record the user's session-replay consent: `setConsent({ replay: true })` starts a
+ * pending recording, `false` stops it at once. Stored on this device and sent to the
+ * platform. Loads the small replay controller lazily (never rrweb by itself).
+ */
+export function setConsent(consent: { replay?: boolean }): Promise<void> {
+  return import('./rum-replay').then((m) => m.setConsent(consent)).catch(() => undefined);
+}
+
+/** Stop session replay (logout, tests). Already uploaded chunks stay on the server. */
+export function stopReplay(): Promise<void> {
+  return import('./rum-replay').then((m) => m.stopReplay()).catch(() => undefined);
 }

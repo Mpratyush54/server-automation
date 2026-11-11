@@ -11,6 +11,7 @@ import { expressAuthenticate, expressRequireRole, getUserPermissions, hasRecentM
 import { requireProjectAccess } from '../lib/project-access';
 import { resolveProjectRef } from '../lib/project-resolve';
 import { decryptValue } from '../lib/secrets-encryption';
+import { affectsTelemetryOrigins, requestTelemetryOriginsSync } from '../lib/telemetry-origins';
 import { FeatureFlagModel } from '../schemas/FeatureFlag';
 
 const router = Router();
@@ -137,6 +138,7 @@ router.post('/config', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
       });
       await repo.save(config);
     }
+    if (affectsTelemetryOrigins(body.key)) requestTelemetryOriginsSync();
 
     return res.status(201).json(config);
   } catch (err: any) {
@@ -165,6 +167,7 @@ router.delete('/config', expressAuthenticate, expressRequireRole([UserRole.DEVOP
       return res.status(404).json({ error: 'Config not found' });
     }
     await repo.remove(config);
+    if (affectsTelemetryOrigins(key)) requestTelemetryOriginsSync();
     return res.json({ success: true });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });

@@ -1,12 +1,17 @@
 import { githubAuthorizationFor } from './github-app';
 import { gitlabApiToken } from './gitlab-app';
+import { redisKey, stateBackend, withRedis } from './redis';
 
 /**
  * GitHub API headers for `owner/repo`: a GitHub App installation token when the App is
  * installed on the repository (#35), else the legacy GITHUB_TOKEN, else anonymous.
  */
 async function githubHeaders(owner: string, repo: string): Promise<Record<string, string>> {
-  const headers: Record<string, string> = { Accept: 'application/vnd.github+json', 'User-Agent': 'platform-api' };
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'platform-api',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
   const auth = await githubAuthorizationFor(owner, repo);
   if (auth) headers.Authorization = auth;
   return headers;
@@ -18,6 +23,73 @@ async function gitlabHeaders(): Promise<Record<string, string>> {
   const token = await gitlabApiToken().catch(() => process.env.GITLAB_TOKEN || '');
   if (token) headers['PRIVATE-TOKEN'] = token;
   return headers;
+}
+
+/** How long a successful branch list is reused before re-hitting the provider (#155). */
+export const BRANCH_CACHE_TTL_MS = 60_000;
+
+export type RepoBranches = {
+  defaultBranch: string;
+  branches: { name: string; sha: string; protected?: boolean }[];
+  provider: string;
+  ownerRepo: string;
+};
+
+// Memory backend only under tests / PLATFORM_STATE_STORE=memory (single replica); deployments
+// use Redis. Bounded: at most MEMORY_BRANCH_CACHE_MAX repositories, oldest evicted first.
+const MEMORY_BRANCH_CACHE_MAX = 200;
+const memoryBranchCache: Record<string, { expiresAt: number; value: RepoBranches }> = {};
+
+function branchCacheKey(provider: string, ownerRepo: string): string {
+  return `git-branches:${provider}:${ownerRepo.toLowerCase()}`;
+}
+
+async function readBranchCache(key: string): Promise<RepoBranches | null> {
+  if (stateBackend() === 'redis') {
+    try {
+      const raw = await withRedis((r) => r.get(redisKey(key)));
+      if (!raw) return null;
+      return JSON.parse(raw) as RepoBranches;
+    } catch {
+      return null;
+    }
+  }
+  const entry = memoryBranchCache[key];
+  if (!entry || entry.expiresAt <= Date.now()) {
+    delete memoryBranchCache[key];
+    return null;
+  }
+  return entry.value;
+}
+
+async function writeBranchCache(key: string, value: RepoBranches): Promise<void> {
+  if (stateBackend() === 'redis') {
+    try {
+      await withRedis((r) => r.set(redisKey(key), JSON.stringify(value), 'PX', BRANCH_CACHE_TTL_MS));
+    } catch {
+      /* cache is best-effort */
+    }
+    return;
+  }
+  delete memoryBranchCache[key];
+  const keys = Object.keys(memoryBranchCache);
+  for (let i = 0; i <= keys.length - MEMORY_BRANCH_CACHE_MAX; i++) delete memoryBranchCache[keys[i]];
+  memoryBranchCache[key] = { expiresAt: Date.now() + BRANCH_CACHE_TTL_MS, value };
+}
+
+/** Test hook: drop in-memory branch lists. */
+export function clearBranchCacheForTests(): void {
+  for (const k of Object.keys(memoryBranchCache)) delete memoryBranchCache[k];
+}
+
+function rateLimitError(provider: string, status: number, body: string): Error {
+  const snippet = body.slice(0, 200);
+  if (status === 403 && /rate.?limit|secondary rate/i.test(body)) {
+    return new Error(
+      `${provider} API rate limit exceeded (${status}). Connect a GitHub App installation or set GITHUB_TOKEN. ${snippet}`,
+    );
+  }
+  return new Error(`${provider} request failed (${status}): ${snippet}`);
 }
 
 /** Only configured provider origins may receive platform credentials. */
@@ -44,14 +116,16 @@ export function parseGitRemote(repositoryUrl: string | null | undefined): {
   } catch { return null; }
 }
 
-export async function fetchRepoBranches(repositoryUrl: string): Promise<{
-  defaultBranch: string;
-  branches: { name: string; sha: string; protected?: boolean }[];
-  provider: string;
-  ownerRepo: string;
-}> {
+export async function fetchRepoBranches(repositoryUrl: string): Promise<RepoBranches> {
   const parsed = parseGitRemote(repositoryUrl);
   if (!parsed) throw new Error('Unsupported repository URL — use a GitHub or GitLab HTTPS/SSH URL');
+
+  const ownerRepo = `${parsed.owner}/${parsed.repo}`;
+  const cacheKey = branchCacheKey(parsed.provider, ownerRepo);
+  const cached = await readBranchCache(cacheKey);
+  if (cached) return cached;
+
+  let result: RepoBranches;
 
   if (parsed.provider === 'github') {
     const headers = await githubHeaders(parsed.owner, parsed.repo);
@@ -59,7 +133,7 @@ export async function fetchRepoBranches(repositoryUrl: string): Promise<{
     const repoRes = await fetch(`${parsed.apiBase}/repos/${parsed.owner}/${parsed.repo}`, { headers, redirect: 'error' });
     if (!repoRes.ok) {
       const body = await repoRes.text();
-      throw new Error(`GitHub repo lookup failed (${repoRes.status}): ${body.slice(0, 200)}`);
+      throw rateLimitError('GitHub repo lookup', repoRes.status, body);
     }
     const repoInfo: any = await repoRes.json();
     const defaultBranch = repoInfo.default_branch || 'HEAD';
@@ -70,7 +144,7 @@ export async function fetchRepoBranches(repositoryUrl: string): Promise<{
     );
     if (!brRes.ok) {
       const body = await brRes.text();
-      throw new Error(`GitHub branches failed (${brRes.status}): ${body.slice(0, 200)}`);
+      throw rateLimitError('GitHub branches', brRes.status, body);
     }
     const branchesRaw: any[] = await brRes.json();
     const branches = branchesRaw.map((b) => ({
@@ -86,22 +160,20 @@ export async function fetchRepoBranches(repositoryUrl: string): Promise<{
       return a.name.localeCompare(b.name);
     });
 
-    return {
+    result = {
       defaultBranch,
       branches,
       provider: 'github',
-      ownerRepo: `${parsed.owner}/${parsed.repo}`,
+      ownerRepo,
     };
-  }
-
-  // GitLab
-  {
+  } else {
+    // GitLab
     const headers = await gitlabHeaders();
-    const projectPath = encodeURIComponent(`${parsed.owner}/${parsed.repo}`);
+    const projectPath = encodeURIComponent(ownerRepo);
     const projRes = await fetch(`${parsed.apiBase}/projects/${projectPath}`, { headers, redirect: 'error' });
     if (!projRes.ok) {
       const body = await projRes.text();
-      throw new Error(`GitLab project lookup failed (${projRes.status}): ${body.slice(0, 200)}`);
+      throw rateLimitError('GitLab project lookup', projRes.status, body);
     }
     const proj: any = await projRes.json();
     const defaultBranch = proj.default_branch || 'HEAD';
@@ -111,7 +183,7 @@ export async function fetchRepoBranches(repositoryUrl: string): Promise<{
     );
     if (!brRes.ok) {
       const body = await brRes.text();
-      throw new Error(`GitLab branches failed (${brRes.status}): ${body.slice(0, 200)}`);
+      throw rateLimitError('GitLab branches', brRes.status, body);
     }
     const branchesRaw: any[] = await brRes.json();
     const branches = branchesRaw.map((b) => ({
@@ -124,13 +196,16 @@ export async function fetchRepoBranches(repositoryUrl: string): Promise<{
       if (b.name === defaultBranch) return 1;
       return a.name.localeCompare(b.name);
     });
-    return {
+    result = {
       defaultBranch,
       branches,
       provider: 'gitlab',
-      ownerRepo: `${parsed.owner}/${parsed.repo}`,
+      ownerRepo,
     };
   }
+
+  await writeBranchCache(cacheKey, result);
+  return result;
 }
 
 export async function fetchBranchCommits(

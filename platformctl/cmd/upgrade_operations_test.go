@@ -33,7 +33,7 @@ func TestActiveOperationsCommandsAndResults(t *testing.T) {
 				calls++
 				want := []string{"-n", "databases", "get", "pods", "-l", "app.kubernetes.io/name=postgresql", "-o", "jsonpath={.items[0].metadata.name}"}
 				if calls == 2 {
-					want = []string{"-n", "databases", "exec", "postgresql-0", "--", "bash", "-ec", operationsShell, "--", operationsSQL}
+					want = []string{"-n", "databases", "exec", "postgresql-0", "-c", "postgresql", "--", "bash", "-ec", operationsShell, "--", operationsSQL}
 				}
 				if name != "kubectl" || !reflect.DeepEqual(args, want) {
 					t.Fatalf("unexpected command %s %q", name, args)

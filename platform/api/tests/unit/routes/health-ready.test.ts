@@ -74,3 +74,32 @@ it('reports draining once shutdown has started', async () => {
   expect(r.status).toBe(503);
   expect(r.body.status).toBe('draining');
 });
+
+describe('GET /api/health/schema', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const migrations = require('../../../src/lib/migrations');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { resetSchemaCheckForTests } = require('../../../src/routes/health');
+  beforeEach(() => resetSchemaCheckForTests());
+
+  it('is 200 when no objects are missing (non-additive differences do not gate)', async () => {
+    jest.spyOn(migrations, 'pendingSchemaChanges').mockResolvedValue([`ALTER TABLE "x" ALTER COLUMN "y" TYPE text`]);
+    const r = await request(app).get('/api/health/schema');
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ status: 'ok', missing: 0 });
+  });
+
+  it('is 503 drift when columns are missing (rolled-back schema)', async () => {
+    jest.spyOn(migrations, 'pendingSchemaChanges').mockResolvedValue([`ALTER TABLE "projects" ADD "x" text`]);
+    const r = await request(app).get('/api/health/schema');
+    expect(r.status).toBe(503);
+    expect(r.body).toEqual({ status: 'drift', missing: 1 });
+  });
+
+  it('is 503 unavailable when the comparison fails, without driver text', async () => {
+    jest.spyOn(migrations, 'pendingSchemaChanges').mockRejectedValue(new Error('ECONNREFUSED 10.0.0.5'));
+    const r = await request(app).get('/api/health/schema');
+    expect(r.status).toBe(503);
+    expect(r.body).toEqual({ status: 'unavailable' });
+  });
+});

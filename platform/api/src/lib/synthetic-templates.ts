@@ -80,17 +80,19 @@ export const SYNTHETIC_TEMPLATES = [
   },
   {
     id: 'browser-smoke',
-    name: 'Browser: page loads and shows a heading',
-    description: 'Headless Chromium (full profile). A screenshot is stored when it fails.',
+    name: 'Browser: page loads',
+    description: 'Headless Chromium (full profile): open your page, expect HTTP < 400 and a rendered body. Enter your URL first. A screenshot is stored when it fails.',
+    /** Fields the user must fill in before saving (the template has no usable default). */
+    requiredFields: ['config.steps[0].url'],
     check: {
       type: 'browser',
       intervalSeconds: 900,
       timeoutMs: 60000,
       config: {
+        // Target-agnostic: goto fails on HTTP >= 400; no assumptions about headings or text.
         steps: [
-          { action: 'goto', url: 'https://example.com/' },
-          { action: 'wait_for', selector: 'h1' },
-          { action: 'assert_text', selector: 'h1', value: 'Example' },
+          { action: 'goto', url: '' },
+          { action: 'wait_for', selector: 'body' },
         ],
       },
     },

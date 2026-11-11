@@ -1,0 +1,105 @@
+<div class="public-status" [ngStyle]="cssVars()">
+  @if (loading && !payload) {
+    <p class="muted" role="status">Loading status…</p>
+  } @else if (error && !payload) {
+    <div class="empty">
+      <h1>Status unavailable</h1>
+      <p>{{ error }}</p>
+    </div>
+  } @else if (payload) {
+    <header class="hero">
+      @if (payload.branding.logoUrl) {
+        <img class="logo" [src]="payload.branding.logoUrl" alt="" />
+      }
+      <h1>{{ payload.title }}</h1>
+      <p class="overall" [attr.data-status]="payload.status">{{ statusLabel(payload.status) }}</p>
+      <p class="muted">Updated {{ payload.generatedAt | date:'medium' }}</p>
+    </header>
+
+    <section class="components">
+      <h2>Components</h2>
+      @for (c of payload.components; track c.id) {
+        <article class="component">
+          <div class="comp-head">
+            <span class="dot" [attr.data-status]="c.status"></span>
+            <strong>{{ c.name }}</strong>
+            <span class="muted">{{ c.status }}</span>
+            @if (c.uptime['30d'] !== null) {
+              <span class="uptime">{{ c.uptime['30d'] }}% (30d)</span>
+            }
+          </div>
+          <div class="bars" role="img" [attr.aria-label]="'Uptime history for ' + c.name">
+            @for (d of c.days; track d.date) {
+              <span class="bar" [attr.data-status]="d.status" [title]="dayTitle(d)"></span>
+            }
+          </div>
+        </article>
+      } @empty {
+        <p class="muted">No components published.</p>
+      }
+    </section>
+
+    <section class="incidents">
+      <h2>Active incidents</h2>
+      @for (inc of openIncidents(); track inc.id) {
+        <article class="incident" [attr.data-maintenance]="inc.isMaintenance">
+          <h3>{{ inc.title }}</h3>
+          <p class="meta">{{ inc.isMaintenance ? 'maintenance in progress' : inc.status }} · {{ inc.impact }}</p>
+          @if (inc.isMaintenance && (inc.scheduledStart || inc.scheduledEnd)) {
+            <p class="meta">
+              Window: {{ inc.scheduledStart ? (inc.scheduledStart | date:'medium') : '…' }}
+              – {{ inc.scheduledEnd ? (inc.scheduledEnd | date:'medium') : 'until further notice' }}
+            </p>
+          }
+          <ol>
+            @for (u of inc.updates; track u.at) {
+              <li><time>{{ u.at | date:'short' }}</time> — <strong>{{ u.status }}</strong>: {{ u.body }}</li>
+            }
+          </ol>
+        </article>
+      } @empty {
+        <p class="muted">No active incidents.</p>
+      }
+    </section>
+
+    @if (upcomingMaintenance().length) {
+      <section class="incidents">
+        <h2>Scheduled maintenance</h2>
+        @for (inc of upcomingMaintenance(); track inc.id) {
+          <article class="incident" data-maintenance="true">
+            <h3>{{ inc.title }}</h3>
+            <p class="meta">
+              Scheduled · {{ inc.scheduledStart ? (inc.scheduledStart | date:'medium') : '…' }}
+              – {{ inc.scheduledEnd ? (inc.scheduledEnd | date:'medium') : 'until further notice' }}
+            </p>
+            @if (inc.updates.length) {
+              <ol>
+                @for (u of inc.updates; track u.at) {
+                  <li><time>{{ u.at | date:'short' }}</time> — {{ u.body }}</li>
+                }
+              </ol>
+            }
+          </article>
+        }
+      </section>
+    }
+
+    @if (pastIncidents().length) {
+      <section class="incidents past">
+        <h2>Past incidents</h2>
+        @for (inc of pastIncidents(); track inc.id) {
+          <article class="incident resolved">
+            <h3>{{ inc.title }}</h3>
+            <p class="meta">{{ inc.isMaintenance ? 'Completed' : 'Resolved' }} {{ inc.resolvedAt | date:'medium' }}</p>
+          </article>
+        }
+      </section>
+    }
+
+    <footer class="foot muted">
+      <a [href]="'/api/public/status/' + payload.slug + '/atom'">Atom</a>
+      ·
+      <a [href]="'/api/public/status/' + payload.slug + '/rss'">RSS</a>
+    </footer>
+  }
+</div>

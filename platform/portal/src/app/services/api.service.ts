@@ -44,6 +44,7 @@ export class ApiService {
   // Metrics
   getMetrics(projectId: string, serviceName?: string): Observable<any> { return this.http.get(`${this.base}/metrics`, { params: { projectId, ...(serviceName ? { serviceName } : {}) } }); }
   getAggregatedMetrics(projectId: string): Observable<any> { return this.http.get(`${this.base}/metrics/aggregated`, { params: { projectId } }); }
+  getObservabilityStatus(): Observable<any> { return this.http.get(`${this.base}/observability/status`); } // #48
 
   // Logs
   searchLogs(params: any): Observable<any> { return this.http.get(`${this.base}/logs/search`, { params }); }
@@ -161,7 +162,7 @@ export class ApiService {
   updateProjectPrivacyScrubbing(projectId: string, data: { scrubIps?: boolean; rules?: any[] }): Observable<any> {
     return this.http.put(`${this.base}/projects/${projectId}/privacy/scrubbing`, data);
   }
-  updateProjectPrivacyRetention(projectId: string, data: Record<string, number>): Observable<any> {
+  updateProjectPrivacyRetention(projectId: string, data: Record<string, number | null>): Observable<any> {
     return this.http.put(`${this.base}/projects/${projectId}/privacy/retention`, data);
   }
   updateProjectPrivacyConsentDefaults(projectId: string, data: { replay?: boolean; analytics?: boolean }): Observable<any> {

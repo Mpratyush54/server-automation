@@ -4,6 +4,7 @@ import { Entity, Index, PrimaryGeneratedColumn, Column, CreateDateColumn } from 
 @Entity('alert_deliveries')
 @Index('alert_deliveries_status', ['status'])
 @Index('alert_deliveries_incident', ['incidentId'])
+@Index('alert_deliveries_created', ['createdAt'])
 export class AlertDelivery {
   @PrimaryGeneratedColumn('uuid')
   id: string;

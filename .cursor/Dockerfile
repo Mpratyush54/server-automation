@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     docker.io \
     && rm -rf /var/lib/apt/lists/*
 
-# Go 1.22 for platformctl
-ENV GO_VERSION=1.22.12
+# Go toolchain for platformctl (keep in step with platformctl/go.mod)
+ENV GO_VERSION=1.26.11
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
     | tar -C /usr/local -xz
 ENV PATH="/usr/local/go/bin:${PATH}"

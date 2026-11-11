@@ -37,6 +37,8 @@ The `201` body includes `token` (`plat_agent_...`) **once**. Store it in a secre
 
 If you omit `scopes`, the API assigns the default set above.
 
+Session replay recordings hold personal data, so reading them (`/api/projects/:id/replays/...`) needs the extra `replays:read` scope, which is never in the default set. Every replay view, chunk and snapshot an agent reads is audited with the agent token's id.
+
 Verify:
 
 ```bash

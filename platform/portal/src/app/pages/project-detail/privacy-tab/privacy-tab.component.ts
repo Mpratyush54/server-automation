@@ -60,16 +60,22 @@ interface ScrubRule {
     <section class="card">
       <h2>Retention (days)</h2>
       <p class="hint">
-        Defaults: logs/traces/profiles 30d, replays 7d, errors 90d, heatmaps 90d (anonymous aggregates). Cluster Loki/Tempo/Pyroscope
-        use <code>TELEMETRY_RETENTION_DAYS</code>; stream retention applies for replays/errors labels.
+        Leave a field empty to use the default (logs 30d or the cluster value, replays 7d, errors 90d,
+        heatmaps 90d of anonymous aggregates). Traces and profiles use the cluster-wide
+        retention (<code>TELEMETRY_RETENTION_DAYS</code>) and cannot be set per project.
       </p>
       <div class="grid">
         @for (k of retentionKeys; track k) {
           <label>
             {{ k }}
-            <input type="number" min="1" max="365" [(ngModel)]="retention[k]" />
+            <input type="number" min="1" max="365" [(ngModel)]="retention[k]"
+              [placeholder]="'default ' + (settings?.defaults?.retentionDays?.[k] ?? '')" />
           </label>
         }
+        <label>
+          traces / profiles
+          <input type="text" disabled [value]="(settings?.retentionDays?.traces ?? '') + ' (cluster)'" />
+        </label>
       </div>
       <button type="button" class="btn btn-sm btn-primary" [disabled]="busy" (click)="saveRetention()">Save retention</button>
     </section>
@@ -131,8 +137,9 @@ export class PrivacyTabComponent implements OnChanges {
   settings: any = null;
   scrubIps = true;
   rules: ScrubRule[] = [];
-  retentionKeys = ['logs', 'traces', 'profiles', 'replays', 'errors', 'heatmaps'] as const;
-  retention: Record<string, number> = {};
+  retentionKeys = ['logs', 'replays', 'errors', 'heatmaps'] as const;
+  /** Project overrides only; empty = default. */
+  retention: Record<string, number | null> = {};
   consent = { replay: false, analytics: true };
   gdpr = { userId: '', sessionId: '', email: '' };
   gdprResult: any = null;
@@ -150,7 +157,7 @@ export class PrivacyTabComponent implements OnChanges {
       this.settings = await firstValueFrom(this.api.getProjectPrivacy(this.projectId));
       this.scrubIps = this.settings.scrubIps !== false;
       this.rules = (this.settings.scrubRules || []).map((r: ScrubRule) => ({ ...r }));
-      this.retention = { ...(this.settings.retentionDays || {}) };
+      this.retention = { ...(this.settings.retentionOverrides || {}) };
       this.consent = {
         replay: !!this.settings.consentDefaults?.replay,
         analytics: this.settings.consentDefaults?.analytics !== false,
@@ -193,8 +200,14 @@ export class PrivacyTabComponent implements OnChanges {
     this.status = '';
     this.error = '';
     try {
-      this.settings = await firstValueFrom(this.api.updateProjectPrivacyRetention(this.projectId, this.retention));
-      this.retention = { ...(this.settings.retentionDays || {}) };
+      // Empty field -> null clears the override (back to the default).
+      const body: Record<string, number | null> = {};
+      for (const k of this.retentionKeys) {
+        const v = this.retention[k];
+        body[k] = v === null || v === undefined || (v as any) === '' ? null : Number(v);
+      }
+      this.settings = await firstValueFrom(this.api.updateProjectPrivacyRetention(this.projectId, body));
+      this.retention = { ...(this.settings.retentionOverrides || {}) };
       this.status = 'Retention saved';
     } catch (e: any) {
       this.error = e?.error?.error || e?.message || 'Save failed';

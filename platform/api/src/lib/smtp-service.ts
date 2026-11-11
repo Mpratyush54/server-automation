@@ -12,33 +12,49 @@ export interface SmtpOptions {
   fromName?: string;
 }
 
-function createTransport(opts: SmtpOptions) {
+/** Default bound for every SMTP phase (nodemailer's own connect default is 2 minutes). */
+export const DEFAULT_SMTP_TIMEOUT_MS = 15_000;
+
+export interface SendMailOptions {
+  /**
+   * Upper bound for connect, greeting and socket inactivity, and for the whole send.
+   * Alert e-mail passes ALERTING_DELIVERY_TIMEOUT_MS so an unreachable server fails
+   * fast (and is retried with backoff) instead of holding the dispatcher.
+   */
+  timeoutMs?: number;
+}
+
+/** nodemailer timeout options, each bounded by `timeoutMs`. */
+export function smtpTimeouts(timeoutMs: number = DEFAULT_SMTP_TIMEOUT_MS) {
+  const ms = Math.max(500, Math.floor(timeoutMs));
+  return { connectionTimeout: ms, greetingTimeout: ms, socketTimeout: ms, dnsTimeout: ms };
+}
+
+export function transportOptions(opts: SmtpOptions, timeoutMs: number = DEFAULT_SMTP_TIMEOUT_MS): Record<string, any> {
+  const t = smtpTimeouts(timeoutMs);
   switch (opts.provider) {
     case 'sendgrid':
-      return nodemailer.createTransport({
-        host: 'smtp.sendgrid.net',
-        port: 587,
-        auth: { user: 'apikey', pass: opts.apiKey },
-      });
+      return { host: 'smtp.sendgrid.net', port: 587, auth: { user: 'apikey', pass: opts.apiKey }, ...t };
     case 'mailgun':
-      return nodemailer.createTransport({
-        host: 'smtp.mailgun.org',
-        port: 587,
-        auth: { user: opts.username, pass: opts.apiKey },
-      });
+      return { host: 'smtp.mailgun.org', port: 587, auth: { user: opts.username, pass: opts.apiKey }, ...t };
     case 'ses':
-      return nodemailer.createTransport({
-        host: `email-smtp.${opts.host || 'us-east-1'}.amazonaws.com`,
-        port: 587,
-        auth: { user: opts.username, pass: opts.password },
-      });
+      return { host: `email-smtp.${opts.host || 'us-east-1'}.amazonaws.com`, port: 587, auth: { user: opts.username, pass: opts.password }, ...t };
     default:
-      return nodemailer.createTransport({
+      return {
         host: opts.host!,
         port: opts.port || 587,
         secure: opts.secure ?? false,
         auth: opts.username ? { user: opts.username, pass: opts.password } : undefined,
-      });
+        ...t,
+      };
+  }
+}
+
+export class SmtpTimeoutError extends Error {
+  readonly code = 'ETIMEDOUT';
+  constructor(ms: number) {
+    super(`SMTP send timed out after ${ms} ms`);
+    this.name = 'SmtpTimeoutError';
   }
 }
 
@@ -46,15 +62,30 @@ export async function sendMail(
   opts: SmtpOptions,
   to: string | string[],
   subject: string,
-  html: string
+  html: string,
+  options: SendMailOptions = {},
 ): Promise<void> {
-  const transport = createTransport(opts);
-  await transport.sendMail({
-    from: `"${opts.fromName || 'Platform'}" <${opts.fromEmail}>`,
-    to: Array.isArray(to) ? to.join(', ') : to,
-    subject,
-    html,
+  const timeoutMs = options.timeoutMs ?? DEFAULT_SMTP_TIMEOUT_MS;
+  const transport = nodemailer.createTransport(transportOptions(opts, timeoutMs) as any);
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new SmtpTimeoutError(timeoutMs)), timeoutMs);
+    timer.unref?.();
   });
+  try {
+    await Promise.race([
+      transport.sendMail({
+        from: `"${opts.fromName || 'Platform'}" <${opts.fromEmail}>`,
+        to: Array.isArray(to) ? to.join(', ') : to,
+        subject,
+        html,
+      }),
+      deadline,
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    try { transport.close(); } catch { /* already closed */ }
+  }
 }
 
 export async function testSmtpConnection(opts: SmtpOptions, testTo: string): Promise<{ success: boolean; error?: string }> {

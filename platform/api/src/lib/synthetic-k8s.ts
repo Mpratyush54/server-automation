@@ -1,9 +1,9 @@
-import crypto from 'crypto';
 import type { SyntheticCheck } from '../entities/SyntheticCheck';
 import { referencedSecrets } from './synthetic-assertions';
 import { runnerToken } from './synthetic-checks';
 import { loadKubeConfig } from './kube-config';
-import { resolveTarget } from './synthetic-ssrf';
+import { INGRESS_SERVICE, isPlatformHost, platformDomainOf, resolveTarget } from './synthetic-ssrf';
+import { cronSchedule } from './synthetic-cron';
 
 /**
  * Kubernetes resources for synthetic checks (#42, full profile).
@@ -21,7 +21,7 @@ import { resolveTarget } from './synthetic-ssrf';
  * image (platform/synthetics-runner), restricted securityContext, explicit requests/limits,
  * concurrencyPolicy Forbid, plus a per-check Secret with its runner token. The namespace has
  * a ResourceQuota (global browser concurrency) and an egress NetworkPolicy (public internet +
- * the platform API only). Enabled only when platformctl wrote the `synthetics-runner`
+ * the API's runner-only port). Enabled only when platformctl wrote the `synthetics-runner`
  * ConfigMap (full profile + SYNTHETICS_BROWSER=true).
  */
 
@@ -29,7 +29,13 @@ export const PROBE_NAMESPACE = 'monitoring';
 export const SYNTHETICS_NAMESPACE = 'synthetics';
 export const CHECK_LABEL = 'platform.io/synthetic-check';
 export const RUNNER_CONFIGMAP = 'synthetics-runner';
-export const DEFAULT_API_URL = 'http://platform-api.platform.svc:3000';
+/** The API's runner-only listener (SYNTHETICS_RUNNER_PORT) behind the platform-api-synthetics Service. */
+export const DEFAULT_API_URL = 'http://platform-api-synthetics.platform.svc:3001';
+/** Ingress controller Service; the CoreDNS rewrite sends DOMAIN and *.DOMAIN there as well. */
+export { INGRESS_SERVICE };
+/** ConfigMap (synthetics namespace) with the internal CA certificate, written by platformctl. */
+export const PLATFORM_CA_CONFIGMAP = 'platform-ca';
+export const PLATFORM_CA_MOUNT = '/etc/platform-ca';
 export const BROWSER_RESOURCES = {
   requests: { cpu: '250m', memory: '512Mi', 'ephemeral-storage': '256Mi' },
   limits: { cpu: '1', memory: '1Gi', 'ephemeral-storage': '1Gi' },
@@ -90,20 +96,11 @@ export function renderProbe(check: Pick<SyntheticCheck, 'id' | 'projectId' | 'ty
   };
 }
 
-/** Cron schedule for a browser interval, offset by a per-check minute so jobs spread out. */
-export function cronSchedule(intervalSeconds: number, checkId: string): string {
-  const minutes = Math.max(5, Math.round(intervalSeconds / 60));
-  const hash = crypto.createHash('sha256').update(checkId).digest();
-  if (minutes < 60) {
-    const offset = hash[0] % minutes;
-    const list: number[] = [];
-    for (let m = offset; m < 60; m += minutes) list.push(m);
-    return `${list.join(',')} * * * *`;
-  }
-  const hours = Math.max(1, Math.round(minutes / 60));
-  const minute = hash[0] % 60;
-  if (hours >= 24) return `${minute} ${hash[1] % 24} * * *`;
-  return `${minute} ${hash[1] % hours}-23/${hours} * * *`;
+export { cronSchedule };
+
+/** activeDeadlineSeconds of a browser run: the check timeout plus browser start-up/report time. */
+export function browserJobDeadlineSeconds(timeoutMs: number): number {
+  return Math.ceil(timeoutMs / 1000) + 90;
 }
 
 export interface BrowserRuntime {
@@ -131,7 +128,7 @@ export function renderBrowserCronJob(
   runtime: { image: string; apiUrl: string },
 ): Record<string, any> {
   const name = resourceName(check.id);
-  const deadline = Math.ceil(check.timeoutMs / 1000) + 90;
+  const deadline = browserJobDeadlineSeconds(check.timeoutMs);
   const labels = { 'app.kubernetes.io/managed-by': 'platform-api', 'app.kubernetes.io/name': 'synthetics-browser', [CHECK_LABEL]: check.id, 'platform.io/project': check.projectId };
   return {
     apiVersion: 'batch/v1',
@@ -139,6 +136,8 @@ export function renderBrowserCronJob(
     metadata: { name, namespace: SYNTHETICS_NAMESPACE, labels },
     spec: {
       schedule: cronSchedule(check.intervalSeconds, check.id),
+      // Fixed zone so the API can show the next run (synthetic-cron.ts).
+      timeZone: 'Etc/UTC',
       suspend: !check.enabled,
       concurrencyPolicy: 'Forbid',
       startingDeadlineSeconds: 120,
@@ -166,14 +165,24 @@ export function renderBrowserCronJob(
                   { name: 'PLATFORM_API_URL', value: runtime.apiUrl },
                   { name: 'RUN_TOKEN', valueFrom: { secretKeyRef: { name, key: 'RUN_TOKEN' } } },
                   { name: 'HOME', value: '/tmp' },
+                  // Project env hosts are mapped to this Service's address inside Chromium.
+                  { name: 'INGRESS_SERVICE', value: INGRESS_SERVICE },
+                  { name: 'PLATFORM_CA_FILE', value: `${PLATFORM_CA_MOUNT}/ca.crt` },
                 ],
                 resources: BROWSER_RESOURCES,
                 securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ['ALL'] } },
-                volumeMounts: [{ name: 'tmp', mountPath: '/tmp' }, { name: 'shm', mountPath: '/dev/shm' }],
+                volumeMounts: [
+                  { name: 'tmp', mountPath: '/tmp' },
+                  { name: 'shm', mountPath: '/dev/shm' },
+                  { name: 'platform-ca', mountPath: PLATFORM_CA_MOUNT, readOnly: true },
+                ],
               }],
               volumes: [
                 { name: 'tmp', emptyDir: { sizeLimit: '512Mi' } },
                 { name: 'shm', emptyDir: { medium: 'Memory', sizeLimit: '256Mi' } },
+                // Internal CA certificate (public part; platformctl copies it). Optional:
+                // installs on Let's Encrypt only need the public roots.
+                { name: 'platform-ca', configMap: { name: PLATFORM_CA_CONFIGMAP, optional: true, items: [{ key: 'ca.crt', path: 'ca.crt' }] } },
               ],
             },
           },
@@ -189,12 +198,36 @@ export function renderBrowserCronJob(
 
 export interface SyntheticK8sOps {
   readRunnerConfig(): Promise<Record<string, string> | null>;
+  /** ca.crt of the synthetics/platform-ca ConfigMap (public certificate only), or null. */
+  readPlatformCa?(): Promise<string | null>;
   applyProbe(probe: Record<string, any>): Promise<void>;
   deleteProbe(name: string): Promise<void>;
   listProbeNames(): Promise<string[]>;
   applyCronJob(cronJob: Record<string, any>, secret: Record<string, any>): Promise<void>;
   deleteCronJob(name: string): Promise<void>;
   listCronJobNames(): Promise<string[]>;
+  /** Why the check's most recent runner Job failed, if it is still around (read-only). */
+  lastJobFailure?(checkId: string): Promise<string | null>;
+}
+
+const POD_WAIT_REASONS = new Set(['ImagePullBackOff', 'ErrImagePull', 'InvalidImageName', 'CreateContainerConfigError', 'CreateContainerError', 'CrashLoopBackOff']);
+
+/** Short, secret-free explanation of a failed runner Job from its status and its pods. */
+export function describeJobFailure(job: any, pods: any[] = []): string | null {
+  for (const p of pods) {
+    for (const cs of p?.status?.containerStatuses || []) {
+      const waiting = cs?.state?.waiting?.reason;
+      if (waiting && POD_WAIT_REASONS.has(waiting)) return `runner pod: ${waiting}`;
+      const term = cs?.state?.terminated || cs?.lastState?.terminated;
+      if (term?.reason === 'OOMKilled') return 'runner pod: OOMKilled (memory limit)';
+      if (term && Number(term.exitCode) !== 0) return `runner exited with code ${term.exitCode}${term.reason ? ` (${term.reason})` : ''}`;
+    }
+    const unsched = (p?.status?.conditions || []).find((c: any) => c?.type === 'PodScheduled' && c?.status === 'False');
+    if (unsched) return `runner pod not scheduled: ${String(unsched.reason || 'Unschedulable')}`;
+  }
+  const failed = (job?.status?.conditions || []).find((c: any) => c?.type === 'Failed' && c?.status === 'True');
+  if (failed) return `runner job failed: ${String(failed.reason || 'Failed')}${failed.message ? ` - ${String(failed.message).slice(0, 160)}` : ''}`;
+  return null;
 }
 
 const notFound = (err: any) => (err?.code ?? err?.statusCode ?? err?.response?.statusCode ?? err?.body?.code) === 404;
@@ -224,6 +257,16 @@ function kubeOps(): SyntheticK8sOps {
       try {
         const cm: any = await core.readNamespacedConfigMap({ name: RUNNER_CONFIGMAP, namespace: SYNTHETICS_NAMESPACE });
         return (cm.body || cm)?.data || {};
+      } catch (err) {
+        if (notFound(err)) return null;
+        throw err;
+      }
+    },
+    async readPlatformCa() {
+      try {
+        const cm: any = await core.readNamespacedConfigMap({ name: PLATFORM_CA_CONFIGMAP, namespace: SYNTHETICS_NAMESPACE });
+        const pem = String((cm.body || cm)?.data?.['ca.crt'] || '');
+        return pem.includes('BEGIN CERTIFICATE') ? pem : null;
       } catch (err) {
         if (notFound(err)) return null;
         throw err;
@@ -264,6 +307,15 @@ function kubeOps(): SyntheticK8sOps {
       const res: any = await batch.listNamespacedCronJob({ namespace: SYNTHETICS_NAMESPACE, labelSelector: CHECK_LABEL });
       return ((res.body || res)?.items || []).map((i: any) => i.metadata?.name).filter(Boolean);
     },
+    async lastJobFailure(checkId) {
+      const res: any = await batch.listNamespacedJob({ namespace: SYNTHETICS_NAMESPACE, labelSelector: `${CHECK_LABEL}=${checkId}` });
+      const jobs = ((res.body || res)?.items || []).sort((a: any, b: any) =>
+        Date.parse(b.metadata?.creationTimestamp || 0) - Date.parse(a.metadata?.creationTimestamp || 0));
+      const job = jobs[0];
+      if (!job?.metadata?.name) return null;
+      const pods: any = await core.listNamespacedPod({ namespace: SYNTHETICS_NAMESPACE, labelSelector: `job-name=${job.metadata.name}` });
+      return describeJobFailure(job, (pods.body || pods)?.items || []);
+    },
   };
 }
 
@@ -275,6 +327,29 @@ function getOps(): SyntheticK8sOps {
 export function setSyntheticK8sOpsForTests(o: SyntheticK8sOps | null): void {
   ops = o;
   runtimeCache = null;
+  caCache = null;
+}
+
+let caCache: { at: number; value: string | null } | null = null;
+
+/**
+ * The platform CA certificate (PEM) for API-side checks against platform hosts (#152):
+ * the synthetics/platform-ca ConfigMap platformctl writes (full profile), cached 5 min.
+ * Null without a DOMAIN, outside a cluster, without RBAC or when the copy is missing.
+ * Never throws.
+ */
+export async function platformCaCertificate(env: NodeJS.ProcessEnv = process.env, now = Date.now()): Promise<string | null> {
+  if (!platformDomainOf(env.DOMAIN)) return null;
+  if (caCache && now - caCache.at < 300_000) return caCache.value;
+  let value: string | null = null;
+  try {
+    const o = getOps();
+    value = o.readPlatformCa ? await o.readPlatformCa() : null;
+  } catch {
+    value = null;
+  }
+  caCache = { at: now, value };
+  return value;
 }
 
 let runtimeCache: { at: number; value: BrowserRuntime } | null = null;
@@ -316,10 +391,13 @@ export async function syncCheckResources(
     } else if (probesEnabled(env)) {
       let eligible = probeEligible(check);
       if (eligible) {
-        // Only public targets: a target allowed via the ingress exception is not mirrored.
+        // Only public targets: a target allowed via the ingress exception (project env
+        // hosts, platform hosts) is not mirrored; blackbox-exporter may not reach the ingress.
         try {
           const url = check.type === 'ssl' ? `https://${check.config.host}:${check.config.port || 443}/` : String(check.config.url);
-          const t = await resolveTarget(url, { allowedIngressHosts: [] });
+          const domain = platformDomainOf(env.DOMAIN);
+          if (isPlatformHost(new URL(url).hostname.replace(/\.$/, '').toLowerCase(), domain)) throw new Error('platform host');
+          const t = await resolveTarget(url, { allowedIngressHosts: [], platformDomain: domain });
           eligible = !t.ingressException;
         } catch {
           eligible = false;
@@ -338,6 +416,16 @@ export async function syncCheckResources(
     console.warn(`[synthetics] syncing resources for check ${check.id} failed: ${out.error}`);
   }
   return out;
+}
+
+/** Best-effort diagnosis for a browser check that stopped reporting; never throws. */
+export async function lastBrowserJobFailure(checkId: string): Promise<string | null> {
+  try {
+    const o = getOps();
+    return o.lastJobFailure ? await o.lastJobFailure(checkId) : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function deleteCheckResources(checkId: string, env: NodeJS.ProcessEnv = process.env): Promise<void> {

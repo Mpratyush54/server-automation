@@ -16,6 +16,9 @@ export {
   scrubTransportItem,
   isDoNotTrack,
   decideSampled,
+  getReplayId,
+  setConsent,
+  stopReplay,
   PlatformRumOptions,
   PlatformTelemetryConfig,
   RumHandle,
@@ -26,5 +29,6 @@ export {
 } from './rum';
 export type { PlatformHeatmapOptions } from './rum-heatmap';
 export { useRumPageView, RumLocationLike } from './rum-react';
+export type { PlatformReplayOptions, ReplayHandle, ReplayMode, ReplaySkipReason } from './rum-replay';
 
 export type { ErrorEvent, ErrorFrame } from './error-event';

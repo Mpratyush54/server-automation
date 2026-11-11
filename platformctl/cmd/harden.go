@@ -28,7 +28,7 @@ var hardenCmd = &cobra.Command{
 		}
 		defer unlock()
 		if cfg.SkipHardening {
-			fmt.Println("Host hardening skipped (PLATFORM_HARDEN=false)")
+			fmt.Println("Host hardening skipped (PLATFORM_HARDEN=false or SKIP_HARDENING=true)")
 			return nil
 		}
 		return runHardening()
@@ -50,6 +50,31 @@ func hardeningHost() harden.Host {
 		}
 	}
 	return harden.Host{Run: shell.Output, KeyFiles: keys, NginxAuth: cfg.NginxAuthJail, Warn: func(s string) { fmt.Println("WARNING: " + s) }}
+}
+
+// existingInstall reports a host provisioned before (tests replace it).
+var existingInstall = func() bool { return state.IsDone("platform") || state.IsDone("k3s") }
+
+// confirmHardening makes host hardening on an existing server explicit: it
+// changes SSH, packet filtering, automatic updates and fail2ban on a host that
+// is already serving. Interactive runs ask (default yes keeps the secure
+// baseline); non-interactive runs print a notice naming the opt-out.
+func confirmHardening(in io.Reader, out io.Writer, interactive bool) {
+	if cfg.SkipHardening || !existingInstall() {
+		return
+	}
+	fmt.Fprintln(out, "NOTICE: this server is already provisioned. Provision (re)applies the host security baseline:")
+	fmt.Fprintln(out, "  SSH settings, nftables host firewall (only 22/80/443 open), fail2ban, unattended upgrades, chrony.")
+	fmt.Fprintln(out, "  To leave host security unchanged: SKIP_HARDENING=true, PLATFORM_HARDEN=false or --skip-hardening.")
+	if !interactive {
+		return
+	}
+	fmt.Fprint(out, "Apply the host security baseline now? [Y/n] ")
+	line, _ := bufio.NewReader(in).ReadString('\n')
+	if a := strings.TrimSpace(strings.ToLower(line)); a == "n" || a == "no" {
+		cfg.SkipHardening = true
+		fmt.Fprintln(out, "Host hardening skipped for this run (saved as PLATFORM_HARDEN=false).")
+	}
 }
 
 func hardeningPreflight() {
@@ -104,7 +129,7 @@ func hardenFirewall() error {
 	} else {
 		_ = state.Clear("harden-ssh")
 	}
-	return state.MarkDone("harden")
+	return state.MarkHardeningDone()
 }
 
 // startHardenPrepare runs hardenPrepare in the background (provision).
