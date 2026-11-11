@@ -10,6 +10,6 @@
   "dependencies": {
     "@mpratyush54/sdk-node": "file:../../../sdk-node",
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "express": "^5.3.0"
   }
 }
