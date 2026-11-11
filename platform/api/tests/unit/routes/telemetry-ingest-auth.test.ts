@@ -119,6 +119,42 @@ it('browser tokens have their own (lower) budget', async () => {
   expect((await call()).status).toBe(429);
 });
 
+it('behind the mapping Ingress (?errors=mapped) throttling is a 403 carrying the real status', async () => {
+  const { token } = await issueIngestToken({ projectId: PID, environment: 'ratelimit-mapped', type: 'server' });
+  const call = () => request(app).get(`${URL_}?errors=mapped`).set('Authorization', `Bearer ${token}`)
+    .set('X-Original-URL', 'https://otel.example.org/v1/traces');
+  for (let i = 0; i < 5; i++) expect((await call()).status).toBe(200);
+  const r = await call();
+  expect(r.status).toBe(403);
+  expect(r.headers['x-platform-auth-status']).toBe('429');
+  expect(Number(r.headers['retry-after'])).toBeGreaterThan(0);
+  expect(Number(r.headers['retry-after'])).toBeLessThanOrEqual(60);
+  expect(r.headers['x-platform-allowed-origin']).toBeUndefined();
+  expect(r.headers['cache-control']).toBe('no-store');
+});
+
+it('mapped throttling of a browser token echoes only its verified Origin', async () => {
+  const { token } = await issueIngestToken({ projectId: PID, environment: 'ratelimit-web-mapped', type: 'web', origins: ['https://shop.example.org'] });
+  const call = (origin: string) => request(app).get(`${URL_}?errors=mapped`).set('Authorization', `Bearer ${token}`)
+    .set('X-Original-URL', 'https://otel.example.org/collect').set('Origin', origin);
+  for (let i = 0; i < 3; i++) expect((await call('https://shop.example.org')).status).toBe(200);
+  const r = await call('https://shop.example.org');
+  expect(r.status).toBe(403);
+  expect(r.headers['x-platform-auth-status']).toBe('429');
+  expect(r.headers['x-platform-allowed-origin']).toBe('https://shop.example.org');
+  // A foreign Origin is refused before the limiter: plain 401, nothing echoed.
+  const bad = await call('https://evil.example.net');
+  expect(bad.status).toBe(401);
+  expect(bad.headers['x-platform-auth-status']).toBeUndefined();
+  expect(bad.headers['x-platform-allowed-origin']).toBeUndefined();
+});
+
+it('auth failures stay 401 in mapped mode (never confused with throttling)', async () => {
+  const r = await request(app).get(`${URL_}?errors=mapped`).set('Authorization', 'Bearer nope');
+  expect(r.status).toBe(401);
+  expect(r.headers['x-platform-auth-status']).toBeUndefined();
+});
+
 it('ingest tokens never grant API access', async () => {
   const s = (await server()).token;
   const w = (await web()).token;
@@ -137,6 +173,10 @@ it('503 (not 401) when the signing key cannot be loaded, so clients retry', asyn
   });
   const r = await request(app).get(URL_).set('Authorization', `Bearer ${token}`);
   expect(r.status).toBe(503);
+  expect(Number(r.headers['retry-after'])).toBeGreaterThan(0);
+  const mapped = await request(app).get(`${URL_}?errors=mapped`).set('Authorization', `Bearer ${token}`);
+  expect(mapped.status).toBe(403);
+  expect(mapped.headers['x-platform-auth-status']).toBe('503');
   tokens.setIngestKeyStoreForTests(undefined);
   setIngestSigningKeyForTests('s'.repeat(64));
 });

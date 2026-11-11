@@ -52,8 +52,15 @@ var reservedLabels = map[string]bool{
 	"app_name":       true,
 }
 
-// Query parameters of the Pyroscope /ingest API that are passed through.
-var allowedParams = []string{"from", "until", "format", "sampleRate", "spyName", "units", "aggregationType"}
+// Query parameters of the Pyroscope /ingest API that are passed through
+// (`format` is checked separately against allowedFormats).
+var allowedParams = []string{"from", "until", "sampleRate", "spyName", "units", "aggregationType"}
+
+// Upload formats whose series labels come only from `name` (pprof sample
+// labels are subordinate to series labels in Pyroscope). Formats that carry
+// their own label sets beside the profile (jfr) are refused; empty means the
+// receiver infers the format from the content type.
+var allowedFormats = map[string]bool{"": true, "pprof": true, "folded": true, "lines": true, "trie": true, "tree": true}
 
 var identityRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
@@ -73,6 +80,22 @@ func IdentityFromHeaders(h http.Header) (Identity, error) {
 		return Identity{}, ErrUnauthenticated
 	}
 	return Identity{Project: p[0], Environment: e[0]}, nil
+}
+
+// canonicalLabel folds case and the separators backends normalise ('.', '-')
+// so that spelling variants of an identity label are recognised as reserved.
+func canonicalLabel(k string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '.' || r == '-' {
+			return '_'
+		}
+		return r
+	}, strings.ToLower(k))
+}
+
+func reservedLabel(k string) bool {
+	c := canonicalLabel(k)
+	return reservedLabels[c] || strings.HasPrefix(c, "__")
 }
 
 func labelNameOK(k string) bool {
@@ -138,7 +161,7 @@ func RewriteName(name string, id Identity) (string, error) {
 		for _, pair := range strings.Split(inner, ",") {
 			k, v, ok := strings.Cut(pair, "=")
 			k, v = strings.TrimSpace(k), strings.TrimSpace(v)
-			if !ok || reservedLabels[k] || !labelNameOK(k) || !labelValueOK(v) || len(out) >= maxLabels {
+			if !ok || reservedLabel(k) || !labelNameOK(k) || !labelValueOK(v) || len(out) >= maxLabels {
 				continue
 			}
 			out[k] = v
@@ -180,6 +203,14 @@ func RewriteQuery(q url.Values, id Identity) (string, error) {
 		return "", err
 	}
 	out := url.Values{"name": {name}}
+	if f, ok := q["format"]; ok {
+		if len(f) != 1 || !allowedFormats[f[0]] {
+			return "", fmt.Errorf("unsupported format")
+		}
+		if f[0] != "" {
+			out.Set("format", f[0])
+		}
+	}
 	for _, p := range allowedParams {
 		if v, ok := q[p]; ok && len(v) == 1 {
 			out.Set(p, v[0])

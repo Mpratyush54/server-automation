@@ -123,3 +123,16 @@ test('late maps retain the raw issue and changing minified bundles in a new rele
   expect(issues).toHaveLength(1); expect(issues[0]).toMatchObject({ count: 3, regression: true, status: 'open' });
   expect(alerts).toHaveLength(2); expect(alerts[1].dedupeKey).toBe(alerts[0].dedupeKey);
 });
+test('validation names the offending field and defaults a missing release like the SDKs do', () => {
+  const { release: _omit, ...noRelease } = event();
+  expect(validateErrorEvent(noRelease).release).toBe('unknown');
+  expect(validateErrorEvent({ ...event(), release: '  ' }).release).toBe('unknown');
+  expect(validateErrorEvent({ ...event(), release: '2.1.0' }).release).toBe('2.1.0');
+  expect(() => validateErrorEvent({ ...event(), release: 42 })).toThrow('Invalid error event field: release must be a string');
+  expect(() => validateErrorEvent({ ...event(), release: 'x'.repeat(201) })).toThrow('release exceeds 200 characters');
+  const { environment: _env, ...noEnv } = event();
+  expect(() => validateErrorEvent(noEnv)).toThrow('Missing error event field: environment');
+  expect(() => validateErrorEvent({ ...event(), message: '' })).toThrow('Missing error event field: message');
+  expect(() => validateErrorEvent({ ...event(), frames: [{ line: 1, column: 0 }] })).toThrow('Missing error event field: frames[0].file');
+  expect(() => validateErrorEvent({ ...event(), breadcrumbs: [{ message: 7 }] })).toThrow('breadcrumbs.message must be a string');
+});

@@ -86,15 +86,25 @@ spec:
 
 // migrateJobScript defines run_api_migrations IMAGE: render the Job from the
 // template ConfigMap, wait for it, and fail (non-zero) if it fails or times
-// out. The Job name is derived from the image reference, so a release whose
-// Job already succeeded is not migrated again. MIGRATE_BACKUP (optional) is
-// recorded in the Job annotations.
+// out. The Job name is derived from the image reference. MIGRATE_BACKUP
+// (optional) is recorded in the Job annotations.
+//
+// Migrations are idempotent and the Job also repairs schema drift, so it runs
+// on every upgrade/provision/update (MIGRATE_FORCE=1). A succeeded Job for the
+// same image is NOT proof the schema is still current: rolling back to an API
+// that synchronizes its schema on boot (v1.2.0) drops newer columns while the
+// migrations table still lists them as applied. Only the periodic auto-update
+// CronJob (MIGRATE_FORCE unset) skips the Job, and only when the API Deployment
+// already runs this exact image and its Job succeeded (a no-op tick).
 const migrateJobScript = `run_api_migrations() {
-  local image="$1" name template state i
+  local image="$1" name template state i current
   name="platform-api-migrate-$(printf '%s' "$image" | sha256sum | cut -c1-12)"
-  if [[ "$(kubectl -n platform get job "$name" -o jsonpath='{.status.succeeded}' 2>/dev/null || true)" == "1" ]]; then
-    echo "migrations already applied for $image ($name)"
-    return 0
+  if [[ "${MIGRATE_FORCE:-}" != "1" ]]; then
+    current="$(kubectl -n platform get deployment platform-api -o jsonpath='{.spec.template.spec.containers[?(@.name=="api")].image}' 2>/dev/null || true)"
+    if [[ "$current" == "$image" && "$(kubectl -n platform get job "$name" -o jsonpath='{.status.succeeded}' 2>/dev/null || true)" == "1" ]]; then
+      echo "API already runs $image and its migrations succeeded ($name)"
+      return 0
+    fi
   fi
   template="$(kubectl -n platform get configmap platform-api-migrate-template -o jsonpath='{.data.template}')"
   [[ -n "$template" ]] || { echo "migration Job template missing; run: sudo platformctl update" >&2; return 1; }
@@ -185,7 +195,7 @@ func RunAPIMigrations(cfg *config.Config, image string) error {
 	}
 	color.Cyan("  ■ Applying database migrations...")
 	script := "set -euo pipefail\nexport KUBECONFIG=\"${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}\"\n" + migrateJobScript + "run_api_migrations \"$API\"\n"
-	if err := shell.RunBashEnv(script, map[string]string{"API": image, "MIGRATE_BACKUP": dump}); err != nil {
+	if err := shell.RunBashEnv(script, map[string]string{"API": image, "MIGRATE_BACKUP": dump, "MIGRATE_FORCE": "1"}); err != nil {
 		return fmt.Errorf("database migrations failed; the API was not rolled: %w", err)
 	}
 	return nil

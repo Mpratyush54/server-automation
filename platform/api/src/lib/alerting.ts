@@ -5,6 +5,7 @@ import { drainAlertEvents, ALERT_CONSUMER_JOB } from './alerting-consumer';
 import { dispatchDeliveries, runEscalations } from './alerting-engine';
 import { runEvaluation } from './alerting-evaluator';
 import { syncAllRules } from './alerting-k8s';
+import { ALERTING_RETENTION_JOB, pruneAlertHistory } from './alerting-retention';
 
 /**
  * Leader jobs of alerting and on-call (#43):
@@ -16,6 +17,7 @@ import { syncAllRules } from './alerting-k8s';
  * | alerting-escalation   | 30 s     | escalation steps, notify after a silence ends            |
  * | alerting-evaluate     | 60 s     | API evaluator (api mode) + SLO status (all modes)        |
  * | alerting-rules-sync   | 5 min    | PrometheusRule / AlertmanagerConfig reconcile (ruler)    |
+ * | alerting-retention    | 1 h      | prune old deliveries (30 d) and resolved incidents (180 d) |
  */
 let warnAt = 0;
 function quiet(name: string, fn: () => Promise<unknown>) {
@@ -55,5 +57,11 @@ export function startAlerting(): void {
     intervalMs: 5 * 60_000,
     initialDelayMs: 15_000,
     run: async () => (alertingMode() !== 'ruler' ? 'skipped' : quiet('rules-sync', () => syncAllRules())()),
+  });
+  registerLeaderJob({
+    name: ALERTING_RETENTION_JOB,
+    intervalMs: 60 * 60_000,
+    initialDelayMs: 5 * 60_000,
+    run: quiet('retention', () => pruneAlertHistory()),
   });
 }

@@ -348,6 +348,31 @@ paths:
                         example: ok
         '503':
           description: PostgreSQL unavailable, or draining
+  /health/schema:
+    get:
+      tags: [Health]
+      summary: Schema check (every table, column, index and constraint the entities need exists)
+      description: |
+        Used by the platformctl upgrade health gate, not by Kubernetes probes. 503 `drift` means objects
+        are missing (for example an older API that synchronized its schema on boot dropped them after a
+        rollback); run the platform-api migrations. Reports a count only. Cached for 30 seconds.
+      security: []
+      responses:
+        '200':
+          description: Schema complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  missing:
+                    type: integer
+                    example: 0
+        '503':
+          description: Objects missing (`drift`), or the check could not run (`unavailable`)
   /telemetry/ingest-auth:
     get:
       tags: [Telemetry]

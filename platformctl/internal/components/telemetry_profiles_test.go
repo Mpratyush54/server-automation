@@ -125,7 +125,60 @@ func TestInstallTelemetryDeploysProfileProxyBeforeIngress(t *testing.T) {
 			applies++
 		}
 	}
-	if rollout < 0 || applies != 6 { // policy, profile-ingest, ingress, rules, dashboard, alerting RBAC (#43)
+	if rollout < 0 || applies != 7 { // policy, profile-ingest, ingress, rules, dashboard, alerting RBAC (#43), synthetics RBAC
 		t.Fatalf("rollout=%d file applies=%d", rollout, applies)
+	}
+}
+
+// auth_request turns every auth status except 401/403 into a 500, so the
+// Ingress asks the API to tunnel 429/503 through a 403 and maps it back.
+func TestTelemetryIngressMapsThrottlingTo429(t *testing.T) {
+	ing := normalizeEOL(readManifest("telemetry-ingress.yaml"))
+	docs := strings.Split(ing, "\n---\n")
+	var main, profiles string
+	for _, d := range docs {
+		switch {
+		case strings.Contains(d, "name: telemetry-profiles"):
+			profiles = d
+		case strings.Contains(d, "name: telemetry\n"):
+			main = d
+		}
+	}
+	if main == "" || profiles == "" {
+		t.Fatal("telemetry ingresses missing")
+	}
+	for name, doc := range map[string]string{"telemetry": main, "telemetry-profiles": profiles} {
+		for _, want := range []string{
+			"/api/telemetry/ingest-auth?errors=mapped",
+			"auth_request_set $telemetry_auth_status $upstream_http_x_platform_auth_status;",
+			"auth_request_set $telemetry_retry_after $upstream_http_retry_after;",
+			"auth_request_set $telemetry_cors_origin $upstream_http_x_platform_allowed_origin;",
+			"error_page 403 = @telemetry_auth_retry;",
+		} {
+			if !strings.Contains(doc, want) {
+				t.Errorf("%s ingress missing %q", name, want)
+			}
+		}
+	}
+	// The named location lives in exactly one Ingress for the shared host.
+	if strings.Count(ing, "server-snippet:") != 1 || !strings.Contains(main, "server-snippet:") {
+		t.Fatal("exactly the telemetry Ingress must define the server-snippet")
+	}
+	for _, want := range []string{
+		"location @telemetry_auth_retry {",
+		"add_header Retry-After $telemetry_retry_after always;",
+		"add_header Access-Control-Allow-Origin $telemetry_cors_origin always;",
+		"add_header Access-Control-Expose-Headers Retry-After always;",
+		"if ($telemetry_auth_status = 429) { return 429 ",
+		"if ($telemetry_auth_status = 503) { return 503 ",
+		"return 403 ",
+	} {
+		if !strings.Contains(main, want) {
+			t.Errorf("server-snippet missing %q", want)
+		}
+	}
+	// Never reflect the request Origin: only the API-verified value may be echoed.
+	if strings.Contains(ing, "$http_origin always") {
+		t.Fatal("throttle response reflects an unverified Origin")
 	}
 }

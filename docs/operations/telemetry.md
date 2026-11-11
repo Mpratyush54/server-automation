@@ -41,9 +41,13 @@ Pyroscope uses `limits.compactor_blocks_retention_period`. Deletion is asynchron
 and includes the backend's compaction/deletion delay. Do not configure an S3
 lifecycle policy that independently removes live index/WAL objects (the separate
 `replays` bucket may use lifecycle — see [telemetry-privacy.md](./telemetry-privacy.md)).
-Loki also applies per-stream retention for `telemetry_type=replays` (7d) and
-`telemetry_type=errors` (90d). Project overrides and GDPR delete live in the API
-Privacy settings (#47).
+Per-project **logs** retention set in the API Privacy settings (#47) is applied
+by the API as Loki runtime overrides (`retention_stream` on the project id labels
+in the `loki-runtime` ConfigMap, re-applied every 10 minutes). Traces and profiles
+have no per-project retention (single-tenant Tempo/Pyroscope). Error-tracking
+events live in Postgres and are pruned by the API's hourly `error-retention` job
+(project `errors` setting, default 90 days); replays are not stored in Loki. See
+[telemetry-privacy.md](./telemetry-privacy.md#retention-what-actually-applies).
 `TELEMETRY_SAMPLING_PERCENTAGE=100` retains every trace by default. Operators can
 explicitly select 0..100 for a smaller server. Both settings persist to the
 installer .env so parallel child steps and reruns see the same values.
@@ -52,7 +56,7 @@ The default S3 endpoint is bundled MinIO. To use an external compatible S3
 service, supply backend Helm overrides for endpoint/region/TLS and the scoped
 Secrets; the installer currently provisions bundled MinIO, not external
 cloud IAM. Keep each backend's bucket and credentials separate. Full profile also
-creates a `replays` bucket (7d lifecycle) for session replay (#40) and GDPR delete.
+creates a `replays` bucket (365 d lifecycle backstop; per-project replay retention is enforced by the API) for session replay (#40) and GDPR delete.
 
 ## Ingest contract and API integration (#49)
 
@@ -75,6 +79,24 @@ and URI, so a browser token's allow decision cannot be reused from another
 origin or ingest path. Limits are 20 requests/second per client IP, burst factor
 2, and a 4 MiB request body. SDK bounded buffers/backoff remain SDK responsibilities.
 
+The API also enforces a per-token budget in ingest-auth (600/min server, 300/min
+browser tokens). nginx `auth_request` only passes 401/403 from the auth service
+to the client and turns every other status into a 500, so the Ingress calls
+`ingest-auth?errors=mapped`. In that mode the API answers throttling and
+signing-key outages as `403` with `X-Platform-Auth-Status: 429|503`,
+`Retry-After` and, for a browser token, the Origin it verified
+(`X-Platform-Allowed-Origin`). A `configuration-snippet` captures those headers
+and sends 403s to `@telemetry_auth_retry` (a `server-snippet` on the `telemetry`
+Ingress only), which returns a real `429`/`503` with `Retry-After`,
+`Access-Control-Allow-Origin` (verified origin only) and
+`Access-Control-Expose-Headers: Retry-After`, so browser and OTLP SDKs back off
+as asked. Any other 403 stays a 403. Only successful auth answers are cached, so
+a throttled token is re-checked on every request. Without `?errors=mapped` (an
+Ingress from an older platformctl) the API keeps answering 429/503, which clients
+see as 500 as before; run `sudo platformctl install telemetry` to apply the new Ingress. The
+snippets rely on the controller's existing `allow-snippet-annotations` /
+`annotations-risk-level: Critical` settings; no global setting changes.
+
 Alloy clears untrusted resource identities, associates the connection with
 Kubernetes pods and their namespace's `platform.io/project` / `platform.io/env`
 labels, then overwrites project/environment from the authenticated headers on
@@ -88,18 +110,43 @@ API query proxies must enforce project scoping (#48). Never expose backend query
 ports directly to project workloads. A NetworkPolicy restricts Alloy ingress
 to the ingress controller, platform API, and Prometheus metrics scraping.
 
-The API owns `monitoring/telemetry-origins`, key `origins.json`, a JSON array of
-exact scheme+host(+port) origins derived from verified project domains. It starts
-as `[]` and is preserved across reruns. The API service account has get/patch/
-update permission on this ConfigMap. Alloy mounts the whole ConfigMap (no subPath)
-and polls the file every 10 seconds, so projected-volume updates trigger live
-CORS reconfiguration without restarting a pod. There is no wildcard origin.
-Allow for kubelet projection delay in addition to the polling interval. The
-API must also check the requesting token's own allowed origins; a global CORS
-union is not per-project authorization. Browser OPTIONS preflight needs an
-origin-validated auth response without requiring an Authorization header;
-#49 must distinguish preflight via ingress's original-method headers, while
-requiring a valid token on actual uploads. Verify this in a real browser.
+The API owns `monitoring/telemetry-origins`, key `origins.json`: a sorted JSON
+array of browser origins. platformctl creates it as `[]` and never overwrites it.
+The API writes the union of every live (not deleted) project's browser origins,
+the same set it signs into browser ingest tokens:
+
+* `https://<environment host>` for every active environment,
+* `https://<project domain>`,
+* every entry of the project variable `TELEMETRY_ALLOWED_ORIGINS` (plain config
+  or secret, any environment; comma or space separated).
+
+Entries are normalised to `scheme://host[:port]` (no path, query or user info;
+http/https only). `https://*.example.com` subdomain wildcards are kept: the Faro
+receiver's CORS matcher (rs/cors through Alloy's `cors` block) accepts one `*`
+per origin. A bare `*` is never written. The list is capped at 2000 origins /
+128 KiB (extra entries are dropped with a log line).
+
+The leader syncs 5 seconds after it starts leading and every 5 minutes; any
+replica also syncs (debounced by 1 second) after `TELEMETRY_ALLOWED_ORIGINS` is
+set, changed or deleted (config, environment-variable and secret APIs) and after
+a project is created, updated or deleted. The API merge-patches only this key,
+and only when the content changed. It never creates the ConfigMap; if it is
+missing, or `PLATFORM_OBSERVABILITY` is unset, the sync does nothing. The
+`telemetry-origins-writer` Role grants the API service account
+(`platform/platform-api`) get/patch/update on this ConfigMap only.
+
+Alloy mounts the whole ConfigMap (no subPath) and its `local.file` component
+polls the file every 10 seconds; the Faro receiver is reconfigured in place, so
+no pod restarts. Expect up to about a minute of kubelet volume refresh plus the
+poll interval (measured on a test VM: under 2 minutes from patch to the new
+preflight answer). The preflight allows the `Authorization` and `Content-Type`
+headers the browser SDK transport sends (plus `Traceparent`) and exposes
+`Retry-After`.
+
+The CORS union only lets browsers talk to the collector. Per-project
+authorisation stays in ingest-auth, which checks the browser token's own signed
+origins on every upload. The credential-less OPTIONS preflight to `/collect` is
+let through by ingest-auth (via `X-Original-Method`) and answered by Alloy.
 
 After all Helm releases report ready, the installer publishes
 `monitoring/telemetry-backend` with string keys `enabled`, `otlpEndpoint`,
@@ -117,7 +164,8 @@ proxy therefore sets profile identity from the authenticated collector identity:
   `X-Platform-Environment` header (set by ingress external auth) get 401.
 * `platform_project_id` and `deployment_environment` are always the header
   values; client values for these, `service_name`, `platform_service`, `app_name` and `__*` labels are
-  discarded. Invalid label names/values are dropped; at most 32 client labels.
+  discarded, including case and `.`/`-` spelling variants (e.g. `platform.project_id`).
+  Invalid label names/values are dropped; at most 32 client labels.
 * The service name is prefixed with the project id (`<project-id>/<service>`), and
   `service_name` is set to the same value, so services of different projects never
   share a name. `platform_service` keeps the unprefixed name; Grafana's
@@ -125,7 +173,9 @@ proxy therefore sets profile identity from the authenticated collector identity:
   `platform_project_id` and `platform_service`.
 * Only the `/ingest` query parameters `name`, `from`, `until`, `format`,
   `sampleRate`, `spyName`, `units`, `aggregationType` are forwarded, with the
-  body and `Content-Type`; credentials and identity headers are not.
+  body and `Content-Type`; credentials and identity headers are not. `format`
+  must be empty, `pprof`, `folded`, `lines`, `trie` or `tree`; formats that
+  carry their own label sets beside the profile (`jfr`) are refused with 400.
 * Pyroscope gives series labels precedence over pprof sample labels, so labels
   embedded in a profile body cannot replace the identity labels.
 
@@ -181,9 +231,23 @@ Verify that each pinned backend exposes the referenced metric series on the VM.
 
 ## Upgrade from loki-stack
 
-This is a storage/schema migration, not an in-place chart rename. The installer
-stops before changing anything when Helm release `loki` still uses loki-stack.
-It never deletes a PVC, uninstalls the legacy release, or rewrites old logs.
+This is a storage/schema migration, not an in-place chart rename. `platformctl
+upgrade` never changes the legacy release (it matches charts by exact name, so
+loki-stack is not "upgraded" to the loki chart). The telemetry step handles it:
+
+- **No persistent volume** (the platformctl default before the full profile:
+  loki-stack was installed without persistence, so its logs live only in the
+  pod and are already lost on any pod restart): the step logs
+  `Removing legacy Helm release "loki" (loki-stack-…)`, runs
+  `helm uninstall loki -n monitoring` (which also removes Promtail and the old
+  datasource ConfigMap) and installs Loki on MinIO under the same release name.
+  Old log lines are not copied.
+- **Persistent volume** (StatefulSet claim template, mounted claim, or a
+  `storage-loki-*` PVC): the step stops before changing anything and names the
+  volume. It never deletes a PVC, uninstalls that release, or rewrites old logs.
+  Follow the steps below, then run `sudo platformctl provision --profile full`.
+
+To keep the old logs of a volume-backed release:
 
 1. Export the legacy Helm values/manifests and Grafana datasource/dashboard JSON
    to a private backup location. Record the existing Loki datasource UID.

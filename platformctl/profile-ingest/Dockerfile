@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Profile ingest proxy (full telemetry profile). Build context: ./platformctl
 #   docker build -f platformctl/profile-ingest/Dockerfile platformctl
-FROM golang:1.26.10 AS build
+FROM golang:1.26.11 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

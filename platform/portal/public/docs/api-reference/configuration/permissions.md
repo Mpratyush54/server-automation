@@ -161,6 +161,11 @@ Complete list of all 48 permissions and their assignment to built-in role preset
 | `alerts.update` | ✓ | ✓ | ✓ | | |
 | `alerts.delete` | ✓ | ✓ | | | |
 
+These cover the legacy `/alerts` API. Per-project alerting configuration (`/projects/:id/alerting/*`:
+channels, policies, schedules, silences, SLOs, monitors) follows **project** roles: project devops or
+owner, or platform admin / devops. Raw PromQL / LogQL monitors (`metric`, `log`) and `ratio` SLOs are
+platform admin / devops only. See [Alerting](../../operations/alerting.md#permissions-and-audit).
+
 ### Logs & Metrics
 
 | Permission | admin | devops | tech_lead | developer | viewer |

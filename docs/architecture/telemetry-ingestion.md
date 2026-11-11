@@ -46,6 +46,10 @@ named by the `environmentId` query parameter (UUID or name; default `development
 `TELEMETRY_ALLOWED_ORIGINS` (comma or space separated, e.g.
 `https://shop.example.com, https://*.preview.example.com, http://localhost:4200`).
 The origins are signed into the token, so a change applies at the next config refresh.
+The API also publishes the union of all projects' origins as the Faro receiver's CORS
+allow-list (`monitoring/telemetry-origins`, see
+[operations/telemetry](../operations/telemetry.md)); that list is refreshed within a
+couple of minutes of a change.
 
 ## Ingest tokens
 
@@ -81,20 +85,30 @@ and the client's `Origin`.
 | `200` + `X-Platform-Project-Id`, `X-Platform-Environment`, `Cache-Control: private, max-age≤60` | valid token, right scope (and origin for browser tokens) |
 | `200` without headers | credential-less CORS preflight (`X-Original-Method: OPTIONS`) to `/collect` |
 | `401` (`Cache-Control: no-store`, JSON `reason`) | missing, malformed, forged or expired token; wrong scope; origin not allowed |
-| `429` + `Retry-After` | the token exceeded `TELEMETRY_INGEST_AUTH_RATE_LIMIT` (server, default 600/min) or `TELEMETRY_INGEST_AUTH_WEB_RATE_LIMIT` (browser, default 300/min). Redis-backed and shared by replicas. ingress-nginx passes non-401/403 auth answers to the client as 500, which SDKs retry with backoff. |
-| `503` | signing key temporarily unavailable |
+| `429` + `Retry-After` | the token exceeded `TELEMETRY_INGEST_AUTH_RATE_LIMIT` (server, default 600/min) or `TELEMETRY_INGEST_AUTH_WEB_RATE_LIMIT` (browser, default 300/min). Redis-backed and shared by replicas. |
+| `503` + `Retry-After` | signing key temporarily unavailable |
+| `403` + `X-Platform-Auth-Status: 429` or `503`, `Retry-After`, `X-Platform-Allowed-Origin` (browser tokens) | the two cases above when called as `?errors=mapped` (the platformctl Ingress). nginx `auth_request` only passes 401/403 through (anything else becomes a 500), so the Ingress maps this 403 back to a real 429/503 with `Retry-After` and CORS headers. See [operations/telemetry](../operations/telemetry.md). |
 
 Ingress annotations for the collector (owned by #37):
 
 ```yaml
-nginx.ingress.kubernetes.io/auth-url: http://platform-api.platform.svc.cluster.local:3000/api/telemetry/ingest-auth
-nginx.ingress.kubernetes.io/auth-method: GET
-nginx.ingress.kubernetes.io/auth-response-headers: X-Platform-Project-Id, X-Platform-Environment
+nginx.ingress.kubernetes.io/auth-url: http://platform-api.platform.svc.cluster.local:3000/api/telemetry/ingest-auth?errors=mapped
+nginx.ingress.kubernetes.io/auth-response-headers: X-Platform-Project-Id,X-Platform-Environment
 # Origin must be part of the cache key, or a cached browser-token success would also
 # apply to other origins.
-nginx.ingress.kubernetes.io/auth-cache-key: $http_authorization$http_origin
-nginx.ingress.kubernetes.io/auth-cache-duration: 200 60s, 401 10s
+nginx.ingress.kubernetes.io/auth-cache-key: '$http_authorization|$http_origin|$request_uri'
+nginx.ingress.kubernetes.io/auth-cache-duration: '200 60s'
+# Maps 403 + X-Platform-Auth-Status to 429/503 with Retry-After (full text in
+# platformctl/internal/manifests/data/telemetry-ingress.yaml).
+nginx.ingress.kubernetes.io/configuration-snippet: |
+  auth_request_set $telemetry_auth_status $upstream_http_x_platform_auth_status;
+  auth_request_set $telemetry_retry_after $upstream_http_retry_after;
+  auth_request_set $telemetry_cors_origin $upstream_http_x_platform_allowed_origin;
+  error_page 403 = @telemetry_auth_retry;
 ```
+
+Only successful auth answers are cached, so a throttled token is re-checked on
+every request.
 
 ## API ingest queue
 

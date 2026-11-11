@@ -141,3 +141,36 @@ func TestInstallBinaryUsesInjectedPaths(t *testing.T) {
 		t.Fatal(string(b), e)
 	}
 }
+
+// Commit runs only after a passing health gate; a failing commit rolls back.
+func TestCommitAfterHealthAndRollbackOnCommitFailure(t *testing.T) {
+	for _, commitErr := range []error{nil, errors.New("read-only fs")} {
+		var events []string
+		var last Record
+		h := Hooks{
+			Save:          func(r Record) error { last = r; return nil },
+			Backup:        func() (string, error) { return "b", nil },
+			Migrate:       func() error { return nil },
+			Chart:         func(Chart) error { return nil },
+			RollbackChart: func(Chart) error { events = append(events, "rollback"); return nil },
+			Image: func(i Image, rb bool) error {
+				if rb {
+					events = append(events, "undo")
+				}
+				return nil
+			},
+			Health: func() error { events = append(events, "health"); return nil },
+			Commit: func() error { events = append(events, "commit"); return commitErr },
+		}
+		e := Apply(Record{Plan: Plan{Images: []Image{{Deployment: "platform-api", Before: "a", After: "b"}}}}, h)
+		if commitErr == nil {
+			if e != nil || last.Status != "succeeded" || strings.Join(events, ",") != "health,commit" {
+				t.Fatalf("e=%v status=%s events=%v", e, last.Status, events)
+			}
+			continue
+		}
+		if e == nil || last.Status != "rolled-back" || strings.Join(events, ",") != "health,commit,undo,health" {
+			t.Fatalf("e=%v status=%s events=%v", e, last.Status, events)
+		}
+	}
+}
