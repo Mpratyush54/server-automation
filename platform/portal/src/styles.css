@@ -41,6 +41,12 @@
   h1, h2, h3, h4, h5, h6 {
     @apply font-sans tracking-tight;
   }
+
+  /* Preflight resets h1 to body size; give bare page headings the same scale
+     as .page-title (colour is inherited so themed pages keep their own). */
+  h1 {
+    @apply text-2xl font-semibold;
+  }
 }
 
 @layer components {
@@ -59,6 +65,54 @@
 
   .btn-sm {
     @apply h-8 px-3 text-xs;
+  }
+
+  /* Disabled buttons must not look actionable (covers primary/danger too). */
+  .btn:disabled,
+  .btn[disabled],
+  .btn[aria-disabled='true'] {
+    @apply opacity-50 cursor-not-allowed pointer-events-none;
+  }
+
+  /* Shared page header used by every page (matches Dashboard/Projects). */
+  .page-header {
+    @apply flex flex-wrap items-end justify-between gap-4 mb-6;
+  }
+
+  .page-title {
+    @apply text-2xl font-semibold tracking-tight text-white m-0;
+  }
+
+  .page-subtitle {
+    @apply text-sm text-[#a1a1aa] mt-1 mb-0;
+  }
+
+  /* Wide tables scroll inside their card instead of the page. */
+  .table-scroll {
+    @apply w-full overflow-x-auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-scroll > table {
+    @apply min-w-full;
+  }
+
+  /* Empty-state row/cell for tables. */
+  .empty-row td,
+  td.empty-cell {
+    @apply text-center text-[#71717a] py-8;
+  }
+
+  .empty-row:hover td {
+    @apply bg-transparent;
+  }
+
+  .empty-state {
+    @apply text-center text-[#a1a1aa] py-10 px-4 text-sm;
+  }
+
+  .empty-state strong {
+    @apply block text-[#ededed] font-medium mb-1;
   }
 
   /* Layout Grids */
@@ -98,6 +152,40 @@
   /* Form Elements */
   input, select, textarea {
     @apply bg-[#111] border border-[#333] rounded-md px-3 py-2 text-sm text-[#ededed] focus:outline-none focus:border-[#666] transition-colors w-full;
+  }
+
+  /* Boxes and other non-text inputs keep their intrinsic size; the text-input
+     rule above would otherwise stretch them across the whole row. */
+  input[type='checkbox'],
+  input[type='radio'],
+  input[type='range'],
+  input[type='color'],
+  input[type='file'],
+  input[type='image'],
+  input[type='hidden'] {
+    @apply w-auto p-0 flex-none;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    @apply h-4 w-4 m-0 align-middle cursor-pointer;
+    accent-color: #0070F3;
+  }
+
+  input[type='checkbox']:disabled,
+  input[type='radio']:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
+  /* label wrapping a box: keep the box inline next to its text. */
+  label:has(> input[type='checkbox']),
+  label:has(> input[type='radio']) {
+    @apply inline-flex flex-row items-center gap-2 cursor-pointer;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    @apply text-[#71717a] opacity-100;
   }
 
   /* Badges */
