@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { getDb } from '../config/database';
 import { ErrorEvent } from './error-event';
-import { fingerprint, isNewerRelease } from './error-fingerprint';
+import { fingerprint, groupingFingerprint, isNewerRelease, parseStack } from './error-fingerprint';
 import { symbolicate } from './error-sourcemaps';
 import { publishAlertEvent } from './alert-events';
 
@@ -14,7 +14,13 @@ export function validateErrorEvent(body: any): ErrorEvent {
     if (v.length > max) throw new Error(`Invalid error event field: ${name} exceeds ${max} characters`);
     return v;
   };
-  if (!body || !Array.isArray(body.frames) || body.frames.length > 100) throw new Error('Expected at most 100 frames');
+  if (!body) throw new Error('Expected at most 100 frames');
+  // Browsers that only expose Error.stack may send it instead of parsed frames;
+  // V8 and SpiderMonkey/JavaScriptCore formats parse to the same frames (#156).
+  if ((body.frames == null || (Array.isArray(body.frames) && !body.frames.length)) && typeof body.stack === 'string') {
+    body = { ...body, frames: parseStack(text('stack', body.stack, 65536)) };
+  }
+  if (!Array.isArray(body.frames) || body.frames.length > 100) throw new Error('Expected at most 100 frames');
   // Every SDK (Node, Python, React/Angular RUM) sends "unknown" when no app
   // version is configured; accept an omitted release the same way.
   const release = body.release == null || (typeof body.release === 'string' && !body.release.trim()) ? 'unknown' : body.release;
@@ -39,10 +45,12 @@ export async function processErrorEvent(payload: { projectId: string; event: Err
   const { projectId } = payload;
   const event = validateErrorEvent(payload.event);
   const display = await symbolicate(projectId, event);
-  const hash = fingerprint(display);
-  // Remember both identities: map uploads can improve grouping without splitting
-  // an existing raw group. Original frames connect changing bundles across releases.
-  const aliases = [...new Set([fingerprint(event), hash])].sort();
+  // Engine/build-neutral key (#156) is the identity of new issues. The legacy raw
+  // and mapped keys stay as aliases so issues grouped before #156 keep matching:
+  // map uploads can improve grouping without splitting an existing raw group, and
+  // original frames connect changing bundles across releases.
+  const hash = groupingFingerprint(event, display);
+  const aliases = [...new Set([fingerprint(event), fingerprint(display), hash])].sort();
   const db = await getDb();
   const outcome = await db.transaction(async tx => {
     await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [JSON.stringify(['error-event', projectId, event.eventId])]);

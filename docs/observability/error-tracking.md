@@ -48,6 +48,10 @@ omitted; integrations retrying a request should retain the original UUID.
 `release` is optional and defaults to `unknown` (as the SDKs send when no app
 version is configured); `type`, `message`, `environment` and each frame `file`
 are required. A rejected event returns 400 naming the offending field.
+Clients that only have the browser's `Error.stack` string may send it as
+`stack` instead of `frames` (or with an empty `frames` array); the server parses
+both V8 (`at fn (url:line:col)`) and SpiderMonkey/JavaScriptCore
+(`fn@url:line:col`) lines into the same frames, up to 64 KiB.
 At most 100 frames/breadcrumbs are accepted, with bounded string fields. Only
 `{accepted:true}` is returned. `/api/errors/rum` accepts short-lived `web` ingest
 tokens with origin checks; it derives project and environment from claims.
@@ -95,14 +99,35 @@ read. The API is `PATCH /api/projects/:projectId/errors/:issueId` with `status`
 that project. The trace opens Grafana Explore using the Tempo datasource; replay links
 target the future #40 replay route and will work when that feature is installed.
 
-The fingerprint hashes exception type and the first five frames (normalized URL
-paths, line, column), preferring mapped original frames. Function names are
-displayed but excluded from grouping because maps may omit original names. Message values
-do not split framed errors; frameless messages normalize numeric/UUID values.
-Both raw and mapped fingerprint aliases are retained. Late source-map uploads
-find the existing raw group, while original positions connect changing generated
-bundle paths across releases. Already separate historical issues are not merged
-retroactively. Environment isolates triage.
+Grouping uses an engine- and build-neutral fingerprint (`v2:` prefix, #156) so
+one bug in Chromium, Firefox and Safari, across deploys, lands in one issue:
+
+- Frames from the platform SDKs and Faro, browser internals (`[native code]`,
+  `<anonymous>`, extension URLs) and constructor `Error` frames are dropped.
+- In-app frames are used; `node_modules`, vendor/framework/polyfill/runtime
+  bundles only count when no in-app frame remains.
+- Each frame contributes its normalized URL path with build content hashes
+  stripped (`main.3f2a1b9c.js`, `main.3f2a1b9c.chunk.js`, `chunk-ABCD1234.js`,
+  `index-B_xY3a9Z.js`, hashed build-id directories all collapse to one name)
+  plus its function name when the engine reports one (`Object.fn`, `async fn`,
+  `fn [as x]` and `outer/fn` all become `fn`; anonymous frames have none).
+- The source line is included only for source-mapped frames. Generated
+  line/column of minified bundles change per build and differ by one column
+  between engines, so they never split groups; columns are never hashed.
+- The first five distinct frame keys plus the exception type (an `Uncaught `
+  prefix is ignored) are hashed. Messages do not split framed errors; frameless
+  errors use the message with numbers, UUIDs and long hex values normalized.
+
+Upload source maps for the best results: without them, minifiers may rename
+functions between builds, and different errors in the same bundle function
+group together.
+
+Every event also stores the legacy fingerprints (raw and mapped frames: path,
+line, column) as issue aliases, and an event joins the oldest issue matching any
+of its aliases. Issues created before `v2` therefore keep receiving events and
+pick up the `v2` alias on their next event, after which other engines and builds
+join them. Late source-map uploads find the existing raw group. Already separate
+historical issues are not merged retroactively. Environment isolates triage.
 
 Resolved issues reopen with a regression flag on a greater `major.minor.patch`
 release. Same/older release occurrences count without reopening. For opaque
