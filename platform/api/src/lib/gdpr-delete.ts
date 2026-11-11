@@ -1,6 +1,6 @@
 /**
  * GDPR subject delete across telemetry stores (#47).
- * Removes Mongo logs/errors, MinIO replay objects (prefix contract for #40),
+ * Removes Mongo logs/errors, session replays (#40: objects + replay_sessions rows),
  * and submits Loki delete requests. Always writes an audit entry via the caller.
  */
 import axios from 'axios';
@@ -11,6 +11,8 @@ import { LogModel } from '../schemas/Log';
 import { TelemetryConsent } from '../entities/TelemetryConsent';
 import { invalidateConsentCache, normalizeSessionId, normalizeSubjectId } from './privacy-consent';
 import { createHash } from 'crypto';
+import { getReplayStore, replaySessionPrefix } from './replay-store';
+import { deleteReplaysForSubject } from './replay-sessions';
 
 export interface GdprDeleteRequest {
   projectId: string;
@@ -45,11 +47,12 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** Object-key prefix #40 must use so GDPR delete can remove a subject's replays. */
-export function replayObjectPrefix(projectId: string, opts: { userId?: string; sessionId?: string }): string {
-  if (opts.sessionId) return `replays/${projectId}/session/${opts.sessionId}/`;
-  if (opts.userId) return `replays/${projectId}/user/${opts.userId}/`;
-  return `replays/${projectId}/`;
+/**
+ * Object-key prefix of a replay session (#40): `replays/<projectId>/<sessionId>/` in the
+ * `replays` bucket. Replays of an application user are found through replay_sessions.
+ */
+export function replayObjectPrefix(projectId: string, opts: { sessionId: string }): string {
+  return replaySessionPrefix(projectId, opts.sessionId);
 }
 
 async function deleteMongoBySubject(
@@ -113,59 +116,20 @@ async function deleteConsents(
 }
 
 /**
- * Best-effort MinIO/S3 delete under the replay prefix. Uses AWS SDK v3 if present
- * via dynamic import of the upload store's S3 client helpers; otherwise no-ops
- * with a warning (replay storage lands in #40).
+ * Replays of the subject (#40): sessions matched by session id, user id or consent
+ * subject id; deletes the objects under each session prefix and the metadata rows.
  */
 async function deleteReplayObjects(
+  ds: DataSource,
   projectId: string,
   userId: string | null,
   sessionId: string | null,
 ): Promise<{ count: number; warning?: string }> {
-  const prefixes: string[] = [];
-  if (userId) prefixes.push(replayObjectPrefix(projectId, { userId }));
-  if (sessionId) prefixes.push(replayObjectPrefix(projectId, { sessionId }));
-  if (!prefixes.length) return { count: 0 };
-
-  const endpoint = process.env.REPLAYS_S3_ENDPOINT || process.env.MINIO_ENDPOINT || '';
-  const bucket = process.env.REPLAYS_BUCKET || 'replays';
-  const accessKeyId = process.env.REPLAYS_S3_ACCESS_KEY || process.env.MINIO_API_ACCESS_KEY || process.env.MINIO_ACCESS_KEY || '';
-  const secretAccessKey = process.env.REPLAYS_S3_SECRET_KEY || process.env.MINIO_API_SECRET_KEY || process.env.MINIO_SECRET_KEY || '';
-  if (!endpoint || !accessKeyId || !secretAccessKey) {
-    return { count: 0, warning: 'replay object store not configured; skipped MinIO delete' };
-  }
-
+  if (!userId && !sessionId) return { count: 0 };
+  const store = getReplayStore();
   try {
-    // Lazy require so unit tests without @aws-sdk still load the module.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { S3Client, ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
-    const client = new S3Client({
-      endpoint,
-      region: process.env.REPLAYS_S3_REGION || 'us-east-1',
-      forcePathStyle: true,
-      credentials: { accessKeyId, secretAccessKey },
-    });
-    let count = 0;
-    for (const prefix of prefixes) {
-      let token: string | undefined;
-      do {
-        const listed = await client.send(new ListObjectsV2Command({
-          Bucket: bucket,
-          Prefix: prefix,
-          ContinuationToken: token,
-        }));
-        const keys = (listed.Contents || []).map((o: { Key?: string }) => o.Key).filter(Boolean) as string[];
-        if (keys.length) {
-          await client.send(new DeleteObjectsCommand({
-            Bucket: bucket,
-            Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true },
-          }));
-          count += keys.length;
-        }
-        token = listed.IsTruncated ? listed.NextContinuationToken : undefined;
-      } while (token);
-    }
-    return { count };
+    const r = await deleteReplaysForSubject(ds, store, projectId, { userId, sessionId });
+    return store ? { count: r.objects } : { count: 0, warning: 'replay object store not configured; skipped MinIO delete' };
   } catch (err: any) {
     return { count: 0, warning: `replay delete failed: ${err?.message || err}` };
   }
@@ -178,13 +142,14 @@ export async function submitLokiDeletes(
   sessionId: string | null,
 ): Promise<{ requests: number; warning?: string }> {
   const lokiUrl = (process.env.LOKI_URL || 'http://loki.monitoring.svc:3100').replace(/\/+$/, '');
-  const start = process.env.GDPR_LOKI_DELETE_START || '0';
+  // Loki rejects start=0; an RFC3339 date before any retained data deletes everything older too.
+  const start = process.env.GDPR_LOKI_DELETE_START || '2020-01-01T00:00:00Z';
   const queries: string[] = [];
   if (userId) {
-    queries.push(`{project_id="${projectId}"} |= "${userId.replace(/"/g, '')}"`);
+    queries.push(`{platform_project_id="${projectId}"} |= "${lokiLiteral(userId)}"`);
   }
   if (sessionId) {
-    queries.push(`{project_id="${projectId}"} |= "${sessionId.replace(/"/g, '')}"`);
+    queries.push(`{platform_project_id="${projectId}"} |= "${lokiLiteral(sessionId)}"`);
   }
   if (!queries.length) return { requests: 0 };
 
@@ -218,8 +183,10 @@ export async function runGdprDelete(
   const hash = email ? emailHash(email) : null;
 
   const mongo = await deleteMongoBySubject(req.projectId, userId, sessionId);
+  // Error events from error tracking (#41) live in Postgres with the subject in the payload.
+  const pgErrors = await deletePostgresErrorEvents(ds, req.projectId, userId, sessionId);
   const consents = await deleteConsents(ds, req.projectId, userId, sessionId);
-  const replays = await deleteReplayObjects(req.projectId, userId, sessionId);
+  const replays = await deleteReplayObjects(ds, req.projectId, userId, sessionId);
   if (replays.warning) warnings.push(replays.warning);
   const loki = await submitLokiDeletes(req.projectId, userId, sessionId);
   if (loki.warning) warnings.push(loki.warning);
@@ -231,11 +198,37 @@ export async function runGdprDelete(
     emailHash: hash,
     deleted: {
       logs: mongo.logs,
-      errors: mongo.errors,
+      errors: mongo.errors + pgErrors,
       consents,
       replayObjects: replays.count,
       lokiRequests: loki.requests,
     },
     warnings,
   };
+}
+
+/** Loki line-filter literal: strip quotes and backslashes so the value cannot break out of the string. */
+function lokiLiteral(v: string): string {
+  return v.replace(/["\\]/g, '');
+}
+
+/** Delete #41 error events whose payload names the subject; issue aggregates keep only counts. */
+export async function deletePostgresErrorEvents(
+  ds: { query: (sql: string, params?: unknown[]) => Promise<any> },
+  projectId: string,
+  userId: string | null,
+  sessionId: string | null,
+): Promise<number> {
+  if (!userId && !sessionId) return 0;
+  try {
+    const rows = await ds.query(
+      `DELETE FROM error_events WHERE project_id = $1 AND (($2::text IS NOT NULL AND payload->>'userId' = $2) OR ($3::text IS NOT NULL AND payload->>'sessionId' = $3)) RETURNING id`,
+      [projectId, userId, sessionId],
+    );
+    // TypeORM/pg returns [rows, affected] for DELETE ... RETURNING (or rows on other drivers).
+    const list = Array.isArray(rows) && Array.isArray(rows[0]) ? rows[0] : rows;
+    return Array.isArray(list) ? list.length : 0;
+  } catch {
+    return 0; // table absent on installs without error tracking
+  }
 }

@@ -1,0 +1,164 @@
+<div class="sp-head">
+  <div>
+    <a [routerLink]="['/projects', projectId]" class="back">← Project</a>
+    <h1>Status page</h1>
+    <p class="muted">
+      Publish a public page fed by synthetic checks (#42). Only component names, uptime and
+      operator-authored incidents are shown — never URLs, hosts, errors or secrets.
+    </p>
+  </div>
+  <div class="head-actions">
+    @if (page && page.published && page.publicPath) {
+      <a class="btn btn-sm" [routerLink]="['/status', page.slug]" target="_blank" rel="noopener">Open public page</a>
+    }
+    <button class="btn btn-primary" type="button" [disabled]="busy || !page" (click)="save()">Save</button>
+  </div>
+</div>
+
+@if (error) { <div class="banner banner-error" role="alert">{{ error }}</div> }
+@if (notice) { <div class="banner banner-ok" role="status">{{ notice }}</div> }
+
+@if (page) {
+  <section class="card">
+    <h2>Settings</h2>
+    <div class="grid">
+      <label class="inline">
+        <input type="checkbox" [(ngModel)]="page.published" /> Published
+      </label>
+      <label>Slug
+        <input [(ngModel)]="page.slug" maxlength="63" pattern="[a-z0-9-]+" />
+        <span class="hint">Public path: /status/{{ page.slug || '…' }}</span>
+      </label>
+      <label>Title <input [(ngModel)]="page.title" maxlength="120" /></label>
+      <label>Custom domain (optional)
+        <input [(ngModel)]="page.domain" placeholder="status.example.com" />
+        <span class="hint">Stored for a future dedicated hostname (must be unique, not published yet); page is live at the path above over TLS today.</span>
+      </label>
+      <label>Logo URL (https)
+        <input [(ngModel)]="page.branding.logoUrl" placeholder="https://…" />
+      </label>
+      <label>Primary colour
+        <input [(ngModel)]="page.branding.primaryColor" placeholder="#102030" />
+      </label>
+      <label>Accent colour
+        <input [(ngModel)]="page.branding.accentColor" placeholder="#16a34a" />
+      </label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Components</h2>
+    <p class="hint">
+      Mapped to synthetic checks. Hide a check from all status pages with
+      <code>"statusPage": {{ '{' }} "visible": false {{ '}' }}</code> on the check config.
+    </p>
+    <label class="inline">
+      <input type="checkbox" [(ngModel)]="useAllComponents" /> Show all visible checks
+    </label>
+    @if (!useAllComponents) {
+      <ul class="check-list">
+        @for (c of checks; track c.id) {
+          <li>
+            <label class="inline">
+              <input
+                type="checkbox"
+                [checked]="isSelected(c.id)"
+                (change)="toggleCheck(c.id, $any($event.target).checked)"
+              />
+              {{ componentLabel(c) }}
+              <span class="tag">{{ c.type }}</span>
+              @if (c.config?.statusPage?.visible === false) {
+                <span class="tag tag-warn">hidden by check</span>
+              }
+            </label>
+          </li>
+        }
+      </ul>
+      @if (!checks.length) {
+        <p class="muted">No synthetic checks yet — create some under Synthetics first.</p>
+      }
+    }
+  </section>
+
+  <section class="card">
+    <h2>Incidents &amp; maintenance</h2>
+    <div class="incident-form grid">
+      <label>Title <input [(ngModel)]="draftIncident.title" maxlength="200" /></label>
+      <label>Impact
+        <select [(ngModel)]="draftIncident.impact">
+          <option value="none">none</option>
+          <option value="minor">minor</option>
+          <option value="major">major</option>
+          <option value="critical">critical</option>
+        </select>
+      </label>
+      <label class="inline">
+        <input type="checkbox" [(ngModel)]="draftIncident.isMaintenance" /> Maintenance window
+      </label>
+      @if (draftIncident.isMaintenance) {
+        <label>Starts (local time)
+          <input type="datetime-local" [(ngModel)]="draftIncident.scheduledStart" />
+        </label>
+        <label>Ends (local time)
+          <input type="datetime-local" [(ngModel)]="draftIncident.scheduledEnd" />
+          <span class="hint">Shown as upcoming until it starts; completed automatically after it ends.</span>
+        </label>
+      }
+      <label class="block">Update
+        <textarea [(ngModel)]="draftIncident.body" rows="2" maxlength="4000"></textarea>
+      </label>
+      <div class="actions">
+        <button class="btn btn-sm btn-primary" type="button" [disabled]="busy || !draftIncident.title.trim()" (click)="createIncident()">
+          Create
+        </button>
+      </div>
+    </div>
+
+    <ul class="incident-list">
+      @for (inc of incidents; track inc.id) {
+        <li>
+          <div class="inc-head">
+            <strong>{{ inc.title }}</strong>
+            <span class="tag">{{ inc.status }}</span>
+            <span class="tag">{{ inc.impact }}</span>
+            @if (inc.isMaintenance) { <span class="tag">maintenance</span> }
+            @if (phaseLabel(inc)) { <span class="tag">{{ phaseLabel(inc) }}</span> }
+          </div>
+          @if (inc.isMaintenance && (inc.scheduledStart || inc.scheduledEnd)) {
+            <p class="hint">
+              Window: {{ inc.scheduledStart ? (inc.scheduledStart | date:'medium') : '…' }}
+              – {{ inc.scheduledEnd ? (inc.scheduledEnd | date:'medium') : 'open-ended' }}
+            </p>
+          }
+          @if (inc.updates.length) {
+            <p class="muted">{{ inc.updates[inc.updates.length - 1].body }}</p>
+          }
+          @if (isOpenIncident(inc) && updateDrafts[inc.id]) {
+            <div class="grid">
+              <label>Status
+                <select [(ngModel)]="updateDrafts[inc.id].status">
+                  @for (s of updateStatuses; track s) {
+                    <option [value]="s">{{ s }}</option>
+                  }
+                </select>
+              </label>
+              <label class="block">Update text
+                <textarea [(ngModel)]="updateDrafts[inc.id].body" rows="2" maxlength="4000"></textarea>
+              </label>
+            </div>
+          }
+          <div class="actions">
+            @if (isOpenIncident(inc)) {
+              <button class="btn btn-sm btn-primary" type="button"
+                [disabled]="busy || !updateDrafts[inc.id]?.body?.trim()" (click)="postUpdate(inc)">Post update</button>
+              <button class="btn btn-sm" type="button" [disabled]="busy" (click)="resolveIncident(inc)">Resolve</button>
+            }
+            <button class="btn btn-sm" type="button" [disabled]="busy" (click)="deleteIncident(inc)">Delete</button>
+          </div>
+        </li>
+      } @empty {
+        <li class="muted">No incidents yet.</li>
+      }
+    </ul>
+  </section>
+}

@@ -8,6 +8,11 @@ FROM mcr.microsoft.com/playwright:v1.49.1-noble
 ENV NODE_ENV=production \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+# certutil: trusts the platform's internal CA in the per-run browser profile
+# (only when the check targets the project's own environment hosts; runner.mjs).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libnss3-tools \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /runner
 COPY package.json ./
 RUN npm install --omit=dev --no-audit --no-fund --ignore-scripts && npm cache clean --force

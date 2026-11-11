@@ -1,6 +1,6 @@
 /**
- * Alerting routes (#43): permissions (project members read, developers ack, admin/devops
- * configure), audit, write-only channel secrets, SSRF on create, Alertmanager webhook auth,
+ * Alerting routes (#43): permissions (project members read, developers ack, project devops/owners
+ * and platform admin/devops configure; raw-query monitors and ratio SLOs platform-only, #151), audit, write-only channel secrets, SSRF on create, Alertmanager webhook auth,
  * and the legacy /alerts mirror.
  */
 import 'reflect-metadata';
@@ -53,6 +53,8 @@ const DEV = '33333333-0000-4000-8000-000000000002';
 const PROJ_DEVOPS = '33333333-0000-4000-8000-000000000003';
 const OPS = '33333333-0000-4000-8000-000000000004';
 const ADMIN = '33333333-0000-4000-8000-000000000005';
+const OWNER = '33333333-0000-4000-8000-000000000006';
+const OUTSIDER = '33333333-0000-4000-8000-000000000007';
 
 function app() {
   const a = express();
@@ -72,8 +74,9 @@ beforeEach(() => {
     { id: 'm1', projectId: PID, userId: VIEWER, role: 'viewer' },
     { id: 'm2', projectId: PID, userId: DEV, role: 'developer' },
     { id: 'm3', projectId: PID, userId: PROJ_DEVOPS, role: 'devops' },
+    { id: 'm4', projectId: PID, userId: OWNER, role: 'owner' },
   );
-  mockRepo('User').rows.push({ id: OPS, role: 'devops' }, { id: DEV, role: 'developer' });
+  mockRepo('User').rows.push({ id: OPS, role: 'devops' }, { id: DEV, role: 'developer' }, { id: OUTSIDER, role: 'developer' });
 });
 
 const base = `/projects/${PID}/alerting`;
@@ -90,14 +93,84 @@ describe('permissions', () => {
     expect((await as(request(app()).get(`/projects/not-a-uuid/alerting/incidents`), VIEWER)).status).toBe(400);
   });
 
-  it('configuration needs platform admin/devops: project devops members and developers get 403', async () => {
+  it('raw-query (metric/log) monitors need platform admin/devops: project devops/owners and developers get 403', async () => {
     const body = { name: 'm', kind: 'metric', query: 'up', operator: '<', threshold: 1 };
-    expect((await as(request(app()).post(`${base}/monitors`).send(body), PROJ_DEVOPS, 'developer')).status).toBe(403);
+    const denied = await as(request(app()).post(`${base}/monitors`).send(body), PROJ_DEVOPS, 'developer');
+    expect(denied.status).toBe(403);
+    expect(denied.body.error).toMatch(/platform admins and devops.*not limited to this project/);
+    expect((await as(request(app()).post(`${base}/monitors`).send({ ...body, kind: 'log', query: '{a="b"}' }), OWNER)).status).toBe(403);
     expect((await as(request(app()).post(`${base}/silences`).send({ durationMinutes: 10 }), DEV)).status).toBe(403);
     const res = await ops(request(app()).post(`${base}/monitors`).send(body));
     expect(res.status).toBe(201);
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'alerting.monitor.create', userId: OPS, targetId: res.body.id }));
     expect((await as(request(app()).post(`${base}/monitors`).send(body), ADMIN, 'admin')).status).toBe(201);
+    // Existing raw monitors cannot be edited by project devops either (even just disabling).
+    expect((await as(request(app()).put(`${base}/monitors/${res.body.id}`).send({ enabled: false }), PROJ_DEVOPS)).status).toBe(403);
+    expect(mockRepo('AlertMonitor').rows.find((r: any) => r.id === res.body.id).enabled).toBe(true);
+  });
+
+  it('project devops/owners configure their project: channels, policies, schedules, silences, SLOs, scoped monitors (#151)', async () => {
+    const pd = (r: request.Test) => as(r, PROJ_DEVOPS);
+    const ch = await pd(request(app()).post(`${base}/channels`).send({ name: 'd', type: 'discord', secrets: { webhookUrl: 'https://discord.example.test/api/webhooks/1/x' } }));
+    expect(ch.status).toBe(201);
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'alerting.channel.create', userId: PROJ_DEVOPS }));
+    const pol = await pd(request(app()).post(`${base}/policies`).send({ name: 'p', steps: [{ channelIds: [ch.body.id] }] }));
+    expect(pol.status).toBe(201);
+    expect((await pd(request(app()).post(`${base}/schedules`).send({ name: 's', userIds: [DEV], rotationHours: 24, startsAt: new Date().toISOString() }))).status).toBe(201);
+    expect((await pd(request(app()).post(`${base}/silences`).send({ durationMinutes: 10 }))).status).toBe(201);
+    expect((await pd(request(app()).post(`${base}/slos`).send({ name: 'a', sliType: 'availability', target: 99 }))).status).toBe(201);
+    const mon = await pd(request(app()).post(`${base}/monitors`).send({ name: 'cpu', kind: 'resource', params: { resource: 'cpu' }, threshold: 80, policyId: pol.body.id }));
+    expect(mon.status).toBe(201);
+    expect((await pd(request(app()).post(`${base}/monitors`).send({ name: 'err', kind: 'trace', params: { signal: 'error_rate' }, threshold: 5 }))).status).toBe(201);
+    expect((await pd(request(app()).put(`${base}/monitors/${mon.body.id}`).send({ threshold: 90 }))).body.threshold).toBe(90);
+    expect((await as(request(app()).post(`${base}/test-event`).send({ key: 'k' }), OWNER)).status).toBe(202);
+    expect((await as(request(app()).post(`${base}/monitors`).send({ name: 'mem', kind: 'resource', params: { resource: 'memory' }, threshold: 80 }), OWNER)).status).toBe(201);
+    // Not on other projects.
+    expect((await pd(request(app()).post(`/projects/${OTHER}/alerting/silences`).send({ durationMinutes: 10 }))).status).toBe(403);
+  });
+
+  it('project developers cannot configure alerting', async () => {
+    const d = (r: request.Test) => as(r, DEV);
+    expect((await d(request(app()).post(`${base}/channels`).send({ name: 'd', type: 'discord', secrets: { webhookUrl: 'https://discord.example.test/api/webhooks/1/x' } }))).status).toBe(403);
+    expect((await d(request(app()).post(`${base}/policies`).send({ name: 'p', steps: [] }))).status).toBe(403);
+    expect((await d(request(app()).post(`${base}/monitors`).send({ name: 'cpu', kind: 'resource', params: { resource: 'cpu' }, threshold: 80 }))).status).toBe(403);
+    expect((await d(request(app()).post(`${base}/slos`).send({ name: 'a', sliType: 'availability', target: 99 }))).status).toBe(403);
+  });
+
+  it('project devops cannot turn a scoped monitor into a raw-query one; platform devops can (#151)', async () => {
+    const mon = await as(request(app()).post(`${base}/monitors`).send({ name: 'cpu', kind: 'resource', params: { resource: 'cpu' }, threshold: 80 }), PROJ_DEVOPS);
+    expect(mon.status).toBe(201);
+    const r = await as(request(app()).put(`${base}/monitors/${mon.body.id}`).send({ kind: 'metric', query: 'up' }), PROJ_DEVOPS);
+    expect(r.status).toBe(403);
+    expect(r.body.error).toMatch(/metric monitors/);
+    expect(mockRepo('AlertMonitor').rows.find((x: any) => x.id === mon.body.id)).toMatchObject({ kind: 'resource', query: null });
+    expect((await as(request(app()).put(`${base}/monitors/${mon.body.id}`).send({ kind: 'log', query: '{a="b"}' }), OWNER)).status).toBe(403);
+    const ok = await ops(request(app()).put(`${base}/monitors/${mon.body.id}`).send({ kind: 'metric', query: 'up' }));
+    expect(ok.status).toBe(200);
+    expect(ok.body.kind).toBe('metric');
+  });
+
+  it('ratio SLOs (raw PromQL) are platform admin/devops only (#151)', async () => {
+    const body = { name: 'r', sliType: 'ratio', errorQuery: 'sum(rate(x_errors[$window]))', totalQuery: 'sum(rate(x_total[$window]))', target: 99 };
+    expect((await as(request(app()).post(`${base}/slos`).send(body), PROJ_DEVOPS)).status).toBe(403);
+    const slo = await as(request(app()).post(`${base}/slos`).send({ name: 'a', sliType: 'availability', target: 99 }), PROJ_DEVOPS);
+    expect((await as(request(app()).put(`${base}/slos/${slo.body.id}`).send({ sliType: 'ratio', errorQuery: body.errorQuery, totalQuery: body.totalQuery }), PROJ_DEVOPS)).status).toBe(403);
+    expect((await ops(request(app()).post(`${base}/slos`).send(body))).status).toBe(201);
+  });
+
+  it('project devops page only people who can see the project; platform devops page anyone', async () => {
+    const sched = (user: string, role: string, ids: string[]) => as(request(app()).post(`${base}/schedules`).send({ name: 's', userIds: ids, rotationHours: 24, startsAt: new Date().toISOString() }), user, role);
+    const r = await sched(PROJ_DEVOPS, 'developer', [DEV, OUTSIDER]);
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/not a member/);
+    expect((await sched(PROJ_DEVOPS, 'developer', [DEV, OPS])).status).toBe(201);
+    expect((await as(request(app()).post(`${base}/policies`).send({ name: 'p', steps: [{ userIds: [OUTSIDER] }] }), PROJ_DEVOPS)).status).toBe(400);
+    expect((await sched(OPS, 'devops', [OUTSIDER])).status).toBe(201);
+  });
+
+  it('project devops still cannot set allowPrivateNetwork on channels', async () => {
+    const priv = { name: 'h', type: 'webhook', secrets: { url: 'https://internal.example.test/hook' }, allowPrivateNetwork: true };
+    expect((await as(request(app()).post(`${base}/channels`).send(priv), PROJ_DEVOPS)).status).toBe(403);
   });
 
   it('developers acknowledge / resolve incidents of their project; viewers cannot', async () => {
@@ -113,6 +186,19 @@ describe('permissions', () => {
 });
 
 describe('channels', () => {
+  it('test notification names the project (not its id)', async () => {
+    const channels = jest.requireActual('../../../src/lib/alerting-channels');
+    const spy = jest.spyOn(channels, 'sendToChannel').mockResolvedValue(undefined);
+    try {
+      const res = await ops(request(app()).post(`${base}/channels`).send({ name: 'hook', type: 'webhook', secrets: { url: 'https://receiver.example.test/x' } }));
+      const t = await ops(request(app()).post(`${base}/channels/${res.body.id}/test`));
+      expect(t.status).toBe(200);
+      expect(spy.mock.calls[0][1]).toMatchObject({ event: 'test', projectId: PID, projectName: 'shop' });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('secrets are write-only; the generated signing secret is returned once', async () => {
     const res = await ops(request(app()).post(`${base}/channels`).send({ name: 'hook', type: 'webhook', secrets: { url: 'https://receiver.example.test/SECRETPATH' } }));
     expect(res.status).toBe(201);

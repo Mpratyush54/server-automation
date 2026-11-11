@@ -40,6 +40,8 @@ import { SyntheticCheck } from '../entities/SyntheticCheck';
 import { SyntheticResult } from '../entities/SyntheticResult';
 import { TelemetryPrivacySettings } from '../entities/TelemetryPrivacySettings';
 import { TelemetryConsent } from '../entities/TelemetryConsent';
+import { StatusPage } from '../entities/StatusPage';
+import { StatusIncident } from '../entities/StatusIncident';
 
 export const MIGRATIONS_TABLE = 'migrations';
 
@@ -67,6 +69,8 @@ export const AppDataSource = new DataSource({
     TelemetryPrivacySettings, TelemetryConsent,
     // Synthetic monitoring (#42): check definitions + run history.
     SyntheticCheck, SyntheticResult,
+    // Public status pages (#46): published page + incident timeline.
+    StatusPage, StatusIncident,
     // Alerting and on-call (#43).
     ...ALERTING_ENTITIES],
   // Schema changes ship as reviewed, versioned migrations (src/migrations),

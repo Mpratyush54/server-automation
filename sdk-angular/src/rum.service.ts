@@ -42,7 +42,7 @@ export class PlatformRumService implements OnDestroy {
   start(): Promise<RumHandle | null> {
     const cfg = this.config;
     if (!cfg || !cfg.rum) return Promise.resolve(null);
-    return initRum(cfg.rum, { appName: cfg.appName, environment: cfg.environment });
+    return initRum(cfg.rum, { appName: cfg.appName, environment: cfg.environment, apiBase: cfg.apiBase, token: cfg.token });
   }
 
   trackRouter(router: RumRouterLike, nameFor?: (url: string) => string): void {
@@ -92,7 +92,7 @@ export class PlatformRumErrorHandler extends ErrorHandler {
  */
 export function providePlatformRum(
   rum: PlatformRumOptions | false | null | undefined,
-  defaults: { appName?: string; environment?: string } = {},
+  defaults: { appName?: string; environment?: string; apiBase?: string; token?: string } = {},
   options: { errorHandler?: boolean } = {},
 ): Provider[] {
   const providers: Provider[] = [

@@ -112,6 +112,28 @@ func MarkDone(step string) error {
 	return update(func(m map[string]string) bool { m[step] = "done"; return true })
 }
 
+// MarkHardeningDone records both the provision step and the baseline status
+// atomically, so a completed firewall cannot remain in progress.
+func MarkHardeningDone() error {
+	return update(func(m map[string]string) bool {
+		m["harden-firewall"] = "done"
+		m["harden"] = "done"
+		return true
+	})
+}
+
+// ReconcileHardening repairs state from versions that only marked harden done.
+// An incomplete baseline is not evidence that the firewall succeeded.
+func ReconcileHardening() error {
+	return update(func(m map[string]string) bool {
+		if m["harden"] != "done" || m["harden-firewall"] != "in_progress" {
+			return false
+		}
+		m["harden-firewall"] = "done"
+		return true
+	})
+}
+
 func MarkInProgress(step string) error {
 	return update(func(m map[string]string) bool {
 		if m[step] == "done" {
@@ -204,4 +226,21 @@ func writeLockMeta(f *os.File, owner string) {
 	_, _ = f.Seek(0, 0)
 	_, _ = f.WriteString(meta)
 	_ = f.Sync()
+}
+
+// Get returns the raw value recorded for key ("" when absent). Besides step
+// markers ("done"/"in_progress") the state file holds auxiliary records such
+// as "<step>.values=<fingerprint>".
+func Get(key string) string {
+	mu.Lock()
+	defer mu.Unlock()
+	return loadMap()[key]
+}
+
+// Set records key=value (value must not contain a newline).
+func Set(key, value string) error {
+	if strings.ContainsAny(key, "=\n") || strings.Contains(value, "\n") {
+		return fmt.Errorf("invalid state record %q", key)
+	}
+	return update(func(m map[string]string) bool { m[key] = value; return true })
 }

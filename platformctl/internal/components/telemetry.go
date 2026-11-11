@@ -13,6 +13,8 @@ import (
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
+	"github.com/fatih/color"
 )
 
 // FullTelemetry deliberately does not interpret an empty profile as full:
@@ -85,14 +87,9 @@ func InstallTelemetry(c *config.Config) error {
 	if err != nil {
 		return err
 	}
-	// Never replace a local Loki release implicitly. Its PVC may contain the
-	// only copy of historic logs; see the explicit migration procedure.
-	old, err := shell.Output("helm", "list", "-n", "monitoring", "-o", "json", "--filter", "^loki$")
-	if err != nil {
+	// Never replace a local Loki release implicitly: migrate it explicitly.
+	if err := migrateLegacyLokiStack(); err != nil {
 		return err
-	}
-	if strings.Contains(old, "loki-stack-") {
-		return fmt.Errorf("legacy loki-stack detected: back up and follow docs/operations/telemetry.md before installing full telemetry")
 	}
 	if err := telemetryStorage(c); err != nil {
 		return err
@@ -161,7 +158,7 @@ func InstallTelemetry(c *config.Config) error {
 		}
 	}
 	// The profile proxy is applied (and ready) before the Ingress routes to it.
-	for _, name := range []string{"telemetry-profile-ingest.yaml", "telemetry-ingress.yaml", "telemetry-rules.yaml", "telemetry-dashboard.yaml", "database-monitoring.yaml", alertingRBACManifest} {
+	for _, name := range []string{"telemetry-profile-ingest.yaml", "telemetry-ingress.yaml", "telemetry-rules.yaml", "telemetry-dashboard.yaml", "database-monitoring.yaml"} {
 		p, err := telemetryManifest(name, c, proxyImage)
 		if err != nil {
 			return err
@@ -176,6 +173,9 @@ func InstallTelemetry(c *config.Config) error {
 				return fmt.Errorf("telemetry profile-ingest: %w", err)
 			}
 		}
+	}
+	if err := ApplyFullProfileAPIAccess(c); err != nil {
+		return err
 	}
 	if err := publishTelemetryBackend(c, sampling); err != nil {
 		return err
@@ -267,9 +267,9 @@ func telemetryBucketScript(bucket string) string {
 	if bucket == "replays" {
 		lifecycle = `
 cat >"$work/lifecycle.json" <<'LIFECYCLE'
-{"Rules":[{"ID":"replays-default-7d","Status":"Enabled","Filter":{"Prefix":"replays/"},"Expiration":{"Days":7}}]}
+{"Rules":[{"ID":"replays-max-365d","Status":"Enabled","Filter":{"Prefix":"replays/"},"Expiration":{"Days":365}}]}
 LIFECYCLE
-mc ilm import local/replays <"$work/lifecycle.json" >/dev/null || mc ilm rule add --expire-days 7 local/replays >/dev/null
+mc ilm import local/replays <"$work/lifecycle.json" >/dev/null || mc ilm rule add --expire-days 365 local/replays >/dev/null
 `
 	}
 	return fmt.Sprintf(`set -eu
@@ -359,4 +359,111 @@ func ProfileIngestImage(c *config.Config) (string, error) {
 		return "", fmt.Errorf("invalid PLATFORM_IMAGE_REGISTRY/PLATFORM_IMAGE_TAG for the profile ingest image")
 	}
 	return registry + "/platform-profile-ingest:" + tag, nil
+}
+
+// Commands used by the loki-stack migration (tests replace them).
+var (
+	lokiOutput = shell.Output
+	lokiRun    = shell.Run
+)
+
+// legacyLokiChart returns the chart (e.g. "loki-stack-2.10.3") when Helm
+// release "loki" in `helm list -o json` output still runs loki-stack.
+func legacyLokiChart(helmList string) (string, error) {
+	var releases []struct{ Name, Chart string }
+	if strings.TrimSpace(helmList) == "" {
+		return "", nil
+	}
+	if err := json.Unmarshal([]byte(helmList), &releases); err != nil {
+		return "", fmt.Errorf("parse helm list: %w", err)
+	}
+	for _, r := range releases {
+		if name, _, ok := versions.SplitChartRef(r.Chart); r.Name == "loki" && ok && name == "loki-stack" {
+			return r.Chart, nil
+		}
+	}
+	return "", nil
+}
+
+// lokiStackVolumes lists the persistent volumes the legacy release uses: claim
+// templates or claims mounted by StatefulSet "loki", and any storage-loki-* PVC.
+func lokiStackVolumes() ([]string, error) {
+	var out []string
+	sts, err := lokiOutput("kubectl", "-n", "monitoring", "get", "statefulset", "loki", "--ignore-not-found", "-o",
+		"jsonpath={.spec.volumeClaimTemplates[*].metadata.name} {.spec.template.spec.volumes[*].persistentVolumeClaim.claimName}")
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, strings.Fields(sts)...)
+	pvcs, err := lokiOutput("kubectl", "-n", "monitoring", "get", "pvc", "-o", "name")
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range strings.Fields(pvcs) {
+		if strings.HasPrefix(strings.TrimPrefix(p, "persistentvolumeclaim/"), "storage-loki-") {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+// migrateLegacyLokiStack handles the loki-stack -> loki move documented in
+// docs/operations/telemetry.md ("Upgrade from loki-stack"). A release that keeps
+// logs on a persistent volume is never touched: the step stops with the manual
+// procedure. Without a volume (the platformctl default before the full profile)
+// its logs live only in the pod and are lost on any restart anyway, so the
+// release is uninstalled (with a clear log line) and replaced by Loki on MinIO.
+func migrateLegacyLokiStack() error {
+	raw, err := lokiOutput("helm", "list", "-n", "monitoring", "-o", "json", "--filter", "^loki$")
+	if err != nil {
+		return err
+	}
+	legacy, err := legacyLokiChart(raw)
+	if err != nil || legacy == "" {
+		return err
+	}
+	volumes, err := lokiStackVolumes()
+	if err != nil {
+		return fmt.Errorf("inspect legacy loki-stack volumes: %w", err)
+	}
+	if len(volumes) > 0 {
+		return fmt.Errorf("legacy Helm release \"loki\" (%s) stores logs on a persistent volume (%s); platformctl does not remove it automatically. "+
+			"Back it up and migrate as described in docs/operations/telemetry.md (\"Upgrade from loki-stack\"), then run: sudo platformctl provision --profile full",
+			legacy, strings.Join(volumes, ", "))
+	}
+	color.Yellow("  ⚠ Removing legacy Helm release \"loki\" (%s): it has no persistent volume, so its logs exist only in the running pod and are not migrated. Loki %s on MinIO replaces it.", legacy, versions.Get("loki").Version)
+	if err := lokiRun("helm", "uninstall", "loki", "-n", "monitoring", "--wait", "--timeout", "5m"); err != nil {
+		return fmt.Errorf("uninstall legacy loki-stack release: %w", err)
+	}
+	return nil
+}
+
+// ApplyFullProfileAPIAccess applies what the platform API's full-profile
+// features need from Kubernetes (alerting RBAC in monitoring; the synthetics
+// namespace, quotas, policies and RBAC). `upgrade` calls it before rolling the
+// API so the new release does not answer 403 until the telemetry and
+// synthetics steps run; both steps re-apply it. No-op below the full profile.
+func ApplyFullProfileAPIAccess(c *config.Config) error {
+	if !FullTelemetry(c) {
+		return nil
+	}
+	p, err := telemetryManifest(alertingRBACManifest, c, "")
+	if err != nil {
+		return err
+	}
+	err = shell.Run("kubectl", "apply", "-f", p)
+	os.Remove(p)
+	if err != nil {
+		return fmt.Errorf("alerting RBAC: %w", err)
+	}
+	p, err = temporaryManifest("synthetics.yaml", c)
+	if err != nil {
+		return err
+	}
+	err = shell.Run("kubectl", "apply", "-f", p)
+	os.Remove(p)
+	if err != nil {
+		return fmt.Errorf("synthetics RBAC: %w", err)
+	}
+	return nil
 }

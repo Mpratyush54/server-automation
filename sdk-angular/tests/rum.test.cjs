@@ -453,3 +453,36 @@ test('providePlatformRum registers a non-blocking initializer and the RUM error 
   }
   assert.deepEqual(errors, [['zone error', { source: 'angular-error-handler' }]]);
 });
+
+// #40: errors Angular catches in its zone never reach window.onerror; they must still mark the
+// session replay and the mirrored RUM error must carry the replay id (same path as React).
+test('Angular-caught errors mark the session replay and carry replayId to error ingest', async () => {
+  const rumMod = require('../dist/rum');
+  const { PlatformTransport } = require('../dist/rum-transport');
+  const marked = [];
+  const off = rumMod.addRumHook({ onError: (e) => marked.push(e.message) });
+  rumMod.setReplayIdForErrors('replay-ng-1');
+  const calls = [];
+  const transport = new PlatformTransport({
+    url: 'https://otel.example.test/collect', errorsUrl: 'https://platform.example.test/api/errors/rum', token: 'web-test',
+    replayId: rumMod.getReplayId, fetchImpl: async (url, init) => { calls.push({ url, init }); return { status: 202 }; },
+  });
+  await sdk.initRum({ telemetry: TELEMETRY }, {}, {
+    load: async () => ({ startFaro: () => ({ setView() {}, getSessionId: () => 's', getViewId: () => 'v', pushEvent() {}, stop() {},
+      pushError: (e) => transport.send([{ type: 'exception', payload: { type: e.name, value: e.message, stacktrace: { frames: [] } }, meta: { session: { id: 's' } } }]) }) }),
+    env: fakeEnv(),
+  });
+  const orig = console.error;
+  console.error = () => {};
+  try {
+    new sdk.PlatformRumErrorHandler().handleError(new Error('checkout failed'));
+  } finally {
+    console.error = orig;
+    off();
+    rumMod.setReplayIdForErrors(undefined);
+  }
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(marked, ['checkout failed'], 'replay error marker hook called');
+  const err = JSON.parse(calls.find((c) => c.url.endsWith('/errors/rum')).init.body);
+  assert.equal(err.replayId, 'replay-ng-1');
+});

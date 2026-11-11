@@ -11,7 +11,8 @@ import { readdirSync } from 'fs';
 import path from 'path';
 import { DataSource, MigrationInterface, QueryRunner } from 'typeorm';
 import { AppDataSource, MIGRATIONS_TABLE, migrationsGlob } from '../../src/config/database';
-import { pendingSchemaChanges, runPendingMigrations, withMigrationLock } from '../../src/lib/migrations';
+import { classifyDrift, pendingSchemaChanges, runPendingMigrations, withMigrationLock } from '../../src/lib/migrations';
+import { migrate } from '../../src/migrate';
 
 const host = process.env.MIGRATION_TEST_PG_HOST;
 const conn = {
@@ -177,6 +178,22 @@ d('migrations against Postgres', () => {
     expect(await appliedNames(ds)).toEqual(ALL);
     const cols = await ds.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'roles' AND column_name = 'half_done'`);
     expect(cols).toEqual([]);
+  });
+
+  it('repairs columns an older synchronize-era API dropped after a rollback (migrations still recorded)', async () => {
+    const db = await freshDb('mig_rollback');
+    const ds = await connect(db);
+    await runPendingMigrations(ds);
+    // What the v1.2.0 API's synchronize does on boot: drop columns/constraints it does not know.
+    await ds.query(`ALTER TABLE "files" DROP CONSTRAINT IF EXISTS "storage_file_provider"`);
+    await ds.query(`ALTER TABLE "files" DROP COLUMN "storage_provider_id"`);
+    await ds.query(`ALTER TABLE "sdk_credentials" DROP COLUMN "kind"`);
+    expect(await appliedNames(ds)).toEqual(ALL);
+    expect(classifyDrift(await pendingSchemaChanges(ds)).additive.length).toBeGreaterThan(0);
+    await migrate(ds, () => undefined);
+    expect(classifyDrift(await pendingSchemaChanges(ds)).additive).toEqual([]);
+    const cols = await ds.query(`SELECT column_name FROM information_schema.columns WHERE table_name IN ('files','sdk_credentials') AND column_name IN ('storage_provider_id','kind') ORDER BY 1`);
+    expect(cols.map((c: { column_name: string }) => c.column_name)).toEqual(['kind', 'storage_provider_id']);
   });
 
   it('the advisory lock keeps a second migrator out until the first finishes', async () => {

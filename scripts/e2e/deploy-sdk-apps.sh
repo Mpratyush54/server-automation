@@ -42,9 +42,11 @@ fi
 
 step "build images on the runner"
 cd "$E2E_ROOT"
-docker build -q -f examples/sdk-apps/node-api/Dockerfile -t sdk-node-api:local . >/dev/null
-docker build -q -f examples/sdk-apps/react-web/Dockerfile --build-arg "VITE_API_URL=https://${NODE_HOST}" -t sdk-react-web:local . >/dev/null
-docker build -q -f examples/sdk-apps/angular-web/Dockerfile -t sdk-angular-web:local . >/dev/null
+# Host network: the platform's host firewall drops forwarded traffic from
+# docker0 when the harness runs on the VM itself (npm installs then hang).
+docker build --network host -q -f examples/sdk-apps/node-api/Dockerfile -t sdk-node-api:local . >/dev/null
+docker build --network host -q -f examples/sdk-apps/react-web/Dockerfile --build-arg "VITE_API_URL=https://${NODE_HOST}" -t sdk-react-web:local . >/dev/null
+docker build --network host -q -f examples/sdk-apps/angular-web/Dockerfile -t sdk-angular-web:local . >/dev/null
 
 step "import images into k3s"
 for img in sdk-node-api sdk-react-web sdk-angular-web; do
@@ -81,20 +83,43 @@ if [[ "$tls_mode" == platform-ca ]]; then
 fi
 kubectl -n "$NS" scale deployment sdk-node-api --replicas=1 >/dev/null
 
+step "browser telemetry secret (sdk-demo-rum)"
+# Faro/replay/heatmaps/errors endpoints and tokens for the web demos; read as
+# RUM_* env at container start, so it must exist before the restart below.
+E2E_ADMIN_TOKEN="$TOKEN" PROJECT_ID="$PROJECT_ID" SDK_TOKEN_FILE="$TMP/sdk-token" \
+  node "$E2E_ROOT/scripts/e2e/sdk-demo-rum.mjs" || die "could not write the sdk-demo-rum secret"
+
+step "restart deployments on the new images"
+# The tags stay :local, so apply alone leaves existing pods on the previous
+# build; a restart makes them pick up the images imported above.
+kubectl -n "$NS" rollout restart deploy/sdk-node-api deploy/sdk-react-web deploy/sdk-angular-web >/dev/null
+
 step "wait for rollouts"
 kubectl -n "$NS" rollout status deploy/sdk-node-api --timeout=300s >/dev/null
 kubectl -n "$NS" rollout status deploy/sdk-react-web --timeout=180s >/dev/null
 kubectl -n "$NS" rollout status deploy/sdk-angular-web --timeout=180s >/dev/null
 
+step "TLS certificates"
+# Until cert-manager issues them, ingress serves its self-signed default
+# certificate and the HTTPS checks below fail (flaky right after apply).
+if ! kubectl -n "$NS" wait certificate --all --for=condition=Ready --timeout=300s >/dev/null 2>&1; then
+  echo "     WARN: certificates not Ready after 300s:"
+  kubectl -n "$NS" get certificate 2>&1 | sed 's/^/       /' || true
+fi
+
 step "HTTPS health"
-ok=0
-for _ in $(seq 1 36); do
-  if c "https://${NODE_HOST}/health" -o /dev/null; then ok=1; break; fi
-  sleep 5
-done
-[[ $ok -eq 1 ]] || die "node-api is not reachable over HTTPS"
-c "https://sdk-react.${DOMAIN}/" -o /dev/null || die "react-web is not reachable over HTTPS"
-c "https://sdk-angular.${DOMAIN}/" -o /dev/null || die "angular-web is not reachable over HTTPS"
+# https_ok URL: retry for up to 3 minutes (certificate hand-over, ingress reload).
+https_ok() {
+  local _
+  for _ in $(seq 1 36); do
+    if c "$1" -o /dev/null 2>/dev/null; then return 0; fi
+    sleep 5
+  done
+  c "$1" -o /dev/null # final attempt shows the error
+}
+https_ok "https://${NODE_HOST}/health" || die "node-api is not reachable over HTTPS"
+https_ok "https://sdk-react.${DOMAIN}/" || die "react-web is not reachable over HTTPS"
+https_ok "https://sdk-angular.${DOMAIN}/" || die "angular-web is not reachable over HTTPS"
 
 step "databases from the project namespace (postgres, mongo, redis)"
 db_ok=0

@@ -23,7 +23,15 @@ import {
  *       platform.project_id / deployment.environment resource attributes)
  *   401 for anything else (missing/invalid/expired/wrong scope/origin)
  *   429 when one token exceeds its per-minute budget (Redis-backed, shared by replicas)
+ *   503 when the signing key cannot be loaded
  * No database access: verification is a single HMAC.
+ *
+ * nginx `auth_request` only passes 401/403 through; any other status becomes a 500 for
+ * the client. The platformctl telemetry Ingress therefore calls this endpoint with
+ * `?errors=mapped`: throttling and key outages are then answered as 403 plus
+ * `X-Platform-Auth-Status: 429|503` (+ Retry-After, + the validated Origin for browser
+ * tokens), and the Ingress' error_page turns that into a real 429/503 with Retry-After
+ * and CORS headers. Without the parameter (older Ingress) the plain status is kept.
  */
 
 const router = Router();
@@ -37,6 +45,30 @@ function deny(res: Response, reason: string) {
   res.setHeader('WWW-Authenticate', 'Bearer realm="platform-telemetry"');
   res.setHeader('Cache-Control', 'no-store');
   return res.status(401).json({ error: 'Unauthorized', reason });
+}
+
+/** Called by an Ingress that maps 403 + X-Platform-Auth-Status back to the real status. */
+function mappedErrors(req: Request): boolean {
+  return req.query.errors === 'mapped';
+}
+
+/**
+ * Answer a retryable failure (429/503). Behind a mapping Ingress it is sent as 403 with
+ * the real status in X-Platform-Auth-Status, because auth_request turns 429/503 into 500.
+ */
+function retryable(req: Request, res: Response, status: 429 | 503, retryAfterSeconds: number, body: object) {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Retry-After', String(Math.max(1, Math.ceil(retryAfterSeconds))));
+  if (!mappedErrors(req)) return res.status(status).json(body);
+  res.setHeader('X-Platform-Auth-Status', String(status));
+  // Only an Origin that this token was verified for is echoed (CORS on the 429 lets the
+  // browser SDK read Retry-After). Server tokens and preflights never get one.
+  const locals = res.locals.ingest as IngestLocals | undefined;
+  const origin = req.header('Origin');
+  if (locals?.claims.typ === 'web' && origin && originAllowed(origin, locals.claims.origins)) {
+    res.setHeader('X-Platform-Allowed-Origin', origin);
+  }
+  return res.status(403).json(body);
 }
 
 function originalPath(req: Request): string | null {
@@ -69,8 +101,7 @@ async function validateIngestToken(req: Request, res: Response, next: NextFuncti
     result = await verifyIngestToken(token);
   } catch (err) {
     if (err instanceof TelemetryKeyUnavailableError) {
-      res.setHeader('Cache-Control', 'no-store');
-      return res.status(503).json({ error: 'Telemetry auth temporarily unavailable' });
+      return retryable(req, res, 503, 30, { error: 'Telemetry auth temporarily unavailable' });
     }
     return deny(res, 'invalid_token');
   }
@@ -97,7 +128,11 @@ const perTokenLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   validate: false,
-  message: { error: 'Too many telemetry requests for this token. Retry later.' },
+  handler: (req: Request, res: Response) => {
+    const reset = (req as Request & { rateLimit?: { resetTime?: Date } }).rateLimit?.resetTime;
+    const secs = reset instanceof Date ? (reset.getTime() - Date.now()) / 1000 : 60;
+    return retryable(req, res, 429, Number.isFinite(secs) ? secs : 60, { error: 'Too many telemetry requests for this token. Retry later.' });
+  },
   store: createLimiterStore('ingest-auth'),
 });
 

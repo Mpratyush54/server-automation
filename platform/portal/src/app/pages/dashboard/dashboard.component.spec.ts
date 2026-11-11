@@ -4,14 +4,15 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 import { DashboardComponent } from './dashboard.component';
 import { ApiService } from '../../services/api.service';
-import { of } from 'rxjs';
+import { AuthService } from '../../services/auth.service';
+import { of, throwError } from 'rxjs';
 
 describe('DashboardComponent', () => {
   let component: DashboardComponent;
   let apiService: jasmine.SpyObj<ApiService>;
 
   beforeEach(async () => {
-    const spy = jasmine.createSpyObj('ApiService', ['getProjects', 'getBootstrapStatus', 'getPlatformVersion']);
+    const spy = jasmine.createSpyObj('ApiService', ['getProjects', 'getBootstrapStatus', 'getPlatformVersion', 'getPods', 'getMetrics', 'getAggregatedMetrics']);
 
     await TestBed.configureTestingModule({
       imports: [DashboardComponent],
@@ -20,6 +21,7 @@ describe('DashboardComponent', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         { provide: ApiService, useValue: spy },
+        { provide: AuthService, useValue: { isDevOps: () => true, isAdmin: () => false } },
       ],
     }).compileComponents();
 
@@ -27,6 +29,9 @@ describe('DashboardComponent', () => {
     apiService.getProjects.and.returnValue(of([]));
     apiService.getBootstrapStatus.and.returnValue(of({ services: {} }));
     apiService.getPlatformVersion.and.returnValue(of({}));
+    apiService.getPods.and.returnValue(of({ k8sConnected: true, pods: [] }));
+    apiService.getMetrics.and.returnValue(of([]));
+    apiService.getAggregatedMetrics.and.returnValue(of({}));
   });
 
   it('should create', () => {
@@ -73,7 +78,7 @@ describe('DashboardComponent', () => {
   });
 
   it('should handle API errors gracefully', async () => {
-    apiService.getProjects.and.returnValue(of([]));
+    apiService.getProjects.and.returnValue(throwError(() => new Error('unavailable')));
     apiService.getBootstrapStatus.and.returnValue(of({ services: {} }));
 
     const fixture = TestBed.createComponent(DashboardComponent);
@@ -83,7 +88,10 @@ describe('DashboardComponent', () => {
     await component.ngOnInit();
     fixture.destroy();
 
-    expect(component.stats.projects).toBe(0);
+    expect(component.stats.projects).toBeNull();
+    expect(component.stats.deployments).toBeNull();
+    expect(component.projectTrend).toBeNull();
+    expect(component.avgDeployTime).toBe('—');
   });
 
   it('should load system health from bootstrap status', async () => {
@@ -100,5 +108,47 @@ describe('DashboardComponent', () => {
 
     expect(component.systemHealth.length).toBe(3);
     expect(component.stats.services).toBe(2);
+  });
+
+  it('renders the install identity and honest empty state', async () => {
+    apiService.getBootstrapStatus.and.returnValue(of({ platformName: 'install.example.test', services: {} }));
+    const fixture = TestBed.createComponent(DashboardComponent);
+    component = fixture.componentInstance;
+    await component.ngOnInit();
+    spyOn(component, 'ngOnInit').and.stub();
+    fixture.detectChanges();
+    const text = fixture.nativeElement.textContent;
+    expect(text).toContain('install.example.test');
+    expect(text).not.toContain('vs last week');
+    expect(text).toContain('— avg deploy time');
+    expect(text).not.toContain('Prod-Kengeri');
+    expect(component.stats.namespaces).toBe(0);
+    fixture.destroy();
+  });
+
+  it('uses all deployments for totals and average, independently of the ten recent rows', async () => {
+    const deployments = Array.from({ length: 12 }, (_, i) => ({
+      id: `d${i}`, status: 'deployed', createdAt: '2026-11-01T00:00:00Z',
+      deployedAt: i === 11 ? '2026-11-01T00:03:00Z' : '2026-11-01T00:01:00Z',
+    }));
+    apiService.getProjects.and.returnValue(of([{ id: 'p1', name: 'app', deployments }]));
+    const fixture = TestBed.createComponent(DashboardComponent);
+    component = fixture.componentInstance;
+    await component.ngOnInit();
+    expect(component.recentDeployments.length).toBe(10);
+    expect(component.stats.deployments).toBe(12);
+    expect(component.avgDeployTime).toBe('1m 10s');
+    fixture.destroy();
+  });
+
+  it('does not count fallback pods when Kubernetes is disconnected', async () => {
+    apiService.getProjects.and.returnValue(of([{ id: 'p1', name: 'app', environments: [{ namespace: 'app' }] }]));
+    apiService.getPods.and.returnValue(of({ k8sConnected: false, pods: [{ namespace: 'app', name: 'app', status: 'Running' }] }));
+    const fixture = TestBed.createComponent(DashboardComponent);
+    component = fixture.componentInstance;
+    await component.ngOnInit();
+    expect(component.stats.podsText).toBe('—');
+    expect(component.platformName).toBe('');
+    fixture.destroy();
   });
 });

@@ -132,11 +132,14 @@ spec:
               API="$(resolve_image "$API")"
               PORTAL="$(resolve_image "$PORTAL")"
               run_api_migrations() {
-                local image="$1" name template state i
+                local image="$1" name template state i current
                 name="platform-api-migrate-$(printf '%s' "$image" | sha256sum | cut -c1-12)"
-                if [[ "$(kubectl -n platform get job "$name" -o jsonpath='{.status.succeeded}' 2>/dev/null || true)" == "1" ]]; then
-                  echo "migrations already applied for $image ($name)"
-                  return 0
+                if [[ "${MIGRATE_FORCE:-}" != "1" ]]; then
+                  current="$(kubectl -n platform get deployment platform-api -o jsonpath='{.spec.template.spec.containers[?(@.name=="api")].image}' 2>/dev/null || true)"
+                  if [[ "$current" == "$image" && "$(kubectl -n platform get job "$name" -o jsonpath='{.status.succeeded}' 2>/dev/null || true)" == "1" ]]; then
+                    echo "API already runs $image and its migrations succeeded ($name)"
+                    return 0
+                  fi
                 fi
                 template="$(kubectl -n platform get configmap platform-api-migrate-template -o jsonpath='{.data.template}')"
                 [[ -n "$template" ]] || { echo "migration Job template missing; run: sudo platformctl update" >&2; return 1; }

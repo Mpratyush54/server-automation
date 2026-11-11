@@ -102,11 +102,14 @@ router.patch('/projects/:id/errors/:issueId', expressAuthenticate, async (req, r
       const [user] = await db.query('SELECT id,role FROM users WHERE id=$1', [assigneeId]);
       if (!user || !(await userCanAccessProject(req.params.id, user))) return res.status(400).json({ error: 'Assignee must have project access' });
     }
-    const [issue] = await db.query(`UPDATE error_issues SET status=COALESCE($3,status),
+    // TypeORM returns [rows, affectedCount] for UPDATE … RETURNING on Postgres.
+    const updated = await db.query(`UPDATE error_issues SET status=COALESCE($3,status),
       assignee_id=CASE WHEN $4 THEN $5::uuid ELSE assignee_id END,
       resolved_release=CASE WHEN $3='resolved' THEN latest_release ELSE resolved_release END,
       regression=CASE WHEN $3='resolved' THEN false ELSE regression END
       WHERE project_id=$1 AND id=$2 RETURNING *`, [req.params.id, req.params.issueId, status || null, assigneeId !== undefined, assigneeId || null]);
+    const rows = Array.isArray(updated?.[0]) ? updated[0] : updated;
+    const issue = Array.isArray(rows) ? rows[0] : undefined;
     if (!issue) return res.status(404).json({ error: 'Issue not found' });
     if (status === 'resolved') await publishAlertEvent({ projectId: req.params.id, environment: issue.environment,
       source: 'error-tracking', severity: 'info', dedupeKey: `error:${issue.fingerprint}:${issue.environment}`,

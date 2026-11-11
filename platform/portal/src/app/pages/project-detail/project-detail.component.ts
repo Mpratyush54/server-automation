@@ -249,7 +249,10 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     this.updateAvailable = false;
     this.currentDeployedVersion = null;
     this.gitMeta = {};
-    if (!this.project?.repositoryUrl && !this.projectSettings.repositoryUrl) {
+    // #155: only call /git/branches when the project actually has a saved repository URL.
+    // Unsaved projectSettings.repositoryUrl must not trigger provider API traffic.
+    const repositoryUrl = (this.project?.repositoryUrl || '').trim();
+    if (!repositoryUrl) {
       this.deployDto.branch = '';
       this.deployDto.commitSha = '';
       this.deployDto.version = '';

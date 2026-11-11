@@ -40,6 +40,8 @@ RUM is off until the browser telemetry block is provided. At container start
 `rum-config.sh` writes `/rum-config.json` from `RUM_FARO_ENDPOINT`, `RUM_BROWSER_TOKEN` and
 `RUM_SAMPLING_RATIO` (k8s: optional Secret `sdk-demo-rum`); without them Faro is never loaded.
 See [docs/guides/frontend-rum.md](../../docs/guides/frontend-rum.md).
+`RUM_ERRORS_ENDPOINT` (Secret key `errorsEndpoint`, the `telemetry.errorsEndpoint` value,
+e.g. `https://$DOMAIN/api/errors/rum`) also mirrors browser exceptions into error tracking.
 
 Verify on a full-profile install (needs the observability backend, #37/#49):
 
@@ -160,3 +162,28 @@ The changed SDK/MCP doc pages are mirrored in the portal and checked for equalit
 
 See [TELEMETRY.md](TELEMETRY.md) for optional dependencies, startup ordering, the Python
 Flask/PostgreSQL example, resource attributes and full-profile collector verification.
+
+## Session replay (#40)
+
+`react-web` and `angular-web` enable `rum.replay` (every session sampled, consent required):
+nothing is recorded until "Allow session replay" is clicked. The Checkout page has name /
+e-mail / password / card / notes fields and a `platform-mask` paragraph to verify masking.
+Add the replay endpoint to the `sdk-demo-rum` Secret (`replayEndpoint`, the
+`telemetry.replayEndpoint` value, e.g. `https://$DOMAIN/api/sdk/replay`) and restart both
+deployments (`RUM_REPLAY_ENDPOINT`).
+
+A real-browser check (Playwright) records a session and verifies it through the portal API:
+
+```bash
+cd react-web && npm i --no-save playwright@1.59.1 && npx playwright install --with-deps chromium
+REACT_URL=https://sdk-react.$DOMAIN PLATFORM_URL=https://$DOMAIN PLATFORM_TOKEN=<portal JWT> PROJECT_ID=<project id> node e2e/replay.mjs
+```
+
+Angular: the same flow, plus a short final page closed within the 5 s flush interval (the
+last chunk must arrive through the keepalive unload path) and error-to-replay linking.
+`BROWSER=chromium|firefox|webkit`:
+
+```bash
+cd angular-web && npm i --no-save playwright@1.59.1 && npx playwright install --with-deps chromium
+ANGULAR_URL=https://sdk-angular.$DOMAIN PLATFORM_URL=https://$DOMAIN PLATFORM_TOKEN=<portal JWT> PROJECT_ID=<project id> node e2e/replay.mjs
+```

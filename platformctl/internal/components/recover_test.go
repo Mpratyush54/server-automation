@@ -33,3 +33,18 @@ func TestUniqueFilledDropsEmptyAndDupes(t *testing.T) {
 		t.Errorf("uniqueFilled = %#v", got)
 	}
 }
+
+func TestSecretDataJSONPathEscapesDots(t *testing.T) {
+	cases := map[string]string{
+		"ca.crt":            `{.data['ca\.crt']}`,
+		"tls.key":           `{.data['tls\.key']}`,
+		"a.b.c":             `{.data['a\.b\.c']}`,
+		"POSTGRES_PASSWORD": `{.data['POSTGRES_PASSWORD']}`,
+		"redis-password":    `{.data['redis-password']}`,
+	}
+	for key, want := range cases {
+		if got := secretDataJSONPath(key); got != want {
+			t.Errorf("secretDataJSONPath(%q) = %s, want %s", key, got, want)
+		}
+	}
+}
