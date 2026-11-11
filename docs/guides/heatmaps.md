@@ -79,8 +79,17 @@ Dates are UTC days (`YYYY-MM-DD`), default the last 7 days, at most 366 days.
 ## Portal
 
 The Heatmaps page lists pages with counts, filters by viewport and range, draws the click
-heatmap on a canvas and the scroll-depth reach chart. The background is the page's first DOM
-snapshot from session replay (`GET /api/projects/:id/replays/:sessionId/snapshot?page=`; the
-session is picked from the replay list or typed in the toolbar), rendered read-only: sanitised
-with DOMPurify, in an `<iframe sandbox="allow-same-origin">` (no scripts) with a CSP that blocks
-scripts and connections. Without session replay the heatmap is drawn over a neutral grid.
+heatmap on a canvas and the scroll-depth reach chart. Each page (path, or route name such as
+`/orders/:id`) has its own heatmap and its own background.
+
+The background is a DOM snapshot of that page from session replay: by default the newest
+snapshot of the page from any session (`GET /api/projects/:id/replays/latest/snapshot?page=`),
+or the snapshot from a specific session typed in the toolbar's *Replay session* field. It is
+rendered read-only: sanitised with DOMPurify, in an `<iframe sandbox="allow-same-origin">` (no
+scripts) with a CSP that blocks scripts and connections. Masked inputs stay masked.
+
+A page gets a background once at least one visitor who allowed session replay has opened it.
+Until then (or without session replay installed) the heatmap is drawn over a neutral grid, and
+the page says why. Click positions are relative to the full document at the visitor's layout
+width, so the overlay is approximate when the recorded page differs from the visitor's layout
+(for example, several apps with different layouts reporting into one project).
