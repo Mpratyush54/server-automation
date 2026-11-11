@@ -164,7 +164,8 @@ proxy therefore sets profile identity from the authenticated collector identity:
   `X-Platform-Environment` header (set by ingress external auth) get 401.
 * `platform_project_id` and `deployment_environment` are always the header
   values; client values for these, `service_name`, `platform_service`, `app_name` and `__*` labels are
-  discarded. Invalid label names/values are dropped; at most 32 client labels.
+  discarded, including case and `.`/`-` spelling variants (e.g. `platform.project_id`).
+  Invalid label names/values are dropped; at most 32 client labels.
 * The service name is prefixed with the project id (`<project-id>/<service>`), and
   `service_name` is set to the same value, so services of different projects never
   share a name. `platform_service` keeps the unprefixed name; Grafana's
@@ -172,7 +173,9 @@ proxy therefore sets profile identity from the authenticated collector identity:
   `platform_project_id` and `platform_service`.
 * Only the `/ingest` query parameters `name`, `from`, `until`, `format`,
   `sampleRate`, `spyName`, `units`, `aggregationType` are forwarded, with the
-  body and `Content-Type`; credentials and identity headers are not.
+  body and `Content-Type`; credentials and identity headers are not. `format`
+  must be empty, `pprof`, `folded`, `lines`, `trie` or `tree`; formats that
+  carry their own label sets beside the profile (`jfr`) are refused with 400.
 * Pyroscope gives series labels precedence over pprof sample labels, so labels
   embedded in a profile body cannot replace the identity labels.
 
