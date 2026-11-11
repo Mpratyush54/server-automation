@@ -1,7 +1,7 @@
 <div class="sp-head">
   <div>
     <a [routerLink]="['/projects', projectId]" class="back">← Project</a>
-    <h1>Status page</h1>
+    <h1 class="page-title">Status page</h1>
     <p class="muted">
       Publish a public page fed by synthetic checks (#42). Only component names, uptime and
       operator-authored incidents are shown — never URLs, hosts, errors or secrets.
@@ -21,8 +21,8 @@
 @if (page) {
   <section class="card">
     <h2>Settings</h2>
-    <div class="grid">
-      <label class="inline">
+    <div class="grid settings-grid">
+      <label class="inline block">
         <input type="checkbox" [(ngModel)]="page.published" /> Published
       </label>
       <label>Slug

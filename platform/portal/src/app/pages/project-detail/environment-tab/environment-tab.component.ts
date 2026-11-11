@@ -327,10 +327,6 @@ export function parseDotEnv(text: string): BulkLine[] {
   background: var(--bg-surface, #0a0a0a); border-left: 1px solid var(--border-subtle, #333); padding: 20px; color: var(--text-primary, #ededed); }
 .env-drawer-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .env-drawer-head h2 { margin: 0; border: 0; padding: 0; font-size: 1rem; }
-@media (prefers-color-scheme: light) {
-  .env-badge-secret { color: #7e22ce; }
-  .env-drawer-backdrop { background: rgba(0, 0, 0, 0.25); }
-}
 `],
 })
 export class EnvironmentTabComponent implements OnChanges {

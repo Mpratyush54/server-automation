@@ -1,6 +1,6 @@
 import { DatabaseInsightsPanelComponent } from './database-insights-panel.component';
 import { ReleasesPanelComponent } from './releases-panel.component';
-import { Component, OnInit, OnDestroy, inject } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, OnInit, OnDestroy, ViewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
@@ -20,7 +20,7 @@ import { TopologyGraphComponent } from './topology/topology-graph.component';
   templateUrl: './project-detail.component.html',
   styleUrl: './project-detail.component.css'
 })
-export class ProjectDetailComponent implements OnInit, OnDestroy {
+export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit {
   project: any;
   deployments: any[] = [];
   files: any[] = [];
@@ -31,6 +31,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   dbConnections: any[] = [];
 
   activeTab = 'deployments';
+  @ViewChild('tabBar') private tabBar?: ElementRef<HTMLElement>;
   /** #48: the Observability page replaces Metrics / API Latency / Logs when telemetry is installed. */
   observabilityEnabled = false;
   role = 'devops';
@@ -703,8 +704,36 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     }
   }
 
+  ngAfterViewInit() {
+    this.scrollActiveTabIntoView();
+  }
+
+  /** SDK token create: API allows platform admin, devops and tech_lead. */
+  get canCreateSdkTokens(): boolean {
+    return this.role === 'admin' || this.role === 'devops' || this.role === 'tech_lead';
+  }
+
+  /** SDK token revoke: API allows platform admin and devops. */
+  get canRevokeSdkTokens(): boolean {
+    return this.role === 'admin' || this.role === 'devops';
+  }
+
+  /** Keep the active tab visible in the horizontally scrolling tab bar. */
+  scrollActiveTabIntoView() {
+    setTimeout(() => {
+      const bar = this.tabBar?.nativeElement;
+      const active = bar?.querySelector<HTMLElement>('.btn-primary');
+      if (!bar || !active) return;
+      const left = active.offsetLeft; // .pd-tabs is position:relative (the offsetParent)
+      const right = left + active.offsetWidth;
+      if (left < bar.scrollLeft) bar.scrollLeft = Math.max(0, left - 16);
+      else if (right > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = right - bar.clientWidth + 16;
+    });
+  }
+
   switchTab(tab: string) {
     this.activeTab = tab;
+    this.scrollActiveTabIntoView();
     if (tab === 'api-metrics') this.loadApiMetrics();
     if (tab === 'metrics') this.loadMetrics();
     if (tab === 'deployments') this.loadDeployments();

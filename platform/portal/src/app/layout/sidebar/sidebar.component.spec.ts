@@ -58,4 +58,37 @@ describe('SidebarComponent', () => {
 
     expect(authService.logout).toHaveBeenCalled();
   });
+
+  it('is hidden off-canvas on mobile until opened', () => {
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentInstance.isMobile = true;
+    fixture.componentInstance.isOpen = false;
+    fixture.detectChanges();
+    const aside = (fixture.nativeElement as HTMLElement).querySelector('aside')!;
+    expect(aside.classList).toContain('sidebar-drawer');
+    expect(aside.classList).not.toContain('sidebar-drawer-open');
+
+    fixture.componentRef.setInput('isOpen', true);
+    fixture.detectChanges();
+    expect(aside.classList).toContain('sidebar-drawer-open');
+  });
+
+  it('emits navigate when a link is clicked', () => {
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.detectChanges();
+    const spy = jasmine.createSpy('navigate');
+    fixture.componentInstance.navigate.subscribe(spy);
+    const link = (fixture.nativeElement as HTMLElement).querySelector('a[href="/projects"]') as HTMLElement;
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    expect(spy).toHaveBeenCalled();
+  });
+
+  it('does not emit navigate for non-link clicks', () => {
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.detectChanges();
+    const spy = jasmine.createSpy('navigate');
+    fixture.componentInstance.navigate.subscribe(spy);
+    ((fixture.nativeElement as HTMLElement).querySelector('aside') as HTMLElement).click();
+    expect(spy).not.toHaveBeenCalled();
+  });
 });

@@ -78,4 +78,45 @@ describe('AlertingComponent', () => {
     expect(ops.kinds).toContain('metric');
     expect(ops.kinds).toContain('log');
   });
+
+  it('links incident titles only to internal paths', async () => {
+    alerting.allIncidents.and.returnValue(of([
+      { id: 'i1', projectId: 'p1', status: 'firing', severity: 'critical', title: 'Synthetic failing', url: '/projects/p1/synthetics?check=c1', source: 'synthetics', eventCount: 1, firstSeenAt: new Date().toISOString() },
+      { id: 'i2', projectId: 'p1', status: 'firing', severity: 'warning', title: 'External', url: 'https://evil.test/x', source: 'monitor', eventCount: 1, firstSeenAt: new Date().toISOString() },
+      { id: 'i3', projectId: 'p1', status: 'firing', severity: 'warning', title: 'Script', url: 'javascript:alert(1)', source: 'monitor', eventCount: 1, firstSeenAt: new Date().toISOString() },
+    ]));
+    const fixture = TestBed.createComponent(AlertingComponent);
+    await fixture.componentInstance.ngOnInit();
+    fixture.detectChanges();
+    const links = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('a[data-testid="incident-link"]')) as HTMLAnchorElement[];
+    expect(links.length).toBe(1);
+    expect(links[0].textContent?.trim()).toBe('Synthetic failing');
+    expect(links[0].getAttribute('href')).toBe('/projects/p1/synthetics?check=c1');
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('External');
+    expect(text).toContain('Script');
+    expect((fixture.nativeElement as HTMLElement).querySelector('a[href^="javascript"], a[href^="https://evil"]')).toBeNull();
+  });
+
+  it('shows empty-state rows for policies and schedules', async () => {
+    const fixture = TestBed.createComponent(AlertingComponent);
+    const c = fixture.componentInstance;
+    fixture.detectChanges();
+    await fixture.whenStable();
+    c.projectId = 'p1';
+    c.tab = 'oncall';
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="policies-empty"]')?.textContent).toContain('No escalation policies');
+    expect(el.querySelector('[data-testid="schedules-empty"]')?.textContent).toContain('No on-call schedules');
+  });
+
+  it('wraps every table in a horizontal scroll container', async () => {
+    const fixture = TestBed.createComponent(AlertingComponent);
+    await fixture.componentInstance.ngOnInit();
+    fixture.detectChanges();
+    const tables = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('table'));
+    expect(tables.length).toBeGreaterThan(0);
+    for (const t of tables) expect(t.parentElement?.classList).toContain('table-scroll');
+  });
 });
