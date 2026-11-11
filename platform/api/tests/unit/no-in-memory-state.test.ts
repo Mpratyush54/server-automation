@@ -41,6 +41,9 @@ const ALLOWED: Record<string, string> = {
   'lib/topology.ts': 'request-scoped',
   // Folds one ingest batch into aggregate rows before the Postgres upsert (heatmaps).
   'lib/heatmaps.ts': 'request-scoped',
+  // Public status-page payload cache used only when Redis is not the state backend
+  // (memory mode, single replica); bounded, TTL'd (#46).
+  'lib/status-page.ts': 'memory-mode fallback (Redis in deployments)',
 };
 
 function walk(dir: string): string[] {
