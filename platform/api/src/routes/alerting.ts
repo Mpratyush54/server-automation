@@ -210,8 +210,9 @@ router.post('/projects/:projectId/alerting/channels/:id/test', expressAuthentica
   const c = await owned<AlertChannel>(AlertChannel, req.params.id, pid);
   if (!c) return res.status(404).json({ error: 'Channel not found' });
   const now = new Date();
+  const project = await (await getDb()).getRepository(Project).findOne({ where: { id: pid } });
   const msg: AlertMessage = {
-    event: 'test', incidentId: '00000000-0000-0000-0000-000000000000', projectId: pid, title: 'Test notification',
+    event: 'test', incidentId: '00000000-0000-0000-0000-000000000000', projectId: pid, projectName: project?.name, title: 'Test notification',
     body: `Test message for channel "${c.name}"`, severity: 'info', source: 'monitor', dedupeKey: `test:${c.id}`,
     status: 'firing', startedAt: now.toISOString(),
   };

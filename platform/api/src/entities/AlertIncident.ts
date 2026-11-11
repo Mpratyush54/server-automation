@@ -82,6 +82,10 @@ export class AlertIncident {
   @Column({ type: 'uuid', nullable: true, name: 'resolved_by' })
   resolvedBy: string | null;
 
+  /** Title of the resolving event when the source sent a distinct one ("... recovered"). */
+  @Column({ type: 'varchar', length: 300, nullable: true, name: 'resolved_title' })
+  resolvedTitle: string | null;
+
   /** Last 50 lifecycle entries: { at, type, detail }. */
   @Column({ type: 'jsonb', default: () => "'[]'" })
   timeline: { at: string; type: string; detail?: string }[];

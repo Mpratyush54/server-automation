@@ -113,6 +113,19 @@ describe('permissions', () => {
 });
 
 describe('channels', () => {
+  it('test notification names the project (not its id)', async () => {
+    const channels = jest.requireActual('../../../src/lib/alerting-channels');
+    const spy = jest.spyOn(channels, 'sendToChannel').mockResolvedValue(undefined);
+    try {
+      const res = await ops(request(app()).post(`${base}/channels`).send({ name: 'hook', type: 'webhook', secrets: { url: 'https://receiver.example.test/x' } }));
+      const t = await ops(request(app()).post(`${base}/channels/${res.body.id}/test`));
+      expect(t.status).toBe(200);
+      expect(spy.mock.calls[0][1]).toMatchObject({ event: 'test', projectId: PID, projectName: 'shop' });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('secrets are write-only; the generated signing secret is returned once', async () => {
     const res = await ops(request(app()).post(`${base}/channels`).send({ name: 'hook', type: 'webhook', secrets: { url: 'https://receiver.example.test/SECRETPATH' } }));
     expect(res.status).toBe(201);

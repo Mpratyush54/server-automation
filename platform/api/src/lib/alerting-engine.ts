@@ -272,6 +272,7 @@ export type ProcessResult = { action: 'opened' | 'silenced' | 'deduplicated' | '
 /** Apply one event. Idempotent for repeats of the same state. */
 export async function processAlertEvent(raw: AlertEvent, now: Date = new Date()): Promise<ProcessResult> {
   const e = normalizeEvent(raw);
+  const explicitTitle = raw && typeof raw.title === 'string' && raw.title.trim() ? e.title : null;
   const ds = await getDb();
   const repo = ds.getRepository(AlertIncident);
   const open = await findOpen(e.projectId, e.dedupeKey);
@@ -282,6 +283,8 @@ export async function processAlertEvent(raw: AlertEvent, now: Date = new Date())
     open.resolvedAt = now;
     open.nextEscalationAt = null;
     open.lastSeenAt = now;
+    // Sources usually send a recovery title ("... recovered"); notifications use it.
+    open.resolvedTitle = explicitTitle && explicitTitle !== open.title ? explicitTitle : null;
     addTimeline(open, now, 'resolved', 'resolved by source');
     await repo.save(open);
     if (open.notifiedAt) await enqueue(open, await notifiedTargets(open.id), 'resolved', now);
@@ -323,6 +326,7 @@ export async function processAlertEvent(raw: AlertEvent, now: Date = new Date())
     acknowledgedBy: null,
     resolvedAt: null,
     resolvedBy: null,
+    resolvedTitle: null,
     timeline: [],
   });
   addTimeline(incident, now, 'opened', `${e.source} ${e.severity}`);
@@ -440,7 +444,7 @@ export function messageFor(incident: AlertIncident, event: string, projectName?:
     incidentId: incident.id,
     projectId: incident.projectId,
     projectName,
-    title: incident.title,
+    title: event === 'resolved' && incident.resolvedTitle ? incident.resolvedTitle : incident.title,
     body: incident.body,
     severity: incident.severity,
     source: incident.source,
