@@ -2,11 +2,11 @@ package upgrade
 
 import (
 	"archive/tar"
-	"errors"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
