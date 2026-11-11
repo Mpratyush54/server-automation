@@ -159,17 +159,29 @@ setConsent({ replay: true });   // false stops a running recording at once
   runs the full profile) or `PlatformConfig.apiBase` + SDK token. Retries with backoff and
   `Retry-After`, bounded 4 MiB queue, `keepalive` on page hide.
 - **Unload delivery.** On `pagehide` or `visibilitychange` -> `hidden` (whichever fires first)
-  the open chunk is cut into pieces of at most 48 KiB raw JSON and every queued chunk is sent
-  with `fetch(..., { keepalive: true })` - including one whose normal upload is still in
-  flight, because an unload may cancel it. No normal fetch is started for the final chunk, so
-  the last page of a session, and sessions shorter than the 5 s flush interval, survive tab
-  close and navigation away. The server answers a re-sent chunk with 200 and stores it once.
-  Limits: browsers allow at most 64 KiB of keepalive bodies in flight per page; chunks that do
-  not fit stay queued and get a best-effort normal request (delivered when the page was only
-  hidden, possibly lost on a real unload; the queue is per page, not persisted).
-  `navigator.sendBeacon` is not used: it cannot send the `Authorization` header the replay API
-  requires. A keepalive request carrying that header needs a CORS preflight; if a browser
-  refuses such a request, the chunk is requeued for the normal path.
+  the open chunk is cut into pieces of at most 40 KiB raw JSON and every queued chunk is sent
+  right away - including one whose normal upload is still in flight, because an unload may
+  cancel it. No normal fetch is started for the final chunk, so the last page of a session, and
+  sessions shorter than the 5 s flush interval, survive tab close and navigation away. The
+  server answers a re-sent chunk with 200 and stores it once.
+  - **Format (#154).** Unload uploads carry the token in the body, not in an `Authorization`
+    header: `Content-Type: text/plain`, body `{"v":1,"token":"<browser token>","chunk":"<base64
+    of the gzip chunk>"}`. That makes them CORS *simple requests* - no preflight that the
+    unload could cancel (Firefox often lost the final POST behind its preflight). The token is
+    never put in the URL (URLs end up in access logs). The API accepts this format only on
+    `POST /api/sdk/replay/chunks` and checks it exactly like the header form: same token kinds,
+    same `Origin` check for `plat_ingest_web_` tokens (browsers send `Origin` on simple
+    requests too), same size limit (on the decoded gzip bytes), validation, dedup and rate
+    limit. A request with both an envelope and an `Authorization` header is refused (400).
+  - **Transport.** `navigator.sendBeacon` first (survives unload best, especially in Firefox);
+    if it is missing, throws or returns `false` (quota), `fetch(..., { keepalive: true })`
+    with the same envelope; if that fails too, the chunk is requeued for the normal path.
+  - **Limits.** Browsers allow at most 64 KiB of beacon/keepalive bodies in flight per page. The
+    40 KiB piece size keeps one envelope under that even for incompressible data (gzip ~41 KiB,
+    base64 x4/3 ~55 KiB, plus token). Chunks that do not fit stay queued and get a best-effort
+    normal request (delivered when the page was only hidden, possibly lost on a real unload;
+    the queue is per page, not persisted). Uploads while the page is visible keep using
+    `application/octet-stream` with `Authorization: Bearer`.
 - **Ordering.** The API derives a chunk's pages from its Meta hrefs and navigation markers in
   timestamp order (then the SDK's page list, then the page when the chunk was cut), so the
   session's `first_page` is where recording started even when the only chunk is the final one.
