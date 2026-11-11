@@ -31,3 +31,12 @@ if [ -n "$endpoint" ] && [ -n "$token" ]; then
 else
   printf '{"enabled":false}\n' > "$out"
 fi
+# RUM_ERRORS_ENDPOINT: optional RUM error mirror (telemetry.errorsEndpoint, e.g. https://<DOMAIN>/api/errors/rum).
+#   Faro exceptions are also sent there so they show up in error tracking; ignored while RUM is off.
+errors="${RUM_ERRORS_ENDPOINT:-}"
+case "$errors" in *'"'*|*'\'*) echo "rum-config: refusing quotes/backslashes in RUM_ERRORS_ENDPOINT" >&2; errors='' ;; esac
+case "$errors" in https://*|http://*|'') ;; *) echo "rum-config: RUM_ERRORS_ENDPOINT must be an http(s) URL" >&2; errors='' ;; esac
+if [ -n "$errors" ] && [ -n "$endpoint" ] && [ -n "$token" ]; then
+  json="$(cat "$out")"
+  printf '%s,"errorsEndpoint":"%s"}\n' "${json%\}}" "$errors" > "$out"
+fi
