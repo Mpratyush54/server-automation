@@ -2,8 +2,8 @@ import { replayObjectPrefix, submitLokiDeletes } from '../../../src/lib/gdpr-del
 
 describe('replayObjectPrefix', () => {
   it('builds the #40 object-key contract', () => {
-    expect(replayObjectPrefix('p1', { userId: 'u1' })).toBe('replays/p1/user/u1/');
-    expect(replayObjectPrefix('p1', { sessionId: 's1' })).toBe('replays/p1/session/s1/');
+    // Same layout the replay ingest writes: replays/<project>/<session>/<seq>.json.gz
+    expect(replayObjectPrefix('p1', { sessionId: 's1' })).toBe('replays/p1/s1/');
   });
 });
 

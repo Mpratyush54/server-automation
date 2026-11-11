@@ -9,6 +9,9 @@ import { startOperationWorker } from './operation-worker';
 import { startTelemetryConsumer } from './telemetry-queue';
 import { startAlerting } from './alerting';
 import { startSyntheticsScheduler } from './synthetic-scheduler';
+import { runReplayRetention } from './replay-sessions';
+import { getReplayStore } from './replay-store';
+import { getDb } from '../config/database';
 import { startRedisAclReconcile } from './redis-acl-reconcile';
 import { ORIGINS_SYNC_JOB, syncTelemetryOrigins } from './telemetry-origins';
 import { startErrorRetention } from './error-retention';
@@ -29,6 +32,7 @@ import { startLokiRetentionReconcile } from './loki-retention';
  * | telemetry-consumer | leader loop (Redis Streams consumer group) | 1 s (#49) |
  * | alerting-*      | leader loop (see lib/alerting.ts) | 1 s .. 5 min (#43) |
  * | synthetics-runner / -retention / -reconcile | leader loop | 5 s / hourly / 10 min (#42) |
+ * | replay-retention | leader loop             | hourly (#40: per-project retentionDays.replays) |
  * | redis-acl-reconcile | leader loop            | 15 s (re-creates project Redis users after a Redis restart) |
  * | telemetry-origins-sync | leader loop (+ debounced on change) | 5 min, 5 s after gain |
  * | error-retention | leader loop              | hourly: error_events past the project's errors retention (#47) |
@@ -72,6 +76,16 @@ export function startBackgroundWork(): void {
   startErrorRetention();
   startLokiRetentionReconcile();
   startStorageHealth();
+  // Session replay (#40): delete sessions (objects + rows) past the project's replay retention.
+  registerLeaderJob({
+    name: 'replay-retention',
+    intervalMs: 60 * 60 * 1000,
+    initialDelayMs: 10 * 60 * 1000,
+    run: async () => {
+      const r = await runReplayRetention(await getDb(), getReplayStore());
+      if (r.sessions) console.log(`[replay] retention removed ${r.sessions} session(s), ${r.objects} object(s)`);
+    },
+  });
   // Project Redis ACL users survive Redis restarts (no aclfile): re-created from stored secrets.
   startRedisAclReconcile();
   // Faro CORS allow-list (monitoring/telemetry-origins); also triggered on change.

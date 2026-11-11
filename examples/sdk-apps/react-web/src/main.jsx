@@ -19,6 +19,10 @@ const platformConfig = {
     telemetryUrl: '/rum-config.json',
     // traceparent goes to this app and the demo Node API only (never to third parties).
     propagateTo: [window.location.origin, ...(API ? [new URL(API, window.location.href).origin] : [])],
+    // Session replay (#40): every session is sampled in this demo; nothing is recorded until the
+    // visitor clicks "Allow session replay" (setConsent). Inputs are always masked. Needs
+    // `replayEndpoint` in /rum-config.json (RUM_REPLAY_ENDPOINT), else replay stays off.
+    replay: { sampleRate: 1, onErrorSampleRate: 1 },
   },
 };
 

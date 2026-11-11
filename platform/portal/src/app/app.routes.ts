@@ -78,6 +78,8 @@ export const routes: Routes = [
   { path: 'projects', component: ProjectsComponent, canActivate: [authGuard] },
   { path: 'projects/:id', component: ProjectDetailComponent, canActivate: [authGuard] },
   { path: 'projects/:id/synthetics', component: SyntheticsComponent, canActivate: [authGuard] }, // #42
+  { path: 'projects/:id/replays', loadComponent: () => import('./pages/replays/replays.component').then(m => m.ReplaysComponent), canActivate: [authGuard] }, // #40
+  { path: 'projects/:id/replays/:sessionId', loadComponent: () => import('./pages/replays/replay-player.component').then(m => m.ReplayPlayerComponent), canActivate: [authGuard] }, // #40
   { path: 'projects/:id/status', component: StatusPageEditorComponent, canActivate: [authGuard] }, // #46
   { path: 'status/:slug', component: PublicStatusComponent }, // #46 public, no auth
   { path: 'deployments', component: DeploymentsComponent, canActivate: [authGuard] },

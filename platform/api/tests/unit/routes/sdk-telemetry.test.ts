@@ -106,6 +106,8 @@ describe('GET /sdk/config telemetry block', () => {
     });
     expect(t.ingestToken).toMatch(/^plat_ingest_(?!web_)/);
     expect(t.browserToken).toMatch(/^plat_ingest_web_/);
+    // Session replay (#40) is part of the full profile: the browser SDK posts chunks here.
+    expect(t.replayEndpoint).toBe('https://platform.example.org/api/sdk/replay');
     expect(new Date(t.ingestTokenExpiresAt).getTime()).toBeGreaterThan(Date.now() + 23 * 3600_000);
 
     const server = await verifyIngestToken(t.ingestToken);
