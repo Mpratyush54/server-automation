@@ -13,6 +13,8 @@ import { startHeatmapRetention } from './heatmap-jobs';
 import { runReplayRetention } from './replay-sessions';
 import { getReplayStore } from './replay-store';
 import { getDb } from '../config/database';
+import { startErrorRetention } from './error-retention';
+import { startLokiRetentionReconcile } from './loki-retention';
 
 /**
  * Background work inventory (every timer/loop in platform/api/src):
@@ -31,6 +33,8 @@ import { getDb } from '../config/database';
  * | synthetics-runner / -retention / -reconcile | leader loop | 5 s / hourly / 10 min (#42) |
  * | heatmaps-retention | leader loop             | hourly (heatmaps)            |
  * | replay-retention | leader loop             | hourly (#40: per-project retentionDays.replays) |
+ * | error-retention | leader loop              | hourly: error_events past the project's errors retention (#47) |
+ * | loki-retention-reconcile | leader loop (full profile) | 10 min: per-project logs retention -> Loki runtime overrides (#47) |
  *
  * Any leader-loop job can instead run as a Kubernetes CronJob
  * (`node dist/jobs/<name>.js`) by listing it in JOBS_EXTERNAL.
@@ -66,6 +70,9 @@ export function startBackgroundWork(): void {
   startAlerting(); // alerting + on-call (#43): events, delivery, escalation, evaluation
   // Synthetic checks (#42): run due checks, prune results, reconcile Probes/CronJobs.
   startSyntheticsScheduler();
+  // Retention (#47): error events (Postgres) and per-project logs retention (Loki overrides).
+  startErrorRetention();
+  startLokiRetentionReconcile();
   startStorageHealth();
   startHeatmapRetention(); // heatmaps: prune aggregates past #47 `heatmaps` retention
   // Session replay (#40): delete sessions (objects + rows) past the project's replay retention.

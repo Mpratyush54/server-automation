@@ -29,8 +29,17 @@ error tracking, synthetics, deploys, ... ──► Redis stream plat:api:alerts:
   if it is still firing and not acknowledged. Steps target channels, on-call schedules (the user on
   call gets an in-app notification) and users. Without a policy, every enabled channel of the project
   is notified. Acknowledging stops escalation (PagerDuty gets `acknowledge`).
-* **Delivery** is retried with backoff (30 s doubling, up to `ALERTING_MAX_DELIVERY_ATTEMPTS`, default
-  5) for network errors, HTTP 5xx, 408 and 429. Other 4xx fail at once and are shown on the channel.
+* **Delivery** is retried with backoff (30 s doubling: 30, 60, 120, 240 s, up to
+  `ALERTING_MAX_DELIVERY_ATTEMPTS`, default 5) for network errors, timeouts, HTTP 5xx, 408 and 429.
+  Other 4xx fail at once and are shown on the channel. E-mail: connection problems, timeouts and
+  SMTP 4xx replies are retried; SMTP 5xx replies and authentication failures fail at once.
+* **Timeouts and concurrency**: every send is bounded by `ALERTING_DELIVERY_TIMEOUT_MS` (default
+  10 s, 1..60 s), including e-mail (SMTP connect, greeting and socket inactivity, and the whole
+  send; nodemailer's own 2-minute connect default no longer applies). The dispatcher sends up to
+  `ALERTING_DELIVERY_CONCURRENCY` deliveries in parallel (default 4, 1..32), so an unreachable
+  SMTP server or webhook holds one slot for at most the timeout and other channels keep flowing.
+* **Resolution messages** use the title of the resolving event when the source sends one (for
+  example `Synthetic check "api" recovered`); manual resolves keep the incident title.
 * **Status pages**: on a published [status page](../guides/status-pages.md), a new `major` / `critical`
   incident (not maintenance) sends a `status-page` event; resolving it sends the resolution.
 
@@ -70,7 +79,15 @@ budget remaining for the period (refreshed every minute by the leader, `?refresh
 | `webhook`   | `url`, `signingSecret` (generated if empty, shown once) | signed, see below |
 | `email`     | none (`config.to`)                     | default SMTP configuration |
 
-Secrets are encrypted with `SECRETS_ENCRYPTION_KEY` and never returned; `GET` shows only which
+E-mail uses the default SMTP configuration (**Settings → SMTP**). Its password / API key is
+encrypted with `SECRETS_ENCRYPTION_KEY` like channel secrets and never returned (`GET` shows `***`);
+configurations saved by older versions in plain text stay readable and are encrypted at the next
+API start. Only the documented fields are accepted (`name`, `provider`, `host`, `port`, `secure`,
+`username`, `password`, `apiKey`, `fromEmail`, `fromName`, `isDefault`); `host`, `port`, `secure`
+and `fromEmail` are validated. There is no update endpoint: delete and re-create a configuration to
+change it. Other SMTP users (deploy and backup e-mails) are bounded by a 15 s timeout.
+
+Channel secrets are encrypted with `SECRETS_ENCRYPTION_KEY` and never returned; `GET` shows only which
 fields are set and the destination host. Outbound requests refuse loopback, private, CGNAT,
 link-local (including cloud metadata), multicast and internal host names, checked before the request
 and again at connect time; redirects are not followed. Only a platform admin can set
@@ -104,6 +121,19 @@ The Loki ruler is not enabled by the installer. To evaluate log monitors in Loki
 * Acknowledge / resolve incidents: project developer+.
 * Configuration (channels, monitors, SLOs, silences, policies, schedules, test events): platform
   admin or devops. Every change is written to the audit log (never with secret values).
+
+## Retention
+
+The leader's hourly `alerting-retention` job prunes history:
+
+| Data | Kept | Setting |
+|------|------|---------|
+| `alert_deliveries` (sent / failed / skipped) | 30 days after creation | `ALERTING_DELIVERY_RETENTION_DAYS` |
+| resolved `alert_incidents` (and their deliveries) | 180 days after resolution | `ALERTING_INCIDENT_RETENTION_DAYS` |
+
+Pending deliveries and open or acknowledged incidents are never pruned. The audit log
+(`audit_logs`, including `alerting.*` actions) is not pruned by the platform: it is the compliance
+record; archive or trim it with your own database tooling if your policy requires it.
 
 ## Legacy `/api/alerts`
 
