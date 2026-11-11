@@ -2,7 +2,8 @@
 # Build from repo root:
 #   docker build -f examples/sdk-apps/angular-web/Dockerfile -t sdk-angular-web:local .
 # Runs nginx as UID 101 on port 8080. Runtime env: API_BASE, and optionally
-# RUM_FARO_ENDPOINT, RUM_BROWSER_TOKEN, RUM_SAMPLING_RATIO for browser RUM.
+# RUM_FARO_ENDPOINT, RUM_BROWSER_TOKEN, RUM_SAMPLING_RATIO for browser RUM and
+# RUM_REPLAY_ENDPOINT for session replay.
 FROM node:22.23.4-alpine3.24 AS build
 # The demo consumes the SDK from this repo (file:../../../sdk-angular), built first;
 # .npmrc install-links=true installs it as a packed copy.
