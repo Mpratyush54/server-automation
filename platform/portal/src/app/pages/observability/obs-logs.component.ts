@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
-import { nsToDate, projectBase } from './observability-api';
+import { nsToDate, projectBase, rangeNotice, SINCE_SECONDS } from './observability-api';
 
 export interface LogEntry { ts: string; line: string; labels: Record<string, string>; traceId: string | null; spanId: string | null }
 
@@ -50,6 +50,7 @@ export interface LogEntry { ts: string; line: string; labels: Record<string, str
       @if (truncated) { <span class="obs-faint">Showing the newest {{ entries.length }} lines</span> }
     </div>
     @if (error) { <div class="obs-banner error" role="alert">{{ error }}</div> }
+    @if (rangeNote) { <div class="obs-banner" role="status">{{ rangeNote }}</div> }
     @if (metricResult) {
       <div class="obs-banner">This LogQL is a metric query ({{ metricResult.length }} series). Use the APM or Overview tabs for charts.</div>
     }
@@ -93,6 +94,8 @@ export class ObsLogsComponent implements OnChanges, OnDestroy {
   loading = false;
   ran = false;
   error = '';
+  /** "Range shortened to N" when the API clamped the requested range. */
+  rangeNote = '';
   live = false;
   private timer: any;
 
@@ -128,6 +131,7 @@ export class ObsLogsComponent implements OnChanges, OnDestroy {
     if (this.mode === 'logql') this.queryChange.emit(this.query.trim());
     try {
       const res: any = await firstValueFrom(this.http.get(`${projectBase(this.projectId)}/query/loki`, { params: this.params() }));
+      this.rangeNote = rangeNotice(res?.range, SINCE_SECONDS[this.since]);
       if (res.resultType && res.resultType !== 'streams') {
         this.metricResult = res.result || [];
         this.entries = [];

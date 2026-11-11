@@ -12,6 +12,34 @@ export const SINCE_OPTIONS = [
   { value: '7d', label: 'Last 7 days' },
 ];
 export const DEFAULT_SINCE = '1h';
+export const SINCE_SECONDS: Record<string, number> = { '15m': 900, '1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800 };
+
+/** Time range echoed by the API; `clamped` when it was shortened server-side. */
+export interface ApiRange { start: number; end: number; clamped?: boolean }
+
+/** Short duration label: 7 d, 24 h, 23 h 59 min, 15 min. */
+export function fmtDuration(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const parts: string[] = [];
+  if (d) parts.push(`${d} d`);
+  if (h) parts.push(`${h} h`);
+  if (m && !d) parts.push(`${m} min`);
+  return parts.slice(0, 2).join(' ') || `${s} s`;
+}
+
+/**
+ * "Range shortened to N" when the API reports `range.clamped`. Trims of under 1 %
+ * of the requested window (e.g. Pyroscope's 24 h → 23 h 59 min) are not worth a notice.
+ */
+export function rangeNotice(range: ApiRange | null | undefined, requestedSeconds?: number): string {
+  if (!range?.clamped) return '';
+  const actual = range.end - range.start;
+  if (requestedSeconds && actual >= requestedSeconds * 0.99) return '';
+  return `Range shortened to ${fmtDuration(actual)}`;
+}
 
 export const PROJECT_TABS = [
   { id: 'overview', label: 'Overview' },
