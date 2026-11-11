@@ -47,6 +47,10 @@ export const alertingSettings = () => ({
   maxDeliveryAttempts: num('ALERTING_MAX_DELIVERY_ATTEMPTS', 5, 1, 20),
   /** Deliveries sent in parallel by one dispatcher run (a slow channel holds one slot). */
   deliveryConcurrency: num('ALERTING_DELIVERY_CONCURRENCY', 4, 1, 32),
+  /** alert_deliveries rows (sent/failed/skipped) older than this are pruned hourly. */
+  deliveryRetentionDays: num('ALERTING_DELIVERY_RETENTION_DAYS', 30, 1, 3650),
+  /** Resolved alert_incidents older than this (by resolved time) are pruned hourly. */
+  incidentRetentionDays: num('ALERTING_INCIDENT_RETENTION_DAYS', 180, 1, 3650),
   consumerBatch: num('ALERTING_CONSUMER_BATCH', 100, 1, 1000),
   consumerBudgetMs: num('ALERTING_CONSUMER_BUDGET_MS', 5_000, 100, 60_000),
   consumerReclaimIdleMs: num('ALERTING_CONSUMER_RECLAIM_IDLE_MS', 60_000, 1_000, 3_600_000),

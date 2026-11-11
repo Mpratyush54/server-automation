@@ -10,6 +10,7 @@ export type IncidentStatus = 'firing' | 'acknowledged' | 'resolved';
 @Entity('alert_incidents')
 @Index('alert_incidents_project', ['projectId'])
 @Index('alert_incidents_status', ['status'])
+@Index('alert_incidents_resolved_at', ['resolvedAt'])
 @Index('alert_incidents_open_key', ['projectId', 'dedupeKey'], { unique: true, where: "status <> 'resolved'" })
 export class AlertIncident {
   @PrimaryGeneratedColumn('uuid')
