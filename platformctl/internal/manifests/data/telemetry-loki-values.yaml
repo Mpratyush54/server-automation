@@ -21,16 +21,11 @@ loki:
       s3ForcePathStyle: true
       insecure: true
   limits_config:
+    # Global logs retention (TELEMETRY_RETENTION_DAYS). Per-project logs overrides (#47)
+    # are written by the platform API as retention_stream rules in the loki-runtime
+    # ConfigMap (runtime overrides, tenant "fake"). Errors and session replays are not
+    # stored in Loki; their retention is applied by the API.
     retention_period: RETENTION_HOURS
-    # Per-type stream retention (#47). Global RETENTION_HOURS remains the default;
-    # replays/errors use shorter/longer periods. Project overrides live in the API.
-    retention_stream:
-      - selector: '{telemetry_type="replays"}'
-        priority: 10
-        period: 168h
-      - selector: '{telemetry_type="errors"}'
-        priority: 5
-        period: 2160h
     ingestion_rate_mb: 2
     ingestion_burst_size_mb: 4
     max_query_parallelism: 2
