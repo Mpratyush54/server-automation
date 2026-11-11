@@ -148,26 +148,17 @@ export class HeatmapsComponent implements OnInit {
 
   /**
    * Page background from session replay (#40): `GET /api/projects/:id/replays/:sessionId/snapshot?page=`.
-   * Uses the session typed in the toolbar, else asks the replay list for a session that visited the
-   * page. Any failure (replay not installed, no session, 404) falls back to the neutral grid.
+   * Uses the session typed in the toolbar, else `latest`: the API returns the newest full DOM
+   * snapshot of this page (path or route name) from any session. A 404 means no consented
+   * replay has recorded the page yet; any other failure (replay not installed) shows the grid too.
    */
   private async loadBackground(seq: number): Promise<void> {
     this.background = 'grid';
     this.backgroundNote = '';
     const pid = encodeURIComponent(this.projectId);
-    let session = this.replaySession.trim();
+    const session = this.replaySession.trim() || 'latest';
     try {
-      if (!session) {
-        const list: any = await firstValueFrom(this.http.get(`/api/projects/${pid}/replays`, { params: { page: this.page, limit: 1 } }));
-        const items = Array.isArray(list) ? list : list?.sessions || list?.items || list?.replays || [];
-        // The replay list (#40) returns snake_case rows (session_id); accept camelCase too.
-        session = items[0]?.session_id || items[0]?.sessionId || items[0]?.id || '';
-      }
-      if (!session) {
-        this.backgroundNote = 'No session replay for this page — showing a neutral grid.';
-        return;
-      }
-      const body = await firstValueFrom(this.http.get(`/api/projects/${pid}/replays/${encodeURIComponent(session)}/snapshot`, { params: { page: this.page } }));
+      const body: any = await firstValueFrom(this.http.get(`/api/projects/${pid}/replays/${encodeURIComponent(session)}/snapshot`, { params: { page: this.page } }));
       if (seq !== this.loadSeq) return;
       const html = snapshotToHtml(body);
       if (!html) {
@@ -184,9 +175,13 @@ export class HeatmapsComponent implements OnInit {
         frame.onload = () => this.layout();
         frame.srcdoc = snapshotDocument(String(clean));
       }
-    } catch {
+    } catch (err: any) {
+      if (seq !== this.loadSeq) return;
       this.background = 'grid';
-      this.backgroundNote = 'Session replay is not available — showing a neutral grid.';
+      this.backgroundNote =
+        err?.status === 404
+          ? 'No session replay has recorded this page yet — showing a neutral grid. The page appears once a visitor who allowed replay opens it.'
+          : 'Session replay is not available — showing a neutral grid.';
     }
   }
 
