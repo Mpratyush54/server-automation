@@ -56,7 +56,10 @@ Metric definitions:
 
 - **RED** metrics come from Tempo span metrics for server and consumer spans: request rate,
   error rate (spans with error status, %), and p50 / p95 / p99 latency.
-- **Apdex** uses T = 0.512 s (satisfied ≤ T, tolerating ≤ 4T).
+- **Apdex** uses T = 512 ms (satisfied ≤ 512 ms, tolerating ≤ 4T = 2048 ms), shown as
+  *Apdex (T = 512 ms)*. It is computed from latency histogram buckets, so T has to be a bucket
+  boundary: 0.512 s and 2.048 s are default Tempo span-metrics buckets, 0.5 s is not. The
+  summary returns it as `red.apdexThresholdMs`.
 - The service map labels callers or callees outside the project as **(other project)**;
   databases and messaging systems keep their names.
 
@@ -82,8 +85,10 @@ it is one of this project's services.
 
 Profile queries are limited to just under 24 hours (86 340 s), because Pyroscope refuses
 queries longer than its `max_query_length` of one day. A longer range keeps its end time and is
-shortened; the response marks it with `range.clamped: true`. The service list is loaded over
-the last 24 hours when the range is shorter than that.
+shortened; the response marks it with `range.clamped: true`. The service list
+(`profiles/meta`) uses the same range as the flame graph, so with *Last 15 minutes* only services
+profiled in the last 15 minutes are listed. With *Last 7 days* the Profiles tab shows *Range
+shortened to 23 h 59 min*.
 
 ## Project scoping
 
@@ -107,7 +112,9 @@ Queries are limited to 4000 characters.
 Every endpoint accepts `since` (`15m`, `1h`, `24h`, `7d`, …; default `1h`) or `start` / `end`
 (Unix seconds, milliseconds or nanoseconds, or RFC 3339). An `end` more than 5 minutes in the
 future is treated as now. Ranges longer than the maximum keep their end and are shortened
-(`range.clamped: true`).
+(`range.clamped: true`). The Overview, Traces, Logs, Infra and Profiles tabs then show a notice
+such as *Range shortened to 3 d*; trims of under 1 % (the 24 h → 23 h 59 min profile trim) are
+not called out.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -119,7 +126,7 @@ future is treated as now. Ranges longer than the maximum keep their end and are 
 | `OBSERVABILITY_MAX_TRACE_SPANS` | `5000` (100–50000) | Spans returned for one trace (`truncated: true` beyond) |
 | `OBSERVABILITY_MAX_RESPONSE_BYTES` | `16777216` (1–64 MiB) | Larger backend responses are refused |
 | `OBSERVABILITY_QUERY_TIMEOUT_MS` | `10000` (1000–30000) | Backend request timeout |
-| `OBSERVABILITY_RATE_LIMIT` | `240` (10–10000) | Observability requests per minute per user (or agent token) |
+| `OBSERVABILITY_RATE_LIMIT` | `600` (10–10000) | Observability requests per minute per user (or agent token), shared by all observability endpoints except `status` (see [Rate limit](#rate-limit)) |
 | `OBSERVABILITY_FLEET_MAX_PROJECTS` | `200` (1–2000) | Projects in the fleet view |
 | `OBSERVABILITY_LOKI_SCOPE` | `stream` | `stream`: the project id is a Loki stream label. `metadata`: it is structured metadata |
 | `OBSERVABILITY_PROMETHEUS_URL` | `PROMETHEUS_URL` or `http://kube-prometheus-kube-prome-prometheus.monitoring.svc:9090` | Prometheus |
@@ -129,6 +136,15 @@ future is treated as now. Ranges longer than the maximum keep their end and are 
 
 Values outside the allowed range are clamped to it. Profile queries are additionally limited to
 just under 24 hours (see [Profiles](#profiles)).
+
+### Rate limit
+
+One per-user limit (default 600 requests per minute, `OBSERVABILITY_RATE_LIMIT`) covers every
+observability endpoint except `status`, including the fleet view; with Redis it is shared by
+all API replicas. Typical portal cost per tab load: Overview 2 (summary, RED), APM 3, Traces 1,
+Logs 1 (+1 every 5 s while live tail is on), Infra 1, Profiles 2, **RUM 5** (one Loki query per
+web vital). Over the limit the API answers 429 and the view shows the error; raise the variable
+if many people share one agent token or account.
 
 `GET /api/observability/status` reports whether the backends are installed and the current
 `maxRangeHours`, `maxLogLines` and `maxTraces`.
