@@ -12,8 +12,7 @@ import { browserLabel, formatDuration, listParams, ReplayFilters, ReplaySessionR
   standalone: true,
   imports: [FormsModule, RouterLink, DatePipe],
   styles: [`
-    :host { display: block; padding: 24px; color: #e4e4e7; }
-    h1 { font-size: 22px; margin: 0 0 4px; }
+    :host { display: block; color: #e4e4e7; }
     .muted { color: #a1a1aa; font-size: 13px; }
     form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin: 16px 0; }
     label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #a1a1aa; }
@@ -31,7 +30,7 @@ import { browserLabel, formatDuration, listParams, ReplayFilters, ReplaySessionR
   `],
   template: `
     <a class="btn" [routerLink]="['/projects', projectId]">&larr; Project</a>
-    <h1>Session replays</h1>
+    <h1 class="page-title">Session replays</h1>
     <p class="muted">Recorded with inputs masked. Replays are kept for the project's replay retention and every view is audited.</p>
 
     @if (!enabled && loaded) {
@@ -41,7 +40,7 @@ import { browserLabel, formatDuration, listParams, ReplayFilters, ReplaySessionR
     @if (error) { <div class="notice err" role="alert">{{ error }}</div> }
 
     <form (ngSubmit)="offset = 0; load()">
-      <label>Page contains <input name="page" [(ngModel)]="filters.page" placeholder="/checkout"></label>
+      <label>Page contains <input name="page" [(ngModel)]="filters.page" placeholder="e.g. /checkout"></label>
       <label>Errors
         <select name="errors" [(ngModel)]="filters.errors">
           <option value="">Any</option><option value="true">With errors</option><option value="false">Without errors</option>
@@ -49,12 +48,12 @@ import { browserLabel, formatDuration, listParams, ReplayFilters, ReplaySessionR
       </label>
       <label>Min duration (s) <input name="min" type="number" min="0" [(ngModel)]="filters.minDurationSec"></label>
       <label>Max duration (s) <input name="max" type="number" min="0" [(ngModel)]="filters.maxDurationSec"></label>
-      <label>Environment <input name="env" [(ngModel)]="filters.environment" placeholder="production"></label>
+      <label>Environment <input name="env" [(ngModel)]="filters.environment" placeholder="e.g. production"></label>
       <button type="submit" [disabled]="busy">Filter</button>
     </form>
 
     @if (busy) { <p class="muted">Loading…</p> }
-    <table>
+    <div class="table-scroll"><table>
       <thead><tr><th>Started</th><th>Duration</th><th>Pages</th><th>Errors</th><th>User</th><th>Browser</th><th></th></tr></thead>
       <tbody>
         @for (s of sessions; track s.session_id) {
@@ -72,7 +71,7 @@ import { browserLabel, formatDuration, listParams, ReplayFilters, ReplaySessionR
           </tr>
         }
       </tbody>
-    </table>
+    </table></div>
     @if (loaded && !busy && !sessions.length) { <p class="muted" data-test="empty">No sessions for these filters.</p> }
     <div class="pager">
       <button type="button" (click)="page(-1)" [disabled]="offset === 0 || busy">Previous</button>

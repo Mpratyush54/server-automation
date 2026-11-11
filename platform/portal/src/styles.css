@@ -6,6 +6,9 @@
 
 @layer base {
   :root {
+    /* The portal is dark-only: keep native controls (checkboxes, selects,
+       scrollbars) dark even when the OS prefers a light scheme. */
+    color-scheme: dark;
     /* Next.js Dark Mode Palette */
     --bg-canvas: #000000;
     --bg-surface: #0a0a0a;
@@ -22,6 +25,9 @@
     --text-secondary: #a1a1aa;
     --text-muted: #71717a;
     --text-code: #ededed;
+    /* Aliases used by older templates (alerting, project detail, audit logs, bootstrap). */
+    --color-text-secondary: var(--text-secondary);
+    --color-text-muted: var(--text-muted);
     
     --font-heading: 'Geist', 'Inter', sans-serif;
     --font-body: 'Geist', 'Inter', sans-serif;
@@ -37,6 +43,12 @@
   /* Typography */
   h1, h2, h3, h4, h5, h6 {
     @apply font-sans tracking-tight;
+  }
+
+  /* Preflight resets h1 to body size; give bare page headings the same scale
+     as .page-title (colour is inherited so themed pages keep their own). */
+  h1 {
+    @apply text-2xl font-semibold;
   }
 }
 
@@ -56,6 +68,54 @@
 
   .btn-sm {
     @apply h-8 px-3 text-xs;
+  }
+
+  /* Disabled buttons must not look actionable (covers primary/danger too). */
+  .btn:disabled,
+  .btn[disabled],
+  .btn[aria-disabled='true'] {
+    @apply opacity-50 cursor-not-allowed pointer-events-none;
+  }
+
+  /* Shared page header used by every page (matches Dashboard/Projects). */
+  .page-header {
+    @apply flex flex-wrap items-end justify-between gap-4 mb-6;
+  }
+
+  .page-title {
+    @apply text-2xl font-semibold tracking-tight text-white m-0;
+  }
+
+  .page-subtitle {
+    @apply text-sm text-[#a1a1aa] mt-1 mb-0;
+  }
+
+  /* Wide tables scroll inside their card instead of the page. */
+  .table-scroll {
+    @apply w-full overflow-x-auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-scroll > table {
+    @apply min-w-full;
+  }
+
+  /* Empty-state row/cell for tables. */
+  .empty-row td,
+  td.empty-cell {
+    @apply text-center text-[#71717a] py-8;
+  }
+
+  .empty-row:hover td {
+    @apply bg-transparent;
+  }
+
+  .empty-state {
+    @apply text-center text-[#a1a1aa] py-10 px-4 text-sm;
+  }
+
+  .empty-state strong {
+    @apply block text-[#ededed] font-medium mb-1;
   }
 
   /* Layout Grids */
@@ -97,6 +157,40 @@
     @apply bg-[#111] border border-[#333] rounded-md px-3 py-2 text-sm text-[#ededed] focus:outline-none focus:border-[#666] transition-colors w-full;
   }
 
+  /* Boxes and other non-text inputs keep their intrinsic size; the text-input
+     rule above would otherwise stretch them across the whole row. */
+  input[type='checkbox'],
+  input[type='radio'],
+  input[type='range'],
+  input[type='color'],
+  input[type='file'],
+  input[type='image'],
+  input[type='hidden'] {
+    @apply w-auto p-0 flex-none;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    @apply h-4 w-4 m-0 align-middle cursor-pointer;
+    accent-color: #0070F3;
+  }
+
+  input[type='checkbox']:disabled,
+  input[type='radio']:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
+  /* label wrapping a box: keep the box inline next to its text. */
+  label:has(> input[type='checkbox']),
+  label:has(> input[type='radio']) {
+    @apply inline-flex flex-row items-center gap-2 cursor-pointer;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    @apply text-[#71717a] opacity-100;
+  }
+
   /* Badges */
   .badge {
     @apply inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border uppercase tracking-wider font-mono;
@@ -116,16 +210,21 @@
     @apply flex min-h-screen bg-black text-[#ededed];
   }
 
+  /* Below md the sidebar is an off-canvas drawer, so main has no left margin. */
   .main-content {
-    @apply flex-1 flex flex-col min-w-0 transition-all duration-300 border-l border-[#333] ml-64;
+    @apply flex-1 flex flex-col min-w-0 transition-all duration-300 ml-0 md:ml-64 md:border-l md:border-[#333];
   }
 
   .main-content.collapsed-nav {
-    @apply ml-16;
+    @apply md:ml-16;
   }
 
   .content {
-    @apply flex-1 p-8 overflow-y-auto relative;
+    @apply flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto relative min-w-0;
+  }
+
+  .sidebar-backdrop {
+    @apply fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden;
   }
 
   /* Tables */

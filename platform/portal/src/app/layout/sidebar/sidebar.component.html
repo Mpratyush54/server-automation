@@ -1,6 +1,10 @@
 <aside class="fixed left-0 top-0 h-screen bg-black border-r border-[#333] transition-all duration-300 z-40 flex flex-col"
   [class.w-64]="!isCollapsed"
-  [class.w-16]="isCollapsed">
+  [class.w-16]="isCollapsed"
+  [class.sidebar-drawer]="isMobile"
+  [class.sidebar-drawer-open]="isMobile && isOpen"
+  [attr.aria-hidden]="isMobile && !isOpen ? 'true' : null"
+  (click)="onNavClick($event)">
 
   <div class="h-16 flex items-center justify-between px-4 border-b border-[#333]">
     @if (!isCollapsed) {
@@ -95,8 +99,24 @@
       }
     </a>
 
-    <a routerLink="/errors" routerLinkActive="bg-[#111] text-white border-[#333]" class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden" [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed" title="Errors"><span aria-hidden="true">!</span><span [class.hidden]="isCollapsed">Errors</span></a>
-    <a routerLink="/observability" routerLinkActive="bg-[#111] text-white border-[#333]" class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden" [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed" title="Observability"><svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 3v18h18"></path><path d="M7 15l4-4 3 3 5-6"></path></svg><span [class.hidden]="isCollapsed">Observability</span></a>
+    <a routerLink="/errors" routerLinkActive="bg-[#111] text-white border-[#333]"
+      class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
+      [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed" [attr.title]="isCollapsed ? 'Errors' : null">
+      <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      @if (!isCollapsed) {
+        <span class="font-medium text-sm whitespace-nowrap">Errors</span>
+      }
+    </a>
+
+    <a routerLink="/observability" routerLinkActive="bg-[#111] text-white border-[#333]"
+      class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
+      [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed" [attr.title]="isCollapsed ? 'Observability' : null">
+      <svg class="flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 3v18h18"></path><path d="M7 15l4-4 3 3 5-6"></path></svg>
+      @if (!isCollapsed) {
+        <span class="font-medium text-sm whitespace-nowrap">Observability</span>
+      }
+    </a>
+
     <a routerLink="/alerting" routerLinkActive="bg-[#111] text-white border-[#333]"
       class="flex items-center h-10 rounded-md text-[#a1a1aa] hover:text-white hover:bg-[#111] transition-colors border border-transparent overflow-hidden"
       [class.gap-3]="!isCollapsed" [class.px-3]="!isCollapsed" [class.justify-center]="isCollapsed">

@@ -1,0 +1,15 @@
+/* Project sections: one scrolling row so the last tab is reachable, never clipped. */
+.pd-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin-bottom: 24px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #333;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  position: relative;
+}
+.pd-tabs > .btn {
+  flex: 0 0 auto;
+}

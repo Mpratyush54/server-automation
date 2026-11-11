@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, Input, OnChanges } from '@angular/core';
+import { AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, Input, OnChanges, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { chartPaths, Point } from './observability-api';
 
@@ -15,7 +15,7 @@ export interface ChartMarker { t: number; label: string }
   styles: [`
     :host { display: block; }
     svg { width: 100%; height: auto; display: block; overflow: visible; }
-    .axis { fill: var(--obs-faint); font-size: 10px; }
+    .axis { fill: var(--obs-faint); font-size: 11px; }
     .grid { stroke: var(--obs-grid); stroke-width: 1; }
     .line { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
     .marker { stroke: var(--obs-marker); stroke-dasharray: 3 3; stroke-width: 1; }
@@ -54,7 +54,10 @@ export interface ChartMarker { t: number; label: string }
     }
   `,
 })
-export class ObsLineChartComponent implements OnChanges {
+export class ObsLineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
+  private host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private cdr = inject(ChangeDetectorRef);
+  private resizeObserver: ResizeObserver | null = null;
   @Input() series: ChartSeries[] = [];
   @Input() markers: ChartMarker[] = [];
   @Input() title = '';
@@ -67,6 +70,35 @@ export class ObsLineChartComponent implements OnChanges {
   visibleMarkers: ChartMarker[] = [];
 
   ngOnChanges(): void {
+    this.compute();
+  }
+
+  /**
+   * Match the SVG's user units to its rendered pixel width so axis labels stay
+   * at their CSS size (a fixed 600-unit viewBox shrank them to ~5px in narrow cards).
+   */
+  ngAfterViewInit(): void {
+    if (typeof ResizeObserver === 'undefined') return;
+    this.resizeObserver = new ResizeObserver((entries) => this.fitWidth(entries[0]?.contentRect.width ?? 0));
+    this.resizeObserver.observe(this.host.nativeElement);
+  }
+
+  ngOnDestroy(): void {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+  }
+
+  /** Plot width for a rendered host width (viewBox adds 52 units of axis gutter). */
+  fitWidth(hostWidth: number): void {
+    if (!hostWidth) return;
+    const next = Math.max(160, Math.round(hostWidth) - 52);
+    if (Math.abs(next - this.width) < 2) return;
+    this.width = next;
+    this.compute();
+    this.cdr.detectChanges();
+  }
+
+  private compute(): void {
     const pts = this.series.flatMap((s) => s.points);
     this.hasData = pts.some((p) => p[1] !== null && Number.isFinite(p[1] as number));
     this.geo = chartPaths(this.series.map((s) => s.points), this.width, this.height);

@@ -7,6 +7,7 @@ import { firstValueFrom, Subscription } from 'rxjs';
 import {
   DEFAULT_SINCE, Flamebearer, fmtBytes, fmtMs, fmtPct, fmtRate, GraphEdge, GraphNode, healthLabel, isProjectTab, isSince, nsToDate, Point,
   PROJECT_TABS, projectBase, ProjectTab, rangeNotice, SINCE_OPTIONS, SINCE_SECONDS,
+  humanizeStatus,
 } from './observability-api';
 import { ChartMarker, ChartSeries, ObsLineChartComponent } from './obs-line-chart.component';
 import { ObsTraceViewComponent } from './obs-trace-view.component';
@@ -35,7 +36,7 @@ export function webVitalQuery(vital: string, seconds: number): string {
   standalone: true,
   imports: [CommonModule, FormsModule, RouterModule, ObsLineChartComponent, ObsTraceViewComponent, ObsLogsComponent, ObsServiceMapComponent, ObsFlamegraphComponent],
   styleUrls: ['./obs-theme.css'],
-  styles: [`:host { padding: 24px; } h1 { margin: 0; font-size: 1.5rem; } .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; } .back { font-size: 0.85rem; } .search { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: end; } .search label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--obs-muted); } textarea.obs-input { width: 100%; box-sizing: border-box; min-height: 48px; }`],
+  styles: [`h1 { margin: 0; } .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; } .back { font-size: 0.85rem; } .search { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: end; } .search label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--obs-muted); } textarea.obs-input { width: 100%; box-sizing: border-box; min-height: 48px; }`],
   templateUrl: './obs-project.component.html',
 })
 export class ObsProjectComponent implements OnInit, OnDestroy {
@@ -46,6 +47,7 @@ export class ObsProjectComponent implements OnInit, OnDestroy {
 
   readonly tabs = PROJECT_TABS;
   readonly sinceOptions = SINCE_OPTIONS;
+  readonly humanize = humanizeStatus;
   readonly vitals = WEB_VITALS;
   readonly rate = fmtRate;
   readonly pct = fmtPct;

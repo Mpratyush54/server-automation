@@ -26,6 +26,15 @@ export interface ReplayPlayerLike {
   goto(timeOffset: number, play?: boolean): void;
   pause?(): void;
   $destroy?(): void;
+  /** rrweb-player (Svelte) prop update — used to resize with the stage. */
+  $set?(props: Record<string, unknown>): void;
+  triggerResize?(): void;
+}
+
+/** Player size for a stage width: 16:9, never wider than 1280 px. */
+export function playerSize(stageWidth: number): { width: number; height: number } {
+  const width = Math.max(200, Math.min(1280, Math.floor(stageWidth) || 960));
+  return { width, height: Math.round(width * 0.5625) };
 }
 export type PlayerFactory = (target: HTMLElement, props: Record<string, unknown>) => ReplayPlayerLike;
 
@@ -47,12 +56,20 @@ const CONCURRENCY = 4;
   encapsulation: ViewEncapsulation.None,
   styleUrls: ['../../../../node_modules/rrweb-player/dist/style.css'],
   styles: [`
-    app-replay-player { display: block; padding: 24px; color: #e4e4e7; }
-    app-replay-player h1 { font-size: 20px; margin: 8px 0 4px; }
+    app-replay-player { display: block; color: #e4e4e7; }
+    app-replay-player h1 { margin: 8px 0 4px; overflow-wrap: anywhere; }
     app-replay-player .muted { color: #a1a1aa; font-size: 13px; }
     app-replay-player .layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; margin-top: 16px; }
-    app-replay-player .stage { flex: 1 1 720px; min-width: 320px; }
-    app-replay-player .stage .rr-player { background: #fff; }
+    app-replay-player .stage { flex: 1 1 720px; min-width: 0; max-width: 100%; overflow: hidden; }
+    app-replay-player .stage .rr-player { background: #fff; max-width: 100%; }
+    /* The controller sits on the player's white background: keep its text dark
+       (it otherwise inherits the portal's light text and disappears). */
+    app-replay-player .stage .rr-controller { color: #18181b; max-width: 100%; }
+    app-replay-player .stage .rr-controller__btns { flex-wrap: wrap; row-gap: 4px; }
+    app-replay-player .stage .rr-controller__btns button { color: #3f3f46; }
+    app-replay-player .stage .rr-controller__btns button.active { color: #fff; }
+    app-replay-player .stage .rr-controller__btns button:disabled { color: #a1a1aa; }
+    app-replay-player .stage .switch .label { color: #3f3f46; }
     app-replay-player aside { flex: 0 1 360px; max-height: 640px; overflow: auto; border: 1px solid #27272a; border-radius: 8px; }
     app-replay-player aside h2 { font-size: 13px; color: #a1a1aa; margin: 0; padding: 10px 12px; border-bottom: 1px solid #27272a; }
     app-replay-player .marker { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #18181b; font-size: 12px; }
@@ -69,7 +86,7 @@ const CONCURRENCY = 4;
   template: `
     <a class="btn" [routerLink]="['/projects', projectId, 'replays']">&larr; Sessions</a>
     @if (detail; as d) {
-      <h1>Session {{ d.session.session_id }}</h1>
+      <h1 class="page-title">Session {{ d.session.session_id }}</h1>
       <p class="muted">
         {{ d.session.started_at | date:'medium' }} · {{ duration(d.session.duration_ms) }} · {{ d.session.pages.length }} page(s)
         · {{ browser(d.session.user_agent) }} · user {{ d.session.user_id || 'anonymous' }}
@@ -118,6 +135,8 @@ export class ReplayPlayerComponent implements OnInit, OnDestroy {
   error = '';
   private player: ReplayPlayerLike | null = null;
   private destroyed = false;
+  private resizeObserver: ResizeObserver | null = null;
+  private lastWidth = 0;
 
   duration = formatDuration;
   browser = browserLabel;
@@ -132,6 +151,8 @@ export class ReplayPlayerComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyed = true;
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     try {
       this.player?.pause?.();
       this.player?.$destroy?.();
@@ -178,11 +199,12 @@ export class ReplayPlayerComponent implements OnInit, OnDestroy {
       }
       const create = await this.playerFactory();
       if (this.destroyed) return;
-      const width = Math.max(320, Math.min(1280, this.stage.nativeElement.clientWidth || 960));
+      const size = playerSize(this.stage.nativeElement.clientWidth);
+      this.lastWidth = size.width;
       this.player = create(this.stage.nativeElement, {
         events,
-        width,
-        height: Math.round(width * 0.5625),
+        width: size.width,
+        height: size.height,
         autoPlay: false,
         showController: true,
         skipInactive: true,
@@ -192,6 +214,7 @@ export class ReplayPlayerComponent implements OnInit, OnDestroy {
         // Recorded pages render in a sandboxed iframe without scripts.
         UNSAFE_replayCanvas: false,
       });
+      this.observeStage();
     } catch (e: any) {
       this.error = e?.status === 404 ? 'Replay not found (it may have been deleted after the retention period).'
         : e?.status === 403 ? 'You need access to this project to view its replays.'
@@ -199,6 +222,27 @@ export class ReplayPlayerComponent implements OnInit, OnDestroy {
     } finally {
       this.loading = false;
       this.cdr.markForCheck();
+    }
+  }
+
+  /** Follow the stage width (window resize, sidebar toggle, rotation). */
+  private observeStage(): void {
+    if (typeof ResizeObserver === 'undefined' || this.resizeObserver) return;
+    this.resizeObserver = new ResizeObserver((entries) => this.resize(entries[0]?.contentRect.width ?? 0));
+    this.resizeObserver.observe(this.stage.nativeElement);
+  }
+
+  /** Resize the player to a new stage width (no-op for sub-pixel jitter). */
+  resize(stageWidth: number): void {
+    if (!this.player || !stageWidth) return;
+    const size = playerSize(stageWidth);
+    if (Math.abs(size.width - this.lastWidth) < 2) return;
+    this.lastWidth = size.width;
+    try {
+      this.player.$set?.(size);
+      this.player.triggerResize?.();
+    } catch {
+      /* ignore */
     }
   }
 

@@ -1,4 +1,18 @@
-@if (project) { <app-releases-panel [projectId]="project.id" /> }
+@if (project) {
+  <div class="card mb-8" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(59, 130, 246, 0.05)); border-color: rgba(139, 92, 246, 0.2);">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+      <div style="min-width:0;">
+        <h2 style="overflow-wrap:anywhere;font-size:1.75rem;margin:0;border:none;padding:0;background:linear-gradient(to right, #fff, #94a3b8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">{{ project.name }}</h2>
+        <p style="color:var(--color-text-secondary);margin:8px 0 0 0;font-size:0.95rem;">{{ project.description || 'No description provided' }}</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <span class="badge badge-active" style="font-size:0.8rem;padding:6px 14px;background-color:rgba(139,92,246,0.15);color:var(--primary);border-color:rgba(139,92,246,0.3);">{{ project.stack }}</span>
+        <span class="badge badge-active" style="font-size:0.8rem;padding:6px 14px;">{{ project.isActive ? 'Active' : 'Archived' }}</span>
+      </div>
+    </div>
+  </div>
+}
+
 @if (project?.namespaceBaselines?.length) {
   <section class="card mb-8" aria-label="Namespace isolation">
     <h2>Namespace isolation</h2>
@@ -22,37 +36,22 @@
           <p>Restricted Pod Security is in warn/audit mode. Review deployment warnings before enforcing.</p>
         }
         @if (baseline.quota) {
-          <table style="width:100%">
+          <div class="table-scroll"><table style="width:100%">
             <thead><tr><th>Resource</th><th>Used</th><th>Quota</th></tr></thead>
             <tbody>
               @for (resource of baseline.quota.hard | keyvalue; track resource.key) {
                 <tr><td>{{ resource.key }}</td><td>{{ baseline.quota.used[$any(resource.key)] || '0' }}</td><td>{{ resource.value }}</td></tr>
               }
             </tbody>
-          </table>
+          </table></div>
         }
       </div>
     }
   </section>
 }
 
-@if (project) {
-  <div class="card mb-8" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(59, 130, 246, 0.05)); border-color: rgba(139, 92, 246, 0.2);">
-    <div style="display:flex;justify-content:space-between;align-items:center;">
-      <div>
-        <h2 style="font-size:1.75rem;margin:0;border:none;padding:0;background:linear-gradient(to right, #fff, #94a3b8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">{{ project.name }}</h2>
-        <p style="color:var(--color-text-secondary);margin:8px 0 0 0;font-size:0.95rem;">{{ project.description || 'No description provided' }}</p>
-      </div>
-      <div style="display:flex;gap:8px;">
-        <span class="badge badge-active" style="font-size:0.8rem;padding:6px 14px;background-color:rgba(139,92,246,0.15);color:var(--primary);border-color:rgba(139,92,246,0.3);">{{ project.stack }}</span>
-        <span class="badge badge-active" style="font-size:0.8rem;padding:6px 14px;">{{ project.isActive ? 'Active' : 'Archived' }}</span>
-      </div>
-    </div>
-  </div>
-}
-
 <!-- Tab Navigation Bar -->
-<div style="display:flex;gap:8px;margin-bottom:24px;border-bottom:1px solid var(--border-glass);padding-bottom:12px;overflow-x:auto;">
+<nav #tabBar class="pd-tabs" aria-label="Project sections">
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'deployments'" (click)="switchTab('deployments')">🚀 Deployments</button>
   <a class="btn btn-sm" [routerLink]="['/projects', project?.id, 'observability']">📈 Observability</a>
   @if (!observabilityEnabled) { <!-- #48: replaced by Observability when telemetry (full profile) is installed -->
@@ -72,11 +71,12 @@
   <a class="btn btn-sm" [routerLink]="['/projects', project?.id, 'status']">📡 Status page</a>
   <a class="btn btn-sm" [routerLink]="['/projects', project?.id, 'heatmaps']">🔥 Heatmaps</a>
   <a class="btn btn-sm" [routerLink]="['/projects', project?.id, 'replays']">▶ Replays</a>
-</div>
+</nav>
 
 <!-- DEPLOYMENTS TAB -->
 @if (activeTab === 'deployments') {
   <div>
+    @if (project) { <app-releases-panel [projectId]="project.id" /> }
     <div class="card" style="margin-bottom:20px;">
       <h2 style="margin-top:0;">Project Settings — Git & Domain</h2>
       <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;">
@@ -707,9 +707,9 @@
 <!-- SDK TOKENS TAB -->
 @if (activeTab === 'sdk-tokens') {
   <div>
-    <div class="grid-2">
+    <div [class.grid-2]="canCreateSdkTokens" data-testid="sdk-tokens-layout">
       <!-- Generate Token Card -->
-      @if (role === 'devops' || role === 'tech_lead') {
+      @if (canCreateSdkTokens) {
         <div class="card">
           <h2>Generate SDK Token</h2>
           <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;margin-bottom:20px;">
@@ -775,7 +775,7 @@
                 <th>Kind</th>
                 <th>Status</th>
                 <th>Created At</th>
-                @if (role === 'devops') {
+                @if (canRevokeSdkTokens) {
                   <th>Actions</th>
                 }
               </tr>
@@ -788,7 +788,7 @@
                   <td><span class="badge" [title]="(t.kind || 'server') === 'browser' ? 'Ingest only (bug reports, logs, API metrics)' : 'Config, secrets and service registration'">{{ (t.kind || 'server') | uppercase }}</span></td>
                   <td><span class="badge badge-active">{{ t.status | uppercase }}</span></td>
                   <td>{{ t.createdAt | date:'short' }}</td>
-                  @if (role === 'devops') {
+                  @if (canRevokeSdkTokens) {
                     <td>
                       <button class="btn btn-sm btn-danger" (click)="revokeToken(t.id)">Revoke</button>
                     </td>
@@ -797,7 +797,7 @@
               }
               @if (tokens.length === 0) {
                 <tr>
-                  <td [attr.colspan]="role === 'devops' ? 6 : 5" style="text-align:center;color:var(--color-text-muted);">
+                  <td [attr.colspan]="canRevokeSdkTokens ? 6 : 5" style="text-align:center;color:var(--color-text-muted);">
                     No SDK credentials configured for this project.
                   </td>
                 </tr>

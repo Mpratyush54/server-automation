@@ -1,12 +1,12 @@
-<div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;">
+<div class="page-header">
   <div>
-    <h2 style="margin:0;font-size:1.5rem;font-weight:700;">Alerting &amp; on-call</h2>
-    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:4px 0 0 0;">
+    <h1 class="page-title">Alerting &amp; on-call</h1>
+    <p class="page-subtitle">
       Monitors, SLO burn-rate alerts, silences and notification routing
       @if (mode) { <span class="badge badge-pending" style="margin-left:6px;">evaluation: {{ mode }}</span> }
     </p>
   </div>
-  <div class="form-group" style="margin:0;min-width:260px;">
+  <div class="form-group" style="margin:0;min-width:min(260px,100%);">
     <label>Project</label>
     <select [(ngModel)]="projectId" (change)="selectProject()" data-testid="project-select">
       <option value="">All projects (incidents only)</option>
@@ -41,7 +41,8 @@
         <button class="btn btn-sm" (click)="testEvent('resolved')">Resolve test alert</button>
       }
     </div>
-    <table>
+    <div class="table-scroll">
+      <table>
       <thead><tr><th>Status</th><th>Severity</th><th>Title</th><th>Project</th><th>Source</th><th>Events</th><th>First seen</th><th></th></tr></thead>
       <tbody>
         @for (i of incidents; track i.id) {
@@ -49,20 +50,23 @@
             <td><span class="badge" [class.badge-failed]="i.status === 'firing'" [class.badge-pending]="i.status === 'acknowledged'" [class.badge-success]="i.status === 'resolved'">{{ i.status }}</span>
               @if (i.silencedBy) { <span class="badge badge-pending">silenced</span> }</td>
             <td>{{ i.severity }}</td>
-            <td><div style="font-weight:600;">{{ i.title }}</div><div style="font-size:0.75rem;color:var(--color-text-secondary);">{{ i.body }}</div></td>
+            <td style="min-width:200px;"><div style="font-weight:600;">@if (incidentLink(i); as link) { <a [routerLink]="link" class="text-white underline decoration-[#555] underline-offset-2 hover:decoration-white" data-testid="incident-link">{{ i.title }}</a> } @else { {{ i.title }} }</div><div style="font-size:0.75rem;color:#a1a1aa;">{{ i.body }}</div></td>
             <td>{{ projectName(i.projectId) }}</td>
             <td>{{ i.source }}</td>
             <td>{{ i.eventCount }}</td>
             <td>{{ i.firstSeenAt | date:'short' }}</td>
             <td style="white-space:nowrap;">
-              @if (i.status === 'firing') { <button class="btn btn-sm" (click)="ack(i)">Acknowledge</button> }
-              @if (i.status !== 'resolved') { <button class="btn btn-sm" (click)="resolveIncident(i)">Resolve</button> }
+              <div style="display:flex;gap:8px;justify-content:flex-end;">
+                @if (i.status === 'firing') { <button class="btn btn-sm" (click)="ack(i)">Acknowledge</button> }
+                @if (i.status !== 'resolved') { <button class="btn btn-sm" (click)="resolveIncident(i)">Resolve</button> }
+              </div>
             </td>
           </tr>
         }
-        @if (!incidents.length && !loading) { <tr><td colspan="8" style="color:var(--color-text-muted);">No incidents.</td></tr> }
+        @if (!incidents.length && !loading) { <tr class="empty-row"><td colspan="8">No incidents.</td></tr> }
       </tbody>
     </table>
+    </div>
   </div>
 }
 
@@ -101,7 +105,8 @@
       <button class="btn btn-primary" (click)="createMonitor()" [disabled]="!newMonitor.name">Create monitor</button>
     </div>
     <div class="card">
-      <table>
+      <div class="table-scroll">
+        <table>
         <thead><tr><th>Name</th><th>Kind</th><th>Condition</th><th>Severity</th><th>State</th><th>Last value</th><th>Enabled</th><th></th></tr></thead>
         <tbody>
           @for (m of monitors; track m.id) {
@@ -116,9 +121,10 @@
               <td><button class="btn btn-danger btn-sm" (click)="deleteItem('monitors', m.id)">Delete</button></td>
             </tr>
           }
-          @if (!monitors.length) { <tr><td colspan="8" style="color:var(--color-text-muted);">No monitors yet.</td></tr> }
+          @if (!monitors.length) { <tr class="empty-row"><td colspan="8">No monitors yet.</td></tr> }
         </tbody>
       </table>
+      </div>
     </div>
   }
 
@@ -133,13 +139,13 @@
             <div style="height:8px;background:#222;border-radius:4px;overflow:hidden;">
               <div [style.width.%]="budgetPercent(s)! < 0 ? 0 : budgetPercent(s)" [style.background]="budgetPercent(s)! > 25 ? '#2e7d32' : '#d32f2f'" style="height:100%;"></div>
             </div>
-            <div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:6px;">
+            <div style="font-size:0.75rem;color:#a1a1aa;margin-top:6px;">
               SLI {{ (s.status.sli ?? 0) * 100 | number:'1.0-3' }}% · burn 1h {{ (s.status.burnRates?.['1h'] | number:'1.0-2') ?? '—' }} · 6h {{ (s.status.burnRates?.['6h'] | number:'1.0-2') ?? '—' }}
               @if (s.status.alerts?.page) { <span class="badge badge-failed">page</span> }
               @if (s.status.alerts?.ticket) { <span class="badge badge-pending">ticket</span> }
             </div>
           } @else {
-            <div style="margin:10px 0;font-size:0.8rem;color:var(--color-text-muted);">{{ s.status?.error || 'No data yet' }}</div>
+            <div style="margin:10px 0;font-size:0.8rem;color:#71717a;">{{ s.status?.error || 'No data yet' }}</div>
           }
           <div style="margin-top:8px;display:flex;gap:6px;">
             <button class="btn btn-sm" (click)="refreshSlo(s)">Refresh</button>
@@ -181,7 +187,8 @@
       <button class="btn btn-primary" (click)="createSilence()">Create</button>
     </div>
     <div class="card">
-      <table>
+      <div class="table-scroll">
+        <table>
         <thead><tr><th>State</th><th>Kind</th><th>Matchers</th><th>Starts</th><th>Ends</th><th>Comment</th><th></th></tr></thead>
         <tbody>
           @for (s of silences; track s.id) {
@@ -192,9 +199,10 @@
               <td>@if (s.state !== 'expired') { <button class="btn btn-sm" (click)="expireSilence(s.id)">Expire</button> }</td>
             </tr>
           }
-          @if (!silences.length) { <tr><td colspan="7" style="color:var(--color-text-muted);">No silences.</td></tr> }
+          @if (!silences.length) { <tr class="empty-row"><td colspan="7">No silences.</td></tr> }
         </tbody>
       </table>
+      </div>
     </div>
   }
 
@@ -210,11 +218,12 @@
           <div class="form-group"><label>{{ f.label }}</label><input [type]="f.secret ? 'password' : 'text'" autocomplete="off" [(ngModel)]="newChannel.fields[f.key]" [placeholder]="f.placeholder || ''"></div>
         }
       </div>
-      <p style="font-size:0.75rem;color:var(--color-text-secondary);">Secrets are stored encrypted and are never shown again.</p>
+      <p style="font-size:0.75rem;color:#a1a1aa;">Secrets are stored encrypted and are never shown again.</p>
       <button class="btn btn-primary" (click)="createChannel()" [disabled]="!newChannel.name">Create channel</button>
     </div>
     <div class="card">
-      <table>
+      <div class="table-scroll">
+        <table>
         <thead><tr><th>Name</th><th>Type</th><th>Destination</th><th>Min severity</th><th>Last delivery</th><th>Last error</th><th></th></tr></thead>
         <tbody>
           @for (c of channels; track c.id) {
@@ -225,9 +234,10 @@
               <td style="white-space:nowrap;"><button class="btn btn-sm" (click)="testChannel(c)">Test</button> <button class="btn btn-danger btn-sm" (click)="deleteItem('channels', c.id)">Delete</button></td>
             </tr>
           }
-          @if (!channels.length) { <tr><td colspan="7" style="color:var(--color-text-muted);">No channels. Without a channel, incidents are only listed here.</td></tr> }
+          @if (!channels.length) { <tr class="empty-row"><td colspan="7">No channels. Without a channel, incidents are only listed here.</td></tr> }
         </tbody>
       </table>
+      </div>
     </div>
   }
 
@@ -235,7 +245,8 @@
   @if (tab === 'oncall') {
     <div class="card">
       <h3>Escalation policies</h3>
-      <table>
+      <div class="table-scroll">
+        <table>
         <thead><tr><th>Name</th><th>Default</th><th>Steps</th><th></th></tr></thead>
         <tbody>
           @for (p of policies; track p.id) {
@@ -247,8 +258,10 @@
               <td><button class="btn btn-danger btn-sm" (click)="deleteItem('policies', p.id)">Delete</button></td>
             </tr>
           }
+          @if (!policies.length) { <tr class="empty-row" data-testid="policies-empty"><td colspan="4">No escalation policies yet.</td></tr> }
         </tbody>
       </table>
+      </div>
       <h4>New policy</h4>
       <div class="form-group"><label>Name</label><input [(ngModel)]="newPolicy.name"></div>
       <div class="form-group"><label><input type="checkbox" [(ngModel)]="newPolicy.isDefault"> Project default</label></div>
@@ -262,15 +275,18 @@
     </div>
     <div class="card">
       <h3>On-call schedules</h3>
-      <table>
+      <div class="table-scroll">
+        <table>
         <thead><tr><th>Name</th><th>Rotation</th><th>Users</th><th>On call now</th><th></th></tr></thead>
         <tbody>
           @for (s of schedules; track s.id) {
             <tr><td>{{ s.name }}</td><td>every {{ s.rotationHours }} h</td><td style="font-size:0.75rem;">{{ s.userIds.join(', ') }}</td><td>{{ s.onCallUserId || '—' }}</td>
               <td><button class="btn btn-danger btn-sm" (click)="deleteItem('schedules', s.id)">Delete</button></td></tr>
           }
+          @if (!schedules.length) { <tr class="empty-row" data-testid="schedules-empty"><td colspan="5">No on-call schedules yet.</td></tr> }
         </tbody>
       </table>
+      </div>
       <h4>New schedule</h4>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;">
         <div class="form-group"><label>Name</label><input [(ngModel)]="newSchedule.name"></div>

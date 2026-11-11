@@ -8,36 +8,58 @@ import { OperationProgressComponent } from '../../shared/operation-progress.comp
   selector: 'app-releases-panel', standalone: true,
   imports: [CommonModule, FormsModule, OperationProgressComponent],
   template: `
-    <section class="card" aria-label="Release tracking">
-      <h3>Releases and deploy markers</h3>
-      <p role="status">{{message}}</p>
-      <label>Release <select [(ngModel)]="selected" (change)="compare()">
-        <option value="">Select a deployment</option>
-        @for (r of releases; track r.id) { <option [value]="r.id">{{r.release}} ? {{r.markerAt | date:'short'}} ? {{r.status}}</option> }
-      </select></label>
-      <label>Minutes before / after <input type="number" min="1" max="120" [(ngModel)]="minutes" (change)="compare()"></label>
-      <button (click)="load()" [disabled]="busy">Refresh</button>
+    <section class="card rp" aria-label="Release tracking">
+      <h2>Releases and deploy markers</h2>
+      <p class="rp-hint">Compare error rate, p95 latency and throughput before and after a deployment.</p>
+      @if (message) { <p class="rp-msg" role="status">{{message}}</p> }
+      <div class="rp-controls">
+        <div class="form-group"><label for="rp-release">Release</label>
+          <select id="rp-release" [(ngModel)]="selected" (change)="compare()">
+            <option value="">Select a deployment</option>
+            @for (r of releases; track r.id) { <option [value]="r.id">{{r.release}} · {{r.markerAt | date:'short'}} · {{r.status}}</option> }
+          </select></div>
+        <div class="form-group rp-minutes"><label for="rp-minutes">Minutes before / after</label>
+          <input id="rp-minutes" type="number" min="1" max="120" [(ngModel)]="minutes" (change)="compare()"></div>
+        <button class="btn" (click)="load()" [disabled]="busy">Refresh</button>
+      </div>
+      @if (!releases.length && !message) { <div class="empty-state">No deployments recorded yet. Markers appear here after the first successful deploy.</div> }
       @if (comparison; as c) {
-        <p>{{c.complete ? 'Complete comparison' : 'After window still collecting'}} ? {{c.release}}</p>
-        <svg viewBox="0 0 600 180" role="img" aria-label="p95 latency before and after deployment" style="width:100%;max-width:600px">
+        <p class="rp-hint">{{c.complete ? 'Complete comparison' : 'After window still collecting'}} · {{c.release}}</p>
+        <svg viewBox="0 0 600 180" role="img" aria-label="p95 latency before and after deployment" class="rp-chart">
           <line x1="300" x2="300" y1="10" y2="150" stroke="currentColor" stroke-dasharray="4" />
           <text x="305" y="20" fill="currentColor">Deploy marker</text>
           <rect x="100" [attr.y]="150-bar(c.before.p95LatencyMs)" width="100" [attr.height]="bar(c.before.p95LatencyMs)" fill="#38bdf8" />
           <rect x="400" [attr.y]="150-bar(c.after.p95LatencyMs)" width="100" [attr.height]="bar(c.after.p95LatencyMs)" fill="#a78bfa" />
           <text x="100" y="175" fill="currentColor">Before p95</text><text x="400" y="175" fill="currentColor">After p95</text>
         </svg>
-        <table><thead><tr><th>Metric</th><th>Before</th><th>After</th><th>Delta</th><th>Change %</th></tr></thead><tbody>
-          @for (m of metrics; track m.key) {
-            <tr><td>{{m.label}}</td><td>{{value(c.before[m.key])}}</td><td>{{value(c.after[m.key])}}</td><td>{{value(c.deltas[m.key].absolute)}}</td><td>{{value(c.deltas[m.key].percent)}}</td></tr>
-          }
-        </tbody></table>
-        <p>Web vitals: {{c.webVitalsUnavailable}}</p>
-        <label>Rollback reason <input [(ngModel)]="reason" maxlength="1000" placeholder="Reason for restoring the previous successful version"></label>
-        <button (click)="rollback()" [disabled]="busy || !reason.trim()">Roll back to previous release</button>
+        <div class="table-scroll">
+          <table><thead><tr><th>Metric</th><th class="num">Before</th><th class="num">After</th><th class="num">Delta</th><th class="num">Change %</th></tr></thead><tbody>
+            @for (m of metrics; track m.key) {
+              <tr><td>{{m.label}}</td><td class="num">{{value(c.before[m.key])}}</td><td class="num">{{value(c.after[m.key])}}</td><td class="num">{{value(c.deltas[m.key].absolute)}}</td><td class="num">{{value(c.deltas[m.key].percent)}}</td></tr>
+            }
+          </tbody></table>
+        </div>
+        <p class="rp-hint">Web vitals: {{c.webVitalsUnavailable}}</p>
+        <div class="rp-controls">
+          <div class="form-group rp-reason"><label for="rp-reason">Rollback reason</label>
+            <input id="rp-reason" [(ngModel)]="reason" maxlength="1000" placeholder="Reason for restoring the previous successful version"></div>
+          <button class="btn btn-danger" (click)="rollback()" [disabled]="busy || !reason.trim()">Roll back to previous release</button>
+        </div>
       }
       @if (operationId) { <app-operation-progress [operationId]="operationId" /> }
     </section>
   `,
+  styles: [`
+    .rp { margin-bottom: 20px; }
+    .rp-hint { color: #a1a1aa; font-size: 0.85rem; margin: 0 0 12px; }
+    .rp-msg { color: #a1a1aa; font-size: 0.85rem; margin: 0 0 12px; }
+    .rp-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 12px; }
+    .rp-controls .form-group { margin: 0; flex: 1 1 240px; }
+    .rp-controls .rp-minutes { flex: 0 1 180px; }
+    .rp-controls .rp-reason { flex: 1 1 320px; }
+    .rp-chart { width: 100%; max-width: 600px; color: #a1a1aa; font-size: 12px; margin: 8px 0; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+  `],
 })
 export class ReleasesPanelComponent implements OnChanges, OnDestroy {
   @Input() projectId = '';

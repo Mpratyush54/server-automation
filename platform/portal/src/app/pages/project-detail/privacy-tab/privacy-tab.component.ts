@@ -83,8 +83,8 @@ interface ScrubRule {
     <section class="card">
       <h2>Consent defaults (session replay)</h2>
       <p class="hint">
-        Replay itself ships in #40. These defaults and the consent API
-        (<code>/api/sdk/privacy/consent</code>, <code>/api/sdk/privacy/replay-allowed</code>) are the hooks it will use.
+        Used when a visitor has no recorded consent decision. Per-visitor choices recorded through the consent API
+        (<code>/api/sdk/privacy/consent</code>, <code>/api/sdk/privacy/replay-allowed</code>) override these defaults.
       </p>
       <label class="check"><input type="checkbox" [(ngModel)]="consent.replay" /> Replay allowed by default (opt-in recommended: off)</label>
       <label class="check"><input type="checkbox" [(ngModel)]="consent.analytics" /> Analytics allowed by default</label>

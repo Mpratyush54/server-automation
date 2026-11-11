@@ -7,32 +7,110 @@ import { firstValueFrom } from 'rxjs';
 
 @Component({
   selector: 'app-errors', standalone: true, imports: [CommonModule, FormsModule, RouterModule],
-  styles: [`:host{display:block;padding:24px}label{display:inline-block;margin:8px}input,select,button{padding:8px;margin:4px}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;border-bottom:1px solid #8885}pre{white-space:pre-wrap;overflow-wrap:anywhere}button,a{cursor:pointer}.regression{color:#e55353}`],
+  styles: [`
+    :host { display: block; }
+    .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end; }
+    .filters .form-group { margin: 0; }
+    .issue-link { background: none; border: 0; padding: 0; color: #ededed; font-weight: 500; text-align: left; cursor: pointer; }
+    .issue-link:hover { text-decoration: underline; }
+    .issue-meta { font-size: 0.75rem; color: #a1a1aa; margin-top: 2px; }
+    .regression { color: #f87171; font-size: 0.75rem; margin-left: 6px; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .pager { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+    .meta { color: #a1a1aa; font-size: 0.85rem; margin: 0 0 4px; }
+    .triage { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin: 16px 0; }
+    .triage .form-group { margin: 0; min-width: 200px; }
+    .event { border-top: 1px solid #222; padding-top: 16px; margin-top: 16px; }
+    .event h3 { font-size: 0.95rem; font-weight: 600; margin: 0 0 4px; }
+    .event h4 { font-size: 0.8rem; font-weight: 500; color: #a1a1aa; margin: 12px 0 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .event-links { display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.85rem; }
+    .event-links a { color: #60a5fa; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-code); font-size: 0.8rem; background: #111; border: 1px solid #222; border-radius: 6px; padding: 8px 10px; margin: 4px 0; }
+    details summary { cursor: pointer; color: #a1a1aa; font-size: 0.85rem; margin-top: 8px; }
+    .banner-error { border-color: #7f1d1d; color: #fca5a5; margin-bottom: 16px; }
+  `],
   template: `
-    <h1>Errors</h1>
-    <p>Group exceptions by environment and release, inspect original stack frames, and triage regressions.</p>
-    <p *ngIf="error" role="alert">{{error}}</p>
-    <label>Project <select [(ngModel)]="project" (change)="offset=0; load()"><option value="">Choose project</option><option *ngFor="let p of projects" [value]="p.id">{{p.name}}</option></select></label>
-    <label>Release <input [(ngModel)]="release" placeholder="All releases"></label>
-    <label>Environment <input [(ngModel)]="environment" placeholder="All environments"></label>
-    <label>Status <select [(ngModel)]="status"><option value="">All</option><option>open</option><option>resolved</option><option>ignored</option></select></label>
-    <button (click)="offset=0; load()" [disabled]="busy || !project">Filter</button>
-    <p *ngIf="busy">Loading…</p>
-    <table><thead><tr><th>Issue</th><th>Status</th><th>Events</th><th>Last seen</th></tr></thead><tbody>
-    <tr *ngFor="let i of issues"><td><button (click)="open(i.id)">{{i.title}}</button><span class="regression" *ngIf="i.regression"> Regression</span><br>{{i.environment}} · {{i.latest_release}}</td><td>{{i.status}}</td><td>{{i.count}}</td><td>{{i.last_seen | date:'medium'}}</td></tr>
-    </tbody></table><p *ngIf="!busy && !issues.length">No issues for these filters.</p>
-    <button (click)="page(-1)" [disabled]="offset === 0">Previous</button><button (click)="page(1)" [disabled]="issues.length < 50">Next</button>
-    <section *ngIf="detail"><h2>{{detail.issue.title}}</h2>
-      <p>First seen {{detail.issue.first_seen | date:'medium'}} · Last seen {{detail.issue.last_seen | date:'medium'}}</p>
-      <p>Counts per release: {{detail.issue.release_counts | json}}</p>
-      <label>Assignee <select [(ngModel)]="assignee"><option value="">Unassigned</option><option *ngFor="let m of members" [value]="m.userId || m.user_id">{{m.user?.name || m.user?.email || m.userId || m.user_id}}</option></select></label><button (click)="triage(undefined)">Assign</button>
-      <button (click)="triage('open')">Reopen</button><button (click)="triage('resolved')">Resolve</button><button (click)="triage('ignored')">Ignore</button>
-      <article *ngFor="let e of detail.events"><h3>{{e.payload.type}} · {{e.payload.release}}</h3><p>{{e.payload.message}}</p><p>{{e.received_at | date:'medium'}} · Session {{e.payload.sessionId || '—'}} · User {{e.payload.userId || '—'}}</p>
-      <a *ngIf="e.payload.traceId" [href]="traceUrl(e.payload.traceId)">Trace {{e.payload.traceId}}</a>
-      <a *ngIf="e.payload.replayId" [routerLink]="['/projects', project, 'replays', e.payload.replayId]">Replay {{e.payload.replayId}}</a>
-      <h4>Original stack</h4><pre *ngFor="let f of e.symbolicated">{{f.function || '(anonymous)'}} at {{f.file}}:{{f.line}}:{{f.column}}</pre>
-      <details><summary>Raw stack</summary><pre>{{e.payload.frames | json}}</pre></details>
-      <h4>Breadcrumbs</h4><pre>{{e.payload.breadcrumbs || [] | json}}</pre></article>
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Errors</h1>
+        <p class="page-subtitle">Group exceptions by environment and release, inspect original stack frames, and triage regressions.</p>
+      </div>
+    </div>
+    <div *ngIf="error" class="card banner-error" role="alert">{{error}}</div>
+
+    <div class="card mb-4">
+      <div class="filters">
+        <div class="form-group"><label for="err-project">Project</label>
+          <select id="err-project" [(ngModel)]="project" (change)="offset=0; load()" data-testid="errors-project"><option value="">Choose project</option><option *ngFor="let p of projects" [value]="p.id">{{p.name}}</option></select></div>
+        <div class="form-group"><label for="err-release">Release</label><input id="err-release" [(ngModel)]="release" placeholder="All releases" [disabled]="!project"></div>
+        <div class="form-group"><label for="err-env">Environment</label><input id="err-env" [(ngModel)]="environment" placeholder="All environments" [disabled]="!project"></div>
+        <div class="form-group"><label for="err-status">Status</label>
+          <select id="err-status" [(ngModel)]="status" [disabled]="!project"><option value="">All</option><option>open</option><option>resolved</option><option>ignored</option></select></div>
+        <div><button class="btn btn-primary w-full" (click)="offset=0; load()" [disabled]="busy || !project">Filter</button></div>
+      </div>
+    </div>
+
+    <div *ngIf="!project" class="card empty-state" data-testid="errors-choose-project">
+      <strong>Choose a project</strong>
+      Error issues are grouped per project. Select one above to see its issues.
+    </div>
+
+    <div *ngIf="project" class="card mb-4">
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Issue</th><th>Status</th><th class="num">Events</th><th>Last seen</th></tr></thead>
+          <tbody>
+            <tr *ngFor="let i of issues">
+              <td><button class="issue-link" (click)="open(i.id)">{{i.title}}</button><span class="regression" *ngIf="i.regression">Regression</span>
+                <div class="issue-meta">{{i.environment}} · {{i.latest_release}}</div></td>
+              <td><span class="badge" [class.badge-failed]="i.status === 'open'" [class.badge-active]="i.status === 'resolved'" [class.badge-pending]="i.status === 'ignored'">{{i.status}}</span></td>
+              <td class="num">{{i.count}}</td>
+              <td class="whitespace-nowrap">{{i.last_seen | date:'medium'}}</td>
+            </tr>
+            <tr *ngIf="busy" class="empty-row"><td colspan="4">Loading…</td></tr>
+            <tr *ngIf="!busy && !issues.length" class="empty-row" data-testid="errors-empty"><td colspan="4">No issues for these filters.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button class="btn btn-sm" (click)="page(-1)" [disabled]="offset === 0">Previous</button>
+        <button class="btn btn-sm" (click)="page(1)" [disabled]="issues.length < 50">Next</button>
+      </div>
+    </div>
+
+    <section *ngIf="detail" class="card" data-testid="error-detail">
+      <h2>{{detail.issue.title}}</h2>
+      <p class="meta">First seen {{detail.issue.first_seen | date:'medium'}} · Last seen {{detail.issue.last_seen | date:'medium'}}</p>
+      <p class="meta">Counts per release:
+        <ng-container *ngFor="let rc of (detail.issue.release_counts || {}) | keyvalue; let last = last">{{rc.key}}: {{rc.value}}<ng-container *ngIf="!last">, </ng-container></ng-container>
+        <ng-container *ngIf="!(detail.issue.release_counts | keyvalue)?.length">—</ng-container>
+      </p>
+      <div class="triage">
+        <div class="form-group"><label for="err-assignee">Assignee</label>
+          <select id="err-assignee" [(ngModel)]="assignee"><option value="">Unassigned</option><option *ngFor="let m of members" [value]="m.userId || m.user_id">{{m.user?.name || m.user?.email || m.userId || m.user_id}}</option></select></div>
+        <button class="btn" (click)="triage(undefined)">Assign</button>
+        <button class="btn" (click)="triage('open')">Reopen</button>
+        <button class="btn" (click)="triage('resolved')">Resolve</button>
+        <button class="btn" (click)="triage('ignored')">Ignore</button>
+      </div>
+
+      <div *ngIf="!detail.events?.length" class="empty-state" data-testid="error-detail-no-events">
+        <strong>No stored events for this issue</strong>
+        Events may have expired under the retention policy.
+      </div>
+
+      <article class="event" *ngFor="let e of detail.events">
+        <h3>{{e.payload.type}} · {{e.payload.release}}</h3>
+        <p>{{e.payload.message}}</p>
+        <p class="meta">{{e.received_at | date:'medium'}} · Session {{e.payload.sessionId || '—'}} · User {{e.payload.userId || '—'}}</p>
+        <div class="event-links">
+          <a *ngIf="e.payload.traceId" [href]="traceUrl(e.payload.traceId)">Trace {{e.payload.traceId}}</a>
+          <a *ngIf="e.payload.replayId" [routerLink]="['/projects', project, 'replays', e.payload.replayId]">Replay {{e.payload.replayId}}</a>
+        </div>
+        <h4>Original stack</h4><pre *ngFor="let f of e.symbolicated">{{f.function || '(anonymous)'}} at {{f.file}}:{{f.line}}:{{f.column}}</pre>
+        <details><summary>Raw stack</summary><pre>{{e.payload.frames | json}}</pre></details>
+        <h4>Breadcrumbs</h4><pre>{{e.payload.breadcrumbs || [] | json}}</pre>
+      </article>
     </section>`,
 })
 export class ErrorsComponent implements OnInit {
@@ -50,7 +128,7 @@ export class ErrorsComponent implements OnInit {
   }
   base() { return '/api/projects/' + encodeURIComponent(this.project); }
   async load() {
-    if (!this.project) return;
+    if (!this.project) { this.issues = []; this.detail = null; return; }
     this.busy = true; this.error = ''; this.detail = null;
     try { this.issues = await firstValueFrom(this.http.get<any[]>(this.base() + '/errors', { params: { release: this.release, environment: this.environment, status: this.status, offset: this.offset } })); }
     catch { this.error = 'Could not load errors.'; } finally { this.busy = false; }

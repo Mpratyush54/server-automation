@@ -68,4 +68,20 @@ describe('HeaderComponent', () => {
     fixture.componentInstance.title = 'Projects';
     expect(fixture.componentInstance.title).toBe('Projects');
   });
+
+  it('shows a menu button only on mobile and emits toggleSidebar', () => {
+    const fixture = TestBed.createComponent(HeaderComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="nav-menu-button"]')).toBeNull();
+
+    fixture.componentRef.setInput('isMobile', true);
+    fixture.detectChanges();
+    const btn = el.querySelector('[data-testid="nav-menu-button"]') as HTMLButtonElement;
+    expect(btn).toBeTruthy();
+    const spy = jasmine.createSpy('toggle');
+    fixture.componentInstance.toggleSidebar.subscribe(spy);
+    btn.click();
+    expect(spy).toHaveBeenCalled();
+  });
 });

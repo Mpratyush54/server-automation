@@ -1,4 +1,4 @@
-import { buildWaterfall, chartPaths, flameRects, fmtDuration, fmtMs, fmtPct, fmtRate, isProjectTab, isSince, layoutGraph, nsToDate, rangeNotice, Span } from './observability-api';
+import { buildWaterfall, chartPaths, flameRects, fmtDuration, fmtMs, fmtPct, fmtRate, humanizeStatus, isProjectTab, isSince, layoutGraph, nsToDate, rangeNotice, Span } from './observability-api';
 
 describe('range clamp notice (#48)', () => {
   it('formats durations', () => {
@@ -94,5 +94,13 @@ describe('observability helpers (#48)', () => {
     expect(isProjectTab('evil')).toBeFalse();
     expect(isSince('7d')).toBeTrue();
     expect(isSince('100y')).toBeFalse();
+  });
+
+  it('humanizes status enums', () => {
+    expect(humanizeStatus('major_outage')).toBe('Major outage');
+    expect(humanizeStatus('operational')).toBe('Operational');
+    expect(humanizeStatus('partial-outage')).toBe('Partial outage');
+    expect(humanizeStatus(null)).toBe('');
+    expect(humanizeStatus('')).toBe('');
   });
 });

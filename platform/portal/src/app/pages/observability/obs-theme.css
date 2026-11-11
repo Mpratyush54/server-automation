@@ -1,7 +1,8 @@
 /*
- * Observability theme tokens (#48). Dark by default (the portal theme); light
- * when the OS prefers it or the document opts in with data-theme="light".
- * Components use only these tokens, so every view renders in both themes.
+ * Observability theme tokens (#48). The portal shell is dark-only, so these
+ * tokens are too: switching them to light under prefers-color-scheme left
+ * dark text on the black shell. Components use only these tokens, so a future
+ * portal-wide light theme only has to override them in one place.
  */
 :host {
   --obs-bg: var(--bg-canvas, #000);
@@ -29,48 +30,6 @@
   font-size: 0.9rem;
 }
 
-@media (prefers-color-scheme: light) {
-  :host {
-    --obs-bg: #ffffff;
-    --obs-surface: #fafafa;
-    --obs-elevated: #f4f4f5;
-    --obs-border: #d4d4d8;
-    --obs-text: #18181b;
-    --obs-muted: #52525b;
-    --obs-faint: #71717a;
-    --obs-ok: #15803d;
-    --obs-warn: #b45309;
-    --obs-bad: #dc2626;
-    --obs-accent: #2563eb;
-    --obs-series-1: #2563eb;
-    --obs-series-2: #dc2626;
-    --obs-series-3: #b45309;
-    --obs-series-4: #7e22ce;
-    --obs-marker: #52525b;
-    --obs-grid: rgba(0, 0, 0, 0.08);
-    --obs-hover: rgba(0, 0, 0, 0.04);
-    --obs-code-bg: #f4f4f5;
-  }
-}
-
-:host-context([data-theme='light']) {
-  --obs-bg: #ffffff;
-  --obs-surface: #fafafa;
-  --obs-elevated: #f4f4f5;
-  --obs-border: #d4d4d8;
-  --obs-text: #18181b;
-  --obs-muted: #52525b;
-  --obs-ok: #15803d;
-  --obs-warn: #b45309;
-  --obs-bad: #dc2626;
-  --obs-accent: #2563eb;
-  --obs-series-1: #2563eb;
-  --obs-series-2: #dc2626;
-  --obs-grid: rgba(0, 0, 0, 0.08);
-  --obs-hover: rgba(0, 0, 0, 0.04);
-  --obs-code-bg: #f4f4f5;
-}
-
 .obs-card { background: var(--obs-surface); border: 1px solid var(--obs-border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
 .obs-card h2, .obs-card h3 { margin: 0 0 12px; font-size: 1rem; font-weight: 600; }
 .obs-muted { color: var(--obs-muted); }
@@ -86,7 +45,7 @@
 .obs-table td { padding: 8px; border-bottom: 1px solid var(--obs-border); vertical-align: top; }
 .obs-table tr.clickable { cursor: pointer; }
 .obs-table tr.clickable:hover, .obs-table tr.selected { background: var(--obs-hover); }
-.obs-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.obs-num, .obs-table th.obs-num, .obs-table td.obs-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .obs-input, .obs-select { background: var(--obs-elevated); color: var(--obs-text); border: 1px solid var(--obs-border); border-radius: 6px; padding: 6px 8px; font: inherit; }
 .obs-input.code, textarea.obs-input { font-family: var(--font-code, ui-monospace, monospace); font-size: 0.82rem; }
 .obs-btn { background: transparent; color: var(--obs-text); border: 1px solid var(--obs-border); border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }

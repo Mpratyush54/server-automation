@@ -1,5 +1,4 @@
-.synth-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
-.synth-head h1 { margin: 4px 0; }
+.synth-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
 .back { font-size: 0.9em; }
 .muted { color: var(--text-muted, #888); }
 .head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -17,8 +16,9 @@ fieldset { border: 1px solid var(--border, #3334); border-radius: 6px; padding: 
 .secret-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
 .struck { text-decoration: line-through; opacity: 0.6; }
 .actions { display: flex; gap: 8px; margin-top: 12px; }
-.layout { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr; gap: 16px; }
-@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+.layout { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr); gap: 16px; }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.layout > * { min-width: 0; }
 .list ul { list-style: none; padding: 0; margin: 0; }
 .list li { padding: 6px 4px; border-bottom: 1px solid var(--border, #3332); }
 .list li.active { background: var(--hover, rgba(127, 127, 127, 0.08)); }
@@ -32,11 +32,14 @@ fieldset { border: 1px solid var(--border, #3334); border-radius: 6px; padding: 
 .st-warn { color: #d97706; }
 .st-bad { color: #dc2626; }
 .st-unknown { color: #9ca3af; }
-.detail-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
-.err { color: #dc2626; font-size: 0.88em; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
-.timeline { display: flex; align-items: flex-end; gap: 2px; height: 80px; padding: 4px 0; border-bottom: 1px solid var(--border, #3334); }
+.detail-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.err { color: #dc2626; font-size: 0.88em; margin-top: 4px; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+.timeline { display: flex; align-items: flex-end; gap: 2px; height: 80px; padding: 4px 0; border-bottom: 1px solid var(--border, #3334); max-width: 100%; overflow-x: auto; overflow-y: hidden; }
+/* 60 bars must fit (or scroll) inside the card on phones, never widen the page. */
+@media (max-width: 640px) { .timeline { gap: 1px; } .timeline .bar { min-width: 2px; } }
 .timeline .bar { flex: 1 1 0; min-width: 3px; max-width: 14px; border: 0; padding: 0; cursor: pointer; background: currentColor; border-radius: 2px 2px 0 0; opacity: 0.85; }
 .timeline .bar:hover, .timeline .bar:focus-visible { opacity: 1; outline: 2px solid currentColor; outline-offset: 1px; }
 .result table { width: 100%; margin-top: 8px; font-size: 0.88em; }
+.result { overflow-x: auto; }
 .result figure { margin: 12px 0 0; }
 .result img { max-width: 100%; border: 1px solid var(--border, #3334); border-radius: 4px; }

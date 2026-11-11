@@ -1,5 +1,4 @@
 :host { display: block; }
-.hm-head h1 { margin: 4px 0; }
 .back { font-size: 0.9em; }
 .muted { color: var(--text-muted, #888); }
 .hint { font-size: 0.82em; color: var(--text-muted, #888); margin: 4px 0 8px; }
