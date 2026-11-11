@@ -4,6 +4,7 @@ import {
 } from './synthetic-assertions';
 import { decryptValue, encryptValue } from './secrets-encryption';
 import { validateUrlSyntax, SsrfError } from './synthetic-ssrf';
+import { browserNextRun } from './synthetic-cron';
 import type { SyntheticAlertPolicy, SyntheticCheck, SyntheticCheckType } from '../entities/SyntheticCheck';
 
 /**
@@ -368,10 +369,21 @@ export function secretNames(encrypted: string | null): string[] {
   }
 }
 
-/** API view of a check: no encrypted blob, only secret names. */
-export function publicCheck(check: SyntheticCheck): Record<string, any> {
+/**
+ * API view of a check: no encrypted blob, only secret names. Browser checks run from
+ * their CronJob, so their nextRunAt is the CronJob's next scheduled time (UTC), not the
+ * in-API scheduler's (unused) next_run_at.
+ */
+export function publicCheck(check: SyntheticCheck, now = new Date()): Record<string, any> {
   const { secretsEncrypted, ...rest } = check;
-  return { ...rest, alertPolicy: normaliseAlertPolicy(check.alertPolicy), locations: check.locations?.length ? check.locations : ['local'], secretNames: secretNames(secretsEncrypted) };
+  const nextRunAt = check.type === 'browser' ? browserNextRun(check, now) : check.nextRunAt;
+  return {
+    ...rest,
+    nextRunAt,
+    alertPolicy: normaliseAlertPolicy(check.alertPolicy),
+    locations: check.locations?.length ? check.locations : ['local'],
+    secretNames: secretNames(secretsEncrypted),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -398,7 +410,8 @@ export function verifyRunnerToken(checkId: string, token: string, key?: string):
 /**
  * Ingress hosts that belong to the project: the hosts of its active environments. These
  * (and only these) may resolve to a private address (see synthetic-ssrf). The platform's
- * own DOMAIN is never treated as a project host.
+ * own DOMAIN is not listed here: it and its subdomains are platform hosts, always
+ * connected through the ingress controller Service (synthetic-ssrf, #152).
  */
 export function projectIngressHosts(environments: Array<{ domain?: string | null; isActive?: boolean }>, platformDomain = process.env.DOMAIN || ''): string[] {
   const hosts = new Set<string>();

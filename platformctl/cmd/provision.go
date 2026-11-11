@@ -150,6 +150,9 @@ func runProvision() error {
 		return err
 	}
 	defer unlock()
+	if err := state.ReconcileHardening(); err != nil {
+		return err
+	}
 	started := time.Now()
 	state.ResetTimings()
 
@@ -175,6 +178,8 @@ func runProvision() error {
 	} else {
 		color.Yellow("  · non-interactive (--auto): using /etc/platform/.env and environment\n")
 	}
+
+	confirmHardening(os.Stdin, os.Stdout, !cfg.NonInteractive)
 
 	cfg.GenerateSecrets()
 	if cfg.PasswordGenerated {

@@ -23,6 +23,7 @@ import { In } from 'typeorm';
 import * as k8s from '@kubernetes/client-node';
 import { v4 as uuidv4 } from 'uuid';
 import { loadKubeConfig } from '../lib/kube-config';
+import { requestTelemetryOriginsSync } from '../lib/telemetry-origins';
 
 const router = Router();
 
@@ -116,6 +117,7 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
       where: { id: saved.id },
       relations: ['environments', 'deployments'],
     });
+    requestTelemetryOriginsSync(); // environment hosts are browser origins
     return res.status(201).json(withRelations || saved);
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
@@ -196,6 +198,7 @@ router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
       ip: req.ip,
     });
 
+    requestTelemetryOriginsSync(); // the domain may have changed
     const fresh = await repo.findOne({ where: { id: updated.id }, relations: ['environments', 'deployments'] });
     return res.json(fresh || updated);
   } catch (err: any) {
@@ -227,6 +230,7 @@ router.delete('/projects/:id', expressAuthenticate, expressRequireRole([UserRole
       ip: req.ip,
     });
 
+    requestTelemetryOriginsSync();
     return res.json({ message: 'Project soft-deleted' });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
@@ -309,7 +313,8 @@ router.post('/projects/:projectId/tokens', expressAuthenticate, expressRequireRo
   }
 });
 
-router.delete('/projects/:projectId/tokens/:tokenId', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+// Same platform roles as token creation: whoever can mint an SDK token can revoke it.
+router.delete('/projects/:projectId/tokens/:tokenId', expressAuthenticate, expressRequireRole([UserRole.DEVOPS, UserRole.TECH_LEAD]), async (req: Request, res: Response) => {
   try {
     const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.projectId, ProjectAccessRole.DEVOPS);
     if (access.ok === false) return res.status(access.status).json({ error: access.error });
@@ -394,16 +399,29 @@ router.get('/projects/:projectId/git/branches', expressAuthenticate, async (req:
     const ds = await getDb();
     const project = await ds.getRepository(Project).findOne({ where: { id: req.params.projectId } });
     if (!project) return res.status(404).json({ error: 'Project not found' });
-    if (!project.repositoryUrl) {
-      return res.status(400).json({ error: 'Project has no repositoryUrl — set a GitHub/GitLab URL first' });
+    // #155: projects without a repo must not hit the provider (anonymous rate limits → 400).
+    const repositoryUrl = (project.repositoryUrl || '').trim();
+    if (!repositoryUrl) {
+      return res.json({
+        repositoryUrl: null,
+        defaultBranch: project.defaultBranch || 'HEAD',
+        branches: [],
+        provider: null,
+        ownerRepo: null,
+      });
     }
-    const data = await fetchRepoBranches(project.repositoryUrl);
+    const data = await fetchRepoBranches(repositoryUrl);
     return res.json({
-      repositoryUrl: project.repositoryUrl,
+      repositoryUrl,
       ...data,
     });
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    const msg = String(err?.message || err);
+    if (/rate.?limit/i.test(msg)) {
+      res.setHeader('Retry-After', '60');
+      return res.status(429).json({ error: msg });
+    }
+    return res.status(400).json({ error: msg });
   }
 });
 

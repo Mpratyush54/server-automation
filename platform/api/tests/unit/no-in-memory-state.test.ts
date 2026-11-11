@@ -34,6 +34,9 @@ const ALLOWED: Record<string, string> = {
   'lib/github-app.ts': 'test double (Redis in deployments)',
   // Pure graph builder: call-scoped node/edge indexes for one topology response (#31).
   'lib/topology.ts': 'request-scoped',
+  // Public status-page payload cache used only when Redis is not the state backend
+  // (memory mode, single replica); bounded, TTL'd (#46).
+  'lib/status-page.ts': 'memory-mode fallback (Redis in deployments)',
 };
 
 function walk(dir: string): string[] {

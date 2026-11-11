@@ -20,7 +20,10 @@ import {
   parseRetentionPatch,
   parseScrubRulesPatch,
   publicPrivacySettings,
+  applyRetentionPatch,
+  defaultRetentionDays,
 } from '../lib/privacy-settings';
+import { requestLokiRetentionReconcile } from '../lib/loki-retention';
 import {
   isReplayAllowed,
   normalizeSubjectId,
@@ -28,7 +31,7 @@ import {
   upsertConsent,
 } from '../lib/privacy-consent';
 import { runGdprDelete } from '../lib/gdpr-delete';
-import { DEFAULT_CONSENT, DEFAULT_RETENTION_DAYS } from '../entities/TelemetryPrivacySettings';
+import { DEFAULT_CONSENT } from '../entities/TelemetryPrivacySettings';
 
 const router = Router();
 
@@ -43,7 +46,8 @@ const safe = (handler: RequestHandler): RequestHandler => (req, res, next) => {
 /** GET /api/privacy/defaults — cluster-wide defaults (no auth; public catalogue). */
 router.get('/privacy/defaults', (_req, res) => {
   res.json({
-    retentionDays: { ...DEFAULT_RETENTION_DAYS },
+    retentionDays: defaultRetentionDays(),
+    retentionScope: { logs: 'project', replays: 'project', errors: 'project', traces: 'cluster', profiles: 'cluster' },
     consent: { ...DEFAULT_CONSENT },
     builtinScrubRules: builtinRulesPublic(true),
     replayObjectPrefix: 'replays/{projectId}/{sessionId}/ (bucket replays; user deletes resolve sessions via replay_sessions)',
@@ -95,7 +99,8 @@ router.put('/projects/:projectId/privacy/retention', expressAuthenticate, safe(a
   if (parsed.ok === false) return res.status(400).json({ error: parsed.error });
   const ds = await getDb();
   const settings = await getOrCreatePrivacySettings(ds, req.params.projectId);
-  settings.retentionDays = { ...(settings.retentionDays || {}), ...parsed.value };
+  const previousLogs = settings.retentionDays?.logs ?? null;
+  settings.retentionDays = applyRetentionPatch(settings.retentionDays, parsed.value);
   settings.updatedById = (req as AuthenticatedRequest).user?.id || null;
   const saved = await ds.getRepository(TelemetryPrivacySettings).save(settings);
   await logAudit({
@@ -106,6 +111,9 @@ router.put('/projects/:projectId/privacy/retention', expressAuthenticate, safe(a
     metadata: { retentionDays: saved.retentionDays },
     ip: req.ip,
   });
+  // Per-project logs retention is enforced by Loki: push the change now (best effort;
+  // the periodic reconcile retries).
+  if ((saved.retentionDays?.logs ?? null) !== previousLogs) requestLokiRetentionReconcile();
   return res.json(publicPrivacySettings(saved));
 }));
 

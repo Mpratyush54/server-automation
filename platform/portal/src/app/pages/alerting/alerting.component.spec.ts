@@ -4,6 +4,7 @@ import { of } from 'rxjs';
 import { AlertingComponent } from './alerting.component';
 import { AlertingApiService } from './alerting-api.service';
 import { ApiService } from '../../services/api.service';
+import { AuthService } from '../../services/auth.service';
 
 describe('AlertingComponent', () => {
   let alerting: jasmine.SpyObj<AlertingApiService>;
@@ -47,5 +48,34 @@ describe('AlertingComponent', () => {
     c.newChannel = { type: 'slack', name: 'ops', minSeverity: 'warning', fields: { webhookUrl: 'https://hooks.example.test/x', channel: '' } };
     await c.createChannel();
     expect(alerting.create).toHaveBeenCalledWith('p1', 'channels', { name: 'ops', type: 'slack', minSeverity: 'warning', secrets: { webhookUrl: 'https://hooks.example.test/x' }, config: {} });
+  });
+
+  async function render(platformOps: boolean) {
+    TestBed.overrideProvider(AuthService, { useValue: { canManageUsers: () => platformOps } });
+    const fixture = TestBed.createComponent(AlertingComponent);
+    const c = fixture.componentInstance;
+    fixture.detectChanges(); // runs ngOnInit
+    await fixture.whenStable();
+    c.projectId = 'p1';
+    c.tab = 'monitors';
+    fixture.detectChanges();
+    const kinds = Array.from(fixture.nativeElement.querySelectorAll('select option') as NodeListOf<HTMLOptionElement>).map((o) => o.value);
+    return { c, kinds };
+  }
+
+  it('offers raw PromQL/LogQL monitors only to platform admin/devops (#151)', async () => {
+    const member = await render(false);
+    expect(member.c.newMonitor.kind).toBe('trace');
+    expect(member.kinds).toContain('trace');
+    expect(member.kinds).toContain('resource');
+    expect(member.kinds).not.toContain('metric');
+    expect(member.kinds).not.toContain('log');
+  });
+
+  it('platform admin/devops still see metric and log monitors (#151)', async () => {
+    const ops = await render(true);
+    expect(ops.c.newMonitor.kind).toBe('metric');
+    expect(ops.kinds).toContain('metric');
+    expect(ops.kinds).toContain('log');
   });
 });

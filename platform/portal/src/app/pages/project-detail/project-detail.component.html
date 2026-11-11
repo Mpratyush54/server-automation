@@ -67,6 +67,7 @@
   <button class="btn btn-sm" [class.btn-primary]="activeTab === 'databases'" (click)="switchTab('databases')">🗄️ Databases</button>
   <a class="btn btn-sm" [routerLink]="['/projects', project?.id, 'synthetics']">🩺 Synthetics</a>
   <a class="btn btn-sm" [routerLink]="['/projects', project?.id, 'replays']">▶ Replays</a>
+  <a class="btn btn-sm" [routerLink]="['/projects', project?.id, 'status']">📡 Status page</a>
 </div>
 
 <!-- DEPLOYMENTS TAB -->

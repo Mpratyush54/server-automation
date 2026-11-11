@@ -114,6 +114,29 @@ The profile also sets the Platform API replica count: `1` on `minimal`, `2` othe
 (rolling updates with `maxUnavailable: 0` and a PodDisruptionBudget). Override it with
 `API_REPLICAS=<1-10>`; see [Scaling](../deployment/scaling.md#api-replicas-shared-state-and-zero-downtime-deploys).
 
+## Ingress per-IP limits
+
+These limits cover all ingress traffic, including customer applications, per
+client IP and controller replica. Defaults accommodate office and carrier NAT:
+
+| Environment variable | Default | Allowed values |
+|---|---|---|
+| `INGRESS_IP_RATE_LIMIT` | `1000` requests/second | `0` or `1-1000000` |
+| `INGRESS_IP_BURST` | `2000` requests | `0` or `1-1000000` |
+| `INGRESS_IP_CONNECTIONS` | `2000` concurrent connections | `0` or `1-65535` |
+
+Invalid values warn and use defaults. Zero rate or connections disables that
+limiter and omits its directives. Zero burst removes the burst allowance while
+keeping the request rate limit active; burst is ignored when rate is zero.
+
+```bash
+sudo INGRESS_IP_RATE_LIMIT=5000 INGRESS_IP_BURST=10000 INGRESS_IP_CONNECTIONS=4000 platformctl install ingress-nginx
+```
+
+Values are saved in `/etc/platform/.env` and re-applied by subsequent
+`platformctl install ingress-nginx` runs. You can also edit the saved file;
+process environment variables take precedence. See [Host hardening](../host-hardening.md#ingress-defaults-and-optional-waf).
+
 ## Offline bundle
 
 Releases include `platform-bundle-<version>-<arch>.tar.zst` and a `.sha256` file:

@@ -17,6 +17,7 @@ tags:
   - name: Settings
   - name: Notifications
   - name: Synthetics
+  - name: StatusPages
   - name: Privacy
   - name: Telemetry
 paths:
@@ -481,6 +482,31 @@ paths:
                         example: ok
         '503':
           description: PostgreSQL unavailable, or draining
+  /health/schema:
+    get:
+      tags: [Health]
+      summary: Schema check (every table, column, index and constraint the entities need exists)
+      description: |
+        Used by the platformctl upgrade health gate, not by Kubernetes probes. 503 `drift` means objects
+        are missing (for example an older API that synchronized its schema on boot dropped them after a
+        rollback); run the platform-api migrations. Reports a count only. Cached for 30 seconds.
+      security: []
+      responses:
+        '200':
+          description: Schema complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  missing:
+                    type: integer
+                    example: 0
+        '503':
+          description: Objects missing (`drift`), or the check could not run (`unavailable`)
   /telemetry/ingest-auth:
     get:
       tags: [Telemetry]
@@ -1488,6 +1514,115 @@ paths:
         - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
         '200': { description: Status feed }
+  /projects/{projectId}/status-page:
+    get:
+      tags: [StatusPages]
+      summary: Get the project's status page settings (#46)
+      description: Read-only. Before the first save it returns unsaved defaults (id null); the row is created on the first PUT or incident.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Status page settings (slug, published, branding, componentIds) }
+    put:
+      tags: [StatusPages]
+      summary: Update status page settings (devops+)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                slug: { type: string }
+                title: { type: string }
+                domain: { type: string, nullable: true }
+                published: { type: boolean }
+                componentIds: { type: array, items: { type: string, format: uuid }, nullable: true }
+                branding:
+                  type: object
+                  properties:
+                    logoUrl: { type: string, nullable: true }
+                    primaryColor: { type: string, nullable: true }
+                    accentColor: { type: string, nullable: true }
+      responses:
+        '200': { description: Updated settings }
+        '400': { description: Validation error }
+        '409': { description: Slug or domain already in use by another status page }
+  /projects/{projectId}/status-page/incidents:
+    get:
+      tags: [StatusPages]
+      summary: List status-page incidents
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: '{ incidents }' }
+    post:
+      tags: [StatusPages]
+      summary: Create an incident or maintenance note
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Created incident }
+  /projects/{projectId}/status-page/incidents/{id}/updates:
+    post:
+      tags: [StatusPages]
+      summary: Append an incident update
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Updated incident }
+  /projects/{projectId}/status-page/incidents/{id}:
+    delete:
+      tags: [StatusPages]
+      summary: Delete an incident
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Deleted }
+  /public/status/{slug}:
+    get:
+      tags: [StatusPages]
+      summary: Public published status page (no auth, cached)
+      description: |
+        Built only from #42's status feed plus published incidents. Exposes
+        { slug, title, branding, generatedAt, status, components, incidents }.
+        Each incident carries `phase` (upcoming | active | resolved); maintenance
+        is active only between scheduledStart and scheduledEnd and reported as
+        resolved after scheduledEnd if nobody resolved it.
+        Never includes URLs, hosts, errors, assertion details or secret names.
+      security: []
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Public status payload }
+        '404': { description: Not published or unknown slug }
+  /public/status/{slug}/atom:
+    get:
+      tags: [StatusPages]
+      summary: Atom feed of status-page incidents
+      security: []
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: application/atom+xml }
+  /public/status/{slug}/rss:
+    get:
+      tags: [StatusPages]
+      summary: RSS feed of status-page incidents
+      security: []
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: application/rss+xml }
   /synthetics/capabilities:
     get:
       tags: [Synthetics]

@@ -253,3 +253,53 @@ func TestOversizedBodyRejected(t *testing.T) {
 		t.Fatalf("status %d upstream %d", resp.StatusCode, c.n)
 	}
 }
+
+func TestIdentityLabelSpellingVariantsAreDropped(t *testing.T) {
+	id := Identity{Project: "proj-a", Environment: "production"}
+	variants := []string{
+		"platform.project_id", "Platform_Project_Id", "PLATFORM_PROJECT_ID", "platform-project-id",
+		"deployment.environment", "Deployment_Environment", "service.name", "Service_Name",
+		"platform.service", "app.name", "__name__", "_.tenant",
+	}
+	for _, k := range variants {
+		got, err := RewriteName("api{"+k+"=proj-b,"+k+"=proj-b,team=x}", id)
+		if err != nil {
+			t.Fatalf("%s: %v", k, err)
+		}
+		l := parseLabelSet(got)
+		if _, kept := l[k]; kept && k != "__name__" {
+			t.Fatalf("%s kept: %q", k, got)
+		}
+		if l["platform_project_id"] != "proj-a" || l["deployment_environment"] != "production" || l["service_name"] != "proj-a/api" || l["team"] != "x" {
+			t.Fatalf("%s: %q", k, got)
+		}
+		for name, v := range l {
+			if v == "proj-b" {
+				t.Fatalf("%s: other project value stored under %s: %q", k, name, got)
+			}
+		}
+	}
+}
+
+func TestOnlyFormatsWithoutSideLabelsAreForwarded(t *testing.T) {
+	srv, c := newProxy(t)
+	for _, f := range []string{"jfr", "JFR", "speedscope", "otlp", "pprof,jfr"} {
+		if resp := post(t, srv, "/ingest?name=app&format="+url.QueryEscape(f), authA); resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("format %q: status %d", f, resp.StatusCode)
+		}
+	}
+	if resp := post(t, srv, "/ingest?name=app&format=jfr&format=pprof", authA); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("duplicate format: status %d", resp.StatusCode)
+	}
+	if c.n != 0 {
+		t.Fatalf("refused format reached upstream %d times", c.n)
+	}
+	for _, f := range []string{"pprof", "folded", "lines", "trie", "tree"} {
+		if resp := post(t, srv, "/ingest?name=app&format="+f, authA); resp.StatusCode != 200 || c.query.Get("format") != f {
+			t.Fatalf("format %q: status %d, upstream %v", f, resp.StatusCode, c.query)
+		}
+	}
+	if resp := post(t, srv, "/ingest?name=app", authA); resp.StatusCode != 200 || c.query.Has("format") {
+		t.Fatalf("no format: status %d, upstream %v", resp.StatusCode, c.query)
+	}
+}

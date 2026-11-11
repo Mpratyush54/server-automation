@@ -219,6 +219,10 @@ type Hooks struct {
 	RollbackChart func(Chart) error
 	Health        func() error
 	Save          func(Record) error
+	// Commit persists the new release in the host configuration once the
+	// health gate passed (optional). It must be atomic: when it fails nothing
+	// was written, and the upgrade is rolled back like any other failure.
+	Commit func() error
 }
 
 func Apply(r Record, h Hooks) (err error) {
@@ -284,6 +288,11 @@ func Apply(r Record, h Hooks) (err error) {
 	}
 	if err = h.Health(); err != nil {
 		return fmt.Errorf("health gate: %w", err)
+	}
+	if h.Commit != nil {
+		if err = h.Commit(); err != nil {
+			return fmt.Errorf("persist upgraded configuration: %w", err)
+		}
 	}
 	r.Status = "succeeded"
 	return nil

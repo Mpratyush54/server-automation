@@ -4,6 +4,8 @@ import { ProjectAccessRole } from '../entities/ProjectMember';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { SmtpConfig } from '../entities/SmtpConfig';
+import { publicSmtpConfig } from '../lib/smtp-secrets';
+import { parseSmtpConfigInput, SmtpInputError } from '../lib/smtp-input';
 import { StorageProvider } from '../entities/StorageProvider';
 import { Project } from '../entities/Project';
 import { User, UserRole } from '../entities/User';
@@ -34,20 +36,23 @@ router.get('/settings/smtp', expressAuthenticate, expressRequireRole([UserRole.D
   try {
     const ds = await getDb();
     const configs = await ds.getRepository(SmtpConfig).find();
-    return res.json(configs.map(c => ({ ...c, password: c.password ? '***' : null, apiKey: c.apiKey ? '***' : null })));
+    return res.json(configs.map(publicSmtpConfig));
   } catch (err: any) { return res.status(400).json({ error: err.message }); }
 });
 
 router.post('/settings/smtp', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+  let input;
   try {
-    if (!req.body?.name) return res.status(400).json({ error: 'name is required' });
-    if (!req.body?.fromEmail) return res.status(400).json({ error: 'fromEmail is required' });
+    input = parseSmtpConfigInput(req.body);
+  } catch (err: any) {
+    return res.status(400).json({ error: err instanceof SmtpInputError ? err.message : 'invalid SMTP configuration' });
+  }
+  try {
     const ds = await getDb();
     const repo = ds.getRepository(SmtpConfig);
-    if (req.body.isDefault) await repo.update({ isDefault: true }, { isDefault: false });
-    const config = repo.create(req.body);
-    const saved = (await repo.save(config)) as unknown as SmtpConfig;
-    return res.status(201).json({ ...saved, password: saved.password ? '***' : null, apiKey: saved.apiKey ? '***' : null });
+    if (input.isDefault) await repo.update({ isDefault: true }, { isDefault: false });
+    const saved = await repo.save(repo.create(input as Partial<SmtpConfig>));
+    return res.status(201).json(publicSmtpConfig(saved));
   } catch (err: any) { return res.status(400).json({ error: err.message }); }
 });
 
