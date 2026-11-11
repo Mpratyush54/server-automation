@@ -9,7 +9,7 @@ import { recordRun } from './synthetic-metrics';
 import { runCheck, RunDeps, RunOutcome } from './synthetic-runner';
 import { registerLeaderJob } from './scheduler';
 import { getUploadStore } from './upload-store';
-import { reconcileSyntheticResources } from './synthetic-k8s';
+import { browserJobDeadlineSeconds, browserRuntime, lastBrowserJobFailure, reconcileSyntheticResources } from './synthetic-k8s';
 
 /**
  * Scheduling, result recording and alerting for synthetic checks (#42).
@@ -18,7 +18,11 @@ import { reconcileSyntheticResources } from './synthetic-k8s';
  * due checks every SYNTHETICS_TICK_MS, claims each one by moving next_run_at forward with
  * a conditional UPDATE (so a leader hand-over cannot run a check twice), and runs up to
  * SYNTHETICS_CONCURRENCY at once. Browser checks are not run here: their CronJobs report
- * through the runner API, which calls the same recordResult().
+ * through the runner API, which calls the same recordResult(). A browser check whose
+ * runner never reports (image pull failure, OOM, deadline, quota) is caught by the
+ * `synthetics-browser-staleness` job: no result for max(2 x interval, interval + job
+ * deadline) records a failed result ("runner did not report") that counts towards
+ * consecutive failures and alerts like any other failure.
  *
  * Alerting (`synthetics` events, dedupeKey `synthetic:<checkId>`):
  *   fail      → after alertPolicy.failureThreshold consecutive failures: firing (policy severity)
@@ -30,6 +34,7 @@ import { reconcileSyntheticResources } from './synthetic-k8s';
 export const SYNTHETICS_JOB = 'synthetics-runner';
 export const SYNTHETICS_RETENTION_JOB = 'synthetics-retention';
 export const SYNTHETICS_RECONCILE_JOB = 'synthetics-reconcile';
+export const SYNTHETICS_STALENESS_JOB = 'synthetics-browser-staleness';
 
 export function syntheticsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return String(env.SYNTHETICS || '').toLowerCase() !== 'off';
@@ -123,6 +128,8 @@ export interface SyntheticStore {
   listExpiredScreenshots(before: Date, limit: number): Promise<Array<{ id: string; screenshotKey: string }>>;
   /** Delete these result rows (their screenshots are already gone). */
   deleteResults(ids: string[]): Promise<void>;
+  /** Enabled browser checks (staleness detection). */
+  listEnabledBrowserChecks(limit: number): Promise<SyntheticCheck[]>;
 }
 
 export class TypeormSyntheticStore implements SyntheticStore {
@@ -177,6 +184,11 @@ export class TypeormSyntheticStore implements SyntheticStore {
       take: limit,
     });
     return rows.map((r) => ({ id: r.id, screenshotKey: r.screenshotKey! }));
+  }
+
+  async listEnabledBrowserChecks(limit: number): Promise<SyntheticCheck[]> {
+    const { checks } = await this.repos();
+    return checks.find({ where: { enabled: true, type: 'browser' } as any, take: limit });
   }
 
   async deleteResults(ids: string[]): Promise<void> {
@@ -288,6 +300,66 @@ export async function runDueChecks(deps: TickDeps = {}): Promise<number> {
   return claimed.length;
 }
 
+// ---------------------------------------------------------------------------
+// Browser checks that stop reporting
+// ---------------------------------------------------------------------------
+
+/** How long a browser check may go without a result: max(2 x interval, interval + job deadline). */
+export function browserStaleAfterMs(check: Pick<SyntheticCheck, 'intervalSeconds' | 'timeoutMs'>): number {
+  const interval = check.intervalSeconds * 1000;
+  return Math.max(2 * interval, interval + browserJobDeadlineSeconds(check.timeoutMs) * 1000);
+}
+
+/**
+ * Whether an enabled browser check is overdue. Measured from its last result, or from its
+ * last change (creation, edit, re-enable) when that is more recent, so a new or re-enabled
+ * check gets a full window before it is declared stale.
+ */
+export function browserCheckStale(
+  check: Pick<SyntheticCheck, 'type' | 'enabled' | 'intervalSeconds' | 'timeoutMs' | 'lastRunAt' | 'updatedAt' | 'createdAt'>,
+  now: number,
+): boolean {
+  if (check.type !== 'browser' || !check.enabled) return false;
+  const t = (d: Date | null | undefined) => (d ? new Date(d).getTime() : 0);
+  const since = Math.max(t(check.lastRunAt), t(check.updatedAt), t(check.createdAt));
+  return since > 0 && now - since > browserStaleAfterMs(check);
+}
+
+export interface StalenessDeps {
+  store?: SyntheticStore;
+  now?: () => Date;
+  publish?: (e: AlertEvent) => Promise<void>;
+  /** Why the latest runner Job failed (Kubernetes, best effort). */
+  jobFailure?: (checkId: string) => Promise<string | null>;
+  /** Whether browser checks are enabled on this cluster. */
+  runtimeEnabled?: () => Promise<boolean>;
+}
+
+/** Record a failed result for every overdue browser check. Returns how many were recorded. */
+export async function detectStaleBrowserChecks(deps: StalenessDeps = {}): Promise<number> {
+  const store = deps.store || syntheticStore();
+  const now = (deps.now || (() => new Date()))();
+  const stale = (await store.listEnabledBrowserChecks(5000)).filter((c) => browserCheckStale(c, now.getTime()));
+  if (stale.length === 0) return 0;
+  const enabled = await (deps.runtimeEnabled || (async () => (await browserRuntime()).enabled))().catch(() => true);
+  let recorded = 0;
+  for (const check of stale) {
+    let detail: string | null = enabled ? null : 'browser checks are not enabled on this cluster';
+    if (!detail) detail = await (deps.jobFailure || lastBrowserJobFailure)(check.id).catch(() => null);
+    const minutes = Math.round(browserStaleAfterMs(check) / 60_000);
+    const error = `Runner did not report a result within ${minutes} minutes${detail ? ` (${detail})` : ''}`.slice(0, 500);
+    try {
+      await recordResult(store, check, {
+        status: 'fail', latencyMs: null, statusCode: null, error, assertions: null, steps: null, sslExpiresAt: null, sslDaysRemaining: null,
+      }, { startedAt: now, publish: deps.publish });
+      recorded++;
+    } catch (err: any) {
+      console.warn(`[synthetics] recording a missing report for ${check.id} failed: ${err?.message || err}`);
+    }
+  }
+  return recorded;
+}
+
 /** First run of a new/edited check: soon, with jitter so checks do not all fire together. */
 export function initialNextRun(intervalSeconds: number, now = Date.now(), rand = Math.random): Date {
   return new Date(now + Math.floor(rand() * Math.min(intervalSeconds, 60)) * 1000 + 5_000);
@@ -360,6 +432,12 @@ export function startSyntheticsScheduler(): void {
     intervalMs: 60 * 60 * 1000,
     initialDelayMs: 10 * 60 * 1000,
     run: async () => { await pruneSyntheticResults(); },
+  });
+  registerLeaderJob({
+    name: SYNTHETICS_STALENESS_JOB,
+    intervalMs: 60 * 1000,
+    initialDelayMs: 2 * 60 * 1000,
+    run: async () => { await detectStaleBrowserChecks(); },
   });
   // Probes / browser CronJobs drift (failed applies, deleted checks, image changes).
   registerLeaderJob({

@@ -2,7 +2,8 @@ import { AlertEvent } from '../../../src/lib/alert-events';
 import { LeadershipListener } from '../../../src/lib/leader';
 import { isJobTimerActive, registerLeaderJob, unregisterAllJobs } from '../../../src/lib/scheduler';
 import {
-  buildAlertEvent, executeCheck, initialNextRun, nextState, pruneSyntheticResults, recordResult, runDueChecks,
+  browserCheckStale, browserStaleAfterMs, buildAlertEvent, detectStaleBrowserChecks, executeCheck, initialNextRun, nextState,
+  pruneSyntheticResults, recordResult, runDueChecks,
   SyntheticStore, SYNTHETICS_JOB,
 } from '../../../src/lib/synthetic-scheduler';
 import type { RunOutcome } from '../../../src/lib/synthetic-runner';
@@ -26,6 +27,9 @@ class MemStore implements SyntheticStore {
   async updateCheck(id: string, patch: any) { Object.assign(this.checks.find((x) => x.id === id), patch); }
   async saveResult(r: any) { const row = { id: `r${this.results.length + 1}`, ...r }; this.results.push(row); return row; }
   async ingressHosts() { return ['app.example.com']; }
+  async listEnabledBrowserChecks(limit: number) {
+    return this.checks.filter((c) => c.enabled && c.type === 'browser').slice(0, limit).map((c) => ({ ...c }));
+  }
   async pruneResultsWithoutScreenshot(before: Date) {
     const n = this.results.length;
     this.results = this.results.filter((r) => !(r.startedAt < before && !r.screenshotKey));
@@ -250,5 +254,61 @@ describe('leader execution', () => {
     leader.set(false);
     await jest.advanceTimersByTimeAsync(20_000);
     expect(tick).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('browser checks that stop reporting', () => {
+  const MIN = 60_000;
+  const t0 = new Date('2026-11-11T10:00:00Z').getTime();
+  const browser = (over: Record<string, any> = {}) => check({
+    type: 'browser', intervalSeconds: 300, timeoutMs: 60_000, config: { steps: [] },
+    createdAt: new Date(t0), updatedAt: new Date(t0), lastRunAt: null, ...over,
+  });
+
+  it('window is max(2 x interval, interval + job deadline)', () => {
+    expect(browserStaleAfterMs({ intervalSeconds: 300, timeoutMs: 60_000 })).toBe(10 * MIN); // 2x300 > 300+150
+    expect(browserStaleAfterMs({ intervalSeconds: 300, timeoutMs: 120_000 })).toBe(10 * MIN); // 2x300 > 300+210
+    expect(browserStaleAfterMs({ intervalSeconds: 86_400, timeoutMs: 60_000 })).toBe(2 * 86_400_000);
+  });
+
+  it('measures from the last result or the last change, whichever is later', () => {
+    expect(browserCheckStale(browser(), t0 + 9 * MIN)).toBe(false);
+    expect(browserCheckStale(browser(), t0 + 11 * MIN)).toBe(true);
+    expect(browserCheckStale(browser({ lastRunAt: new Date(t0 + 5 * MIN) }), t0 + 11 * MIN)).toBe(false);
+    // Re-enabled / edited recently: a full window again.
+    expect(browserCheckStale(browser({ lastRunAt: new Date(t0 - 86_400_000), updatedAt: new Date(t0 + 5 * MIN) }), t0 + 11 * MIN)).toBe(false);
+    expect(browserCheckStale(browser({ enabled: false }), t0 + 60 * MIN)).toBe(false);
+    expect(browserCheckStale(browser({ type: 'http' }), t0 + 60 * MIN)).toBe(false);
+  });
+
+  it('records a failed result that counts toward consecutive failures and fires the alert', async () => {
+    const store = new MemStore();
+    store.checks.push(browser({ alertPolicy: { failureThreshold: 2 } }), browser({ id: 'aaaaaaaa-0000-4000-8000-000000000002', lastRunAt: new Date(t0 + 30 * MIN) }));
+    const events: AlertEvent[] = [];
+    let now = new Date(t0 + 11 * MIN);
+    const deps = {
+      store, now: () => now, publish: async (e: AlertEvent) => { events.push(e); },
+      runtimeEnabled: async () => true, jobFailure: async () => 'runner pod: ImagePullBackOff',
+    };
+    expect(await detectStaleBrowserChecks(deps)).toBe(1);
+    expect(store.results).toHaveLength(1);
+    expect(store.results[0]).toMatchObject({ checkId: store.checks[0].id, status: 'fail', startedAt: now });
+    expect(store.results[0].error).toBe('Runner did not report a result within 10 minutes (runner pod: ImagePullBackOff)');
+    expect(store.checks[0]).toMatchObject({ lastStatus: 'down', consecutiveFailures: 1, lastRunAt: now });
+    expect(events).toHaveLength(0);
+    // Not again until another full window has passed.
+    now = new Date(t0 + 15 * MIN);
+    expect(await detectStaleBrowserChecks(deps)).toBe(0);
+    now = new Date(t0 + 22 * MIN);
+    expect(await detectStaleBrowserChecks(deps)).toBe(1);
+    expect(store.checks[0]).toMatchObject({ consecutiveFailures: 2, alertState: 'firing' });
+    expect(events).toEqual([expect.objectContaining({ status: 'firing', dedupeKey: `synthetic:${store.checks[0].id}` })]);
+  });
+
+  it('says so when browser checks are not enabled on the cluster', async () => {
+    const store = new MemStore();
+    store.checks.push(browser());
+    await detectStaleBrowserChecks({ store, now: () => new Date(t0 + 11 * MIN), publish: async () => {}, runtimeEnabled: async () => false, jobFailure: async () => 'unused' });
+    expect(store.results[0].error).toBe('Runner did not report a result within 10 minutes (browser checks are not enabled on this cluster)');
   });
 });

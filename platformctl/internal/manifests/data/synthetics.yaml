@@ -13,7 +13,8 @@
 #   never its key) lets runners trust env hosts served by the internal CA.
 # - IPv4 only (k3s default single-stack); blackbox modules prefer ip4.
 # - RBAC: the platform API manages Probes in monitoring and CronJobs + their token
-#   Secrets in synthetics, and reads the synthetics-runner ConfigMap. Nothing else.
+#   Secrets in synthetics, reads the synthetics-runner ConfigMap, and reads runner
+#   Jobs/Pods (status only) to explain missing reports. Nothing else.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -136,6 +137,13 @@ rules:
   - apiGroups: ["batch"]
     resources: [cronjobs]
     verbs: [get, list, create, update, delete]
+  # Read-only: why a browser run did not report (job deadline, image pull, OOM).
+  - apiGroups: ["batch"]
+    resources: [jobs]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
   - apiGroups: [""]
     resources: [secrets]
     verbs: [get, create, update, delete]

@@ -105,6 +105,16 @@ func TestSyntheticsRBACIsScoped(t *testing.T) {
 	if !strings.Contains(runner, "resourceNames: [synthetics-runner]") {
 		t.Fatal("configmap access must be limited to synthetics-runner")
 	}
+	// Jobs and pods are read-only (diagnosing runs that did not report).
+	for _, res := range []string{"jobs", "pods"} {
+		i := strings.Index(runner, "resources: ["+res+"]")
+		if i < 0 {
+			t.Fatalf("role must read %s", res)
+		}
+		if line := strings.SplitN(runner[i:], "\n", 3)[1]; !strings.Contains(line, "verbs: [get, list]") {
+			t.Fatalf("%s access must be read-only, got %q", res, line)
+		}
+	}
 }
 
 func TestSyntheticsRunnerConfigMap(t *testing.T) {

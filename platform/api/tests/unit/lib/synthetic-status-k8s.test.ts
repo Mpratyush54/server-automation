@@ -189,3 +189,19 @@ describe('runner tokens', () => {
     expect(verifyRunnerToken(ID, t, 'other-key')).toBe(false);
   });
 });
+
+describe('runner job diagnosis', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { describeJobFailure } = require('../../../src/lib/synthetic-k8s');
+  const pod = (state: any, extra: any = {}) => ({ status: { containerStatuses: [{ name: 'runner', state }], ...extra } });
+
+  it('explains image pull failures, OOM kills, exit codes, scheduling and job deadlines', () => {
+    expect(describeJobFailure({}, [pod({ waiting: { reason: 'ImagePullBackOff', message: 'secret-ish detail' } })])).toBe('runner pod: ImagePullBackOff');
+    expect(describeJobFailure({}, [pod({ terminated: { reason: 'OOMKilled', exitCode: 137 } })])).toBe('runner pod: OOMKilled (memory limit)');
+    expect(describeJobFailure({}, [pod({ terminated: { reason: 'Error', exitCode: 1 } })])).toBe('runner exited with code 1 (Error)');
+    expect(describeJobFailure({}, [{ status: { conditions: [{ type: 'PodScheduled', status: 'False', reason: 'Unschedulable' }] } }])).toBe('runner pod not scheduled: Unschedulable');
+    expect(describeJobFailure({ status: { conditions: [{ type: 'Failed', status: 'True', reason: 'DeadlineExceeded', message: 'Job was active longer than specified deadline' }] } }, []))
+      .toBe('runner job failed: DeadlineExceeded - Job was active longer than specified deadline');
+    expect(describeJobFailure({ status: { conditions: [{ type: 'Complete', status: 'True' }] } }, [pod({ terminated: { reason: 'Completed', exitCode: 0 } })])).toBeNull();
+  });
+});

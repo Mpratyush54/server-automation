@@ -98,6 +98,11 @@ export function renderProbe(check: Pick<SyntheticCheck, 'id' | 'projectId' | 'ty
 
 export { cronSchedule };
 
+/** activeDeadlineSeconds of a browser run: the check timeout plus browser start-up/report time. */
+export function browserJobDeadlineSeconds(timeoutMs: number): number {
+  return Math.ceil(timeoutMs / 1000) + 90;
+}
+
 export interface BrowserRuntime {
   enabled: boolean;
   image: string | null;
@@ -123,7 +128,7 @@ export function renderBrowserCronJob(
   runtime: { image: string; apiUrl: string },
 ): Record<string, any> {
   const name = resourceName(check.id);
-  const deadline = Math.ceil(check.timeoutMs / 1000) + 90;
+  const deadline = browserJobDeadlineSeconds(check.timeoutMs);
   const labels = { 'app.kubernetes.io/managed-by': 'platform-api', 'app.kubernetes.io/name': 'synthetics-browser', [CHECK_LABEL]: check.id, 'platform.io/project': check.projectId };
   return {
     apiVersion: 'batch/v1',
@@ -199,6 +204,28 @@ export interface SyntheticK8sOps {
   applyCronJob(cronJob: Record<string, any>, secret: Record<string, any>): Promise<void>;
   deleteCronJob(name: string): Promise<void>;
   listCronJobNames(): Promise<string[]>;
+  /** Why the check's most recent runner Job failed, if it is still around (read-only). */
+  lastJobFailure?(checkId: string): Promise<string | null>;
+}
+
+const POD_WAIT_REASONS = new Set(['ImagePullBackOff', 'ErrImagePull', 'InvalidImageName', 'CreateContainerConfigError', 'CreateContainerError', 'CrashLoopBackOff']);
+
+/** Short, secret-free explanation of a failed runner Job from its status and its pods. */
+export function describeJobFailure(job: any, pods: any[] = []): string | null {
+  for (const p of pods) {
+    for (const cs of p?.status?.containerStatuses || []) {
+      const waiting = cs?.state?.waiting?.reason;
+      if (waiting && POD_WAIT_REASONS.has(waiting)) return `runner pod: ${waiting}`;
+      const term = cs?.state?.terminated || cs?.lastState?.terminated;
+      if (term?.reason === 'OOMKilled') return 'runner pod: OOMKilled (memory limit)';
+      if (term && Number(term.exitCode) !== 0) return `runner exited with code ${term.exitCode}${term.reason ? ` (${term.reason})` : ''}`;
+    }
+    const unsched = (p?.status?.conditions || []).find((c: any) => c?.type === 'PodScheduled' && c?.status === 'False');
+    if (unsched) return `runner pod not scheduled: ${String(unsched.reason || 'Unschedulable')}`;
+  }
+  const failed = (job?.status?.conditions || []).find((c: any) => c?.type === 'Failed' && c?.status === 'True');
+  if (failed) return `runner job failed: ${String(failed.reason || 'Failed')}${failed.message ? ` - ${String(failed.message).slice(0, 160)}` : ''}`;
+  return null;
 }
 
 const notFound = (err: any) => (err?.code ?? err?.statusCode ?? err?.response?.statusCode ?? err?.body?.code) === 404;
@@ -267,6 +294,15 @@ function kubeOps(): SyntheticK8sOps {
     async listCronJobNames() {
       const res: any = await batch.listNamespacedCronJob({ namespace: SYNTHETICS_NAMESPACE, labelSelector: CHECK_LABEL });
       return ((res.body || res)?.items || []).map((i: any) => i.metadata?.name).filter(Boolean);
+    },
+    async lastJobFailure(checkId) {
+      const res: any = await batch.listNamespacedJob({ namespace: SYNTHETICS_NAMESPACE, labelSelector: `${CHECK_LABEL}=${checkId}` });
+      const jobs = ((res.body || res)?.items || []).sort((a: any, b: any) =>
+        Date.parse(b.metadata?.creationTimestamp || 0) - Date.parse(a.metadata?.creationTimestamp || 0));
+      const job = jobs[0];
+      if (!job?.metadata?.name) return null;
+      const pods: any = await core.listNamespacedPod({ namespace: SYNTHETICS_NAMESPACE, labelSelector: `job-name=${job.metadata.name}` });
+      return describeJobFailure(job, (pods.body || pods)?.items || []);
     },
   };
 }
@@ -342,6 +378,16 @@ export async function syncCheckResources(
     console.warn(`[synthetics] syncing resources for check ${check.id} failed: ${out.error}`);
   }
   return out;
+}
+
+/** Best-effort diagnosis for a browser check that stopped reporting; never throws. */
+export async function lastBrowserJobFailure(checkId: string): Promise<string | null> {
+  try {
+    const o = getOps();
+    return o.lastJobFailure ? await o.lastJobFailure(checkId) : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function deleteCheckResources(checkId: string, env: NodeJS.ProcessEnv = process.env): Promise<void> {
