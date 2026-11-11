@@ -78,10 +78,10 @@
               }
             </svg>
             <div class="axis muted"><span>top</span><span>50%</span><span>bottom</span></div>
-            <table class="reach">
+            <div class="table-scroll"><table class="reach">
               <tr><th>Reached 25%</th><th>50%</th><th>75%</th><th>100%</th></tr>
               <tr><td>{{ pct(reachAt(25)) }}</td><td>{{ pct(reachAt(50)) }}</td><td>{{ pct(reachAt(75)) }}</td><td>{{ pct(reachAt(100)) }}</td></tr>
-            </table>
+            </table></div>
           } @else {
             <p class="muted">No scroll data for this page yet.</p>
           }
@@ -89,11 +89,11 @@
         <div class="card">
           <h2>Most clicked elements</h2>
           @if (click?.topTargets?.length) {
-            <table class="targets">
+            <div class="table-scroll"><table class="targets">
               @for (t of click!.topTargets; track t.selector) {
                 <tr><td><code>{{ t.selector }}</code></td><td class="num">{{ t.count }}</td></tr>
               }
-            </table>
+            </table></div>
           } @else {
             <p class="muted">No element data yet.</p>
           }

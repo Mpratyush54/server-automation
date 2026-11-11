@@ -61,11 +61,11 @@
       <div class="obs-card">
         <h3>SLOs</h3>
         @if (summary?.slos?.length) {
-          <table class="obs-table"><thead><tr><th>SLO</th><th class="obs-num">Target</th><th class="obs-num">SLI</th><th class="obs-num">Budget left</th></tr></thead><tbody>
+          <div class="table-scroll"><table class="obs-table"><thead><tr><th>SLO</th><th class="obs-num">Target</th><th class="obs-num">SLI</th><th class="obs-num">Budget left</th></tr></thead><tbody>
             @for (s of summary.slos; track s.id) {
               <tr><td [class.obs-bad]="s.breaching">{{ s.name }}</td><td class="obs-num">{{ s.target }}%</td><td class="obs-num">{{ s.sli != null ? (s.sli * 100 | number: '1.2-3') + '%' : '—' }}</td><td class="obs-num">{{ s.errorBudgetRemaining != null ? (s.errorBudgetRemaining * 100 | number: '1.0-1') + '%' : '—' }}</td></tr>
             }
-          </tbody></table>
+          </tbody></table></div>
         } @else {
           <p class="obs-muted">No SLOs yet. <a routerLink="/alerting" [queryParams]="{ projectId, tab: 'slos' }">Define one in Alerting</a>.</p>
         }
@@ -96,13 +96,13 @@
       @if (!services.length) {
         <div class="obs-empty"><strong>No services reporting</strong>Install the platform SDK (Node / Python) with telemetry enabled.</div>
       } @else {
-        <table class="obs-table"><thead><tr><th>Service</th><th class="obs-num">Requests</th><th class="obs-num">Errors</th><th class="obs-num">p95</th></tr></thead><tbody>
+        <div class="table-scroll"><table class="obs-table"><thead><tr><th>Service</th><th class="obs-num">Requests</th><th class="obs-num">Errors</th><th class="obs-num">p95</th></tr></thead><tbody>
           @for (s of services; track s.name) {
             <tr class="clickable" [class.selected]="selectedService === s.name" (click)="selectService(s.name)">
               <td>{{ s.name }}</td><td class="obs-num">{{ rate(s.requestRate) }}</td><td class="obs-num" [class.obs-bad]="(s.errorRate ?? 0) >= 5">{{ pct(s.errorRate) }}</td><td class="obs-num">{{ ms(s.p95Ms) }}</td>
             </tr>
           }
-        </tbody></table>
+        </tbody></table></div>
       }
     </div>
     <div class="obs-card" style="overflow-x:auto">
@@ -110,14 +110,14 @@
       @if (!endpoints.length) {
         <p class="obs-muted">No server spans in this time range.</p>
       } @else {
-        <table class="obs-table"><thead><tr><th>Endpoint</th><th class="obs-num">Requests</th><th class="obs-num">Errors</th><th class="obs-num">p95</th><th></th></tr></thead><tbody>
+        <div class="table-scroll"><table class="obs-table"><thead><tr><th>Endpoint</th><th class="obs-num">Requests</th><th class="obs-num">Errors</th><th class="obs-num">p95</th><th></th></tr></thead><tbody>
           @for (e of endpoints; track e.service + e.name) {
             <tr>
               <td><span class="obs-faint">{{ e.service }}</span> {{ e.name }}</td><td class="obs-num">{{ rate(e.requestRate) }}</td><td class="obs-num" [class.obs-bad]="(e.errorRate ?? 0) >= 5">{{ pct(e.errorRate) }}</td><td class="obs-num">{{ ms(e.p95Ms) }}</td>
               <td><button class="obs-btn" style="padding:0 6px" (click)="traceForm.service = e.service; traceForm.name = e.name; traceMode = 'filters'; setState({ tab: 'traces', trace: null })">Traces</button></td>
             </tr>
           }
-        </tbody></table>
+        </tbody></table></div>
       }
     </div>
   </div>
@@ -152,7 +152,7 @@
       @if (tracesLoaded && !traces.length) {
         <div class="obs-empty"><strong>No traces</strong>Nothing matched in this time range.</div>
       } @else if (traces.length) {
-        <table class="obs-table"><thead><tr><th>Trace</th><th>Root service</th><th>Matched span</th><th>Start</th><th class="obs-num">Duration</th></tr></thead><tbody>
+        <div class="table-scroll"><table class="obs-table"><thead><tr><th>Trace</th><th>Root service</th><th>Matched span</th><th>Start</th><th class="obs-num">Duration</th></tr></thead><tbody>
           @for (t of traces; track t.traceId) {
             <tr class="clickable" (click)="openTrace(t.traceId)">
               <td><span class="obs-code">{{ t.traceId.slice(0, 16) }}</span></td>
@@ -162,7 +162,7 @@
               <td class="obs-num">{{ ms(t.durationMs) }}</td>
             </tr>
           }
-        </tbody></table>
+        </tbody></table></div>
       }
     </div>
   }
@@ -194,11 +194,11 @@
     @if (rumLoaded && !rum.length) {
       <div class="obs-empty"><strong>No RUM data</strong>Add the platform React or Angular SDK with RUM enabled to your frontend.</div>
     } @else if (rum.length) {
-      <table class="obs-table"><thead><tr><th>Page</th>@for (v of vitals; track v) { <th class="obs-num">{{ v.toUpperCase() }}</th> }</tr></thead><tbody>
+      <div class="table-scroll"><table class="obs-table"><thead><tr><th>Page</th>@for (v of vitals; track v) { <th class="obs-num">{{ v.toUpperCase() }}</th> }</tr></thead><tbody>
         @for (r of rum; track r.page) {
           <tr><td style="overflow-wrap:anywhere">{{ r.page }}</td>@for (v of vitals; track v) { <td class="obs-num" [class]="'obs-num ' + vitalClass(v, r.values[v])">{{ fmtVital(v, r.values[v]) }}</td> }</tr>
         }
-      </tbody></table>
+      </tbody></table></div>
     }
   </div>
 }
@@ -237,9 +237,9 @@
     </div>
     <div class="obs-card" style="overflow-x:auto">
       <h3>Restarts in range</h3>
-      <table class="obs-table"><thead><tr><th>Namespace</th><th>Pod</th><th class="obs-num">Restarts</th></tr></thead><tbody>
+      <div class="table-scroll"><table class="obs-table"><thead><tr><th>Namespace</th><th>Pod</th><th class="obs-num">Restarts</th></tr></thead><tbody>
         @for (r of infra.restarts; track r.pod) { <tr><td>{{ r.namespace }}</td><td>{{ r.pod }}</td><td class="obs-num" [class.obs-bad]="(r.restarts ?? 0) >= 1">{{ r.restarts | number: '1.0-0' }}</td></tr> }
-      </tbody></table>
+      </tbody></table></div>
     </div>
   }
 }

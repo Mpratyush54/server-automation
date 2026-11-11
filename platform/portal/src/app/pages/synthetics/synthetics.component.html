@@ -153,24 +153,24 @@
           </div>
           @if (detail.error) { <div class="err">{{ detail.error }}</div> }
           @if (detail.assertions?.length) {
-            <table>
+            <div class="table-scroll"><table>
               <thead><tr><th>Assertion</th><th>Actual</th><th></th></tr></thead>
               <tbody>
                 @for (a of detail.assertions; track $index) {
                   <tr><td><code>{{ a.source }}{{ a.property ? ' ' + a.property : '' }} {{ a.comparison }} {{ a.target ?? '' }}</code></td><td>{{ a.actual ?? '—' }}</td><td [class]="a.passed ? 'st-ok' : 'st-bad'">{{ a.passed ? 'pass' : (a.message || 'fail') }}</td></tr>
                 }
               </tbody>
-            </table>
+            </table></div>
           }
           @if (detail.steps?.length) {
-            <table>
+            <div class="table-scroll"><table>
               <thead><tr><th>Step</th><th>Status</th><th>Time</th><th>Detail</th></tr></thead>
               <tbody>
                 @for (s of detail.steps; track $index) {
                   <tr><td>{{ s.name }}</td><td [class]="statusClass(s.status)">{{ s.status }}</td><td>{{ s.latencyMs ?? '—' }}@if (s.latencyMs !== null) { ms }</td><td>{{ s.error || (s.statusCode ? 'HTTP ' + s.statusCode : '') }}</td></tr>
                 }
               </tbody>
-            </table>
+            </table></div>
           }
           @if (screenshotUrl) {
             <figure><img [src]="screenshotUrl" alt="Screenshot of the failed browser run"><figcaption class="muted">Screenshot at failure</figcaption></figure>

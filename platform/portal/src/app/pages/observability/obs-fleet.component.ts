@@ -54,7 +54,7 @@ const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown
       } @else if (!rows.length) {
         <div class="obs-empty"><strong>No projects</strong>You are not a member of any project yet.</div>
       } @else {
-        <table class="obs-table">
+        <div class="table-scroll"><table class="obs-table">
           <thead><tr>
             <th><button (click)="sortBy('health')">Health</button></th>
             <th><button (click)="sortBy('name')">Project</button></th>
@@ -81,7 +81,7 @@ const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown
               </tr>
             }
           </tbody>
-        </table>
+        </table></div>
       }
     </div>
     @if (truncated) { <p class="obs-faint">Only the first projects are shown.</p> }
