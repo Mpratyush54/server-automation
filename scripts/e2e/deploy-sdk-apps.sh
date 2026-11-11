@@ -83,6 +83,17 @@ if [[ "$tls_mode" == platform-ca ]]; then
 fi
 kubectl -n "$NS" scale deployment sdk-node-api --replicas=1 >/dev/null
 
+step "browser telemetry secret (sdk-demo-rum)"
+# Faro/replay/heatmaps/errors endpoints and tokens for the web demos; read as
+# RUM_* env at container start, so it must exist before the restart below.
+E2E_ADMIN_TOKEN="$TOKEN" PROJECT_ID="$PROJECT_ID" SDK_TOKEN_FILE="$TMP/sdk-token" \
+  node "$E2E_ROOT/scripts/e2e/sdk-demo-rum.mjs" || die "could not write the sdk-demo-rum secret"
+
+step "restart deployments on the new images"
+# The tags stay :local, so apply alone leaves existing pods on the previous
+# build; a restart makes them pick up the images imported above.
+kubectl -n "$NS" rollout restart deploy/sdk-node-api deploy/sdk-react-web deploy/sdk-angular-web >/dev/null
+
 step "wait for rollouts"
 kubectl -n "$NS" rollout status deploy/sdk-node-api --timeout=300s >/dev/null
 kubectl -n "$NS" rollout status deploy/sdk-react-web --timeout=180s >/dev/null
