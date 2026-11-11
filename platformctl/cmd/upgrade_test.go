@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/upgrade"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
 	"os"
 	"path/filepath"
@@ -145,5 +146,27 @@ func TestPersistUpgradedTagRewritesEnvAtomically(t *testing.T) {
 	}
 	if _, e := os.Stat(upgradeEnvFile + ".tmp"); !os.IsNotExist(e) {
 		t.Fatal("temporary file left behind")
+	}
+}
+
+func TestUpgradePlanMutableTagOnlyForUnreleasedTarget(t *testing.T) {
+	old := upgradeRun
+	defer func() { upgradeRun, upgrade.AllowUnreleased = old, false }()
+	target := "ghcr.io/test/platform-api:1.3.0"
+	upgradeRun = func(name string, args ...string) (string, error) {
+		if name == "helm" {
+			return "[]", nil
+		}
+		return target, nil
+	}
+	if _, e := upgradePlan(target, target); e == nil {
+		t.Fatal("mutable tag accepted without --allow-unreleased")
+	}
+	upgrade.AllowUnreleased = true
+	if _, e := upgradePlan(target, target); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := upgradePlan("ghcr.io/test/platform-api:1.3.1", target); e == nil {
+		t.Fatal("a different mutable tag accepted")
 	}
 }

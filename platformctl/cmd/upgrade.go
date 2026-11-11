@@ -433,7 +433,9 @@ func upgradePlan(api, portal string) (upgrade.Plan, error) {
 		if old == "" {
 			return upgrade.Plan{}, fmt.Errorf("missing %s image", x.d)
 		}
-		if !strings.Contains(old, "@sha256:") {
+		// Local test builds (--allow-unreleased) have no registry digest: the
+		// deployed target tag itself is accepted, nothing else.
+		if !strings.Contains(old, "@sha256:") && !(upgrade.AllowUnreleased && old == x.target) {
 			return upgrade.Plan{}, fmt.Errorf("%s uses a mutable tag; run platformctl update to pin images before a release upgrade", x.d)
 		}
 		images = append(images, upgrade.Image{Deployment: x.d, Container: x.c, Before: old, After: x.target})
