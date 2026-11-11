@@ -25,12 +25,9 @@
     --text-secondary: #a1a1aa;
     --text-muted: #71717a;
     --text-code: #ededed;
-    /* Aliases used by older templates (alerting, project detail, audit logs, bootstrap). */
-    --color-text-secondary: var(--text-secondary);
-    --color-text-muted: var(--text-muted);
-    
-    /* Aliases used by older page templates (were undefined, so text and
-       borders silently fell back to inherited colours). */
+
+    /* Aliases used by older page templates (alerting, project detail, audit logs,
+       bootstrap; were undefined, so text and borders fell back to inherited colours). */
     --color-text-secondary: var(--text-secondary);
     --color-text-muted: var(--text-muted);
     --border-glass: var(--border-subtle);
