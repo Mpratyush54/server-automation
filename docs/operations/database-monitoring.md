@@ -9,7 +9,9 @@ pg_stat_statements to shared_preload_libraries. The ServiceMonitor is installed
 after Prometheus CRDs, in the full telemetry reconciliation step.
 
 The Database tab calls
-`GET /api/projects/:projectId/databases/insights?environment=production`.
+`GET /api/projects/:projectId/databases/insights?environment=<name>`. It opens on the
+project's `production` environment when one exists, otherwise on the first environment,
+and has an environment selector.
 Authentication and viewer-level project access are checked before reading any
 statistics. Unknown environments are rejected. Database names and usernames are
 resolved on the server, never from request parameters. The API uses the existing
@@ -56,11 +58,27 @@ an existing slow-query alert.
 
 ## Upgrade and remaining integration
 
-No platform database schema migration or lockfile change is required. Existing
-installations marked done for database install steps need their database Helm
-releases reconciled with the new full-profile values; the installer done markers
-do not automatically reconfigure existing database releases. Changing PostgreSQL
-preload libraries restarts PostgreSQL. Disabling monitoring does not erase engine
+No platform database schema migration or lockfile change is required. Fresh
+full-profile installs get the exporters and the ServiceMonitor automatically.
+Existing installations marked done for database install steps need their database
+Helm releases reconciled with the new full-profile values; the installer done
+markers do not automatically reconfigure existing database releases. To reconcile
+an existing full-profile server (as root, with the new `platformctl`):
+
+```bash
+cp /etc/platform/.bootstrap_state /root/bootstrap_state.bak
+sed -i '/^\(postgresql\|mongodb\|redis\|telemetry\)=/d' /etc/platform/.bootstrap_state
+platformctl --auto install postgresql
+platformctl --auto install mongodb
+platformctl --auto install redis
+platformctl --auto install telemetry   # applies the platform-databases ServiceMonitor
+```
+
+Then check `pg_up`, `mongodb_up` and `redis_up` in Prometheus. Changing PostgreSQL
+preload libraries restarts PostgreSQL. The standalone MongoDB Deployment uses the
+`Recreate` update strategy (one pod on a ReadWriteOnce volume: a rolling update
+would start the new pod while the old one still holds `mongod.lock`), so every
+MongoDB upgrade briefly stops MongoDB before the new pod starts. Disabling monitoring does not erase engine
 statistics or automatically disable an already enabled Mongo profiler; operators
 can run `db.setProfilingLevel(0)` in the relevant project databases.
 
@@ -95,5 +113,8 @@ project, and that literal payloads and the other project's identities are absent
 Check unauthorized API requests, failed engines and a partial Redis scan. Verify
 database alert events reach #43 rules. Repeat on a standard profile and confirm
 the panel reports monitoring disabled and no exporter sidecars are installed.
-This real-database, Kubernetes, scrape and load verification has not run in the
-Windows sandbox.
+Verified on 2026-11-11 on a fresh full-profile EC2 VM (4 vCPU / 16 GB): all
+three exporters scraped (`pg_up`, `mongodb_up`, `redis_up` = 1), project
+`project_database_*` metrics present, PostgreSQL top queries normalised without
+literals, MongoDB slow operations and Redis key estimates shown per project, and
+the reconcile steps above on an existing install.
