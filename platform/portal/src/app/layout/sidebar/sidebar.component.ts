@@ -12,7 +12,13 @@ import { AuthService } from '../../services/auth.service';
 })
 export class SidebarComponent implements OnInit {
   @Input() isCollapsed = false;
+  /** Below md the sidebar renders as an off-canvas drawer. */
+  @Input() isMobile = false;
+  /** Drawer open state (mobile only). */
+  @Input() isOpen = false;
   @Output() toggleCollapse = new EventEmitter<void>();
+  /** Emitted when a nav link is clicked so the shell can close the drawer. */
+  @Output() navigate = new EventEmitter<void>();
   isDevOps = false;
   isTechLeadOrDevOps = false;
   canManageUsers = false;
@@ -29,6 +35,12 @@ export class SidebarComponent implements OnInit {
     if (host !== 'localhost' && host !== '127.0.0.1') {
       this.portainerUrl = `${window.location.protocol}//portainer.${host}/`;
     }
+  }
+
+  /** Close the mobile drawer when any link inside it is followed. */
+  onNavClick(event: Event) {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest?.('a')) this.navigate.emit();
   }
 
   logout() {

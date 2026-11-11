@@ -15,6 +15,9 @@ import { ApiService } from '../../services/api.service';
 export class HeaderComponent implements OnInit, OnDestroy {
   @Input() title = 'Dashboard';
   @Input() isSidebarCollapsed = false;
+  /** Below md the header shows a menu button that opens the nav drawer. */
+  @Input() isMobile = false;
+  @Input() mobileNavOpen = false;
   @Output() toggleSidebar = new EventEmitter<void>();
 
   currentUser: any = null;

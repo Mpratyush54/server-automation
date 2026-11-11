@@ -116,16 +116,21 @@
     @apply flex min-h-screen bg-black text-[#ededed];
   }
 
+  /* Below md the sidebar is an off-canvas drawer, so main has no left margin. */
   .main-content {
-    @apply flex-1 flex flex-col min-w-0 transition-all duration-300 border-l border-[#333] ml-64;
+    @apply flex-1 flex flex-col min-w-0 transition-all duration-300 ml-0 md:ml-64 md:border-l md:border-[#333];
   }
 
   .main-content.collapsed-nav {
-    @apply ml-16;
+    @apply md:ml-16;
   }
 
   .content {
-    @apply flex-1 p-8 overflow-y-auto relative;
+    @apply flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto relative min-w-0;
+  }
+
+  .sidebar-backdrop {
+    @apply fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden;
   }
 
   /* Tables */

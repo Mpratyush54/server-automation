@@ -3,9 +3,13 @@
     <!-- Sleek Next.js background glow -->
     <div class="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-900/20 blur-[120px] pointer-events-none"></div>
     <div class="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-purple-900/10 blur-[120px] pointer-events-none"></div>
-    <app-sidebar [isCollapsed]="isSidebarCollapsed" (toggleCollapse)="isSidebarCollapsed = !isSidebarCollapsed"></app-sidebar>
-    <main class="main-content" [class.collapsed-nav]="isSidebarCollapsed">
-      <app-header [title]="pageTitle" [isSidebarCollapsed]="isSidebarCollapsed" (toggleSidebar)="isSidebarCollapsed = !isSidebarCollapsed"></app-header>
+    @if (isMobile && mobileNavOpen) {
+      <div class="sidebar-backdrop" data-testid="sidebar-backdrop" (click)="closeMobileNav()" aria-hidden="true"></div>
+    }
+    <app-sidebar [isCollapsed]="isMobile ? false : isSidebarCollapsed" [isMobile]="isMobile" [isOpen]="mobileNavOpen"
+      (toggleCollapse)="toggleSidebar()" (navigate)="closeMobileNav()"></app-sidebar>
+    <main class="main-content" [class.collapsed-nav]="isSidebarCollapsed && !isMobile">
+      <app-header [title]="pageTitle" [isSidebarCollapsed]="isSidebarCollapsed" [isMobile]="isMobile" [mobileNavOpen]="mobileNavOpen" (toggleSidebar)="toggleSidebar()"></app-header>
       <div class="content">
         <router-outlet></router-outlet>
       </div>

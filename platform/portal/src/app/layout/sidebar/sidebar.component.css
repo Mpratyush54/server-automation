@@ -1,0 +1,11 @@
+/* Mobile off-canvas drawer: hidden by default, slides in when open. */
+.sidebar-drawer {
+  transform: translateX(-100%);
+  visibility: hidden;
+  z-index: 50;
+}
+.sidebar-drawer.sidebar-drawer-open {
+  transform: translateX(0);
+  visibility: visible;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+}

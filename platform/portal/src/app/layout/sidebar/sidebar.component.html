@@ -1,6 +1,10 @@
 <aside class="fixed left-0 top-0 h-screen bg-black border-r border-[#333] transition-all duration-300 z-40 flex flex-col"
   [class.w-64]="!isCollapsed"
-  [class.w-16]="isCollapsed">
+  [class.w-16]="isCollapsed"
+  [class.sidebar-drawer]="isMobile"
+  [class.sidebar-drawer-open]="isMobile && isOpen"
+  [attr.aria-hidden]="isMobile && !isOpen ? 'true' : null"
+  (click)="onNavClick($event)">
 
   <div class="h-16 flex items-center justify-between px-4 border-b border-[#333]">
     @if (!isCollapsed) {
