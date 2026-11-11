@@ -1,10 +1,11 @@
 import { Component, OnInit } from '@angular/core';
 import { DatePipe, DecimalPipe, JsonPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink, UrlTree } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { AlertingApiService } from './alerting-api.service';
+import { internalUrlTree } from '../../shared/internal-link';
 
 type Tab = 'incidents' | 'monitors' | 'slos' | 'silences' | 'channels' | 'oncall';
 
@@ -29,7 +30,7 @@ const CHANNEL_FIELDS: Record<string, { key: string; label: string; secret: boole
 @Component({
   selector: 'app-alerting',
   standalone: true,
-  imports: [FormsModule, DatePipe, DecimalPipe, JsonPipe],
+  imports: [FormsModule, DatePipe, DecimalPipe, JsonPipe, RouterLink],
   templateUrl: './alerting.component.html',
 })
 export class AlertingComponent implements OnInit {
@@ -54,6 +55,8 @@ export class AlertingComponent implements OnInit {
 
   incidentFilter = 'open';
   incidents: any[] = [];
+  /** Router target per incident id; null when the incident url isn't an internal path. */
+  private incidentLinks = new Map<string, UrlTree | null>();
   monitors: any[] = [];
   slos: any[] = [];
   silences: any[] = [];
@@ -103,6 +106,12 @@ export class AlertingComponent implements OnInit {
     await this.reload();
   }
 
+  /** Internal link for an incident title, or null (render plain text). */
+  incidentLink(i: any): UrlTree | null {
+    if (!this.incidentLinks.has(i?.id)) this.incidentLinks.set(i?.id, internalUrlTree(this.router, i?.url));
+    return this.incidentLinks.get(i?.id) ?? null;
+  }
+
   private fail(err: any) {
     this.error = err?.error?.error || err?.message || 'Request failed';
   }
@@ -112,9 +121,11 @@ export class AlertingComponent implements OnInit {
     this.loading = true;
     try {
       if (this.tab === 'incidents') {
-        this.incidents = this.projectId
+        const incidents = this.projectId
           ? await firstValueFrom(this.alerting.list(this.projectId, 'incidents', { status: this.incidentFilter }))
           : await firstValueFrom(this.alerting.allIncidents(this.incidentFilter));
+        this.incidentLinks.clear();
+        this.incidents = incidents;
       } else if (this.projectId) {
         if (this.tab === 'monitors') this.monitors = await firstValueFrom(this.alerting.list(this.projectId, 'monitors'));
         if (this.tab === 'slos') this.slos = await firstValueFrom(this.alerting.list(this.projectId, 'slos'));
