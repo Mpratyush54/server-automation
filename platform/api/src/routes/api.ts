@@ -40,6 +40,7 @@ import replayRoutes from './replays';
 import gitAppRoutes from './git-apps';
 import topologyRoutes from './topology';
 import syntheticRoutes from './synthetics';
+import observabilityRoutes from './observability';
 import statusPageRoutes from './status-pages';
 
 router.use('/', errorTrackingRoutes);
@@ -79,6 +80,7 @@ router.use('/', notificationRoutes);
 router.use('/', operationRoutes);
 router.use('/', backupRoutes);
 router.use('/', syntheticRoutes); // synthetic checks, results, status feed, browser runner (#42)
+router.use('/', observabilityRoutes); // project-scoped Prometheus/Loki/Tempo/Pyroscope query proxies, fleet view (#48)
 router.use('/', statusPageRoutes); // public status pages + incidents (#46)
 router.use('/', topologyRoutes); // GET /projects/:projectId/environments/:envId/topology (#31)
 

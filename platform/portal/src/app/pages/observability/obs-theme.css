@@ -1,0 +1,112 @@
+/*
+ * Observability theme tokens (#48). Dark by default (the portal theme); light
+ * when the OS prefers it or the document opts in with data-theme="light".
+ * Components use only these tokens, so every view renders in both themes.
+ */
+:host {
+  --obs-bg: var(--bg-canvas, #000);
+  --obs-surface: var(--bg-surface, #0a0a0a);
+  --obs-elevated: var(--bg-elevated, #111);
+  --obs-border: var(--border-subtle, #333);
+  --obs-text: var(--text-primary, #ededed);
+  --obs-muted: var(--text-secondary, #a1a1aa);
+  --obs-faint: var(--text-muted, #71717a);
+  --obs-ok: #22c55e;
+  --obs-warn: #f5a623;
+  --obs-bad: #ef4444;
+  --obs-unknown: #71717a;
+  --obs-accent: #3b82f6;
+  --obs-series-1: #3b82f6;
+  --obs-series-2: #ef4444;
+  --obs-series-3: #f5a623;
+  --obs-series-4: #a855f7;
+  --obs-marker: #a1a1aa;
+  --obs-grid: rgba(255, 255, 255, 0.08);
+  --obs-hover: rgba(255, 255, 255, 0.05);
+  --obs-code-bg: #0f0f10;
+  display: block;
+  color: var(--obs-text);
+  font-size: 0.9rem;
+}
+
+@media (prefers-color-scheme: light) {
+  :host {
+    --obs-bg: #ffffff;
+    --obs-surface: #fafafa;
+    --obs-elevated: #f4f4f5;
+    --obs-border: #d4d4d8;
+    --obs-text: #18181b;
+    --obs-muted: #52525b;
+    --obs-faint: #71717a;
+    --obs-ok: #15803d;
+    --obs-warn: #b45309;
+    --obs-bad: #dc2626;
+    --obs-accent: #2563eb;
+    --obs-series-1: #2563eb;
+    --obs-series-2: #dc2626;
+    --obs-series-3: #b45309;
+    --obs-series-4: #7e22ce;
+    --obs-marker: #52525b;
+    --obs-grid: rgba(0, 0, 0, 0.08);
+    --obs-hover: rgba(0, 0, 0, 0.04);
+    --obs-code-bg: #f4f4f5;
+  }
+}
+
+:host-context([data-theme='light']) {
+  --obs-bg: #ffffff;
+  --obs-surface: #fafafa;
+  --obs-elevated: #f4f4f5;
+  --obs-border: #d4d4d8;
+  --obs-text: #18181b;
+  --obs-muted: #52525b;
+  --obs-ok: #15803d;
+  --obs-warn: #b45309;
+  --obs-bad: #dc2626;
+  --obs-accent: #2563eb;
+  --obs-series-1: #2563eb;
+  --obs-series-2: #dc2626;
+  --obs-grid: rgba(0, 0, 0, 0.08);
+  --obs-hover: rgba(0, 0, 0, 0.04);
+  --obs-code-bg: #f4f4f5;
+}
+
+.obs-card { background: var(--obs-surface); border: 1px solid var(--obs-border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.obs-card h2, .obs-card h3 { margin: 0 0 12px; font-size: 1rem; font-weight: 600; }
+.obs-muted { color: var(--obs-muted); }
+.obs-faint { color: var(--obs-faint); }
+.obs-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.obs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.obs-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.obs-stat { background: var(--obs-elevated); border: 1px solid var(--obs-border); border-radius: 8px; padding: 12px; }
+.obs-stat .label { font-size: 0.75rem; color: var(--obs-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.obs-stat .value { font-size: 1.4rem; font-weight: 600; margin-top: 4px; }
+.obs-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.obs-table th { text-align: left; font-weight: 500; color: var(--obs-muted); padding: 8px; border-bottom: 1px solid var(--obs-border); white-space: nowrap; }
+.obs-table td { padding: 8px; border-bottom: 1px solid var(--obs-border); vertical-align: top; }
+.obs-table tr.clickable { cursor: pointer; }
+.obs-table tr.clickable:hover, .obs-table tr.selected { background: var(--obs-hover); }
+.obs-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.obs-input, .obs-select { background: var(--obs-elevated); color: var(--obs-text); border: 1px solid var(--obs-border); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.obs-input.code, textarea.obs-input { font-family: var(--font-code, ui-monospace, monospace); font-size: 0.82rem; }
+.obs-btn { background: transparent; color: var(--obs-text); border: 1px solid var(--obs-border); border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.obs-btn:hover { background: var(--obs-hover); }
+.obs-btn.primary { background: var(--obs-text); color: var(--obs-bg); border-color: transparent; }
+.obs-btn:disabled { opacity: 0.5; cursor: default; }
+.obs-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--obs-border); margin-bottom: 16px; overflow-x: auto; }
+.obs-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--obs-muted); padding: 8px 12px; cursor: pointer; font: inherit; white-space: nowrap; }
+.obs-tabs button.active { color: var(--obs-text); border-bottom-color: var(--obs-accent); }
+.obs-banner { border: 1px solid var(--obs-border); background: var(--obs-elevated); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
+.obs-banner.error { border-color: var(--obs-bad); color: var(--obs-bad); }
+.obs-empty { text-align: center; padding: 32px 16px; color: var(--obs-muted); }
+.obs-empty strong { display: block; color: var(--obs-text); margin-bottom: 6px; }
+.obs-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; background: var(--obs-unknown); }
+.obs-dot.healthy { background: var(--obs-ok); }
+.obs-dot.degraded { background: var(--obs-warn); }
+.obs-dot.critical { background: var(--obs-bad); }
+.obs-bad { color: var(--obs-bad); }
+.obs-warn { color: var(--obs-warn); }
+.obs-ok { color: var(--obs-ok); }
+.obs-code { font-family: var(--font-code, ui-monospace, monospace); font-size: 0.8rem; background: var(--obs-code-bg); border-radius: 4px; padding: 1px 4px; overflow-wrap: anywhere; }
+.obs-links { display: flex; gap: 8px; flex-wrap: wrap; }
+a { color: var(--obs-accent); }

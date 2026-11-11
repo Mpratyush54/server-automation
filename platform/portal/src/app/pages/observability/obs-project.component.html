@@ -1,0 +1,265 @@
+<div class="head">
+  <div>
+    <a class="back" [routerLink]="['/projects', projectId]">← {{ projectName || 'Project' }}</a>
+    <h1>Observability</h1>
+  </div>
+  <div class="obs-row">
+    @if (environments.length) {
+      <label class="obs-muted">Environment
+        <select class="obs-select" [ngModel]="environment" (ngModelChange)="setState({ env: $event || null })" aria-label="Environment">
+          <option value="">All</option>
+          @for (e of environments; track e) { <option [value]="e">{{ e }}</option> }
+        </select>
+      </label>
+    }
+    <label class="obs-muted">Time range
+      <select class="obs-select" [ngModel]="since" (ngModelChange)="setState({ since: $event })" aria-label="Time range">
+        @for (o of sinceOptions; track o.value) { <option [value]="o.value">{{ o.label }}</option> }
+      </select>
+    </label>
+    <button class="obs-btn" (click)="loadTab()" [disabled]="loading">Refresh</button>
+    <a class="obs-btn" routerLink="/observability" [queryParams]="{ since }">Fleet</a>
+  </div>
+</div>
+
+<nav class="obs-tabs" aria-label="Observability sections">
+  @for (t of tabs; track t.id) {
+    <button [class.active]="tab === t.id" (click)="setState({ tab: t.id, trace: null })" [attr.aria-current]="tab === t.id ? 'page' : null">{{ t.label }}</button>
+  }
+</nav>
+
+@if (enabled === false && tab !== 'errors' && tab !== 'synthetics' && tab !== 'sessions') {
+  <div class="obs-banner" data-testid="telemetry-disabled">
+    <strong>Telemetry is not enabled on this platform.</strong>
+    Traces, logs, metrics and profiles need the full install profile
+    (<span class="obs-code">platformctl provision --profile full</span>) and the platform SDK in your services.
+    Alerts, errors and synthetics still work.
+  </div>
+}
+@if (error) { <div class="obs-banner error" role="alert">{{ error }}</div> }
+@if (rangeNote) { <div class="obs-banner" role="status">{{ rangeNote }}</div> }
+
+<!-- OVERVIEW -->
+@if (tab === 'overview') {
+  @if (summary) {
+    <div class="obs-grid" style="margin-bottom:16px">
+      <div class="obs-stat"><div class="label">Health</div><div class="value obs-row" style="gap:8px"><span [class]="'obs-dot ' + summary.health"></span>{{ healthLabel(summary.health) }}</div></div>
+      <div class="obs-stat"><div class="label">Requests</div><div class="value">{{ rate(summary.red?.requestRate) }}</div></div>
+      <div class="obs-stat"><div class="label">Error rate</div><div class="value" [class.obs-bad]="(summary.red?.errorRate ?? 0) >= 5">{{ pct(summary.red?.errorRate) }}</div></div>
+      <div class="obs-stat"><div class="label">p95 latency</div><div class="value">{{ ms(summary.red?.p95Ms) }}</div></div>
+      <div class="obs-stat"><div class="label">Apdex (T = {{ summary.red?.apdexThresholdMs || 512 }} ms)</div><div class="value">{{ summary.red?.apdex != null ? (summary.red.apdex | number: '1.2-2') : '—' }}</div></div>
+      <div class="obs-stat"><div class="label">Active alerts</div><div class="value" [class.obs-bad]="summary.incidents.critical > 0">{{ summary.incidents.active }}</div></div>
+      <div class="obs-stat"><div class="label">Open errors</div><div class="value">{{ summary.errors.open }}</div></div>
+      <div class="obs-stat"><div class="label">Synthetics</div><div class="value" style="font-size:1rem">{{ summary.synthetics || '—' }}</div></div>
+    </div>
+    @if (summary.telemetryError) { <div class="obs-banner error">{{ summary.telemetryError }}</div> }
+  }
+  @if (enabled) {
+    <div class="obs-grid-2">
+      <div class="obs-card"><app-obs-line-chart title="Requests per second" unit="rate" [series]="redSeries.rate" [markers]="markers" /></div>
+      <div class="obs-card"><app-obs-line-chart title="Error rate" unit="pct" [series]="redSeries.errors" [markers]="markers" /></div>
+      <div class="obs-card"><app-obs-line-chart title="p95 latency" unit="ms" [series]="redSeries.latency" [markers]="markers" /></div>
+      <div class="obs-card">
+        <h3>SLOs</h3>
+        @if (summary?.slos?.length) {
+          <table class="obs-table"><thead><tr><th>SLO</th><th class="obs-num">Target</th><th class="obs-num">SLI</th><th class="obs-num">Budget left</th></tr></thead><tbody>
+            @for (s of summary.slos; track s.id) {
+              <tr><td [class.obs-bad]="s.breaching">{{ s.name }}</td><td class="obs-num">{{ s.target }}%</td><td class="obs-num">{{ s.sli != null ? (s.sli * 100 | number: '1.2-3') + '%' : '—' }}</td><td class="obs-num">{{ s.errorBudgetRemaining != null ? (s.errorBudgetRemaining * 100 | number: '1.0-1') + '%' : '—' }}</td></tr>
+            }
+          </tbody></table>
+        } @else {
+          <p class="obs-muted">No SLOs yet. <a routerLink="/alerting" [queryParams]="{ projectId, tab: 'slos' }">Define one in Alerting</a>.</p>
+        }
+      </div>
+    </div>
+  }
+  <div class="obs-card">
+    <h3>Related</h3>
+    <div class="obs-links">
+      <a class="obs-btn" [routerLink]="['/projects', projectId, 'errors']">Errors</a>
+      <a class="obs-btn" [routerLink]="['/projects', projectId, 'synthetics']">Synthetics</a>
+      <a class="obs-btn" routerLink="/alerting" [queryParams]="{ projectId }">Alerting</a>
+      <a class="obs-btn" [routerLink]="['/projects', projectId]" [queryParams]="{ tab: 'deployments' }">Releases</a>
+      @if (replaysAvailable) { <a class="obs-btn" [routerLink]="['/projects', projectId, 'replays']">Session replays</a> }
+    </div>
+  </div>
+}
+
+<!-- APM -->
+@if (tab === 'apm' && enabled) {
+  <div class="obs-card">
+    <h3>Service map</h3>
+    <app-obs-service-map [nodes]="graph.nodes" [edges]="graph.edges" (selectService)="selectService($event)" />
+  </div>
+  <div class="obs-grid-2">
+    <div class="obs-card" style="overflow-x:auto">
+      <h3>Services</h3>
+      @if (!services.length) {
+        <div class="obs-empty"><strong>No services reporting</strong>Install the platform SDK (Node / Python) with telemetry enabled.</div>
+      } @else {
+        <table class="obs-table"><thead><tr><th>Service</th><th class="obs-num">Requests</th><th class="obs-num">Errors</th><th class="obs-num">p95</th></tr></thead><tbody>
+          @for (s of services; track s.name) {
+            <tr class="clickable" [class.selected]="selectedService === s.name" (click)="selectService(s.name)">
+              <td>{{ s.name }}</td><td class="obs-num">{{ rate(s.requestRate) }}</td><td class="obs-num" [class.obs-bad]="(s.errorRate ?? 0) >= 5">{{ pct(s.errorRate) }}</td><td class="obs-num">{{ ms(s.p95Ms) }}</td>
+            </tr>
+          }
+        </tbody></table>
+      }
+    </div>
+    <div class="obs-card" style="overflow-x:auto">
+      <h3>Endpoints @if (selectedService) { <span class="obs-faint">· {{ selectedService }}</span> }</h3>
+      @if (!endpoints.length) {
+        <p class="obs-muted">No server spans in this time range.</p>
+      } @else {
+        <table class="obs-table"><thead><tr><th>Endpoint</th><th class="obs-num">Requests</th><th class="obs-num">Errors</th><th class="obs-num">p95</th><th></th></tr></thead><tbody>
+          @for (e of endpoints; track e.service + e.name) {
+            <tr>
+              <td><span class="obs-faint">{{ e.service }}</span> {{ e.name }}</td><td class="obs-num">{{ rate(e.requestRate) }}</td><td class="obs-num" [class.obs-bad]="(e.errorRate ?? 0) >= 5">{{ pct(e.errorRate) }}</td><td class="obs-num">{{ ms(e.p95Ms) }}</td>
+              <td><button class="obs-btn" style="padding:0 6px" (click)="traceForm.service = e.service; traceForm.name = e.name; traceMode = 'filters'; setState({ tab: 'traces', trace: null })">Traces</button></td>
+            </tr>
+          }
+        </tbody></table>
+      }
+    </div>
+  </div>
+}
+
+<!-- TRACES -->
+@if (tab === 'traces' && enabled) {
+  @if (openTraceId) {
+    <div class="obs-card">
+      <app-obs-trace-view [projectId]="projectId" [traceId]="openTraceId" (closed)="closeTrace()" (logsForTrace)="logsForTrace($event)" />
+    </div>
+  } @else {
+    <div class="obs-card">
+      <div class="obs-row" style="margin-bottom:8px">
+        <label><input type="radio" name="tracemode" value="filters" [(ngModel)]="traceMode"> Filters</label>
+        <label><input type="radio" name="tracemode" value="traceql" [(ngModel)]="traceMode"> TraceQL</label>
+        <span class="obs-faint">Searches are always limited to this project.</span>
+      </div>
+      @if (traceMode === 'filters') {
+        <div class="search">
+          <label>Service <input class="obs-input" [(ngModel)]="traceForm.service" placeholder="any"></label>
+          <label>Span name <input class="obs-input" [(ngModel)]="traceForm.name" placeholder="e.g. GET /orders"></label>
+          <label>Min duration <input class="obs-input" [(ngModel)]="traceForm.minDuration" placeholder="e.g. 250ms"></label>
+          <label>Status <select class="obs-select" [(ngModel)]="traceForm.status"><option value="">any</option><option value="error">error</option><option value="ok">ok</option></select></label>
+        </div>
+      } @else {
+        <textarea class="obs-input code" [(ngModel)]="traceForm.q" aria-label="TraceQL query" placeholder="{ span.http.status_code >= 500 }"></textarea>
+      }
+      <div style="margin-top:8px"><button class="obs-btn primary" (click)="loading = true; searchTraces().catch(onErr).finally(done)">Search</button></div>
+    </div>
+    <div class="obs-card" style="padding:0;overflow-x:auto">
+      @if (tracesLoaded && !traces.length) {
+        <div class="obs-empty"><strong>No traces</strong>Nothing matched in this time range.</div>
+      } @else if (traces.length) {
+        <table class="obs-table"><thead><tr><th>Trace</th><th>Root service</th><th>Matched span</th><th>Start</th><th class="obs-num">Duration</th></tr></thead><tbody>
+          @for (t of traces; track t.traceId) {
+            <tr class="clickable" (click)="openTrace(t.traceId)">
+              <td><span class="obs-code">{{ t.traceId.slice(0, 16) }}</span></td>
+              <td>{{ t.rootServiceName || '—' }}</td>
+              <td>{{ firstSpanName(t) }}</td>
+              <td>{{ traceStart(t) | date: 'MMM d, HH:mm:ss' }}</td>
+              <td class="obs-num">{{ ms(t.durationMs) }}</td>
+            </tr>
+          }
+        </tbody></table>
+      }
+    </div>
+  }
+}
+
+<!-- LOGS -->
+@if (tab === 'logs' && enabled) {
+  <div class="obs-card">
+    <app-obs-logs [projectId]="projectId" [since]="since" [environment]="environment" [traceId]="logTraceId" (openTrace)="openTrace($event)" />
+  </div>
+}
+
+<!-- ERRORS (#41) -->
+@if (tab === 'errors') {
+  <div class="obs-card">
+    <h3>Errors</h3>
+    @if (summary) {
+      <p>{{ summary.errors.open }} open issues · {{ summary.errors.regressions }} regressions</p>
+    }
+    <p class="obs-muted">Grouped exceptions with symbolicated stack traces, releases and triage.</p>
+    <a class="obs-btn primary" [routerLink]="['/projects', projectId, 'errors']">Open error tracking</a>
+  </div>
+}
+
+<!-- RUM -->
+@if (tab === 'rum' && enabled) {
+  <div class="obs-card" style="overflow-x:auto">
+    <h3>Web vitals by page (p75)</h3>
+    @if (rumLoaded && !rum.length) {
+      <div class="obs-empty"><strong>No RUM data</strong>Add the platform React or Angular SDK with RUM enabled to your frontend.</div>
+    } @else if (rum.length) {
+      <table class="obs-table"><thead><tr><th>Page</th>@for (v of vitals; track v) { <th class="obs-num">{{ v.toUpperCase() }}</th> }</tr></thead><tbody>
+        @for (r of rum; track r.page) {
+          <tr><td style="overflow-wrap:anywhere">{{ r.page }}</td>@for (v of vitals; track v) { <td class="obs-num" [class]="'obs-num ' + vitalClass(v, r.values[v])">{{ fmtVital(v, r.values[v]) }}</td> }</tr>
+        }
+      </tbody></table>
+    }
+  </div>
+}
+
+<!-- SESSIONS (#40) -->
+@if (tab === 'sessions') {
+  <div class="obs-card">
+    <h3>Sessions</h3>
+    @if (replaysAvailable) {
+      <p class="obs-muted">Browse recorded sessions with error and network markers.</p>
+      <a class="obs-btn primary" [routerLink]="['/projects', projectId, 'replays']">Open session replays</a>
+    } @else {
+      <div class="obs-empty"><strong>Session replay is not available</strong>Session replay ships with the replay feature; errors with a replay id will link here once it is installed.</div>
+    }
+  </div>
+}
+
+<!-- SYNTHETICS (#42) -->
+@if (tab === 'synthetics') {
+  <div class="obs-card">
+    <h3>Synthetics</h3>
+    @if (summary) { <p>Overall status: <strong>{{ summary.synthetics || 'no checks' }}</strong></p> }
+    <a class="obs-btn primary" [routerLink]="['/projects', projectId, 'synthetics']">Open synthetic checks</a>
+    <a class="obs-btn" routerLink="/alerting" [queryParams]="{ projectId }" style="margin-left:8px">Alerting ({{ summary?.incidents?.active ?? 0 }} active)</a>
+  </div>
+}
+
+<!-- INFRA -->
+@if (tab === 'infra' && enabled) {
+  @if (!infra.namespaces.length && !loading) {
+    <div class="obs-card"><div class="obs-empty"><strong>No environments deployed</strong>Pod metrics appear once the project has a running environment.</div></div>
+  } @else {
+    <div class="obs-grid-2">
+      <div class="obs-card"><app-obs-line-chart title="CPU (cores) by pod" unit="cores" [series]="infra.cpu" /></div>
+      <div class="obs-card"><app-obs-line-chart title="Memory (working set) by pod" unit="bytes" [series]="infra.memory" /></div>
+    </div>
+    <div class="obs-card" style="overflow-x:auto">
+      <h3>Restarts in range</h3>
+      <table class="obs-table"><thead><tr><th>Namespace</th><th>Pod</th><th class="obs-num">Restarts</th></tr></thead><tbody>
+        @for (r of infra.restarts; track r.pod) { <tr><td>{{ r.namespace }}</td><td>{{ r.pod }}</td><td class="obs-num" [class.obs-bad]="(r.restarts ?? 0) >= 1">{{ r.restarts | number: '1.0-0' }}</td></tr> }
+      </tbody></table>
+    </div>
+  }
+}
+
+<!-- PROFILES -->
+@if (tab === 'profiles' && enabled) {
+  <div class="obs-card">
+    <div class="obs-row" style="margin-bottom:12px">
+      <label class="obs-muted">Service
+        <select class="obs-select" [(ngModel)]="profileService" (ngModelChange)="loadFlame().catch(onErr)">
+          @for (s of profileMeta.services; track s) { <option [value]="s">{{ s }}</option> }
+        </select>
+      </label>
+      <label class="obs-muted">Profile
+        <select class="obs-select" [(ngModel)]="profileType" (ngModelChange)="loadFlame().catch(onErr)">
+          @for (t of profileMeta.profileTypes; track t) { <option [value]="t">{{ t.split(':').slice(0, 2).join(' / ') }}</option> }
+        </select>
+      </label>
+    </div>
+    <app-obs-flamegraph [flamebearer]="flame.flamebearer" [unit]="flame.units" />
+  </div>
+}
