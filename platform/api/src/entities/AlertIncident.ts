@@ -10,6 +10,7 @@ export type IncidentStatus = 'firing' | 'acknowledged' | 'resolved';
 @Entity('alert_incidents')
 @Index('alert_incidents_project', ['projectId'])
 @Index('alert_incidents_status', ['status'])
+@Index('alert_incidents_resolved_at', ['resolvedAt'])
 @Index('alert_incidents_open_key', ['projectId', 'dedupeKey'], { unique: true, where: "status <> 'resolved'" })
 export class AlertIncident {
   @PrimaryGeneratedColumn('uuid')
@@ -81,6 +82,10 @@ export class AlertIncident {
 
   @Column({ type: 'uuid', nullable: true, name: 'resolved_by' })
   resolvedBy: string | null;
+
+  /** Title of the resolving event when the source sent a distinct one ("... recovered"). */
+  @Column({ type: 'varchar', length: 300, nullable: true, name: 'resolved_title' })
+  resolvedTitle: string | null;
 
   /** Last 50 lifecycle entries: { at, type, detail }. */
   @Column({ type: 'jsonb', default: () => "'[]'" })

@@ -173,6 +173,12 @@ async function bootstrap() {
     // Operation definitions (deploy, secret rotation, DB provisioning) must be
     // registered before the leader's operation-resume job runs (issue #23).
     await (await import('./lib/storage-providers')).encryptLegacyStorage(ds);
+    try {
+      const n = await (await import('./lib/smtp-secrets')).encryptLegacySmtpSecrets(ds);
+      if (n) console.log(`[server] Encrypted stored credentials of ${n} SMTP configuration(s)`);
+    } catch (err: any) {
+      console.warn(`[server] SMTP credential encryption skipped: ${err?.message || err}`);
+    }
     await (await import('./lib/storage-providers')).ensureBundledStorage(ds);
     await import('./lib/operation-types');
 
