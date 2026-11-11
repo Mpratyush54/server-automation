@@ -6,17 +6,21 @@
  *   GET  /alerting/status               evaluation mode
  *   POST /alerting/alertmanager/webhook Alertmanager receiver (bearer token, not a user JWT)
  *
- * Read: project viewer. Acknowledge / resolve: project developer. Configuration changes:
- * platform admin or devops (and project devops access), audited. Channel secrets are write-only.
+ * Read: project viewer. Acknowledge / resolve: project developer. Configuration changes
+ * (channels, policies, schedules, silences, SLOs, monitors): project devops/owner or platform
+ * admin/devops, audited (#151). Monitors and SLOs that carry raw PromQL/LogQL (monitor kinds
+ * `metric`/`log`, `ratio` SLOs) are not rewritten to the project's scope, so only platform
+ * admin/devops may create them or edit them into/while in that form. allowPrivateNetwork on
+ * channels stays platform-admin only. Agent tokens are read-only. Channel secrets are write-only.
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import { In } from 'typeorm';
 import { getDb } from '../config/database';
-import { expressAuthenticate, expressRequireRole, AuthenticatedRequest, logAudit } from '../middleware/auth';
+import { expressAuthenticate, AuthenticatedRequest, logAudit } from '../middleware/auth';
 import { UserRole, User } from '../entities/User';
 import { ProjectAccessRole } from '../entities/ProjectMember';
 import { Project } from '../entities/Project';
-import { requireProjectAccess, listAccessibleProjectIds } from '../lib/project-access';
+import { requireProjectAccess, listAccessibleProjectIds, isGlobalProjectAdmin, userCanAccessProject } from '../lib/project-access';
 import { AlertChannel } from '../entities/AlertChannel';
 import { AlertMonitor } from '../entities/AlertMonitor';
 import { AlertSlo } from '../entities/AlertSlo';
@@ -42,7 +46,20 @@ import { AlertEvent } from '../lib/alert-events';
 
 const router = Router();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const configRole = expressRequireRole([UserRole.DEVOPS]);
+
+/** Monitor kinds whose user-supplied PromQL/LogQL is evaluated as-is (not scoped to the project). */
+export const RAW_QUERY_MONITOR_KINDS: readonly string[] = ['metric', 'log'];
+
+class Forbidden extends Error {
+  readonly status = 403;
+}
+
+/** Raw-query monitors / ratio SLOs: platform admin or devops only (#151). */
+function requireRawQueryRole(req: AuthenticatedRequest, what: string) {
+  if (!isGlobalProjectAdmin(req.user)) {
+    throw new Forbidden(`Only platform admins and devops can configure ${what}: their raw queries are not limited to this project`);
+  }
+}
 
 type Handler = (req: AuthenticatedRequest, res: Response) => Promise<unknown>;
 const wrap = (fn: Handler) => (req: Request, res: Response, next: NextFunction) => {
@@ -146,7 +163,7 @@ function channelFlags(req: AuthenticatedRequest, body: any, current?: AlertChann
   return { minSeverity, allowPrivateNetwork, enabled: body.enabled === undefined ? current?.enabled ?? true : !!body.enabled };
 }
 
-router.post('/projects/:projectId/alerting/channels', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.post('/projects/:projectId/alerting/channels', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const body = req.body || {};
@@ -172,7 +189,7 @@ router.post('/projects/:projectId/alerting/channels', expressAuthenticate, confi
   });
 }));
 
-router.put('/projects/:projectId/alerting/channels/:id', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.put('/projects/:projectId/alerting/channels/:id', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const c = await owned<AlertChannel>(AlertChannel, req.params.id, pid);
@@ -194,7 +211,7 @@ router.put('/projects/:projectId/alerting/channels/:id', expressAuthenticate, co
   res.json({ ...publicChannel(saved), ...(normalized.generatedSigningSecret ? { signingSecret: normalized.generatedSigningSecret } : {}) });
 }));
 
-router.delete('/projects/:projectId/alerting/channels/:id', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.delete('/projects/:projectId/alerting/channels/:id', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const c = await owned<AlertChannel>(AlertChannel, req.params.id, pid);
@@ -204,7 +221,7 @@ router.delete('/projects/:projectId/alerting/channels/:id', expressAuthenticate,
   res.json({ success: true });
 }));
 
-router.post('/projects/:projectId/alerting/channels/:id/test', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.post('/projects/:projectId/alerting/channels/:id/test', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const c = await owned<AlertChannel>(AlertChannel, req.params.id, pid);
@@ -230,9 +247,10 @@ router.post('/projects/:projectId/alerting/channels/:id/test', expressAuthentica
 // Monitors
 // ---------------------------------------------------------------------------
 
-async function monitorFields(pid: string, body: any, current?: AlertMonitor): Promise<Partial<AlertMonitor>> {
+async function monitorFields(req: AuthenticatedRequest, pid: string, body: any, current?: AlertMonitor): Promise<Partial<AlertMonitor>> {
   const kind = String(body.kind ?? current?.kind ?? '');
   if (!['metric', 'log', 'trace', 'resource'].includes(kind)) throw bad('kind must be metric, log, trace or resource');
+  if (RAW_QUERY_MONITOR_KINDS.includes(kind)) requireRawQueryRole(req, `${kind} monitors`);
   const params = body.params !== undefined ? (body.params && typeof body.params === 'object' ? body.params : {}) : current?.params || {};
   const cleanParams: Record<string, string> = {};
   if (params.environment) cleanParams.environment = str(params.environment, 'params.environment', 50);
@@ -285,10 +303,10 @@ router.get('/projects/:projectId/alerting/monitors', expressAuthenticate, wrap(a
   res.json(await (await getDb()).getRepository(AlertMonitor).find({ where: { projectId: pid } }));
 }));
 
-router.post('/projects/:projectId/alerting/monitors', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.post('/projects/:projectId/alerting/monitors', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
-  const fields = await monitorFields(pid, req.body || {});
+  const fields = await monitorFields(req, pid, req.body || {});
   const repo = (await getDb()).getRepository(AlertMonitor);
   const saved = await repo.save(repo.create({ ...fields, projectId: pid, state: 'ok', pendingSince: null, lastValue: null, lastEvaluatedAt: null, lastError: null, legacyAlertId: null, createdBy: req.user?.id || null }));
   await audit(req, 'alerting.monitor.create', 'alert_monitor', saved.id, { projectId: pid, kind: saved.kind, name: saved.name });
@@ -296,12 +314,12 @@ router.post('/projects/:projectId/alerting/monitors', expressAuthenticate, confi
   res.status(201).json(saved);
 }));
 
-router.put('/projects/:projectId/alerting/monitors/:id', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.put('/projects/:projectId/alerting/monitors/:id', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const m = await owned<AlertMonitor>(AlertMonitor, req.params.id, pid);
   if (!m) return res.status(404).json({ error: 'Monitor not found' });
-  Object.assign(m, await monitorFields(pid, req.body || {}, m));
+  Object.assign(m, await monitorFields(req, pid, req.body || {}, m));
   const wasFiring = m.state === 'firing';
   if (!m.enabled) { m.state = 'ok'; m.pendingSince = null; }
   const saved = await (await getDb()).getRepository(AlertMonitor).save(m);
@@ -311,7 +329,7 @@ router.put('/projects/:projectId/alerting/monitors/:id', expressAuthenticate, co
   res.json(saved);
 }));
 
-router.delete('/projects/:projectId/alerting/monitors/:id', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.delete('/projects/:projectId/alerting/monitors/:id', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const m = await owned<AlertMonitor>(AlertMonitor, req.params.id, pid);
@@ -327,7 +345,7 @@ router.delete('/projects/:projectId/alerting/monitors/:id', expressAuthenticate,
 // SLOs
 // ---------------------------------------------------------------------------
 
-async function sloFields(pid: string, body: any, current?: AlertSlo): Promise<Partial<AlertSlo>> {
+async function sloFields(req: AuthenticatedRequest, pid: string, body: any, current?: AlertSlo): Promise<Partial<AlertSlo>> {
   const params = body.params !== undefined ? (body.params && typeof body.params === 'object' ? body.params : {}) : current?.params || {};
   const clean: Record<string, any> = {};
   if (params.service) clean.service = str(params.service, 'params.service', 200);
@@ -344,6 +362,7 @@ async function sloFields(pid: string, body: any, current?: AlertSlo): Promise<Pa
     enabled: body.enabled === undefined ? current?.enabled ?? true : !!body.enabled,
     policyId: body.policyId !== undefined ? await checkPolicy(pid, body.policyId) : current?.policyId ?? null,
   };
+  if (fields.sliType === 'ratio') requireRawQueryRole(req, 'ratio SLOs');
   if (fields.sliType !== 'ratio') { fields.errorQuery = null; fields.totalQuery = null; }
   try {
     validateSlo({ id: 'x', projectId: pid, ...fields } as any);
@@ -359,10 +378,10 @@ router.get('/projects/:projectId/alerting/slos', expressAuthenticate, wrap(async
   res.json(await (await getDb()).getRepository(AlertSlo).find({ where: { projectId: pid } }));
 }));
 
-router.post('/projects/:projectId/alerting/slos', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.post('/projects/:projectId/alerting/slos', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
-  const fields = await sloFields(pid, req.body || {});
+  const fields = await sloFields(req, pid, req.body || {});
   const repo = (await getDb()).getRepository(AlertSlo);
   const saved = await repo.save(repo.create({ ...fields, projectId: pid, status: null, alertState: {}, createdBy: req.user?.id || null }));
   await audit(req, 'alerting.slo.create', 'alert_slo', saved.id, { projectId: pid, name: saved.name, target: saved.target });
@@ -370,19 +389,19 @@ router.post('/projects/:projectId/alerting/slos', expressAuthenticate, configRol
   res.status(201).json(saved);
 }));
 
-router.put('/projects/:projectId/alerting/slos/:id', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.put('/projects/:projectId/alerting/slos/:id', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const s = await owned<AlertSlo>(AlertSlo, req.params.id, pid);
   if (!s) return res.status(404).json({ error: 'SLO not found' });
-  Object.assign(s, await sloFields(pid, req.body || {}, s));
+  Object.assign(s, await sloFields(req, pid, req.body || {}, s));
   const saved = await (await getDb()).getRepository(AlertSlo).save(s);
   await audit(req, 'alerting.slo.update', 'alert_slo', s.id, { projectId: pid, fields: Object.keys(req.body || {}) });
   scheduleRulesSync(pid);
   res.json(saved);
 }));
 
-router.delete('/projects/:projectId/alerting/slos/:id', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.delete('/projects/:projectId/alerting/slos/:id', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const s = await owned<AlertSlo>(AlertSlo, req.params.id, pid);
@@ -420,7 +439,7 @@ router.get('/projects/:projectId/alerting/silences', expressAuthenticate, wrap(a
     .map((s) => ({ ...s, state: new Date(s.endsAt).getTime() <= now ? 'expired' : new Date(s.startsAt).getTime() > now ? 'pending' : 'active' })));
 }));
 
-router.post('/projects/:projectId/alerting/silences', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.post('/projects/:projectId/alerting/silences', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const body = req.body || {};
@@ -444,7 +463,7 @@ router.post('/projects/:projectId/alerting/silences', expressAuthenticate, confi
   res.status(201).json(saved);
 }));
 
-router.delete('/projects/:projectId/alerting/silences/:id', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.delete('/projects/:projectId/alerting/silences/:id', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const s = await owned<AlertSilence>(AlertSilence, req.params.id, pid);
@@ -464,12 +483,25 @@ router.delete('/projects/:projectId/alerting/silences/:id', expressAuthenticate,
 // Escalation policies + on-call schedules
 // ---------------------------------------------------------------------------
 
-async function checkStepRefs(pid: string, steps: ReturnType<typeof validateSteps>) {
-  const ds = await getDb();
+/**
+ * Users paged by policies / schedules must exist. Project-level configurers (#151) may only page
+ * people who can see the project (members, platform admin/devops); platform admin/devops may page anyone.
+ */
+async function checkUsers(req: AuthenticatedRequest, pid: string, ids: string[]) {
+  const repo = (await getDb()).getRepository(User);
+  const anyone = isGlobalProjectAdmin(req.user);
+  for (const id of ids) {
+    const u = await repo.findOne({ where: { id } });
+    if (!u) throw bad(`user ${id} not found`);
+    if (!anyone && !(await userCanAccessProject(pid, { id: u.id, role: String(u.role) }))) throw bad(`user ${id} is not a member of this project`);
+  }
+}
+
+async function checkStepRefs(req: AuthenticatedRequest, pid: string, steps: ReturnType<typeof validateSteps>) {
   for (const s of steps) {
     for (const id of s.channelIds || []) if (!(await owned(AlertChannel, id, pid))) throw bad(`channel ${id} does not belong to this project`);
     for (const id of s.scheduleIds || []) if (!(await owned(AlertOncallSchedule, id, pid))) throw bad(`schedule ${id} does not belong to this project`);
-    for (const id of s.userIds || []) if (!(await ds.getRepository(User).findOne({ where: { id } }))) throw bad(`user ${id} not found`);
+    await checkUsers(req, pid, s.userIds || []);
   }
 }
 
@@ -486,13 +518,13 @@ router.get('/projects/:projectId/alerting/policies', expressAuthenticate, wrap(a
   res.json(await (await getDb()).getRepository(AlertEscalationPolicy).find({ where: { projectId: pid } }));
 }));
 
-router.post('/projects/:projectId/alerting/policies', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.post('/projects/:projectId/alerting/policies', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const body = req.body || {};
   let steps;
   try { steps = validateSteps(body.steps); } catch (err: any) { throw bad(err.message); }
-  await checkStepRefs(pid, steps);
+  await checkStepRefs(req, pid, steps);
   const repo = (await getDb()).getRepository(AlertEscalationPolicy);
   const saved = await repo.save(repo.create({ projectId: pid, name: str(body.name, 'name', 100), isDefault: !!body.isDefault, steps }));
   if (saved.isDefault) await setDefault(pid, saved.id);
@@ -500,7 +532,7 @@ router.post('/projects/:projectId/alerting/policies', expressAuthenticate, confi
   res.status(201).json(saved);
 }));
 
-router.put('/projects/:projectId/alerting/policies/:id', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.put('/projects/:projectId/alerting/policies/:id', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const p = await owned<AlertEscalationPolicy>(AlertEscalationPolicy, req.params.id, pid);
@@ -508,7 +540,7 @@ router.put('/projects/:projectId/alerting/policies/:id', expressAuthenticate, co
   const body = req.body || {};
   if (body.steps !== undefined) {
     try { p.steps = validateSteps(body.steps); } catch (err: any) { throw bad(err.message); }
-    await checkStepRefs(pid, p.steps);
+    await checkStepRefs(req, pid, p.steps);
   }
   if (body.name !== undefined) p.name = str(body.name, 'name', 100);
   if (body.isDefault !== undefined) p.isDefault = !!body.isDefault;
@@ -518,7 +550,7 @@ router.put('/projects/:projectId/alerting/policies/:id', expressAuthenticate, co
   res.json(saved);
 }));
 
-router.delete('/projects/:projectId/alerting/policies/:id', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.delete('/projects/:projectId/alerting/policies/:id', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const p = await owned<AlertEscalationPolicy>(AlertEscalationPolicy, req.params.id, pid);
@@ -551,11 +583,6 @@ function scheduleFields(body: any, current?: AlertOncallSchedule): Partial<Alert
   };
 }
 
-async function checkUsers(ids: string[]) {
-  const repo = (await getDb()).getRepository(User);
-  for (const id of ids) if (!(await repo.findOne({ where: { id } }))) throw bad(`user ${id} not found`);
-}
-
 router.get('/projects/:projectId/alerting/schedules', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.VIEWER);
   if (!pid) return;
@@ -564,30 +591,30 @@ router.get('/projects/:projectId/alerting/schedules', expressAuthenticate, wrap(
   res.json(rows.map((s) => ({ ...s, onCallUserId: currentOncall(s, now) })));
 }));
 
-router.post('/projects/:projectId/alerting/schedules', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.post('/projects/:projectId/alerting/schedules', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const fields = scheduleFields(req.body || {});
-  await checkUsers([...(fields.userIds || []), ...(fields.overrides || []).map((o) => o.userId)]);
+  await checkUsers(req, pid, [...(fields.userIds || []), ...(fields.overrides || []).map((o) => o.userId)]);
   const repo = (await getDb()).getRepository(AlertOncallSchedule);
   const saved = await repo.save(repo.create({ ...fields, projectId: pid }));
   await audit(req, 'alerting.schedule.create', 'alert_schedule', saved.id, { projectId: pid, users: saved.userIds.length });
   res.status(201).json({ ...saved, onCallUserId: currentOncall(saved, new Date()) });
 }));
 
-router.put('/projects/:projectId/alerting/schedules/:id', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.put('/projects/:projectId/alerting/schedules/:id', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const s = await owned<AlertOncallSchedule>(AlertOncallSchedule, req.params.id, pid);
   if (!s) return res.status(404).json({ error: 'Schedule not found' });
   Object.assign(s, scheduleFields(req.body || {}, s));
-  await checkUsers([...s.userIds, ...s.overrides.map((o) => o.userId)]);
+  await checkUsers(req, pid, [...s.userIds, ...s.overrides.map((o) => o.userId)]);
   const saved = await (await getDb()).getRepository(AlertOncallSchedule).save(s);
   await audit(req, 'alerting.schedule.update', 'alert_schedule', s.id, { projectId: pid, fields: Object.keys(req.body || {}) });
   res.json({ ...saved, onCallUserId: currentOncall(saved, new Date()) });
 }));
 
-router.delete('/projects/:projectId/alerting/schedules/:id', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.delete('/projects/:projectId/alerting/schedules/:id', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const s = await owned<AlertOncallSchedule>(AlertOncallSchedule, req.params.id, pid);
@@ -640,7 +667,7 @@ router.post('/projects/:projectId/alerting/incidents/:id/resolve', expressAuthen
 }));
 
 /** Fire (or resolve) a test alert through the whole pipeline (routing, silences, channels). */
-router.post('/projects/:projectId/alerting/test-event', expressAuthenticate, configRole, wrap(async (req, res) => {
+router.post('/projects/:projectId/alerting/test-event', expressAuthenticate, wrap(async (req, res) => {
   const pid = await guard(req, res, ProjectAccessRole.DEVOPS);
   if (!pid) return;
   const body = req.body || {};
