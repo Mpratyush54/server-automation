@@ -4,21 +4,30 @@
 // arbitrary scripts), and report the result (+ a PNG screenshot on failure).
 //
 // Network safety (layered):
-//   1. The pod's egress NetworkPolicy allows the public internet, cluster DNS and the
-//      platform API's dedicated runner port only.
+//   1. The pod's egress NetworkPolicy allows the public internet, cluster DNS, the
+//      platform API's dedicated runner port and the ingress controller only. The
+//      project's own env hosts (allowedIngressHosts) are mapped to the ingress
+//      controller inside Chromium; every other platform name is refused.
 //   2. Chromium's host resolver refuses cluster-internal names, the platform's own
 //      domain and literal private addresses on EVERY connection, redirect hops included.
 //   3. Requests the page issues are checked here before they leave (scheme, host,
 //      resolved addresses); redirect hops, which Playwright cannot hold back, are
 //      re-validated as they happen and after every step; any disallowed hop fails the
 //      check and no screenshot of the resulting page is taken.
+import { execFileSync } from 'node:child_process';
 import dns from 'node:dns';
+import fs from 'node:fs';
 import net from 'node:net';
+import path from 'node:path';
 
 const API = (process.env.PLATFORM_API_URL || 'http://platform-api-synthetics.platform.svc:3001').replace(/\/+$/, '');
 const CHECK_ID = process.env.CHECK_ID || '';
 const TOKEN = process.env.RUN_TOKEN || '';
 const USER_AGENT_SUFFIX = ' platform-synthetics/1.0';
+// The project's own env hosts are routed to this Service (the ingress controller) and,
+// when they use the platform's internal CA, verified against PLATFORM_CA_FILE.
+const INGRESS_SERVICE = process.env.INGRESS_SERVICE || '';
+const PLATFORM_CA_FILE = process.env.PLATFORM_CA_FILE || '';
 
 const PRIVATE_V4 = [
   ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16],
@@ -143,6 +152,44 @@ export function hopGuard(allowedHosts = [], lookup = (h) => dns.promises.lookup(
   };
 }
 
+/** IPv4 address of the ingress controller Service (cluster DNS), or null. */
+export async function resolveIngressAddress(name, lookup = (h) => dns.promises.lookup(h, { family: 4 })) {
+  if (!name) return null;
+  try {
+    const r = await lookup(name);
+    const address = Array.isArray(r) ? r[0]?.address : r?.address;
+    return net.isIPv4(address || '') ? address : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * certutil invocations that create the browser's NSS database under `home` and trust
+ * the platform CA for TLS server certificates only ("C,,": no e-mail / code signing).
+ */
+export function nssTrustCommands(home, caFile) {
+  const db = `sql:${path.posix.join(home, '.pki', 'nssdb')}`;
+  return [
+    ['certutil', ['-d', db, '-N', '--empty-password']],
+    ['certutil', ['-d', db, '-A', '-t', 'C,,', '-n', 'platform-internal-ca', '-i', caFile]],
+  ];
+}
+
+/** Trust the platform CA in this run's browser profile (HOME is a per-run emptyDir). */
+function trustPlatformCa(home, caFile) {
+  if (!home || !caFile) return false;
+  try {
+    if (!fs.readFileSync(caFile, 'utf8').includes('BEGIN CERTIFICATE')) return false;
+    fs.mkdirSync(path.join(home, '.pki', 'nssdb'), { recursive: true, mode: 0o700 });
+    for (const [cmd, args] of nssTrustCommands(home, caFile)) execFileSync(cmd, args, { stdio: 'ignore', timeout: 15_000 });
+    return true;
+  } catch (err) {
+    console.warn(`platform CA not trusted (${err?.code || err?.message || err}); env hosts using it will fail TLS`);
+    return false;
+  }
+}
+
 export function render(value, secrets) {
   return String(value ?? '').replace(/\{\{\s*secret\.([A-Za-z_][A-Za-z0-9_]{0,63})\s*\}\}/g, (whole, name) =>
     (Object.prototype.hasOwnProperty.call(secrets, name) ? secrets[name] : whole));
@@ -213,12 +260,16 @@ export async function main() {
   let error = null;
   let screenshot = null;
   const guard = hopGuard(allowed);
+  // Env hosts: exactly those names go to the ingress controller (CoreDNS answers for
+  // them are not usable by Chromium), and the internal CA is trusted for this run.
+  const ingressIp = allowed.length > 0 ? await resolveIngressAddress(INGRESS_SERVICE) : null;
+  if (allowed.length > 0) trustPlatformCa(process.env.HOME, PLATFORM_CA_FILE);
   const { chromium } = await import('playwright-core');
   const browser = await chromium.launch({
     headless: true,
     args: [
       '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
-      `--host-resolver-rules=${hostResolverRules({ allowedHosts: allowed, blockedDomains })}`,
+      `--host-resolver-rules=${hostResolverRules({ allowedHosts: allowed, ingressIp, blockedDomains })}`,
       '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
     ],
   });

@@ -2,7 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addressBlocked, firstDisallowedHop, hopGuard, hostResolverRules, privateIpv4Patterns, redirectChain, render, requestAllowed, runStep,
+  addressBlocked, firstDisallowedHop, hopGuard, hostResolverRules, nssTrustCommands, privateIpv4Patterns, redirectChain, render,
+  requestAllowed, resolveIngressAddress, runStep,
 } from './runner.mjs';
 
 test('blocks internal and non-HTTP requests', () => {
@@ -89,4 +90,28 @@ test('host resolver rules: project hosts first, then platform domain, internal n
   }
   assert.ok(!rules.includes('MAP 172.32.*.* ~NOTFOUND') && !rules.includes('MAP 100.128.*.* ~NOTFOUND'));
   assert.equal(privateIpv4Patterns().length, 5 + 16 + 64 + 32);
+});
+
+test('env hosts: exactly the project hosts are mapped to the ingress controller, before the platform-domain block', () => {
+  const rules = hostResolverRules({
+    allowedHosts: ['shop.apps.example.com', 'shop-staging.apps.example.com'], ingressIp: '10.43.12.7', blockedDomains: ['apps.example.com'],
+  }).split(', ');
+  assert.deepEqual(rules.slice(0, 2), ['MAP shop.apps.example.com 10.43.12.7', 'MAP shop-staging.apps.example.com 10.43.12.7']);
+  assert.ok(rules.indexOf('MAP *.apps.example.com ~NOTFOUND') > 1, 'other platform names stay refused');
+  assert.ok(!rules.some((r) => r.startsWith('MAP *') && r.endsWith('10.43.12.7')), 'no wildcard is mapped to the ingress');
+  // A non-IPv4 ingress answer is never used as a mapping target.
+  assert.equal(hostResolverRules({ allowedHosts: ['a.example.com'], ingressIp: 'evil.example' }).split(', ')[0], 'EXCLUDE a.example.com');
+});
+
+test('resolveIngressAddress returns an IPv4 address or null', async () => {
+  assert.equal(await resolveIngressAddress('ingress', async () => ({ address: '10.43.12.7', family: 4 })), '10.43.12.7');
+  assert.equal(await resolveIngressAddress('ingress', async () => { throw new Error('ENOTFOUND'); }), null);
+  assert.equal(await resolveIngressAddress('ingress', async () => ({ address: 'fd00::1', family: 6 })), null);
+  assert.equal(await resolveIngressAddress('', async () => ({ address: '10.0.0.1' })), null);
+});
+
+test('platform CA is added to the run profile NSS db for TLS servers only', () => {
+  const cmds = nssTrustCommands('/tmp', '/etc/platform-ca/ca.crt');
+  assert.deepEqual(cmds[0], ['certutil', ['-d', 'sql:/tmp/.pki/nssdb', '-N', '--empty-password']]);
+  assert.deepEqual(cmds[1], ['certutil', ['-d', 'sql:/tmp/.pki/nssdb', '-A', '-t', 'C,,', '-n', 'platform-internal-ca', '-i', '/etc/platform-ca/ca.crt']]);
 });

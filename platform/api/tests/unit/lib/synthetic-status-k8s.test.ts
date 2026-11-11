@@ -106,6 +106,16 @@ describe('browser CronJob rendering', () => {
     expect(JSON.stringify(cj)).not.toContain('synr_');
   });
 
+  it('mounts the internal CA (optional, read-only) and names the ingress Service for env hosts', () => {
+    expect(c.env).toEqual(expect.arrayContaining([
+      { name: 'INGRESS_SERVICE', value: 'ingress-nginx-controller.ingress-nginx.svc.cluster.local' },
+      { name: 'PLATFORM_CA_FILE', value: '/etc/platform-ca/ca.crt' },
+    ]));
+    expect(c.volumeMounts).toContainEqual({ name: 'platform-ca', mountPath: '/etc/platform-ca', readOnly: true });
+    expect(pod.volumes).toContainEqual({ name: 'platform-ca', configMap: { name: 'platform-ca', optional: true, items: [{ key: 'ca.crt', path: 'ca.crt' }] } });
+    expect(pod.volumes.some((v: any) => v.secret)).toBe(false);
+  });
+
   it('cron schedules spread checks and respect the interval', () => {
     expect(cronSchedule(300, ID)).toMatch(/^(\d+,){11}\d+ \* \* \* \*$/);
     const every15 = cronSchedule(900, ID).split(' ')[0].split(',').map(Number);

@@ -2,7 +2,11 @@ package components
 
 import (
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"strings"
+
+	"github.com/fatih/color"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
@@ -54,6 +58,47 @@ func syntheticsRunnerConfigMap(c *config.Config) map[string]any {
 	}
 }
 
+// SyntheticsCAConfigMap is the synthetics-namespace copy of the platform CA
+// certificate (public part only), mounted by browser runners so they trust the
+// project's environment hosts when those are served by the internal CA.
+const SyntheticsCAConfigMap = "platform-ca"
+
+// caCertificatePEM returns only the CERTIFICATE blocks of pemData (never a key),
+// or "" when there are none.
+func caCertificatePEM(pemData string) string {
+	var out strings.Builder
+	rest := []byte(pemData)
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		if block.Type == "CERTIFICATE" && len(block.Headers) == 0 {
+			_ = pem.Encode(&out, block)
+		}
+	}
+	return out.String()
+}
+
+// syntheticsCAConfigMap renders the CA copy, or nil when there is no certificate.
+func syntheticsCAConfigMap(caPEM string) map[string]any {
+	cert := caCertificatePEM(caPEM)
+	if cert == "" {
+		return nil
+	}
+	return map[string]any{
+		"apiVersion": "v1",
+		"kind":       "ConfigMap",
+		"metadata": map[string]any{
+			"name":      SyntheticsCAConfigMap,
+			"namespace": "synthetics",
+			"labels":    map[string]string{"app.kubernetes.io/managed-by": "platformctl"},
+		},
+		"data": map[string]string{"ca.crt": cert},
+	}
+}
+
 // InstallSynthetics applies the synthetics namespace and policies (full profile).
 func InstallSynthetics(c *config.Config) error {
 	if !FullTelemetry(c) {
@@ -72,6 +117,15 @@ func InstallSynthetics(c *config.Config) error {
 	}
 	if _, err := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, string(b)); err != nil {
 		return fmt.Errorf("synthetics runner config: %w", err)
+	}
+	// Best effort: without the copy, env hosts served by the internal CA fail TLS
+	// in browser checks (Let's Encrypt certificates are trusted anyway).
+	if cm := syntheticsCAConfigMap(kubeSecretValue("cert-manager", "platform-ca", "ca.crt")); cm != nil {
+		if b, err := json.Marshal(cm); err == nil {
+			if _, err := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, string(b)); err != nil {
+				color.Yellow("  ⚠ synthetics: publishing the platform CA for browser checks failed: %v", err)
+			}
+		}
 	}
 	return state.MarkDone("synthetics")
 }

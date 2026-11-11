@@ -128,3 +128,45 @@ func TestBlackboxSyntheticModules(t *testing.T) {
 		}
 	}
 }
+
+func TestSyntheticsRunnerReachesOnlyIngressControllerForEnvHosts(t *testing.T) {
+	runner := syntheticsDoc(t, "NetworkPolicy", "synthetics-runner")
+	for _, want := range []string{
+		"matchLabels: {kubernetes.io/metadata.name: ingress-nginx}",
+		"matchLabels: {app.kubernetes.io/component: controller}",
+		"{port: 80, protocol: TCP}",
+		"{port: 443, protocol: TCP}",
+	} {
+		if !strings.Contains(runner, want) {
+			t.Fatalf("runner policy must allow the ingress controller (%s):\n%s", want, runner)
+		}
+	}
+	// Private ranges stay excluded from the internet rule.
+	if !strings.Contains(runner, "10.0.0.0/8") {
+		t.Fatal("runner internet rule must still exclude 10.0.0.0/8")
+	}
+}
+
+const testCA = `-----BEGIN CERTIFICATE-----
+MIIBdzCCAR2gAwIBAgIQZ0n2kQ==
+-----END CERTIFICATE-----
+`
+
+func TestSyntheticsCAConfigMapCarriesCertificateOnly(t *testing.T) {
+	if syntheticsCAConfigMap("") != nil || syntheticsCAConfigMap("not pem") != nil {
+		t.Fatal("no certificate: no ConfigMap")
+	}
+	withKey := testCA + "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIA==\n-----END EC PRIVATE KEY-----\n"
+	cm := syntheticsCAConfigMap(withKey)
+	if cm == nil {
+		t.Fatal("certificate present: ConfigMap expected")
+	}
+	data := cm["data"].(map[string]string)["ca.crt"]
+	if !strings.Contains(data, "BEGIN CERTIFICATE") || strings.Contains(data, "PRIVATE KEY") {
+		t.Fatalf("ConfigMap must hold the certificate and never a key:\n%s", data)
+	}
+	meta := cm["metadata"].(map[string]any)
+	if meta["name"] != "platform-ca" || meta["namespace"] != "synthetics" {
+		t.Fatalf("unexpected metadata %v", meta)
+	}
+}

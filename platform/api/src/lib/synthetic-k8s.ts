@@ -31,6 +31,11 @@ export const CHECK_LABEL = 'platform.io/synthetic-check';
 export const RUNNER_CONFIGMAP = 'synthetics-runner';
 /** The API's runner-only listener (SYNTHETICS_RUNNER_PORT) behind the platform-api-synthetics Service. */
 export const DEFAULT_API_URL = 'http://platform-api-synthetics.platform.svc:3001';
+/** Ingress controller Service; the CoreDNS rewrite sends *.DOMAIN there as well. */
+export const INGRESS_SERVICE = 'ingress-nginx-controller.ingress-nginx.svc.cluster.local';
+/** ConfigMap (synthetics namespace) with the internal CA certificate, written by platformctl. */
+export const PLATFORM_CA_CONFIGMAP = 'platform-ca';
+export const PLATFORM_CA_MOUNT = '/etc/platform-ca';
 export const BROWSER_RESOURCES = {
   requests: { cpu: '250m', memory: '512Mi', 'ephemeral-storage': '256Mi' },
   limits: { cpu: '1', memory: '1Gi', 'ephemeral-storage': '1Gi' },
@@ -167,14 +172,24 @@ export function renderBrowserCronJob(
                   { name: 'PLATFORM_API_URL', value: runtime.apiUrl },
                   { name: 'RUN_TOKEN', valueFrom: { secretKeyRef: { name, key: 'RUN_TOKEN' } } },
                   { name: 'HOME', value: '/tmp' },
+                  // Project env hosts are mapped to this Service's address inside Chromium.
+                  { name: 'INGRESS_SERVICE', value: INGRESS_SERVICE },
+                  { name: 'PLATFORM_CA_FILE', value: `${PLATFORM_CA_MOUNT}/ca.crt` },
                 ],
                 resources: BROWSER_RESOURCES,
                 securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ['ALL'] } },
-                volumeMounts: [{ name: 'tmp', mountPath: '/tmp' }, { name: 'shm', mountPath: '/dev/shm' }],
+                volumeMounts: [
+                  { name: 'tmp', mountPath: '/tmp' },
+                  { name: 'shm', mountPath: '/dev/shm' },
+                  { name: 'platform-ca', mountPath: PLATFORM_CA_MOUNT, readOnly: true },
+                ],
               }],
               volumes: [
                 { name: 'tmp', emptyDir: { sizeLimit: '512Mi' } },
                 { name: 'shm', emptyDir: { medium: 'Memory', sizeLimit: '256Mi' } },
+                // Internal CA certificate (public part; platformctl copies it). Optional:
+                // installs on Let's Encrypt only need the public roots.
+                { name: 'platform-ca', configMap: { name: PLATFORM_CA_CONFIGMAP, optional: true, items: [{ key: 'ca.crt', path: 'ca.crt' }] } },
               ],
             },
           },

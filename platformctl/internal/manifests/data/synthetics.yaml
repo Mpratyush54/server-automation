@@ -7,7 +7,10 @@
 #   public internet only (no RFC 1918 / CGNAT / link-local / loopback ranges, so no
 #   pod, service, node-internal or cloud-metadata addresses); runners may also
 #   reach the platform API's dedicated runner port (3001: the runner endpoints
-#   only, never the rest of the API) to fetch their definition and report results.
+#   only, never the rest of the API) to fetch their definition and report results,
+#   and the ingress controller (ports 80/443) for the project's own env hosts.
+# - ConfigMap "platform-ca" (written by platformctl: the internal CA certificate,
+#   never its key) lets runners trust env hosts served by the internal CA.
 # - IPv4 only (k3s default single-stack); blackbox modules prefer ip4.
 # - RBAC: the platform API manages Probes in monitoring and CronJobs + their token
 #   Secrets in synthetics, and reads the synthetics-runner ConfigMap. Nothing else.
@@ -73,6 +76,17 @@ spec:
       ports:
         # Runner endpoints only (SYNTHETICS_RUNNER_PORT); the main API port stays closed.
         - {port: 3001, protocol: TCP}
+    # The project's own environment hosts: the runner maps exactly those names to the
+    # ingress controller (Chromium host-resolver-rules) and refuses every other
+    # platform name, so only routed Ingress traffic for those hosts reaches these pods.
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+          podSelector:
+            matchLabels: {app.kubernetes.io/component: controller}
+      ports:
+        - {port: 80, protocol: TCP}
+        - {port: 443, protocol: TCP}
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
