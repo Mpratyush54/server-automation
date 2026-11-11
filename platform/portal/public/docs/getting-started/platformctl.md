@@ -73,6 +73,92 @@ sudo sed -i '/^platform=/d' /etc/platform/.bootstrap_state
 sudo platformctl install platform
 ```
 
+## Install speed, logs and timings
+
+`provision` installs cluster components in parallel, respecting dependencies (databases before the Platform API, ingress before routing):
+
+```bash
+sudo platformctl provision --auto              # default: 4 steps at a time
+sudo platformctl provision --auto --parallel 2 # gentler on small servers
+sudo platformctl provision --auto --parallel 1 # serial, live output (old behaviour)
+```
+
+- Per-step logs: `/var/log/platformctl/<step>.log` (the last lines are printed if a step fails)
+- Background image pre-pull log: `/var/log/platformctl/prepull.log`
+- Timing summary: printed at the end and saved to `/var/log/platformctl/timings.txt`
+
+Docker is **not** installed on the server; k3s uses its own containerd. For private GHCR images set `GITHUB_TOKEN` before provisioning; it is written to `/etc/rancher/k3s/registries.yaml`.
+
+## Install profiles
+
+Set `PLATFORM_PROFILE` (or pass `--profile`) to `minimal`, `standard` (default)
+or `full`:
+
+- `minimal` ? core only; no monitoring, Portainer or ArgoCD.
+- `standard` ? the existing Grafana/Prometheus/Loki stack, Portainer and ArgoCD.
+- `full` ? standard services plus Alloy, S3-backed Loki, Tempo, Pyroscope and
+  blackbox-exporter. See [Full-profile telemetry](../operations/telemetry.md) for
+  memory estimates, token/CORS integration and the required legacy Loki migration.
+
+Saved explicit profiles remain in effect. Existing `loki-stack` installations
+must follow the telemetry migration procedure before selecting full.
+
+Browser synthetic checks (headless Chromium CronJobs) are an extra opt-in on the
+full profile: `SYNTHETICS_BROWSER=true`. See [Synthetic monitoring](../operations/synthetics.md).
+
+Explicit `INSTALL_*` variables override the profile. The profile is saved as
+`PLATFORM_PROFILE` in `/etc/platform/.env`; choosing a new profile explicitly ignores the
+`INSTALL_*` values saved by an earlier run.
+
+The profile also sets the Platform API replica count: `1` on `minimal`, `2` otherwise
+(rolling updates with `maxUnavailable: 0` and a PodDisruptionBudget). Override it with
+`API_REPLICAS=<1-10>`; see [Scaling](../deployment/scaling.md#api-replicas-shared-state-and-zero-downtime-deploys).
+
+## Ingress per-IP limits
+
+These limits cover all ingress traffic, including customer applications, per
+client IP and controller replica. Defaults accommodate office and carrier NAT:
+
+| Environment variable | Default | Allowed values |
+|---|---|---|
+| `INGRESS_IP_RATE_LIMIT` | `1000` requests/second | `0` or `1-1000000` |
+| `INGRESS_IP_BURST` | `2000` requests | `0` or `1-1000000` |
+| `INGRESS_IP_CONNECTIONS` | `2000` concurrent connections | `0` or `1-65535` |
+
+Invalid values warn and use defaults. Zero rate or connections disables that
+limiter and omits its directives. Zero burst removes the burst allowance while
+keeping the request rate limit active; burst is ignored when rate is zero.
+
+```bash
+sudo INGRESS_IP_RATE_LIMIT=5000 INGRESS_IP_BURST=10000 INGRESS_IP_CONNECTIONS=4000 platformctl install ingress-nginx
+```
+
+Values are saved in `/etc/platform/.env` and re-applied by subsequent
+`platformctl install ingress-nginx` runs. You can also edit the saved file;
+process environment variables take precedence. See [Host hardening](../host-hardening.md#ingress-defaults-and-optional-waf).
+
+## Offline bundle
+
+Releases include `platform-bundle-<version>-<arch>.tar.zst` and a `.sha256` file:
+k3s airgap images, all pinned Helm charts (`platformctl charts --json`) and the platform
+container images. The bundle is larger than GitHub's 2 GiB per-asset limit, so a release
+carries it as `.tar.zst.part00`, `.part01`, …; `--bundle auto` downloads and reassembles the
+parts and checks the result against the `.sha256`. To fetch it manually, download every part
+and the `.sha256`, then `cat platform-bundle-<version>-<arch>.tar.zst.part* >
+platform-bundle-<version>-<arch>.tar.zst` and `sha256sum -c` before `--bundle <path>`. `--bundle <path|auto>` verifies the checksum and extracts it before k3s is
+installed — images into `/var/lib/rancher/k3s/agent/images/`, charts into
+`/var/lib/platform/charts/` — so provisioning needs little or no network for images and charts.
+
+```bash
+sudo platformctl provision --bundle auto
+```
+
+To build a bundle locally (needs curl, jq, helm 3, docker, zstd):
+
+```bash
+scripts/build-bundle.sh v1.0.0 amd64   # writes dist/platform-bundle-v1.0.0-amd64.tar.zst
+```
+
 ## Day-2 operations
 
 **Update images after a release:**
