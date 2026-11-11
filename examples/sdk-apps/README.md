@@ -40,6 +40,8 @@ RUM is off until the browser telemetry block is provided. At container start
 `rum-config.sh` writes `/rum-config.json` from `RUM_FARO_ENDPOINT`, `RUM_BROWSER_TOKEN` and
 `RUM_SAMPLING_RATIO` (k8s: optional Secret `sdk-demo-rum`); without them Faro is never loaded.
 See [docs/guides/frontend-rum.md](../../docs/guides/frontend-rum.md).
+`RUM_ERRORS_ENDPOINT` (Secret key `errorsEndpoint`, the `telemetry.errorsEndpoint` value,
+e.g. `https://$DOMAIN/api/errors/rum`) also mirrors browser exceptions into error tracking.
 
 Verify on a full-profile install (needs the observability backend, #37/#49):
 
