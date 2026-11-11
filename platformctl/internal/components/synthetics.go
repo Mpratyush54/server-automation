@@ -126,6 +126,8 @@ func InstallSynthetics(c *config.Config) error {
 				color.Yellow("  ⚠ synthetics: publishing the platform CA for browser checks failed: %v", err)
 			}
 		}
+	} else {
+		color.Yellow("  ⚠ synthetics: could not read ca.crt from secret cert-manager/platform-ca; browser checks against internal-CA hosts will fail TLS until `platformctl` is re-run")
 	}
 	return state.MarkDone("synthetics")
 }
