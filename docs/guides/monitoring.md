@@ -2,6 +2,9 @@
 
 The Platform observability stack collects metrics, logs, and traces from all services. It uses **Grafana** for visualization, **Loki** for log aggregation, and **Prometheus** for metric collection — deployed via the `kube-prometheus-stack` Helm chart.
 
+For project-scoped metrics, traces, logs and profiles inside the portal, see
+[Observability views](observability.md).
+
 ---
 
 ## Grafana Dashboards
