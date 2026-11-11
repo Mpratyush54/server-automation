@@ -31,6 +31,8 @@ error tracking, synthetics, deploys, ... ──► Redis stream plat:api:alerts:
   is notified. Acknowledging stops escalation (PagerDuty gets `acknowledge`).
 * **Delivery** is retried with backoff (30 s doubling, up to `ALERTING_MAX_DELIVERY_ATTEMPTS`, default
   5) for network errors, HTTP 5xx, 408 and 429. Other 4xx fail at once and are shown on the channel.
+* **Status pages**: on a published [status page](../guides/status-pages.md), a new `major` / `critical`
+  incident (not maintenance) sends a `status-page` event; resolving it sends the resolution.
 
 ## Monitors
 
