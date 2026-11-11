@@ -15,6 +15,8 @@ import {
 } from './synthetic-status';
 
 export const PUBLIC_CACHE_TTL_SEC = 15;
+/** Max slugs held by the in-process cache used when Redis is not the state backend. */
+export const MEMORY_CACHE_MAX_ENTRIES = 500;
 export const PUBLIC_CACHE_CONTROL = `public, max-age=${PUBLIC_CACHE_TTL_SEC}, s-maxage=30`;
 
 const SLUG_RE = /^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])?$/;
@@ -37,10 +39,19 @@ export interface PublicComponent {
   days: StatusFeedComponent['days'];
 }
 
+/**
+ * Where an incident sits on the timeline at serialization time:
+ *  - upcoming: maintenance whose scheduledStart is still in the future
+ *  - active:   open incident, or maintenance inside its window
+ *  - resolved: resolved, or maintenance past scheduledEnd without a resolution
+ */
+export type IncidentPhase = 'upcoming' | 'active' | 'resolved';
+
 export interface PublicIncident {
   id: string;
   title: string;
   status: StatusIncidentLifecycle;
+  phase: IncidentPhase;
   impact: StatusIncidentImpact;
   isMaintenance: boolean;
   updates: Array<{ at: string; status: StatusIncidentLifecycle; body: string }>;
@@ -54,7 +65,6 @@ export interface PublicIncident {
 export interface PublicStatusPayload {
   slug: string;
   title: string;
-  domain: string | null;
   branding: { logoUrl: string | null; primaryColor: string | null; accentColor: string | null };
   generatedAt: string;
   status: OverallStatus;
@@ -63,7 +73,8 @@ export interface PublicStatusPayload {
 }
 
 export interface AdminStatusPageView {
-  id: string;
+  /** null until the page is first saved (GET returns unsaved defaults). */
+  id: string | null;
   projectId: string;
   slug: string;
   title: string;
@@ -72,8 +83,8 @@ export interface AdminStatusPageView {
   branding: StatusPageBranding;
   componentIds: string[] | null;
   publicPath: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export function isValidSlug(slug: string): boolean {
@@ -95,7 +106,7 @@ export function publicPathFor(slug: string): string {
 /** Admin view (auth required) — never includes secret/check internals. */
 export function serializeAdminStatusPage(page: StatusPage): AdminStatusPageView {
   return {
-    id: page.id,
+    id: page.id || null,
     projectId: page.projectId,
     slug: page.slug,
     title: page.title,
@@ -110,17 +121,51 @@ export function serializeAdminStatusPage(page: StatusPage): AdminStatusPageView 
       ? null
       : [...page.componentIds],
     publicPath: publicPathFor(page.slug),
-    createdAt: new Date(page.createdAt).toISOString(),
-    updatedAt: new Date(page.updatedAt).toISOString(),
+    createdAt: page.createdAt ? new Date(page.createdAt).toISOString() : null,
+    updatedAt: page.updatedAt ? new Date(page.updatedAt).toISOString() : null,
   };
 }
 
-/** Strip anything that is not an explicitly published incident field. */
-export function serializePublicIncident(inc: StatusIncident): PublicIncident {
+/**
+ * Timeline phase of an incident at `now`. Only maintenance windows are
+ * time-driven: active between scheduledStart and scheduledEnd, upcoming
+ * before, and completed (resolved) after scheduledEnd if nobody resolved it.
+ */
+export function incidentPhase(
+  inc: Pick<StatusIncident, 'status' | 'isMaintenance' | 'scheduledStart' | 'scheduledEnd'>,
+  now = new Date(),
+): IncidentPhase {
+  if (inc.status === 'resolved') return 'resolved';
+  if (!inc.isMaintenance) return 'active';
+  const t = now.getTime();
+  if (inc.scheduledEnd && t >= new Date(inc.scheduledEnd).getTime()) return 'resolved';
+  if (inc.scheduledStart && t < new Date(inc.scheduledStart).getTime()) return 'upcoming';
+  return 'active';
+}
+
+/**
+ * Admin incident view: stored lifecycle status plus the computed phase (so the
+ * editor can show upcoming/completed maintenance without rewriting the row).
+ */
+export function serializeAdminIncident(inc: StatusIncident, now = new Date()): PublicIncident {
+  return serializeIncidentFields(inc, incidentPhase(inc, now), false);
+}
+
+/**
+ * Strip anything that is not an explicitly published incident field. Maintenance
+ * past its window without a resolution is reported as resolved at scheduledEnd.
+ */
+export function serializePublicIncident(inc: StatusIncident, now = new Date()): PublicIncident {
+  return serializeIncidentFields(inc, incidentPhase(inc, now), true);
+}
+
+function serializeIncidentFields(inc: StatusIncident, phase: IncidentPhase, effective: boolean): PublicIncident {
+  const autoCompleted = effective && phase === 'resolved' && inc.status !== 'resolved';
   return {
     id: inc.id,
     title: inc.title,
-    status: inc.status,
+    status: autoCompleted ? 'resolved' : inc.status,
+    phase,
     impact: inc.impact,
     isMaintenance: !!inc.isMaintenance,
     updates: (inc.updates || []).map((u) => ({
@@ -130,10 +175,27 @@ export function serializePublicIncident(inc: StatusIncident): PublicIncident {
     })),
     scheduledStart: inc.scheduledStart ? new Date(inc.scheduledStart).toISOString() : null,
     scheduledEnd: inc.scheduledEnd ? new Date(inc.scheduledEnd).toISOString() : null,
-    resolvedAt: inc.resolvedAt ? new Date(inc.resolvedAt).toISOString() : null,
+    resolvedAt: inc.resolvedAt
+      ? new Date(inc.resolvedAt).toISOString()
+      : (autoCompleted && inc.scheduledEnd ? new Date(inc.scheduledEnd).toISOString() : null),
     createdAt: new Date(inc.createdAt).toISOString(),
     updatedAt: new Date(inc.updatedAt).toISOString(),
   };
+}
+
+/**
+ * A `firing` status-page alert is emitted for a manual incident only when the
+ * page is published, impact is major/critical, it is not maintenance, and it
+ * is not already resolved. `resolved` is emitted later only if this held.
+ */
+export function shouldFireIncidentAlert(
+  page: Pick<StatusPage, 'published'>,
+  inc: Pick<StatusIncident, 'impact' | 'isMaintenance' | 'status'>,
+): boolean {
+  return !!page.published
+    && (inc.impact === 'major' || inc.impact === 'critical')
+    && !inc.isMaintenance
+    && inc.status !== 'resolved';
 }
 
 /**
@@ -141,9 +203,10 @@ export function serializePublicIncident(inc: StatusIncident): PublicIncident {
  * page/incident rows; returns only fields safe for unauthenticated clients.
  */
 export function serializePublicStatusPage(
-  page: Pick<StatusPage, 'slug' | 'title' | 'domain' | 'published' | 'branding' | 'componentIds'>,
+  page: Pick<StatusPage, 'slug' | 'title' | 'published' | 'branding' | 'componentIds'>,
   feed: StatusFeed,
   incidents: StatusIncident[],
+  now = new Date(),
 ): PublicStatusPayload | null {
   if (!page.published) return null;
 
@@ -169,7 +232,8 @@ export function serializePublicStatusPage(
   return {
     slug: page.slug,
     title: page.title,
-    domain: page.domain,
+    // `domain` is stored for a future dedicated hostname but not served yet,
+    // so it is deliberately not part of the public payload.
     branding: {
       logoUrl: page.branding?.logoUrl ?? null,
       primaryColor: page.branding?.primaryColor ?? null,
@@ -178,7 +242,7 @@ export function serializePublicStatusPage(
     generatedAt: feed.generatedAt,
     status,
     components,
-    incidents: incidents.map(serializePublicIncident),
+    incidents: incidents.map((inc) => serializePublicIncident(inc, now)),
   };
 }
 
@@ -306,6 +370,13 @@ export function parseIncidentCreate(body: any): { ok: true; value: IncidentCreat
     scheduledEnd = new Date(body.scheduledEnd);
     if (Number.isNaN(scheduledEnd.getTime())) return { ok: false, error: 'scheduledEnd is invalid' };
   }
+  if (!isMaintenance) {
+    // Windows only drive maintenance; ignore them on ordinary incidents.
+    scheduledStart = null;
+    scheduledEnd = null;
+  } else if (scheduledStart && scheduledEnd && scheduledEnd.getTime() <= scheduledStart.getTime()) {
+    return { ok: false, error: 'scheduledEnd must be after scheduledStart' };
+  }
   const value: IncidentCreate = { title, status, impact, isMaintenance, scheduledStart, scheduledEnd };
   if (body.body !== undefined) {
     const b = String(body.body || '').trim();
@@ -351,15 +422,59 @@ function cacheKey(slug: string): string {
   return redisKey(`status:public:${slug}`);
 }
 
+/**
+ * Bounded in-process TTL cache used when Redis is not the state backend
+ * (single-replica / memory mode). Invalidation only reaches this process,
+ * which is fine because memory mode is single-replica by definition.
+ */
+const memoryCache = new Map<string, { payload: PublicStatusPayload; expiresAt: number }>();
+
+/** Tests only. */
+export function clearMemoryPublicCache(): void {
+  memoryCache.clear();
+}
+
+/** Tests only. */
+export function memoryPublicCacheSize(): number {
+  return memoryCache.size;
+}
+
+function memoryGet(slug: string, nowMs: number): PublicStatusPayload | null {
+  const hit = memoryCache.get(slug);
+  if (!hit) return null;
+  if (hit.expiresAt <= nowMs) {
+    memoryCache.delete(slug);
+    return null;
+  }
+  return hit.payload;
+}
+
+function memorySet(slug: string, payload: PublicStatusPayload, nowMs: number): void {
+  memoryCache.delete(slug);
+  if (memoryCache.size >= MEMORY_CACHE_MAX_ENTRIES) {
+    // Drop expired entries first, then the oldest insertion (Map keeps order).
+    for (const [k, v] of memoryCache) {
+      if (v.expiresAt <= nowMs) memoryCache.delete(k);
+    }
+    while (memoryCache.size >= MEMORY_CACHE_MAX_ENTRIES) {
+      const oldest = memoryCache.keys().next().value;
+      if (oldest === undefined) break;
+      memoryCache.delete(oldest);
+    }
+  }
+  memoryCache.set(slug, { payload, expiresAt: nowMs + PUBLIC_CACHE_TTL_SEC * 1000 });
+}
+
 export async function invalidatePublicCache(slug: string): Promise<void> {
+  memoryCache.delete(slug);
   if (stateBackend() !== 'redis') return;
   try {
     await withRedis((r) => r.del(cacheKey(slug)));
   } catch { /* cache is best-effort */ }
 }
 
-export async function readPublicCache(slug: string): Promise<PublicStatusPayload | null> {
-  if (stateBackend() !== 'redis') return null;
+export async function readPublicCache(slug: string, nowMs = Date.now()): Promise<PublicStatusPayload | null> {
+  if (stateBackend() !== 'redis') return memoryGet(slug, nowMs);
   try {
     const raw = await withRedis((r) => r.get(cacheKey(slug)));
     if (!raw) return null;
@@ -369,8 +484,11 @@ export async function readPublicCache(slug: string): Promise<PublicStatusPayload
   }
 }
 
-export async function writePublicCache(slug: string, payload: PublicStatusPayload): Promise<void> {
-  if (stateBackend() !== 'redis') return;
+export async function writePublicCache(slug: string, payload: PublicStatusPayload, nowMs = Date.now()): Promise<void> {
+  if (stateBackend() !== 'redis') {
+    memorySet(slug, payload, nowMs);
+    return;
+  }
   try {
     await withRedis((r) => r.set(cacheKey(slug), JSON.stringify(payload), 'EX', PUBLIC_CACHE_TTL_SEC));
   } catch { /* ignore */ }
@@ -391,14 +509,33 @@ export async function buildPublicStatusPayload(slug: string, now = new Date()): 
     }),
   ]);
 
-  return serializePublicStatusPage(page, feed, incidents);
+  return serializePublicStatusPage(page, feed, incidents, now);
 }
 
+/**
+ * Existing page, or unsaved defaults (free slug, draft) for the editor. Never
+ * writes: a viewer opening the editor must not create rows.
+ */
+export async function getStatusPageOrDefaults(projectId: string, createdById?: string | null): Promise<StatusPage> {
+  const ds = await getDb();
+  const repo = ds.getRepository(StatusPage);
+  const existing = await repo.findOne({ where: { projectId } });
+  if (existing) return existing;
+  return buildDefaultStatusPage(projectId, createdById);
+}
+
+/** Create on first write (settings save or first incident). */
 export async function getOrCreateStatusPage(projectId: string, createdById?: string | null): Promise<StatusPage> {
   const ds = await getDb();
   const repo = ds.getRepository(StatusPage);
   const existing = await repo.findOne({ where: { projectId } });
   if (existing) return existing;
+  return repo.save(await buildDefaultStatusPage(projectId, createdById));
+}
+
+async function buildDefaultStatusPage(projectId: string, createdById?: string | null): Promise<StatusPage> {
+  const ds = await getDb();
+  const repo = ds.getRepository(StatusPage);
 
   const project = await ds.getRepository(Project).findOne({ where: { id: projectId } });
   const base = slugify(project?.name || 'status');
@@ -418,7 +555,7 @@ export async function getOrCreateStatusPage(projectId: string, createdById?: str
     componentIds: null,
     createdById: createdById || null,
   });
-  return repo.save(page);
+  return page;
 }
 
 function slugify(name: string): string {
@@ -426,36 +563,64 @@ function slugify(name: string): string {
   return s.length >= 3 ? s : `status-${s || 'page'}`.slice(0, 63);
 }
 
-/** Atom 1.0 feed of incidents (optional subscription channel). */
-export function buildAtomFeed(payload: PublicStatusPayload, selfUrl: string): string {
+/** Human-readable maintenance window (UTC), or '' when the incident has none. */
+export function maintenanceWindowText(inc: Pick<PublicIncident, 'scheduledStart' | 'scheduledEnd'>): string {
+  const fmt = (iso: string) => new Date(iso).toUTCString().replace(/:\d\d GMT$/, ' UTC');
+  if (inc.scheduledStart && inc.scheduledEnd) return `${fmt(inc.scheduledStart)} – ${fmt(inc.scheduledEnd)}`;
+  if (inc.scheduledStart) return `from ${fmt(inc.scheduledStart)}`;
+  if (inc.scheduledEnd) return `until ${fmt(inc.scheduledEnd)}`;
+  return '';
+}
+
+function feedEntryTitle(inc: PublicIncident): string {
+  if (!inc.isMaintenance) return inc.title;
+  if (inc.phase === 'upcoming') return `Scheduled maintenance: ${inc.title}`;
+  if (inc.phase === 'active') return `Maintenance in progress: ${inc.title}`;
+  return `Maintenance completed: ${inc.title}`;
+}
+
+function feedEntrySummary(inc: PublicIncident): string {
+  const latest = inc.updates[inc.updates.length - 1]?.body || inc.title;
+  const window = inc.isMaintenance ? maintenanceWindowText(inc) : '';
+  return window ? `Window: ${window}. ${latest}` : latest;
+}
+
+/**
+ * Atom 1.0 feed of incidents (optional subscription channel). `htmlUrl` is the
+ * public HTML page (/status/<slug>) used for the alternate links.
+ */
+export function buildAtomFeed(payload: PublicStatusPayload, selfUrl: string, htmlUrl?: string): string {
   const entries = payload.incidents.map((inc) => {
     const updated = inc.updatedAt;
-    const summary = escapeXml(inc.updates[inc.updates.length - 1]?.body || inc.title);
+    const summary = escapeXml(feedEntrySummary(inc));
+    const alt = htmlUrl ? `\n    <link rel="alternate" type="text/html" href="${escapeXml(htmlUrl)}"/>` : '';
     return `  <entry>
     <id>urn:status-incident:${inc.id}</id>
-    <title>${escapeXml(inc.title)}</title>
-    <updated>${updated}</updated>
+    <title>${escapeXml(feedEntryTitle(inc))}</title>
+    <updated>${updated}</updated>${alt}
     <summary>${summary}</summary>
   </entry>`;
   }).join('\n');
+  const altFeed = htmlUrl ? `\n  <link rel="alternate" type="text/html" href="${escapeXml(htmlUrl)}"/>` : '';
   return `<?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <title>${escapeXml(payload.title)}</title>
   <id>urn:status-page:${escapeXml(payload.slug)}</id>
   <updated>${payload.generatedAt}</updated>
-  <link rel="self" href="${escapeXml(selfUrl)}"/>
+  <link rel="self" href="${escapeXml(selfUrl)}"/>${altFeed}
   <subtitle>Status and incidents for ${escapeXml(payload.title)}</subtitle>
 ${entries}
 </feed>
 `;
 }
 
-/** RSS 2.0 feed of incidents. */
-export function buildRssFeed(payload: PublicStatusPayload, selfUrl: string): string {
+/** RSS 2.0 feed of incidents. Channel/item <link> point at the public HTML page. */
+export function buildRssFeed(payload: PublicStatusPayload, htmlUrl: string): string {
   const items = payload.incidents.map((inc) => {
-    const desc = escapeXml(inc.updates[inc.updates.length - 1]?.body || inc.title);
+    const desc = escapeXml(feedEntrySummary(inc));
     return `    <item>
-      <title>${escapeXml(inc.title)}</title>
+      <title>${escapeXml(feedEntryTitle(inc))}</title>
+      <link>${escapeXml(htmlUrl)}</link>
       <guid isPermaLink="false">urn:status-incident:${inc.id}</guid>
       <pubDate>${new Date(inc.createdAt).toUTCString()}</pubDate>
       <description>${desc}</description>
@@ -465,7 +630,7 @@ export function buildRssFeed(payload: PublicStatusPayload, selfUrl: string): str
 <rss version="2.0">
   <channel>
     <title>${escapeXml(payload.title)}</title>
-    <link>${escapeXml(selfUrl.replace(/\/rss$/, ''))}</link>
+    <link>${escapeXml(htmlUrl)}</link>
     <description>Status and incidents for ${escapeXml(payload.title)}</description>
     <lastBuildDate>${new Date(payload.generatedAt).toUTCString()}</lastBuildDate>
 ${items}
