@@ -29,6 +29,13 @@
     --color-text-secondary: var(--text-secondary);
     --color-text-muted: var(--text-muted);
     
+    /* Aliases used by older page templates (were undefined, so text and
+       borders silently fell back to inherited colours). */
+    --color-text-secondary: var(--text-secondary);
+    --color-text-muted: var(--text-muted);
+    --border-glass: var(--border-subtle);
+    --primary: #a78bfa;
+
     --font-heading: 'Geist', 'Inter', sans-serif;
     --font-body: 'Geist', 'Inter', sans-serif;
     --font-code: 'Geist Mono', monospace;

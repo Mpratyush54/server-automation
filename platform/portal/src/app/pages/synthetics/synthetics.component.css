@@ -34,6 +34,7 @@ fieldset { border: 1px solid var(--border, #3334); border-radius: 6px; padding: 
 .st-unknown { color: #9ca3af; }
 .detail-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .err { color: #dc2626; font-size: 0.88em; margin-top: 4px; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+.detail h3, .result h3 { margin-top: 16px; }
 .timeline { display: flex; align-items: flex-end; gap: 2px; height: 80px; padding: 4px 0; border-bottom: 1px solid var(--border, #3334); max-width: 100%; overflow-x: auto; overflow-y: hidden; }
 /* 60 bars must fit (or scroll) inside the card on phones, never widen the page. */
 @media (max-width: 640px) { .timeline { gap: 1px; } .timeline .bar { min-width: 2px; } }
