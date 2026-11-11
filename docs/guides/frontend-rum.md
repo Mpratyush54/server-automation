@@ -164,8 +164,10 @@ setConsent({ replay: true });   // false stops a running recording at once
   to its replay.
 - **Portal.** Project -> Replays lists sessions (filters: page, errors, duration, environment);
   the player (rrweb-player, lazy-loaded) shows the markers on the timeline with links to the
-  error issue and the Tempo trace. Project members only; every view is audited
-  (`replay.view`, `replay.snapshot_view`, `replay.delete`).
+  error issue and the Tempo trace. Project members only; every access is audited
+  (`replay.view`, `replay.chunk_view` per downloaded chunk, `replay.snapshot_view`,
+  `replay.delete`). Agent tokens (MCP) additionally need the `replays:read` scope, which is not
+  in the default agent scopes; their audit entries carry the agent token id and name.
 - **Storage and retention.** MinIO bucket `replays`, `replays/<projectId>/<sessionId>/<seq>.json.gz`,
   plus `replay_sessions` / `replay_chunks` rows. An hourly job deletes sessions older than the
   project's replay retention (privacy settings, default 7 days); the bucket lifecycle rule is the
@@ -176,7 +178,9 @@ setConsent({ replay: true });   // false stops a running recording at once
   `REPLAY_MAX_SESSION_BYTES` (100 MiB), `REPLAY_RATE_LIMIT` (600/min per IP).
 - **Heatmap backgrounds.** `GET /api/projects/:projectId/replays/:sessionId|latest/snapshot?page=/orders/:id`
   returns the first full DOM snapshot of that page as inert HTML (no scripts, CSP prepended) for a
-  sandboxed iframe, plus the rrweb events.
+  sandboxed iframe, plus the rrweb events. With `latest` it is the newest snapshot of that page
+  (path or route name) from any session. A page that was left within 300 ms of navigating to it
+  (before it rendered) gets no snapshot.
 
 | Replay option | Default | Meaning |
 |---------------|---------|---------|
