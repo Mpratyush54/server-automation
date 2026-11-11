@@ -168,17 +168,17 @@ describe('persistHeatmapAggregates', () => {
     expect(r).toEqual({ stored: 3, refusedPages: [] });
     const cells = db.calls.find((c) => c.sql.includes('INSERT INTO heatmap_click_cells'))!;
     expect(cells.sql).toMatch(/count = heatmap_click_cells\.count \+ EXCLUDED\.count/);
-    expect(cells.params).toEqual([PROJECT, '2026-11-10', ['/known', '/new1'], ['desktop', 'desktop'], [10, 10], [10, 10], [1, 1]]);
+    expect(cells.params).toEqual([[PROJECT, PROJECT], ['2026-11-10', '2026-11-10'], ['/known', '/new1'], ['desktop', 'desktop'], [10, 10], [10, 10], [1, 1]]);
     const targets = db.calls.find((c) => c.sql.includes('INSERT INTO heatmap_click_targets'))!;
     expect(targets.params[4]).toEqual(['a#x']);
     const scroll = db.calls.find((c) => c.sql.includes('INSERT INTO heatmap_scroll_depth'))!;
-    expect(scroll.params).toEqual([PROJECT, '2026-11-10', ['/new2'], ['desktop'], [50], [1]]);
+    expect(scroll.params).toEqual([[PROJECT], ['2026-11-10'], ['/new2'], ['desktop'], [50], [1]]);
     for (const c of db.calls) expect(JSON.stringify(c.params)).not.toMatch(/subject|session|ip/i);
   });
 
   it('refuses new pages once the project page cap is reached (known pages still count)', async () => {
     const db = fakeDb((sql) => {
-      if (sql.startsWith('SELECT page')) return [{ page: '/known' }];
+      if (sql.startsWith('SELECT page')) return [{ page: '/known', last_day: '2026-11-09' }];
       if (sql.startsWith('SELECT count')) return [{ n: 2 }];
       return [];
     });
@@ -186,8 +186,18 @@ describe('persistHeatmapAggregates', () => {
     expect(r.refusedPages).toEqual(['/new2']);
     expect(r.stored).toBe(2);
     expect(db.calls.some((c) => c.sql.includes('heatmap_scroll_depth'))).toBe(false);
+    // Only new pages are inserted; a known page last seen yesterday gets one guarded UPDATE.
     const pages = db.calls.find((c) => c.sql.includes('INSERT INTO heatmap_pages'))!;
-    expect(pages.params[2]).toEqual(['/known', '/new1']);
+    expect(pages.params[2]).toEqual(['/new1']);
+    const touch = db.calls.find((c) => c.sql.includes('UPDATE heatmap_pages'))!;
+    expect(touch.params[2]).toEqual(['/known']);
+  });
+
+  it('does not write heatmap_pages for pages already seen today (no hot-row rewrite)', async () => {
+    const db = fakeDb((sql) => (sql.startsWith('SELECT page') ? agg.pages.map((page) => ({ page, last_day: new Date('2026-11-10T00:00:00Z') })) : []));
+    await persistHeatmapAggregates(db, PROJECT, agg, { day: '2026-11-10', maxPages: 100 });
+    expect(db.calls.some((c) => /INSERT INTO heatmap_pages|UPDATE heatmap_pages/.test(c.sql))).toBe(false);
+    expect(db.calls.some((c) => c.sql.includes('heatmap_click_cells'))).toBe(true);
   });
 });
 

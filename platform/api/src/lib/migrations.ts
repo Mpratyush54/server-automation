@@ -81,3 +81,70 @@ export async function pendingSchemaChanges(ds: DataSource): Promise<string[]> {
   const sql = await ds.driver.createSchemaBuilder().log();
   return sql.upQueries.map((q) => q.query);
 }
+
+/**
+ * Statements that only ADD something (a table, column, index, enum type or
+ * constraint). This is the drift a rollback leaves behind: an older API that
+ * synchronizes its schema on boot (v1.2.0) drops the columns, indexes and
+ * constraints it does not know, while the `migrations` table still lists the
+ * migrations that created them as applied.
+ */
+const ADDITIVE_DRIFT = [
+  /^CREATE TABLE\b/i,
+  /^CREATE (UNIQUE )?INDEX\b/i,
+  /^CREATE TYPE\b/i,
+  /^ALTER TABLE ("[^"]+"\.)?"[^"]+" ADD\b/i,
+];
+
+export interface DriftReport {
+  /** Missing objects: repairable by re-running the idempotent migrations. */
+  additive: string[];
+  /** Anything else (type/default/nullability changes, drops): never applied automatically. */
+  other: string[];
+}
+
+export function classifyDrift(queries: string[]): DriftReport {
+  const out: DriftReport = { additive: [], other: [] };
+  for (const q of queries) {
+    const sql = q.trim().replace(/\s+/g, ' ');
+    (ADDITIVE_DRIFT.some((re) => re.test(sql)) ? out.additive : out.other).push(sql);
+  }
+  return out;
+}
+
+function migrationTimestamp(name: string): number {
+  const m = /(\d{13})$/.exec(name);
+  return m ? Number(m[1]) : 0;
+}
+
+/**
+ * Re-run up() of every migration (oldest first, each in its own transaction)
+ * under the migration lock. Every migration in src/migrations is written in an
+ * idempotent form (CREATE ... IF NOT EXISTS, ADD COLUMN IF NOT EXISTS, guarded
+ * constraints and backfills), so this only re-creates what is missing.
+ */
+export async function rerunMigrations(ds: DataSource, opts: LockOptions = {}): Promise<string[]> {
+  return withMigrationLock(ds, async () => {
+    const migrations = [...ds.migrations].sort(
+      (a, b) => migrationTimestamp(a.name || a.constructor.name) - migrationTimestamp(b.name || b.constructor.name),
+    );
+    const names: string[] = [];
+    for (const m of migrations) {
+      const name = m.name || m.constructor.name;
+      const runner = ds.createQueryRunner();
+      await runner.connect();
+      await runner.startTransaction();
+      try {
+        await m.up(runner);
+        await runner.commitTransaction();
+      } catch (err: any) {
+        await runner.rollbackTransaction().catch(() => undefined);
+        throw new Error(`re-running ${name} failed: ${err?.message || err}`);
+      } finally {
+        await runner.release();
+      }
+      names.push(name);
+    }
+    return names;
+  }, opts);
+}

@@ -60,6 +60,14 @@ export class StatusIncident {
   @Column({ type: 'timestamp', name: 'resolved_at', nullable: true })
   resolvedAt: Date | null;
 
+  /**
+   * True while a `firing` status-page alert event is outstanding for this
+   * incident, so a later resolve/delete emits `resolved` only when something
+   * actually fired.
+   */
+  @Column({ type: 'boolean', name: 'alert_firing', default: false })
+  alertFiring: boolean;
+
   @Column({ type: 'uuid', name: 'created_by_id', nullable: true })
   createdById: string | null;
 

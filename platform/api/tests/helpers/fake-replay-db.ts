@@ -55,12 +55,45 @@ export class FakeReplayDb {
   errorEvents: any[] | null = null; // null = table missing
   queries: string[] = [];
   private clock = 0;
+  private locks = new Map<string, Promise<void>>();
+  transactions = 0;
+
+  /**
+   * Emulates `DataSource.transaction` + `pg_advisory_xact_lock`: the lock taken inside a
+   * transaction blocks other transactions asking for the same key until it ends.
+   * (No rollback: the code under test throws before writing.)
+   */
+  async transaction<T>(run: (tx: { query: (sql: string, p?: any[]) => Promise<any> }) => Promise<T>): Promise<T> {
+    this.transactions++;
+    const held: Array<() => void> = [];
+    const tx = {
+      query: async (sql: string, p: any[] = []) => {
+        if (/^\s*SELECT pg_advisory_xact_lock\(hashtextextended\(\$1,0\)\)\s*$/.test(sql)) {
+          this.queries.push(sql.trim());
+          const key = String(p[0]);
+          const prev = this.locks.get(key) ?? Promise.resolve();
+          let release!: () => void;
+          const mine = new Promise<void>((r) => (release = r));
+          this.locks.set(key, prev.then(() => mine));
+          await prev;
+          held.push(release);
+          return [{ pg_advisory_xact_lock: '' }];
+        }
+        return this.query(sql, p);
+      },
+    };
+    try {
+      return await run(tx);
+    } finally {
+      held.forEach((r) => r());
+    }
+  }
 
   async query(sql: string, p: any[] = []): Promise<any> {
     const s = sql.replace(/\s+/g, ' ').trim();
     this.queries.push(s);
     const sess = (pid: string, sid: string) => this.sessions.find((x) => x.project_id === pid && x.session_id === sid);
-    if (s.startsWith('SELECT chunk_count, bytes, pages, trace_ids FROM replay_sessions')) {
+    if (s.startsWith('SELECT chunk_count, bytes, pages, trace_ids, first_page, started_at FROM replay_sessions')) {
       const r = sess(p[0], p[1]);
       return r ? [r] : [];
     }
@@ -68,7 +101,7 @@ export class FakeReplayDb {
       return this.chunks.filter((c) => c.project_id === p[0] && c.session_id === p[1] && c.seq === p[2]).map(() => ({ '?column?': 1 }));
     }
     if (s.startsWith('INSERT INTO replay_sessions')) {
-      const [pid, sid, env, release, app, user, subject, ua, firstPage, pages, traces, start, end, events, bytes, errors, netErrors, vw, vh, seq] = p;
+      const [pid, sid, env, release, app, user, subject, ua, firstPage, pages, traces, start, end, events, bytes, errors, netErrors, vw, vh] = p;
       const st = new Date(start);
       const en = new Date(end);
       const cur = sess(pid, sid);
@@ -86,7 +119,7 @@ export class FakeReplayDb {
         cur.user_id = user ?? cur.user_id;
         cur.subject_id = cur.subject_id ?? subject;
         cur.user_agent = cur.user_agent ?? ua;
-        cur.first_page = seq === 0 ? firstPage : cur.first_page ?? firstPage;
+        cur.first_page = firstPage;
         cur.pages = JSON.parse(pages);
         cur.trace_ids = JSON.parse(traces);
         cur.started_at = new Date(Math.min(cur.started_at.getTime(), st.getTime()));

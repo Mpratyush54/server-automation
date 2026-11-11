@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink, UrlTree } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
+import { AuthService } from '../../services/auth.service';
 import { AlertingApiService } from './alerting-api.service';
 import { internalUrlTree } from '../../shared/internal-link';
 
@@ -26,6 +27,8 @@ const CHANNEL_FIELDS: Record<string, { key: string; label: string; secret: boole
 /**
  * Alerting and on-call (#43): incidents, monitors, SLO dashboard (error budget remaining),
  * silences / maintenance windows, notification channels, escalation policies and schedules.
+ * Project devops/owners configure their project's alerting; raw PromQL/LogQL monitors and ratio
+ * SLOs are offered only to platform admins/devops, mirroring the API (#151).
  */
 @Component({
   selector: 'app-alerting',
@@ -71,9 +74,19 @@ export class AlertingComponent implements OnInit {
   newPolicy: any = { name: '', isDefault: true, step0: [] as string[], delay: 15, step1: [] as string[], step1Schedule: '' };
   newSchedule: any = { name: '', userIds: '', rotationHours: 168 };
 
-  constructor(private api: ApiService, private alerting: AlertingApiService, private route: ActivatedRoute, private router: Router) {}
+  constructor(private api: ApiService, private alerting: AlertingApiService, private route: ActivatedRoute, private router: Router, private auth: AuthService) {}
+
+  /** Raw-query monitors (metric/log) and ratio SLOs: platform admin/devops only (API enforces it too). */
+  get rawQueryAllowed(): boolean {
+    return !!this.auth?.canManageUsers();
+  }
+
+  isRawMonitor(m: any): boolean {
+    return m?.kind === 'metric' || m?.kind === 'log';
+  }
 
   async ngOnInit() {
+    this.newMonitor = this.blankMonitor();
     const q = this.route.snapshot.queryParamMap;
     this.projectId = q.get('projectId') || '';
     const tab = q.get('tab') as Tab | null;
@@ -84,7 +97,7 @@ export class AlertingComponent implements OnInit {
   }
 
   blankMonitor() {
-    return { name: '', kind: 'metric', query: '', signal: 'error_rate', service: '', resource: 'cpu', operator: '>', threshold: 0, forSeconds: 300, severity: 'warning', policyId: '' };
+    return { name: '', kind: this.rawQueryAllowed ? 'metric' : 'trace', query: '', signal: 'error_rate', service: '', resource: 'cpu', operator: '>', threshold: 0, forSeconds: 300, severity: 'warning', policyId: '' };
   }
 
   blankSlo() {

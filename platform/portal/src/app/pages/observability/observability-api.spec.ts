@@ -1,4 +1,22 @@
-import { buildWaterfall, chartPaths, flameRects, fmtMs, fmtPct, fmtRate, humanizeStatus, isProjectTab, isSince, layoutGraph, nsToDate, Span } from './observability-api';
+import { buildWaterfall, chartPaths, flameRects, fmtDuration, fmtMs, fmtPct, fmtRate, humanizeStatus, isProjectTab, isSince, layoutGraph, nsToDate, rangeNotice, Span } from './observability-api';
+
+describe('range clamp notice (#48)', () => {
+  it('formats durations', () => {
+    expect(fmtDuration(604_800)).toBe('7 d');
+    expect(fmtDuration(86_400)).toBe('1 d');
+    expect(fmtDuration(86_340)).toBe('23 h 59 min');
+    expect(fmtDuration(900)).toBe('15 min');
+    expect(fmtDuration(30)).toBe('30 s');
+  });
+
+  it('only reports clamped ranges, ignoring sub-1% trims', () => {
+    expect(rangeNotice(null)).toBe('');
+    expect(rangeNotice({ start: 0, end: 3600, clamped: false }, 3600)).toBe('');
+    expect(rangeNotice({ start: 0, end: 259_200, clamped: true }, 604_800)).toBe('Range shortened to 3 d');
+    expect(rangeNotice({ start: 0, end: 86_340, clamped: true }, 86_400)).toBe('');
+    expect(rangeNotice({ start: 0, end: 86_340, clamped: true })).toBe('Range shortened to 23 h 59 min');
+  });
+});
 
 function span(id: string, parent: string | null, start: number, end: number, extra: Partial<Span> = {}): Span {
   return {

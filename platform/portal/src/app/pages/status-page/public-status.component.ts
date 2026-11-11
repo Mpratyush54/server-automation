@@ -25,9 +25,13 @@ export interface PublicIncident {
   id: string;
   title: string;
   status: string;
+  /** upcoming (maintenance before its window) | active | resolved (incl. window ended). */
+  phase?: 'upcoming' | 'active' | 'resolved';
   impact: string;
   isMaintenance: boolean;
   updates: Array<{ at: string; status: string; body: string }>;
+  scheduledStart?: string | null;
+  scheduledEnd?: string | null;
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
@@ -36,7 +40,6 @@ export interface PublicIncident {
 export interface PublicStatusPayload {
   slug: string;
   title: string;
-  domain: string | null;
   branding: { logoUrl: string | null; primaryColor: string | null; accentColor: string | null };
   generatedAt: string;
   status: 'operational' | 'degraded' | 'partial_outage' | 'major_outage' | 'unknown';
@@ -52,6 +55,11 @@ export function statusLabel(status: string): string {
     case 'major_outage': return 'Major outage';
     default: return 'Status unknown';
   }
+}
+
+/** Phase from the API, with a fallback for payloads that predate it. */
+export function incidentPhase(inc: PublicIncident): 'upcoming' | 'active' | 'resolved' {
+  return inc.phase || (inc.status === 'resolved' ? 'resolved' : 'active');
 }
 
 export function dayTitle(d: PublicDay): string {
@@ -116,11 +124,17 @@ export class PublicStatusComponent implements OnInit, OnDestroy {
   }
 
   openIncidents(): PublicIncident[] {
-    return (this.payload?.incidents || []).filter((i) => i.status !== 'resolved');
+    return (this.payload?.incidents || []).filter((i) => incidentPhase(i) === 'active');
+  }
+
+  upcomingMaintenance(): PublicIncident[] {
+    return (this.payload?.incidents || [])
+      .filter((i) => incidentPhase(i) === 'upcoming')
+      .sort((a, b) => String(a.scheduledStart || '').localeCompare(String(b.scheduledStart || '')));
   }
 
   pastIncidents(): PublicIncident[] {
-    return (this.payload?.incidents || []).filter((i) => i.status === 'resolved');
+    return (this.payload?.incidents || []).filter((i) => incidentPhase(i) === 'resolved');
   }
 
   cssVars(): Record<string, string> {

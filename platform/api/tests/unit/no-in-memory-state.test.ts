@@ -39,8 +39,16 @@ const ALLOWED: Record<string, string> = {
   'lib/github-app.ts': 'test double (Redis in deployments)',
   // Pure graph builder: call-scoped node/edge indexes for one topology response (#31).
   'lib/topology.ts': 'request-scoped',
+  // Public status-page payload cache used only when Redis is not the state backend
+  // (memory mode, single replica); bounded, TTL'd (#46).
+  'lib/status-page.ts': 'memory-mode fallback (Redis in deployments)',
   // Folds one ingest batch into aggregate rows before the Postgres upsert (heatmaps).
   'lib/heatmaps.ts': 'request-scoped',
+  // Bounded write-behind buffer of additive heatmap count increments (max keys, flushed every
+  // HEATMAP_FLUSH_MS and on shutdown). Not shared state: each replica adds its own deltas with
+  // count = count + EXCLUDED.count, so Postgres totals stay exact across replicas; a hard crash
+  // loses at most one flush interval of this process's counts (docs/guides/heatmaps.md).
+  'lib/heatmap-buffer.ts': 'bounded write-behind aggregation buffer',
 };
 
 function walk(dir: string): string[] {

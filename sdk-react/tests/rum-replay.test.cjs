@@ -84,6 +84,11 @@ function fakeRecorder() {
 const flushMicro = async () => { for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r)); };
 const uploads = (calls) => calls.filter((c) => c.url.endsWith('/chunks'));
 const decode = (call) => JSON.parse(zlib.gunzipSync(Buffer.from(call.init.body)).toString());
+/** Unload envelope (#154): text/plain {"v":1,"token","chunk": base64 gzip}. */
+const openEnvelope = (text) => {
+  const env = JSON.parse(text);
+  return { ...env, raw: Buffer.from(env.chunk, 'base64') };
+};
 
 test.afterEach(() => replay.stopReplay());
 
@@ -413,6 +418,207 @@ test('a refused keepalive request puts the chunk back for the normal retry path'
   assert.equal(up.sent, 1);
   assert.equal(calls, 2);
 });
+
+// Regression (Playwright, #40): the final chunk on page hide was sent with a normal fetch that
+// the unload cancelled (last page lost; sessions shorter than the 5 s flush vanished entirely).
+test('page hide sends the final chunk with keepalive only, on visibilitychange or pagehide', async () => {
+  const f = fakeEnv({ serverAllows: true });
+  const docListeners = {};
+  f.env.win.document.addEventListener = (t, fn) => ((docListeners[t] = docListeners[t] || []).push(fn));
+  f.env.win.document.removeEventListener = (t, fn) => (docListeners[t] = (docListeners[t] || []).filter((x) => x !== fn));
+  const rec = fakeRecorder();
+  const h = await replay.startReplay({ sampleRate: 1 }, TELEMETRY, {}, { env: f.env, load: rec.load });
+  rec.state.emit({ type: 2, timestamp: 1, data: { node: {} } });
+  assert.equal(uploads(f.calls).length, 0, 'short session: nothing uploaded before hide');
+  f.env.win.document.visibilityState = 'hidden';
+  for (const fn of docListeners.visibilitychange || []) fn();
+  await flushMicro();
+  let up = uploads(f.calls);
+  assert.equal(up.length, 1);
+  assert.equal(up[0].init.keepalive, true, 'final chunk uses keepalive');
+  assert.deepEqual(up[0].init.headers, { 'Content-Type': 'text/plain' }, 'CORS simple request: no Authorization header');
+  assert.equal(up[0].init.credentials, 'omit');
+  const env0 = openEnvelope(up[0].init.body);
+  assert.equal(env0.token, TELEMETRY.browserToken, 'token travels in the body');
+  assert.ok(!up[0].url.includes(TELEMETRY.browserToken), 'never in the URL');
+  assert.equal(JSON.parse(zlib.gunzipSync(env0.raw).toString()).seq, 0);
+  // pagehide after visibilitychange: nothing new to send, no duplicate
+  for (const fn of f.listeners.pagehide || []) fn();
+  await flushMicro();
+  assert.equal(uploads(f.calls).length, 1);
+  // pagehide alone (e.g. bfcache navigation without a visibility change) also flushes
+  rec.state.emit({ type: 3, timestamp: 2, data: {} });
+  for (const fn of f.listeners.pagehide || []) fn();
+  await flushMicro();
+  up = uploads(f.calls);
+  assert.equal(up.length, 2);
+  assert.ok(up.every((c) => c.init.keepalive === true), 'no normal fetch on hide');
+  assert.equal(h._uploader.sent, 2);
+});
+
+test('unload re-sends the in-flight chunk with keepalive and counts each chunk once', async () => {
+  const sent = [];
+  let releaseNormal;
+  const up = new replay.ReplayUploader({
+    url: 'u', token: 't', compress: (s) => Buffer.from(s), setTimer: () => {},
+    fetchImpl: (url, init) => {
+      sent.push({ body: init.keepalive ? openEnvelope(init.body).raw.toString() : Buffer.from(init.body).toString(), keepalive: init.keepalive });
+      if (!init.keepalive) return new Promise((r) => { releaseNormal = () => r({ status: 202, headers: { get: () => null } }); });
+      return Promise.resolve({ status: 200, headers: { get: () => null } }); // duplicate answer
+    },
+  });
+  up.enqueue(0, 'first'); // normal fetch in flight
+  up.enqueue(1, 'last', { pump: false });
+  assert.equal(sent.length, 1, 'pump: false starts no request');
+  up.flushUnload();
+  const keep = sent.filter((s) => s.keepalive).map((s) => s.body);
+  assert.deepEqual(keep, ['first', 'last'], 'in-flight head re-sent with keepalive');
+  await flushMicro();
+  releaseNormal(); // the normal fetch survived too: server deduplicates
+  await flushMicro();
+  assert.equal(up.sent, 2);
+  assert.equal(up.pending, 0);
+  assert.equal(sent.filter((s) => !s.keepalive).length, 1, 'no further normal requests');
+});
+
+test('unload skips chunks over the keepalive budget, sends smaller ones and tries the rest normally', async () => {
+  const sent = [];
+  const up = new replay.ReplayUploader({
+    url: 'u', token: 't', compress: (s) => Buffer.from(s), setTimer: () => {},
+    fetchImpl: (url, init) => {
+      sent.push({ len: init.keepalive ? openEnvelope(init.body).raw.length : init.body.length, size: init.body.length, keepalive: init.keepalive });
+      return new Promise(() => {});
+    },
+  });
+  // base64 grows each chunk by 4/3: 38 000 -> ~50.7 KB, 30 000 -> 40 KB, 5 000 -> ~6.7 KB
+  up.enqueue(0, 'a'.repeat(38_000), { pump: false });
+  up.enqueue(1, 'b'.repeat(30_000), { pump: false });
+  up.enqueue(2, 'c'.repeat(5_000), { pump: false });
+  up.flushUnload();
+  const keep = sent.filter((s) => s.keepalive);
+  assert.deepEqual(keep.map((s) => s.len), [38_000, 5_000]);
+  assert.ok(keep.reduce((a, s) => a + s.size, 0) <= 60_000, 'envelopes (not raw chunks) count against the budget');
+  assert.deepEqual(sent.filter((s) => !s.keepalive).map((s) => s.len), [30_000], 'leftover: best-effort normal fetch');
+  // a second hide while keepalive requests are pending does not exceed the budget
+  up.flushUnload();
+  assert.equal(sent.filter((s) => s.keepalive).length, 2);
+});
+
+test('unload envelope: token and base64 gzip chunk in a text/plain JSON body', () => {
+  const gz = zlib.gzipSync(Buffer.from('{"v":1}'));
+  const text = replay.unloadEnvelope('plat_ingest_web_abc', gz);
+  const env = openEnvelope(text);
+  assert.equal(env.v, 1);
+  assert.equal(env.token, 'plat_ingest_web_abc');
+  assert.deepEqual(env.raw, gz);
+  assert.match(env.chunk, /^[A-Za-z0-9+/]*={0,2}$/);
+});
+
+test('an unload piece fits the keepalive budget even when incompressible and base64-encoded', () => {
+  const crypto = require('node:crypto');
+  // worst case: random bytes (gzip cannot shrink them) plus envelope metadata, a long token
+  const gz = zlib.gzipSync(crypto.randomBytes(replay.UNLOAD_PIECE_BYTES + 1024));
+  const text = replay.unloadEnvelope('plat_ingest_web_' + 'x'.repeat(300), gz);
+  assert.ok(text.length < 60_000, `envelope ${text.length} bytes`);
+});
+
+test('unload uses sendBeacon first, with no fetch and the chunk counted once', async () => {
+  const beacons = [];
+  const fetches = [];
+  const up = new replay.ReplayUploader({
+    url: 'https://api.example.test/api/sdk/replay/chunks', token: 'tok', compress: (s) => Buffer.from(s), setTimer: () => {},
+    sendBeacon: (url, data) => { beacons.push({ url, data }); return true; },
+    fetchImpl: (url, init) => { fetches.push(init); return new Promise(() => {}); },
+  });
+  up.enqueue(0, 'one', { pump: false });
+  up.enqueue(1, 'two', { pump: false });
+  up.flushUnload();
+  assert.equal(fetches.length, 0, 'no keepalive fetch when the beacon was queued');
+  assert.deepEqual(beacons.map((b) => b.url), ['https://api.example.test/api/sdk/replay/chunks', 'https://api.example.test/api/sdk/replay/chunks']);
+  assert.equal(typeof beacons[0].data, 'string', 'a string beacon body is sent as text/plain (simple request)');
+  assert.deepEqual(beacons.map((b) => openEnvelope(b.data).raw.toString()), ['one', 'two']);
+  assert.ok(beacons.every((b) => openEnvelope(b.data).token === 'tok'));
+  assert.equal(up.sent, 2);
+  assert.equal(up.pending, 0);
+});
+
+test('a refused beacon falls back to keepalive fetch, then to the queue', async () => {
+  const timers = [];
+  const fetches = [];
+  let fetchFails = true;
+  const up = new replay.ReplayUploader({
+    url: 'u', token: 'tok', compress: (s) => Buffer.from(s), random: () => 0,
+    setTimer: (fn, ms) => timers.push({ fn, ms }),
+    sendBeacon: () => { throw new Error('beacon blocked'); },
+    fetchImpl: async (url, init) => {
+      fetches.push(init);
+      if (init.keepalive && fetchFails) throw new TypeError('NetworkError');
+      return { status: 202, headers: { get: () => null } };
+    },
+  });
+  up.enqueue(0, 'x', { pump: false });
+  up.flushUnload();
+  assert.equal(fetches.length, 1);
+  assert.equal(fetches[0].keepalive, true);
+  assert.deepEqual(fetches[0].headers, { 'Content-Type': 'text/plain' });
+  assert.equal(openEnvelope(fetches[0].body).token, 'tok');
+  await flushMicro();
+  assert.equal(up.pending, 1, 'requeued after the keepalive fetch failed');
+  assert.equal(up.sent, 0);
+  // page survived (only hidden): the normal path retries with the Authorization header
+  timers.at(-1).fn();
+  await flushMicro();
+  assert.equal(fetches.length, 2);
+  assert.equal(fetches[1].headers.Authorization, 'Bearer tok');
+  assert.equal(up.sent, 1);
+  // beacon returning false (quota) also falls back to keepalive fetch
+  fetchFails = false;
+  const up2 = new replay.ReplayUploader({
+    url: 'u', token: 'tok', compress: (s) => Buffer.from(s), setTimer: () => {},
+    sendBeacon: () => false,
+    fetchImpl: async (url, init) => { fetches.push(init); return { status: 202, headers: { get: () => null } }; },
+  });
+  up2.enqueue(0, 'y', { pump: false });
+  up2.flushUnload();
+  await flushMicro();
+  assert.equal(fetches.at(-1).keepalive, true);
+  assert.equal(up2.sent, 1);
+});
+
+test('page hide uses navigator.sendBeacon when the browser has it', async () => {
+  const beacons = [];
+  const nav = { sendBeacon(url, data) { beacons.push({ url, data, self: this }); return true; } };
+  const f = fakeEnv({ serverAllows: true, nav });
+  const rec = fakeRecorder();
+  const h = await replay.startReplay({ sampleRate: 1 }, TELEMETRY, {}, { env: f.env, load: rec.load });
+  rec.state.emit({ type: 2, timestamp: 1, data: { node: {} } });
+  for (const fn of f.listeners.pagehide || []) fn();
+  await flushMicro();
+  assert.equal(uploads(f.calls).length, 0, 'no fetch');
+  assert.equal(beacons.length, 1);
+  assert.equal(beacons[0].self, nav, 'called as a navigator method');
+  assert.equal(beacons[0].url, `${TELEMETRY.replayEndpoint}/chunks`);
+  const env = openEnvelope(beacons[0].data);
+  assert.equal(env.token, TELEMETRY.browserToken);
+  assert.equal(JSON.parse(zlib.gunzipSync(env.raw).toString()).seq, 0);
+  assert.equal(h._uploader.sent, 1);
+});
+
+test('chunker splits the unload flush into keepalive-sized pieces', () => {
+  const out = [];
+  const c = new replay.ReplayChunker((ch) => out.push(ch), { maxBytes: 512 * 1024, setTimer: () => ({}), clearTimer: () => {} });
+  c.note('page', '/a');
+  c.note('error');
+  for (let i = 0; i < 10; i++) c.add(JSON.stringify({ type: 3, timestamp: i, data: 'x'.repeat(10_000) }), i);
+  c.flush(replay.UNLOAD_PIECE_BYTES);
+  assert.ok(out.length >= 3);
+  assert.ok(out.every((p) => p.bytes <= replay.UNLOAD_PIECE_BYTES));
+  assert.equal(out.reduce((a, p) => a + p.events.length, 0), 10);
+  assert.deepEqual(out[0].pages, ['/a']);
+  assert.equal(out[0].errors, 1);
+  assert.equal(out[1].errors, 0);
+});
+
 
 test('errors carry the replay id; exports are lazy wrappers', async () => {
   rum.setReplayIdForErrors('sess-1');

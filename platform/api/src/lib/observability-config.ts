@@ -16,7 +16,7 @@
  * | OBSERVABILITY_MAX_POINTS                 | 1100                                                           | Max points per series (the step is raised to fit). |
  * | OBSERVABILITY_MAX_TRACE_SPANS            | 5000                                                           | Cap on spans returned for one trace. |
  * | OBSERVABILITY_MAX_RESPONSE_BYTES         | 16777216                                                       | Upstream responses larger than this are refused. |
- * | OBSERVABILITY_RATE_LIMIT                 | 240                                                            | Proxy requests per minute per user. |
+ * | OBSERVABILITY_RATE_LIMIT                 | 600                                                            | Proxy requests per minute per user, shared by every observability route (one portal tab load is 1-5 requests). |
  * | OBSERVABILITY_LOKI_SCOPE                 | `stream`                                                       | `stream`: `platform_project_id` is a Loki stream label. `metadata`: it is structured metadata (filter after the selector). |
  * | OBSERVABILITY_FLEET_MAX_PROJECTS         | 200                                                            | Projects shown in the fleet view. |
  */
@@ -51,6 +51,13 @@ export function backendUrl(b: Backend): string {
   }
 }
 
+/**
+ * Default per-user requests/minute across all observability routes. Sized for a
+ * few people clicking through tabs: the RUM tab alone sends 5 Loki queries, and
+ * live log tail polls every 5 s.
+ */
+export const DEFAULT_OBSERVABILITY_RATE_LIMIT = 600;
+
 export interface ObservabilityLimits {
   timeoutMs: number;
   maxRangeSeconds: number;
@@ -74,7 +81,7 @@ export function observabilityLimits(): ObservabilityLimits {
     maxPoints: num('OBSERVABILITY_MAX_POINTS', 1100, 50, 11_000),
     maxTraceSpans: num('OBSERVABILITY_MAX_TRACE_SPANS', 5000, 100, 50_000),
     maxResponseBytes: num('OBSERVABILITY_MAX_RESPONSE_BYTES', 16 * 1024 * 1024, 1024 * 1024, 64 * 1024 * 1024),
-    rateLimitPerMinute: num('OBSERVABILITY_RATE_LIMIT', 240, 10, 10_000),
+    rateLimitPerMinute: num('OBSERVABILITY_RATE_LIMIT', DEFAULT_OBSERVABILITY_RATE_LIMIT, 10, 10_000),
     fleetMaxProjects: num('OBSERVABILITY_FLEET_MAX_PROJECTS', 200, 1, 2000),
   };
 }

@@ -10,11 +10,13 @@ import { getDb } from './config/database';
 import { connectMongo } from './config/mongoose';
 import { User } from './entities/User';
 import apiRouter from './routes/api';
+import { buildSyntheticsRunnerApp, syntheticsRunnerPort } from './synthetics-runner-app';
 import { startBackgroundWork, stopBackgroundWork } from './lib/background';
 import { configuredAdminEmail, ensureAdminUser } from './lib/seed-admin';
 import { createLimiterStore } from './lib/rate-limit-store';
 import { closeRedis } from './lib/redis';
 import { drainingConnectionClose, installGracefulShutdown } from './lib/shutdown';
+import { flushHeatmapBuffer } from './lib/heatmap-buffer';
 
 /** Paths called cross-origin by browser SDKs (bearer SDK token, no cookies). */
 const SDK_PUBLIC_PATH = /^\/api\/(sdk\/|errors\/rum$|logs\/ingest$)/;
@@ -173,6 +175,12 @@ async function bootstrap() {
     // Operation definitions (deploy, secret rotation, DB provisioning) must be
     // registered before the leader's operation-resume job runs (issue #23).
     await (await import('./lib/storage-providers')).encryptLegacyStorage(ds);
+    try {
+      const n = await (await import('./lib/smtp-secrets')).encryptLegacySmtpSecrets(ds);
+      if (n) console.log(`[server] Encrypted stored credentials of ${n} SMTP configuration(s)`);
+    } catch (err: any) {
+      console.warn(`[server] SMTP credential encryption skipped: ${err?.message || err}`);
+    }
     await (await import('./lib/storage-providers')).ensureBundledStorage(ds);
     await import('./lib/operation-types');
 
@@ -215,11 +223,19 @@ async function bootstrap() {
     const server = app.listen(port, () => {
       console.log(`[server] Platform Express backend running on http://localhost:${port}`);
     });
+    // Runner-only listener for browser synthetic checks (see synthetics-runner-app.ts).
+    const runnerPort = syntheticsRunnerPort();
+    const runnerServer = runnerPort && String(runnerPort) !== String(port)
+      ? buildSyntheticsRunnerApp().listen(runnerPort, () => console.log(`[server] Synthetics runner endpoints on port ${runnerPort}`))
+      : null;
     installGracefulShutdown(server, {
       // Release the leader Lease first and wait for it: if the process exits
       // before the release lands, peers wait for the lease to expire (#19).
       preDrain: [{ name: 'released leadership', run: stopBackgroundWork }],
       closers: [
+        ...(runnerServer ? [{ name: 'synthetics runner listener', close: () => new Promise<void>((resolve) => { runnerServer.close(() => resolve()); }) }] : []),
+        // Before Postgres closes: write buffered heatmap counts (heatmap-buffer.ts).
+        { name: 'heatmap buffer', close: flushHeatmapBuffer },
         { name: 'redis', close: closeRedis },
         { name: 'postgres', close: () => (ds.isInitialized ? ds.destroy() : undefined) },
         { name: 'mongodb', close: () => import('mongoose').then((m) => m.default.disconnect()) },

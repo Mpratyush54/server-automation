@@ -32,7 +32,7 @@
       <label>Title <input [(ngModel)]="page.title" maxlength="120" /></label>
       <label>Custom domain (optional)
         <input [(ngModel)]="page.domain" placeholder="status.example.com" />
-        <span class="hint">Stored for a future dedicated hostname; page is live at the path above over TLS today.</span>
+        <span class="hint">Stored for a future dedicated hostname (must be unique, not published yet); page is live at the path above over TLS today.</span>
       </label>
       <label>Logo URL (https)
         <input [(ngModel)]="page.branding.logoUrl" placeholder="https://…" />
@@ -95,6 +95,15 @@
       <label class="inline">
         <input type="checkbox" [(ngModel)]="draftIncident.isMaintenance" /> Maintenance window
       </label>
+      @if (draftIncident.isMaintenance) {
+        <label>Starts (local time)
+          <input type="datetime-local" [(ngModel)]="draftIncident.scheduledStart" />
+        </label>
+        <label>Ends (local time)
+          <input type="datetime-local" [(ngModel)]="draftIncident.scheduledEnd" />
+          <span class="hint">Shown as upcoming until it starts; completed automatically after it ends.</span>
+        </label>
+      }
       <label class="block">Update
         <textarea [(ngModel)]="draftIncident.body" rows="2" maxlength="4000"></textarea>
       </label>
@@ -113,12 +122,35 @@
             <span class="tag">{{ inc.status }}</span>
             <span class="tag">{{ inc.impact }}</span>
             @if (inc.isMaintenance) { <span class="tag">maintenance</span> }
+            @if (phaseLabel(inc)) { <span class="tag">{{ phaseLabel(inc) }}</span> }
           </div>
+          @if (inc.isMaintenance && (inc.scheduledStart || inc.scheduledEnd)) {
+            <p class="hint">
+              Window: {{ inc.scheduledStart ? (inc.scheduledStart | date:'medium') : '…' }}
+              – {{ inc.scheduledEnd ? (inc.scheduledEnd | date:'medium') : 'open-ended' }}
+            </p>
+          }
           @if (inc.updates.length) {
             <p class="muted">{{ inc.updates[inc.updates.length - 1].body }}</p>
           }
+          @if (isOpenIncident(inc) && updateDrafts[inc.id]) {
+            <div class="grid">
+              <label>Status
+                <select [(ngModel)]="updateDrafts[inc.id].status">
+                  @for (s of updateStatuses; track s) {
+                    <option [value]="s">{{ s }}</option>
+                  }
+                </select>
+              </label>
+              <label class="block">Update text
+                <textarea [(ngModel)]="updateDrafts[inc.id].body" rows="2" maxlength="4000"></textarea>
+              </label>
+            </div>
+          }
           <div class="actions">
-            @if (inc.status !== 'resolved') {
+            @if (isOpenIncident(inc)) {
+              <button class="btn btn-sm btn-primary" type="button"
+                [disabled]="busy || !updateDrafts[inc.id]?.body?.trim()" (click)="postUpdate(inc)">Post update</button>
               <button class="btn btn-sm" type="button" [disabled]="busy" (click)="resolveIncident(inc)">Resolve</button>
             }
             <button class="btn btn-sm" type="button" [disabled]="busy" (click)="deleteIncident(inc)">Delete</button>

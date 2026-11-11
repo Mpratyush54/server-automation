@@ -7,6 +7,7 @@ import { ProjectAccessRole } from '../entities/ProjectMember';
 import { createLimiterStore } from '../lib/rate-limit-store';
 import { looksLikeIngestToken, originAllowed, verifyIngestToken } from '../lib/telemetry-tokens';
 import { resolveConsent } from '../lib/privacy-consent';
+import { bufferHeatmapAggregates } from '../lib/heatmap-buffer';
 import {
   MAX_BATCH_BYTES,
   aggregateHeatmapEvents,
@@ -14,7 +15,6 @@ import {
   listHeatmapPages,
   normalizeHeatmapPage,
   parseHeatmapRange,
-  persistHeatmapAggregates,
   queryClickHeatmap,
   queryScrollHeatmap,
   validateHeatmapBatch,
@@ -35,10 +35,14 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
-/** Per client IP, before authentication (cheap rejection of floods / token guessing). */
+/**
+ * Per client IP, before authentication (cheap rejection of floods / token guessing).
+ * Generous by default: thousands of visitors can share one office or carrier NAT address,
+ * and the ingress already caps a single IP at 100 req/s. Per-project limits bound DB load.
+ */
 const ipLimiter = rateLimit({
   windowMs: 60_000,
-  limit: envInt('HEATMAP_IP_RATE_LIMIT', 300),
+  limit: envInt('HEATMAP_IP_RATE_LIMIT', 6000),
   store: createLimiterStore('heatmap-ip'),
   standardHeaders: true,
   legacyHeaders: false,
@@ -47,7 +51,7 @@ const ipLimiter = rateLimit({
 /** Per project (from the credential), after authentication: bounds DB write load per project. */
 const projectLimiter = rateLimit({
   windowMs: 60_000,
-  limit: envInt('HEATMAP_PROJECT_RATE_LIMIT', 3000),
+  limit: envInt('HEATMAP_PROJECT_RATE_LIMIT', 30000),
   store: createLimiterStore('heatmap-project'),
   keyGenerator: (req) => `p:${(req as AuthenticatedRequest).projectId}`,
   standardHeaders: true,
@@ -99,7 +103,8 @@ router.post('/sdk/heatmap/events', ipLimiter, allowBrowserSdkToken, heatmapAuth,
     // #47 consent: per-subject record, else the project's analytics default.
     const consent = await resolveConsent(ds, { projectId, subjectId: batch.subjectId || '', sessionId: batch.sessionId });
     if (!consent.analyticsAllowed) return res.status(202).json({ accepted: 0, consent: false });
-    const { stored } = await persistHeatmapAggregates(ds, projectId, aggregateHeatmapEvents(batch.events));
+    // Page cap is enforced now; counts are buffered and flushed in batches (heatmap-buffer.ts).
+    const { stored } = await bufferHeatmapAggregates(ds, projectId, aggregateHeatmapEvents(batch.events));
     // Write-only: never return aggregates, config or project data to the browser.
     return res.status(202).json({ accepted: stored });
   } catch (err: any) {

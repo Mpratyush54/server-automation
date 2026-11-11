@@ -141,10 +141,92 @@ describe('POST /sdk/replay/chunks', () => {
     expect(detail.body.chunks.map((c: any) => c.seq)).toEqual([0, 1]);
   });
 
+  it('header path unchanged: octet-stream with Authorization; text/plain without an envelope is refused', async () => {
+    const res = await post(chunk());
+    expect(res.status).toBe(202);
+    expect((await request(app).post('/sdk/replay/chunks').set('Content-Type', 'text/plain').send('hello')).status).toBe(400);
+  });
+
   it('refuses uploads after consent was withdrawn for the subject', async () => {
     (resolveConsent as jest.Mock).mockResolvedValue({ replayAllowed: false, source: 'recorded' });
     expect((await post(chunk())).status).toBe(403);
     expect(store.objects.size).toBe(0);
+  });
+});
+
+// Page-hide upload (#154): token in a text/plain body so the browser sends a CORS simple
+// request (no preflight) via navigator.sendBeacon or keepalive fetch.
+const envelope = (body: Buffer, token = 'sdk_live_browser', extra: Record<string, unknown> = {}) =>
+  JSON.stringify({ v: 1, token, chunk: body.toString('base64'), ...extra });
+const postUnload = (text: string, origin?: string, contentType = 'text/plain;charset=UTF-8') => {
+  const r = request(app).post('/sdk/replay/chunks').set('Content-Type', contentType);
+  if (origin) r.set('Origin', origin);
+  return r.send(text);
+};
+
+describe('POST /sdk/replay/chunks unload envelope (text/plain)', () => {
+  it('accepts a valid token from the body and stores the chunk like the header path', async () => {
+    const res = await postUnload(envelope(chunk()));
+    expect(res.status).toBe(202);
+    expect(res.body).toEqual({ accepted: true });
+    expect([...store.objects.keys()]).toEqual([`replays/${P}/${SID}/0.json.gz`]);
+    expect(store.objects.get(`replays/${P}/${SID}/0.json.gz`)).toEqual(chunk());
+    expect(db.sessions[0].project_id).toBe(P);
+  });
+
+  it('refuses a bad token (401) and an envelope that also carries an Authorization header', async () => {
+    expect((await postUnload(envelope(chunk(), 'nope'))).status).toBe(401);
+    expect((await postUnload(envelope(chunk(), ''))).status).toBe(400);
+    const both = await request(app).post('/sdk/replay/chunks').set('Content-Type', 'text/plain')
+      .set('Authorization', 'Bearer sdk_live_browser').send(envelope(chunk()));
+    expect(both.status).toBe(400);
+    expect(store.objects.size).toBe(0);
+  });
+
+  it('checks the Origin for browser ingest tokens exactly like the header path', async () => {
+    (verifyIngestToken as jest.Mock).mockResolvedValue({ ok: true, claims: { typ: 'web', projectId: P, environment: 'signed-env', origins: ['https://app.example.test'] } });
+    (originAllowed as jest.Mock).mockReturnValue(false);
+    expect((await postUnload(envelope(chunk(), 'plat_ingest_web_x'), 'https://evil.test')).status).toBe(403);
+    expect((originAllowed as jest.Mock).mock.calls[0]).toEqual(['https://evil.test', ['https://app.example.test']]);
+    expect(store.objects.size).toBe(0);
+    (originAllowed as jest.Mock).mockReturnValue(true);
+    expect((await postUnload(envelope(chunk(), 'plat_ingest_web_x'), 'https://app.example.test')).status).toBe(202);
+    expect(db.sessions[0].environment).toBe('signed-env');
+    (verifyIngestToken as jest.Mock).mockResolvedValue({ ok: true, claims: { typ: 'server', projectId: P, environment: 'e', origins: [] } });
+    expect((await postUnload(envelope(chunk({ seq: 1 }), 'plat_ingest_x'), 'https://app.example.test')).status).toBe(403);
+    (verifyIngestToken as jest.Mock).mockResolvedValue({ ok: false, reason: 'expired' });
+    expect((await postUnload(envelope(chunk({ seq: 1 }), 'plat_ingest_web_old'))).status).toBe(401);
+  });
+
+  it('validates the envelope and the chunk, and enforces the same size limit', async () => {
+    expect((await postUnload('not json')).status).toBe(400);
+    expect((await postUnload(JSON.stringify({ v: 2, token: 'sdk_live_browser', chunk: '' }))).status).toBe(400);
+    expect((await postUnload(envelope(chunk(), 'sdk_live_browser', { chunk: 'not*base64' }))).status).toBe(400);
+    expect((await postUnload(envelope(Buffer.from('not gzip')))).status).toBe(400);
+    expect((await postUnload(envelope(chunk({ sessionId: '../x' })))).status).toBe(400);
+    process.env.REPLAY_MAX_CHUNK_BYTES = String(64 * 1024);
+    const noisy = randomBytes(70 * 1024).toString('base64');
+    const big = chunk({}, [{ type: 5, timestamp: now, data: { tag: 'x', payload: noisy } }]);
+    expect(big.length).toBeGreaterThan(64 * 1024);
+    expect((await postUnload(envelope(big))).status).toBe(413);
+    // far over the limit: refused while reading the body
+    expect((await postUnload(envelope(Buffer.concat([big, big])))).status).toBe(413);
+    expect(store.objects.size).toBe(0);
+  });
+
+  it('answers a re-sent chunk with 200 once stored (header then envelope, envelope again)', async () => {
+    expect((await post(chunk())).status).toBe(202);
+    const dup = await postUnload(envelope(chunk()));
+    expect(dup.status).toBe(200);
+    expect(dup.body.duplicate).toBe(true);
+    expect((await postUnload(envelope(chunk()))).status).toBe(200);
+    expect(db.sessions[0].chunk_count).toBe(1);
+    expect(store.objects.size).toBe(1);
+  });
+
+  it('is off unless replay ingest is enabled', async () => {
+    process.env.REPLAY_INGEST = 'off';
+    expect((await postUnload(envelope(chunk()))).status).toBe(404);
   });
 });
 
@@ -232,5 +314,18 @@ describe('portal replay routes', () => {
     expect(store.objects.size).toBe(0);
     expect(db.sessions).toHaveLength(0);
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'replay.delete' }));
+  });
+});
+
+// Last: lowers the shared per-IP limit for the rest of this file's window.
+describe('replay ingest rate limit', () => {
+  afterAll(() => { delete process.env.REPLAY_RATE_LIMIT; });
+  it('applies to the unload envelope before the body is parsed or the token checked', async () => {
+    process.env.REPLAY_RATE_LIMIT = '10';
+    const statuses: number[] = [];
+    for (let i = 0; i < 12; i++) statuses.push((await postUnload(envelope(chunk(), 'nope'))).status);
+    expect(statuses).toContain(429);
+    expect(statuses.slice(statuses.indexOf(429)).every((st) => st === 429)).toBe(true);
+    expect((await post(chunk())).status).toBe(429); // one limiter for both formats
   });
 });

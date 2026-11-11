@@ -42,11 +42,22 @@ func uniqueFilled(vals ...string) []string {
 	return out
 }
 
+// secretDataJSONPath builds the kubectl jsonpath expression for one Secret data
+// key. Dots must be escaped: recent kubectl releases treat an unescaped dot
+// inside ['...'] as a path separator, so `{.data['ca.crt']}` resolves to
+// nothing while `{.data['ca\.crt']}` returns the value.
+func secretDataJSONPath(key string) string {
+	key = strings.ReplaceAll(key, `.`, `\.`)
+	return "{.data['" + key + "']}"
+}
+
 func kubeSecretValue(ns, name, key string) string {
+	// Inside bash double quotes a backslash before "." is kept literally, so the
+	// escaped jsonpath reaches kubectl unchanged.
 	script := fmt.Sprintf(`
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-kubectl -n %s get secret %s -o jsonpath="{.data['%s']}" 2>/dev/null | base64 -d 2>/dev/null || true
-`, ns, name, key)
+kubectl -n %s get secret %s -o jsonpath="%s" 2>/dev/null | base64 -d 2>/dev/null || true
+`, ns, name, secretDataJSONPath(key))
 	out, err := shell.OutputBash(script)
 	if err != nil {
 		return ""

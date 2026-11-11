@@ -35,8 +35,8 @@ export {
   RumTransportItem,
   RumEnvironment,
 } from './rum';
-export type { PlatformHeatmapOptions } from './rum-heatmap';
 export type { PlatformReplayOptions, ReplayHandle, ReplayMode, ReplaySkipReason } from './rum-replay';
+export type { PlatformHeatmapOptions } from './rum-heatmap';
 export {
   PlatformRumService,
   RumRouterLike,

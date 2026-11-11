@@ -159,14 +159,45 @@ setConsent({ replay: true });   // false stops a running recording at once
   with the telemetry block's browser token (`telemetry.replayEndpoint`, present when the platform
   runs the full profile) or `PlatformConfig.apiBase` + SDK token. Retries with backoff and
   `Retry-After`, bounded 4 MiB queue, `keepalive` on page hide.
+- **Unload delivery.** On `pagehide` or `visibilitychange` -> `hidden` (whichever fires first)
+  the open chunk is cut into pieces of at most 40 KiB raw JSON and every queued chunk is sent
+  right away - including one whose normal upload is still in flight, because an unload may
+  cancel it. No normal fetch is started for the final chunk, so the last page of a session, and
+  sessions shorter than the 5 s flush interval, survive tab close and navigation away. The
+  server answers a re-sent chunk with 200 and stores it once.
+  - **Format (#154).** Unload uploads carry the token in the body, not in an `Authorization`
+    header: `Content-Type: text/plain`, body `{"v":1,"token":"<browser token>","chunk":"<base64
+    of the gzip chunk>"}`. That makes them CORS *simple requests* - no preflight that the
+    unload could cancel (Firefox often lost the final POST behind its preflight). The token is
+    never put in the URL (URLs end up in access logs). The API accepts this format only on
+    `POST /api/sdk/replay/chunks` and checks it exactly like the header form: same token kinds,
+    same `Origin` check for `plat_ingest_web_` tokens (browsers send `Origin` on simple
+    requests too), same size limit (on the decoded gzip bytes), validation, dedup and rate
+    limit. A request with both an envelope and an `Authorization` header is refused (400).
+  - **Transport.** `navigator.sendBeacon` first (survives unload best, especially in Firefox);
+    if it is missing, throws or returns `false` (quota), `fetch(..., { keepalive: true })`
+    with the same envelope; if that fails too, the chunk is requeued for the normal path.
+  - **Limits.** Browsers allow at most 64 KiB of beacon/keepalive bodies in flight per page. The
+    40 KiB piece size keeps one envelope under that even for incompressible data (gzip ~41 KiB,
+    base64 x4/3 ~55 KiB, plus token). Chunks that do not fit stay queued and get a best-effort
+    normal request (delivered when the page was only hidden, possibly lost on a real unload;
+    the queue is per page, not persisted). Uploads while the page is visible keep using
+    `application/octet-stream` with `Authorization: Bearer`.
+- **Ordering.** The API derives a chunk's pages from its Meta hrefs and navigation markers in
+  timestamp order (then the SDK's page list, then the page when the chunk was cut), so the
+  session's `first_page` is where recording started even when the only chunk is the final one.
+  Chunks of one session are stored under a per-session lock (duplicate check, limits, page
+  merge and counters are atomic), so parallel uploads cannot drop pages or exceed the limits.
 - **Markers.** Errors (uncaught, and framework-caught via `reportRumError`), SPA navigations and
   network calls (method, redacted URL, status, duration, trace id from RUM client spans) are
   recorded as rrweb custom events. RUM error events carry `replayId`, so an error issue links
   to its replay.
 - **Portal.** Project -> Replays lists sessions (filters: page, errors, duration, environment);
   the player (rrweb-player, lazy-loaded) shows the markers on the timeline with links to the
-  error issue and the Tempo trace. Project members only; every view is audited
-  (`replay.view`, `replay.snapshot_view`, `replay.delete`).
+  error issue and the Tempo trace. Project members only; every access is audited
+  (`replay.view`, `replay.chunk_view` per downloaded chunk, `replay.snapshot_view`,
+  `replay.delete`). Agent tokens (MCP) additionally need the `replays:read` scope, which is not
+  in the default agent scopes; their audit entries carry the agent token id and name.
 - **Storage and retention.** MinIO bucket `replays`, `replays/<projectId>/<sessionId>/<seq>.json.gz`,
   plus `replay_sessions` / `replay_chunks` rows. An hourly job deletes sessions older than the
   project's replay retention (privacy settings, default 7 days); the bucket lifecycle rule is the
@@ -177,7 +208,9 @@ setConsent({ replay: true });   // false stops a running recording at once
   `REPLAY_MAX_SESSION_BYTES` (100 MiB), `REPLAY_RATE_LIMIT` (600/min per IP).
 - **Heatmap backgrounds.** `GET /api/projects/:projectId/replays/:sessionId|latest/snapshot?page=/orders/:id`
   returns the first full DOM snapshot of that page as inert HTML (no scripts, CSP prepended) for a
-  sandboxed iframe, plus the rrweb events.
+  sandboxed iframe, plus the rrweb events. With `latest` it is the newest snapshot of that page
+  (path or route name) from any session. A page that was left within 300 ms of navigating to it
+  (before it rendered) gets no snapshot.
 
 | Replay option | Default | Meaning |
 |---------------|---------|---------|
@@ -192,6 +225,13 @@ setConsent({ replay: true });   // false stops a running recording at once
 | `snapshotOnNavigation` | `true` | DOM snapshot after SPA route changes |
 | `endpoint`, `userId`, `flushIntervalMs`, `maxChunkBytes` | — / — / 5000 / 65536 | |
 
+**Demo apps.** `examples/sdk-apps/react-web` and `examples/sdk-apps/angular-web` both enable
+replay with a consent banner (`Allow session replay` / `Decline`), a Checkout form with personal
+data and a `platform-mask` paragraph; set `RUM_REPLAY_ENDPOINT` (k8s Secret `sdk-demo-rum`, key
+`replayEndpoint`). Each has a Playwright check, `e2e/replay.mjs` (Angular: `ANGULAR_URL`,
+`BROWSER=chromium|firefox|webkit`; it also verifies the final short page and error linking).
+See [examples/sdk-apps/README.md](../../examples/sdk-apps/README.md#session-replay-40).
+
 ## Backpressure
 
 The SDK ships its own small Faro transport: `Authorization: Bearer <browser token>`, batches
@@ -200,9 +240,21 @@ from Faro's batch executor, `keepalive` for page-hide flushes, `Retry-After` hon
 whose overflow is dropped and counted, and no retries for other 4xx. It never throws into
 the app.
 
+## Where the data shows up
+
+Web vitals appear per page (p75) in **Project → Observability → RUM**, and browser spans join
+backend traces in Tempo. See [Observability views](observability.md).
+
 ## Collector notes
 
-- CORS on the Faro receiver must allow the app origins and the `Authorization` and
-  `Content-Type` request headers.
+- CORS on the Faro receiver allows the `Authorization` and `Content-Type` request headers
+  and exposes `Retry-After`. Its origin list is maintained by the platform API from every
+  project's browser origins: environment hosts, the project domain and
+  `TELEMETRY_ALLOWED_ORIGINS` (e.g. `https://shop.example.com, https://*.preview.example.com,
+  http://localhost:4200`). After you change the variable, allow up to about two minutes
+  before the collector accepts the new origin; the browser token picks it up at its next
+  config refresh.
+- When a browser token exceeds its ingest budget the collector answers `429` with
+  `Retry-After` and CORS headers, so the transport waits as asked.
 - Backends that receive `traceparent` cross-origin must allow it in
   `Access-Control-Allow-Headers` (the `cors` npm package reflects requested headers by default).

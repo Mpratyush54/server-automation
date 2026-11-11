@@ -127,7 +127,9 @@ export interface ParsedReplayChunk {
   sessionId: string;
   seq: number;
   mode: 'session' | 'buffer';
+  /** Page when the chunk was cut (the latest one). */
   page: string | null;
+  /** Pages in visit order (earliest first): Meta hrefs and navigation markers, then the SDK list. */
   pages: string[];
   subjectId: string | null;
   userId: string | null;
@@ -148,6 +150,7 @@ export interface ParsedReplayChunk {
 /** rrweb EventType: DomContentLoaded 0, Load 1, FullSnapshot 2, IncrementalSnapshot 3, Meta 4, Custom 5, Plugin 6. */
 export const RRWEB_FULL_SNAPSHOT = 2;
 export const RRWEB_META = 4;
+export const RRWEB_CUSTOM = 5;
 
 /** Decompress (bounded) and JSON-parse a stored or uploaded chunk. */
 export function decodeChunk(body: Buffer, maxRawBytes: number): any {
@@ -189,6 +192,7 @@ export function parseReplayChunk(body: Buffer, limits: ReplayLimits = replayLimi
   let maxTs = -Infinity;
   let metaPage: string | null = null;
   const snapshotPages: string[] = [];
+  const visits: Array<[number, string]> = []; // [timestamp, page] from Meta hrefs + navigation markers
   for (const ev of doc.events) {
     if (!ev || typeof ev !== 'object' || !Number.isInteger(ev.type) || ev.type < 0 || ev.type > 6) {
       throw new ReplayValidationError('invalid rrweb event');
@@ -197,7 +201,14 @@ export function parseReplayChunk(body: Buffer, limits: ReplayLimits = replayLimi
     if (!Number.isFinite(ts)) throw new ReplayValidationError('event timestamp required');
     minTs = Math.min(minTs, ts);
     maxTs = Math.max(maxTs, ts);
-    if (ev.type === RRWEB_META) metaPage = normalizePagePath(ev.data?.href);
+    if (ev.type === RRWEB_META) {
+      metaPage = normalizePagePath(ev.data?.href);
+      if (metaPage) visits.push([ts, metaPage]);
+    }
+    if (ev.type === RRWEB_CUSTOM && ev.data?.tag === 'navigation') {
+      const nav = normalizePagePath(ev.data?.payload?.path);
+      if (nav) visits.push([ts, nav]);
+    }
     if (ev.type === RRWEB_FULL_SNAPSHOT) {
       const page = metaPage || normalizePagePath(doc.page);
       if (page) {
@@ -209,10 +220,15 @@ export function parseReplayChunk(body: Buffer, limits: ReplayLimits = replayLimi
     throw new ReplayValidationError('event timestamps out of range');
   }
 
+  // Pages in visit order: what the events show (timestamp order), then the SDK's list
+  // (noted in navigation order), then `page` - the page when the chunk was cut, i.e.
+  // the LAST one, so it must not come first (a session whose only chunk is the final
+  // one would otherwise start on its last page).
+  visits.sort((a, b) => a[0] - b[0]);
   const pages: string[] = [];
-  for (const p of [doc.page, ...(Array.isArray(doc.pages) ? doc.pages.slice(0, 20) : [])]) {
+  for (const p of [...visits.map((v) => v[1]), ...(Array.isArray(doc.pages) ? doc.pages.slice(0, 20) : []), doc.page]) {
     const n = normalizePagePath(p);
-    if (n && !pages.includes(n)) pages.push(n);
+    if (n && !pages.includes(n) && pages.length < 40) pages.push(n);
   }
   const vw = Number(doc.viewport?.w);
   const vh = Number(doc.viewport?.h);

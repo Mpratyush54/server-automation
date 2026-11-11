@@ -324,7 +324,11 @@ router.delete('/users/:id', expressAuthenticate, expressRequireRole([UserRole.AD
     const grantErr = await checkRoleGrant((req as AuthenticatedRequest).user, { target: user });
     if (grantErr) return res.status(grantErr.status).json({ error: grantErr.error });
 
-    await repo.remove(user);
+    // project_members has no FK cascade: drop the user's memberships with the user.
+    await ds.transaction(async (tx) => {
+      await tx.query('DELETE FROM project_members WHERE user_id = $1', [user.id]);
+      await tx.getRepository(User).remove(user);
+    });
 
     await logAudit({
       userId: (req as AuthenticatedRequest).user?.id,

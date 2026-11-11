@@ -140,16 +140,16 @@ export default function App() {
       <nav style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
         <Link to="/">Home</Link>
         <Link to="/orders">Orders</Link>
-        <Link to="/features">Features</Link>
         <Link to="/checkout">Checkout</Link>
+        <Link to="/features">Features</Link>
       </nav>
       <ConsentBanner />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/orders" element={<Orders />} />
         <Route path="/orders/:id" element={<OrderDetail />} />
-        <Route path="/features" element={<Features />} />
         <Route path="/checkout" element={<Checkout />} />
+        <Route path="/features" element={<Features />} />
       </Routes>
     </div>
   );

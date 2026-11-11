@@ -3,6 +3,9 @@
  *
  * Browser (write-only, project-bound; browser tokens allowed deliberately):
  *   POST /api/sdk/replay/chunks     gzip chunk envelope (application/octet-stream) -> 202
+ *        or, on page hide (#154), text/plain {"v":1,"token","chunk":"<base64 gzip>"}: the
+ *        token in the body instead of the Authorization header makes it a CORS simple
+ *        request (no preflight; works with navigator.sendBeacon). Same auth, limits, checks.
  *   GET  /api/sdk/replay/allowed    ?subjectId=&sessionId= -> { replayAllowed }   (consent, #47)
  *   PUT  /api/sdk/replay/consent    { subjectId, sessionId?, replayAllowed }      (setConsent, #47)
  *   Auth: the telemetry block's origin-bound browser ingest token (`plat_ingest_web_…`,
@@ -94,6 +97,58 @@ async function replaySdkAuth(req: Request, res: Response, next: NextFunction) {
   });
 }
 
+const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
+const UNLOAD_TOKEN_MAX = 512;
+
+/**
+ * Unload envelope (#154), POST /sdk/replay/chunks only: a `text/plain` body
+ * `{"v":1,"token":"…","chunk":"<base64 of the gzip chunk>"}`. Unwraps it into the same
+ * request the header path sees - the token as `Authorization: Bearer …` (so replaySdkAuth
+ * verifies it exactly as usual, including the Origin check for ingest tokens) and the
+ * decoded gzip bytes as the body (same size limit and validation). Other content types
+ * pass through untouched.
+ */
+function unloadEnvelope(req: Request, res: Response, next: NextFunction) {
+  if (!req.is('text/plain')) return next();
+  if (!replayIngestEnabled()) return disabled(res);
+  if (req.header('Authorization')) {
+    return res.status(400).json({ error: 'send the token in the Authorization header or in the unload envelope, not both' });
+  }
+  const maxChunkBytes = replayLimits().maxChunkBytes;
+  const limit = Math.ceil(maxChunkBytes / 3) * 4 + 1024; // base64 + token and JSON keys
+  express.text({ type: 'text/plain', limit })(req, res, (err?: any) => {
+    if (err) {
+      const status = err.status === 413 || err.type === 'entity.too.large' ? 413 : 400;
+      return res.status(status).json({ error: status === 413 ? 'replay chunk too large' : 'invalid body' });
+    }
+    let doc: any;
+    try {
+      doc = JSON.parse(typeof req.body === 'string' ? req.body : '');
+    } catch {
+      doc = null;
+    }
+    if (
+      !doc ||
+      typeof doc !== 'object' ||
+      doc.v !== 1 ||
+      typeof doc.token !== 'string' ||
+      !doc.token ||
+      doc.token.length > UNLOAD_TOKEN_MAX ||
+      /\s/.test(doc.token) ||
+      typeof doc.chunk !== 'string' ||
+      doc.chunk.length % 4 !== 0 ||
+      !BASE64_RE.test(doc.chunk)
+    ) {
+      return res.status(400).json({ error: 'invalid unload envelope' });
+    }
+    const body = Buffer.from(doc.chunk, 'base64');
+    if (body.length > maxChunkBytes) return res.status(413).json({ error: 'replay chunk too large' });
+    req.body = body;
+    req.headers.authorization = `Bearer ${doc.token}`;
+    return next();
+  });
+}
+
 const rawChunk = (req: Request, res: Response, next: NextFunction) => {
   express.raw({ type: ['application/octet-stream', 'application/gzip'], limit: replayLimits().maxChunkBytes })(req, res, (err?: any) => {
     if (err) {
@@ -114,7 +169,7 @@ async function consentWithdrawn(projectId: string, subjectId: string | null, ses
   return d.source === 'recorded' && !d.replayAllowed;
 }
 
-router.post('/sdk/replay/chunks', ingestLimiter, replaySdkAuth, rawChunk, async (req: Request, res: Response) => {
+router.post('/sdk/replay/chunks', ingestLimiter, unloadEnvelope, replaySdkAuth, rawChunk, async (req: Request, res: Response) => {
   const r = req as ReplayRequest;
   const projectId = r.projectId;
   if (!projectId) return res.status(401).json({ error: 'SDK token required' });

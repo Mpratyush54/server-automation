@@ -9,7 +9,9 @@ pg_stat_statements to shared_preload_libraries. The ServiceMonitor is installed
 after Prometheus CRDs, in the full telemetry reconciliation step.
 
 The Database tab calls
-`GET /api/projects/:projectId/databases/insights?environment=production`.
+`GET /api/projects/:projectId/databases/insights?environment=<name>`. It opens on the
+project's `production` environment when one exists, otherwise on the first environment,
+and has an environment selector.
 Authentication and viewer-level project access are checked before reading any
 statistics. Unknown environments are rejected. Database names and usernames are
 resolved on the server, never from request parameters. The API uses the existing
@@ -56,13 +58,37 @@ an existing slow-query alert.
 
 ## Upgrade and remaining integration
 
-No platform database schema migration or lockfile change is required. Existing
-installations marked done for database install steps need their database Helm
-releases reconciled with the new full-profile values; the installer done markers
-do not automatically reconfigure existing database releases. Changing PostgreSQL
-preload libraries restarts PostgreSQL. Disabling monitoring does not erase engine
-statistics or automatically disable an already enabled Mongo profiler; operators
-can run `db.setProfilingLevel(0)` in the relevant project databases.
+No platform database schema migration or lockfile change is required. Fresh
+full-profile installs get the exporters and the ServiceMonitor automatically.
+
+Existing installations get them from the normal upgrade, with no manual steps.
+PostgreSQL, MongoDB and Redis record a fingerprint of their rendered Helm values
+next to their done marker. When a release changes those values (here: enabling
+the metrics exporters on the full profile), `platformctl upgrade` reconciles the
+three releases with `helm upgrade` after the release itself is healthy. It also
+installs or re-applies the telemetry step, which applies the
+`platform-databases` ServiceMonitor. Installs from before fingerprints existed
+reconcile once. Preview the changes and the restarts first, then apply:
+
+```bash
+sudo platformctl upgrade --to vX.Y.Z --dry-run   # lists e.g. "postgresql  reconcile (Helm values changed); restarts: postgresql-0 ..."
+sudo platformctl upgrade --to vX.Y.Z
+```
+
+If the install is already at the target release (for example after switching
+the profile to `full`), run the same command again: at the installed release it
+only reconciles components. `sudo platformctl provision --profile full --auto`
+reconciles the same way. Do not edit `/etc/platform/.bootstrap_state`.
+
+Then check `pg_up`, `mongodb_up` and `redis_up` in Prometheus (each should be 1).
+Changing PostgreSQL preload libraries restarts PostgreSQL. The standalone MongoDB
+Deployment uses the `Recreate` update strategy (one pod on a ReadWriteOnce volume:
+a rolling update would start the new pod while the old one still holds
+`mongod.lock`), so every MongoDB upgrade briefly stops MongoDB before the new pod
+starts. Redis restarts its master and replica; the platform API re-creates project
+Redis ACL users within about 15 seconds. Disabling monitoring does not erase
+engine statistics or automatically disable an already enabled Mongo profiler;
+operators can run `db.setProfilingLevel(0)` in the relevant project databases.
 
 The exporter chart values follow the [PostgreSQL chart](https://github.com/bitnami/charts/tree/main/bitnami/postgresql),
 [MongoDB chart](https://github.com/bitnami/charts/tree/main/bitnami/mongodb), and
@@ -95,5 +121,8 @@ project, and that literal payloads and the other project's identities are absent
 Check unauthorized API requests, failed engines and a partial Redis scan. Verify
 database alert events reach #43 rules. Repeat on a standard profile and confirm
 the panel reports monitoring disabled and no exporter sidecars are installed.
-This real-database, Kubernetes, scrape and load verification has not run in the
-Windows sandbox.
+Verified on 2026-11-11 on a fresh full-profile EC2 VM (4 vCPU / 16 GB): all
+three exporters scraped (`pg_up`, `mongodb_up`, `redis_up` = 1), project
+`project_database_*` metrics present, PostgreSQL top queries normalised without
+literals, MongoDB slow operations and Redis key estimates shown per project, and
+the reconcile steps above on an existing install.

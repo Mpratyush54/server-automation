@@ -95,6 +95,8 @@ export interface ReplayEnvironment {
   random?: () => number;
   now?: () => number;
   fetchImpl?: (url: string, init: any) => Promise<{ status: number; ok?: boolean; json?: () => Promise<any>; headers?: { get(name: string): string | null } }>;
+  /** `navigator.sendBeacon` (page hide); defaults to `nav.sendBeacon` when present. */
+  sendBeacon?: (url: string, data: string) => boolean;
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (t: unknown) => void;
 }
@@ -383,7 +385,12 @@ export class ReplayChunker {
     return this.cur.events.length;
   }
 
-  flush(): void {
+  /**
+   * Emit the open chunk. `maxPieceBytes` splits it into several chunks of at most
+   * that many raw bytes (page hide: each piece must fit a keepalive request); the
+   * metadata travels with the first piece, a single oversized event stays whole.
+   */
+  flush(maxPieceBytes?: number): void {
     const chunk = this.cur;
     if (chunk.timer) this.clearTimer(chunk.timer);
     if (!chunk.events.length) {
@@ -392,7 +399,20 @@ export class ReplayChunker {
     }
     this.cur = emptyChunk();
     const { timer: _t, ...out } = chunk;
-    this.onChunk(out);
+    if (!maxPieceBytes || out.bytes <= maxPieceBytes) {
+      this.onChunk(out);
+      return;
+    }
+    let piece: ReplayChunk = { ...out, events: [], bytes: 0 };
+    for (const ev of out.events) {
+      if (piece.events.length && piece.bytes + ev.length + 1 > maxPieceBytes) {
+        this.onChunk(piece);
+        piece = { events: [], startedAt: out.startedAt, endedAt: out.endedAt, bytes: 0, pages: [], errors: 0, networkErrors: 0, traceIds: [] };
+      }
+      piece.events.push(ev);
+      piece.bytes += ev.length + 1;
+    }
+    this.onChunk(piece);
   }
 }
 
@@ -461,6 +481,8 @@ export interface ReplayUploaderOptions {
   token: string;
   compress: (text: string) => Uint8Array;
   fetchImpl?: ReplayEnvironment['fetchImpl'];
+  /** Tried first for each chunk on page hide; keepalive fetch is the fallback. */
+  sendBeacon?: ReplayEnvironment['sendBeacon'];
   now?: () => number;
   random?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
@@ -471,7 +493,40 @@ export interface ReplayUploaderOptions {
   onFatal?: (status: number) => void;
 }
 
-const KEEPALIVE_BUDGET = 60_000; // browsers cap in-flight keepalive bodies at 64 KiB per page
+const KEEPALIVE_BUDGET = 60_000; // browsers cap in-flight keepalive/beacon bodies at 64 KiB per page
+/**
+ * Raw bytes per chunk flushed on page hide, so each piece fits a keepalive request once
+ * wrapped in the unload envelope: gzip of 40 KiB (worst case ~41 KiB incompressible),
+ * base64 (x4/3, ~55 KiB) plus the token and JSON keys stays under the 60 000-byte budget.
+ */
+export const UNLOAD_PIECE_BYTES = 40 * 1024;
+
+function toBase64(bytes: Uint8Array): string {
+  if (typeof btoa === 'function') {
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 0x8000)));
+    }
+    return btoa(bin);
+  }
+  return (globalThis as any).Buffer.from(bytes).toString('base64');
+}
+
+/**
+ * Body of the page-hide upload (#154): `text/plain` JSON `{"v":1,"token","chunk"}` with
+ * the gzip chunk base64-encoded. Carrying the token in the body (not an `Authorization`
+ * header, not the URL) makes the request a CORS "simple request": no preflight that the
+ * unload could cancel, and it can go out with `navigator.sendBeacon`.
+ */
+export function unloadEnvelope(token: string, body: Uint8Array): string {
+  return JSON.stringify({ v: 1, token, chunk: toBase64(body) });
+}
+
+interface QueuedChunk {
+  seq: number;
+  body: Uint8Array;
+  delivered?: boolean;
+}
 
 function retryAfter(value: string | null | undefined, now: number): number | null {
   if (!value) return null;
@@ -485,18 +540,30 @@ function retryAfter(value: string | null | undefined, now: number): number | nul
  * Sequential uploader: one request in flight, retry with exponential backoff and
  * jitter (honours `Retry-After` on 429/503), bounded queue (oldest dropped and
  * counted), `keepalive` for the final flush on page hide. Never throws.
+ *
+ * Page hide: the final chunks are enqueued without starting a normal fetch
+ * (`enqueue(.., { pump: false })`) and `flushUnload()` sends every queued chunk -
+ * including one whose normal fetch is still in flight, which an unload may cancel -
+ * as an unload envelope (`text/plain`, token in the body: no CORS preflight, #154):
+ * `navigator.sendBeacon` first, `fetch(.., { keepalive: true })` if the beacon is
+ * unavailable or refused, and back into the queue if that fails too. The server
+ * answers a re-sent chunk with 200 and stores it once. Keepalive bodies share a 64 KiB
+ * per-page budget; chunks that do not fit stay queued and get a best-effort normal
+ * fetch (delivered if the page survives, e.g. it was only hidden).
  */
 export class ReplayUploader {
   dropped = 0;
   sent = 0;
   stopped = false;
-  private queue: Array<{ seq: number; body: Uint8Array }> = [];
+  private queue: QueuedChunk[] = [];
+  private keepaliveBytes = 0;
   private queuedBytes = 0;
   private inFlight = false;
   private failures = 0;
   private blockedUntil = 0;
   private timer: unknown = null;
   private readonly fetchImpl: NonNullable<ReplayEnvironment['fetchImpl']>;
+  private readonly sendBeacon: ReplayEnvironment['sendBeacon'];
   private readonly now: () => number;
   private readonly random: () => number;
   private readonly setTimer: (fn: () => void, ms: number) => unknown;
@@ -504,6 +571,7 @@ export class ReplayUploader {
   constructor(private readonly opts: ReplayUploaderOptions) {
     const f = opts.fetchImpl ?? (typeof fetch === 'function' ? (fetch.bind(globalThis) as any) : undefined);
     this.fetchImpl = f ?? (() => Promise.reject(new Error('fetch unavailable')));
+    this.sendBeacon = opts.sendBeacon;
     this.now = opts.now ?? (() => Date.now());
     this.random = opts.random ?? Math.random;
     this.setTimer = opts.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
@@ -513,7 +581,8 @@ export class ReplayUploader {
     return this.queue.length;
   }
 
-  enqueue(seq: number, envelope: string): void {
+  /** `pump: false` queues without starting a normal request (page hide: `flushUnload` follows). */
+  enqueue(seq: number, envelope: string, opts: { pump?: boolean } = {}): void {
     if (this.stopped) return;
     let body: Uint8Array;
     try {
@@ -530,40 +599,91 @@ export class ReplayUploader {
     }
     this.queue.push({ seq, body });
     this.queuedBytes += body.length;
-    this.pump();
+    if (opts.pump !== false) this.pump();
   }
 
-  /** Page is going away: send what fits the keepalive budget, now. */
+  /**
+   * Page is going away: send every queued chunk as an unload envelope, now - the
+   * in-flight head too (its normal fetch may die with the page). sendBeacon first,
+   * then keepalive fetch within the budget; what does not fit stays queued and gets a
+   * best-effort normal request.
+   */
   flushUnload(): void {
     if (this.stopped) return;
-    let budget = KEEPALIVE_BUDGET;
-    const start = this.inFlight ? 1 : 0; // the in-flight head is already being sent
-    while (this.queue.length > start) {
-      const item = this.queue[start];
-      if (item.body.length > budget) break;
-      budget -= item.body.length;
-      this.queue.splice(start, 1);
+    for (let i = 0; i < this.queue.length; ) {
+      const item = this.queue[i];
+      let text: string;
+      try {
+        text = unloadEnvelope(this.opts.token, item.body);
+      } catch {
+        i++;
+        continue;
+      }
+      const size = text.length; // ASCII (base64 + token)
+      if (size > KEEPALIVE_BUDGET) {
+        i++; // never fits an unload request; the normal path tries it
+        continue;
+      }
+      if (this.sendBeacon) {
+        let queued = false;
+        try {
+          queued = this.sendBeacon(this.opts.url, text) === true;
+        } catch {
+          queued = false;
+        }
+        if (queued) {
+          // The browser owns delivery now (no response to read); a duplicate is harmless.
+          this.queue.splice(i, 1);
+          this.queuedBytes -= item.body.length;
+          this.delivered(item);
+          continue;
+        }
+      }
+      if (this.keepaliveBytes + size > KEEPALIVE_BUDGET) {
+        i++; // too big for what is left of the budget; a smaller one may still fit
+        continue;
+      }
+      this.queue.splice(i, 1);
       this.queuedBytes -= item.body.length;
-      // If the browser refuses the keepalive request (e.g. no keepalive preflight support),
-      // put the chunk back: the page may only be hidden, and the normal path retries it.
+      this.keepaliveBytes += size;
+      // If the browser refuses the keepalive request, put the chunk back: the page may
+      // only be hidden, and the normal path retries it.
       let req: Promise<{ status: number }>;
       try {
-        req = this.request(item.body, true);
+        req = this.fetchImpl(this.opts.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: text,
+          keepalive: true,
+          credentials: 'omit',
+        });
       } catch (err) {
         req = Promise.reject(err);
       }
-      req.then(
-        (res) => {
-          if (res && res.status >= 200 && res.status < 300) this.sent++;
-          else if (res && (res.status === 0 || res.status >= 500 || res.status === 429)) this.requeue(item);
-        },
-        () => this.requeue(item),
-      );
+      req
+        .then(
+          (res) => {
+            const status = res?.status ?? 0;
+            if ((status >= 200 && status < 300) || status === 409) this.delivered(item);
+            else if (status === 0 || status >= 500 || status === 429) this.requeue(item);
+          },
+          () => this.requeue(item),
+        )
+        .then(() => {
+          this.keepaliveBytes -= size;
+        });
     }
+    this.pump(); // leftovers (over the keepalive budget): best effort
   }
 
-  private requeue(item: { seq: number; body: Uint8Array }): void {
-    if (this.stopped) return;
+  private delivered(item: QueuedChunk): void {
+    if (item.delivered) return;
+    item.delivered = true;
+    this.sent++;
+  }
+
+  private requeue(item: QueuedChunk): void {
+    if (this.stopped || item.delivered || this.queue.includes(item)) return;
     this.queue.unshift(item);
     this.queuedBytes += item.body.length;
     this.schedule(1000);
@@ -575,12 +695,11 @@ export class ReplayUploader {
     this.queuedBytes = 0;
   }
 
-  private request(body: Uint8Array, keepalive: boolean) {
+  private request(body: Uint8Array) {
     return this.fetchImpl(this.opts.url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${this.opts.token}` },
       body,
-      keepalive: keepalive && body.length < KEEPALIVE_BUDGET,
       credentials: 'omit',
     });
   }
@@ -613,7 +732,7 @@ export class ReplayUploader {
     this.inFlight = true;
     let req: Promise<{ status: number; headers?: { get(name: string): string | null } }>;
     try {
-      req = this.request(head.body, false);
+      req = this.request(head.body);
     } catch (err) {
       req = Promise.reject(err);
     }
@@ -631,8 +750,9 @@ export class ReplayUploader {
           } else {
             // 2xx delivered (409 = already stored); other 4xx (400/413) are permanent for this chunk.
             this.shiftHead(head);
-            if (status >= 400 && status !== 409) this.dropped++;
-            else this.sent++;
+            if (status >= 400 && status !== 409) {
+              if (!head.delivered) this.dropped++;
+            } else this.delivered(head);
             this.failures = 0;
           }
         },
@@ -801,12 +921,16 @@ function record(c: Context, mod: ReplayRecorderModule, session: ReplaySessionSta
     token: c.token,
     compress: mod.gzip,
     fetchImpl: env.fetchImpl,
+    sendBeacon:
+      env.sendBeacon ??
+      (env.nav && typeof env.nav.sendBeacon === 'function' ? (u: string, d: string) => env.nav.sendBeacon(u, d) : undefined),
     now: env.now,
     random: env.random,
     setTimer: env.setTimer,
     onFatal: () => handle.stop(),
   });
   let page = currentPath(win);
+  let hiding = false;
   const meta = (): Omit<EnvelopeMeta, 'seq'> => ({
     sessionId: session.id,
     mode,
@@ -823,7 +947,7 @@ function record(c: Context, mod: ReplayRecorderModule, session: ReplaySessionSta
       const seq = session.seq++;
       session.lastActivity = env.now();
       saveReplaySession(env.session, session);
-      uploader.enqueue(seq, buildEnvelope({ ...meta(), seq }, chunk));
+      uploader.enqueue(seq, buildEnvelope({ ...meta(), seq }, chunk), { pump: !hiding });
     },
     { maxBytes: options.maxChunkBytes, flushIntervalMs: options.flushIntervalMs, setTimer: env.setTimer, clearTimer: env.clearTimer },
   );
@@ -973,11 +1097,19 @@ function record(c: Context, mod: ReplayRecorderModule, session: ReplaySessionSta
     cleanups.push(() => (win as any).removeEventListener('popstate', onPop));
   }
 
-  // Unload: flush the open chunk and send it with keepalive.
+  // Unload (pagehide, or visibilitychange -> hidden, whichever fires first): flush the
+  // open chunk in keepalive-sized pieces without starting normal fetches, then send
+  // everything queued as unload envelopes (sendBeacon, else keepalive fetch). A normal fetch started here would often be
+  // cancelled by the unload, losing the last page (or a whole short session).
   const onHide = () => {
     if (stopped) return;
     if (mode === 'session') {
-      chunker.flush();
+      hiding = true;
+      try {
+        chunker.flush(UNLOAD_PIECE_BYTES);
+      } finally {
+        hiding = false;
+      }
       uploader.flushUnload();
     }
   };

@@ -44,7 +44,13 @@
       @for (inc of openIncidents(); track inc.id) {
         <article class="incident" [attr.data-maintenance]="inc.isMaintenance">
           <h3>{{ inc.title }}</h3>
-          <p class="meta">{{ inc.status }} · {{ inc.impact }}{{ inc.isMaintenance ? ' · maintenance' : '' }}</p>
+          <p class="meta">{{ inc.isMaintenance ? 'maintenance in progress' : inc.status }} · {{ inc.impact }}</p>
+          @if (inc.isMaintenance && (inc.scheduledStart || inc.scheduledEnd)) {
+            <p class="meta">
+              Window: {{ inc.scheduledStart ? (inc.scheduledStart | date:'medium') : '…' }}
+              – {{ inc.scheduledEnd ? (inc.scheduledEnd | date:'medium') : 'until further notice' }}
+            </p>
+          }
           <ol>
             @for (u of inc.updates; track u.at) {
               <li><time>{{ u.at | date:'short' }}</time> — <strong>{{ u.status }}</strong>: {{ u.body }}</li>
@@ -56,13 +62,35 @@
       }
     </section>
 
+    @if (upcomingMaintenance().length) {
+      <section class="incidents">
+        <h2>Scheduled maintenance</h2>
+        @for (inc of upcomingMaintenance(); track inc.id) {
+          <article class="incident" data-maintenance="true">
+            <h3>{{ inc.title }}</h3>
+            <p class="meta">
+              Scheduled · {{ inc.scheduledStart ? (inc.scheduledStart | date:'medium') : '…' }}
+              – {{ inc.scheduledEnd ? (inc.scheduledEnd | date:'medium') : 'until further notice' }}
+            </p>
+            @if (inc.updates.length) {
+              <ol>
+                @for (u of inc.updates; track u.at) {
+                  <li><time>{{ u.at | date:'short' }}</time> — {{ u.body }}</li>
+                }
+              </ol>
+            }
+          </article>
+        }
+      </section>
+    }
+
     @if (pastIncidents().length) {
       <section class="incidents past">
         <h2>Past incidents</h2>
         @for (inc of pastIncidents(); track inc.id) {
           <article class="incident resolved">
             <h3>{{ inc.title }}</h3>
-            <p class="meta">Resolved {{ inc.resolvedAt | date:'medium' }}</p>
+            <p class="meta">{{ inc.isMaintenance ? 'Completed' : 'Resolved' }} {{ inc.resolvedAt | date:'medium' }}</p>
           </article>
         }
       </section>
