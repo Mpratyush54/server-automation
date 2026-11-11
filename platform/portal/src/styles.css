@@ -6,6 +6,9 @@
 
 @layer base {
   :root {
+    /* The portal is dark-only: keep native controls (checkboxes, selects,
+       scrollbars) dark even when the OS prefers a light scheme. */
+    color-scheme: dark;
     /* Next.js Dark Mode Palette */
     --bg-canvas: #000000;
     --bg-surface: #0a0a0a;
