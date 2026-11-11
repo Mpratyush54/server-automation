@@ -39,7 +39,7 @@ var reappliedSteps = map[string]string{
 	"platform":       "platform-api and platform-portal (rolling, one pod at a time) when the Deployment spec or configuration changed",
 	"storage-scoped": "platform-api, only when scoped MinIO credentials are created",
 	// Platform Ingresses: security headers, routing and TLS settings of the release.
-	"ingress": "none (Ingress objects; ingress-nginx reloads its configuration)",
+	"ingress":       "none (Ingress objects; ingress-nginx reloads its configuration)",
 	"ingress-nginx": "ingress-nginx controller, only if its values changed",
 	"telemetry":     "Grafana/Prometheus/Loki/Tempo/Pyroscope/Alloy/profile-ingest, only where values changed",
 	"synthetics":    "none (namespace, policies and runner config)",
