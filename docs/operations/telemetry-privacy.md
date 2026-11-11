@@ -107,10 +107,22 @@ so those rules were removed.
 `POST /api/projects/:projectId/privacy/gdpr-delete` (project **owner**):
 
 1. Mongo `logs` / `errors` matching `userId` / `sessionId` (fields or message)
-2. `telemetry_consents` rows + Redis consent cache
-3. MinIO objects under the replay prefixes (when `REPLAYS_*` / MinIO env is set)
-4. Loki delete requests for `{project_id="…"} |= "userId|sessionId"`
-5. Audit `privacy.gdpr_delete` with counts, warnings and optional `emailHash`
+2. Postgres `error_events` (error tracking) whose payload carries the `userId` / `sessionId`
+3. `telemetry_consents` rows + Redis consent cache
+4. MinIO objects under the replay prefixes (when `REPLAYS_*` / MinIO env is set)
+5. One Loki delete request per identifier: `{platform_project_id="<project>"} |= "<userId>"`
+   (and the same for `sessionId`), from the start of the data
+6. Audit `privacy.gdpr_delete` with counts, warnings and optional `emailHash`
+
+The response reports what was removed (`deleted.logs`, `errors`, `consents`,
+`replayObjects`, `lokiRequests`) and any `warnings` (for example an unreachable backend);
+a step that fails does not stop the others.
+
+**Loki timing.** Loki accepts the delete request immediately (status `received`) and
+filters the matching lines out of query results once its queriers refresh their delete
+requests, about 5 minutes later. The compactor removes the data from storage after
+`delete_request_cancel_period` (24 h by default); until then the request can still be
+cancelled through Loki's delete API. Other lines in the same streams are kept.
 
 ## Profiles / install weight
 
