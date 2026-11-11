@@ -26,6 +26,14 @@ loki:
     # ConfigMap (runtime overrides, tenant "fake"). Errors and session replays are not
     # stored in Loki; their retention is applied by the API.
     retention_period: RETENTION_HOURS
+    # Promote the authenticated project/environment (set by Alloy from the ingress
+    # external-auth headers) to stream labels, so project-scoped queries (#48), GDPR
+    # deletes (#47) and per-project retention select by stream. One value per project.
+    otlp_config:
+      resource_attributes:
+        attributes_config:
+          - action: index_label
+            attributes: [platform.project_id, deployment.environment, service.name]
     ingestion_rate_mb: 2
     ingestion_burst_size_mb: 4
     max_query_parallelism: 2
