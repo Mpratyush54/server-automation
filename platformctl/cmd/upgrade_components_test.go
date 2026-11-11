@@ -42,7 +42,7 @@ func TestComponentPlanBringsOldInstallToProfile(t *testing.T) {
 			t.Errorf("%s: %+v", s, p[s])
 		}
 	}
-	if p["platform"].Action != "re-apply" || p["storage-scoped"].Action != "re-apply" {
+	if p["platform"].Action != "re-apply" || p["storage-scoped"].Action != "re-apply" || p["ingress"].Action != "re-apply" {
 		t.Errorf("platform configuration not re-applied: %+v %+v", p["platform"], p["storage-scoped"])
 	}
 	for _, s := range []string{"seed", "minio", "routing", "argocd", "auto-update"} {
