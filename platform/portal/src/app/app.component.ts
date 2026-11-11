@@ -38,6 +38,9 @@ export class AppComponent implements OnDestroy {
     'services': 'Services',
     'metrics': 'Metrics',
     'alerts': 'Alerts',
+    'alerting': 'Alerting',
+    'errors': 'Errors',
+    'observability': 'Observability',
     'logs': 'Logs',
     'config': 'Configuration',
     'storage': 'Storage',
@@ -54,6 +57,16 @@ export class AppComponent implements OnDestroy {
     'profile': 'Profile'
   };
 
+  /** Titles for project sub-pages (/projects/:id/<page>). */
+  private projectPageTitles: Record<string, string> = {
+    'errors': 'Errors',
+    'synthetics': 'Synthetics',
+    'status': 'Status page',
+    'heatmaps': 'Heatmaps',
+    'observability': 'Observability',
+    'replays': 'Session replays',
+  };
+
   constructor(router: Router) {
     if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
       this.mqMobile = window.matchMedia('(max-width: 767.98px)');
@@ -64,12 +77,14 @@ export class AppComponent implements OnDestroy {
     }
     router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(() => {
       this.mobileNavOpen = false;
-      const segment = router.url.split(/[?#]/)[0].split('/')[1] || '';
+      const parts = router.url.split(/[?#]/)[0].split('/');
+      const segment = parts[1] || '';
       this.isLoginPage = segment === 'login' || segment === 'oauth' || segment === 'mfa';
       this.isLandingPage = segment === '' || segment === 'landing';
       this.isDocsPage = segment === 'docs';
       this.isPublicStatusPage = segment === 'status';
-      this.pageTitle = this.titles[segment] || 'Platform';
+      this.pageTitle = (segment === 'projects' && parts[3] && this.projectPageTitles[parts[3]])
+        || this.titles[segment] || 'Platform';
     });
   }
 
