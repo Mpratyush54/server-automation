@@ -150,6 +150,9 @@ func runProvision() error {
 		return err
 	}
 	defer unlock()
+	if err := state.ReconcileHardening(); err != nil {
+		return err
+	}
 	started := time.Now()
 	state.ResetTimings()
 
