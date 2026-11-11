@@ -235,7 +235,14 @@ backend traces in Tempo. See [Observability views](observability.md).
 
 ## Collector notes
 
-- CORS on the Faro receiver must allow the app origins and the `Authorization` and
-  `Content-Type` request headers.
+- CORS on the Faro receiver allows the `Authorization` and `Content-Type` request headers
+  and exposes `Retry-After`. Its origin list is maintained by the platform API from every
+  project's browser origins: environment hosts, the project domain and
+  `TELEMETRY_ALLOWED_ORIGINS` (e.g. `https://shop.example.com, https://*.preview.example.com,
+  http://localhost:4200`). After you change the variable, allow up to about two minutes
+  before the collector accepts the new origin; the browser token picks it up at its next
+  config refresh.
+- When a browser token exceeds its ingest budget the collector answers `429` with
+  `Retry-After` and CORS headers, so the transport waits as asked.
 - Backends that receive `traceparent` cross-origin must allow it in
   `Access-Control-Allow-Headers` (the `cors` npm package reflects requested headers by default).

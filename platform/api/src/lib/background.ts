@@ -15,6 +15,7 @@ import { getReplayStore } from './replay-store';
 import { getDb } from '../config/database';
 import { startErrorRetention } from './error-retention';
 import { startLokiRetentionReconcile } from './loki-retention';
+import { ORIGINS_SYNC_JOB, syncTelemetryOrigins } from './telemetry-origins';
 
 /**
  * Background work inventory (every timer/loop in platform/api/src):
@@ -35,6 +36,7 @@ import { startLokiRetentionReconcile } from './loki-retention';
  * | replay-retention | leader loop             | hourly (#40: per-project retentionDays.replays) |
  * | error-retention | leader loop              | hourly: error_events past the project's errors retention (#47) |
  * | loki-retention-reconcile | leader loop (full profile) | 10 min: per-project logs retention -> Loki runtime overrides (#47) |
+ * | telemetry-origins-sync | leader loop (+ debounced on change) | 5 min, 5 s after gain |
  *
  * Any leader-loop job can instead run as a Kubernetes CronJob
  * (`node dist/jobs/<name>.js`) by listing it in JOBS_EXTERNAL.
@@ -84,6 +86,13 @@ export function startBackgroundWork(): void {
       const r = await runReplayRetention(await getDb(), getReplayStore());
       if (r.sessions) console.log(`[replay] retention removed ${r.sessions} session(s), ${r.objects} object(s)`);
     },
+  });
+  // Faro CORS allow-list (monitoring/telemetry-origins); also triggered on change.
+  registerLeaderJob({
+    name: ORIGINS_SYNC_JOB,
+    intervalMs: 5 * 60 * 1000,
+    initialDelayMs: 5_000,
+    run: async () => ((await syncTelemetryOrigins()) === 'disabled' ? 'skipped' : undefined),
   });
 
   leadership.start();
