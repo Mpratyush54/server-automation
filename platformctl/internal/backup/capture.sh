@@ -23,13 +23,14 @@ config)
   fi
   ;;
 postgres)
-  p=$(pod postgresql)
-  kubectl -n databases exec "$p" -- bash -ec "$PWHELPER"'
+  p=$(pg_pod)
+  pg_container=$(pg_container "$p")
+  kubectl -n databases exec "$p" -c "$pg_container" -- bash -ec "$PWHELPER"'
     export PGPASSWORD="$(pw POSTGRES_PASSWORD)"
     pg_dumpall -U postgres --globals-only
   ' > "$dest/globals.sql"
   # Database names are data, never interpolated into shell source or filenames.
-  kubectl -n databases exec "$p" -- bash -ec "$PWHELPER"'
+  kubectl -n databases exec "$p" -c "$pg_container" -- bash -ec "$PWHELPER"'
     export PGPASSWORD="$(pw POSTGRES_PASSWORD)"
     work=$(mktemp -d); trap '\''rm -rf "$work"'\'' EXIT
     psql -U postgres -At -0 -c "SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname" > "$work/names"
@@ -42,13 +43,13 @@ postgres)
   ' > "$dest/databases.tar"
   ;;
 mongo)
-  p=$(pod mongodb)
+  p=$(mongo_pod)
   kubectl -n databases exec "$p" -- bash -ec "$PWHELPER"'
     mongodump --username root --password "$(pw MONGODB_ROOT_PASSWORD)" --authenticationDatabase admin --archive --gzip' > "$dest/mongo.archive.gz"
   ;;
 redis)
-  p=$(kubectl -n databases get pods -l 'app.kubernetes.io/instance=redis,app.kubernetes.io/component=master' -o jsonpath='{.items[0].metadata.name}')
-  kubectl -n databases exec "$p" -- bash -ec "$PWHELPER"'
+  p=$(redis_master_pod)
+  kubectl -n databases exec "$p" -c redis -- bash -ec "$PWHELPER"'
     export REDISCLI_AUTH="$(pw REDIS_PASSWORD)"
     result=$(redis-cli BGSAVE)
     case "$result" in "Background saving started"|"Background saving already in progress"*) ;; *) echo "Redis BGSAVE failed" >&2;exit 1;; esac

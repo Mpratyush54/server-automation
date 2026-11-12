@@ -57,9 +57,9 @@ export async function canConnectPostgres(password: string): Promise<boolean> {
 }
 
 async function canConnectRedis(password: string): Promise<boolean> {
+  const { redisEndpointOptions } = await import('./redis-endpoint');
   const client = new Redis({
-    host: process.env.REDIS_HOST || 'redis-master.databases.svc.cluster.local',
-    port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    ...redisEndpointOptions({ defaultHost: 'redis-master.databases.svc.cluster.local' }),
     password: password || undefined,
     connectTimeout: 4000,
     lazyConnect: true,

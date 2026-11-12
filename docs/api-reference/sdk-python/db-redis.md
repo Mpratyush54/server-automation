@@ -33,6 +33,10 @@ redis_mgr = RedisManager(config: dict = None)
 | `db` | `PLATFORM_REDIS_DB` | redis-py default (`0`) |
 | `url` | `PLATFORM_REDIS_URL` | (none) — `redis://` or `rediss://` (TLS); URL values win |
 | `ssl` | `PLATFORM_REDIS_TLS=true` | `False` |
+| `sentinels` | `PLATFORM_REDIS_SENTINELS` (`host:port,host:port`) | (none) |
+| `master_name` | `PLATFORM_REDIS_SENTINEL_MASTER` | `mymaster` |
+| `sentinel_username` | `PLATFORM_REDIS_SENTINEL_USERNAME` | (none) |
+| `sentinel_password` | `PLATFORM_REDIS_SENTINEL_PASSWORD` | (none) |
 
 Passing a `config` dict replaces the host/port/password environment defaults; `username` and
 `key_prefix` still fall back to their environment variables when absent from the dict. An
@@ -46,6 +50,16 @@ per-project/environment ACL user (`username`, `password`) confined to `keyPrefix
 (`plat:<project>:<env>:`). The SDK maps `keyPrefix` to `key_prefix`. If the request fails the
 manager uses the environment variables above; if the Platform reports a Redis provisioning
 error the manager is registered but not connected.
+
+### Sentinel (ha profile)
+
+When `sentinels` is set (a list of `{"host", "port"}` dicts, `(host, port)` tuples or a
+`host:port,...` string), `connect()` uses `redis.sentinel.Sentinel(...).master_for(master_name)`
+instead of `host`/`port`. On the Platform's `ha` profile the db-credentials response includes
+`sentinels`, `masterName`, `sentinelUsername` and `sentinelPassword`; the SDK maps them to these
+keys. redis-py rediscovers the master after a failover and turns a `READONLY` reply from a
+demoted master into a reconnect, so no restart is needed. `redis_mgr.mode` is `"sentinel"` or
+`"standalone"`.
 
 ---
 
@@ -110,6 +124,7 @@ Closes the Redis connection. Sets `self.connected = False`.
 | Property | Type | Description |
 |---|---|---|
 | `redis_mgr.connected` | `bool` | Whether the client is connected |
+| `redis_mgr.mode` | `str` | `"sentinel"` or `"standalone"` |
 | `redis_mgr.key_prefix` | `str` | Prefix applied by the helpers (`""` when unset) |
 | `redis_mgr.client` | `redis.Redis \| None` | Raw client; keys are **not** prefixed automatically |
 

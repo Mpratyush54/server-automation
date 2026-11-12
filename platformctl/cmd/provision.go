@@ -20,10 +20,12 @@ import (
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/helm"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ingressha"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/k3s"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ocifetch"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/preflight"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/runner"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/stack"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
@@ -105,18 +107,20 @@ func provisionGraph(c *config.Config) []stepDef {
 	// Ready steps start in this order, so the critical path comes first:
 	// databases -> platform -> routing, plus Portainer (slowest to become ready).
 	return []stepDef{
-		{name: "postgresql", args: install("postgresql"), fn: components.InstallPostgreSQL},
-		{name: "mongodb", args: install("mongodb"), fn: components.InstallMongoDB},
-		{name: "redis", args: install("redis"), fn: components.InstallRedis},
-		{name: "minio", args: install("minio"), fn: components.InstallMinIO},
+		// k3s is a host step before this graph. Set the default StorageClass before any PVC is created.
+		{name: "longhorn", skip: !c.IsHA(), args: install("longhorn"), fn: components.InstallLonghorn},
+		{name: "postgresql", deps: []string{"longhorn"}, args: install("postgresql"), fn: components.InstallPostgreSQL},
+		{name: "mongodb", deps: []string{"longhorn"}, args: install("mongodb"), fn: components.InstallMongoDB},
+		{name: "redis", deps: []string{"longhorn"}, args: install("redis"), fn: components.InstallRedis},
+		{name: "minio", deps: []string{"longhorn"}, args: install("minio"), fn: components.InstallMinIO},
 		{name: "ingress-nginx", args: install("ingress-nginx"), fn: components.InstallIngressNginx},
 		{name: "cert-manager", skip: !c.InstallCertManager, args: install("cert-manager"), fn: components.InstallCertManager},
-		{name: "portainer", skip: !c.InstallPortainer, args: install("portainer"), fn: components.InstallPortainer},
+		{name: "portainer", deps: []string{"longhorn"}, skip: !c.InstallPortainer, args: install("portainer"), fn: components.InstallPortainer},
 		{name: "argocd", skip: !c.InstallArgoCD, args: install("argocd"), fn: components.InstallArgoCD},
-		{name: "monitoring", skip: !c.InstallMonitoring, args: install("monitoring"), fn: components.InstallMonitoring},
+		{name: "monitoring", deps: []string{"longhorn"}, skip: !c.InstallMonitoring, args: install("monitoring"), fn: components.InstallMonitoring},
 		// Kyverno is opt-in (full + INSTALL_KYVERNO); skipped nodes satisfy deps.
 		{name: "kyverno", skip: !c.InstallKyverno, args: install("kyverno"), fn: components.InstallKyverno},
-		{name: "platform", deps: []string{"postgresql", "mongodb", "redis", "minio", "kyverno"},
+		{name: "platform", deps: []string{"longhorn", "postgresql", "mongodb", "redis", "minio", "kyverno"},
 			args: install("platform"), fn: components.InstallPlatform},
 		// Ingresses (and so the TLS certificate request) right after the ingress
 		// controller and cert-manager: the certificate issues in parallel with
@@ -134,9 +138,12 @@ func provisionGraph(c *config.Config) []stepDef {
 		{name: "oauth2-proxy", deps: []string{"routing"}, args: install("oauth2-proxy"), fn: components.InstallOAuthProxy},
 		{name: "auto-update", deps: []string{"argocd", "platform"}, skip: !c.AutoUpdate,
 			args: install("auto-update"), fn: components.InstallAutoUpdate},
-		{name: "telemetry", deps: []string{"platform", "monitoring", "routing"}, skip: !components.FullTelemetry(c), args: install("telemetry"), fn: components.InstallTelemetry},
+		{name: "telemetry", deps: []string{"longhorn", "platform", "monitoring", "routing"}, skip: !components.FullTelemetry(c), args: install("telemetry"), fn: components.InstallTelemetry},
 		// Synthetic monitoring (#42): namespace, quotas, egress policies, API RBAC (full profile).
 		{name: "synthetics", deps: []string{"telemetry"}, skip: !components.FullTelemetry(c), args: install("synthetics"), fn: components.InstallSynthetics},
+		{name: "longhorn-monitoring", deps: []string{"longhorn", "monitoring", "telemetry"}, skip: !c.IsHA() || !c.InstallMonitoring, args: install("longhorn-monitoring"), fn: components.InstallLonghornMonitoring, warnOnly: true},
+		{name: "postgresql-backup", deps: []string{"postgresql", "minio", "platform"}, skip: !c.IsHA(), args: install("postgresql-backup"), fn: components.InstallPostgresBackup},
+		{name: "postgresql-monitoring", deps: []string{"postgresql", "monitoring", "telemetry"}, skip: !c.IsHA() || !c.InstallMonitoring, args: install("postgresql-monitoring"), fn: components.InstallPostgresMonitoring, warnOnly: true},
 		{name: "seed", deps: []string{"platform"}, args: []string{"seed"}, fn: components.SeedAdmin, warnOnly: true},
 		// MinIO IAM needs the platform API (its OpenID issuer), so the API's scoped
 		// storage user is created after "platform"; the API restarts with it.
@@ -180,11 +187,18 @@ func runProvision() error {
 	}
 
 	confirmHardening(os.Stdin, os.Stdout, !cfg.NonInteractive)
+	if err := checkHAProvision(cfg); err != nil {
+		return err
+	}
 
 	cfg.GenerateSecrets()
 	if cfg.PasswordGenerated {
 		color.Green("  ✓ Admin password auto-generated (saved to /etc/platform/.env)")
 		fmt.Printf("    ADMIN_PASSWORD=%s\n", cfg.AdminPassword)
+	}
+
+	if err := cfg.ValidateIngressHA(); err != nil {
+		return err
 	}
 
 	// Child steps load their config from this file — it must be written before
@@ -269,7 +283,30 @@ func runProvision() error {
 	}()
 
 	if !cfg.SkipK8s {
-		if err := hostStep("k3s", func() error { return k3s.Install(cfg.Domain, cfg.GitHubToken) }); err != nil {
+		// Ingress HA (#54): the k3s config fragment (ServiceLB off, API VIP in
+		// tls-san) and the kube-vip auto-deploy manifest must exist before k3s
+		// starts, so kube-vip already runs when ingress-nginx waits for its
+		// LoadBalancer address.
+		if cfg.IsHA() {
+			if err := hostStep("ingress-ha", func() error {
+				host := ingressha.Default()
+				restart, err := host.Prepare(cfg)
+				if err != nil || !restart {
+					return err
+				}
+				if err := shell.RunBash("systemctl restart k3s"); err != nil {
+					return fmt.Errorf("restart k3s: %w", err)
+				}
+				if err := k3s.WaitReady(); err != nil {
+					return err
+				}
+				host.CleanupServiceLB(cfg)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		if err := hostStep("k3s", func() error { return k3s.InstallWith(cfg.Domain, cfg.GitHubToken, k3sServerOptions(cfg)) }); err != nil {
 			return err
 		}
 	}
@@ -317,6 +354,7 @@ func runProvision() error {
 	}
 	printTimings(started)
 	components.ProvisionComplete(cfg)
+	printJoinHint(os.Stdout, cfg)
 	return nil
 }
 

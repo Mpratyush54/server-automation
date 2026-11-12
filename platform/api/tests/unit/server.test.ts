@@ -86,6 +86,22 @@ describe('buildApp security middleware', () => {
     expect(log).not.toMatch(/oauth-code-123|state-456|jwt-789/);
   });
 
+  it('does not log successful health checks but logs failing ones and other routes', async () => {
+    const lines: string[] = [];
+    const probe = express();
+    probe.use(requestLogger({ stream: { write: (l: string) => { lines.push(l); } } }));
+    probe.get('/api/health', (_req, res) => res.json({ ok: true }));
+    probe.get('/api/health/ready', (_req, res) => res.status(503).json({ ok: false }));
+    probe.get('/api/projects', (_req, res) => res.json([]));
+    await request(probe).get('/api/health');
+    await request(probe).get('/api/health/ready');
+    await request(probe).get('/api/projects');
+    const log = lines.join('');
+    expect(log).not.toMatch(/GET \/api\/health 200/);
+    expect(log).toMatch(/GET \/api\/health\/ready 503/);
+    expect(log).toMatch(/GET \/api\/projects 200/);
+  });
+
   it('redactUrlForLog keeps paths without a query unchanged', () => {
     expect(redactUrlForLog('/api/health')).toBe('/api/health');
     expect(redactUrlForLog('/api/x?flag')).toBe('/api/x?flag=[REDACTED]');

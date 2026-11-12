@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -60,6 +61,20 @@ type Config struct {
 	InstallKyvernoCVEPolicy bool
 	// KyvernoPolicyMode is Audit (default) or Enforce for Kyverno policies.
 	KyvernoPolicyMode string
+	// LonghornReplicas is 0 (auto) or an explicit count from 1 through 3.
+	LonghornReplicas     int
+	LonghornBackupTarget string
+	// LonghornBackupSecret names an operator-created Secret; credentials stay out of .env.
+	LonghornBackupSecret string
+	// PostgreSQL HA (#51, ha profile only): storage class of the CloudNativePG
+	// instances and the WAL/base-backup target. The Secret is operator-created
+	// in namespace databases; credentials never go to .env.
+	PostgresHAStorageClass    string
+	PostgresBackupDestination string
+	PostgresBackupEndpoint    string
+	PostgresBackupSecret      string
+	PostgresBackupRetention   string
+
 	// SyntheticsBrowser enables browser synthetic checks (headless Chromium
 	// CronJobs, #42). Only honored on the full profile with SYNTHETICS_BROWSER=true.
 	SyntheticsBrowser bool
@@ -104,7 +119,25 @@ type Config struct {
 
 	// PasswordGenerated is set when admin password was auto-created this run.
 	PasswordGenerated bool
+
+	// Cluster is the multi-node configuration of the ha profile (#53).
+	Cluster Cluster
+	// Ingress HA (ha profile only). See docs/operations/ha.md and #54.
+	// IngressHAMode is "vip" (kube-vip) or "external" (operator LB / DNS failover).
+	IngressHAMode string
+	// IngressVIP is the floating Service IP advertised by kube-vip (vip mode).
+	IngressVIP string
+	// IngressVIPInterface is the NIC for ARP; empty = default-route interface.
+	IngressVIPInterface string
+	// APIVIP is an optional floating Kubernetes API address (vip mode).
+	APIVIP string
 }
+
+// Ingress HA modes (INGRESS_HA_MODE).
+const (
+	IngressHAModeVIP      = "vip"
+	IngressHAModeExternal = "external"
+)
 
 func Load() *Config {
 	tagDefault := DefaultImageTag
@@ -159,11 +192,28 @@ func Load() *Config {
 		OIDCSecretPortainer:   os.Getenv("OIDC_SECRET_PORTAINER"),
 		OIDCSecretOAuth2Proxy: os.Getenv("OIDC_SECRET_OAUTH2_PROXY"),
 		OIDCSecretMinio:       os.Getenv("OIDC_SECRET_MINIO"),
+
+		IngressVIP:          strings.TrimSpace(os.Getenv("INGRESS_VIP")),
+		IngressVIPInterface: strings.TrimSpace(os.Getenv("INGRESS_VIP_INTERFACE")),
+		APIVIP:              strings.TrimSpace(os.Getenv("API_VIP")),
 	}
+	c.IngressHAMode = resolveIngressHAMode(os.Getenv("INGRESS_HA_MODE"), c.IngressVIP)
 	c.resolveProfile(explicit)
 	_, profileExplicit := explicit["PLATFORM_PROFILE"]
 	c.resolveAPIReplicas(explicitReplicas, profileExplicit)
 	c.resolveKyverno()
+	c.loadCluster()
+	c.LonghornReplicas, _ = strconv.Atoi(strings.TrimSpace(os.Getenv("LONGHORN_REPLICAS")))
+	if c.LonghornReplicas < 1 || c.LonghornReplicas > 3 {
+		c.LonghornReplicas = 0
+	}
+	c.PostgresHAStorageClass = getEnv("POSTGRES_HA_STORAGE_CLASS", "local-path")
+	c.PostgresBackupDestination = getEnv("POSTGRES_BACKUP_DESTINATION", "")
+	c.PostgresBackupEndpoint = getEnv("POSTGRES_BACKUP_ENDPOINT", "")
+	c.PostgresBackupSecret = getEnv("POSTGRES_BACKUP_SECRET", "")
+	c.PostgresBackupRetention = getEnv("POSTGRES_BACKUP_RETENTION", "14d")
+	c.LonghornBackupTarget = strings.TrimSpace(os.Getenv("LONGHORN_BACKUP_TARGET"))
+	c.LonghornBackupSecret = strings.TrimSpace(os.Getenv("LONGHORN_BACKUP_SECRET"))
 	return c
 }
 
@@ -526,7 +576,13 @@ func (c *Config) SaveEnvFile(path string) error {
 			return fmt.Errorf("telemetry settings cannot contain line breaks")
 		}
 	}
+	if strings.ContainsAny(c.LonghornBackupTarget+c.LonghornBackupSecret, "\r\n") {
+		return fmt.Errorf("Longhorn backup settings cannot contain line breaks")
+	}
 
+	if strings.ContainsAny(c.PostgresHAStorageClass+c.PostgresBackupDestination+c.PostgresBackupEndpoint+c.PostgresBackupSecret+c.PostgresBackupRetention, "\r\n") {
+		return fmt.Errorf("PostgreSQL HA settings cannot contain line breaks")
+	}
 	if idx := strings.LastIndexAny(path, "/\\"); idx != -1 {
 		dir := path[:idx]
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -584,7 +640,84 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("INSTALL_KYVERNO=%t\n", c.InstallKyverno))
 	b.WriteString(fmt.Sprintf("INSTALL_KYVERNO_CVE_POLICY=%t\n", c.InstallKyvernoCVEPolicy))
 	b.WriteString(fmt.Sprintf("KYVERNO_POLICY_MODE=%s\n", c.KyvernoPolicyMode))
+	cluster, err := c.clusterEnv()
+	if err != nil {
+		return err
+	}
+	b.WriteString(cluster)
+	b.WriteString(fmt.Sprintf("LONGHORN_REPLICAS=%d\n", c.LonghornReplicas))
+	b.WriteString(fmt.Sprintf("LONGHORN_BACKUP_TARGET=%s\n", c.LonghornBackupTarget))
+	b.WriteString(fmt.Sprintf("LONGHORN_BACKUP_SECRET=%s\n", c.LonghornBackupSecret))
+	// Ingress HA settings only belong on ha-profile installs; keep non-ha .env
+	// files byte-stable so profile switches do not leak VIP configuration.
+	if c.IsHA() {
+		b.WriteString(fmt.Sprintf("POSTGRES_HA_STORAGE_CLASS=%s\n", c.PostgresHAStorageClass))
+		b.WriteString(fmt.Sprintf("POSTGRES_BACKUP_DESTINATION=%s\n", c.PostgresBackupDestination))
+		b.WriteString(fmt.Sprintf("POSTGRES_BACKUP_ENDPOINT=%s\n", c.PostgresBackupEndpoint))
+		b.WriteString(fmt.Sprintf("POSTGRES_BACKUP_SECRET=%s\n", c.PostgresBackupSecret))
+		b.WriteString(fmt.Sprintf("POSTGRES_BACKUP_RETENTION=%s\n", c.PostgresBackupRetention))
+		b.WriteString(fmt.Sprintf("INGRESS_HA_MODE=%s\n", c.IngressHAMode))
+		b.WriteString(fmt.Sprintf("INGRESS_VIP=%s\n", c.IngressVIP))
+		b.WriteString(fmt.Sprintf("INGRESS_VIP_INTERFACE=%s\n", c.IngressVIPInterface))
+		b.WriteString(fmt.Sprintf("API_VIP=%s\n", c.APIVIP))
+	}
 	return os.WriteFile(path, []byte(b.String()), 0600)
+}
+
+// ResolveIngressHAMode is resolveIngressHAMode for callers that override
+// INGRESS_VIP after Load (e.g. `platformctl join --ingress-vip`).
+func ResolveIngressHAMode(mode, ingressVIP string) string {
+	return resolveIngressHAMode(mode, ingressVIP)
+}
+
+// resolveIngressHAMode lower-cases/trims INGRESS_HA_MODE; empty defaults to
+// vip when INGRESS_VIP is set, otherwise external.
+func resolveIngressHAMode(mode, ingressVIP string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode != "" {
+		return mode
+	}
+	if strings.TrimSpace(ingressVIP) != "" {
+		return IngressHAModeVIP
+	}
+	return IngressHAModeExternal
+}
+
+// ValidateIngressHA checks ha-profile ingress HA settings. Non-ha profiles
+// always pass. Subnet/node-IP checks live in the ingressha package (need host data).
+func (c *Config) ValidateIngressHA() error {
+	if !c.IsHA() {
+		return nil
+	}
+	for _, v := range []string{c.IngressHAMode, c.IngressVIP, c.IngressVIPInterface, c.APIVIP} {
+		if strings.ContainsAny(v, "\r\n") {
+			return fmt.Errorf("ingress HA settings cannot contain line breaks")
+		}
+	}
+	mode := strings.ToLower(strings.TrimSpace(c.IngressHAMode))
+	switch mode {
+	case IngressHAModeVIP, IngressHAModeExternal:
+	default:
+		return fmt.Errorf("INGRESS_HA_MODE must be %q or %q (got %q)", IngressHAModeVIP, IngressHAModeExternal, c.IngressHAMode)
+	}
+	if mode != IngressHAModeVIP {
+		return nil
+	}
+	vip, err := netip.ParseAddr(strings.TrimSpace(c.IngressVIP))
+	if err != nil || !vip.Is4() {
+		return fmt.Errorf("INGRESS_VIP must be a valid IPv4 address (got %q)", c.IngressVIP)
+	}
+	if c.APIVIP == "" {
+		return nil
+	}
+	api, err := netip.ParseAddr(strings.TrimSpace(c.APIVIP))
+	if err != nil || !api.Is4() {
+		return fmt.Errorf("API_VIP must be a valid IPv4 address (got %q)", c.APIVIP)
+	}
+	if api == vip {
+		return fmt.Errorf("API_VIP must differ from INGRESS_VIP")
+	}
+	return nil
 }
 
 func getEnv(key, defaultVal string) string {
@@ -629,10 +762,24 @@ const (
 	ProfileMinimal  = "minimal"  // core only: no monitoring, Portainer, ArgoCD
 	ProfileStandard = "standard" // default: existing light monitoring stack
 	ProfileFull     = "full"     // full telemetry backend (explicit opt-in)
+	// ProfileHA is the multi-node profile (Phase 5, #50-#54): everything in full,
+	// plus k3s HA (embedded etcd), ingress VIP, replicated storage and HA
+	// datastores. Single-node installs never select it implicitly.
+	ProfileHA = "ha"
 )
 
 // Profiles lists the valid profile names.
-var Profiles = []string{ProfileMinimal, ProfileStandard, ProfileFull}
+var Profiles = []string{ProfileMinimal, ProfileStandard, ProfileFull, ProfileHA}
+
+// FullFeatures reports whether a profile includes the full feature set
+// (telemetry backend, synthetics, ...): the full and ha profiles.
+func FullFeatures(profile string) bool {
+	n := normalizeProfile(profile)
+	return n == ProfileFull || n == ProfileHA
+}
+
+// IsHA reports whether this install uses the multi-node HA profile.
+func (c *Config) IsHA() bool { return normalizeProfile(c.Profile) == ProfileHA }
 
 // installKeys are the INSTALL_* variables a profile controls.
 var installKeys = []string{"INSTALL_ARGOCD", "INSTALL_MONITORING", "INSTALL_PORTAINER", "INSTALL_CERTMANAGER"}
@@ -650,7 +797,7 @@ func profileDefaults(name string) (map[string]bool, error) {
 			"INSTALL_ARGOCD": true, "INSTALL_MONITORING": true, "INSTALL_PORTAINER": true,
 			"INSTALL_CERTMANAGER": true,
 		}, nil
-	case ProfileFull:
+	case ProfileFull, ProfileHA:
 		return map[string]bool{
 			"INSTALL_ARGOCD": true, "INSTALL_MONITORING": true, "INSTALL_PORTAINER": true,
 			"INSTALL_CERTMANAGER": true,
@@ -742,8 +889,8 @@ func (c *Config) ApplyProfile(name string) error {
 // profile so single-server installs stay light.
 func (c *Config) resolveKyverno() {
 	// Browser synthetic checks (#42) follow the same rule: explicit opt-in, full profile only.
-	c.SyntheticsBrowser = normalizeProfile(c.Profile) == ProfileFull && getEnvBool("SYNTHETICS_BROWSER", false)
-	c.InstallKyverno = normalizeProfile(c.Profile) == ProfileFull && getEnvBool("INSTALL_KYVERNO", false)
+	c.SyntheticsBrowser = FullFeatures(c.Profile) && getEnvBool("SYNTHETICS_BROWSER", false)
+	c.InstallKyverno = FullFeatures(c.Profile) && getEnvBool("INSTALL_KYVERNO", false)
 	c.InstallKyvernoCVEPolicy = getEnvBool("INSTALL_KYVERNO_CVE_POLICY", false)
 	mode := strings.TrimSpace(getEnv("KYVERNO_POLICY_MODE", "Audit"))
 	switch strings.ToLower(mode) {

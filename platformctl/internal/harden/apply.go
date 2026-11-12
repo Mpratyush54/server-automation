@@ -3,6 +3,7 @@ package harden
 import (
 	"bytes"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,6 +20,12 @@ type Host struct {
 	KeyFiles  []string
 	Warn      func(string)
 	NginxAuth bool
+	// APIVIP and NodeSubnet enable the optional control-plane VIP firewall rule
+	// (ha profile with API_VIP). Both must be set for the rule to appear.
+	APIVIP     netip.Addr
+	NodeSubnet netip.Prefix
+	// ClusterPeers are the PLATFORM_CLUSTER_NODES prefixes (ha, #53).
+	ClusterPeers []netip.Prefix
 }
 
 func (h Host) Path(p string) string          { return filepath.Join(h.Root, filepath.FromSlash(p)) }
@@ -69,14 +76,27 @@ func (h Host) secureKeyPath(path string) bool {
 	return true
 }
 
+// aptLockTimeout makes apt-get wait up to 5 minutes for the dpkg lock.
+const aptLockTimeout = "DPkg::Lock::Timeout=300"
+
 func (h Host) Prepare() error {
 	if h.NginxAuth {
 		if _, err := h.read("/var/log/platform/ingress-error.log"); err != nil {
 			return fmt.Errorf("nginx auth jail requires exported ingress error log: %w", err)
 		}
 	}
-	if err := h.run("env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "-qq", "unattended-upgrades", "fail2ban", "chrony", "nftables"); err != nil {
-		return err
+	// Provision runs this alongside other apt users (Longhorn prerequisites on
+	// ha): wait for the dpkg lock instead of failing on it.
+	install := []string{"DEBIAN_FRONTEND=noninteractive", "apt-get", "-o", aptLockTimeout, "install", "-y", "-qq", "unattended-upgrades", "fail2ban", "chrony", "nftables"}
+	if err := h.run("env", install...); err != nil {
+		// A fresh cloud image (e.g. a node about to `join`) can have empty
+		// package lists: refresh them once and retry.
+		if uerr := h.run("env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "-o", aptLockTimeout, "update", "-qq"); uerr != nil {
+			return fmt.Errorf("%w (apt-get update: %v)", err, uerr)
+		}
+		if err := h.run("env", install...); err != nil {
+			return err
+		}
 	}
 	for p, data := range map[string]string{
 		"/etc/apt/apt.conf.d/99-platform-security": UpdatesConfig,
@@ -218,11 +238,11 @@ func (h Host) ApplyFirewall(confirm func() bool) error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	// Config fragments may override the main YAML; refuse rather than silently
-	// using incorrect CIDRs. Multi-node configuration is a separate feature.
-	fragments, err := filepath.Glob(h.Path("/etc/rancher/k3s/config.yaml.d/*.yaml"))
-	if err != nil || len(fragments) != 0 {
-		return fmt.Errorf("k3s config fragments require operator-managed firewall (--skip-hardening)")
+	// Fragments that override cluster/service CIDRs would make the firewall use
+	// the wrong pod networks. Other drop-ins (e.g. ingress-HA disable+/tls-san+)
+	// are allowed; CIDRs still come from the main config.yaml.
+	if err := h.refuseCIDRFragments(); err != nil {
+		return err
 	}
 	cidrs, err := CIDRs(data)
 	if err != nil {
@@ -243,7 +263,8 @@ func (h Host) ApplyFirewall(confirm func() bool) error {
 			return err
 		}
 	}
-	apply := "delete table inet platform_guard\n" + Firewall(cidrs)
+	rules := FirewallWith(cidrs, FirewallOptions{APIVIP: h.APIVIP, NodeSubnet: h.NodeSubnet, Peers: h.ClusterPeers})
+	apply := "delete table inet platform_guard\n" + rules
 	rollback := "delete table inet platform_guard\n" + prior + "\n"
 	persisted := map[string][]byte{}
 	for _, path := range []string{"/etc/platform/firewall.nft", "/etc/systemd/system/platform-firewall.service"} {
@@ -311,7 +332,7 @@ func (h Host) ApplyFirewall(confirm func() bool) error {
 	}
 	// Persist only the confirmed policy. Do not enable the distribution nftables
 	// service: its default flush-ruleset would erase k3s rules.
-	if err := h.write("/etc/platform/firewall.nft", Firewall(cidrs), 0600); err != nil {
+	if err := h.write("/etc/platform/firewall.nft", rules, 0600); err != nil {
 		return rollbackNow(err)
 	}
 	unit := `[Unit]
@@ -336,4 +357,42 @@ WantedBy=multi-user.target
 		return rollbackNow(err)
 	}
 	return os.Remove(h.Path(runtimeDir + "/pending"))
+}
+
+// refuseCIDRFragments errors when a config.yaml.d drop-in sets cluster-cidr or
+// service-cidr (with or without a trailing +). Other fragments are fine.
+func (h Host) refuseCIDRFragments() error {
+	fragments, err := filepath.Glob(h.Path("/etc/rancher/k3s/config.yaml.d/*.yaml"))
+	if err != nil {
+		return err
+	}
+	for _, path := range fragments {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if fragmentSetsPodCIDR(string(data)) {
+			return fmt.Errorf("k3s config fragment %s sets cluster/service CIDRs; use --skip-hardening", filepath.Base(path))
+		}
+	}
+	return nil
+}
+
+func fragmentSetsPodCIDR(data string) bool {
+	for _, raw := range strings.Split(data, "\n") {
+		line := strings.TrimSpace(strings.SplitN(raw, "#", 2)[0])
+		if line == "" {
+			continue
+		}
+		key, _, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		switch key {
+		case "cluster-cidr", "cluster-cidr+", "service-cidr", "service-cidr+":
+			return true
+		}
+	}
+	return false
 }

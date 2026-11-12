@@ -34,6 +34,9 @@ var stepMarker = map[string]string{"ingress-nginx": "ingress", "ingress": "", "s
 // changes in a release reach existing installs; Helm/kubectl only restart
 // workloads whose rendered templates changed.
 var reappliedSteps = map[string]string{
+	"postgresql":        "CloudNativePG operator (helm upgrade) and the postgresql Cluster: only spec changes roll the instances, standbys first, then a switchover of the primary (a few seconds of reconnects)",
+	"postgresql-backup": "none (backup settings and ScheduledBackup)",
+	"longhorn":          "Longhorn manager/driver/UI, only when the pinned chart version or values changed (helm upgrade; Longhorn upgrades engines live)",
 	// Secrets, RBAC and Deployment spec of the target release (the transaction
 	// only swaps images); same digest-pinned images, migrations re-run.
 	"platform":       "platform-api and platform-portal (rolling, one pod at a time) when the Deployment spec or configuration changed",

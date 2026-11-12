@@ -13,8 +13,9 @@ import (
 )
 
 type Result struct {
-	Passed bool
-	Errors []string
+	Passed   bool
+	Errors   []string
+	Warnings []string
 }
 
 func Check() *Result {
@@ -42,6 +43,9 @@ func Check() *Result {
 }
 
 func PrintResult(r *Result) {
+	for _, warning := range r.Warnings {
+		color.Yellow("    - %s", warning)
+	}
 	if r.Passed {
 		color.Green("  ✓ Pre-flight checks passed")
 		return

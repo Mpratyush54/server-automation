@@ -98,6 +98,53 @@ it('passes through project-scoped credentials', async () => {
   expect(r.body.redis.username).toBe('plat_demo_development');
 });
 
+it('passes multi-host replica-set mongo URIs and refuses the platform multi-host URI', async () => {
+  const prev = process.env.MONGODB_URI;
+  process.env.MONGODB_URI = 'mongodb://root:pw@mongo-0:27017,mongo-1:27017/plat_platform?replicaSet=rs0&authSource=admin';
+  try {
+    mockResolve.mockResolvedValue({
+      mongo: { uri: 'mongodb://plat_demo_user:p@mongo-0:27017,mongo-1:27017/plat_demo_development?replicaSet=rs0&authSource=plat_demo_development' },
+    });
+    const ok = await request(app).get(`/api/sdk/db-credentials?projectId=${PROJ}&dbTypes=mongo`).set(auth);
+    expect(ok.status).toBe(200);
+    expect(ok.body.mongo.uri).toContain('mongo-0:27017,mongo-1:27017');
+    expect(ok.body.mongo.uri).toContain('replicaSet=rs0');
+    expect(ok.body.mongo.status).toBeUndefined();
+
+    mockResolve.mockResolvedValue({
+      mongo: { uri: 'mongodb://root:pw@mongo-0:27017,mongo-1:27017/plat_platform?replicaSet=rs0&authSource=admin' },
+    });
+    const bad = await request(app).get(`/api/sdk/db-credentials?projectId=${PROJ}&dbTypes=mongo`).set(auth);
+    expect(bad.status).toBe(200);
+    expect(bad.body.mongo.status).toBe('error');
+    expect(JSON.stringify(bad.body)).not.toContain('root:pw');
+  } finally {
+    process.env.MONGODB_URI = prev;
+  }
+});
+
+it('refuses redis sentinel credentials that reuse the platform password or default user', async () => {
+  mockResolve.mockResolvedValue({
+    redis: {
+      host: 'redis', username: 'plat_demo_development', password: 'project-pw', keyPrefix: 'demo:development:',
+      sentinels: [{ host: 's0', port: 26379 }], masterName: 'mymaster',
+      sentinelUsername: 'default', sentinelPassword: 'x',
+    },
+  });
+  const r1 = await request(app).get(`/api/sdk/db-credentials?projectId=${PROJ}&dbTypes=redis`).set(auth);
+  expect(r1.body.redis.status).toBe('error');
+
+  mockResolve.mockResolvedValue({
+    redis: {
+      host: 'redis', username: 'plat_demo_development', password: 'project-pw', keyPrefix: 'demo:development:',
+      sentinels: [{ host: 's0', port: 26379 }], masterName: 'mymaster',
+      sentinelUsername: 'plat-sentinel', sentinelPassword: 'platform-redis-password',
+    },
+  });
+  const r2 = await request(app).get(`/api/sdk/db-credentials?projectId=${PROJ}&dbTypes=redis`).set(auth);
+  expect(r2.body.redis.status).toBe('error');
+});
+
 it('refuses mongo URIs with the platform user and redis credentials without an ACL user', async () => {
   mockResolve.mockResolvedValue({
     mongo: { uri: 'mongodb://plat:pw@mongo:27017/plat_demo_development' },

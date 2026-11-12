@@ -28,18 +28,27 @@ config)
     kubectl -n storage rollout restart deploy/minio
     kubectl -n storage rollout status deploy/minio --timeout=300s
   fi
+  if kubectl -n storage get sts minio >/dev/null 2>&1; then
+    kubectl -n storage rollout restart sts/minio
+    kubectl -n storage rollout status sts/minio --timeout=300s
+  fi
   if kubectl -n databases get sts redis-master >/dev/null 2>&1; then
     kubectl -n databases rollout restart sts/redis-master
     kubectl -n databases rollout status sts/redis-master --timeout=300s
   fi
+  if kubectl -n databases get sts redis-node >/dev/null 2>&1; then
+    kubectl -n databases rollout restart sts/redis-node
+    kubectl -n databases rollout status sts/redis-node --timeout=300s
+  fi
   ;;
 postgres)
-  p=$(pod postgresql)
-  remote=$(kubectl -n databases exec "$p" -- mktemp -d)
-  trap 'kubectl -n databases exec "$p" -- rm -rf "$remote"' EXIT
-  kubectl -n databases cp "$src/globals.sql" "$p:$remote/globals.sql"
-  kubectl -n databases cp "$src/databases.tar" "$p:$remote/databases.tar"
-  kubectl -n databases exec "$p" -- bash -ec "$PWHELPER"'
+  p=$(pg_pod)
+  pg_container=$(pg_container "$p")
+  remote=$(kubectl -n databases exec "$p" -c "$pg_container" -- mktemp -d)
+  trap 'kubectl -n databases exec "$p" -c "$pg_container" -- rm -rf "$remote"' EXIT
+  kubectl -n databases cp -c "$pg_container" "$src/globals.sql" "$p:$remote/globals.sql"
+  kubectl -n databases cp -c "$pg_container" "$src/databases.tar" "$p:$remote/databases.tar"
+  kubectl -n databases exec "$p" -c "$pg_container" -- bash -ec "$PWHELPER"'
     export PGPASSWORD="$(pw POSTGRES_PASSWORD)"
     work=$1
     # The bootstrap superuser already exists. Keep its current password until
@@ -56,7 +65,7 @@ postgres)
   ' -- "$remote"
   ;;
 mongo)
-  p=$(pod mongodb)
+  p=$(mongo_pod)
   remote=$(kubectl -n databases exec "$p" -- mktemp -d)
   trap 'kubectl -n databases exec "$p" -- rm -rf "$remote"' EXIT
   kubectl -n databases cp "$src/mongo.archive.gz" "$p:$remote/mongo.archive.gz"
@@ -82,12 +91,22 @@ minio)
   done
   ;;
 redis)
-  p=$(kubectl -n databases get pods -l 'app.kubernetes.io/instance=redis,app.kubernetes.io/component=master' -o jsonpath='{.items[0].metadata.name}')
+  p=$(redis_master_pod)
   sts=$(kubectl -n databases get pod "$p" -o jsonpath='{.metadata.ownerReferences[?(@.kind=="StatefulSet")].name}')
-  pvc=$(kubectl -n databases get pod "$p" -o jsonpath='{.spec.volumes[?(@.name=="redis-data")].persistentVolumeClaim.claimName}')
   image=$(kubectl -n databases get pod "$p" -o jsonpath='{.spec.containers[0].image}')
-  test -n "$sts" && test -n "$pvc" && test -n "$image"
+  test -n "$sts" && test -n "$image"
   replicas=$(kubectl -n databases get sts "$sts" -o jsonpath='{.spec.replicas}')
+  # Collect PVCs redis-data-$sts-$i that exist (standalone: redis-data-redis-master-0).
+  pvcs=()
+  i=0
+  while [ "$i" -lt "$replicas" ]; do
+    claim="redis-data-$sts-$i"
+    if kubectl -n databases get pvc "$claim" >/dev/null 2>&1; then
+      pvcs+=("$claim")
+    fi
+    i=$((i + 1))
+  done
+  test "${#pvcs[@]}" -gt 0
   helper="platform-redis-restore-$(date +%s)"
   cleanup() {
     kubectl -n databases delete pod "$helper" --ignore-not-found --wait=true
@@ -95,33 +114,46 @@ redis)
   }
   trap cleanup EXIT
   kubectl -n databases scale sts "$sts" --replicas=0
-  kubectl -n databases wait --for=delete "pod/$p" --timeout=180s
-  jq -n --arg name "$helper" --arg pvc "$pvc" --arg image "$image" '{apiVersion:"v1",kind:"Pod",metadata:{name:$name,namespace:"databases"},spec:{restartPolicy:"Never",automountServiceAccountToken:false,securityContext:{runAsUser:1001,fsGroup:1001},containers:[{name:"restore",image:$image,command:["sleep","3600"],resources:{requests:{cpu:"50m",memory:"64Mi"},limits:{cpu:"1",memory:"512Mi"}},volumeMounts:[{name:"data",mountPath:"/data"}]}],volumes:[{name:"data",persistentVolumeClaim:{claimName:$pvc}}]}}' | kubectl apply -f -
-  kubectl -n databases wait --for=condition=Ready "pod/$helper" --timeout=180s
-  kubectl -n databases cp "$src/dump.rdb" "$helper:/data/dump.rdb"
-  # Bitnami enables AOF by default. Build a matching AOF from the restored RDB
-  # using the installed Redis version, or old AOF data would override the RDB.
-  kubectl -n databases exec "$helper" -- bash -ec '
-    rm -rf /data/appendonlydir /data/appendonly.aof
-    redis-server --dir /data --dbfilename dump.rdb --appendonly no --save "" --port 0 --unixsocket /tmp/restore.sock --logfile /tmp/restore.log --daemonize yes
-    # --daemonize returns before the RDB is loaded and the socket is open.
-    for i in $(seq 1 60); do
-      [ "$(redis-cli -s /tmp/restore.sock PING 2>/dev/null)" = PONG ] && break
-      [ "$i" = 60 ] && { echo "redis-server did not start:" >&2; tail -20 /tmp/restore.log >&2; exit 1; }
-      sleep 1
-    done
-    redis-cli -s /tmp/restore.sock CONFIG SET appendonly yes
-    for i in $(seq 1 180); do
-      info=$(redis-cli -s /tmp/restore.sock INFO persistence)
-      if printf "%s" "$info" | grep -q "aof_rewrite_in_progress:0"; then
-        printf "%s" "$info" | grep -q "aof_last_bgrewrite_status:ok"
-        redis-cli -s /tmp/restore.sock SHUTDOWN NOSAVE
-        exit 0
-      fi
-      sleep 1
-    done
-    exit 1
-  '
+  # Wait for every pod of this StatefulSet to be gone (Sentinel: all nodes).
+  i=0
+  while [ "$i" -lt "$replicas" ]; do
+    kubectl -n databases wait --for=delete "pod/$sts-$i" --timeout=180s 2>/dev/null || true
+    i=$((i + 1))
+  done
+  restore_redis_pvc() {
+    local pvc="$1"
+    kubectl -n databases delete pod "$helper" --ignore-not-found --wait=true
+    jq -n --arg name "$helper" --arg pvc "$pvc" --arg image "$image" '{apiVersion:"v1",kind:"Pod",metadata:{name:$name,namespace:"databases"},spec:{restartPolicy:"Never",automountServiceAccountToken:false,securityContext:{runAsUser:1001,fsGroup:1001},containers:[{name:"restore",image:$image,command:["sleep","3600"],resources:{requests:{cpu:"50m",memory:"64Mi"},limits:{cpu:"1",memory:"512Mi"}},volumeMounts:[{name:"data",mountPath:"/data"}]}],volumes:[{name:"data",persistentVolumeClaim:{claimName:$pvc}}]}}' | kubectl apply -f -
+    kubectl -n databases wait --for=condition=Ready "pod/$helper" --timeout=180s
+    kubectl -n databases cp "$src/dump.rdb" "$helper:/data/dump.rdb"
+    # Bitnami enables AOF by default. Build a matching AOF from the restored RDB
+    # using the installed Redis version, or old AOF data would override the RDB.
+    kubectl -n databases exec "$helper" -- bash -ec '
+      rm -rf /data/appendonlydir /data/appendonly.aof
+      redis-server --dir /data --dbfilename dump.rdb --appendonly no --save "" --port 0 --unixsocket /tmp/restore.sock --logfile /tmp/restore.log --daemonize yes
+      # --daemonize returns before the RDB is loaded and the socket is open.
+      for i in $(seq 1 60); do
+        [ "$(redis-cli -s /tmp/restore.sock PING 2>/dev/null)" = PONG ] && break
+        [ "$i" = 60 ] && { echo "redis-server did not start:" >&2; tail -20 /tmp/restore.log >&2; exit 1; }
+        sleep 1
+      done
+      redis-cli -s /tmp/restore.sock CONFIG SET appendonly yes
+      for i in $(seq 1 180); do
+        info=$(redis-cli -s /tmp/restore.sock INFO persistence)
+        if printf "%s" "$info" | grep -q "aof_rewrite_in_progress:0"; then
+          printf "%s" "$info" | grep -q "aof_last_bgrewrite_status:ok"
+          redis-cli -s /tmp/restore.sock SHUTDOWN NOSAVE
+          exit 0
+        fi
+        sleep 1
+      done
+      exit 1
+    '
+    kubectl -n databases delete pod "$helper" --ignore-not-found --wait=true
+  }
+  for claim in "${pvcs[@]}"; do
+    restore_redis_pvc "$claim"
+  done
   ;;
 k3s)
   if systemctl is-active --quiet k3s; then

@@ -113,7 +113,10 @@ function withoutPlatformCredentials(result: Record<string, any>): Record<string,
   const redis = out.redis;
   const platRedisPass = process.env.REDIS_PASSWORD || '';
   if (redis && redis.status !== 'error' && (!redis.keyPrefix || !redis.username || redis.username === 'default'
-    || !redis.password || (platRedisPass && redis.password === platRedisPass))) {
+    || !redis.password || (platRedisPass && redis.password === platRedisPass)
+    // Sentinel discovery creds must never be the platform password or the default user.
+    || redis.sentinelUsername === 'default'
+    || (platRedisPass && redis.sentinelPassword && redis.sentinelPassword === platRedisPass))) {
     // Only a per-project ACL user confined to its key prefix is isolation; the default user or
     // the platform's own Redis password would share the whole keyspace.
     out.redis = refused('redis');

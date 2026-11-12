@@ -256,19 +256,12 @@
   <div>
     <div class="card mb-6">
       <h2>Add Fresh Cluster Node</h2>
-      <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;margin-bottom:20px;">Generate a one-time join token and provision VPS nodes to automatically join the KVM8 cluster.</p>
-      <button class="btn btn-primary" (click)="generateJoinToken()" [disabled]="loadingToken">
-        {{ loadingToken ? 'Generating...' : 'Generate Join Command' }}
-      </button>
-      @if (joinCommand) {
-        <div style="margin-top:20px;">
-          <div style="font-size:0.8rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;margin-bottom:6px;">SSH Command (Run on fresh VPS)</div>
-          <div style="position:relative;background:rgba(0,0,0,0.3);padding:16px;border-radius:10px;border:1px solid var(--border-glass);color:var(--primary);font-family:monospace;font-size:0.85rem;word-break:break-all;">
-            {{ joinCommand }}
-          </div>
-          <p style="margin:8px 0 0 0;font-size:0.75rem;color:var(--color-text-muted);">Join token expires in 1 hour.</p>
-        </div>
-      }
+      <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;margin-bottom:20px;">Nodes join with <code>platformctl join</code> on a server installed with the <code>ha</code> profile. Join tokens are created on an existing server and never pass through the browser.</p>
+      <div style="font-size:0.8rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;margin-bottom:6px;">1. On an existing server</div>
+      <pre style="background:rgba(0,0,0,0.3);padding:16px;border-radius:10px;border:1px solid var(--border-glass);color:var(--primary);font-size:0.85rem;white-space:pre-wrap;word-break:break-all;margin:0 0 16px 0;">sudo platformctl token create --role agent --ttl 2h --output /root/agent.token</pre>
+      <div style="font-size:0.8rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;margin-bottom:6px;">2. On the new node (after copying the token file)</div>
+      <pre style="background:rgba(0,0,0,0.3);padding:16px;border-radius:10px;border:1px solid var(--border-glass);color:var(--primary);font-size:0.85rem;white-space:pre-wrap;word-break:break-all;margin:0;">sudo platformctl join --role agent --server https://&lt;server-ip&gt;:6443 --token-file /root/agent.token --nodes &lt;node-ips&gt;</pre>
+      <p style="margin:8px 0 0 0;font-size:0.75rem;color:var(--color-text-muted);">Use <code>--role server</code> with a server token to add an etcd server. See <a href="/docs/operations/ha">High availability</a>.</p>
     </div>
     <div class="card" style="padding:0;overflow:hidden;">
       <h2 style="padding:24px 24px 0 24px;border:0;margin:0;">Bootstrap Run History</h2>

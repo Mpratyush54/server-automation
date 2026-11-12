@@ -1,5 +1,35 @@
 import type Redis from 'ioredis';
 
+function parseSentinels(value: unknown): Array<{ host: string; port: number }> | undefined {
+  if (!value) return undefined;
+  if (Array.isArray(value)) {
+    return value.map((s: any) => ({
+      host: String(s.host ?? s[0]),
+      port: Number(s.port ?? s[1] ?? 26379),
+    })).filter((s) => s.host && Number.isFinite(s.port));
+  }
+  if (typeof value === 'string') {
+    const out: Array<{ host: string; port: number }> = [];
+    for (const part of value.split(',')) {
+      const raw = part.trim();
+      if (!raw) continue;
+      const idx = raw.lastIndexOf(':');
+      if (idx > 0 && /^\d+$/.test(raw.slice(idx + 1))) {
+        out.push({ host: raw.slice(0, idx), port: parseInt(raw.slice(idx + 1), 10) });
+      } else {
+        out.push({ host: raw, port: 26379 });
+      }
+    }
+    return out.length ? out : undefined;
+  }
+  return undefined;
+}
+
+/** Reconnect + resend after a demoted master returns READONLY. */
+export function redisReadonlyReconnect(err: Error): 2 | false {
+  return /READONLY/.test(err?.message || '') ? 2 : false;
+}
+
 export class RedisManager {
   private client: Redis | null = null;
   private connected = false;
@@ -8,17 +38,41 @@ export class RedisManager {
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private stopped = false;
   private config: any;
+  private _mode: 'sentinel' | 'standalone';
 
   constructor(config: any = {}) {
-    this.config = {
-      host: config.host || process.env.PLATFORM_REDIS_HOST || 'localhost',
-      port: config.port || parseInt(process.env.PLATFORM_REDIS_PORT || '6379', 10),
+    const sentinels = parseSentinels(
+      config.sentinels ?? process.env.PLATFORM_REDIS_SENTINELS,
+    );
+    const masterName = config.masterName || config.name
+      || process.env.PLATFORM_REDIS_SENTINEL_MASTER
+      || (sentinels ? 'mymaster' : undefined);
+    const base: any = {
       // Platform db-credentials return a per-project ACL user confined to keyPrefix.
       username: config.username || process.env.PLATFORM_REDIS_USERNAME || undefined,
       password: config.password || process.env.PLATFORM_REDIS_PASSWORD || undefined,
       keyPrefix: config.keyPrefix || process.env.PLATFORM_REDIS_KEY_PREFIX || undefined,
       db: config.db ?? (process.env.PLATFORM_REDIS_DB ? parseInt(process.env.PLATFORM_REDIS_DB, 10) : undefined),
     };
+    if (sentinels?.length) {
+      this._mode = 'sentinel';
+      this.config = {
+        ...base,
+        sentinels,
+        name: masterName || 'mymaster',
+        sentinelUsername: config.sentinelUsername || process.env.PLATFORM_REDIS_SENTINEL_USERNAME || undefined,
+        sentinelPassword: config.sentinelPassword || process.env.PLATFORM_REDIS_SENTINEL_PASSWORD || undefined,
+        role: 'master',
+        reconnectOnError: redisReadonlyReconnect,
+      };
+    } else {
+      this._mode = 'standalone';
+      this.config = {
+        host: config.host || process.env.PLATFORM_REDIS_HOST || 'localhost',
+        port: config.port || parseInt(process.env.PLATFORM_REDIS_PORT || '6379', 10),
+        ...base,
+      };
+    }
   }
 
   async connect(): Promise<void> {
@@ -35,8 +89,8 @@ export class RedisManager {
       if (this.client === client) this.connected = false;
       console.error('[platform] Redis error:', err.message);
     });
-    // ioredis reconnects on its own after an established connection drops (Redis restart);
-    // without this the manager kept reporting "disconnected" after the client recovered.
+    // ioredis reconnects on its own after an established connection drops (Redis restart /
+    // Sentinel failover); without this the manager kept reporting "disconnected" after recovery.
     client.on('ready', () => {
       if (this.client === client && !this.connected) {
         this.connected = true;
@@ -112,7 +166,8 @@ export class RedisManager {
   }
 
   get isConnected(): boolean { return this.connected; }
-  get health(): { connected: boolean } {
-    return { connected: this.connected };
+  get mode(): 'sentinel' | 'standalone' { return this._mode; }
+  get health(): { connected: boolean; mode?: 'sentinel' | 'standalone' } {
+    return { connected: this.connected, mode: this._mode };
   }
 }

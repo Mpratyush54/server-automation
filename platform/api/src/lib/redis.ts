@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import Redis, { RedisOptions } from 'ioredis';
+import { forEachRedisDataNode, redisDataNodes, redisEndpointOptions } from './redis-endpoint';
 
 /**
  * Shared Redis client for request-spanning API state (OAuth login state, one-time
@@ -80,8 +81,7 @@ export function buildApiAclSetUserArgs(username: string, password: string): stri
 
 function connectionBase(): RedisOptions {
   return {
-    host: process.env.REDIS_HOST || 'redis-master.databases.svc.cluster.local',
-    port: Number(process.env.REDIS_PORT) || 6379,
+    ...redisEndpointOptions({ defaultHost: 'redis-master.databases.svc.cluster.local' }),
     db: Number(process.env.REDIS_DB) || 0,
     connectTimeout: 5000,
     // Fail a command quickly instead of queueing it for minutes during an outage.
@@ -91,20 +91,22 @@ function connectionBase(): RedisOptions {
 }
 
 async function ensureAclUser(adminPassword: string, username: string, password: string): Promise<'ok' | 'unsupported'> {
-  const admin = new Redis({ ...connectionBase(), password: adminPassword, lazyConnect: true, maxRetriesPerRequest: 0, retryStrategy: () => null });
-  admin.on('error', () => {});
-  try {
-    await admin.connect(); // connection failures propagate: Redis is down, not ACL-less
-    try {
-      await admin.call('ACL', ...buildApiAclSetUserArgs(username, password));
-      return 'ok';
-    } catch (err: any) {
-      console.warn(`[redis] could not create ACL user ${username} (${err?.message || err}); using the default user`);
-      return 'unsupported';
-    }
-  } finally {
-    admin.disconnect();
+  // ACL users are not replicated — set them on every data node (master + replicas).
+  const nodes = await redisDataNodes(adminPassword);
+  const master = nodes.find((n) => n.role === 'master') ?? nodes[0];
+  const masterLabel = `${master.host}:${master.port}`;
+  const result = await forEachRedisDataNode(adminPassword, async (client) => {
+    await client.call('ACL', ...buildApiAclSetUserArgs(username, password));
+  });
+  if (result.ok.includes(masterLabel)) return 'ok';
+  const masterFail = result.failed.find((f) => f.node === masterLabel) || result.failed[0];
+  if (!masterFail) return 'ok';
+  // Connection failure to every node → Redis is down (propagate like the old single-host path).
+  if (result.ok.length === 0 && /ECONNREFUSED|ENOTFOUND|ETIMEDOUT|connect/i.test(masterFail.error)) {
+    throw new Error(masterFail.error);
   }
+  console.warn(`[redis] could not create ACL user ${username} (${masterFail.error}); using the default user`);
+  return 'unsupported';
 }
 
 let lastAclRepair = 0;

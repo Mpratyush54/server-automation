@@ -170,3 +170,55 @@ func TestK3sSQLiteCaptureUsesSnapshotNotOnlineBackup(t *testing.T) {
 		t.Fatal("k3s SQLite capture must snapshot with VACUUM INTO and verify it")
 	}
 }
+
+func TestHADatastoreBackupHelpers(t *testing.T) {
+	for _, want := range []string{
+		"mongo_pod()",
+		"redis_master_pod()",
+		"isWritablePrimary",
+		"app.kubernetes.io/component=node",
+		"role:master",
+	} {
+		if !strings.Contains(commonScript, want) {
+			t.Fatalf("common.sh missing %q", want)
+		}
+	}
+	if !strings.Contains(captureScript, "p=$(mongo_pod)") || !strings.Contains(captureScript, "p=$(redis_master_pod)") {
+		t.Fatal("capture must use mongo_pod / redis_master_pod")
+	}
+	if !strings.Contains(captureScript, "-c redis") {
+		t.Fatal("redis capture must exec the redis container")
+	}
+	for _, want := range []string{
+		"p=$(mongo_pod)",
+		"p=$(redis_master_pod)",
+		"restore_redis_pvc()",
+		"redis-data-$sts-$i",
+		"sts/redis-node",
+		"sts/minio",
+	} {
+		if !strings.Contains(restoreScript, want) {
+			t.Fatalf("restore.sh missing %q", want)
+		}
+	}
+}
+
+// "$PWHELPER" ends with "}": text appended without a separator ("}export ...")
+// is a bash syntax error. redis_master_pod hid it behind 2>/dev/null, so ha
+// backups never found the Redis master (3-node test).
+func TestPWHelperIsAlwaysFollowedBySeparator(t *testing.T) {
+	for name, s := range map[string]string{"common.sh": commonScript, "capture.sh": captureScript, "restore.sh": restoreScript} {
+		s = strings.ReplaceAll(s, "\r\n", "\n")
+		for i := 0; ; {
+			j := strings.Index(s[i:], `"$PWHELPER"'`)
+			if j < 0 {
+				break
+			}
+			at := i + j + len(`"$PWHELPER"'`)
+			if at < len(s) && s[at] != '\n' && s[at] != ';' && s[at] != ' ' {
+				t.Errorf("%s: $PWHELPER followed by %q (needs a newline or ';')", name, s[at:min(at+20, len(s))])
+			}
+			i = at
+		}
+	}
+}

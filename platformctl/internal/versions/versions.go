@@ -45,6 +45,16 @@ func MirrorTag(version string) string {
 // Helm 4 changed flag semantics; stay on 3.x until the installer is validated on 4.
 const HelmVersion = "v3.22.1"
 
+// KubeVIPImage is the kube-vip DaemonSet image for ha-profile ingress VIP (#54).
+// Pinned so offline/pre-pull inventories stay reproducible without a Helm chart.
+const KubeVIPImage = "ghcr.io/kube-vip/kube-vip:v1.3.1"
+
+// StaticImages returns container images rendered by platformctl itself (not by
+// a Helm chart). scripts/gen-images.sh appends these to images.txt.
+func StaticImages() []string {
+	return []string{KubeVIPImage, CNPGPostgresImage}
+}
+
 // ChartCacheDir holds pre-downloaded chart tarballs (<name>-<version>.tgz).
 // The offline bundle extracts charts here; Prefetch() also fills it.
 const ChartCacheDir = "/var/lib/platform/charts"
@@ -114,7 +124,16 @@ func (c Chart) PullArgs() string {
 // Bitnami charts come from OCI: no multi-megabyte index.yaml download.
 const bitnamiOCI = "oci://registry-1.docker.io/bitnamicharts/"
 
+// CNPGPostgresImage uses the "system" image: the standard image plus barman-cloud
+// tools needed by the in-tree barmanObjectStore; it also includes pgaudit.
+const CNPGPostgresImage = "ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie"
+
 var charts = map[string]Chart{
+	// ha profile only. CNPG removes in-tree barmanObjectStore in 1.31;
+	// operator >= 1.31 (chart >= 0.30) requires migrating to the Barman Cloud plugin first.
+	"cloudnative-pg": {Name: "cloudnative-pg", Repo: "cnpg", RepoURL: "https://cloudnative-pg.github.io/charts", Chart: "cloudnative-pg", Version: "0.29.1"},
+	// HA profile only; 1.12.1 is upstream stable. Bump here, then regenerate images.txt.
+	"longhorn":                     {Name: "longhorn", Repo: "longhorn", RepoURL: "https://charts.longhorn.io", Chart: "longhorn", Version: "1.12.1"},
 	"ingress-nginx":                {Name: "ingress-nginx", Repo: "ingress-nginx", RepoURL: "https://kubernetes.github.io/ingress-nginx", Chart: "ingress-nginx", Version: "4.15.1"},
 	"cert-manager":                 {Name: "cert-manager", Repo: "jetstack", RepoURL: "https://charts.jetstack.io", Chart: "cert-manager", Version: "v1.21.3"},
 	"postgresql":                   {Name: "postgresql", Chart: bitnamiOCI + "postgresql", Version: "18.12.18"},

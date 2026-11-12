@@ -5,6 +5,8 @@ package harden
 import (
 	"fmt"
 	"net/netip"
+	"sort"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
@@ -111,7 +113,29 @@ func CIDRs(data []byte) ([]netip.Prefix, error) {
 	return result, nil
 }
 
+// FirewallOptions adds optional ha-profile rules (control-plane VIP).
+type FirewallOptions struct {
+	APIVIP     netip.Addr
+	NodeSubnet netip.Prefix
+	// Peers are the PLATFORM_CLUSTER_NODES prefixes (#53): the inter-node
+	// ports (etcd, API, kubelet, flannel) are accepted only from them.
+	Peers []netip.Prefix
+}
+
+// Firewall returns the single-node baseline ruleset (no API VIP extras).
 func Firewall(cidrs []netip.Prefix) string {
+	return FirewallWith(cidrs, FirewallOptions{})
+}
+
+// ClusterFirewall renders the policy plus the inter-node ports for the ha
+// profile, accepted only from the given peers.
+func ClusterFirewall(cidrs, peers []netip.Prefix) string {
+	return FirewallWith(cidrs, FirewallOptions{Peers: peers})
+}
+
+// FirewallWith is Firewall plus an optional rule allowing the node subnet to
+// reach the floating Kubernetes API VIP on 6443 (ha profile with API_VIP).
+func FirewallWith(cidrs []netip.Prefix, opt FirewallOptions) string {
 	var trusted strings.Builder
 	// Trust interfaces, not externally spoofable source addresses. CIDRs are
 	// constrained to internal-facing traffic (interfaces above are sufficient
@@ -123,6 +147,10 @@ func Firewall(cidrs []netip.Prefix) string {
 		}
 		fmt.Fprintf(&trusted, "    iifname { \"cni0\", \"flannel.*\" } %s saddr %s accept\n", family, p)
 	}
+	var apiVIPRule string
+	if opt.APIVIP.IsValid() && opt.APIVIP.Is4() && opt.NodeSubnet.IsValid() && opt.NodeSubnet.Addr().Is4() {
+		apiVIPRule = fmt.Sprintf("    ip saddr %s ip daddr %s tcp dport 6443 accept\n", opt.NodeSubnet.Masked(), opt.APIVIP)
+	}
 	return `table inet platform_guard {
   chain input {
     type filter hook input priority 10; policy drop;
@@ -130,11 +158,11 @@ func Firewall(cidrs []netip.Prefix) string {
     ct state established,related accept
     ct state invalid drop
     iifname { "cni0", "flannel.*" } accept
-` + trusted.String() + `    meta l4proto { icmp, ipv6-icmp } accept
+` + trusted.String() + apiVIPRule + `    meta l4proto { icmp, ipv6-icmp } accept
     udp sport 67 udp dport 68 accept
     udp sport 547 udp dport 546 accept
     tcp dport { 22, 80, 443 } accept
-  }
+` + clusterRules(opt.Peers) + `  }
   chain forward {
     type filter hook forward priority 10; policy drop;
     ct state established,related accept
@@ -148,3 +176,77 @@ func Firewall(cidrs []netip.Prefix) string {
 
 // Quote is used only for fixed executable paths, including injected test roots.
 func Quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
+
+// Ports are shared with callers documenting inter-node firewall requirements.
+// 9100: node-exporter runs on the host network; Prometheus scrapes every node
+// from wherever it is scheduled (without it 2 of 3 nodes had no host metrics).
+var ClusterTCPPorts = []int{2379, 2380, 6443, 9100, 10250}
+var ClusterUDPPorts = []int{8472}
+
+func clusterRules(peers []netip.Prefix) string {
+	var b strings.Builder
+	for _, family := range []string{"ip", "ip6"} {
+		var addresses []string
+		for _, p := range peers {
+			if p.Addr().Is6() == (family == "ip6") {
+				addresses = append(addresses, p.String())
+			}
+		}
+		if len(addresses) == 0 {
+			continue
+		}
+		for _, protocol := range []struct {
+			name  string
+			ports []int
+		}{{"tcp", ClusterTCPPorts}, {"udp", ClusterUDPPorts}} {
+			if len(protocol.ports) == 0 {
+				continue
+			}
+			var ports []string
+			for _, port := range protocol.ports {
+				ports = append(ports, strconv.Itoa(port))
+			}
+			portSet := strings.Join(ports, ", ")
+			if len(ports) > 1 {
+				portSet = "{ " + portSet + " }"
+			}
+			fmt.Fprintf(&b, "    %s saddr { %s } %s dport %s accept\n", family, strings.Join(addresses, ", "), protocol.name, portSet)
+		}
+	}
+	return b.String()
+}
+
+// ParsePeers parses PLATFORM_CLUSTER_NODES (IPs or CIDRs), refusing overly broad ranges.
+func ParsePeers(values []string) ([]netip.Prefix, error) {
+	seen := map[netip.Prefix]bool{}
+	var out []netip.Prefix
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		p, err := netip.ParsePrefix(value)
+		if err != nil {
+			addr, addrErr := netip.ParseAddr(value)
+			if addrErr != nil || addr.Zone() != "" {
+				return nil, fmt.Errorf("invalid cluster peer %q", value)
+			}
+			p = netip.PrefixFrom(addr, addr.BitLen())
+		}
+		if p.Addr().Is4() && p.Bits() < 8 || p.Addr().Is6() && p.Bits() < 32 {
+			return nil, fmt.Errorf("cluster peer %q is too broad", value)
+		}
+		p = p.Masked()
+		if !seen[p] {
+			out = append(out, p)
+			seen[p] = true
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if c := out[i].Addr().Compare(out[j].Addr()); c != 0 {
+			return c < 0
+		}
+		return out[i].Bits() < out[j].Bits()
+	})
+	return out, nil
+}

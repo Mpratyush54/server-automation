@@ -213,7 +213,11 @@ it('keeps ingress-nginx reachable both ways and DNS/databases/platform egress na
   expect(ingress.ingress).toEqual([{ from: [controller] }]);
   expect(ingress.egress).toEqual([{ to: [controller], ports: [{ protocol: 'TCP', port: 80 }, { protocol: 'TCP', port: 443 }] }]);
   expect(policy('allow-dns').spec.egress[0].to[0].namespaceSelector).toEqual({ matchLabels: { 'kubernetes.io/metadata.name': 'kube-system' } });
-  expect(policy('allow-databases').spec.egress.map((r: any) => r.ports[0].port)).toEqual([5432, 27017, 6379]);
+  expect(policy('allow-databases').spec.egress.map((r: any) => r.ports.map((p: any) => p.port))).toEqual([
+    [5432],
+    [27017],
+    [6379, 26379],
+  ]);
   expect(policy('allow-platform').spec.egress[0]).toEqual({ to: [{ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'platform' } }, podSelector: { matchLabels: { app: 'platform-api' } } }], ports: [{ protocol: 'TCP', port: 3000 }] });
   // No allow rule selects other project namespaces.
   expect(JSON.stringify(manifests().policies)).not.toContain('platform.io/project');

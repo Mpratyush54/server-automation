@@ -37,11 +37,6 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
   // Namespace filtering
   selectedNamespace = 'all';
 
-  // Join token variables
-  joinToken = '';
-  joinCommand = '';
-  loadingToken = false;
-
   // Logs terminal modal state
   showLogsModal = false;
   selectedPodName = '';
@@ -197,20 +192,6 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
       await this.loadPods();
     } catch (err: any) {
       alert(`Failed to restart pod: ${err.error?.error || err.message}`);
-    }
-  }
-
-  // Join command for nodes
-  async generateJoinToken() {
-    this.loadingToken = true;
-    try {
-      const res: any = await firstValueFrom(this.api.getBootstrapToken());
-      this.joinToken = res.token;
-      this.joinCommand = `curl ${window.location.origin}/bootstrap/get | bash -s -- --token ${this.joinToken} --master <server-ip>`;
-    } catch (err: any) {
-      alert('Failed to generate join token: ' + (err.error?.error || err.message));
-    } finally {
-      this.loadingToken = false;
     }
   }
 

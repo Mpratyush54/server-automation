@@ -24,12 +24,12 @@ func startBackgroundPrePull() {
 			extra = append(extra, img)
 		}
 	}
-	n := len(images.ListForTelemetry(components.FullTelemetry(cfg))) + len(extra)
+	n := len(images.ListForProfile(components.FullTelemetry(cfg), cfg.IsHA())) + len(extra)
 	color.Cyan("  ■ Pre-pulling %d images in background (log: %s)", n, images.LogPath)
 
 	go func() {
 		done := state.Track("image-prepull (background)")
-		res := images.PrePullForTelemetry(context.Background(), resolveParallel(), components.FullTelemetry(cfg), extra...)
+		res := images.PrePullForProfile(context.Background(), resolveParallel(), components.FullTelemetry(cfg), cfg.IsHA(), extra...)
 		done(fmt.Sprintf("%d pulled, %d present, %d failed", len(res.Pulled), len(res.Skipped), len(res.Failed)))
 	}()
 }

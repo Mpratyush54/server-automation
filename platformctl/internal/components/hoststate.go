@@ -46,7 +46,11 @@ var credentialKeys = []string{
 }
 
 func mongoURI(cfg *config.Config) string {
-	return "mongodb://root:" + url.QueryEscape(cfg.MongoPassword) + "@mongodb.databases:27017/platform?authSource=admin"
+	uri := "mongodb://root:" + url.QueryEscape(cfg.MongoPassword) + "@" + MongoHosts(cfg) + "/platform?authSource=admin"
+	if cfg != nil && cfg.IsHA() {
+		uri += "&replicaSet=" + MongoReplicaSetName
+	}
+	return uri
 }
 
 // credentialValues renders the platform-credentials Secret from config.

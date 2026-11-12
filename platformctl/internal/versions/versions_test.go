@@ -1,6 +1,7 @@
 package versions
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -77,6 +78,16 @@ func TestSplitChartRef(t *testing.T) {
 	}
 }
 
+func TestStaticImages(t *testing.T) {
+	imgs := StaticImages()
+	if len(imgs) != 2 || imgs[0] != KubeVIPImage || imgs[1] != CNPGPostgresImage {
+		t.Fatalf("StaticImages = %v", imgs)
+	}
+	if !strings.HasPrefix(KubeVIPImage, "ghcr.io/kube-vip/kube-vip:v") {
+		t.Fatal(KubeVIPImage)
+	}
+}
+
 // The "loki" pin must never match a loki-stack release (prefix "loki-").
 func TestSplitChartRefNeverConfusesLokiStack(t *testing.T) {
 	n, _, _ := SplitChartRef("loki-stack-2.10.3")
@@ -85,5 +96,15 @@ func TestSplitChartRefNeverConfusesLokiStack(t *testing.T) {
 	}
 	if n != Get("loki-stack").BaseName() {
 		t.Fatalf("got %q", n)
+	}
+}
+
+func TestCNPGInTreeBarmanVersionGate(t *testing.T) {
+	var major, minor, patch int
+	if _, err := fmt.Sscanf(Get("cloudnative-pg").Version, "%d.%d.%d", &major, &minor, &patch); err != nil {
+		t.Fatal(err)
+	}
+	if major > 0 || minor >= 30 {
+		t.Fatal("CNPG chart >= 0.30.0 uses operator >= 1.31, which removes in-tree barmanObjectStore; migrate to the Barman Cloud plugin first")
 	}
 }

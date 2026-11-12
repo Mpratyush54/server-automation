@@ -1,7 +1,10 @@
 package components
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 )
 
 func TestAllComponents(t *testing.T) {
@@ -9,8 +12,8 @@ func TestAllComponents(t *testing.T) {
 	if len(all) == 0 {
 		t.Fatal("All() returned no components")
 	}
-	if len(all) != 18 { // Infisical removed; ingress (early TLS); kyverno (#28); storage-scoped (#36); telemetry (#37); synthetics (#42)
-		t.Errorf("expected 18 components, got %d", len(all))
+	if len(all) != 22 { // Infisical removed; ingress (early TLS); kyverno (#28); storage-scoped (#36); telemetry (#37); synthetics (#42); Longhorn + monitoring (#50); PostgreSQL HA backups + monitoring (#51)
+		t.Errorf("expected 22 components, got %d", len(all))
 	}
 }
 
@@ -39,7 +42,7 @@ func TestAllUniqueNames(t *testing.T) {
 }
 
 func TestFindExisting(t *testing.T) {
-	names := []string{"argocd", "postgresql", "monitoring", "ingress-nginx", "cert-manager", "platform"}
+	names := []string{"longhorn", "longhorn-monitoring", "argocd", "postgresql", "monitoring", "ingress-nginx", "cert-manager", "platform"}
 	for _, name := range names {
 		c := Find(name)
 		if c == nil {
@@ -114,4 +117,39 @@ func containsStr(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// The MinIO chart rejects defaultBuckets in distributed mode (found on the
+// 3-node ha test); storage-scoped creates the buckets there.
+func TestMinioHelmArgsDefaultBucketsOnlyStandalone(t *testing.T) {
+	ha := strings.Join(minioHelmArgs(&config.Config{Profile: config.ProfileHA}, "v.yaml", "25Gi"), " ")
+	if strings.Contains(ha, "defaultBuckets") {
+		t.Fatalf("ha must not set defaultBuckets: %s", ha)
+	}
+	full := strings.Join(minioHelmArgs(&config.Config{Profile: config.ProfileFull}, "v.yaml", "50Gi"), " ")
+	if !strings.Contains(full, "defaultBuckets=platform-backups") {
+		t.Fatalf("single-node must keep defaultBuckets: %s", full)
+	}
+}
+
+// The portal was a single replica on ha (found on the 3-node test).
+func TestPortalReplicasAndSpreadOnHA(t *testing.T) {
+	ha := &config.Config{Profile: config.ProfileHA}
+	full := &config.Config{Profile: config.ProfileFull}
+	if portalReplicas(ha) != 2 || portalReplicas(full) != 1 {
+		t.Fatalf("portal replicas: ha=%d full=%d", portalReplicas(ha), portalReplicas(full))
+	}
+	if a := spreadAffinityYAML(ha, "platform-portal"); !strings.Contains(a, "app: platform-portal") || !strings.Contains(a, "whenUnsatisfiable: DoNotSchedule") {
+		t.Fatalf("ha portal affinity: %q", a)
+	}
+	if spreadAffinityYAML(full, "platform-portal") != "" {
+		t.Fatal("single-node profiles need no affinity")
+	}
+}
+
+func TestDaemonSetReadyCheck(t *testing.T) {
+	c := daemonSetReadyCheck("ingress-nginx", "ingress-nginx-controller")
+	if !strings.Contains(c, "get daemonset -n ingress-nginx ingress-nginx-controller") || !strings.Contains(c, "desiredNumberScheduled") {
+		t.Fatalf("unexpected check: %s", c)
+	}
 }

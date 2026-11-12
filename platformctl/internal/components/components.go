@@ -46,9 +46,13 @@ type Component struct {
 
 func All() []Component {
 	return []Component{
+		{"longhorn", "Longhorn replicated block storage (ha profile; default StorageClass)", InstallLonghorn},
+		{"longhorn-monitoring", "Longhorn ServiceMonitor and volume alerts (ha profile + monitoring)", InstallLonghornMonitoring},
 		{"ingress-nginx", "Kubernetes Ingress Controller", InstallIngressNginx},
 		{"cert-manager", "Let's Encrypt certificate management", InstallCertManager},
-		{"postgresql", "PostgreSQL database", InstallPostgreSQL},
+		{"postgresql", "PostgreSQL database (CloudNativePG cluster on the ha profile)", InstallPostgreSQL},
+		{"postgresql-backup", "PostgreSQL WAL archiving and daily base backups to S3/MinIO (ha profile)", InstallPostgresBackup},
+		{"postgresql-monitoring", "PostgreSQL PodMonitor and HA alerts (ha profile + monitoring)", InstallPostgresMonitoring},
 		{"mongodb", "MongoDB database", InstallMongoDB},
 		{"redis", "Redis cache", InstallRedis},
 		{"minio", "S3-compatible object storage", InstallMinIO},
@@ -175,18 +179,30 @@ func InstallCertManager(cfg *config.Config) error {
 }
 
 func InstallPostgreSQL(cfg *config.Config) error {
+	if cfg.IsHA() {
+		return InstallPostgresHA(cfg)
+	}
 	return postgresqlRelease(cfg).reconcile("--wait", "--timeout", "10m")
 }
 
 func InstallMongoDB(cfg *config.Config) error {
+	if err := checkHAMigration(cfg, "mongodb"); err != nil {
+		return err
+	}
 	return mongodbRelease(cfg).reconcile("--wait", "--timeout", "10m")
 }
 
 func InstallRedis(cfg *config.Config) error {
+	if err := checkHAMigration(cfg, "redis"); err != nil {
+		return err
+	}
 	return redisRelease(cfg).reconcile("--wait", "--timeout", "10m")
 }
 
 func InstallMinIO(cfg *config.Config) error {
+	if err := checkHAMigration(cfg, "minio"); err != nil {
+		return err
+	}
 	if doneOrSkip("minio", "MinIO") {
 		return nil
 	}
@@ -197,12 +213,27 @@ func InstallMinIO(cfg *config.Config) error {
 	}
 	defer os.Remove(tmpFile)
 
-	err = helmValues("minio", "minio", "storage", minioInstallValues(cfg), "-f", tmpFile, "--set", "persistence.size=50Gi", "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser", "--set", `defaultBuckets=platform-backups\,platform-logs\,platform-uploads`, "--wait", "--timeout", "10m")
+	persistSize := "50Gi"
+	if cfg.IsHA() {
+		persistSize = "25Gi"
+	}
+	err = helmValues("minio", "minio", "storage", minioInstallValues(cfg), minioHelmArgs(cfg, tmpFile, persistSize)...)
 	if err != nil {
 		return err
 	}
 	color.Green("  ✓ MinIO installed")
 	return state.MarkDone("minio")
+}
+
+// minioHelmArgs are the MinIO helm flags besides the values map. The chart only
+// creates defaultBuckets in standalone mode and refuses the value in distributed
+// mode (ha); there the storage-scoped step creates the buckets.
+func minioHelmArgs(cfg *config.Config, valuesFile, persistSize string) []string {
+	args := []string{"-f", valuesFile, "--set", "persistence.size=" + persistSize, "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser"}
+	if !cfg.IsHA() {
+		args = append(args, "--set", `defaultBuckets=platform-backups\,platform-logs\,platform-uploads`)
+	}
+	return append(args, "--wait", "--timeout", "10m")
 }
 
 func InstallArgoCD(cfg *config.Config) error {
@@ -682,6 +713,44 @@ func apiReplicas(cfg *config.Config) int {
 	return cfg.APIReplicas
 }
 
+// apiAffinityYAML spreads platform-api replicas across nodes in the ha profile
+// (#53) so losing one node keeps the API serving. It is a preference, not a
+// requirement: a cluster that is still joining nodes schedules both replicas
+// on the first server. Single-node profiles render nothing (manifest unchanged).
+func apiAffinityYAML(cfg *config.Config) string {
+	return spreadAffinityYAML(cfg, "platform-api")
+}
+
+// spreadAffinityYAML spreads the app's pods across nodes on ha. A topology
+// spread constraint with DoNotSchedule never stacks two replicas on one node
+// while another node is schedulable, yet still schedules everything on a
+// single-node cluster that is still growing (skew is 0 there). Soft pod
+// anti-affinity let both API replicas land on one node when CPU was short
+// (3-node test), so one node loss took the whole API down.
+func spreadAffinityYAML(cfg *config.Config, app string) string {
+	if !cfg.IsHA() {
+		return ""
+	}
+	return `      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: ` + app + `
+        matchLabelKeys:
+        - pod-template-hash
+`
+}
+
+// portalReplicas is 2 on ha (the portal survives a node loss), else 1.
+func portalReplicas(cfg *config.Config) int {
+	if cfg.IsHA() {
+		return 2
+	}
+	return 1
+}
+
 // apiPDBScript applies a PodDisruptionBudget (minAvailable: 1) when the API runs
 // more than one replica so node drains keep one pod serving. With a single
 // replica a PDB would block drains forever, so any old one is removed.
@@ -747,6 +816,11 @@ kubectl -n platform rollout status deployment/platform-api --timeout=300s
 }
 
 // deploymentReadyCheck succeeds when every desired replica of the deployment is ready.
+// daemonSetReadyCheck succeeds when every scheduled pod of the DaemonSet is ready.
+func daemonSetReadyCheck(ns, name string) string {
+	return fmt.Sprintf(`k3s kubectl get daemonset -n %s %s -o jsonpath='{.status.numberReady} {.status.desiredNumberScheduled}' 2>/dev/null | awk '$1 != "" && $1 > 0 && $1 == $2 { ok = 1 } END { exit !ok }'`, ns, name)
+}
+
 func deploymentReadyCheck(ns, name string) string {
 	return fmt.Sprintf(`k3s kubectl get deployment -n %s %s -o jsonpath='{.status.readyReplicas} {.spec.replicas}' 2>/dev/null | awk '$1 != "" && $1 == $2 { ok = 1 } END { exit !ok }'`, ns, name)
 }
@@ -759,6 +833,32 @@ var platformImages struct{ api, portal string }
 
 // UsePlatformImages pins the images InstallPlatform deploys in this process.
 func UsePlatformImages(api, portal string) { platformImages.api, platformImages.portal = api, portal }
+
+// platformEnvValues is the platform-env Secret data for InstallPlatform.
+func platformEnvValues(cfg *config.Config) map[string]string {
+	m := map[string]string{
+		"NODE_ENV": "production", "PORT": "3000", "JWT_SECRET": cfg.JWTSecret,
+		"SECRETS_ENCRYPTION_KEY": cfg.SecretsEncryptionKey, "PLATFORM_WEBHOOK_SECRET": cfg.WebhookSecret,
+		"POSTGRES_HOST": "postgresql.databases", "POSTGRES_PORT": "5432", "POSTGRES_DB": "platform", "POSTGRES_USER": "postgres",
+		"REDIS_HOST": "redis-master.databases", "REDIS_PORT": "6379",
+		// Telemetry block in /api/sdk/config (#49): on only when the full-profile backend (#37) is installed.
+		"PLATFORM_OBSERVABILITY": observabilityFlag(cfg),
+		// Global Loki/Tempo/Pyroscope retention: the API reports it as the logs/traces/profiles default.
+		"TELEMETRY_RETENTION_DAYS": cfg.TelemetryRetentionDays,
+		"MINIO_ENDPOINT":           "http://minio.storage:9000",
+		"MINIO_API_ACCESS_KEY":     kubeSecretValue("platform", "platform-storage", "MINIO_API_ACCESS_KEY"),
+		"MINIO_API_SECRET_KEY":     kubeSecretValue("platform", "platform-storage", "MINIO_API_SECRET_KEY"),
+		"UPLOADS_BUCKET":           "platform-uploads", "BACKUP_BUCKET": "platform-backups",
+		"PLATFORM_NAME": cfg.PlatformName, "DOMAIN": cfg.Domain, "ADMIN_EMAIL": cfg.AdminEmail,
+		"OIDC_ISSUER": cfg.OIDCIssuer(), "OIDC_CLIENTS": cfg.OIDCClientsJSON(),
+		"CORS_ORIGINS": "https://" + cfg.Domain,
+	}
+	if cfg.IsHA() {
+		m["REDIS_SENTINEL_HOSTS"] = RedisSentinelHosts()
+		m["REDIS_SENTINEL_MASTER"] = RedisSentinelMaster
+	}
+	return m
+}
 
 func InstallPlatform(cfg *config.Config) error {
 	// Always reconcile security settings on existing installations as well.
@@ -784,23 +884,7 @@ func InstallPlatform(cfg *config.Config) error {
 	if err := MigrateHostState(cfg); err != nil {
 		return err
 	}
-	if err := applySecret("platform", "platform-env", map[string]string{
-		"NODE_ENV": "production", "PORT": "3000", "JWT_SECRET": cfg.JWTSecret,
-		"SECRETS_ENCRYPTION_KEY": cfg.SecretsEncryptionKey, "PLATFORM_WEBHOOK_SECRET": cfg.WebhookSecret,
-		"POSTGRES_HOST": "postgresql.databases", "POSTGRES_PORT": "5432", "POSTGRES_DB": "platform", "POSTGRES_USER": "postgres",
-		"REDIS_HOST": "redis-master.databases", "REDIS_PORT": "6379",
-		// Telemetry block in /api/sdk/config (#49): on only when the full-profile backend (#37) is installed.
-		"PLATFORM_OBSERVABILITY": observabilityFlag(cfg),
-		// Global Loki/Tempo/Pyroscope retention: the API reports it as the logs/traces/profiles default.
-		"TELEMETRY_RETENTION_DAYS": cfg.TelemetryRetentionDays,
-		"MINIO_ENDPOINT": "http://minio.storage:9000",
-		"MINIO_API_ACCESS_KEY": kubeSecretValue("platform", "platform-storage", "MINIO_API_ACCESS_KEY"),
-		"MINIO_API_SECRET_KEY": kubeSecretValue("platform", "platform-storage", "MINIO_API_SECRET_KEY"),
-		"UPLOADS_BUCKET": "platform-uploads", "BACKUP_BUCKET": "platform-backups",
-		"PLATFORM_NAME": cfg.PlatformName, "DOMAIN": cfg.Domain, "ADMIN_EMAIL": cfg.AdminEmail,
-		"OIDC_ISSUER": cfg.OIDCIssuer(), "OIDC_CLIENTS": cfg.OIDCClientsJSON(),
-		"CORS_ORIGINS": "https://" + cfg.Domain,
-	}); err != nil {
+	if err := applySecret("platform", "platform-env", platformEnvValues(cfg)); err != nil {
 		return err
 	}
 	if err := applyAPIRBAC(); err != nil {
@@ -842,7 +926,7 @@ spec:
       serviceAccountName: platform-api
       # preStop sleep (10s) + in-process drain (SHUTDOWN_TIMEOUT_MS, 25s) + margin.
       terminationGracePeriodSeconds: 45
-      securityContext:
+%[5]s      securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
@@ -931,7 +1015,7 @@ metadata:
   labels:
     app: platform-portal
 spec:
-  replicas: 1
+  replicas: %[6]d
   selector:
     matchLabels:
       app: platform-portal
@@ -941,7 +1025,7 @@ spec:
         app: platform-portal
     spec:
       automountServiceAccountToken: false
-      securityContext:
+%[7]s      securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
@@ -982,6 +1066,7 @@ EOF
 kubectl wait --for=condition=Available deployment/platform-api -n platform --timeout=300s
 kubectl wait --for=condition=Available deployment/platform-portal -n platform --timeout=180s
 `, strconv.Quote(apiImg), strconv.Quote(portalImg), apiReplicas(cfg), apiPDBScript(apiReplicas(cfg)),
+		apiAffinityYAML(cfg), portalReplicas(cfg), spreadAffinityYAML(cfg, "platform-portal"),
 	))
 	if err != nil {
 		return err
@@ -1424,9 +1509,10 @@ func CheckHealth() error {
 	checks := []check{
 		{"K3s nodes", "k3s kubectl get nodes --no-headers 2>/dev/null | grep -q Ready"},
 		{"Platform API", deploymentReadyCheck("platform", "platform-api")},
-		{"Platform Portal", "k3s kubectl get deployment -n platform platform-portal --no-headers 2>/dev/null | grep -q '1/1'"},
-		{"Ingress NGINX", "k3s kubectl get deployment -n ingress-nginx ingress-nginx-controller --no-headers 2>/dev/null | grep -q '1/1'"},
-		{"ArgoCD", "k3s kubectl get deployment -n argocd argocd-server --no-headers 2>/dev/null | grep -q '1/1'"},
+		{"Platform Portal", deploymentReadyCheck("platform", "platform-portal")},
+		// A DaemonSet on ha (one controller per node), a Deployment otherwise.
+		{"Ingress NGINX", daemonSetReadyCheck("ingress-nginx", "ingress-nginx-controller") + " || " + deploymentReadyCheck("ingress-nginx", "ingress-nginx-controller")},
+		{"ArgoCD", deploymentReadyCheck("argocd", "argocd-server")},
 	}
 
 	var failed []string

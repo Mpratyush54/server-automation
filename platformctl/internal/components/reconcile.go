@@ -122,22 +122,82 @@ func postgresqlRelease(cfg *config.Config) helmRelease {
 }
 
 func mongodbRelease(cfg *config.Config) helmRelease {
+	auth := map[string]string{"rootPassword": cfg.MongoPassword}
+	if cfg != nil && cfg.IsHA() {
+		auth["replicaSetKey"] = mongoReplicaSetKey(cfg.MongoPassword)
+	}
+	values := databaseMonitoringValues(cfg, "mongo", auth)
+	restarts := "mongodb (project databases unavailable for ~30s)"
+	if cfg != nil && cfg.IsHA() {
+		values["architecture"] = "replicaset"
+		values["replicaCount"] = MongoReplicaCount
+		values["replicaSetName"] = MongoReplicaSetName
+		values["arbiter"] = map[string]any{"enabled": false}
+		values["global"] = map[string]any{"defaultStorageClass": HAStorageClass(cfg)}
+		values["persistence"] = map[string]any{"storageClass": LonghornSingleStorageClass}
+		// The chart's "small" preset requests 500m CPU per member (1.5 cores for
+		// the replica set) while a member used ~260m under the 3-node load test;
+		// with it, 2-vCPU nodes had no CPU left for rolling updates.
+		values["resources"] = map[string]any{
+			"requests": map[string]string{"cpu": "150m", "memory": "512Mi"},
+			"limits":   map[string]string{"cpu": "1", "memory": "1Gi"},
+		}
+		values["podAntiAffinityPreset"] = "soft"
+		values["pdb"] = map[string]any{"create": true, "maxUnavailable": 1}
+		restarts = "mongodb-0..2, one member at a time (the replica set elects a new primary; drivers retry)"
+	}
 	return helmRelease{Step: "mongodb", Label: "MongoDB", Release: "mongodb", Chart: "mongodb", Namespace: "databases",
-		Values:   databaseMonitoringValues(cfg, "mongo", map[string]string{"rootPassword": cfg.MongoPassword}),
+		Values:   values,
 		Args:     []string{"--set", "persistence.size=10Gi"},
-		Restarts: "mongodb (project databases unavailable for ~30s)"}
+		Restarts: restarts}
 }
 
 func redisRelease(cfg *config.Config) helmRelease {
+	// auth.sentinel defaults to true in the chart: sentinels require the same password.
+	values := databaseMonitoringValues(cfg, "redis", map[string]string{"password": cfg.RedisPassword})
+	// Single server: one read replica. The chart default (3, started one at a
+	// time) added ~1.5 minutes to every install for no redundancy.
+	args := []string{"--set", "master.persistence.size=5Gi", "--set", "replica.replicaCount=1"}
+	restarts := "redis-master-0, redis-replicas-0 (project Redis users are re-created by the API)"
+	if cfg != nil && cfg.IsHA() {
+		values["architecture"] = "replication"
+		values["sentinel"] = map[string]any{
+			"enabled":   true,
+			"masterSet": RedisSentinelMaster,
+			"quorum":    2,
+			// Chart defaults (60 s down-after, 180 s failover timeout) kept
+			// Redis writes failing for ~60 s after the master's node was
+			// powered off (3-node test).
+			"downAfterMilliseconds": 5000,
+			"failoverTimeout":       20000,
+			"resources": map[string]any{
+				"requests": map[string]string{"cpu": "25m", "memory": "32Mi"},
+				"limits":   map[string]string{"cpu": "200m", "memory": "128Mi"},
+			},
+			"masterService": map[string]any{"enabled": true},
+		}
+		values["replica"] = map[string]any{
+			"replicaCount":                 RedisNodeCount,
+			"persistence":                  map[string]any{"size": "5Gi", "storageClass": LonghornSingleStorageClass},
+			"podAntiAffinityPreset":        "soft",
+			"automountServiceAccountToken": true,
+		}
+		values["rbac"] = map[string]any{"create": true}
+		values["serviceAccount"] = map[string]any{"automountServiceAccountToken": true}
+		values["global"] = map[string]any{"defaultStorageClass": HAStorageClass(cfg)}
+		args = nil
+		restarts = "redis-node-0..2 one at a time (Sentinel fails over; clients rediscover the master; the API re-creates project Redis users on every node)"
+	}
 	return helmRelease{Step: "redis", Label: "Redis", Release: "redis", Chart: "redis", Namespace: "databases",
-		Values: databaseMonitoringValues(cfg, "redis", map[string]string{"password": cfg.RedisPassword}),
-		// Single server: one read replica. The chart default (3, started one at a
-		// time) added ~1.5 minutes to every install for no redundancy.
-		Args:     []string{"--set", "master.persistence.size=5Gi", "--set", "replica.replicaCount=1"},
-		Restarts: "redis-master-0, redis-replicas-0 (project Redis users are re-created by the API)"}
+		Values:   values,
+		Args:     args,
+		Restarts: restarts}
 }
 
 // DatabaseReleases are the values-reconciled database components.
 func DatabaseReleases(cfg *config.Config) []helmRelease {
+	if cfg.IsHA() {
+		return []helmRelease{mongodbRelease(cfg), redisRelease(cfg)}
+	}
 	return []helmRelease{postgresqlRelease(cfg), mongodbRelease(cfg), redisRelease(cfg)}
 }

@@ -108,6 +108,13 @@ func PodArgs() []string {
 		"-o", "jsonpath={.items[0].metadata.name}"}
 }
 
+// PrimaryPodArgs finds the CloudNativePG primary (ha). The instance label above
+// matches the standbys too, and they refuse writes.
+func PrimaryPodArgs() []string {
+	return []string{"-n", DatabaseNamespace, "get", "pods", "-l", "cnpg.io/cluster=postgresql,cnpg.io/instanceRole=primary",
+		"-o", "jsonpath={.items[0].metadata.name}"}
+}
+
 // DatabaseArgs reads POSTGRES_DB from the platform-env Secret.
 func DatabaseArgs() []string {
 	return []string{"-n", "platform", "get", "secret", "platform-env", "-o", "jsonpath={.data.POSTGRES_DB}"}
@@ -143,8 +150,11 @@ func (b BreakGlass) Disable(email string) (Result, error) {
 	if b.Run == nil {
 		b.Run = ExecRunner
 	}
-	pod, err := b.Run("", "kubectl", PodArgs()...)
-	pod = strings.TrimSpace(pod)
+	pod, err := b.Run("", "kubectl", PrimaryPodArgs()...)
+	if pod = strings.TrimSpace(pod); err != nil || pod == "" {
+		pod, err = b.Run("", "kubectl", PodArgs()...)
+		pod = strings.TrimSpace(pod)
+	}
 	if err != nil || pod == "" {
 		return Result{}, fmt.Errorf("PostgreSQL pod not found in namespace %s (is the platform installed and kubectl configured?)", DatabaseNamespace)
 	}

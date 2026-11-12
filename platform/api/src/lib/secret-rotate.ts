@@ -68,12 +68,18 @@ async function alterPostgresPassword(newPassword: string, currentPassword?: stri
 }
 
 async function alterRedisPassword(newPassword: string, currentPassword?: string): Promise<RotateResult> {
-  const host = process.env.REDIS_HOST || 'redis-master.databases.svc.cluster.local';
-  const port = parseInt(process.env.REDIS_PORT || '6379', 10);
+  const { redisEndpointOptions, redisSentinelConfig } = await import('./redis-endpoint');
+  // Sentinel HA: password must change on every data node and every Sentinel together via platformctl.
+  if (redisSentinelConfig()) {
+    return {
+      key: 'REDIS_PASSWORD',
+      ok: false,
+      detail: 'skipped: Redis runs with Sentinel (ha profile); rotate the Redis password with platformctl recover/provision so every node and sentinel changes together',
+    };
+  }
   const current = currentPassword ?? (process.env.REDIS_PASSWORD || '');
   const client = new Redis({
-    host,
-    port,
+    ...redisEndpointOptions({ defaultHost: 'redis-master.databases.svc.cluster.local' }),
     password: current || undefined,
     connectTimeout: 5000,
     lazyConnect: true,
@@ -144,9 +150,9 @@ async function healRedis(results: RotateResult[]): Promise<void> {
 
 /** True when Redis accepts `password` (used only when resuming an interrupted rotation). */
 async function redisAcceptsPassword(password: string): Promise<boolean> {
+  const { redisEndpointOptions } = await import('./redis-endpoint');
   const client = new Redis({
-    host: process.env.REDIS_HOST || 'redis-master.databases.svc.cluster.local',
-    port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    ...redisEndpointOptions({ defaultHost: 'redis-master.databases.svc.cluster.local' }),
     password: password || undefined,
     connectTimeout: 5000,
     lazyConnect: true,

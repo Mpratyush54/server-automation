@@ -27,7 +27,7 @@ if [[ -z "$access" || -z "$secret" ]]; then
   access="platform-api-storage"
   secret="$(openssl rand -hex 32)"
 fi
-pod="$(kubectl -n storage get pods -l app.kubernetes.io/instance=minio,app.kubernetes.io/component=minio -o jsonpath='{.items[0].metadata.name}')"
+pod="$(kubectl -n storage get pods -l app.kubernetes.io/instance=minio,app.kubernetes.io/component=minio --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')"
 [[ -n "$pod" ]] || { echo 'MinIO pod unavailable' >&2; exit 1; }
 {
   printf 'ROOT_ACCESS=%q\nROOT_SECRET=%q\nAPI_ACCESS=%q\nAPI_SECRET=%q\nADMIN_WAIT=%q\n' "$ROOT_ACCESS" "$ROOT_SECRET" "$access" "$secret" "${MINIO_ADMIN_WAIT_SECONDS:-600}"
@@ -48,6 +48,7 @@ until mc admin policy list bundled >/dev/null 2>&1; do
 done
 step "create bucket platform-uploads" mc mb --ignore-existing bundled/platform-uploads
 step "create bucket platform-backups" mc mb --ignore-existing bundled/platform-backups
+step "create bucket platform-logs" mc mb --ignore-existing bundled/platform-logs
 cat > "$work/policy.json" <<'POLICY'
 {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:ListBucket","s3:GetBucketLocation"],"Resource":["arn:aws:s3:::platform-uploads","arn:aws:s3:::platform-backups","arn:aws:s3:::replays"]},{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload","s3:ListMultipartUploadParts"],"Resource":["arn:aws:s3:::platform-uploads/*","arn:aws:s3:::platform-backups/*","arn:aws:s3:::replays/*"]}]}
 POLICY

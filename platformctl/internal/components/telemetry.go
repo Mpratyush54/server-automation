@@ -29,7 +29,7 @@ func observabilityFlag(c *config.Config) string {
 }
 
 func FullTelemetry(c *config.Config) bool {
-	return c.Profile == config.ProfileFull && c.InstallMonitoring
+	return config.FullFeatures(c.Profile) && c.Profile != "" && c.InstallMonitoring
 }
 
 func telemetryRetention(c *config.Config) (int, error) {
@@ -125,7 +125,7 @@ func InstallTelemetry(c *config.Config) error {
 		return err
 	}
 
-	if err := helmValues("kube-prometheus", "kube-prometheus-stack", "monitoring", map[string]any{"grafana": map[string]string{"adminPassword": c.GrafanaPassword}}, "-f", base, "-f", full, "--set", "grafana.assertNoLeakedSecrets=false", "--set", fmt.Sprintf("prometheus.prometheusSpec.retention=%dd", days), "--wait", "--timeout", "10m"); err != nil {
+	if err := helmValues("kube-prometheus", "kube-prometheus-stack", "monitoring", map[string]any{"grafana": map[string]string{"adminPassword": c.GrafanaPassword}}, append([]string{"-f", base, "-f", full, "--set", "grafana.assertNoLeakedSecrets=false", "--set", fmt.Sprintf("prometheus.prometheusSpec.retention=%dd", days), "--wait", "--timeout", "10m"}, prometheusHAArgs(c)...)...); err != nil {
 		return err
 	}
 	// Enforce the collector trust boundary before its first pod is exposed.
@@ -234,24 +234,28 @@ func telemetryStorage(c *config.Config) error {
 // telemetryJobWaitScript waits until the Job completes (exit 0) or fails (exit 1,
 // printing the newest pod's log), or the timeout passes.
 func telemetryJobWaitScript(job string, timeoutSec int) string {
+	return minioJobWaitScript("monitoring", job, timeoutSec)
+}
+
+func minioJobWaitScript(namespace, job string, timeoutSec int) string {
 	return fmt.Sprintf(`set -uo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 job=%s
 for _ in $(seq 1 %d); do
-  conds="$(kubectl -n monitoring get job "$job" -o jsonpath='{range .status.conditions[*]}{.type}={.status} {end}' 2>/dev/null || true)"
+  conds="$(kubectl -n %[4]s get job "$job" -o jsonpath='{range .status.conditions[*]}{.type}={.status} {end}' 2>/dev/null || true)"
   case " $conds " in
     *" Complete=True "*) exit 0 ;;
     *" Failed=True "*)
-      pod="$(kubectl -n monitoring get pods -l job-name="$job" --sort-by=.metadata.creationTimestamp -o name 2>/dev/null | tail -1)"
+      pod="$(kubectl -n %[4]s get pods -l job-name="$job" --sort-by=.metadata.creationTimestamp -o name 2>/dev/null | tail -1)"
       echo "job $job failed; last pod log:" >&2
-      [ -n "$pod" ] && kubectl -n monitoring logs "$pod" --tail=30 >&2 || true
+      [ -n "$pod" ] && kubectl -n %[4]s logs "$pod" --tail=30 >&2 || true
       exit 1 ;;
   esac
   sleep 1
 done
-echo "job $job did not finish within %ds" >&2
+echo "job $job did not finish within %[3]ds" >&2
 exit 1
-`, shellQuote(job), timeoutSec, timeoutSec)
+`, shellQuote(job), timeoutSec, timeoutSec, namespace)
 }
 
 // The MinIO server image already used by the minio chart (and in the platform
@@ -260,6 +264,10 @@ exit 1
 const telemetryMCImage = "docker.io/bitnamilegacy/minio:2025.7.23-debian-12-r3"
 
 func telemetryBucketScript(bucket string) string {
+	return minioBucketUserScript(bucket, "telemetry-"+bucket, "S3_ACCESS_KEY", "S3_SECRET_KEY")
+}
+
+func minioBucketUserScript(bucket, policy, accessEnv, secretEnv string) string {
 	// bucket is an internal constant, never operator input. Commands never print
 	// credentials; mc's private config is on the ephemeral job filesystem.
 	// Replays get a 365-day lifecycle backstop; per-project retention (default 7 days) is
@@ -289,13 +297,13 @@ mc mb --ignore-existing local/%[1]s
 cat >"$work/policy.json" <<'POLICY'
 {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:ListBucket","s3:GetBucketLocation","s3:ListBucketMultipartUploads"],"Resource":["arn:aws:s3:::%[1]s"]},{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload","s3:ListMultipartUploadParts"],"Resource":["arn:aws:s3:::%[1]s/*"]}]}
 POLICY
-mc admin user add local "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
-mc admin policy create local telemetry-%[1]s "$work/policy.json"
+mc admin user add local "$%[4]s" "$%[5]s" >/dev/null
+mc admin policy create local %[3]s "$work/policy.json"
 # attach fails when already attached (re-run): accept an existing mapping.
-if ! mc admin policy attach local telemetry-%[1]s --user "$S3_ACCESS_KEY" >/dev/null 2>&1; then
-  mc admin user info local "$S3_ACCESS_KEY" 2>/dev/null | grep -q "telemetry-%[1]s" || { echo "attach policy telemetry-%[1]s failed" >&2; exit 1; }
+if ! mc admin policy attach local %[3]s --user "$%[4]s" >/dev/null 2>&1; then
+  mc admin user info local "$%[4]s" 2>/dev/null | grep -q "%[3]s" || { echo "attach policy %[3]s failed" >&2; exit 1; }
 fi
-%[2]s`, bucket, lifecycle)
+%[2]s`, bucket, lifecycle, policy, accessEnv, secretEnv)
 }
 
 // Existing MinIO chart defaults are too large for the 8 GB full-profile target.
@@ -305,6 +313,18 @@ func minioInstallValues(c *config.Config) map[string]any {
 	if FullTelemetry(c) {
 		values["resources"] = map[string]any{"requests": map[string]string{"cpu": "100m", "memory": "128Mi"}, "limits": map[string]string{"cpu": "1", "memory": "384Mi"}}
 		values["console"] = map[string]any{"resources": map[string]any{"requests": map[string]string{"cpu": "25m", "memory": "32Mi"}, "limits": map[string]string{"cpu": "200m", "memory": "128Mi"}}}
+	}
+	if c != nil && c.IsHA() {
+		values["mode"] = "distributed"
+		values["statefulset"] = map[string]any{"replicaCount": MinioDrives, "drivesPerNode": 1, "zones": 1}
+		values["global"] = map[string]any{"defaultStorageClass": HAStorageClass(c)}
+		// Erasure coding already spreads each object across the drives; the
+		// longhorn-minio class adds a second Longhorn replica only while the
+		// cluster has fewer nodes than drives (persistence.storageClass takes
+		// precedence over global.defaultStorageClass in Bitnami charts).
+		values["persistence"] = map[string]any{"storageClass": LonghornMinioStorageClass}
+		values["podAntiAffinityPreset"] = "soft"
+		values["pdb"] = map[string]any{"create": true, "maxUnavailable": 1}
 	}
 	return values
 }
@@ -467,4 +487,17 @@ func ApplyFullProfileAPIAccess(c *config.Config) error {
 		return fmt.Errorf("synthetics RBAC: %w", err)
 	}
 	return nil
+}
+
+// prometheusHAArgs size Prometheus for ha. It scrapes every node and three
+// members of each datastore plus Longhorn; with the single-node 768Mi limit it
+// was OOMKilled under the 3-node load test (Grafana graphs had gaps). --set
+// flags, because they override the values files passed with -f.
+func prometheusHAArgs(c *config.Config) []string {
+	if !c.IsHA() {
+		return nil
+	}
+	const r = "prometheus.prometheusSpec.resources."
+	return []string{"--set", r + "requests.cpu=200m", "--set", r + "requests.memory=768Mi",
+		"--set", r + "limits.cpu=1500m", "--set", r + "limits.memory=2Gi"}
 }
