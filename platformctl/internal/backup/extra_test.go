@@ -202,3 +202,23 @@ func TestHADatastoreBackupHelpers(t *testing.T) {
 		}
 	}
 }
+
+// "$PWHELPER" ends with "}": text appended without a separator ("}export ...")
+// is a bash syntax error. redis_master_pod hid it behind 2>/dev/null, so ha
+// backups never found the Redis master (3-node test).
+func TestPWHelperIsAlwaysFollowedBySeparator(t *testing.T) {
+	for name, s := range map[string]string{"common.sh": commonScript, "capture.sh": captureScript, "restore.sh": restoreScript} {
+		s = strings.ReplaceAll(s, "\r\n", "\n")
+		for i := 0; ; {
+			j := strings.Index(s[i:], `"$PWHELPER"'`)
+			if j < 0 {
+				break
+			}
+			at := i + j + len(`"$PWHELPER"'`)
+			if at < len(s) && s[at] != '\n' && s[at] != ';' && s[at] != ' ' {
+				t.Errorf("%s: $PWHELPER followed by %q (needs a newline or ';')", name, s[at:min(at+20, len(s))])
+			}
+			i = at
+		}
+	}
+}

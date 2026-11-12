@@ -43,7 +43,8 @@ redis_master_pod() {
   [ -n "$pods" ] || { echo "no running redis master pod" >&2; return 1; }
   while IFS= read -r p; do
     [ -n "$p" ] || continue
-    info=$(kubectl -n databases exec "$p" -c redis -- bash -ec "$PWHELPER"'export REDISCLI_AUTH="$(pw REDIS_PASSWORD)"; redis-cli INFO replication' 2>/dev/null || true)
+    info=$(kubectl -n databases exec "$p" -c redis -- bash -ec "$PWHELPER"'
+export REDISCLI_AUTH="$(pw REDIS_PASSWORD)"; redis-cli INFO replication' 2>/dev/null || true)
     if printf '%s' "$info" | grep -q 'role:master'; then
       printf '%s' "$p"
       return 0
