@@ -8,7 +8,7 @@ import (
 
 func TestFullOnlyTelemetryImages(t *testing.T) {
 	light, full := ListForTelemetry(false), ListForTelemetry(true)
-	if !slices.Equal(full, List()) {
+	if !slices.Equal(ListForProfile(true, true), List()) {
 		t.Fatal("offline inventory changed")
 	}
 	for _, img := range full {

@@ -1,0 +1,41 @@
+# HA storage; quoted replica placeholders also support image inventory rendering.
+persistence:
+  defaultClass: true
+  defaultClassReplicaCount: "{{REPLICAS}}"
+  defaultFsType: ext4
+  reclaimPolicy: Delete
+defaultSettings:
+  defaultReplicaCount: '{"v1":"{{REPLICAS}}","v2":"{{REPLICAS}}"}'
+  replicaAutoBalance: best-effort
+  # Delete dead-node pods so volumes can reattach on a healthy node.
+  nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
+  upgradeChecker: false
+  allowCollectingLonghornUsageMetrics: false
+  storageMinimalAvailablePercentage: 15
+csi:
+  attacherReplicaCount: 2
+  provisionerReplicaCount: 2
+  resizerReplicaCount: 2
+  snapshotterReplicaCount: 2
+longhornUI:
+  replicas: 1
+# longhorn-frontend remains a cluster-internal ClusterIP service.
+service:
+  ui:
+    type: ClusterIP
+ingress:
+  enabled: false
+longhornManager:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+preUpgradeChecker:
+  jobEnabled: true
+# Applied separately after monitoring CRDs exist.
+metrics:
+  serviceMonitor:
+    enabled: false

@@ -92,13 +92,17 @@ Docker is **not** installed on the server; k3s uses its own containerd. For priv
 ## Install profiles
 
 Set `PLATFORM_PROFILE` (or pass `--profile`) to `minimal`, `standard` (default)
-or `full`:
+`full` or `ha`:
 
 - `minimal` ? core only; no monitoring, Portainer or ArgoCD.
 - `standard` ? the existing Grafana/Prometheus/Loki stack, Portainer and ArgoCD.
 - `full` ? standard services plus Alloy, S3-backed Loki, Tempo, Pyroscope and
   blackbox-exporter. See [Full-profile telemetry](../operations/telemetry.md) for
   memory estimates, token/CORS integration and the required legacy Loki migration.
+
+- `ha` adds Longhorn replicated storage as the default StorageClass to the full
+  feature set. See [High availability](../operations/ha.md) for prerequisites,
+  replica rules and migration guidance.
 
 Saved explicit profiles remain in effect. Existing `loki-stack` installations
 must follow the telemetry migration procedure before selecting full.

@@ -115,6 +115,8 @@ func (c Chart) PullArgs() string {
 const bitnamiOCI = "oci://registry-1.docker.io/bitnamicharts/"
 
 var charts = map[string]Chart{
+	// HA profile only; 1.12.1 is upstream stable. Bump here, then regenerate images.txt.
+	"longhorn":                     {Name: "longhorn", Repo: "longhorn", RepoURL: "https://charts.longhorn.io", Chart: "longhorn", Version: "1.12.1"},
 	"ingress-nginx":                {Name: "ingress-nginx", Repo: "ingress-nginx", RepoURL: "https://kubernetes.github.io/ingress-nginx", Chart: "ingress-nginx", Version: "4.15.1"},
 	"cert-manager":                 {Name: "cert-manager", Repo: "jetstack", RepoURL: "https://charts.jetstack.io", Chart: "cert-manager", Version: "v1.21.3"},
 	"postgresql":                   {Name: "postgresql", Chart: bitnamiOCI + "postgresql", Version: "18.12.18"},
