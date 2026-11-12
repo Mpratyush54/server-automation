@@ -44,8 +44,14 @@ func TestListForProfileDropsKubeVIPUnlessHA(t *testing.T) {
 			haOnly++
 		}
 	}
-	// kube-vip plus the Longhorn images (#50) are the only ha-only images.
-	if haOnly != 14 || len(ha) != len(nonHA)+haOnly {
-		t.Fatalf("ha=%d nonHA=%d", len(ha), len(nonHA))
+	// kube-vip, Longhorn (#50), and redis-sentinel (#52) are the ha-only images.
+	if haOnly != 15 || len(ha) != len(nonHA)+haOnly {
+		t.Fatalf("ha=%d nonHA=%d haOnly=%d", len(ha), len(nonHA), haOnly)
+	}
+	if slices.Contains(nonHA, "registry-1.docker.io/bitnami/redis-sentinel:latest") {
+		t.Fatal("redis-sentinel must not pre-pull on non-ha")
+	}
+	if !slices.Contains(ha, "registry-1.docker.io/bitnami/redis-sentinel:latest") {
+		t.Fatal("redis-sentinel missing on ha")
 	}
 }

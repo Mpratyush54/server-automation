@@ -306,6 +306,13 @@ func minioInstallValues(c *config.Config) map[string]any {
 		values["resources"] = map[string]any{"requests": map[string]string{"cpu": "100m", "memory": "128Mi"}, "limits": map[string]string{"cpu": "1", "memory": "384Mi"}}
 		values["console"] = map[string]any{"resources": map[string]any{"requests": map[string]string{"cpu": "25m", "memory": "32Mi"}, "limits": map[string]string{"cpu": "200m", "memory": "128Mi"}}}
 	}
+	if c != nil && c.IsHA() {
+		values["mode"] = "distributed"
+		values["statefulset"] = map[string]any{"replicaCount": MinioDrives, "drivesPerNode": 1, "zones": 1}
+		values["global"] = map[string]any{"defaultStorageClass": HAStorageClass(c)}
+		values["podAntiAffinityPreset"] = "soft"
+		values["pdb"] = map[string]any{"create": true, "maxUnavailable": 1}
+	}
 	return values
 }
 

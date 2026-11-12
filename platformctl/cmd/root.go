@@ -67,6 +67,9 @@ var statusCmd = &cobra.Command{
 			if err := printClusterStatus(os.Stdout); err != nil {
 				color.Red("  ✗ cluster status: %v", err)
 			}
+			if joinedRole() != "server" {
+				components.PrintHADatastoreStatus(os.Stdout)
+			}
 		}
 		if joinedRole() == "server" {
 			// Joined servers run k3s only; the platform is checked on the first server.

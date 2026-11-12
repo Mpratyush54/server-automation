@@ -18,7 +18,12 @@ func TestDatabaseMonitoringProfile(t *testing.T) {
 				t.Fatal("missing resource bounds")
 			}
 			if engine == "mongo" {
-				if us, _ := v["updateStrategy"].(map[string]any); us["type"] != "Recreate" {
+				us, _ := v["updateStrategy"].(map[string]any)
+				if profile == "ha" {
+					if us != nil {
+						t.Fatalf("mongo ha must not set Recreate updateStrategy")
+					}
+				} else if us["type"] != "Recreate" {
 					t.Fatalf("mongo must use the Recreate strategy (%s)", profile)
 				}
 			}

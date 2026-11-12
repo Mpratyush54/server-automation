@@ -6,9 +6,10 @@ import (
 )
 
 // haOnlyPrefixes mark images that only the ha profile needs: Longhorn
-// replicated storage (#50) and kube-vip for ingress HA (#54). Prefixes are
-// matched against the image reference with any "docker.io/" prefix removed.
-var haOnlyPrefixes = []string{"longhornio/", "ghcr.io/kube-vip/kube-vip:"}
+// replicated storage (#50), Redis Sentinel (#52), and kube-vip for ingress HA
+// (#54). Prefixes are matched against the image reference with any
+// "docker.io/" prefix removed.
+var haOnlyPrefixes = []string{"longhornio/", "ghcr.io/kube-vip/kube-vip:", "registry-1.docker.io/bitnami/redis-sentinel:"}
 
 // isHAOnly reports whether img is only pulled on the ha profile.
 func isHAOnly(img string) bool {
