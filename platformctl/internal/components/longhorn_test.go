@@ -1,6 +1,7 @@
 package components
 
 import (
+	"fmt"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/apt"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"strings"
@@ -137,23 +138,53 @@ func TestLonghornScripts(t *testing.T) {
 	}
 }
 
-func TestLonghornSingleStorageClassManifest(t *testing.T) {
-	m := longhornSingleStorageClassManifest
-	for _, want := range []string{
-		"kind: StorageClass",
-		"name: longhorn-single",
-		"provisioner: driver.longhorn.io",
-		`numberOfReplicas: "1"`,
-		"dataLocality: best-effort",
-		"allowVolumeExpansion: true",
-	} {
-		if !strings.Contains(m, want) {
-			t.Errorf("longhorn-single manifest missing %q", want)
+func TestMinioStorageReplicaCount(t *testing.T) {
+	for nodes, want := range map[int]int{0: 2, 1: 2, 2: 2, 3: 2, 4: 1, 5: 1, 9: 1} {
+		if got := MinioStorageReplicaCount(nodes); got != want {
+			t.Errorf("nodes=%d: got %d replicas, want %d", nodes, got, want)
 		}
 	}
-	// Longhorn stays the only default StorageClass.
-	if strings.Contains(m, "is-default-class") {
-		t.Error("longhorn-single must not be a default StorageClass")
+}
+
+func TestLonghornMinioStorageClassManifest(t *testing.T) {
+	for _, replicas := range []int{1, 2} {
+		m := longhornMinioStorageClassManifest(replicas)
+		for _, want := range []string{
+			"kind: StorageClass",
+			"name: longhorn-minio",
+			"provisioner: driver.longhorn.io",
+			fmt.Sprintf("numberOfReplicas: \"%d\"", replicas),
+			"dataLocality: best-effort",
+			`staleReplicaTimeout: "30"`,
+			"allowVolumeExpansion: true",
+		} {
+			if !strings.Contains(m, want) {
+				t.Errorf("replicas=%d: longhorn-minio manifest missing %q", replicas, want)
+			}
+		}
+		// Longhorn stays the only default StorageClass.
+		if strings.Contains(m, "is-default-class") {
+			t.Error("longhorn-minio must not be a default StorageClass")
+		}
+	}
+}
+
+func TestMinioStorageClassNeedsRecreate(t *testing.T) {
+	cases := []struct {
+		current  string
+		replicas int
+		want     bool
+	}{
+		{"", 2, false},    // absent: plain apply
+		{"2", 2, false},   // unchanged
+		{"2\n", 2, false}, // trailing newline from kubectl
+		{"2", 1, true},    // grew to 4+ nodes
+		{"1", 2, true},    // shrank below 4 nodes
+	}
+	for _, c := range cases {
+		if got := minioStorageClassNeedsRecreate(c.current, c.replicas); got != c.want {
+			t.Errorf("current=%q replicas=%d: got %v want %v", c.current, c.replicas, got, c.want)
+		}
 	}
 }
 

@@ -18,12 +18,12 @@ import (
 
 const (
 	LonghornStorageClass = "longhorn"
-	// LonghornSingleStorageClass keeps one Longhorn replica, next to the
-	// workload. For apps that replicate their own data (distributed MinIO).
-	LonghornSingleStorageClass = "longhorn-single"
-	LocalPathStorageClass      = "local-path"
-	LonghornNamespace          = "longhorn-system"
-	LocalStorageSkipFile       = "/var/lib/rancher/k3s/server/manifests/local-storage.yaml.skip"
+	// LonghornMinioStorageClass backs the distributed MinIO drives. Its
+	// replica count follows the node count (MinioStorageReplicaCount).
+	LonghornMinioStorageClass = "longhorn-minio"
+	LocalPathStorageClass     = "local-path"
+	LonghornNamespace         = "longhorn-system"
+	LocalStorageSkipFile      = "/var/lib/rancher/k3s/server/manifests/local-storage.yaml.skip"
 )
 
 // HAStorageClass is a stable helper for Postgres/Mongo/Redis/MinIO HA (#51/#52)
@@ -85,14 +85,27 @@ func renderLonghornValues(cfg *config.Config, replicas int) (string, error) {
 	return values, nil
 }
 
-// longhornSingleStorageClassManifest is a non-default Longhorn StorageClass
-// with one replica and best-effort data locality. Distributed MinIO uses it:
-// erasure coding across its drives already provides redundancy, so Longhorn's
-// usual three replicas would store every object about six times.
-const longhornSingleStorageClassManifest = `apiVersion: storage.k8s.io/v1
+// MinioStorageReplicaCount picks the Longhorn replica count for the MinIO
+// drives from the number of Ready schedulable nodes. MinIO runs 4 drives (one
+// per pod). With fewer than 4 nodes some node holds two drives, and losing it
+// loses write quorum; a second Longhorn replica lets those volumes attach on
+// another node so the pods reschedule and writes resume. With 4 or more nodes
+// each drive sits on its own node and erasure coding alone covers a node loss,
+// so one replica (next to the pod) avoids storing every object twice more.
+func MinioStorageReplicaCount(nodes int) int {
+	if nodes >= MinioDrives {
+		return 1
+	}
+	return 2
+}
+
+// longhornMinioStorageClassManifest renders the non-default Longhorn
+// StorageClass for the MinIO drives with the given replica count.
+func longhornMinioStorageClassManifest(replicas int) string {
+	return `apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: ` + LonghornSingleStorageClass + `
+  name: ` + LonghornMinioStorageClass + `
   labels:
     app.kubernetes.io/managed-by: platformctl
 provisioner: driver.longhorn.io
@@ -100,17 +113,37 @@ allowVolumeExpansion: true
 reclaimPolicy: Delete
 volumeBindingMode: Immediate
 parameters:
-  numberOfReplicas: "1"
+  numberOfReplicas: "` + strconv.Itoa(replicas) + `"
   dataLocality: best-effort
   staleReplicaTimeout: "30"
   fsType: ext4
   dataEngine: v1
 `
+}
 
-// applyLonghornSingleStorageClass is overridable in tests.
-var applyLonghornSingleStorageClass = func() error {
-	if out, err := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, longhornSingleStorageClassManifest); err != nil {
-		return fmt.Errorf("apply %s StorageClass: %w: %s", LonghornSingleStorageClass, err, out)
+// minioStorageClassNeedsRecreate reports whether the existing StorageClass
+// (current = its numberOfReplicas, "" when absent) must be deleted before
+// applying: StorageClass parameters are immutable.
+func minioStorageClassNeedsRecreate(current string, replicas int) bool {
+	current = strings.TrimSpace(current)
+	return current != "" && current != strconv.Itoa(replicas)
+}
+
+// applyLonghornMinioStorageClass creates or reconciles the MinIO StorageClass.
+// Overridable in tests.
+var applyLonghornMinioStorageClass = func(replicas int) error {
+	current, err := shell.Output("kubectl", "get", "storageclass", LonghornMinioStorageClass, "--ignore-not-found", "-o", "jsonpath={.parameters.numberOfReplicas}")
+	if err != nil {
+		return fmt.Errorf("read %s StorageClass: %w: %s", LonghornMinioStorageClass, err, current)
+	}
+	if minioStorageClassNeedsRecreate(current, replicas) {
+		if out, err := shell.Output("kubectl", "delete", "storageclass", LonghornMinioStorageClass); err != nil {
+			return fmt.Errorf("recreate %s StorageClass: %w: %s", LonghornMinioStorageClass, err, out)
+		}
+		color.Yellow("  %s StorageClass now uses %d replica(s) (was %s); existing MinIO volumes keep their replica count, see docs/operations/ha.md#object-storage", LonghornMinioStorageClass, replicas, strings.TrimSpace(current))
+	}
+	if out, err := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, longhornMinioStorageClassManifest(replicas)); err != nil {
+		return fmt.Errorf("apply %s StorageClass: %w: %s", LonghornMinioStorageClass, err, out)
 	}
 	return nil
 }
@@ -192,7 +225,8 @@ func InstallLonghorn(cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("count Longhorn nodes: %w: %s", err, out)
 	}
-	replicas, warning := LonghornReplicaCount(countReadyNodes(out), cfg.LonghornReplicas)
+	nodes := countReadyNodes(out)
+	replicas, warning := LonghornReplicaCount(nodes, cfg.LonghornReplicas)
 	if warning != "" {
 		color.Yellow("  %s", warning)
 	}
@@ -218,7 +252,8 @@ func InstallLonghorn(cfg *config.Config) error {
 	if err := shell.RunBash(longhornReadinessScript); err != nil {
 		return fmt.Errorf("Longhorn CSI readiness timed out: %w", err)
 	}
-	if err := applyLonghornSingleStorageClass(); err != nil {
+	minioReplicas := MinioStorageReplicaCount(nodes)
+	if err := applyLonghornMinioStorageClass(minioReplicas); err != nil {
 		return err
 	}
 	// Every k3s server needs this file; otherwise k3s restores local-path's default annotation on restart.
@@ -240,7 +275,7 @@ func InstallLonghorn(cfg *config.Config) error {
 	if len(defaults) != 1 || defaults[0] != LonghornStorageClass {
 		return fmt.Errorf("expected only longhorn as default StorageClass, got %v", defaults)
 	}
-	color.Green("  ✓ Longhorn installed as default StorageClass (%d replicas); %s for self-replicating apps", replicas, LonghornSingleStorageClass)
+	color.Green("  ✓ Longhorn installed as default StorageClass (%d replicas); %s for MinIO drives (%d replica(s))", replicas, LonghornMinioStorageClass, minioReplicas)
 	return state.MarkDone("longhorn")
 }
 

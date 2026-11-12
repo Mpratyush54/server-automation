@@ -132,8 +132,11 @@ func TestMinioHAValuesAndArgs(t *testing.T) {
 	if MinioDrives != 4 {
 		t.Fatal(MinioDrives)
 	}
-	if p, _ := v["persistence"].(map[string]any); p["storageClass"] != LonghornSingleStorageClass {
-		t.Fatalf("ha minio drives must use %s, got %#v", LonghornSingleStorageClass, v["persistence"])
+	if p, _ := v["persistence"].(map[string]any); p["storageClass"] != LonghornMinioStorageClass || LonghornMinioStorageClass != "longhorn-minio" {
+		t.Fatalf("ha minio drives must use %s, got %#v", LonghornMinioStorageClass, v["persistence"])
+	}
+	if v["podAntiAffinityPreset"] != "soft" {
+		t.Fatalf("ha minio pods must spread across nodes (soft anti-affinity), got %#v", v["podAntiAffinityPreset"])
 	}
 	nonHA := minioInstallValues(fixedDatastoreCfg(config.ProfileFull))
 	if _, ok := nonHA["mode"]; ok {

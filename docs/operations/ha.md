@@ -291,7 +291,9 @@ sudo platformctl install longhorn
 ```
 
 Existing volumes keep their saved replica count; see
-[Replicas and default storage](#replicas-and-default-storage).
+[Replicas and default storage](#replicas-and-default-storage). The same run
+also reconciles the `longhorn-minio` StorageClass for the node count (see
+[Object storage](#object-storage)).
 
 ### Status
 
@@ -521,10 +523,11 @@ explicitly defaults to local-path because it replicates its own data (see
 below).
 
 The longhorn step also creates a second, non-default StorageClass,
-`longhorn-single`: one replica per volume with `dataLocality: best-effort`, so
-the replica follows the pod's node. Distributed MinIO uses it for its drives
-(see [Object storage](#object-storage)), because MinIO's erasure coding already
-keeps redundant copies.
+`longhorn-minio`, for the distributed MinIO drives (see
+[Object storage](#object-storage)). It uses `dataLocality: best-effort` (a
+replica follows the pod's node), `staleReplicaTimeout: "30"`, and a replica
+count chosen from the number of Ready schedulable nodes: 2 with fewer than 4
+nodes, 1 with 4 or more.
 
 The manager requests 100m CPU and 128Mi memory per node, limited to one CPU and
 1Gi memory. CSI attacher, provisioner, resizer and snapshotter each use two
@@ -697,7 +700,8 @@ nodes one at a time.
 |---|---|
 | Mode | MinIO `distributed`, 4 pods with one drive each (`minio-0..3`) |
 | Erasure coding | Default parity EC:2: reads survive losing 2 drives, writes need 3 of 4 |
-| Volume | 25Gi volume per drive on the `longhorn-single` StorageClass (100Gi raw, about 50Gi usable) |
+| Volume | 25Gi volume per drive on the `longhorn-minio` StorageClass (100Gi of MinIO drives, about 50Gi usable) |
+| Placement | Soft pod anti-affinity spreads the pods across nodes; a PodDisruptionBudget allows one pod down at a time |
 | Endpoint | unchanged: `http://minio.storage:9000` (Service `minio`) |
 
 Every consumer keeps using the stable `minio` Service: API uploads and backups
@@ -708,19 +712,45 @@ distributed cluster exactly as on a single node. The installer creates the
 default buckets itself, because the chart only creates them in standalone mode.
 The MinIO console and SSO are unchanged.
 
-Storage overhead: erasure coding stores each usable gigabyte on about 2 GB of
-MinIO drives. The drives use the `longhorn-single` StorageClass (one Longhorn
-replica, `dataLocality: best-effort`), because erasure coding already provides
-the redundancy; three Longhorn replicas per drive would store each object about
-six times. Size node disks for about 2 GB per usable gigabyte.
+Erasure coding stores each usable gigabyte on about 2 GB of MinIO drives. The
+drives use the `longhorn-minio` StorageClass, whose Longhorn replica count
+depends on the number of Ready schedulable nodes when
+`platformctl install longhorn` runs:
 
-Trade-off: a drive's only copy lives on one node, so a MinIO pod whose node is
-down stays Pending until the node returns (Longhorn cannot move the volume).
-With four pods on three nodes, one node holds two drives; while that node is
-down, objects stay readable but writes fail (they need 3 of 4 drives). Spread
-the pods over four or more nodes to tolerate any single node loss for writes. Apps can also keep their own objects in an external
-S3, R2 or GCS bucket through [storage providers](storage-providers.md); the
-bundled MinIO still holds the platform's own data.
+| Nodes | Longhorn replicas per drive | Disk per usable GB | When one node is down |
+|---|---|---|---|
+| 1 | 2 (one scheduled until a second node joins) | about 2 GB, 4 GB once a second node joins | No HA: MinIO is down with the node |
+| 2 or 3 | 2 | about 4 GB | Reads continue. One node holds two of the four drives; while that node is down, writes pause (they need 3 of 4 drives). Longhorn deletes the stuck pods (the installer sets its node-down pod deletion policy), Kubernetes reschedules them, by default about 5 to 6 minutes after the node becomes unreachable, and their volumes attach on another node from the second replica. Writes then resume while the node stays down |
+| 4 or more | 1 | about 2 GB | Each drive is on its own node, so reads and writes continue with 3 of 4 drives. The lost drive's pod stays Pending until the node returns, because its only replica is on that node |
+
+With fewer nodes than drives, a second replica lets a drive move to another
+node. With four or more nodes, erasure coding already covers any single node
+loss, and more Longhorn replicas would only multiply the disk use (three
+replicas would store every object about six times). Size node disks
+accordingly.
+
+Every `platformctl install longhorn` run reconciles the StorageClass; run it
+after joins (see
+[After joining](#4-after-joining-reconcile-longhorn-replicas)). StorageClass
+parameters cannot change in place, so when the replica count must change the
+installer deletes and recreates `longhorn-minio`. Existing PersistentVolumes
+keep their StorageClass and their replica count; only volumes created later use
+the new count. To change the existing MinIO volumes, set each volume's replica
+count in the Longhorn UI (Volume, Update Replicas Count) or patch it:
+
+```bash
+# MinIO volumes and their replica counts (the Longhorn volume name is the PV name)
+kubectl get pv -o custom-columns=PV:.metadata.name,CLAIM:.spec.claimRef.name,SC:.spec.storageClassName | grep longhorn-minio
+kubectl -n longhorn-system get volumes.longhorn.io -o custom-columns=NAME:.metadata.name,REPLICAS:.spec.numberOfReplicas
+# set the replica count of one volume
+kubectl -n longhorn-system patch volumes.longhorn.io <pv-name> --type merge -p '{"spec":{"numberOfReplicas":2}}'
+```
+
+Raise the count to 2 before the cluster drops below four nodes; lower it to 1
+only once each MinIO pod runs on its own node. Apps can also keep their own
+objects in an external S3, R2 or GCS bucket through
+[storage providers](storage-providers.md); the bundled MinIO still holds the
+platform's own data.
 
 ### Migrating an existing single-node install
 
