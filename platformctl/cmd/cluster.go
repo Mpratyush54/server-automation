@@ -1,0 +1,453 @@
+package cmd
+
+import (
+	"fmt"
+	"io"
+	"net/netip"
+	"os"
+	"runtime"
+	"strings"
+
+	"github.com/fatih/color"
+	"github.com/spf13/cobra"
+
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/harden"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/k3s"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/preflight"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
+)
+
+// clusterRoleKey records how this node joined the cluster (state file):
+// "server" or "agent" for nodes added with `platformctl join`. The first
+// server of an HA cluster has no role entry: it is a regular provisioned host.
+const clusterRoleKey = "cluster-role"
+
+// joinedRole returns the role of a node added with `platformctl join` ("" otherwise).
+var joinedRole = func() string { return state.Get(clusterRoleKey) }
+
+var (
+	joinRole, joinServer, joinTokenFile, joinNodes, joinNodeIP string
+	tokenRole, tokenTTL, tokenOutput, tokenFile                string
+)
+
+var joinCmd = &cobra.Command{
+	Use:   "join",
+	Short: "Join this node to an HA cluster (ha profile) as a server or agent",
+	Long: `Installs k3s on a fresh node and joins it to an existing HA cluster.
+
+The token is read from a file (mode 0600) or from standard input with
+--token-file -; it is never accepted on the command line. Create it on an
+existing server with:
+
+  sudo platformctl token create --role agent --ttl 2h --output /root/agent.token
+
+See docs/operations/ha.md.`,
+	RunE: func(cmd *cobra.Command, args []string) error { return runJoin(os.Stdin) },
+}
+
+var tokenCmd = &cobra.Command{
+	Use:   "token",
+	Short: "Manage HA cluster join tokens",
+}
+
+var tokenCreateCmd = &cobra.Command{
+	Use:   "create",
+	Short: "Print a join token once (server token, static agent token or an expiring agent bootstrap token)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runTokenCreate(os.Stdout)
+	},
+}
+
+var tokenRotateCmd = &cobra.Command{
+	Use:   "rotate",
+	Short: "Rotate the server token (k3s token rotate) and print the new token once",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runTokenRotate(os.Stdout)
+	},
+}
+
+var tokenInstallCmd = &cobra.Command{
+	Use:   "install",
+	Short: "Store a rotated token on this node and restart k3s",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runTokenInstall(os.Stdin)
+	},
+}
+
+func init() {
+	joinCmd.Flags().StringVar(&joinRole, "role", "agent", "server (etcd member) or agent (workloads only)")
+	joinCmd.Flags().StringVar(&joinServer, "server", "", "existing server or API VIP: https://<host>:6443")
+	joinCmd.Flags().StringVar(&joinTokenFile, "token-file", "", "file holding the join token (mode 0600), or - for standard input")
+	joinCmd.Flags().StringVar(&joinNodes, "nodes", "", "cluster node IPs/CIDRs for the firewall (default PLATFORM_CLUSTER_NODES)")
+	joinCmd.Flags().StringVar(&joinNodeIP, "node-ip", "", "address k3s advertises for this node (default PLATFORM_NODE_IP)")
+	joinCmd.Flags().BoolVar(&cfg.SkipPreflight, "skip-preflight", cfg.SkipPreflight, "skip the join checks")
+	joinCmd.Flags().BoolVar(&cfg.SkipHardening, "skip-hardening", cfg.SkipHardening, "leave host security to the operator (PLATFORM_HARDEN=false)")
+	_ = joinCmd.MarkFlagRequired("server")
+	_ = joinCmd.MarkFlagRequired("token-file")
+
+	tokenCreateCmd.Flags().StringVar(&tokenRole, "role", "agent", "server or agent")
+	tokenCreateCmd.Flags().StringVar(&tokenTTL, "ttl", "", "agent only: create an expiring bootstrap token (e.g. 2h; 10m-720h) instead of printing the static agent token")
+	tokenCreateCmd.Flags().StringVar(&tokenOutput, "output", "", "write the token to this file (mode 0600) instead of standard output")
+	tokenRotateCmd.Flags().StringVar(&tokenOutput, "output", "", "write the new token to this file (mode 0600) instead of standard output")
+	tokenInstallCmd.Flags().StringVar(&tokenRole, "role", "server", "server or agent")
+	tokenInstallCmd.Flags().StringVar(&tokenFile, "token-file", "", "file holding the token (mode 0600), or - for standard input")
+	_ = tokenInstallCmd.MarkFlagRequired("token-file")
+
+	tokenCmd.AddCommand(tokenCreateCmd, tokenRotateCmd, tokenInstallCmd)
+	rootCmd.AddCommand(joinCmd, tokenCmd)
+}
+
+// requireRoot is swapped in tests.
+var requireRoot = func(what string) error {
+	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
+		return fmt.Errorf("%s requires Linux and root (sudo platformctl %s)", what, what)
+	}
+	return nil
+}
+
+// k3sServerOptions maps the ha profile settings to the first server's k3s
+// options. Single-node profiles get the zero value: exactly today's config.
+func k3sServerOptions(c *config.Config) k3s.ServerOptions {
+	if !c.IsHA() {
+		return k3s.ServerOptions{}
+	}
+	o := clusterServerOptions(c)
+	o.ClusterInit = true
+	o.TokenFile = k3s.ServerTokenFile
+	o.AgentTokenFile = k3s.AgentTokenFile
+	return o
+}
+
+// clusterServerOptions are the settings every HA server shares (first server
+// and joiners): API SANs, node address and the etcd snapshot schedule/target.
+func clusterServerOptions(c *config.Config) k3s.ServerOptions {
+	cl := c.Cluster
+	return k3s.ServerOptions{
+		HA:      true,
+		TLSSANs: cl.APISANs,
+		NodeIP:  cl.NodeIP,
+		Snapshots: k3s.EtcdSnapshots{
+			Cron: cl.EtcdSnapshotCron, Retention: cl.EtcdSnapshotRetention,
+			S3Endpoint: cl.EtcdS3Endpoint, S3Bucket: cl.EtcdS3Bucket, S3Region: cl.EtcdS3Region,
+			S3Folder: cl.EtcdS3Folder, S3AccessKey: cl.EtcdS3AccessKey, S3SecretKey: cl.EtcdS3SecretKey,
+		},
+	}
+}
+
+// clusterPeers parses PLATFORM_CLUSTER_NODES for the firewall. Only the ha
+// profile opens cluster ports; other profiles get no peers.
+func clusterPeers(c *config.Config) ([]netip.Prefix, error) {
+	if !c.IsHA() {
+		return nil, nil
+	}
+	peers, err := harden.ParsePeers(c.Cluster.Nodes)
+	if err != nil {
+		return nil, fmt.Errorf("PLATFORM_CLUSTER_NODES: %w", err)
+	}
+	return peers, nil
+}
+
+// checkHAProvision validates the ha settings before provision changes anything.
+func checkHAProvision(c *config.Config) error {
+	if role := joinedRole(); role != "" {
+		return fmt.Errorf("this node joined the cluster as %s with `platformctl join`; provision runs on the first server only", role)
+	}
+	if !c.IsHA() {
+		return nil
+	}
+	peers, err := clusterPeers(c)
+	if err != nil {
+		return err
+	}
+	if len(peers) == 0 && !c.SkipHardening {
+		return fmt.Errorf("the ha profile with host hardening needs PLATFORM_CLUSTER_NODES (every node's IP, or the private subnet CIDR) so the firewall admits the other nodes; or use --skip-hardening")
+	}
+	if err := k3sServerOptions(c).Validate(); err != nil {
+		return fmt.Errorf("ha settings: %w", err)
+	}
+	return nil
+}
+
+// printJoinHint tells the operator how to grow the cluster after provision.
+func printJoinHint(w io.Writer, c *config.Config) {
+	if !c.IsHA() {
+		return
+	}
+	fmt.Fprintln(w, "\n  HA cluster: add servers (3 or 5 in total) and agents:")
+	fmt.Fprintln(w, "    sudo platformctl token create --role server --output /root/server.token")
+	fmt.Fprintln(w, "    sudo platformctl token create --role agent --ttl 2h --output /root/agent.token")
+	fmt.Fprintln(w, "  then on each new node (copy the token file first):")
+	fmt.Fprintf(w, "    sudo platformctl join --role server|agent --server https://<this-node>:6443 --token-file <file> --nodes %s\n",
+		strings.Join(c.Cluster.Nodes, ","))
+	fmt.Fprintln(w, "  See docs/operations/ha.md.")
+}
+
+// joinPreflight is swapped in tests.
+var joinPreflight = func(host, role, token string) *preflight.Result {
+	r := preflight.Check()
+	o := preflight.JoinOptions{ServerHost: host, Role: role, Token: token, LocalK3sVersion: versions.K3sVersion}
+	if k3s.IsInstalled() {
+		// Re-running join on this node: k3s itself holds the local ports.
+		o.PortInUse = func(int) bool { return false }
+	}
+	j := preflight.CheckJoin(o)
+	r.Errors = append(r.Errors, j.Errors...)
+	r.Warnings = append(r.Warnings, j.Warnings...)
+	r.Passed = r.Passed && j.Passed
+	return r
+}
+
+// Swapped in tests.
+var (
+	k3sJoin       = k3s.Join
+	joinHarden    = func() error { return runHardening() }
+	upsertEnvKey  = config.UpsertEnvKey
+	provisionedFn = func() bool { return state.IsDone("platform") }
+)
+
+func runJoin(stdin io.Reader) error {
+	if err := requireRoot("join"); err != nil {
+		return err
+	}
+	role, err := k3s.ParseRole(joinRole)
+	if err != nil {
+		return err
+	}
+	serverURL, err := k3s.ValidateServerURL(joinServer)
+	if err != nil {
+		return fmt.Errorf("--server: %w", err)
+	}
+	if provisionedFn() {
+		return fmt.Errorf("this host already runs the platform; join is for fresh nodes")
+	}
+	if prev := joinedRole(); prev != "" && prev != string(role) {
+		return fmt.Errorf("this node already joined as %s; it cannot rejoin as %s", prev, role)
+	}
+	token, err := k3s.ReadToken(joinTokenFile, stdin)
+	if err != nil {
+		return fmt.Errorf("--token-file: %w", err)
+	}
+
+	// The node takes the ha profile; flags override the environment.
+	if err := cfg.ApplyProfile(config.ProfileHA); err != nil {
+		return err
+	}
+	if joinNodes != "" {
+		cfg.Cluster.Nodes = config.SplitList(joinNodes)
+	}
+	if joinNodeIP != "" {
+		cfg.Cluster.NodeIP = strings.TrimSpace(joinNodeIP)
+	}
+	peers, err := clusterPeers(cfg)
+	if err != nil {
+		return err
+	}
+	if len(peers) == 0 && !cfg.SkipHardening {
+		return fmt.Errorf("host hardening needs the cluster node addresses for the firewall: pass --nodes (or PLATFORM_CLUSTER_NODES), or --skip-hardening")
+	}
+	opts := clusterServerOptions(cfg)
+	if role == k3s.RoleAgent {
+		opts = k3s.ServerOptions{NodeIP: cfg.Cluster.NodeIP}
+	}
+
+	unlock, err := state.AcquireLock("join")
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	if !cfg.SkipPreflight {
+		color.Cyan("\n  ■ Join pre-flight checks\n")
+		r := joinPreflight(k3s.ServerHost(serverURL), string(role), token)
+		preflight.PrintResult(r)
+		if !r.Passed {
+			return fmt.Errorf("join pre-flight checks failed")
+		}
+	}
+
+	// Persist what later `harden`/`status` runs on this node need. Not the
+	// token: it lives in /etc/platform/k3s (0600), referenced by k3s' config.
+	for k, v := range joinEnv(cfg) {
+		if err := upsertEnvKey(envFilePath, k, v); err != nil {
+			return fmt.Errorf("save %s: %w", envFilePath, err)
+		}
+	}
+
+	color.Cyan("\n  ■ Joining %s as %s...", serverURL, role)
+	if err := k3sJoin(role, serverURL, token, cfg.GitHubToken, opts); err != nil {
+		return err
+	}
+	color.Green("  ✓ Joined the cluster as %s", role)
+
+	if !cfg.SkipHardening {
+		if err := joinHarden(); err != nil {
+			return fmt.Errorf("host hardening: %w (k3s joined; fix and run `sudo platformctl harden --auto`)", err)
+		}
+	}
+	fmt.Println("\n  Check the cluster from a server: sudo platformctl status")
+	return nil
+}
+
+// joinEnv are the .env keys a joined node keeps.
+func joinEnv(c *config.Config) map[string]string {
+	env := map[string]string{
+		"PLATFORM_PROFILE":       config.ProfileHA,
+		"PLATFORM_CLUSTER_NODES": strings.Join(c.Cluster.Nodes, ","),
+		"PLATFORM_NODE_IP":       c.Cluster.NodeIP,
+		"PLATFORM_HARDEN":        fmt.Sprintf("%t", !c.SkipHardening),
+	}
+	for k, v := range env {
+		env[k] = strings.NewReplacer("\r", "", "\n", "").Replace(v)
+	}
+	return env
+}
+
+// writeToken prints a token once or writes it to a 0600 file. Status text
+// goes to stderr so `platformctl token create | ...` pipes only the token.
+func writeToken(stdout io.Writer, token, output string) error {
+	if output != "" {
+		if err := k3s.WriteTokenFile(output, token); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "Token written to %s (mode 0600). Copy it to the new node and delete it afterwards.\n", output)
+		return nil
+	}
+	fmt.Fprintln(os.Stderr, "Join token (shown once; treat it like a root password):")
+	_, err := fmt.Fprintln(stdout, token)
+	return err
+}
+
+// requireServer refuses token management on agents and single-node hosts.
+func requireServer() error {
+	if joinedRole() == string(k3s.RoleAgent) {
+		return fmt.Errorf("run this on a server node, not on an agent")
+	}
+	if !shell.FileExists(k3s.DataTokenFile) {
+		return fmt.Errorf("no k3s server on this node (%s missing)", k3s.DataTokenFile)
+	}
+	return nil
+}
+
+func runTokenCreate(stdout io.Writer) error {
+	if err := requireRoot("token"); err != nil {
+		return err
+	}
+	if err := requireServer(); err != nil {
+		return err
+	}
+	role, err := k3s.ParseRole(tokenRole)
+	if err != nil {
+		return err
+	}
+	var token string
+	switch {
+	case role == k3s.RoleServer && tokenTTL != "":
+		return fmt.Errorf("--ttl applies to agent tokens only; servers join with the server token")
+	case role == k3s.RoleServer:
+		token, err = k3s.ReadSecureToken(k3s.RoleServer)
+	case tokenTTL != "":
+		os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
+		token, err = k3s.CreateBootstrapToken(tokenTTL)
+	default:
+		token, err = k3s.ReadSecureToken(k3s.RoleAgent)
+	}
+	if err != nil {
+		return err
+	}
+	return writeToken(stdout, token, tokenOutput)
+}
+
+func runTokenRotate(stdout io.Writer) error {
+	if err := requireRoot("token"); err != nil {
+		return err
+	}
+	if err := requireServer(); err != nil {
+		return err
+	}
+	unlock, err := state.AcquireLock("token-rotate")
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	token, err := k3s.RotateServerToken()
+	if err != nil {
+		return err
+	}
+	if err := writeToken(stdout, token, tokenOutput); err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stderr, "Server token rotated. On every other server run:")
+	fmt.Fprintln(os.Stderr, "  sudo platformctl token install --role server --token-file <file>")
+	fmt.Fprintln(os.Stderr, "then restart k3s on this server: sudo systemctl restart k3s")
+	fmt.Fprintln(os.Stderr, "Agents joined with the agent token are not affected. Keep the old token for etcd snapshots taken before now.")
+	return nil
+}
+
+func runTokenInstall(stdin io.Reader) error {
+	if err := requireRoot("token"); err != nil {
+		return err
+	}
+	role, err := k3s.ParseRole(tokenRole)
+	if err != nil {
+		return err
+	}
+	token, err := k3s.ReadToken(tokenFile, stdin)
+	if err != nil {
+		return fmt.Errorf("--token-file: %w", err)
+	}
+	if err := k3s.InstallToken(role, token); err != nil {
+		return err
+	}
+	color.Green("  ✓ Token installed; k3s restarted")
+	return nil
+}
+
+// printClusterStatus shows nodes, roles and etcd health on HA servers.
+func printClusterStatus(w io.Writer) error {
+	out, err := shell.Output("k3s", "kubectl", "get", "nodes", "-o", "json", "--request-timeout=10s")
+	if err != nil {
+		return fmt.Errorf("list nodes: %w", err)
+	}
+	nodes, err := k3s.ParseNodes([]byte(out))
+	if err != nil {
+		return err
+	}
+	etcd := "ok"
+	if res, err := shell.Output("k3s", "kubectl", "get", "--raw", "/readyz/etcd", "--request-timeout=10s"); err != nil || strings.TrimSpace(res) != "ok" {
+		etcd = "UNHEALTHY"
+	}
+	writeClusterStatus(w, nodes, etcd)
+	return nil
+}
+
+func writeClusterStatus(w io.Writer, nodes []k3s.NodeInfo, etcd string) {
+	fmt.Fprintf(w, "  Cluster nodes (%d), etcd: %s\n", len(nodes), etcd)
+	for _, n := range nodes {
+		ready := "Ready"
+		if !n.Ready {
+			ready = "NotReady"
+		}
+		roles := strings.Join(n.Roles, ",")
+		if roles == "" {
+			roles = "agent"
+		}
+		fmt.Fprintf(w, "    %-24s %-28s %-9s %-15s %s\n", n.Name, roles, ready, n.InternalIP, n.Version)
+	}
+	if msg := k3s.QuorumWarning(k3s.EtcdMembers(nodes)); msg != "" {
+		fmt.Fprintf(w, "  WARNING: %s\n", msg)
+	}
+}
+
+// agentStatus reports the k3s-agent service on a joined agent (no kubeconfig there).
+func agentStatus(w io.Writer) error {
+	out, err := shell.Output("systemctl", "is-active", "k3s-agent")
+	fmt.Fprintf(w, "  Agent node: k3s-agent %s\n", strings.TrimSpace(out))
+	if err != nil {
+		return fmt.Errorf("k3s-agent is not active")
+	}
+	fmt.Fprintln(w, "  Cluster health is reported on the servers: sudo platformctl status")
+	return nil
+}

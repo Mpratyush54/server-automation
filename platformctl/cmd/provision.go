@@ -180,6 +180,9 @@ func runProvision() error {
 	}
 
 	confirmHardening(os.Stdin, os.Stdout, !cfg.NonInteractive)
+	if err := checkHAProvision(cfg); err != nil {
+		return err
+	}
 
 	cfg.GenerateSecrets()
 	if cfg.PasswordGenerated {
@@ -269,7 +272,7 @@ func runProvision() error {
 	}()
 
 	if !cfg.SkipK8s {
-		if err := hostStep("k3s", func() error { return k3s.Install(cfg.Domain, cfg.GitHubToken) }); err != nil {
+		if err := hostStep("k3s", func() error { return k3s.InstallWith(cfg.Domain, cfg.GitHubToken, k3sServerOptions(cfg)) }); err != nil {
 			return err
 		}
 	}
@@ -317,6 +320,7 @@ func runProvision() error {
 	}
 	printTimings(started)
 	components.ProvisionComplete(cfg)
+	printJoinHint(os.Stdout, cfg)
 	return nil
 }
 

@@ -98,15 +98,8 @@ func hardenPrepare() error {
 	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
 		return fmt.Errorf("host hardening requires Linux and root (sudo platformctl harden)")
 	}
-	// This baseline deliberately closes node API/overlay ports to external
-	// clients. Do not apply it to an existing multi-node cluster.
-	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
-	nodes, err := shell.Output("kubectl", "get", "nodes", "-o", "name", "--request-timeout=10s")
-	if err != nil {
-		return fmt.Errorf("verify single-node cluster before hardening: %w", err)
-	}
-	if len(strings.Fields(nodes)) != 1 {
-		return fmt.Errorf("host hardening supports one node; multi-node clusters require an operator-managed firewall (--skip-hardening)")
+	if err := checkHardenNodes(); err != nil {
+		return err
 	}
 	if err := state.Clear("harden"); err != nil {
 		return err
@@ -117,10 +110,47 @@ func hardenPrepare() error {
 	return hardeningHost().Prepare()
 }
 
+// listNodes is swapped in tests.
+var listNodes = func() (string, error) {
+	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
+	return shell.Output("kubectl", "get", "nodes", "-o", "name", "--request-timeout=10s")
+}
+
+// checkHardenNodes guards the firewall against cutting a cluster apart. The
+// baseline closes node API/overlay ports to everything but the configured
+// peers, so a multi-node cluster is only hardened in the ha profile with
+// PLATFORM_CLUSTER_NODES set. Agents have no kubeconfig; join already
+// required the node list for them.
+func checkHardenNodes() error {
+	peers, err := clusterPeers(cfg)
+	if err != nil {
+		return err
+	}
+	if joinedRole() == "agent" {
+		if len(peers) == 0 {
+			return fmt.Errorf("agent hardening needs PLATFORM_CLUSTER_NODES; multi-node clusters otherwise require an operator-managed firewall (--skip-hardening)")
+		}
+		return nil
+	}
+	nodes, err := listNodes()
+	if err != nil {
+		return fmt.Errorf("verify cluster nodes before hardening: %w", err)
+	}
+	if len(strings.Fields(nodes)) != 1 && len(peers) == 0 {
+		return fmt.Errorf("host hardening of a multi-node cluster needs the ha profile with PLATFORM_CLUSTER_NODES; otherwise use an operator-managed firewall (--skip-hardening)")
+	}
+	return nil
+}
+
 // hardenFirewall applies the firewall with its automatic rollback. It needs
 // the platform running: confirmation checks live local ports and the API.
 func hardenFirewall() error {
 	h := hardeningHost()
+	peers, err := clusterPeers(cfg)
+	if err != nil {
+		return err
+	}
+	h.ClusterPeers = peers
 	if err := h.ApplyFirewall(func() bool { return confirmFirewall(cfg.NonInteractive, localHardeningHealth) }); err != nil {
 		return err
 	}
@@ -155,6 +185,9 @@ func startHardenPrepare() <-chan error {
 // Probes are bounded well below the 120s rollback window. Auto never confirms
 // a bare host: provision calls this after ingress and the API are available.
 func localHardeningHealth() bool {
+	if role := joinedRole(); role != "" {
+		return joinedNodeHealth(role)
+	}
 	for _, port := range []string{"22", "80", "443", "6443"} {
 		c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", port), 3*time.Second)
 		if err != nil {
@@ -175,6 +208,29 @@ func localHardeningHealth() bool {
 	}
 	_, err = shell.Output("curl", "--noproxy", "*", "-kfsS", "--max-time", "10", "--resolve", cfg.Domain+":443:127.0.0.1", "https://"+cfg.Domain+"/api/health/ready")
 	return err == nil
+}
+
+// hardeningPorts are the local ports that must answer before a joined node
+// keeps its firewall. Joined nodes do not run the platform's ingress check:
+// the API is checked on the first server.
+func hardeningPorts(role string) []string {
+	if role == "server" {
+		return []string{"22", "6443", "10250"}
+	}
+	return []string{"22", "10250"}
+}
+
+func joinedNodeHealth(role string) bool {
+	for _, port := range hardeningPorts(role) {
+		c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", port), 3*time.Second)
+		if err != nil {
+			fmt.Printf("Firewall confirmation: local port %s unavailable\n", port)
+			return false
+		}
+		_ = c.Close()
+	}
+	out, err := shell.Output("ss", "-tlnp", "sport = :22")
+	return err == nil && strings.Contains(out, "sshd")
 }
 
 func confirmFirewall(auto bool, healthy func() bool) bool {

@@ -682,6 +682,26 @@ func apiReplicas(cfg *config.Config) int {
 	return cfg.APIReplicas
 }
 
+// apiAffinityYAML spreads platform-api replicas across nodes in the ha profile
+// (#53) so losing one node keeps the API serving. It is a preference, not a
+// requirement: a cluster that is still joining nodes schedules both replicas
+// on the first server. Single-node profiles render nothing (manifest unchanged).
+func apiAffinityYAML(cfg *config.Config) string {
+	if !cfg.IsHA() {
+		return ""
+	}
+	return `      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app: platform-api
+`
+}
+
 // apiPDBScript applies a PodDisruptionBudget (minAvailable: 1) when the API runs
 // more than one replica so node drains keep one pod serving. With a single
 // replica a PDB would block drains forever, so any old one is removed.
@@ -842,7 +862,7 @@ spec:
       serviceAccountName: platform-api
       # preStop sleep (10s) + in-process drain (SHUTDOWN_TIMEOUT_MS, 25s) + margin.
       terminationGracePeriodSeconds: 45
-      securityContext:
+%[5]s      securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
@@ -982,6 +1002,7 @@ EOF
 kubectl wait --for=condition=Available deployment/platform-api -n platform --timeout=300s
 kubectl wait --for=condition=Available deployment/platform-portal -n platform --timeout=180s
 `, strconv.Quote(apiImg), strconv.Quote(portalImg), apiReplicas(cfg), apiPDBScript(apiReplicas(cfg)),
+		apiAffinityYAML(cfg),
 	))
 	if err != nil {
 		return err

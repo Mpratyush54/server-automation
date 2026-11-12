@@ -60,6 +60,18 @@ var statusCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		color.Cyan("\n  ■ Platform Health Check\n")
 		printHardeningStatus()
+		if joinedRole() == "agent" {
+			return agentStatus(os.Stdout)
+		}
+		if cfg.IsHA() {
+			if err := printClusterStatus(os.Stdout); err != nil {
+				color.Red("  ✗ cluster status: %v", err)
+			}
+		}
+		if joinedRole() == "server" {
+			// Joined servers run k3s only; the platform is checked on the first server.
+			return nil
+		}
 		if meta, err := state.LockInfo(); err == nil && meta != "" {
 			color.Yellow("  · provision lock present (%s) — status does not wait on it", meta)
 		}
@@ -226,7 +238,7 @@ func init() {
 	provisionCmd.Flags().IntVar(&parallelFlag, "parallel", 0,
 		"cluster steps to run at once (default 4, env PLATFORMCTL_PARALLEL; 1 = serial with live output)")
 	provisionCmd.Flags().StringVar(&profileFlag, "profile", "",
-		"component set: minimal | standard | full (default standard, env PLATFORM_PROFILE)")
+		"component set: minimal | standard | full | ha (default standard, env PLATFORM_PROFILE)")
 	provisionCmd.Flags().StringVar(&bundleFlag, "bundle", "",
 		"offline bundle: path to platform-bundle-*.tar.zst, or 'auto' to download the matching release")
 }
