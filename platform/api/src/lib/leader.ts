@@ -37,11 +37,37 @@ export interface LeaderElectorOptions {
   leaseName?: string;
   leaseDurationMs?: number;
   retryPeriodMs?: number;
+  /** Per-request timeout for Lease API calls (default: half the lease, max 5 s). */
+  requestTimeoutMs?: number;
   now?: () => number;
   log?: (msg: string) => void;
 }
 
 export type LeadershipListener = (isLeader: boolean) => void;
+
+/**
+ * Bounds every Lease API call. The client keeps connections alive; when the
+ * node behind one dies (the kubernetes Service had routed it to that node's
+ * API server), a request on it hangs until TCP gives up, minutes later. On
+ * the 3-node power-off test that kept the follower from taking over a 10 s
+ * lease for over two minutes. A timed-out call fails like any API error and
+ * the next attempt opens a new connection.
+ */
+export function withRequestTimeout(api: LeaseApi, ms: number): LeaseApi {
+  const timed = <T>(name: string, p: Promise<T>): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(Object.assign(new Error(`${name} timed out after ${ms} ms`), { code: 'ETIMEDOUT' })), ms);
+      (timer as any).unref?.();
+    });
+    return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+  };
+  return {
+    readNamespacedLease: (p) => timed('readNamespacedLease', api.readNamespacedLease(p)),
+    createNamespacedLease: (p) => timed('createNamespacedLease', api.createNamespacedLease(p)),
+    replaceNamespacedLease: (p) => timed('replaceNamespacedLease', api.replaceNamespacedLease(p)),
+  };
+}
 
 /** k8s MicroTime needs exactly six fractional digits on the wire. */
 class MicroTime extends Date {
@@ -83,7 +109,8 @@ export class LeaderElector {
   private observedAt = 0;
 
   constructor(opts: LeaderElectorOptions) {
-    this.api = opts.api;
+    const leaseMs = opts.leaseDurationMs ?? 10_000;
+    this.api = withRequestTimeout(opts.api, opts.requestTimeoutMs ?? Math.max(1_000, Math.min(5_000, leaseMs / 2)));
     this.namespace = opts.namespace;
     this.identity = opts.identity;
     this.leaseName = opts.leaseName || DEFAULT_LEASE_NAME;
