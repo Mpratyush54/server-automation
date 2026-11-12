@@ -46,9 +46,22 @@ export function redactUrlForLog(url: string | undefined): string {
 
 morgan.token('redacted-url', (req: express.Request) => redactUrlForLog(req.originalUrl || req.url));
 
+/** Liveness/readiness paths polled by kubelet probes and load balancers. */
+const HEALTH_PATHS = new Set(['/api/health', '/api/health/ready']);
+
+/**
+ * Successful health checks are not logged: probes and load-balancer checks
+ * poll them every few seconds per node, which flooded the logs (and Loki)
+ * without information. Failures (status >= 400) are still logged.
+ */
+export function skipHealthLog(req: express.Request, res: express.Response): boolean {
+  const path = (req.originalUrl || req.url || '').split('?')[0];
+  return HEALTH_PATHS.has(path) && res.statusCode < 400;
+}
+
 /** Access logger (morgan) that never logs query-string values. */
 export function requestLogger(options: morgan.Options<express.Request, express.Response> = {}) {
-  return morgan(':method :redacted-url :status :response-time ms - :res[content-length]', options);
+  return morgan(':method :redacted-url :status :response-time ms - :res[content-length]', { skip: skipHealthLog, ...options });
 }
 
 export function buildApp(): express.Express {
