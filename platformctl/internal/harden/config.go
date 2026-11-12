@@ -178,7 +178,9 @@ func FirewallWith(cidrs []netip.Prefix, opt FirewallOptions) string {
 func Quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 
 // Ports are shared with callers documenting inter-node firewall requirements.
-var ClusterTCPPorts = []int{2379, 2380, 6443, 10250}
+// 9100: node-exporter runs on the host network; Prometheus scrapes every node
+// from wherever it is scheduled (without it 2 of 3 nodes had no host metrics).
+var ClusterTCPPorts = []int{2379, 2380, 6443, 9100, 10250}
 var ClusterUDPPorts = []int{8472}
 
 func clusterRules(peers []netip.Prefix) string {

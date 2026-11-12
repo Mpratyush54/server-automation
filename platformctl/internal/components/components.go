@@ -721,21 +721,25 @@ func apiAffinityYAML(cfg *config.Config) string {
 	return spreadAffinityYAML(cfg, "platform-api")
 }
 
-// spreadAffinityYAML spreads the app's pods across nodes on ha (soft, so a
-// cluster that is still growing schedules them anyway).
+// spreadAffinityYAML spreads the app's pods across nodes on ha. A topology
+// spread constraint with DoNotSchedule never stacks two replicas on one node
+// while another node is schedulable, yet still schedules everything on a
+// single-node cluster that is still growing (skew is 0 there). Soft pod
+// anti-affinity let both API replicas land on one node when CPU was short
+// (3-node test), so one node loss took the whole API down.
 func spreadAffinityYAML(cfg *config.Config, app string) string {
 	if !cfg.IsHA() {
 		return ""
 	}
-	return `      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              topologyKey: kubernetes.io/hostname
-              labelSelector:
-                matchLabels:
-                  app: ` + app + `
+	return `      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: ` + app + `
+        matchLabelKeys:
+        - pod-template-hash
 `
 }
 

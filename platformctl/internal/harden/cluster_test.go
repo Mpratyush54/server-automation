@@ -37,7 +37,7 @@ func TestClusterFirewall(t *testing.T) {
 		t.Fatal("single node changed")
 	}
 	peers := []netip.Prefix{netip.MustParsePrefix("10.0.0.11/32"), netip.MustParsePrefix("10.0.0.0/24"), netip.MustParsePrefix("2001:db8::1/128")}
-	rules := "    ip saddr { 10.0.0.11/32, 10.0.0.0/24 } tcp dport { 2379, 2380, 6443, 10250 } accept\n    ip saddr { 10.0.0.11/32, 10.0.0.0/24 } udp dport 8472 accept\n    ip6 saddr { 2001:db8::1/128 } tcp dport { 2379, 2380, 6443, 10250 } accept\n    ip6 saddr { 2001:db8::1/128 } udp dport 8472 accept\n"
+	rules := "    ip saddr { 10.0.0.11/32, 10.0.0.0/24 } tcp dport { 2379, 2380, 6443, 9100, 10250 } accept\n    ip saddr { 10.0.0.11/32, 10.0.0.0/24 } udp dport 8472 accept\n    ip6 saddr { 2001:db8::1/128 } tcp dport { 2379, 2380, 6443, 9100, 10250 } accept\n    ip6 saddr { 2001:db8::1/128 } udp dport 8472 accept\n"
 	anchor := "    tcp dport { 22, 80, 443 } accept\n"
 	if got := ClusterFirewall(cidrs, peers); got != strings.Replace(base, anchor, anchor+rules, 1) {
 		t.Fatal(got)

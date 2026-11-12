@@ -35,7 +35,7 @@ func TestPostgresHAGraphAndUpgrade(t *testing.T) {
 					t.Fatal(step)
 				}
 			case "postgresql-monitoring":
-				if !slices.Equal(step.deps, []string{"postgresql", "monitoring"}) || step.skip != !c.IsHA() || !step.warnOnly {
+				if !slices.Equal(step.deps, []string{"postgresql", "monitoring", "telemetry"}) || step.skip != !c.IsHA() || !step.warnOnly {
 					t.Fatal(step)
 				}
 			}

@@ -25,7 +25,7 @@ func TestLonghornGraph(t *testing.T) {
 				t.Errorf("%s missing longhorn dep", s.name)
 			}
 			if s.name == "longhorn-monitoring" {
-				if !slices.Equal(s.deps, []string{"longhorn", "monitoring"}) || !s.warnOnly || s.skip != (profile != config.ProfileHA) {
+				if !slices.Equal(s.deps, []string{"longhorn", "monitoring", "telemetry"}) || !s.warnOnly || s.skip != (profile != config.ProfileHA) {
 					t.Errorf("%s: %+v", profile, s)
 				}
 			}

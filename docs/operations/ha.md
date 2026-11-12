@@ -62,6 +62,7 @@ of servers (3 or 5). Agents do not run etcd and do not count towards quorum.
 |---|---|---|---|
 | 6443 | TCP | Kubernetes API and k3s supervisor (node join) | servers |
 | 2379, 2380 | TCP | etcd client and peer traffic | servers |
+| 9100 | TCP | node-exporter host metrics (Prometheus scrapes every node) | all nodes |
 | 10250 | TCP | kubelet (logs, exec, metrics) | all nodes |
 | 8472 | UDP | flannel VXLAN pod network | all nodes |
 
