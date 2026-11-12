@@ -104,6 +104,9 @@ type Config struct {
 
 	// PasswordGenerated is set when admin password was auto-created this run.
 	PasswordGenerated bool
+
+	// Cluster is the multi-node configuration of the ha profile (#53).
+	Cluster Cluster
 }
 
 func Load() *Config {
@@ -164,6 +167,7 @@ func Load() *Config {
 	_, profileExplicit := explicit["PLATFORM_PROFILE"]
 	c.resolveAPIReplicas(explicitReplicas, profileExplicit)
 	c.resolveKyverno()
+	c.loadCluster()
 	return c
 }
 
@@ -584,6 +588,11 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("INSTALL_KYVERNO=%t\n", c.InstallKyverno))
 	b.WriteString(fmt.Sprintf("INSTALL_KYVERNO_CVE_POLICY=%t\n", c.InstallKyvernoCVEPolicy))
 	b.WriteString(fmt.Sprintf("KYVERNO_POLICY_MODE=%s\n", c.KyvernoPolicyMode))
+	cluster, err := c.clusterEnv()
+	if err != nil {
+		return err
+	}
+	b.WriteString(cluster)
 	return os.WriteFile(path, []byte(b.String()), 0600)
 }
 

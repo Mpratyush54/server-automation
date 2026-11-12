@@ -60,20 +60,20 @@ func TestInstallK3sFallsBackToMirror(t *testing.T) {
 	t.Cleanup(func() { installUpstream, installFromMirror = origUp, origMirror })
 
 	mirrored := 0
-	installUpstream = func() error { return errors.New("exit status 22") }
-	installFromMirror = func() error { mirrored++; return nil }
-	if err := installK3s(); err != nil || mirrored != 1 {
+	installUpstream = func(string) error { return errors.New("exit status 22") }
+	installFromMirror = func(string) error { mirrored++; return nil }
+	if err := installK3s(""); err != nil || mirrored != 1 {
 		t.Fatalf("expected mirror install, err=%v mirrored=%d", err, mirrored)
 	}
 
-	installUpstream = func() error { return nil }
-	if err := installK3s(); err != nil || mirrored != 1 {
+	installUpstream = func(string) error { return nil }
+	if err := installK3s(""); err != nil || mirrored != 1 {
 		t.Fatalf("mirror must not be used when upstream works (mirrored=%d)", mirrored)
 	}
 
-	installUpstream = func() error { return errors.New("upstream down") }
-	installFromMirror = func() error { return errors.New("mirror down") }
-	if err := installK3s(); err == nil || !strings.Contains(err.Error(), "upstream down") || !strings.Contains(err.Error(), "mirror down") {
+	installUpstream = func(string) error { return errors.New("upstream down") }
+	installFromMirror = func(string) error { return errors.New("mirror down") }
+	if err := installK3s(""); err == nil || !strings.Contains(err.Error(), "upstream down") || !strings.Contains(err.Error(), "mirror down") {
 		t.Fatalf("expected both causes, got %v", err)
 	}
 	if k3sMirrorFile("amd64") != "k3s" || k3sMirrorFile("arm64") != "k3s-arm64" {
@@ -83,16 +83,18 @@ func TestInstallK3sFallsBackToMirror(t *testing.T) {
 
 func TestInstallK3sPrefersTheStagedStack(t *testing.T) {
 	origUp, origMirror, origStack, origPaths := installUpstream, installFromMirror, installFromStack, stackPaths
-	t.Cleanup(func() { installUpstream, installFromMirror, installFromStack, stackPaths = origUp, origMirror, origStack, origPaths })
+	t.Cleanup(func() {
+		installUpstream, installFromMirror, installFromStack, stackPaths = origUp, origMirror, origStack, origPaths
+	})
 	dir := t.TempDir()
 	stackPaths.Staging = dir
 	calls := []string{}
-	installUpstream = func() error { calls = append(calls, "upstream"); return nil }
-	installFromMirror = func() error { calls = append(calls, "mirror"); return nil }
-	installFromStack = func() error { calls = append(calls, "stack"); return nil }
+	installUpstream = func(string) error { calls = append(calls, "upstream"); return nil }
+	installFromMirror = func(string) error { calls = append(calls, "mirror"); return nil }
+	installFromStack = func(string) error { calls = append(calls, "stack"); return nil }
 
 	// Nothing staged: the normal download.
-	if err := installK3s(); err != nil || strings.Join(calls, ",") != "upstream" {
+	if err := installK3s(""); err != nil || strings.Join(calls, ",") != "upstream" {
 		t.Fatalf("without a stack: calls=%v err=%v", calls, err)
 	}
 	// Staged: no download at all.
@@ -102,13 +104,13 @@ func TestInstallK3sPrefersTheStagedStack(t *testing.T) {
 		}
 	}
 	calls = nil
-	if err := installK3s(); err != nil || strings.Join(calls, ",") != "stack" {
+	if err := installK3s(""); err != nil || strings.Join(calls, ",") != "stack" {
 		t.Fatalf("with a staged stack: calls=%v err=%v", calls, err)
 	}
 	// A failing staged install falls back to the download.
 	calls = nil
-	installFromStack = func() error { calls = append(calls, "stack"); return errors.New("bad binary") }
-	if err := installK3s(); err != nil || strings.Join(calls, ",") != "stack,upstream" {
+	installFromStack = func(string) error { calls = append(calls, "stack"); return errors.New("bad binary") }
+	if err := installK3s(""); err != nil || strings.Join(calls, ",") != "stack,upstream" {
 		t.Fatalf("staged failure must fall back: calls=%v err=%v", calls, err)
 	}
 }

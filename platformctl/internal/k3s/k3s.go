@@ -57,6 +57,18 @@ func WriteRegistries(githubToken string) (bool, error) {
 }
 
 func Install(domain, githubToken string) error {
+	return InstallWith(domain, githubToken, ServerOptions{})
+}
+
+func InstallWith(domain, githubToken string, o ServerOptions) error {
+	if o.HA {
+		if err := o.Validate(); err != nil {
+			return err
+		}
+		if _, err := EnsureServerTokens(); err != nil {
+			return err
+		}
+	}
 	color.Cyan("\n  ■ Installing K3s %s...", versions.K3sVersion)
 
 	changed, err := WriteRegistries(githubToken)
@@ -70,7 +82,7 @@ func Install(domain, githubToken string) error {
 
 	// k3s reads /etc/rancher/k3s/config.yaml on every start, so these settings
 	// apply to fresh installs and are reconciled on existing ones.
-	cfgChanged, err := WriteServerConfig(upstreamDNS())
+	cfgChanged, err := WriteConfig(RenderServerConfig(o), upstreamDNS())
 	if err != nil {
 		return fmt.Errorf("write k3s config: %w", err)
 	}
@@ -91,7 +103,7 @@ func Install(domain, githubToken string) error {
 
 	if !IsInstalled() {
 		// Traefik is disabled and DNS configured via config.yaml (see WriteServerConfig).
-		if err := installK3s(); err != nil {
+		if err := installK3s(""); err != nil {
 			return err
 		}
 	} else {
@@ -118,19 +130,19 @@ var stackPaths = stack.DefaultPaths
 
 // installFromStack installs the k3s binary and install script staged by the
 // platform stack: no download at all. Swapped in tests.
-var installFromStack = func() error {
+var installFromStack = func(exec string) error {
 	if err := shell.RunBash(fmt.Sprintf("install -m 0755 %s /usr/local/bin/k3s", shellQuote(stackPaths.K3sBinary()))); err != nil {
 		return err
 	}
-	return shell.RunBash(fmt.Sprintf("INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION=%s sh %s",
+	return shell.RunBash(installExec(exec) + fmt.Sprintf("INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION=%s sh %s",
 		shellQuote(versions.K3sVersion), shellQuote(stackPaths.K3sScript())))
 }
 
 // installUpstream and installFromMirror are swapped in tests.
 var (
-	installUpstream = func() error {
-		return shell.RunBash(fmt.Sprintf(`curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=%s sh -`,
-			shellQuote(versions.K3sVersion)))
+	installUpstream = func(exec string) error {
+		return shell.RunBash(fmt.Sprintf(`curl -sfL https://get.k3s.io | %sINSTALL_K3S_VERSION=%s sh -`,
+			installExec(exec), shellQuote(versions.K3sVersion)))
 	}
 	installFromMirror = installK3sFromMirror
 )
@@ -138,20 +150,20 @@ var (
 // installK3s installs k3s with the official script. The script downloads the
 // binary from GitHub Releases; when that (or get.k3s.io) fails, install the
 // same version from the GHCR mirror (versions.K3sMirror) instead.
-func installK3s() error {
+func installK3s(exec string) error {
 	if stackPaths.Staged() {
-		err := installFromStack()
+		err := installFromStack(exec)
 		if err == nil {
 			return nil
 		}
 		color.Yellow("  ⚠ k3s from the platform stack failed (%v); downloading it instead", err)
 	}
-	upstream := installUpstream()
+	upstream := installUpstream(exec)
 	if upstream == nil {
 		return nil
 	}
 	color.Yellow("  ⚠ k3s download failed (%v); installing %s from the GHCR mirror", upstream, versions.K3sVersion)
-	if err := installFromMirror(); err != nil {
+	if err := installFromMirror(exec); err != nil {
 		return fmt.Errorf("k3s install failed: %v; mirror: %w", upstream, err)
 	}
 	return nil
@@ -165,7 +177,7 @@ func k3sMirrorFile(goarch string) string {
 	return "k3s"
 }
 
-func installK3sFromMirror() error {
+func installK3sFromMirror(exec string) error {
 	host, repo, _ := strings.Cut(versions.K3sMirror, "/")
 	tag := versions.MirrorTag(versions.K3sVersion)
 	client := ocifetch.New(host)
@@ -182,7 +194,7 @@ func installK3sFromMirror() error {
 		return err
 	}
 	// The binary is digest-verified; the script only sets up the service.
-	return shell.RunBash(fmt.Sprintf("INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION=%s sh %s",
+	return shell.RunBash(installExec(exec) + fmt.Sprintf("INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION=%s sh %s",
 		shellQuote(versions.K3sVersion), shellQuote(script)))
 }
 
@@ -264,24 +276,49 @@ func ResolvConf(servers []string) string {
 	return b.String()
 }
 
-// WriteServerConfig writes the k3s config and resolver files. It reports
-// whether anything changed (a running k3s must then be restarted).
+// Config locations; variables so tests never write to /etc.
+var (
+	configDir        = "/etc/rancher/k3s"
+	serverConfigPath = ServerConfigPath
+	resolvConfPath   = ResolvConfPath
+)
+
+// WriteServerConfig writes the single-node k3s config and resolver files.
 func WriteServerConfig(servers []string) (bool, error) {
-	if err := os.MkdirAll("/etc/rancher/k3s", 0755); err != nil {
+	return WriteConfig(ServerConfigYAML(), servers)
+}
+
+// WriteConfig writes config.yaml (mode 0600: it may hold etcd S3 credentials)
+// and the resolver file. It reports whether any content changed (a running
+// k3s must then be restarted); a permissions repair alone does not.
+func WriteConfig(content string, servers []string) (bool, error) {
+	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return false, err
 	}
 	changed := false
-	for path, content := range map[string]string{
-		ServerConfigPath: ServerConfigYAML(),
-		ResolvConfPath:   ResolvConf(servers),
+	for _, file := range []struct {
+		path, content string
+		mode          os.FileMode
+	}{
+		{serverConfigPath, content, 0600},
+		{resolvConfPath, ResolvConf(servers), 0644},
 	} {
-		if cur, err := os.ReadFile(path); err == nil && string(cur) == content {
-			continue
+		cur, err := os.ReadFile(file.path)
+		if err != nil || string(cur) != file.content {
+			// Restrict an existing config before it receives S3 credentials.
+			if file.path == serverConfigPath {
+				if err := os.Chmod(file.path, file.mode); err != nil && !os.IsNotExist(err) {
+					return false, err
+				}
+			}
+			if err := os.WriteFile(file.path, []byte(file.content), file.mode); err != nil {
+				return false, err
+			}
+			changed = true
 		}
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		if err := os.Chmod(file.path, file.mode); err != nil {
 			return false, err
 		}
-		changed = true
 	}
 	return changed, nil
 }
