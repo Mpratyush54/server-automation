@@ -391,3 +391,29 @@ func TestInterruptedFirewallRecovery(t *testing.T) {
 		t.Fatal("stale rollback overwritten before recovery")
 	}
 }
+
+// A fresh node has empty apt lists: the first install fails, Prepare refreshes
+// the lists once and retries (regression from the ha join test).
+func TestPrepareRefreshesAptListsOnce(t *testing.T) {
+	h, f := testHost(t)
+	installs := 0
+	h.Run = func(name string, args ...string) (string, error) {
+		s := name + " " + strings.Join(args, " ")
+		if strings.Contains(s, "apt-get install") {
+			installs++
+			if installs == 1 {
+				f.calls = append(f.calls, s)
+				return "E: Unable to locate package fail2ban", errors.New("exit status 100")
+			}
+		}
+		return f.run(name, args...)
+	}
+	f.h = &h
+	if err := h.Prepare(); err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	joined := strings.Join(f.calls, "\n")
+	if installs != 2 || !strings.Contains(joined, "apt-get update -qq") {
+		t.Fatalf("want install, update, install; got %d installs:\n%s", installs, joined)
+	}
+}

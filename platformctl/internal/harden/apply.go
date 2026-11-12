@@ -82,8 +82,16 @@ func (h Host) Prepare() error {
 			return fmt.Errorf("nginx auth jail requires exported ingress error log: %w", err)
 		}
 	}
-	if err := h.run("env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "-qq", "unattended-upgrades", "fail2ban", "chrony", "nftables"); err != nil {
-		return err
+	install := []string{"DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "-qq", "unattended-upgrades", "fail2ban", "chrony", "nftables"}
+	if err := h.run("env", install...); err != nil {
+		// A fresh cloud image (e.g. a node about to `join`) can have empty
+		// package lists: refresh them once and retry.
+		if uerr := h.run("env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "update", "-qq"); uerr != nil {
+			return fmt.Errorf("%w (apt-get update: %v)", err, uerr)
+		}
+		if err := h.run("env", install...); err != nil {
+			return err
+		}
 	}
 	for p, data := range map[string]string{
 		"/etc/apt/apt.conf.d/99-platform-security": UpdatesConfig,
