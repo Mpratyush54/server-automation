@@ -125,7 +125,7 @@ func InstallTelemetry(c *config.Config) error {
 		return err
 	}
 
-	if err := helmValues("kube-prometheus", "kube-prometheus-stack", "monitoring", map[string]any{"grafana": map[string]string{"adminPassword": c.GrafanaPassword}}, "-f", base, "-f", full, "--set", "grafana.assertNoLeakedSecrets=false", "--set", fmt.Sprintf("prometheus.prometheusSpec.retention=%dd", days), "--wait", "--timeout", "10m"); err != nil {
+	if err := helmValues("kube-prometheus", "kube-prometheus-stack", "monitoring", map[string]any{"grafana": map[string]string{"adminPassword": c.GrafanaPassword}}, append([]string{"-f", base, "-f", full, "--set", "grafana.assertNoLeakedSecrets=false", "--set", fmt.Sprintf("prometheus.prometheusSpec.retention=%dd", days), "--wait", "--timeout", "10m"}, prometheusHAArgs(c)...)...); err != nil {
 		return err
 	}
 	// Enforce the collector trust boundary before its first pod is exposed.
@@ -487,4 +487,17 @@ func ApplyFullProfileAPIAccess(c *config.Config) error {
 		return fmt.Errorf("synthetics RBAC: %w", err)
 	}
 	return nil
+}
+
+// prometheusHAArgs size Prometheus for ha. It scrapes every node and three
+// members of each datastore plus Longhorn; with the single-node 768Mi limit it
+// was OOMKilled under the 3-node load test (Grafana graphs had gaps). --set
+// flags, because they override the values files passed with -f.
+func prometheusHAArgs(c *config.Config) []string {
+	if !c.IsHA() {
+		return nil
+	}
+	const r = "prometheus.prometheusSpec.resources."
+	return []string{"--set", r + "requests.cpu=200m", "--set", r + "requests.memory=768Mi",
+		"--set", r + "limits.cpu=1500m", "--set", r + "limits.memory=2Gi"}
 }

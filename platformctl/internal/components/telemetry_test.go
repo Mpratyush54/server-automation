@@ -329,3 +329,13 @@ sleep() { :; }
 		t.Fatalf("timeout: err=%v out=%s", err, out)
 	}
 }
+
+func TestPrometheusHAArgsOnlyOnHA(t *testing.T) {
+	if got := prometheusHAArgs(&config.Config{Profile: config.ProfileFull}); got != nil {
+		t.Fatalf("full keeps the values-file sizing: %v", got)
+	}
+	got := strings.Join(prometheusHAArgs(&config.Config{Profile: config.ProfileHA}), " ")
+	if !strings.Contains(got, "prometheus.prometheusSpec.resources.limits.memory=2Gi") {
+		t.Fatalf("ha must raise the Prometheus memory limit: %s", got)
+	}
+}
