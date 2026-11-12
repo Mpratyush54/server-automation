@@ -57,7 +57,7 @@ restrictions and must be reconciled by their owner.
 | --- | --- |
 | TCP 22 | Public SSH on the standard port |
 | TCP 80, 443 | Public ingress; DNAT forwarding uses original destination ports |
-| TCP 6443, 10250 | Host loopback and internal pod interfaces only; closed to external clients |
+| TCP 6443, 10250 | Host loopback and internal pod interfaces only; closed to external clients (`ha` profile: also open to `PLATFORM_CLUSTER_NODES`, with TCP 2379/2380 and UDP 8472) |
 | cni0, flannel.* | Trusted internal traffic, including pod/service routing |
 | Established/related | Allowed, preserving existing SSH sessions and reply traffic |
 | ICMP / ICMPv6 | Allowed, including IPv6 neighbor discovery and path MTU |
@@ -69,10 +69,12 @@ Pod/service CIDRs default to k3s' standard IPv4 ranges and are read from
 and dual-stack forms). CIDR source rules are constrained to internal interfaces
 to avoid trusting spoofed external source addresses. Config fragment directories
 are refused rather than guessed. Existing multi-node clusters are refused before
-any host changes. This is deliberately a single-node policy: use
-`--skip-hardening` and operator-managed node allowlists for multi-node/HA hosts,
-nonstandard SSH ports, or future `platformctl join` (#53). Remote kubectl clients
-need an SSH tunnel rather than direct public 6443 access.
+any host changes unless the `ha` profile is used with `PLATFORM_CLUSTER_NODES`: then
+TCP 2379/2380/6443/10250 and UDP 8472 are additionally accepted from those node
+addresses only, on every node (see [High availability](operations/ha.md)). Use
+`--skip-hardening` and operator-managed allowlists for other multi-node setups or
+nonstandard SSH ports. Remote kubectl clients need an SSH tunnel rather than direct
+public 6443 access.
 
 The previous **owned table** is captured, generated rules are syntax-checked, and
 a transient systemd rollback is armed for 120 seconds **before** atomic policy

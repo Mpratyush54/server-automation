@@ -27,11 +27,13 @@ Requirements: Ubuntu 22.04+, sudo, ≥ 8 GB RAM, ≥ 80 GB free on `/var`, ports
 |---|---|
 | `platformctl provision` | Full bootstrap: k3s, databases, ArgoCD, monitoring, Platform API + portal |
 | `platformctl install <component>` | Install or re-run one component (see list below) |
-| `platformctl status` | Health check of cluster components |
+| `platformctl status` | Health check of cluster components (HA: nodes, roles, etcd health and quorum) |
 | `platformctl seed` | Seed the admin user from `/etc/platform/.env` |
 | `platformctl update` | Pull newest GHCR images and roll Platform deployments |
 | `platformctl recover` | Backup host files, persist passwords to disk, then restore API/Postgres login after a broken rotate |
 | `platformctl backup` | Copy `/etc/platform/.env` and database secrets to `/var/lib/platform/backups/<timestamp>/` |
+| `platformctl join` | Join this node to an HA cluster as a server or agent ([High availability](../operations/ha.md)) |
+| `platformctl token create\|rotate\|install` | Create, rotate and install cluster join tokens (HA) |
 | `platformctl version` | Print CLI version and default image tag |
 | `platformctl --help` | List commands |
 
@@ -109,6 +111,11 @@ full profile: `SYNTHETICS_BROWSER=true`. See [Synthetic monitoring](../operation
 Explicit `INSTALL_*` variables override the profile. The profile is saved as
 `PLATFORM_PROFILE` in `/etc/platform/.env`; choosing a new profile explicitly ignores the
 `INSTALL_*` values saved by an earlier run.
+
+The `ha` profile installs everything in `full` on a multi-node cluster: the first
+server starts k3s with embedded etcd (`cluster-init`) and further nodes join with
+`platformctl join`. Set `PLATFORM_CLUSTER_NODES` (all node IPs or a CIDR) so the host
+firewall admits the other nodes. See [High availability](../operations/ha.md).
 
 The profile also sets the Platform API replica count: `1` on `minimal`, `2` otherwise
 (rolling updates with `maxUnavailable: 0` and a PodDisruptionBudget). Override it with

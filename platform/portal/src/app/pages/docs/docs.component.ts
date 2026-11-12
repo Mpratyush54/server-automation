@@ -93,6 +93,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
       pages: [
         { label: 'Upgrades', section: 'operations', page: 'upgrades' },
         { label: 'Backups', section: 'operations', page: 'backups' },
+        { label: 'High Availability', section: 'operations', page: 'ha' },
         { label: 'Telemetry', section: 'operations', page: 'telemetry' },
         { label: 'Telemetry Privacy & GDPR', section: 'operations', page: 'telemetry-privacy' },
         { label: 'Alerting', section: 'operations', page: 'alerting' },
