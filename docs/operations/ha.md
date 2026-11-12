@@ -516,9 +516,15 @@ printf '# HA storage: Longhorn is the default StorageClass.\n' | sudo tee /var/l
 
 Other HA components can use `components.HAStorageClass(cfg)` to request an explicit
 StorageClass: it returns `longhorn` for HA and an empty string for other profiles
-(use the cluster default/local-path). This is the shared contract for the
-MongoDB, Redis and MinIO HA work. PostgreSQL explicitly defaults to local-path
-because it replicates its own data (see below).
+(use the cluster default/local-path). MongoDB and Redis use it. PostgreSQL
+explicitly defaults to local-path because it replicates its own data (see
+below).
+
+The longhorn step also creates a second, non-default StorageClass,
+`longhorn-single`: one replica per volume with `dataLocality: best-effort`, so
+the replica follows the pod's node. Distributed MinIO uses it for its drives
+(see [Object storage](#object-storage)), because MinIO's erasure coding already
+keeps redundant copies.
 
 The manager requests 100m CPU and 128Mi memory per node, limited to one CPU and
 1Gi memory. CSI attacher, provisioner, resizer and snapshotter each use two
@@ -691,7 +697,7 @@ nodes one at a time.
 |---|---|
 | Mode | MinIO `distributed`, 4 pods with one drive each (`minio-0..3`) |
 | Erasure coding | Default parity EC:2: reads survive losing 2 drives, writes need 3 of 4 |
-| Volume | 25Gi Longhorn volume per drive (100Gi raw, about 50Gi usable) |
+| Volume | 25Gi volume per drive on the `longhorn-single` StorageClass (100Gi raw, about 50Gi usable) |
 | Endpoint | unchanged: `http://minio.storage:9000` (Service `minio`) |
 
 Every consumer keeps using the stable `minio` Service: API uploads and backups
@@ -703,8 +709,16 @@ default buckets itself, because the chart only creates them in standalone mode.
 The MinIO console and SSO are unchanged.
 
 Storage overhead: erasure coding stores each usable gigabyte on about 2 GB of
-MinIO drives, and Longhorn replicates each drive (three replicas by default).
-Size node disks for that. Apps can also keep their own objects in an external
+MinIO drives. The drives use the `longhorn-single` StorageClass (one Longhorn
+replica, `dataLocality: best-effort`), because erasure coding already provides
+the redundancy; three Longhorn replicas per drive would store each object about
+six times. Size node disks for about 2 GB per usable gigabyte.
+
+Trade-off: a drive's only copy lives on one node, so a MinIO pod whose node is
+down stays Pending until the node returns (Longhorn cannot move the volume).
+With four pods on three nodes, one node holds two drives; while that node is
+down, objects stay readable but writes fail (they need 3 of 4 drives). Spread
+the pods over four or more nodes to tolerate any single node loss for writes. Apps can also keep their own objects in an external
 S3, R2 or GCS bucket through [storage providers](storage-providers.md); the
 bundled MinIO still holds the platform's own data.
 

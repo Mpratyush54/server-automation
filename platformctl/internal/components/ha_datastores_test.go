@@ -132,9 +132,15 @@ func TestMinioHAValuesAndArgs(t *testing.T) {
 	if MinioDrives != 4 {
 		t.Fatal(MinioDrives)
 	}
+	if p, _ := v["persistence"].(map[string]any); p["storageClass"] != LonghornSingleStorageClass {
+		t.Fatalf("ha minio drives must use %s, got %#v", LonghornSingleStorageClass, v["persistence"])
+	}
 	nonHA := minioInstallValues(fixedDatastoreCfg(config.ProfileFull))
 	if _, ok := nonHA["mode"]; ok {
 		t.Fatal("non-ha minio must not set mode")
+	}
+	if _, ok := nonHA["persistence"]; ok {
+		t.Fatal("non-ha minio must keep the default StorageClass")
 	}
 }
 

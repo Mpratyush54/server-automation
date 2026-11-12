@@ -137,6 +137,26 @@ func TestLonghornScripts(t *testing.T) {
 	}
 }
 
+func TestLonghornSingleStorageClassManifest(t *testing.T) {
+	m := longhornSingleStorageClassManifest
+	for _, want := range []string{
+		"kind: StorageClass",
+		"name: longhorn-single",
+		"provisioner: driver.longhorn.io",
+		`numberOfReplicas: "1"`,
+		"dataLocality: best-effort",
+		"allowVolumeExpansion: true",
+	} {
+		if !strings.Contains(m, want) {
+			t.Errorf("longhorn-single manifest missing %q", want)
+		}
+	}
+	// Longhorn stays the only default StorageClass.
+	if strings.Contains(m, "is-default-class") {
+		t.Error("longhorn-single must not be a default StorageClass")
+	}
+}
+
 func TestLonghornSkipsNonHA(t *testing.T) {
 	for _, profile := range []string{config.ProfileMinimal, config.ProfileStandard, config.ProfileFull} {
 		c := &config.Config{Profile: profile, InstallMonitoring: true}

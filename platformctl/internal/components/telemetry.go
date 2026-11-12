@@ -318,6 +318,10 @@ func minioInstallValues(c *config.Config) map[string]any {
 		values["mode"] = "distributed"
 		values["statefulset"] = map[string]any{"replicaCount": MinioDrives, "drivesPerNode": 1, "zones": 1}
 		values["global"] = map[string]any{"defaultStorageClass": HAStorageClass(c)}
+		// Erasure coding already spreads each object across the drives, so
+		// each drive needs only one Longhorn replica (persistence.storageClass
+		// takes precedence over global.defaultStorageClass in Bitnami charts).
+		values["persistence"] = map[string]any{"storageClass": LonghornSingleStorageClass}
 		values["podAntiAffinityPreset"] = "soft"
 		values["pdb"] = map[string]any{"create": true, "maxUnavailable": 1}
 	}

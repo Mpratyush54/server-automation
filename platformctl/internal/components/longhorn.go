@@ -17,10 +17,13 @@ import (
 )
 
 const (
-	LonghornStorageClass  = "longhorn"
-	LocalPathStorageClass = "local-path"
-	LonghornNamespace     = "longhorn-system"
-	LocalStorageSkipFile  = "/var/lib/rancher/k3s/server/manifests/local-storage.yaml.skip"
+	LonghornStorageClass = "longhorn"
+	// LonghornSingleStorageClass keeps one Longhorn replica, next to the
+	// workload. For apps that replicate their own data (distributed MinIO).
+	LonghornSingleStorageClass = "longhorn-single"
+	LocalPathStorageClass      = "local-path"
+	LonghornNamespace          = "longhorn-system"
+	LocalStorageSkipFile       = "/var/lib/rancher/k3s/server/manifests/local-storage.yaml.skip"
 )
 
 // HAStorageClass is a stable helper for Postgres/Mongo/Redis/MinIO HA (#51/#52)
@@ -80,6 +83,36 @@ func renderLonghornValues(cfg *config.Config, replicas int) (string, error) {
 		values += fmt.Sprintf("\ndefaultBackupStore:\n  backupTarget: %q\n  backupTargetCredentialSecret: %q\n", target, secret)
 	}
 	return values, nil
+}
+
+// longhornSingleStorageClassManifest is a non-default Longhorn StorageClass
+// with one replica and best-effort data locality. Distributed MinIO uses it:
+// erasure coding across its drives already provides redundancy, so Longhorn's
+// usual three replicas would store every object about six times.
+const longhornSingleStorageClassManifest = `apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ` + LonghornSingleStorageClass + `
+  labels:
+    app.kubernetes.io/managed-by: platformctl
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  numberOfReplicas: "1"
+  dataLocality: best-effort
+  staleReplicaTimeout: "30"
+  fsType: ext4
+  dataEngine: v1
+`
+
+// applyLonghornSingleStorageClass is overridable in tests.
+var applyLonghornSingleStorageClass = func() error {
+	if out, err := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, longhornSingleStorageClassManifest); err != nil {
+		return fmt.Errorf("apply %s StorageClass: %w: %s", LonghornSingleStorageClass, err, out)
+	}
+	return nil
 }
 
 func countReadyNodes(out string) int {
@@ -185,6 +218,9 @@ func InstallLonghorn(cfg *config.Config) error {
 	if err := shell.RunBash(longhornReadinessScript); err != nil {
 		return fmt.Errorf("Longhorn CSI readiness timed out: %w", err)
 	}
+	if err := applyLonghornSingleStorageClass(); err != nil {
+		return err
+	}
 	// Every k3s server needs this file; otherwise k3s restores local-path's default annotation on restart.
 	if err := WriteLocalStorageSkip(""); err != nil {
 		return err
@@ -204,7 +240,7 @@ func InstallLonghorn(cfg *config.Config) error {
 	if len(defaults) != 1 || defaults[0] != LonghornStorageClass {
 		return fmt.Errorf("expected only longhorn as default StorageClass, got %v", defaults)
 	}
-	color.Green("  ✓ Longhorn installed as default StorageClass (%d replicas)", replicas)
+	color.Green("  ✓ Longhorn installed as default StorageClass (%d replicas); %s for self-replicating apps", replicas, LonghornSingleStorageClass)
 	return state.MarkDone("longhorn")
 }
 
