@@ -60,3 +60,28 @@ spec:
           annotations:
             summary: "Longhorn disk {{ $labels.disk }} usage exceeds 85%"
             description: "Add storage capacity or remove unused snapshots and volumes."
+---
+# Longhorn's chart NetworkPolicy only admits Longhorn components to the
+# manager, so Prometheus scrapes were refused (3-node test). Policies are
+# additive: this one admits only Prometheus, only on the metrics port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: longhorn-manager-metrics
+  namespace: longhorn-system
+spec:
+  podSelector:
+    matchLabels:
+      app: longhorn-manager
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9500
