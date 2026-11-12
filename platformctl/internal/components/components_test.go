@@ -1,7 +1,10 @@
 package components
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 )
 
 func TestAllComponents(t *testing.T) {
@@ -114,4 +117,17 @@ func containsStr(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// The MinIO chart rejects defaultBuckets in distributed mode (found on the
+// 3-node ha test); storage-scoped creates the buckets there.
+func TestMinioHelmArgsDefaultBucketsOnlyStandalone(t *testing.T) {
+	ha := strings.Join(minioHelmArgs(&config.Config{Profile: config.ProfileHA}, "v.yaml", "25Gi"), " ")
+	if strings.Contains(ha, "defaultBuckets") {
+		t.Fatalf("ha must not set defaultBuckets: %s", ha)
+	}
+	full := strings.Join(minioHelmArgs(&config.Config{Profile: config.ProfileFull}, "v.yaml", "50Gi"), " ")
+	if !strings.Contains(full, "defaultBuckets=platform-backups") {
+		t.Fatalf("single-node must keep defaultBuckets: %s", full)
+	}
 }

@@ -217,12 +217,23 @@ func InstallMinIO(cfg *config.Config) error {
 	if cfg.IsHA() {
 		persistSize = "25Gi"
 	}
-	err = helmValues("minio", "minio", "storage", minioInstallValues(cfg), "-f", tmpFile, "--set", "persistence.size="+persistSize, "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser", "--set", `defaultBuckets=platform-backups\,platform-logs\,platform-uploads`, "--wait", "--timeout", "10m")
+	err = helmValues("minio", "minio", "storage", minioInstallValues(cfg), minioHelmArgs(cfg, tmpFile, persistSize)...)
 	if err != nil {
 		return err
 	}
 	color.Green("  ✓ MinIO installed")
 	return state.MarkDone("minio")
+}
+
+// minioHelmArgs are the MinIO helm flags besides the values map. The chart only
+// creates defaultBuckets in standalone mode and refuses the value in distributed
+// mode (ha); there the storage-scoped step creates the buckets.
+func minioHelmArgs(cfg *config.Config, valuesFile, persistSize string) []string {
+	args := []string{"-f", valuesFile, "--set", "persistence.size=" + persistSize, "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser"}
+	if !cfg.IsHA() {
+		args = append(args, "--set", `defaultBuckets=platform-backups\,platform-logs\,platform-uploads`)
+	}
+	return append(args, "--wait", "--timeout", "10m")
 }
 
 func InstallArgoCD(cfg *config.Config) error {
