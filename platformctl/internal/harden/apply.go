@@ -76,17 +76,22 @@ func (h Host) secureKeyPath(path string) bool {
 	return true
 }
 
+// aptLockTimeout makes apt-get wait up to 5 minutes for the dpkg lock.
+const aptLockTimeout = "DPkg::Lock::Timeout=300"
+
 func (h Host) Prepare() error {
 	if h.NginxAuth {
 		if _, err := h.read("/var/log/platform/ingress-error.log"); err != nil {
 			return fmt.Errorf("nginx auth jail requires exported ingress error log: %w", err)
 		}
 	}
-	install := []string{"DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "-qq", "unattended-upgrades", "fail2ban", "chrony", "nftables"}
+	// Provision runs this alongside other apt users (Longhorn prerequisites on
+	// ha): wait for the dpkg lock instead of failing on it.
+	install := []string{"DEBIAN_FRONTEND=noninteractive", "apt-get", "-o", aptLockTimeout, "install", "-y", "-qq", "unattended-upgrades", "fail2ban", "chrony", "nftables"}
 	if err := h.run("env", install...); err != nil {
 		// A fresh cloud image (e.g. a node about to `join`) can have empty
 		// package lists: refresh them once and retry.
-		if uerr := h.run("env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "update", "-qq"); uerr != nil {
+		if uerr := h.run("env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "-o", aptLockTimeout, "update", "-qq"); uerr != nil {
 			return fmt.Errorf("%w (apt-get update: %v)", err, uerr)
 		}
 		if err := h.run("env", install...); err != nil {

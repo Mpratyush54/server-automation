@@ -36,7 +36,9 @@ const LonghornPrereqsScript = `
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 pkgs="open-iscsi nfs-common util-linux dmsetup"
-apt-get install -y -qq $pkgs || { apt-get update -qq && apt-get install -y -qq $pkgs; }
+# Wait for the dpkg lock: host hardening may run apt-get at the same time.
+apt="apt-get -o DPkg::Lock::Timeout=300"
+$apt install -y -qq $pkgs || { $apt update -qq && $apt install -y -qq $pkgs; }
 systemctl enable --now iscsid
 modprobe iscsi_tcp
 mkdir -p /etc/modules-load.d

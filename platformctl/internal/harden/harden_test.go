@@ -399,7 +399,10 @@ func TestPrepareRefreshesAptListsOnce(t *testing.T) {
 	installs := 0
 	h.Run = func(name string, args ...string) (string, error) {
 		s := name + " " + strings.Join(args, " ")
-		if strings.Contains(s, "apt-get install") {
+		if strings.Contains(s, " install -y ") {
+			if !strings.Contains(s, "DPkg::Lock::Timeout=") {
+				t.Errorf("apt install must wait for the dpkg lock: %s", s)
+			}
 			installs++
 			if installs == 1 {
 				f.calls = append(f.calls, s)
@@ -413,7 +416,7 @@ func TestPrepareRefreshesAptListsOnce(t *testing.T) {
 		t.Fatalf("Prepare: %v", err)
 	}
 	joined := strings.Join(f.calls, "\n")
-	if installs != 2 || !strings.Contains(joined, "apt-get update -qq") {
+	if installs != 2 || !strings.Contains(joined, " update -qq") {
 		t.Fatalf("want install, update, install; got %d installs:\n%s", installs, joined)
 	}
 }
