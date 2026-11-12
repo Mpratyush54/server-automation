@@ -54,6 +54,18 @@ EOF
   echo "no redis master among redis-node pods" >&2
   return 1
 }
+# Prefer the writable CNPG primary, retaining the existing Bitnami selector.
+pg_pod() {
+  local p
+  p=$(kubectl -n databases get pods -l cnpg.io/cluster=postgresql,cnpg.io/instanceRole=primary -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+  if [ -z "$p" ]; then p=$(pod postgresql); fi
+  printf '%s' "$p"
+}
+pg_container() {
+  local cluster
+  cluster=$(kubectl -n databases get pod "$1" -o jsonpath='{.metadata.labels.cnpg\.io/cluster}')
+  if [ "$cluster" = postgresql ]; then printf postgres; else printf postgresql; fi
+}
 # minio_source: use the configured mc alias, or derive one for the bundled
 # MinIO from its Secret and ClusterIP (reachable from the k3s host). The
 # credential lives only in this process environment (MC_HOST_*), never on disk.

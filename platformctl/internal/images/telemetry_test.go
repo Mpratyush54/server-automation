@@ -44,8 +44,9 @@ func TestListForProfileDropsKubeVIPUnlessHA(t *testing.T) {
 			haOnly++
 		}
 	}
-	// kube-vip, Longhorn (#50), and redis-sentinel (#52) are the ha-only images.
-	if haOnly != 15 || len(ha) != len(nonHA)+haOnly {
+	// kube-vip, Longhorn (#50), both CloudNativePG images (#51), and
+	// redis-sentinel (#52) are the ha-only images.
+	if haOnly != 17 || len(ha) != len(nonHA)+haOnly {
 		t.Fatalf("ha=%d nonHA=%d haOnly=%d", len(ha), len(nonHA), haOnly)
 	}
 	if slices.Contains(nonHA, "registry-1.docker.io/bitnami/redis-sentinel:latest") {
@@ -53,5 +54,13 @@ func TestListForProfileDropsKubeVIPUnlessHA(t *testing.T) {
 	}
 	if !slices.Contains(ha, "registry-1.docker.io/bitnami/redis-sentinel:latest") {
 		t.Fatal("redis-sentinel missing on ha")
+	}
+}
+
+func TestCloudNativePGImagesHAOnly(t *testing.T) {
+	for _, img := range []string{"ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1", "ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie"} {
+		if slices.Contains(ListForProfile(true, false), img) || !slices.Contains(ListForProfile(true, true), img) {
+			t.Fatal(img)
+		}
 	}
 }

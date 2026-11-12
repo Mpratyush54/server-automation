@@ -11,6 +11,7 @@ import (
 
 	"filippo.io/age"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/backup"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 	"github.com/fatih/color"
@@ -20,6 +21,7 @@ import (
 var backupAll bool
 var backupConfigPath, backupTarget, restoreID, restoreComponent string
 var restoreConfirm bool
+var restorePITR string
 
 func backupSettings() (backup.Config, error) {
 	c, e := backup.ReadConfig(backupConfigPath)
@@ -244,6 +246,21 @@ func init() {
 		if !restoreConfirm {
 			return fmt.Errorf("restore replaces data: stop project workloads, then pass --confirm")
 		}
+		if restorePITR != "" {
+			if !cfg.IsHA() {
+				return fmt.Errorf("--pitr requires the ha profile")
+			}
+			target, err := time.Parse(time.RFC3339, restorePITR)
+			if err != nil {
+				return fmt.Errorf("--pitr must be RFC3339: %w", err)
+			}
+			unlock, err := state.AcquireLock("restore-pitr")
+			if err != nil {
+				return err
+			}
+			defer unlock()
+			return components.RestorePostgresPITR(cfg, target)
+		}
 		if restoreID == "" {
 			return fmt.Errorf("--from backup ID is required")
 		}
@@ -254,6 +271,7 @@ func init() {
 		defer clear(identity)
 		return runRestore(backupTarget, restoreID, restoreComponent, identity)
 	}}
+	restore.Flags().StringVar(&restorePITR, "pitr", "", "HA PostgreSQL recovery target (RFC3339); does not read an age identity")
 	restore.Flags().StringVar(&backupConfigPath, "backup-config", "/etc/platform/backup.json", "backup config")
 	restore.Flags().StringVar(&backupTarget, "target", "", "target override")
 	restore.Flags().StringVar(&restoreID, "from", "", "backup ID")

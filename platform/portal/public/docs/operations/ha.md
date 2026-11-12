@@ -1,7 +1,7 @@
 # High availability (ha profile)
 
 The `ha` install profile (`PLATFORM_PROFILE=ha`) runs the platform on several
-nodes. It installs everything the `full` profile does, plus four HA layers that
+nodes. It installs everything the `full` profile does, plus five HA layers that
 this page covers in order:
 
 1. **Cluster**: k3s keeps the cluster state in **embedded etcd** replicated
@@ -16,6 +16,8 @@ this page covers in order:
    Sentinel on three nodes, and MinIO runs in distributed mode on four drives,
    so losing a datastore pod or node does not take the platform or project apps
    down.
+5. **PostgreSQL HA**: CloudNativePG maintains a primary and two standbys on
+   separate nodes, with continuous WAL archiving and daily base backups.
 
 Single-node profiles (`minimal`, `standard`, `full`) are not affected by
 anything on this page: they keep a single-node k3s, k3s local-path storage and
@@ -76,6 +78,11 @@ the nodes. See [Host hardening](../host-hardening.md).
 | `INGRESS_VIP` | ingress | Floating IPv4 address for the ingress LoadBalancer Service (required in `vip` mode) |
 | `INGRESS_VIP_INTERFACE` | ingress | NIC that carries the VIP; must have this name on every server (unset: kube-vip uses each node's default-route interface) |
 | `API_VIP` | ingress | Optional floating IPv4 address for the Kubernetes API (`vip` mode only) |
+| `POSTGRES_HA_STORAGE_CLASS` | PostgreSQL | Instance StorageClass (default `local-path`) |
+| `POSTGRES_BACKUP_DESTINATION` | PostgreSQL | External `s3://bucket/prefix/`; empty selects bundled MinIO |
+| `POSTGRES_BACKUP_ENDPOINT` | PostgreSQL | Optional HTTP(S) S3 endpoint |
+| `POSTGRES_BACKUP_SECRET` | PostgreSQL | External credentials Secret in `databases` (required with destination) |
+| `POSTGRES_BACKUP_RETENTION` | PostgreSQL | Retention duration (default `14d`; positive `d`, `w`, `m`) |
 | `LONGHORN_REPLICAS` | storage | `1`, `2` or `3`; unset = automatic |
 | `LONGHORN_BACKUP_TARGET` / `LONGHORN_BACKUP_SECRET` | storage | Longhorn S3 backup target and credentials Secret name |
 
@@ -510,7 +517,8 @@ printf '# HA storage: Longhorn is the default StorageClass.\n' | sudo tee /var/l
 Other HA components can use `components.HAStorageClass(cfg)` to request an explicit
 StorageClass: it returns `longhorn` for HA and an empty string for other profiles
 (use the cluster default/local-path). This is the shared contract for the
-Postgres, MongoDB, Redis and MinIO HA work.
+MongoDB, Redis and MinIO HA work. PostgreSQL explicitly defaults to local-path
+because it replicates its own data (see below).
 
 The manager requests 100m CPU and 128Mi memory per node, limited to one CPU and
 1Gi memory. CSI attacher, provisioner, resizer and snapshotter each use two
@@ -735,6 +743,221 @@ Migrate with a backup and restore:
 6. Start the API and apps again. Apps pick up the new Mongo and Redis settings
    the next time they request `/api/sdk/db-credentials` (on start).
 
+## PostgreSQL HA (CloudNativePG)
+
+The `ha` profile installs the CloudNativePG (CNPG) operator in `cnpg-system`
+and a `postgresql` Cluster in `databases`, using PostgreSQL 18.6. Other profiles
+retain the existing Bitnami PostgreSQL release. An existing Bitnami release,
+StatefulSet, or Helm-managed `postgresql` Service blocks HA installation without
+changing its data; use the migration procedure below.
+
+### Topology, storage and endpoints
+
+Three PostgreSQL instances run on separate nodes (required pod anti-affinity).
+One quorum synchronous standby acknowledges writes: RPO is zero while a
+synchronous standby is available. `dataDurability: preferred` allows the primary
+to keep accepting writes when no standby is available, including initial
+provisioning on one node or loss of two database nodes. Such writes lack the
+synchronous replication guarantee. On the first server only the primary needs
+to become Ready; both standbys remain Pending until additional nodes join.
+CNPG manages PodDisruptionBudgets for voluntary disruptions.
+
+Each instance requests 100m CPU and 512Mi memory, is limited to two CPUs and 1Gi,
+and has a 10Gi volume. `POSTGRES_HA_STORAGE_CLASS` defaults to `local-path` even
+though Longhorn is the cluster default. PostgreSQL replicates its own data;
+three Longhorn replicas beneath each of three instances would store each write
+nine times and move WAL fsync across the network. With one database instance
+per node, Longhorn adds no extra recovery capacity on a three-node cluster.
+Set a different DNS-1123 StorageClass name explicitly if needed before creating
+the Cluster; changing an existing volume's class requires a storage migration.
+
+Applications keep using `postgresql.databases:5432`, a ClusterIP alias selecting
+the primary, equivalent to CNPG's `postgresql-rw.databases:5432`. Read-only
+clients can use `postgresql-ro.databases:5432`; CNPG also creates `postgresql-r`.
+The Cluster name preserves project NetworkPolicy pod-label matching. The API
+connects as `postgres` to `platform`; CNPG's generated `postgresql-app` owner
+Secret is unused by the API.
+
+The installer creates the existing-name `databases/postgresql` Secret only if
+absent, with type `kubernetes.io/basic-auth`, `username: postgres`, and equal
+`password` and `postgres-password` keys. CNPG reads `password`; the platform
+reads `postgres-password`. API rotation and `platformctl recover` keep both keys
+equal. Re-provision never overwrites the Secret. CNPG also reapplies its value
+when an instance manager starts. Recovery verifies passwords over TCP because
+CNPG's local socket uses peer authentication.
+
+### Monitoring and status
+
+With monitoring enabled, `postgresql-monitoring` installs the `postgresql`
+PodMonitor and `postgresql-ha` PrometheusRule in `monitoring`. Relabeling keeps
+`pg_up` and `project_database_*` compatible with existing database insights and
+[database monitoring](database-monitoring.md). Custom queries run on the primary
+and report connections and bytes per `plat_%` database. Alerts cover an instance
+down for five minutes, no primary for two minutes, replication lag over sixty
+seconds for ten minutes, WAL archive failures, and an available backup older
+than two days. Other CNPG metrics retain their `cnpg_*` names.
+
+`platformctl status` prints the Cluster phase, ready/desired count and primary,
+both endpoints, WAL archiving (`ok`, `FAILING`, or `not configured`), last
+successful backup and first recoverability point when present. It warns when
+fewer than three instances are ready. Inspect details with:
+
+```bash
+kubectl -n databases get cluster postgresql
+kubectl -n databases get pods -l cnpg.io/cluster=postgresql -o wide
+kubectl -n databases describe cluster postgresql
+```
+
+### Continuous WAL and daily backups
+
+The `postgresql-backup` step runs after PostgreSQL, MinIO and the platform API
+(MinIO's OIDC issuer must be reachable before IAM initialization). By default it
+creates `s3://postgres-backups/` in bundled MinIO, a scoped `postgres-backup` user
+and bucket-only policy. `postgresql-backup-s3` in `databases` stores
+`ACCESS_KEY_ID` and a randomly generated `ACCESS_SECRET_KEY`; it is preserved on
+reruns. Temporary root credentials are removed after bootstrap. Bundled MinIO
+is **not off-site** and does not protect against losing the cluster.
+
+For an external S3-compatible store, create a dedicated Secret (credentials
+already supplied in your shell environment), then configure the public settings:
+
+```bash
+kubectl create namespace databases --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n databases create secret generic postgresql-external-s3 \
+  --from-literal=ACCESS_KEY_ID="$S3_ACCESS_KEY" \
+  --from-literal=ACCESS_SECRET_KEY="$S3_SECRET_KEY"
+```
+
+```dotenv
+POSTGRES_BACKUP_DESTINATION=s3://offsite-backups/postgresql/
+POSTGRES_BACKUP_ENDPOINT=https://s3.example.com
+POSTGRES_BACKUP_SECRET=postgresql-external-s3
+POSTGRES_BACKUP_RETENTION=14d
+POSTGRES_HA_STORAGE_CLASS=local-path
+```
+
+The endpoint is optional for the provider's default S3 endpoint. A destination
+requires a Secret name; credentials never enter `.env`. Retention defaults to
+`14d` and accepts positive durations in days (`d`), weeks (`w`), or months (`m`).
+Run `sudo platformctl install postgresql-backup` to reconcile settings. Continuous
+WAL archiving uses gzip compression; the daily base backup runs at 03:00 UTC
+(`0 0 3 * * *`, CNPG's six-field cron), with an immediate initial backup.
+Provision waits for `ContinuousArchiving=True`; inspect archive errors with
+`kubectl -n databases describe cluster postgresql`.
+
+CNPG refuses a non-empty WAL archive for a newly created Cluster. Re-provisioning
+after deleting the Cluster requires a new bucket/prefix or a change to
+`POSTGRES_BACKUP_DESTINATION`; do not erase the old archive needed for recovery.
+The pinned chart `0.29.1` uses operator `1.30.1` and the in-tree
+`barmanObjectStore`. CNPG removes this API in operator 1.31: upgrading to chart
+0.30 or later requires migrating to the Barman Cloud plugin first. The pinned
+PostgreSQL `system` image includes barman-cloud tools and pgaudit.
+
+### Point-in-time recovery (PITR)
+
+Choose a past RFC3339 timestamp at or after the first recoverability point:
+
+```bash
+sudo platformctl restore --pitr 2026-11-12T10:00:00Z --confirm
+```
+
+This HA-only restore uses the live Cluster's object-store settings, without
+`--from` or an age identity on stdin. Stop project writers for the downtime
+window. The command stops the API, switches and archives the primary's WAL,
+deletes and recreates the Cluster, and waits for its recovered primary. Database
+volumes are replaced; all databases return to the selected timestamp. It always
+attempts to resume the API, including on failure, and reports resume errors.
+The restored Cluster uses a new `postgresql-pitr-<unix seconds>` serverName, while
+recovery reads the old serverName. The old WAL archive is never written again.
+Reconciles preserve the live serverName. An immediate fresh base backup is
+requested and the daily ScheduledBackup remains active. Verify the new backup
+and first recoverability point before relying on further PITR. The retention
+policy only prunes the current serverName: delete the old serverName's objects
+manually once they are no longer needed.
+
+### Failover verification
+
+With all three instances Ready, keep a test application writing through the
+read-write endpoint. In a planned test window, delete the primary pod:
+
+```bash
+primary=$(kubectl -n databases get pod -l cnpg.io/cluster=postgresql,cnpg.io/instanceRole=primary -o jsonpath='{.items[0].metadata.name}')
+kubectl -n databases delete pod "$primary"
+kubectl -n databases get cluster postgresql -w
+```
+
+Also test powering off the primary's node, with etcd quorum and two database
+nodes still available. Expect promotion in tens of seconds after failure
+detection; node failure detection can add time, so measure on your network.
+The primary selector and services follow promotion; the API reconnects after
+interrupted connections. Verify writes resume, acknowledged data remains, and
+the returning instance rejoins as a standby. PDBs do not prevent involuntary
+node loss. Do not remove additional nodes while the cluster is degraded.
+
+### Migrating from a single-node install
+
+There is no automatic in-place conversion. Switching `ha` back to a single-node
+profile is also unsupported. Keep tested external backups and arrange a downtime
+window. Perform this manual migration on the first server:
+
+1. Stop project database writers, record the API replica count, and scale it to
+   zero: `kubectl -n platform scale deploy/platform-api --replicas=0`. Wait for
+   API pods to terminate. Record every non-template database and verify dump
+   tools use the installed PostgreSQL version.
+2. From the Bitnami primary (`postgresql-0`, container `postgresql`), export
+   `pg_dumpall -U postgres --globals-only` and a separate `pg_dump -U postgres
+   -Fc -d <database>` for **every** database, including `platform` and project
+   databases. Read passwords from the container's env/password file; redirect
+   dumps to protected files outside the pod. Check exit codes and test the dumps.
+
+   ```bash
+   umask 077
+   kubectl -n databases exec postgresql-0 -c postgresql -- bash -ec \
+     'export PGPASSWORD="${POSTGRES_PASSWORD:-$(cat "${POSTGRES_PASSWORD_FILE:-/opt/bitnami/postgresql/secrets/postgres-password}")}"; pg_dumpall -U postgres --globals-only' > globals.sql
+   # Repeat for each database, using a distinct local dump filename.
+   kubectl -n databases exec postgresql-0 -c postgresql -- bash -ec \
+     'export PGPASSWORD="${POSTGRES_PASSWORD:-$(cat "${POSTGRES_PASSWORD_FILE:-/opt/bitnami/postgresql/secrets/postgres-password}")}"; pg_dump -U postgres -Fc -d platform' > platform.dump
+   ```
+
+3. Keep the existing `postgresql` Secret and PVC. Annotate the Secret before
+   uninstalling: `kubectl -n databases annotate secret postgresql
+   helm.sh/resource-policy=keep --overwrite`. Inspect and retain the database
+   PVC and its PV reclaim policy (take a volume backup as well); do not delete
+   them. Then run `helm uninstall postgresql -n databases`. Confirm the old
+   StatefulSet and Helm-owned alias Service are gone. Retain the old PVC for
+   rollback until migration has been verified.
+4. Add `username: postgres` and `password` equal to the existing
+   `postgres-password` in the preserved Secret, without printing the password:
+
+   ```bash
+   kubectl -n databases get secret postgresql -o json | \
+     jq '{data:{username:("postgres"|@base64),password:.data["postgres-password"]}}' | \
+     kubectl -n databases patch secret postgresql --type merge --patch-file=/dev/stdin
+   ```
+
+5. Re-run provision with `PLATFORM_PROFILE=ha` (`sudo -E platformctl provision
+   --profile ha`). Provision starts the API against the new, empty `platform`
+   database (its migrations create empty tables, which the restore below
+   replaces). Scale the API back to zero as soon as provision finishes and keep
+   project writers stopped during the import. New instances use fresh CNPG
+   volumes, leaving the old retained PVC untouched.
+6. Select the CNPG primary with the selector above, container `postgres`. Restore
+   globals with `psql -U postgres -v ON_ERROR_STOP=1`, omitting the existing
+   `postgres` role's CREATE/ALTER lines and handling the pre-existing `platform`
+   owner role. Review role statements before applying. Restore each custom
+   dump with `pg_restore -U postgres -d template1 --clean --if-exists --create
+   --exit-on-error`, streaming through `kubectl exec -i` or copying into a
+   directory obtained with remote `mktemp -d`. Keep the preserved superuser
+   Secret authoritative; do not restore a conflicting postgres password.
+7. Restore the recorded API replica count, resume project workloads, and verify
+   login, database owners/extensions, project reads and writes, three ready
+   instances, WAL archiving and a fresh base backup before ending downtime.
+
+Alternatively, use CNPG `bootstrap.initdb.import` in monolith mode to import
+from the old PostgreSQL service during a controlled downtime window. This
+requires a separately named source service/cluster, source credentials and a
+reviewed import manifest; the installer deliberately does not automate it.
+
 ## Upgrades and backups
 
 ### Upgrades
@@ -742,6 +965,10 @@ Migrate with a backup and restore:
 k3s is pinned per platformctl release. Upgrade the nodes one at a time, servers
 first, waiting for each node to be `Ready` before the next, so etcd keeps quorum.
 Never run different platformctl releases on nodes for longer than the rollout.
+
+`platformctl upgrade` re-applies the CloudNativePG operator chart and the
+`postgresql` Cluster; only spec changes roll the instances (standbys first,
+then a switchover of the primary, a few seconds of reconnects).
 
 `platformctl upgrade` reapplies the pinned Longhorn chart using `helm upgrade`;
 Longhorn upgrades engines live. Read the Longhorn upgrade notes before upgrading
@@ -809,6 +1036,9 @@ Longhorn backups separately.
 
 | Symptom | Cause and fix |
 |---|---|
+| PostgreSQL standbys stay Pending | Required anti-affinity needs three schedulable nodes. Join the other nodes and check CPU, memory and storage capacity. The first primary can accept writes alone. |
+| PostgreSQL WAL archiving is failing: archive is not empty | A new Cluster cannot reuse a populated serverName archive. Use a new bucket/prefix with `POSTGRES_BACKUP_DESTINATION`, preserving old backups for recovery. |
+| Applying the PostgreSQL Cluster fails: webhook not ready | Installer retries for about two minutes. Check `kubectl -n cnpg-system rollout status deploy/cnpg-cloudnative-pg`, endpoints and the Established CRD, then rerun. |
 | `join` pre-flight: `cannot reach <server>:<port>` | The existing nodes' firewall does not admit this node: add its IP to `PLATFORM_CLUSTER_NODES` on every existing node and run `sudo platformctl harden --auto` there. Check cloud security groups too. |
 | `join` pre-flight: CA hash mismatch | The token belongs to another cluster, or the server token was rotated: create a new token. |
 | `join` pre-flight: k3s version differs | Install the same platformctl release as on the first server. |

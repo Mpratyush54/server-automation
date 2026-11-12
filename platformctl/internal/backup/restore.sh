@@ -42,12 +42,13 @@ config)
   fi
   ;;
 postgres)
-  p=$(pod postgresql)
-  remote=$(kubectl -n databases exec "$p" -- mktemp -d)
-  trap 'kubectl -n databases exec "$p" -- rm -rf "$remote"' EXIT
-  kubectl -n databases cp "$src/globals.sql" "$p:$remote/globals.sql"
-  kubectl -n databases cp "$src/databases.tar" "$p:$remote/databases.tar"
-  kubectl -n databases exec "$p" -- bash -ec "$PWHELPER"'
+  p=$(pg_pod)
+  pg_container=$(pg_container "$p")
+  remote=$(kubectl -n databases exec "$p" -c "$pg_container" -- mktemp -d)
+  trap 'kubectl -n databases exec "$p" -c "$pg_container" -- rm -rf "$remote"' EXIT
+  kubectl -n databases cp -c "$pg_container" "$src/globals.sql" "$p:$remote/globals.sql"
+  kubectl -n databases cp -c "$pg_container" "$src/databases.tar" "$p:$remote/databases.tar"
+  kubectl -n databases exec "$p" -c "$pg_container" -- bash -ec "$PWHELPER"'
     export PGPASSWORD="$(pw POSTGRES_PASSWORD)"
     work=$1
     # The bootstrap superuser already exists. Keep its current password until

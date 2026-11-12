@@ -23,13 +23,14 @@ config)
   fi
   ;;
 postgres)
-  p=$(pod postgresql)
-  kubectl -n databases exec "$p" -- bash -ec "$PWHELPER"'
+  p=$(pg_pod)
+  pg_container=$(pg_container "$p")
+  kubectl -n databases exec "$p" -c "$pg_container" -- bash -ec "$PWHELPER"'
     export PGPASSWORD="$(pw POSTGRES_PASSWORD)"
     pg_dumpall -U postgres --globals-only
   ' > "$dest/globals.sql"
   # Database names are data, never interpolated into shell source or filenames.
-  kubectl -n databases exec "$p" -- bash -ec "$PWHELPER"'
+  kubectl -n databases exec "$p" -c "$pg_container" -- bash -ec "$PWHELPER"'
     export PGPASSWORD="$(pw POSTGRES_PASSWORD)"
     work=$(mktemp -d); trap '\''rm -rf "$work"'\'' EXIT
     psql -U postgres -At -0 -c "SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname" > "$work/names"
