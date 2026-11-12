@@ -60,6 +60,11 @@ type Config struct {
 	InstallKyvernoCVEPolicy bool
 	// KyvernoPolicyMode is Audit (default) or Enforce for Kyverno policies.
 	KyvernoPolicyMode string
+	// LonghornReplicas is 0 (auto) or an explicit count from 1 through 3.
+	LonghornReplicas     int
+	LonghornBackupTarget string
+	// LonghornBackupSecret names an operator-created Secret; credentials stay out of .env.
+	LonghornBackupSecret string
 	// SyntheticsBrowser enables browser synthetic checks (headless Chromium
 	// CronJobs, #42). Only honored on the full profile with SYNTHETICS_BROWSER=true.
 	SyntheticsBrowser bool
@@ -168,6 +173,12 @@ func Load() *Config {
 	c.resolveAPIReplicas(explicitReplicas, profileExplicit)
 	c.resolveKyverno()
 	c.loadCluster()
+	c.LonghornReplicas, _ = strconv.Atoi(strings.TrimSpace(os.Getenv("LONGHORN_REPLICAS")))
+	if c.LonghornReplicas < 1 || c.LonghornReplicas > 3 {
+		c.LonghornReplicas = 0
+	}
+	c.LonghornBackupTarget = strings.TrimSpace(os.Getenv("LONGHORN_BACKUP_TARGET"))
+	c.LonghornBackupSecret = strings.TrimSpace(os.Getenv("LONGHORN_BACKUP_SECRET"))
 	return c
 }
 
@@ -530,6 +541,9 @@ func (c *Config) SaveEnvFile(path string) error {
 			return fmt.Errorf("telemetry settings cannot contain line breaks")
 		}
 	}
+	if strings.ContainsAny(c.LonghornBackupTarget+c.LonghornBackupSecret, "\r\n") {
+		return fmt.Errorf("Longhorn backup settings cannot contain line breaks")
+	}
 
 	if idx := strings.LastIndexAny(path, "/\\"); idx != -1 {
 		dir := path[:idx]
@@ -593,6 +607,9 @@ func (c *Config) SaveEnvFile(path string) error {
 		return err
 	}
 	b.WriteString(cluster)
+	b.WriteString(fmt.Sprintf("LONGHORN_REPLICAS=%d\n", c.LonghornReplicas))
+	b.WriteString(fmt.Sprintf("LONGHORN_BACKUP_TARGET=%s\n", c.LonghornBackupTarget))
+	b.WriteString(fmt.Sprintf("LONGHORN_BACKUP_SECRET=%s\n", c.LonghornBackupSecret))
 	return os.WriteFile(path, []byte(b.String()), 0600)
 }
 

@@ -46,6 +46,8 @@ type Component struct {
 
 func All() []Component {
 	return []Component{
+		{"longhorn", "Longhorn replicated block storage (ha profile; default StorageClass)", InstallLonghorn},
+		{"longhorn-monitoring", "Longhorn ServiceMonitor and volume alerts (ha profile + monitoring)", InstallLonghornMonitoring},
 		{"ingress-nginx", "Kubernetes Ingress Controller", InstallIngressNginx},
 		{"cert-manager", "Let's Encrypt certificate management", InstallCertManager},
 		{"postgresql", "PostgreSQL database", InstallPostgreSQL},

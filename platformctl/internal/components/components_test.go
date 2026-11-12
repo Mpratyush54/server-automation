@@ -9,8 +9,8 @@ func TestAllComponents(t *testing.T) {
 	if len(all) == 0 {
 		t.Fatal("All() returned no components")
 	}
-	if len(all) != 18 { // Infisical removed; ingress (early TLS); kyverno (#28); storage-scoped (#36); telemetry (#37); synthetics (#42)
-		t.Errorf("expected 18 components, got %d", len(all))
+	if len(all) != 20 { // Infisical removed; ingress (early TLS); kyverno (#28); storage-scoped (#36); telemetry (#37); synthetics (#42); Longhorn + monitoring (#50)
+		t.Errorf("expected 20 components, got %d", len(all))
 	}
 }
 
@@ -39,7 +39,7 @@ func TestAllUniqueNames(t *testing.T) {
 }
 
 func TestFindExisting(t *testing.T) {
-	names := []string{"argocd", "postgresql", "monitoring", "ingress-nginx", "cert-manager", "platform"}
+	names := []string{"longhorn", "longhorn-monitoring", "argocd", "postgresql", "monitoring", "ingress-nginx", "cert-manager", "platform"}
 	for _, name := range names {
 		c := Find(name)
 		if c == nil {

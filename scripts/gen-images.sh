@@ -106,6 +106,9 @@ chart_args() {
     portainer)
       echo "-f $(values portainer-values.yaml) --set service.type=ClusterIP --set ingress.enabled=false" \
            "--set adminPassword.existingSecret=portainer-admin-password" ;;
+    longhorn)
+      # Match platformctl/internal/components/longhorn.go.
+      echo "-f $(values longhorn-values.yaml)" ;;
     kyverno)
       # Match platformctl/internal/components/kyverno.go resource pins.
       echo "--set admissionController.replicas=1" \
@@ -122,8 +125,10 @@ chart_args() {
 # extract_images: read rendered YAML on stdin, print image refs.
 #  - every `image: <ref>` scalar (quoted or not, optionally a list item)
 #  - prometheus-operator's --prometheus-config-reloader=<ref> argument
+#  - quoted Longhorn image arguments and driver-deployer environment values
 extract_images() {
   tr -d '\r' | sed -n \
+    -e 's/^[[:space:]-]*\(value:[[:space:]]*\)\{0,1\}"\(longhornio\/[^"[:space:]]\{1,\}\)"[[:space:]]*$/\2/p' \
     -e 's/^[[:space:]-]*image:[[:space:]]*["'\'']\{0,1\}\([^"'\''[:space:]#]\{1,\}\)["'\'']\{0,1\}[[:space:]]*\(#.*\)\{0,1\}$/\1/p' \
     -e 's/.*--prometheus-config-reloader=["'\'']\{0,1\}\([^"'\''[:space:]]\{1,\}\).*/\1/p' |
     grep -v -e '^{' -e '^\$' -e '^null$' || true

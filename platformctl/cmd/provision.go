@@ -105,18 +105,20 @@ func provisionGraph(c *config.Config) []stepDef {
 	// Ready steps start in this order, so the critical path comes first:
 	// databases -> platform -> routing, plus Portainer (slowest to become ready).
 	return []stepDef{
-		{name: "postgresql", args: install("postgresql"), fn: components.InstallPostgreSQL},
-		{name: "mongodb", args: install("mongodb"), fn: components.InstallMongoDB},
-		{name: "redis", args: install("redis"), fn: components.InstallRedis},
-		{name: "minio", args: install("minio"), fn: components.InstallMinIO},
+		// k3s is a host step before this graph. Set the default StorageClass before any PVC is created.
+		{name: "longhorn", skip: !c.IsHA(), args: install("longhorn"), fn: components.InstallLonghorn},
+		{name: "postgresql", deps: []string{"longhorn"}, args: install("postgresql"), fn: components.InstallPostgreSQL},
+		{name: "mongodb", deps: []string{"longhorn"}, args: install("mongodb"), fn: components.InstallMongoDB},
+		{name: "redis", deps: []string{"longhorn"}, args: install("redis"), fn: components.InstallRedis},
+		{name: "minio", deps: []string{"longhorn"}, args: install("minio"), fn: components.InstallMinIO},
 		{name: "ingress-nginx", args: install("ingress-nginx"), fn: components.InstallIngressNginx},
 		{name: "cert-manager", skip: !c.InstallCertManager, args: install("cert-manager"), fn: components.InstallCertManager},
-		{name: "portainer", skip: !c.InstallPortainer, args: install("portainer"), fn: components.InstallPortainer},
+		{name: "portainer", deps: []string{"longhorn"}, skip: !c.InstallPortainer, args: install("portainer"), fn: components.InstallPortainer},
 		{name: "argocd", skip: !c.InstallArgoCD, args: install("argocd"), fn: components.InstallArgoCD},
-		{name: "monitoring", skip: !c.InstallMonitoring, args: install("monitoring"), fn: components.InstallMonitoring},
+		{name: "monitoring", deps: []string{"longhorn"}, skip: !c.InstallMonitoring, args: install("monitoring"), fn: components.InstallMonitoring},
 		// Kyverno is opt-in (full + INSTALL_KYVERNO); skipped nodes satisfy deps.
 		{name: "kyverno", skip: !c.InstallKyverno, args: install("kyverno"), fn: components.InstallKyverno},
-		{name: "platform", deps: []string{"postgresql", "mongodb", "redis", "minio", "kyverno"},
+		{name: "platform", deps: []string{"longhorn", "postgresql", "mongodb", "redis", "minio", "kyverno"},
 			args: install("platform"), fn: components.InstallPlatform},
 		// Ingresses (and so the TLS certificate request) right after the ingress
 		// controller and cert-manager: the certificate issues in parallel with
@@ -137,6 +139,7 @@ func provisionGraph(c *config.Config) []stepDef {
 		{name: "telemetry", deps: []string{"platform", "monitoring", "routing"}, skip: !components.FullTelemetry(c), args: install("telemetry"), fn: components.InstallTelemetry},
 		// Synthetic monitoring (#42): namespace, quotas, egress policies, API RBAC (full profile).
 		{name: "synthetics", deps: []string{"telemetry"}, skip: !components.FullTelemetry(c), args: install("synthetics"), fn: components.InstallSynthetics},
+		{name: "longhorn-monitoring", deps: []string{"longhorn", "monitoring"}, skip: !c.IsHA() || !c.InstallMonitoring, args: install("longhorn-monitoring"), fn: components.InstallLonghornMonitoring, warnOnly: true},
 		{name: "seed", deps: []string{"platform"}, args: []string{"seed"}, fn: components.SeedAdmin, warnOnly: true},
 		// MinIO IAM needs the platform API (its OpenID issuer), so the API's scoped
 		// storage user is created after "platform"; the API restarts with it.
