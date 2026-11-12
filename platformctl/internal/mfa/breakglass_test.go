@@ -20,6 +20,8 @@ type call struct {
 type fakeKube struct {
 	calls   []call
 	pod     string
+	primary string // CNPG primary; "" = no CNPG cluster (lookup falls back to pod)
+	standby bool   // pod is a CNPG standby: only the primary lookup must be used
 	dbB64   string
 	execOut string
 	execErr error
@@ -29,6 +31,8 @@ func (f *fakeKube) run(stdin, name string, args ...string) (string, error) {
 	f.calls = append(f.calls, call{stdin, name, append([]string(nil), args...)})
 	joined := strings.Join(args, " ")
 	switch {
+	case strings.Contains(joined, "instanceRole=primary") && (f.primary != "" || f.standby):
+		return f.primary, nil
 	case strings.Contains(joined, "get pods"):
 		return f.pod, nil
 	case strings.Contains(joined, "secret platform-env"):
@@ -186,5 +190,23 @@ func TestInPodScriptQuoting(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "pwned")); err == nil {
 		t.Fatal("email was executed by the shell")
+	}
+}
+
+// On ha the instance label also matches CNPG standbys, which refuse writes
+// (found on the 3-node test): the break-glass must exec in the primary.
+func TestDisableUsesCNPGPrimary(t *testing.T) {
+	f := &fakeKube{pod: "postgresql-3", primary: "postgresql-2", standby: true, execOut: "removed=1\n"}
+	if _, err := (BreakGlass{Run: f.run, Database: "platform"}).Disable("a@example.com"); err != nil {
+		t.Fatalf("Disable: %v", err)
+	}
+	last := f.calls[len(f.calls)-1]
+	if strings.Join(last.args, " ") == "" || last.args[4] != "postgresql-2" {
+		t.Fatalf("exec must target the primary, got %q", last.args)
+	}
+	for _, c := range f.calls {
+		if strings.Contains(strings.Join(c.args, " "), "app.kubernetes.io/instance=postgresql") {
+			t.Fatal("must not fall back to the instance label when a primary exists")
+		}
 	}
 }

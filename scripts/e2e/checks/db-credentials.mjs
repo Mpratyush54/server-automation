@@ -49,11 +49,14 @@ function freePort() {
 }
 
 /** host like "<svc>.<namespace>.svc.cluster.local" -> local forwarded port. */
+/** "<pod>.<headless-svc>.<namespace>.svc..." (replica-set member) forwards the pod. */
 async function forward(host, port) {
-  const [svc, ns] = String(host).split('.');
-  if (!svc || !ns) throw new Error('unexpected database host format');
+  const parts = String(host).split('.');
+  const member = parts.length > 2 && parts[1].endsWith('-headless');
+  const [target, ns] = member ? [`pod/${parts[0]}`, parts[2]] : [`svc/${parts[0]}`, parts[1]];
+  if (!parts[0] || !ns) throw new Error('unexpected database host format');
   const local = await freePort();
-  const child = spawn('kubectl', ['-n', ns, 'port-forward', `svc/${svc}`, `${local}:${port}`], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn('kubectl', ['-n', ns, 'port-forward', target, `${local}:${port}`], { stdio: ['ignore', 'pipe', 'pipe'] });
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('port-forward timeout')), 30000);
     child.stdout.on('data', (d) => { if (/Forwarding from/.test(String(d))) { clearTimeout(timer); resolve(); } });
@@ -85,15 +88,26 @@ async function verify(engine, file) {
   } else if (engine === 'mongo') {
     const m = c.mongo;
     const mongoose = apiRequire('mongoose');
-    const uri = new URL(m.uri);
-    const hostPort = uri.host.split(',')[0];
-    const [host, port] = hostPort.split(':');
-    const f = await forward(host, Number(port || 27017));
-    try {
-      uri.host = `127.0.0.1:${f.local}`;
+    // ha returns a replica-set URI (mongodb://u:p@m0,m1,m2/db?replicaSet=rs0),
+    // which WHATWG URL rejects: split the host list off and forward each
+    // member until the writable primary answers.
+    const mu = /^(mongodb:\/\/)([^@/]+@)?([^/?]+)(.*)$/.exec(m.uri);
+    if (!mu) throw new Error('unexpected mongo uri format');
+    let f; let conn;
+    for (const hostPort of mu[3].split(',')) {
+      const [host, port] = hostPort.split(':');
+      const fw = await forward(host, Number(port || 27017));
+      const uri = new URL(`${mu[1]}${mu[2] || ''}127.0.0.1:${fw.local}${mu[4]}`);
       uri.searchParams.set('directConnection', 'true');
       uri.searchParams.delete('replicaSet');
-      const conn = await mongoose.createConnection(uri.toString(), { serverSelectionTimeoutMS: 15000 }).asPromise();
+      const c = await mongoose.createConnection(uri.toString(), { serverSelectionTimeoutMS: 15000 }).asPromise().catch(() => null);
+      const primary = c && (await c.db.admin().command({ hello: 1 }).then((h) => h.isWritablePrimary, () => false));
+      if (primary) { f = fw; conn = c; break; }
+      if (c) await c.close();
+      fw.stop();
+    }
+    if (!expect(conn, 'mongo: a replica-set member answers as writable primary', 'none')) return;
+    try {
       const col = conn.db.collection('e2e_probe');
       await col.insertOne({ at: new Date() });
       expect((await col.countDocuments()) >= 1, 'mongo: project credentials read/write their database', 'no documents');
