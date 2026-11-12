@@ -204,3 +204,86 @@ class TestRedisManager:
         assert kwargs["username"] == "project-user"
         assert kwargs["host"] == "redis.internal"
         assert kwargs["port"] == 6380
+
+    @patch('platform_sdk.db.redis.Sentinel')
+    def test_sentinel_from_config(self, mock_sentinel_cls):
+        mock_sentinel = MagicMock()
+        mock_master = MagicMock()
+        mock_sentinel_cls.return_value = mock_sentinel
+        mock_sentinel.master_for.return_value = mock_master
+
+        manager = RedisManager({
+            "sentinels": [{"host": "s0", "port": 26379}, {"host": "s1", "port": 26379}],
+            "master_name": "mymaster",
+            "sentinel_username": "plat-sentinel",
+            "sentinel_password": "sent-pw",
+            "username": "plat_a",
+            "password": "pw",
+            "db": 0,
+            "key_prefix": "plat:a:",
+        })
+        assert manager.mode == "sentinel"
+        manager.connect()
+        mock_sentinel_cls.assert_called_once_with(
+            [("s0", 26379), ("s1", 26379)],
+            sentinel_kwargs={"username": "plat-sentinel", "password": "sent-pw"},
+            socket_timeout=5,
+        )
+        mock_sentinel.master_for.assert_called_once_with(
+            "mymaster",
+            decode_responses=True,
+            username="plat_a",
+            password="pw",
+            db=0,
+        )
+        mock_master.ping.assert_called_once()
+        assert manager.connected is True
+
+    @patch('platform_sdk.db.redis.Sentinel')
+    def test_sentinel_string_parsing(self, mock_sentinel_cls):
+        mock_sentinel = MagicMock()
+        mock_sentinel_cls.return_value = mock_sentinel
+        mock_sentinel.master_for.return_value = MagicMock()
+
+        manager = RedisManager({"sentinels": "s0:26379,s1", "username": "u", "password": "p"})
+        manager.connect()
+        mock_sentinel_cls.assert_called_once_with(
+            [("s0", 26379), ("s1", 26379)],
+            sentinel_kwargs=None,
+            socket_timeout=5,
+        )
+        mock_sentinel.master_for.assert_called_once_with(
+            "mymaster", decode_responses=True, username="u", password="p",
+        )
+
+    @patch.dict(os.environ, {
+        "PLATFORM_REDIS_SENTINELS": "a:26379,b:26379",
+        "PLATFORM_REDIS_SENTINEL_MASTER": "mymaster",
+        "PLATFORM_REDIS_SENTINEL_USERNAME": "plat-sentinel",
+        "PLATFORM_REDIS_SENTINEL_PASSWORD": "sent-pw",
+    }, clear=True)
+    @patch('platform_sdk.db.redis.Sentinel')
+    def test_sentinel_from_env(self, mock_sentinel_cls):
+        mock_sentinel = MagicMock()
+        mock_sentinel_cls.return_value = mock_sentinel
+        mock_sentinel.master_for.return_value = MagicMock()
+        manager = RedisManager()
+        assert manager.mode == "sentinel"
+        manager.connect()
+        mock_sentinel_cls.assert_called_once_with(
+            [("a", 26379), ("b", 26379)],
+            sentinel_kwargs={"username": "plat-sentinel", "password": "sent-pw"},
+            socket_timeout=5,
+        )
+        # host/port from env defaults must not be passed to master_for in sentinel mode.
+        kwargs = mock_sentinel.master_for.call_args
+        assert kwargs[0][0] == "mymaster"
+        assert "host" not in kwargs[1]
+        assert "port" not in kwargs[1]
+
+    @patch('platform_sdk.db.redis.redis.Redis')
+    def test_standalone_unchanged_without_sentinels(self, mock_redis_class):
+        RedisManager({"host": "redis", "port": 6379, "password": "p"}).connect()
+        mock_redis_class.assert_called_once_with(
+            host="redis", port=6379, password="p", username=None, decode_responses=True,
+        )

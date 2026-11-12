@@ -140,6 +140,15 @@ describe('project-db-ensure', () => {
     expect(store.find((s) => s.key === 'MONGO_PASSWORD').encryptedValue).toBe(`enc:${create.pwd}`);
   });
 
+  it('buildProjectMongoUri keeps multi-host replicaSet seeds and never carries the root user', () => {
+    const { buildProjectMongoUri } = require('../../src/lib/project-db-ensure');
+    const platform = 'mongodb://root:platform-password@mongo-0:27017,mongo-1:27017,mongo-2:27017/plat_platform?replicaSet=rs0&authSource=admin';
+    const uri = buildProjectMongoUri(platform, 'plat_proj_dev', 'plat_proj_dev_user', 'proj-secret');
+    expect(uri).toBe('mongodb://plat_proj_dev_user:proj-secret@mongo-0:27017,mongo-1:27017,mongo-2:27017/plat_proj_dev?replicaSet=rs0&authSource=plat_proj_dev');
+    expect(uri).not.toContain('root');
+    expect(uri).not.toContain('platform-password');
+  });
+
   it('updates the existing MongoDB user and reuses its stored password', async () => {
     process.env.MONGODB_URI = 'mongodb://root:platform-password@mongo:27017/plat_platform';
     const { resolveProjectDbCredentials } = require('../../src/lib/project-db-ensure');

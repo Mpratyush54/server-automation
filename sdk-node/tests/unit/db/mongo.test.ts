@@ -89,4 +89,17 @@ describe('MongoManager error handling', () => {
     expect(on).toHaveBeenCalledWith('error', expect.any(Function));
     await m.disconnect();
   });
+
+  it('passes a multi-host replica-set URI through to createConnection unchanged', async () => {
+    const mongoose = require('mongoose');
+    const uri = 'mongodb://plat_u:p@mongo-0:27017,mongo-1:27017,mongo-2:27017/plat_db?replicaSet=rs0&authSource=plat_db';
+    mongoose.createConnection.mockReturnValue({
+      on: jest.fn(),
+      asPromise: jest.fn().mockResolvedValue({ close: jest.fn() }),
+    });
+    const m = new MongoManager({ uri });
+    await m.connect();
+    expect(mongoose.createConnection).toHaveBeenCalledWith(uri);
+    await m.disconnect();
+  });
 });
