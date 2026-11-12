@@ -165,7 +165,7 @@ Restore is destructive and not transactional. Postgres expects a newly
 provisioned server; pre-existing non-bootstrap roles may conflict and correctly
 fail recovery. If a restore fails after a database step, credentials may no
 longer match the Secrets: run `sudo platformctl recover`, then retry the restore.
-Replica/Sentinel Redis topologies are outside this single-node driver. Bucket
+On the `ha` profile, Mongo is dumped from and restored to the replica set primary, Redis is captured from the current Sentinel master and restored onto every node's volume, and MinIO is mirrored through the `minio` Service (see [High availability](ha.md#datastores)). Bucket
 policies/IAM are not captured by `mc mirror`; recreate them separately. Re-enable
 GitOps auto-sync and project workloads afterwards, and verify old user login,
 project list, decrypted secret values, DB seed rows and an uploaded object before

@@ -28,6 +28,21 @@ const redis = new RedisManager(config?: RedisConfig);
 | `host` | `PLATFORM_REDIS_HOST` | `localhost` |
 | `port` | `PLATFORM_REDIS_PORT` | `6379` |
 | `password` | `PLATFORM_REDIS_PASSWORD` | (none) |
+| `username` | `PLATFORM_REDIS_USERNAME` | (none) |
+| `keyPrefix` | `PLATFORM_REDIS_KEY_PREFIX` | (none) |
+| `sentinels` | `PLATFORM_REDIS_SENTINELS` (`host:port,host:port`) | (none) |
+| `masterName` | `PLATFORM_REDIS_SENTINEL_MASTER` | `mymaster` |
+| `sentinelUsername` | `PLATFORM_REDIS_SENTINEL_USERNAME` | (none) |
+| `sentinelPassword` | `PLATFORM_REDIS_SENTINEL_PASSWORD` | (none) |
+
+### Sentinel (ha profile)
+
+When `sentinels` is set (an array of `{ host, port }` or a `host:port,...` string), the manager
+asks Sentinel for the current master instead of using `host`/`port`. On the Platform's `ha`
+profile `/api/sdk/db-credentials` returns these fields, so `PlatformClient.init()` uses Sentinel
+automatically. After a failover ioredis reconnects to the new master by itself, and a command
+rejected by a demoted master (`READONLY`) is retried on the new one; no restart is needed.
+`redis.mode` is `'sentinel'` or `'standalone'`.
 
 ---
 
@@ -80,7 +95,8 @@ Closes the Redis connection via `client.quit()`.
 | Property | Type | Description |
 |---|---|---|
 | `redis.isConnected` | `boolean` | Whether the client is connected |
-| `redis.health` | `{ connected }` | Health-check summary |
+| `redis.health` | `{ connected, mode }` | Health-check summary |
+| `redis.mode` | `'sentinel' \| 'standalone'` | How the master is found |
 
 ---
 

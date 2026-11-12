@@ -1,7 +1,7 @@
 # High availability (ha profile)
 
 The `ha` install profile (`PLATFORM_PROFILE=ha`) runs the platform on several
-nodes. It installs everything the `full` profile does, plus three HA layers that
+nodes. It installs everything the `full` profile does, plus four HA layers that
 this page covers in order:
 
 1. **Cluster**: k3s keeps the cluster state in **embedded etcd** replicated
@@ -12,6 +12,10 @@ this page covers in order:
    balancer / DNS failover).
 3. **Replicated storage**: Longhorn replicates every PersistentVolume across
    nodes and is the default StorageClass.
+4. **Datastores**: MongoDB runs as a three-member replica set, Redis runs with
+   Sentinel on three nodes, and MinIO runs in distributed mode on four drives,
+   so losing a datastore pod or node does not take the platform or project apps
+   down.
 
 Single-node profiles (`minimal`, `standard`, `full`) are not affected by
 anything on this page: they keep a single-node k3s, k3s local-path storage and
@@ -477,6 +481,182 @@ kubectl patch storageclass local-path -p '{"metadata":{"annotations":{"storagecl
 ```
 
 Verify that only local-path is default before provisioning new PVCs.
+
+## Datastores
+
+On the `ha` profile the installer deploys the bundled MongoDB, Redis and MinIO
+in replicated topologies on Longhorn volumes (`global.defaultStorageClass:
+longhorn`). The chart versions are the same pinned Bitnami charts the
+single-node profiles use; only their values change. Members are spread across
+nodes with soft pod anti-affinity, so a cluster that is still growing to three
+nodes installs and runs, and the pods spread out as nodes join. Each datastore
+has a PodDisruptionBudget that allows one member to be unavailable at a time
+during node drains. `minimal`, `standard` and `full` keep the single instances.
+
+`sudo platformctl status` on the first server reports the current Mongo
+primary, the Redis master as Sentinel sees it, and how many MinIO pods are
+ready:
+
+```text
+  MongoDB replica set rs0: primary mongodb-1.mongodb-headless.databases.svc.cluster.local:27017, members 3/3
+  Redis Sentinel mymaster: master redis-node-0.redis-headless.databases.svc.cluster.local:6379
+  MinIO distributed: 4/4 pods ready
+```
+
+### MongoDB replica set
+
+| Setting | Value |
+|---|---|
+| Architecture | `replicaset`, 3 data-bearing members (`mongodb-0..2`), no arbiter |
+| Replica set name | `rs0` |
+| Members | `mongodb-N.mongodb-headless.databases.svc.cluster.local:27017` |
+| Internal auth | Keyfile derived from the Mongo root password (no extra secret) |
+| Volume | 10Gi Longhorn volume per member |
+
+The platform API's `MONGODB_URI` lists all three members with
+`replicaSet=rs0`, and every project connection string returned by
+`/api/sdk/db-credentials` (and stored as the project secret `MONGO_URI`) carries
+the same hosts and options with the project's own user:
+
+```text
+mongodb://plat_<id>_<env>_user:<password>@mongodb-0.mongodb-headless.databases.svc.cluster.local:27017,mongodb-1.mongodb-headless.databases.svc.cluster.local:27017,mongodb-2.mongodb-headless.databases.svc.cluster.local:27017/plat_<id>_<env>?replicaSet=rs0&authSource=plat_<id>_<env>
+```
+
+MongoDB drivers (the Node and Python SDK helpers, Mongoose, PyMongo) discover
+the primary from this seed list. When the primary fails, the remaining members
+elect a new one within about 10 to 15 seconds, and drivers retry writes once
+(`retryWrites` is on by default), so apps need no restart. Connection strings
+issued before the switch to `ha` name the old single host: request
+`/api/sdk/db-credentials` again (the SDKs do this on start) or redeploy the app.
+
+Metrics: each member runs the MongoDB exporter sidecar, so `mongodb_up` and the
+other `mongodb_*` series are reported per member. Per-project database insights
+(slow operations from the profiler) read from the current primary. The
+profiler level is per member, so the API re-enables it on whichever member is
+primary each time it collects insights; slow operations recorded on a previous
+primary stay on that member.
+
+### Redis Sentinel
+
+| Setting | Value |
+|---|---|
+| Nodes | 3 (`redis-node-0..2`), each running Redis and Sentinel |
+| Master set | `mymaster`, quorum 2 |
+| Sentinel | port 26379 on every node (`redis-node-N.redis-headless.databases.svc.cluster.local:26379`) |
+| Compatibility service | `redis-master.databases` follows the current master (the chart's experimental master Service) |
+| Volume | 5Gi Longhorn volume per node |
+
+The API finds the master through Sentinel (`REDIS_SENTINEL_HOSTS`, the three
+sentinels, and `REDIS_SENTINEL_MASTER` in `platform-env`). After a failover it reconnects to
+the new master on its own, and a command rejected by a demoted master
+(`READONLY`) is retried on the new one.
+
+Redis does not replicate ACL users, so the API creates every per-project Redis
+user, and its own `plat-api` user, on **every** node, not only on the master.
+The `redis-acl-reconcile` leader job checks all nodes every 15 seconds and
+re-creates users that are missing, for example on a node that restarted. A
+promoted replica therefore already has the users when apps reconnect.
+
+Project apps get the same settings as the project secrets `REDIS_SENTINELS`,
+`REDIS_SENTINEL_MASTER`, `REDIS_SENTINEL_USERNAME` and `REDIS_SENTINEL_PASSWORD`.
+`/api/sdk/db-credentials` keeps returning `host`, `port`, `username`,
+`password` and `keyPrefix` as before, and on `ha` adds the Sentinel settings:
+
+```json
+{
+  "redis": {
+    "host": "redis-master.databases",
+    "port": 6379,
+    "username": "plat_<id>_<env>",
+    "password": "…",
+    "keyPrefix": "plat:<id>:<env>:",
+    "db": 0,
+    "sentinels": [
+      { "host": "redis-node-0.redis-headless.databases.svc.cluster.local", "port": 26379 },
+      { "host": "redis-node-1.redis-headless.databases.svc.cluster.local", "port": 26379 },
+      { "host": "redis-node-2.redis-headless.databases.svc.cluster.local", "port": 26379 }
+    ],
+    "masterName": "mymaster",
+    "sentinelUsername": "plat-sentinel",
+    "sentinelPassword": "…"
+  }
+}
+```
+
+`plat-sentinel` is a shared, discovery-only Sentinel user: it can ask the
+sentinels where the master and replicas are, but cannot reconfigure Sentinel,
+trigger a failover or read any data. Apps never receive the platform Redis
+password. The SDK helpers (sdk-node and sdk-python `RedisManager`) use Sentinel
+automatically when these fields are present. Clients that ignore them keep
+using `host` (the compatibility service), which follows the master but can lag
+behind a failover; prefer Sentinel. Project namespaces' network policy allows
+TCP 6379 and 26379 to the Redis pods.
+
+Each node runs the Redis exporter sidecar, so `redis_up` and the other
+`redis_*` series are reported per node.
+
+Rotating the platform Redis password from the portal is skipped on `ha`: the
+password has to change on every node and sentinel together. Use
+`sudo platformctl recover`, which updates the `redis` Secret and restarts the
+nodes one at a time.
+
+### Object storage
+
+| Setting | Value |
+|---|---|
+| Mode | MinIO `distributed`, 4 pods with one drive each (`minio-0..3`) |
+| Erasure coding | Default parity EC:2: reads survive losing 2 drives, writes need 3 of 4 |
+| Volume | 25Gi Longhorn volume per drive (100Gi raw, about 50Gi usable) |
+| Endpoint | unchanged: `http://minio.storage:9000` (Service `minio`) |
+
+Every consumer keeps using the stable `minio` Service: API uploads and backups
+(`platform-uploads`, `platform-backups`), session replays (`replays`), Loki,
+Tempo and Pyroscope storage, and `platformctl backup`. The scoped API
+credentials (`storage-scoped` step) and the telemetry IAM jobs run against the
+distributed cluster exactly as on a single node. The installer creates the
+default buckets itself, because the chart only creates them in standalone mode.
+The MinIO console and SSO are unchanged.
+
+Storage overhead: erasure coding stores each usable gigabyte on about 2 GB of
+MinIO drives, and Longhorn replicates each drive (three replicas by default).
+Size node disks for that. Apps can also keep their own objects in an external
+S3, R2 or GCS bucket through [storage providers](storage-providers.md); the
+bundled MinIO still holds the platform's own data.
+
+### Migrating an existing single-node install
+
+The installer does not convert single instances in place: standalone MongoDB
+keeps its data on a different volume than the replica set, Redis moves from the
+`redis-master`/`redis-replicas` StatefulSets to `redis-node`, and standalone
+MinIO data is not erasure-coded. When it finds a standalone MongoDB
+Deployment, a `redis-master` StatefulSet or a standalone MinIO Deployment on an
+install whose profile is now `ha`, `provision` and `upgrade` stop with an error
+that names the datastore and links here, and change nothing.
+
+Migrate with a backup and restore:
+
+1. Configure encrypted backups and take a full backup (see [Backups](backups.md)):
+   `sudo platformctl backup --all`.
+2. Stop writers: scale the platform API and project apps to zero.
+3. Remove the single instances and their volumes. The backup is now the only
+   copy, so check it with `sudo platformctl backup list` first:
+
+   ```bash
+   helm -n databases uninstall mongodb redis
+   helm -n storage uninstall minio
+   kubectl -n databases delete pvc -l app.kubernetes.io/instance=mongodb
+   kubectl -n databases delete pvc -l app.kubernetes.io/instance=redis
+   kubectl -n storage delete pvc -l app.kubernetes.io/instance=minio
+   ```
+
+4. Remove the `mongodb`, `mongodb.values`, `redis`, `redis.values` and `minio`
+   lines from `/etc/platform/.bootstrap_state` (keep a copy), then run
+   `sudo platformctl provision --profile ha` to install the HA topologies.
+5. Restore the data, streaming the age identity as for any restore:
+   `sudo platformctl restore --from <ID> --component mongo --confirm`, then the
+   same for `redis` and `minio`.
+6. Start the API and apps again. Apps pick up the new Mongo and Redis settings
+   the next time they request `/api/sdk/db-credentials` (on start).
 
 ## Upgrades and backups
 

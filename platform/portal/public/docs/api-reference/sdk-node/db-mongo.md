@@ -27,6 +27,8 @@ const mongo = new MongoManager(config?: MongoConfig);
 |---|---|---|
 | `uri` | `PLATFORM_MONGO_URI` | `mongodb://localhost:27017/platform` |
 
+On the Platform's `ha` profile the issued URI lists all three replica set members and `replicaSet=rs0`; the driver finds the primary and follows elections without a restart.
+
 ---
 
 ## Methods
