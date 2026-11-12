@@ -73,3 +73,16 @@ func TestConfirmHardeningOnExistingServer(t *testing.T) {
 		t.Fatal("fresh install must not prompt")
 	}
 }
+
+// join over non-interactive SSH, or with the token piped on stdin, could never
+// type 'confirm': the firewall was armed and rolled back after 90 s (3-node test).
+func TestHardenFirewallNeedsTerminalOrAuto(t *testing.T) {
+	oldTTY, oldAuto := stdinIsTerminal, cfg.NonInteractive
+	defer func() { stdinIsTerminal, cfg.NonInteractive = oldTTY, oldAuto }()
+	stdinIsTerminal = func() bool { return false }
+	cfg.NonInteractive = false
+	err := hardenFirewall()
+	if err == nil || !strings.Contains(err.Error(), "--auto") {
+		t.Fatalf("want a --auto hint before arming the firewall, got %v", err)
+	}
+}

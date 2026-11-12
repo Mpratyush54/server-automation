@@ -210,7 +210,11 @@ the join, and the node's later reconnects, then do not depend on the first
 server), a DNS name from `PLATFORM_API_SANS` that points at the servers, or
 `https://<first server IP>:6443` (external mode without such a name).
 `--token-file -` reads the token from standard input
-(`ssh first-server sudo platformctl token create --role agent --ttl 1h | sudo platformctl join ... --token-file -`).
+(`ssh first-server sudo platformctl token create --role agent --ttl 1h | sudo platformctl --auto join ... --token-file -`).
+Without `--auto`, the host firewall step waits for you to type `confirm`; when
+standard input is not a terminal (the piped token above, or a non-interactive
+`ssh node sudo platformctl join ...`) `join` stops before arming the firewall
+and asks for `--auto`, where automatic health checks confirm the rules.
 The token is never accepted on the command line, where other users could read
 it, and is never printed or logged.
 

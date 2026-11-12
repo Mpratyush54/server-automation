@@ -178,6 +178,13 @@ func checkHardenNodes() error {
 // hardenFirewall applies the firewall with its automatic rollback. It needs
 // the platform running: confirmation checks live local ports and the API.
 func hardenFirewall() error {
+	// Without --auto a person must type 'confirm' within 90 s. With stdin not
+	// a terminal (non-interactive SSH, or join --token-file - reading the token
+	// from a pipe) nobody can, so the rules would always be rolled back: stop
+	// before arming them.
+	if !cfg.NonInteractive && !stdinIsTerminal() {
+		return fmt.Errorf("the firewall needs a typed confirmation but standard input is not a terminal; re-run with --auto (automatic health checks confirm the rules)")
+	}
 	h := hardeningHost()
 	peers, err := clusterPeers(cfg)
 	if err != nil {
@@ -264,6 +271,13 @@ func joinedNodeHealth(role string) bool {
 	}
 	out, err := shell.Output("ss", "-tlnp", "sport = :22")
 	return err == nil && strings.Contains(out, "sshd")
+}
+
+// stdinIsTerminal reports whether standard input is an interactive terminal.
+// Overridable in tests.
+var stdinIsTerminal = func() bool {
+	fi, err := os.Stdin.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
 func confirmFirewall(auto bool, healthy func() bool) bool {
