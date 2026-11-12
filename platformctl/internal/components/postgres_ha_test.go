@@ -58,24 +58,30 @@ func TestRenderPostgresCluster(t *testing.T) {
 			if spec["superuserSecret"].(map[string]string)["name"] != "postgresql" || spec["enableSuperuserAccess"] != true || spec["enablePDB"] != true || spec["primaryUpdateMethod"] != "switchover" || spec["smartShutdownTimeout"] != 15 {
 				t.Fatal(spec)
 			}
-			if _, ok := spec["backup"]; ok != tc.backup {
+			plugins, hasPlugins := spec["plugins"].([]any)
+			if _, inTree := spec["backup"]; inTree || hasPlugins != tc.backup {
 				t.Fatal(spec)
 			}
 			if tc.backup {
-				b := spec["backup"].(map[string]any)
+				pl := plugins[0].(map[string]any)
+				params := pl["parameters"].(map[string]string)
+				if pl["name"] != BarmanCloudPluginName || pl["isWALArchiver"] != true || params["barmanObjectName"] != PGObjectStoreName || params["serverName"] != opts.ServerName {
+					t.Fatal(pl)
+				}
+				store := pgObjectStoreResource(cfg, opts.Backup)
+				conf := store["spec"].(map[string]any)["configuration"].(map[string]any)
 				ret := tc.retention
 				if ret == "" {
 					ret = "14d"
 				}
-				if b["retentionPolicy"] != ret {
-					t.Fatal(b)
-				}
-				store := b["barmanObjectStore"].(map[string]any)
-				if store["serverName"] != opts.ServerName || store["destinationPath"] != opts.Backup.Destination || store["endpointURL"] != opts.Backup.Endpoint {
+				if store["kind"] != "ObjectStore" || store["spec"].(map[string]any)["retentionPolicy"] != ret || conf["destinationPath"] != opts.Backup.Destination || conf["endpointURL"] != opts.Backup.Endpoint {
 					t.Fatal(store)
 				}
-				if !reflect.DeepEqual(store["wal"], map[string]any{"compression": "gzip", "maxParallel": 2}) {
-					t.Fatal(store)
+				if _, ok := conf["serverName"]; ok {
+					t.Fatal("serverName belongs to the Cluster's plugin parameters")
+				}
+				if !reflect.DeepEqual(conf["wal"], map[string]any{"compression": "gzip", "maxParallel": 2}) {
+					t.Fatal(conf)
 				}
 			}
 			if tc.recovery {
@@ -83,7 +89,7 @@ func TestRenderPostgresCluster(t *testing.T) {
 					t.Fatal("initdb in recovery")
 				}
 				ext := spec["externalClusters"].([]any)[0].(map[string]any)
-				if ext["barmanObjectStore"].(map[string]any)["serverName"] != "postgresql" {
+				if ext["plugin"].(map[string]any)["parameters"].(map[string]string)["serverName"] != "postgresql" {
 					t.Fatal(ext)
 				}
 			}
@@ -97,9 +103,13 @@ func TestRenderPostgresCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := m["spec"].(map[string]any)["backup"].(map[string]any)["barmanObjectStore"].(map[string]any)
-	if _, ok := store["endpointURL"]; ok || store["serverName"] != "postgresql" {
-		t.Fatal(store)
+	params := m["spec"].(map[string]any)["plugins"].([]any)[0].(map[string]any)["parameters"].(map[string]string)
+	if params["serverName"] != "postgresql" {
+		t.Fatal(params)
+	}
+	conf := pgObjectStoreResource(&config.Config{}, &pgBackup{"s3://backups/", "", "s3"})["spec"].(map[string]any)["configuration"].(map[string]any)
+	if _, ok := conf["endpointURL"]; ok {
+		t.Fatal(conf)
 	}
 	if _, err := renderPostgresCluster(&config.Config{}, pgClusterOptions{Recovery: &pgRecovery{}}); err == nil {
 		t.Fatal("recovery without backup")
@@ -159,13 +169,15 @@ func TestWritePostgresHAStatus(t *testing.T) {
 		want      []string
 	}{
 		{"healthy", `{"spec":{"instances":3,"backup":{"barmanObjectStore":{}}},"status":{"phase":"Cluster in healthy state","readyInstances":3,"currentPrimary":"postgresql-2","lastSuccessfulBackup":"backup-time","firstRecoverabilityPoint":"first-time","conditions":[{"type":"ContinuousArchiving","status":"True"}]}}`, []string{"3/3 ready, primary postgresql-2", "WAL archiving: ok", "backup-time", "first-time"}},
+		{"plugin archiving", `{"spec":{"instances":3,"plugins":[{"name":"barman-cloud.cloudnative-pg.io","isWALArchiver":true,"parameters":{"barmanObjectName":"postgresql-backup","serverName":"pg-a"}}]},"status":{"conditions":[{"type":"ContinuousArchiving","status":"True"}]}}`, []string{"WAL archiving: ok (Barman Cloud plugin)", "plugin-backup-time", "plugin-first-time"}},
 		{"degraded", `{"spec":{"instances":3},"status":{"readyInstances":1}}`, []string{"1/3 ready", "WARNING", "not configured"}},
 		{"archive failed", `{"spec":{"backup":{"barmanObjectStore":{}}},"status":{"conditions":[{"type":"ContinuousArchiving","status":"False"}]}}`, []string{"WAL archiving: FAILING"}},
 		{"missing fields", `{}`, []string{"0/0 ready", "not configured"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var b bytes.Buffer
-			if err := writePostgresHAStatus(&b, []byte(tc.raw)); err != nil {
+			store := []byte(`{"status":{"serverRecoveryWindow":{"pg-a":{"firstRecoverabilityPoint":"plugin-first-time","lastSuccessfulBackupTime":"plugin-backup-time"}}}}`)
+			if err := writePostgresHAStatus(&b, []byte(tc.raw), store); err != nil {
 				t.Fatal(err)
 			}
 			for _, s := range tc.want {
@@ -185,19 +197,26 @@ func TestWritePostgresHAStatus(t *testing.T) {
 
 func TestPGPITRValidation(t *testing.T) {
 	now := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
-	raw := []byte(`{"spec":{"backup":{"barmanObjectStore":{"serverName":"postgresql"}}},"status":{"firstRecoverabilityPoint":"2026-11-10T10:00:00Z"}}`)
+	raw := []byte(`{"spec":{"plugins":[{"name":"barman-cloud.cloudnative-pg.io","isWALArchiver":true,"parameters":{"barmanObjectName":"postgresql-backup","serverName":"postgresql"}}]}}`)
+	store := []byte(`{"spec":{"configuration":{"destinationPath":"s3://postgres-backups/"}},"status":{"serverRecoveryWindow":{"postgresql":{"firstRecoverabilityPoint":"2026-11-10T10:00:00Z"}}}}`)
 	for _, tc := range []struct {
 		target time.Time
 		fail   bool
 	}{{now.Add(time.Hour), true}, {now, true}, {now.Add(-72 * time.Hour), true}, {now.Add(-time.Hour), false}, {now.Add(-48 * time.Hour), false}} {
-		_, err := validatePGPITR(raw, tc.target, now)
+		_, _, err := validatePGPITR(raw, store, tc.target, now)
 		if (err != nil) != tc.fail {
 			t.Fatal(tc, err)
 		}
 	}
-	for _, raw := range []string{`{}`, `{"spec":{"backup":{"barmanObjectStore":{}}}}`, `bad`} {
-		if _, err := validatePGPITR([]byte(raw), now.Add(-time.Hour), now); err == nil {
-			t.Fatal(raw)
+	// In-tree archiving must be migrated first; no archiving, a missing store or bad JSON fail.
+	for _, c := range [][2]string{
+		{`{"spec":{"backup":{"barmanObjectStore":{"serverName":"postgresql"}}},"status":{"firstRecoverabilityPoint":"2026-11-10T10:00:00Z"}}`, string(store)},
+		{`{}`, string(store)},
+		{string(raw), ``},
+		{`bad`, string(store)},
+	} {
+		if _, _, err := validatePGPITR([]byte(c[0]), []byte(c[1]), now.Add(-time.Hour), now); err == nil {
+			t.Fatal(c)
 		}
 	}
 	if got := pgPITRServerName(now); got != fmt.Sprintf("postgresql-pitr-%d", now.Unix()) {

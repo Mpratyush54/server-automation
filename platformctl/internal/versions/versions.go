@@ -52,8 +52,15 @@ const KubeVIPImage = "ghcr.io/kube-vip/kube-vip:v1.3.1"
 // StaticImages returns container images rendered by platformctl itself (not by
 // a Helm chart). scripts/gen-images.sh appends these to images.txt.
 func StaticImages() []string {
-	return []string{KubeVIPImage, CNPGPostgresImage}
+	return []string{KubeVIPImage, CNPGPostgresImage, BarmanCloudPluginImage, BarmanCloudSidecarImage}
 }
+
+// Barman Cloud plugin (CNPG-I) for PostgreSQL WAL archiving and base backups
+// on ha (#181). Matches manifests/data/barman-cloud-plugin.yaml.
+const (
+	BarmanCloudPluginImage  = "ghcr.io/cloudnative-pg/plugin-barman-cloud:v0.15.1"
+	BarmanCloudSidecarImage = "ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.15.1"
+)
 
 // ChartCacheDir holds pre-downloaded chart tarballs (<name>-<version>.tgz).
 // The offline bundle extracts charts here; Prefetch() also fills it.
@@ -129,8 +136,8 @@ const bitnamiOCI = "oci://registry-1.docker.io/bitnamicharts/"
 const CNPGPostgresImage = "ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie"
 
 var charts = map[string]Chart{
-	// ha profile only. CNPG removes in-tree barmanObjectStore in 1.31;
-	// operator >= 1.31 (chart >= 0.30) requires migrating to the Barman Cloud plugin first.
+	// ha profile only. Backups use the Barman Cloud plugin (#181), so the
+	// operator can move to 1.31, which removes in-tree barmanObjectStore.
 	"cloudnative-pg": {Name: "cloudnative-pg", Repo: "cnpg", RepoURL: "https://cloudnative-pg.github.io/charts", Chart: "cloudnative-pg", Version: "0.29.1"},
 	// HA profile only; 1.12.1 is upstream stable. Bump here, then regenerate images.txt.
 	"longhorn":                     {Name: "longhorn", Repo: "longhorn", RepoURL: "https://charts.longhorn.io", Chart: "longhorn", Version: "1.12.1"},

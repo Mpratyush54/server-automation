@@ -894,8 +894,18 @@ kubectl -n databases describe cluster postgresql
 
 ### Continuous WAL and daily backups
 
-The `postgresql-backup` step runs after PostgreSQL, MinIO and the platform API
-(MinIO's OIDC issuer must be reachable before IAM initialization). By default it
+WAL archiving and base backups run through the CloudNativePG **Barman Cloud
+plugin** (CNPG-I, `barman-cloud.cloudnative-pg.io`, v0.15.1). The plugin runs in
+`cnpg-system` as one replica that moves off a failed node after 30 s, and injects
+a sidecar into each PostgreSQL pod that ships WAL to, and restores it from, the
+object store, so archiving and failover do not depend on the plugin pod. Its gRPC link to the operator uses cert-manager certificates. The
+destination lives in the `ObjectStore` resource `databases/postgresql-backup`;
+the Cluster references it in `spec.plugins` with its archive `serverName`.
+
+The `postgresql-backup` step runs after PostgreSQL, MinIO, cert-manager and the
+platform API (MinIO's OIDC issuer must be reachable before IAM initialization).
+It installs the plugin, applies the `ObjectStore` and enables archiving on the
+Cluster. By default it
 creates `s3://postgres-backups/` in bundled MinIO, a scoped `postgres-backup` user
 and bucket-only policy. `postgresql-backup-s3` in `databases` stores
 `ACCESS_KEY_ID` and a randomly generated `ACCESS_SECRET_KEY`; it is preserved on
@@ -924,18 +934,35 @@ The endpoint is optional for the provider's default S3 endpoint. A destination
 requires a Secret name; credentials never enter `.env`. Retention defaults to
 `14d` and accepts positive durations in days (`d`), weeks (`w`), or months (`m`).
 Run `sudo platformctl install postgresql-backup` to reconcile settings. Continuous
-WAL archiving uses gzip compression; the daily base backup runs at 03:00 UTC
-(`0 0 3 * * *`, CNPG's six-field cron), with an immediate initial backup.
-Provision waits for `ContinuousArchiving=True`; inspect archive errors with
-`kubectl -n databases describe cluster postgresql`.
+WAL archiving uses gzip compression; the daily base backup (`ScheduledBackup`
+`postgresql-daily`, `method: plugin`) runs at 03:00 UTC (`0 0 3 * * *`, CNPG's
+six-field cron), with an immediate initial backup. Provision waits for
+`ContinuousArchiving=True`; inspect archive errors with
+`kubectl -n databases describe cluster postgresql` and the plugin's logs
+(`kubectl -n cnpg-system logs deploy/barman-cloud`). The recovery window
+(first recoverability point, last successful backup) is reported in the
+ObjectStore status, which `platformctl status` reads:
+
+```bash
+kubectl -n databases get objectstores.barmancloud.cnpg.io postgresql-backup -o jsonpath='{.status.serverRecoveryWindow}'
+```
 
 CNPG refuses a non-empty WAL archive for a newly created Cluster. Re-provisioning
 after deleting the Cluster requires a new bucket/prefix or a change to
 `POSTGRES_BACKUP_DESTINATION`; do not erase the old archive needed for recovery.
-The pinned chart `0.29.1` uses operator `1.30.1` and the in-tree
-`barmanObjectStore`. CNPG removes this API in operator 1.31: upgrading to chart
-0.30 or later requires migrating to the Barman Cloud plugin first. The pinned
-PostgreSQL `system` image includes barman-cloud tools and pgaudit.
+The pinned chart `0.29.1` uses operator `1.30.1`. Because backups already use
+the plugin, the operator can move to 1.31, which removes the in-tree
+`barmanObjectStore` API. The pinned PostgreSQL `system` image includes pgaudit.
+
+**Migrating from in-tree archiving.** Clusters provisioned by earlier releases
+archive with `spec.backup.barmanObjectStore`. `sudo platformctl install
+postgresql-backup` moves them to the plugin in place: it installs the plugin,
+creates the ObjectStore with the same destination and credentials, and replaces
+`spec.backup` with `spec.plugins` keeping the same `serverName`, so the archive
+continues without a gap and older WAL and base backups stay usable for PITR.
+`platformctl restore --pitr` refuses a cluster that still archives in-tree and
+asks for this step first. After migrating, check `WAL archiving: ok (Barman
+Cloud plugin)` in `platformctl status` and request a base backup.
 
 ### Point-in-time recovery (PITR)
 
@@ -945,7 +972,7 @@ Choose a past RFC3339 timestamp at or after the first recoverability point:
 sudo platformctl restore --pitr 2026-11-12T10:00:00Z --confirm
 ```
 
-This HA-only restore uses the live Cluster's object-store settings, without
+This HA-only restore uses the live ObjectStore's settings, without
 `--from` or an age identity on stdin. Stop project writers for the downtime
 window. The command stops the API, switches and archives the primary's WAL,
 deletes and recreates the Cluster, and waits for its recovered primary. Database

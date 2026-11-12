@@ -89,6 +89,56 @@ func pgObjectStore(b *pgBackup, server string) map[string]any {
 	return m
 }
 
+const (
+	// BarmanCloudPluginName is the CNPG-I plugin that archives WAL and takes base backups.
+	BarmanCloudPluginName = "barman-cloud.cloudnative-pg.io"
+	// PGObjectStoreName is the plugin ObjectStore holding the backup destination.
+	PGObjectStoreName = "postgresql-backup"
+)
+
+// pgObjectStoreResource renders the plugin ObjectStore for the backup target.
+// The serverName is per Cluster (plugin parameters), not part of the store.
+func pgObjectStoreResource(cfg *config.Config, b *pgBackup) map[string]any {
+	conf := pgObjectStore(b, "")
+	delete(conf, "serverName")
+	conf["wal"] = map[string]any{"compression": "gzip", "maxParallel": 2}
+	conf["data"] = map[string]any{"compression": "gzip", "jobs": 2}
+	retention := cfg.PostgresBackupRetention
+	if retention == "" {
+		retention = "14d"
+	}
+	return map[string]any{"apiVersion": "barmancloud.cnpg.io/v1", "kind": "ObjectStore",
+		"metadata": map[string]any{"name": PGObjectStoreName, "namespace": "databases"},
+		"spec":     map[string]any{"configuration": conf, "retentionPolicy": retention}}
+}
+
+const barmanPluginReadyScript = `set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+timeout 5m kubectl wait --for=condition=Established crd/objectstores.barmancloud.cnpg.io --timeout=5m
+timeout 5m kubectl -n cnpg-system wait --for=condition=Ready certificate/barman-cloud-server certificate/barman-cloud-client --timeout=5m
+timeout 5m kubectl -n cnpg-system rollout status deploy/barman-cloud --timeout=5m
+`
+
+// ensureBarmanPlugin installs the Barman Cloud plugin (needs cert-manager)
+// and waits until CNPG can call it. Overridable in tests.
+var ensureBarmanPlugin = func() error {
+	if out, err := shell.RunWithInput("kubectl", []string{"apply", "--server-side", "--force-conflicts", "-f", "-"}, readManifest("barman-cloud-plugin.yaml")); err != nil {
+		return fmt.Errorf("install Barman Cloud plugin: %w: %s", err, out)
+	}
+	if err := shell.RunBash(barmanPluginReadyScript); err != nil {
+		return fmt.Errorf("Barman Cloud plugin not ready: %w", err)
+	}
+	return nil
+}
+
+// applyPGBackupStore installs the plugin and applies the ObjectStore.
+func applyPGBackupStore(cfg *config.Config, b *pgBackup) error {
+	if err := ensureBarmanPlugin(); err != nil {
+		return err
+	}
+	return applyTelemetryJSON(pgObjectStoreResource(cfg, b))
+}
+
 func pgResource(kind, name string) map[string]any {
 	api := "postgresql.cnpg.io/v1"
 	if kind == "Secret" || kind == "Service" || kind == "ConfigMap" {
@@ -126,23 +176,18 @@ func renderPostgresCluster(cfg *config.Config, opts pgClusterOptions) (map[strin
 		"monitoring": map[string]any{"customQueriesConfigMap": []any{map[string]string{"name": "postgresql-monitoring", "key": "queries"}}},
 	}
 	if opts.Backup != nil {
-		store := pgObjectStore(opts.Backup, opts.ServerName)
-		store["wal"] = map[string]any{"compression": "gzip", "maxParallel": 2}
-		store["data"] = map[string]any{"compression": "gzip", "jobs": 2}
-		retention := cfg.PostgresBackupRetention
-		if retention == "" {
-			retention = "14d"
-		}
-		spec["backup"] = map[string]any{"retentionPolicy": retention, "barmanObjectStore": store}
+		// WAL archiving and base backups through the Barman Cloud plugin
+		// (#181); the destination lives in the ObjectStore (pgObjectStoreResource).
+		spec["plugins"] = []any{map[string]any{"name": BarmanCloudPluginName, "isWALArchiver": true,
+			"parameters": map[string]string{"barmanObjectName": PGObjectStoreName, "serverName": opts.ServerName}}}
 	}
 	if opts.Recovery != nil {
 		if opts.Backup == nil {
 			return nil, fmt.Errorf("PITR requires backup storage")
 		}
 		spec["bootstrap"] = map[string]any{"recovery": map[string]any{"database": "platform", "owner": "platform", "source": "pitr-origin", "recoveryTarget": map[string]string{"targetTime": opts.Recovery.Target.Format(time.RFC3339)}}}
-		store := pgObjectStore(opts.Backup, opts.Recovery.ServerName)
-		store["wal"] = map[string]int{"maxParallel": 4}
-		spec["externalClusters"] = []any{map[string]any{"name": "pitr-origin", "barmanObjectStore": store}}
+		spec["externalClusters"] = []any{map[string]any{"name": "pitr-origin", "plugin": map[string]any{"name": BarmanCloudPluginName,
+			"parameters": map[string]string{"barmanObjectName": PGObjectStoreName, "serverName": opts.Recovery.ServerName}}}}
 	}
 	m := pgResource("Cluster", "postgresql")
 	m["spec"] = spec
@@ -200,7 +245,7 @@ func pgBackupOptions(cfg *config.Config) (*pgBackup, error) {
 }
 
 func pgLiveServerName() (string, error) {
-	out, err := shell.Output("kubectl", "-n", "databases", "get", "clusters.postgresql.cnpg.io", "postgresql", "--ignore-not-found", "-o", "jsonpath={.spec.backup.barmanObjectStore.serverName}")
+	out, err := shell.Output("kubectl", "-n", "databases", "get", "clusters.postgresql.cnpg.io", "postgresql", "--ignore-not-found", "-o", `jsonpath={.spec.plugins[?(@.name=="`+BarmanCloudPluginName+`")].parameters.serverName}{.spec.backup.barmanObjectStore.serverName}`)
 	if strings.TrimSpace(out) == "" {
 		out = "postgresql"
 	}
@@ -308,6 +353,13 @@ func InstallPostgresHA(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	if b != nil {
+		// Re-provision of a cluster that already archives: keep the plugin
+		// and ObjectStore in place before the Cluster references them.
+		if err = applyPGBackupStore(cfg, b); err != nil {
+			return err
+		}
+	}
 	if err = applyPGCluster(cfg, pgClusterOptions{Backup: b, ServerName: server}); err != nil {
 		return err
 	}
@@ -388,11 +440,14 @@ func InstallPostgresBackup(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	if err = applyPGBackupStore(cfg, b); err != nil {
+		return err
+	}
 	if err = applyPGCluster(cfg, pgClusterOptions{Backup: b, ServerName: server}); err != nil {
 		return err
 	}
 	m := pgResource("ScheduledBackup", "postgresql-daily")
-	m["spec"] = map[string]any{"schedule": "0 0 3 * * *", "backupOwnerReference": "self", "cluster": map[string]string{"name": "postgresql"}, "method": "barmanObjectStore", "immediate": true}
+	m["spec"] = pgPluginBackupSpec(map[string]any{"schedule": "0 0 3 * * *", "backupOwnerReference": "self", "immediate": true})
 	if err = applyTelemetryJSON(m); err != nil {
 		return err
 	}
@@ -400,6 +455,14 @@ func InstallPostgresBackup(cfg *config.Config) error {
 		return fmt.Errorf("WAL archiving not ready; check kubectl -n databases describe cluster postgresql for archive errors: %w", err)
 	}
 	return state.MarkDone("postgresql-backup")
+}
+
+// pgPluginBackupSpec completes a Backup/ScheduledBackup spec for the plugin.
+func pgPluginBackupSpec(spec map[string]any) map[string]any {
+	spec["cluster"] = map[string]string{"name": "postgresql"}
+	spec["method"] = "plugin"
+	spec["pluginConfiguration"] = map[string]string{"name": BarmanCloudPluginName}
+	return spec
 }
 
 func InstallPostgresMonitoring(cfg *config.Config) error {
@@ -420,7 +483,12 @@ func InstallPostgresMonitoring(cfg *config.Config) error {
 type pgClusterState struct {
 	Spec struct {
 		Instances int
-		Backup    struct {
+		Plugins   []struct {
+			Name          string
+			IsWALArchiver bool
+			Parameters    map[string]string
+		}
+		Backup struct {
 			BarmanObjectStore *struct {
 				DestinationPath, EndpointURL, ServerName string
 				S3Credentials                            struct {
@@ -438,15 +506,68 @@ type pgClusterState struct {
 	}
 }
 
-func writePostgresHAStatus(w io.Writer, clusterJSON []byte) error {
+// pgObjectStoreState is the part of the plugin ObjectStore platformctl reads.
+type pgObjectStoreState struct {
+	Spec struct {
+		Configuration struct {
+			DestinationPath, EndpointURL string
+			S3Credentials                struct {
+				AccessKeyID     struct{ Name, Key string }
+				SecretAccessKey struct{ Name, Key string }
+			}
+		}
+	}
+	Status struct {
+		ServerRecoveryWindow map[string]struct {
+			FirstRecoverabilityPoint, LastSuccessfulBackupTime string
+		}
+	}
+}
+
+// pluginServerName returns the archive serverName when the Cluster archives
+// through the Barman Cloud plugin.
+func (c pgClusterState) pluginServerName() (string, bool) {
+	for _, p := range c.Spec.Plugins {
+		if p.Name == BarmanCloudPluginName && p.IsWALArchiver {
+			if n := p.Parameters["serverName"]; n != "" {
+				return n, true
+			}
+			return "postgresql", true
+		}
+	}
+	return "", false
+}
+
+// recoveryWindow returns the first recoverability point and last successful
+// backup, from the ObjectStore (plugin) or the Cluster status (in-tree).
+func (c pgClusterState) recoveryWindow(store *pgObjectStoreState) (first, last string) {
+	if server, ok := c.pluginServerName(); ok {
+		if store != nil {
+			w := store.Status.ServerRecoveryWindow[server]
+			return w.FirstRecoverabilityPoint, w.LastSuccessfulBackupTime
+		}
+		return "", ""
+	}
+	return c.Status.FirstRecoverabilityPoint, c.Status.LastSuccessfulBackup
+}
+
+func writePostgresHAStatus(w io.Writer, clusterJSON []byte, storeJSON ...[]byte) error {
 	var c pgClusterState
 	if err := json.Unmarshal(clusterJSON, &c); err != nil {
 		return err
 	}
+	var store *pgObjectStoreState
+	if len(storeJSON) > 0 && len(storeJSON[0]) > 0 {
+		store = &pgObjectStoreState{}
+		if err := json.Unmarshal(storeJSON[0], store); err != nil {
+			store = nil
+		}
+	}
 	fmt.Fprintf(w, "PostgreSQL (CloudNativePG): %s, %d/%d ready, primary %s\n", c.Status.Phase, c.Status.ReadyInstances, c.Spec.Instances, c.Status.CurrentPrimary)
 	fmt.Fprintln(w, "  read-write: postgresql.databases:5432 (alias of postgresql-rw), read-only: postgresql-ro.databases:5432")
 	archive := "not configured"
-	if c.Spec.Backup.BarmanObjectStore != nil {
+	_, plugin := c.pluginServerName()
+	if c.Spec.Backup.BarmanObjectStore != nil || plugin {
 		archive = "FAILING"
 	}
 	for _, cond := range c.Status.Conditions {
@@ -457,12 +578,16 @@ func writePostgresHAStatus(w io.Writer, clusterJSON []byte) error {
 			}
 		}
 	}
-	fmt.Fprintln(w, "  WAL archiving:", archive)
-	if c.Status.LastSuccessfulBackup != "" {
-		fmt.Fprintln(w, "  Last successful backup:", c.Status.LastSuccessfulBackup)
+	if plugin {
+		archive += " (Barman Cloud plugin)"
 	}
-	if c.Status.FirstRecoverabilityPoint != "" {
-		fmt.Fprintln(w, "  First recoverability point:", c.Status.FirstRecoverabilityPoint)
+	fmt.Fprintln(w, "  WAL archiving:", archive)
+	first, last := c.recoveryWindow(store)
+	if last != "" {
+		fmt.Fprintln(w, "  Last successful backup:", last)
+	}
+	if first != "" {
+		fmt.Fprintln(w, "  First recoverability point:", first)
 	}
 	if c.Status.ReadyInstances < c.Spec.Instances {
 		fmt.Fprintln(w, "  WARNING: PostgreSQL instances are not all ready")
@@ -473,32 +598,41 @@ func writePostgresHAStatus(w io.Writer, clusterJSON []byte) error {
 func PrintPostgresHAStatus(w io.Writer) {
 	out, err := shell.Output("kubectl", "-n", "databases", "get", "clusters.postgresql.cnpg.io", "postgresql", "-o", "json")
 	if err == nil {
-		err = writePostgresHAStatus(w, []byte(out))
+		store, _ := shell.Output("kubectl", "-n", "databases", "get", "objectstores.barmancloud.cnpg.io", PGObjectStoreName, "--ignore-not-found", "-o", "json")
+		err = writePostgresHAStatus(w, []byte(out), []byte(strings.TrimSpace(store)))
 	}
 	if err != nil {
 		color.New(color.FgRed).Fprintf(w, "PostgreSQL HA status: %v\n", err)
 	}
 }
 
-func validatePGPITR(raw []byte, target, now time.Time) (pgClusterState, error) {
+func validatePGPITR(raw, storeRaw []byte, target, now time.Time) (pgClusterState, *pgObjectStoreState, error) {
 	var c pgClusterState
 	if !target.Before(now) {
-		return c, fmt.Errorf("PITR target must be in the past")
+		return c, nil, fmt.Errorf("PITR target must be in the past")
 	}
 	if err := json.Unmarshal(raw, &c); err != nil {
-		return c, err
+		return c, nil, err
 	}
-	if c.Spec.Backup.BarmanObjectStore == nil {
-		return c, fmt.Errorf("PITR requires spec.backup.barmanObjectStore")
+	if _, ok := c.pluginServerName(); !ok {
+		if c.Spec.Backup.BarmanObjectStore != nil {
+			return c, nil, fmt.Errorf("the cluster still archives with the in-tree barmanObjectStore; run `platformctl install postgresql-backup` to move it to the Barman Cloud plugin, then retry")
+		}
+		return c, nil, fmt.Errorf("PITR requires WAL archiving (Barman Cloud plugin); run `platformctl install postgresql-backup`")
 	}
-	first, err := time.Parse(time.RFC3339, c.Status.FirstRecoverabilityPoint)
+	store := &pgObjectStoreState{}
+	if err := json.Unmarshal(storeRaw, store); err != nil || store.Spec.Configuration.DestinationPath == "" {
+		return c, nil, fmt.Errorf("ObjectStore %s/%s is missing or unreadable", "databases", PGObjectStoreName)
+	}
+	firstRaw, _ := c.recoveryWindow(store)
+	first, err := time.Parse(time.RFC3339, firstRaw)
 	if err != nil {
-		return c, fmt.Errorf("firstRecoverabilityPoint is unavailable: %w", err)
+		return c, nil, fmt.Errorf("firstRecoverabilityPoint is unavailable (no completed base backup yet?): %w", err)
 	}
 	if target.Before(first) {
-		return c, fmt.Errorf("PITR target precedes firstRecoverabilityPoint %s", first.Format(time.RFC3339))
+		return c, nil, fmt.Errorf("PITR target precedes firstRecoverabilityPoint %s", first.Format(time.RFC3339))
 	}
-	return c, nil
+	return c, store, nil
 }
 func pgPITRServerName(now time.Time) string { return fmt.Sprintf("postgresql-pitr-%d", now.Unix()) }
 
@@ -513,21 +647,19 @@ func RestorePostgresPITR(cfg *config.Config, target time.Time) (err error) {
 	if err != nil {
 		return err
 	}
-	live, err := validatePGPITR([]byte(raw), target, time.Now())
+	storeRaw, _ := shell.Output("kubectl", "-n", "databases", "get", "objectstores.barmancloud.cnpg.io", PGObjectStoreName, "--ignore-not-found", "-o", "json")
+	live, store, err := validatePGPITR([]byte(raw), []byte(storeRaw), target, time.Now())
 	if err != nil {
 		return err
 	}
-	store := live.Spec.Backup.BarmanObjectStore
+	conf := store.Spec.Configuration
 	// Preserve the live destination rather than silently restoring from changed .env settings.
-	b := &pgBackup{store.DestinationPath, store.EndpointURL, store.S3Credentials.AccessKeyID.Name}
-	if b.Secret == "" || b.Secret != store.S3Credentials.SecretAccessKey.Name || store.S3Credentials.AccessKeyID.Key != "ACCESS_KEY_ID" || store.S3Credentials.SecretAccessKey.Key != "ACCESS_SECRET_KEY" {
+	b := &pgBackup{conf.DestinationPath, conf.EndpointURL, conf.S3Credentials.AccessKeyID.Name}
+	if b.Secret == "" || b.Secret != conf.S3Credentials.SecretAccessKey.Name || conf.S3Credentials.AccessKeyID.Key != "ACCESS_KEY_ID" || conf.S3Credentials.SecretAccessKey.Key != "ACCESS_SECRET_KEY" {
 		return fmt.Errorf("PITR requires one backup Secret with ACCESS_KEY_ID and ACCESS_SECRET_KEY")
 	}
 	server := pgPITRServerName(time.Now())
-	old := store.ServerName
-	if old == "" {
-		old = "postgresql"
-	}
+	old, _ := live.pluginServerName()
 	opts := pgClusterOptions{Backup: b, ServerName: server, Recovery: &pgRecovery{target, old}}
 	if _, err = renderPostgresCluster(cfg, opts); err != nil {
 		return err
@@ -559,7 +691,7 @@ func RestorePostgresPITR(cfg *config.Config, target time.Time) (err error) {
 		return err
 	}
 	m := pgResource("Backup", fmt.Sprintf("postgresql-after-pitr-%d", time.Now().Unix()))
-	m["spec"] = map[string]any{"cluster": map[string]string{"name": "postgresql"}, "method": "barmanObjectStore"}
+	m["spec"] = pgPluginBackupSpec(map[string]any{})
 	if err = applyTelemetryJSON(m); err != nil {
 		return err
 	}

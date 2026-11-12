@@ -80,7 +80,7 @@ func TestSplitChartRef(t *testing.T) {
 
 func TestStaticImages(t *testing.T) {
 	imgs := StaticImages()
-	if len(imgs) != 2 || imgs[0] != KubeVIPImage || imgs[1] != CNPGPostgresImage {
+	if len(imgs) != 4 || imgs[0] != KubeVIPImage || imgs[1] != CNPGPostgresImage || imgs[2] != BarmanCloudPluginImage || imgs[3] != BarmanCloudSidecarImage {
 		t.Fatalf("StaticImages = %v", imgs)
 	}
 	if !strings.HasPrefix(KubeVIPImage, "ghcr.io/kube-vip/kube-vip:v") {

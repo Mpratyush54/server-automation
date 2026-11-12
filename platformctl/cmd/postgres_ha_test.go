@@ -31,7 +31,7 @@ func TestPostgresHAGraphAndUpgrade(t *testing.T) {
 		for _, step := range graph {
 			switch step.name {
 			case "postgresql-backup":
-				if !slices.Equal(step.deps, []string{"postgresql", "minio", "platform"}) || step.skip != !c.IsHA() {
+				if !slices.Equal(step.deps, []string{"postgresql", "minio", "platform", "cert-manager"}) || step.skip != !c.IsHA() {
 					t.Fatal(step)
 				}
 			case "postgresql-monitoring":

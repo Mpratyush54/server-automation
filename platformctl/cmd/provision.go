@@ -142,7 +142,7 @@ func provisionGraph(c *config.Config) []stepDef {
 		// Synthetic monitoring (#42): namespace, quotas, egress policies, API RBAC (full profile).
 		{name: "synthetics", deps: []string{"telemetry"}, skip: !components.FullTelemetry(c), args: install("synthetics"), fn: components.InstallSynthetics},
 		{name: "longhorn-monitoring", deps: []string{"longhorn", "monitoring", "telemetry"}, skip: !c.IsHA() || !c.InstallMonitoring, args: install("longhorn-monitoring"), fn: components.InstallLonghornMonitoring, warnOnly: true},
-		{name: "postgresql-backup", deps: []string{"postgresql", "minio", "platform"}, skip: !c.IsHA(), args: install("postgresql-backup"), fn: components.InstallPostgresBackup},
+		{name: "postgresql-backup", deps: []string{"postgresql", "minio", "platform", "cert-manager"}, skip: !c.IsHA(), args: install("postgresql-backup"), fn: components.InstallPostgresBackup},
 		{name: "postgresql-monitoring", deps: []string{"postgresql", "monitoring", "telemetry"}, skip: !c.IsHA() || !c.InstallMonitoring, args: install("postgresql-monitoring"), fn: components.InstallPostgresMonitoring, warnOnly: true},
 		{name: "seed", deps: []string{"platform"}, args: []string{"seed"}, fn: components.SeedAdmin, warnOnly: true},
 		// MinIO IAM needs the platform API (its OpenID issuer), so the API's scoped
