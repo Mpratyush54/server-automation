@@ -3,6 +3,7 @@ package harden
 import (
 	"bytes"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,9 +17,10 @@ type Host struct {
 	Root string
 	Run  Runner
 	// KeyFiles are root and SUDO_USER authorized_keys, resolved by the caller.
-	KeyFiles  []string
-	Warn      func(string)
-	NginxAuth bool
+	KeyFiles     []string
+	Warn         func(string)
+	NginxAuth    bool
+	ClusterPeers []netip.Prefix
 }
 
 func (h Host) Path(p string) string          { return filepath.Join(h.Root, filepath.FromSlash(p)) }
@@ -219,7 +221,7 @@ func (h Host) ApplyFirewall(confirm func() bool) error {
 		return err
 	}
 	// Config fragments may override the main YAML; refuse rather than silently
-	// using incorrect CIDRs. Multi-node configuration is a separate feature.
+	// using incorrect CIDRs. Cluster peers are explicitly supplied by the caller.
 	fragments, err := filepath.Glob(h.Path("/etc/rancher/k3s/config.yaml.d/*.yaml"))
 	if err != nil || len(fragments) != 0 {
 		return fmt.Errorf("k3s config fragments require operator-managed firewall (--skip-hardening)")
@@ -243,7 +245,7 @@ func (h Host) ApplyFirewall(confirm func() bool) error {
 			return err
 		}
 	}
-	apply := "delete table inet platform_guard\n" + Firewall(cidrs)
+	apply := "delete table inet platform_guard\n" + ClusterFirewall(cidrs, h.ClusterPeers)
 	rollback := "delete table inet platform_guard\n" + prior + "\n"
 	persisted := map[string][]byte{}
 	for _, path := range []string{"/etc/platform/firewall.nft", "/etc/systemd/system/platform-firewall.service"} {
@@ -311,7 +313,7 @@ func (h Host) ApplyFirewall(confirm func() bool) error {
 	}
 	// Persist only the confirmed policy. Do not enable the distribution nftables
 	// service: its default flush-ruleset would erase k3s rules.
-	if err := h.write("/etc/platform/firewall.nft", Firewall(cidrs), 0600); err != nil {
+	if err := h.write("/etc/platform/firewall.nft", ClusterFirewall(cidrs, h.ClusterPeers), 0600); err != nil {
 		return rollbackNow(err)
 	}
 	unit := `[Unit]
