@@ -718,6 +718,12 @@ func apiReplicas(cfg *config.Config) int {
 // requirement: a cluster that is still joining nodes schedules both replicas
 // on the first server. Single-node profiles render nothing (manifest unchanged).
 func apiAffinityYAML(cfg *config.Config) string {
+	return spreadAffinityYAML(cfg, "platform-api")
+}
+
+// spreadAffinityYAML spreads the app's pods across nodes on ha (soft, so a
+// cluster that is still growing schedules them anyway).
+func spreadAffinityYAML(cfg *config.Config, app string) string {
 	if !cfg.IsHA() {
 		return ""
 	}
@@ -729,8 +735,16 @@ func apiAffinityYAML(cfg *config.Config) string {
               topologyKey: kubernetes.io/hostname
               labelSelector:
                 matchLabels:
-                  app: platform-api
+                  app: ` + app + `
 `
+}
+
+// portalReplicas is 2 on ha (the portal survives a node loss), else 1.
+func portalReplicas(cfg *config.Config) int {
+	if cfg.IsHA() {
+		return 2
+	}
+	return 1
 }
 
 // apiPDBScript applies a PodDisruptionBudget (minAvailable: 1) when the API runs
@@ -798,6 +812,11 @@ kubectl -n platform rollout status deployment/platform-api --timeout=300s
 }
 
 // deploymentReadyCheck succeeds when every desired replica of the deployment is ready.
+// daemonSetReadyCheck succeeds when every scheduled pod of the DaemonSet is ready.
+func daemonSetReadyCheck(ns, name string) string {
+	return fmt.Sprintf(`k3s kubectl get daemonset -n %s %s -o jsonpath='{.status.numberReady} {.status.desiredNumberScheduled}' 2>/dev/null | awk '$1 != "" && $1 > 0 && $1 == $2 { ok = 1 } END { exit !ok }'`, ns, name)
+}
+
 func deploymentReadyCheck(ns, name string) string {
 	return fmt.Sprintf(`k3s kubectl get deployment -n %s %s -o jsonpath='{.status.readyReplicas} {.spec.replicas}' 2>/dev/null | awk '$1 != "" && $1 == $2 { ok = 1 } END { exit !ok }'`, ns, name)
 }
@@ -992,7 +1011,7 @@ metadata:
   labels:
     app: platform-portal
 spec:
-  replicas: 1
+  replicas: %[6]d
   selector:
     matchLabels:
       app: platform-portal
@@ -1002,7 +1021,7 @@ spec:
         app: platform-portal
     spec:
       automountServiceAccountToken: false
-      securityContext:
+%[7]s      securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
@@ -1043,7 +1062,7 @@ EOF
 kubectl wait --for=condition=Available deployment/platform-api -n platform --timeout=300s
 kubectl wait --for=condition=Available deployment/platform-portal -n platform --timeout=180s
 `, strconv.Quote(apiImg), strconv.Quote(portalImg), apiReplicas(cfg), apiPDBScript(apiReplicas(cfg)),
-		apiAffinityYAML(cfg),
+		apiAffinityYAML(cfg), portalReplicas(cfg), spreadAffinityYAML(cfg, "platform-portal"),
 	))
 	if err != nil {
 		return err
@@ -1486,9 +1505,10 @@ func CheckHealth() error {
 	checks := []check{
 		{"K3s nodes", "k3s kubectl get nodes --no-headers 2>/dev/null | grep -q Ready"},
 		{"Platform API", deploymentReadyCheck("platform", "platform-api")},
-		{"Platform Portal", "k3s kubectl get deployment -n platform platform-portal --no-headers 2>/dev/null | grep -q '1/1'"},
-		{"Ingress NGINX", "k3s kubectl get deployment -n ingress-nginx ingress-nginx-controller --no-headers 2>/dev/null | grep -q '1/1'"},
-		{"ArgoCD", "k3s kubectl get deployment -n argocd argocd-server --no-headers 2>/dev/null | grep -q '1/1'"},
+		{"Platform Portal", deploymentReadyCheck("platform", "platform-portal")},
+		// A DaemonSet on ha (one controller per node), a Deployment otherwise.
+		{"Ingress NGINX", daemonSetReadyCheck("ingress-nginx", "ingress-nginx-controller") + " || " + deploymentReadyCheck("ingress-nginx", "ingress-nginx-controller")},
+		{"ArgoCD", deploymentReadyCheck("argocd", "argocd-server")},
 	}
 
 	var failed []string

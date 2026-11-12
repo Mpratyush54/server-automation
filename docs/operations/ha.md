@@ -111,7 +111,9 @@ Provision on the first server, in order:
    TLS SANs (`PLATFORM_API_SANS`, plus `API_VIP` from the fragment);
 3. installs Longhorn and makes it the default StorageClass before any workload
    creates a PersistentVolumeClaim;
-4. installs the platform as usual (ingress-nginx runs as a DaemonSet).
+4. installs the platform as usual (ingress-nginx runs as a DaemonSet; the
+   platform API and portal run two replicas each, spread across nodes with soft
+   pod anti-affinity).
 
 platformctl generates the cluster tokens before k3s starts and keeps them in
 `/etc/platform/k3s/` (mode 0600): `server-token` joins servers, `agent-token`

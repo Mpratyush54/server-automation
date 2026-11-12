@@ -131,3 +131,25 @@ func TestMinioHelmArgsDefaultBucketsOnlyStandalone(t *testing.T) {
 		t.Fatalf("single-node must keep defaultBuckets: %s", full)
 	}
 }
+
+// The portal was a single replica on ha (found on the 3-node test).
+func TestPortalReplicasAndSpreadOnHA(t *testing.T) {
+	ha := &config.Config{Profile: config.ProfileHA}
+	full := &config.Config{Profile: config.ProfileFull}
+	if portalReplicas(ha) != 2 || portalReplicas(full) != 1 {
+		t.Fatalf("portal replicas: ha=%d full=%d", portalReplicas(ha), portalReplicas(full))
+	}
+	if a := spreadAffinityYAML(ha, "platform-portal"); !strings.Contains(a, "app: platform-portal") || !strings.Contains(a, "kubernetes.io/hostname") {
+		t.Fatalf("ha portal affinity: %q", a)
+	}
+	if spreadAffinityYAML(full, "platform-portal") != "" {
+		t.Fatal("single-node profiles need no affinity")
+	}
+}
+
+func TestDaemonSetReadyCheck(t *testing.T) {
+	c := daemonSetReadyCheck("ingress-nginx", "ingress-nginx-controller")
+	if !strings.Contains(c, "get daemonset -n ingress-nginx ingress-nginx-controller") || !strings.Contains(c, "desiredNumberScheduled") {
+		t.Fatalf("unexpected check: %s", c)
+	}
+}
