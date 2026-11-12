@@ -44,6 +44,11 @@ of servers (3 or 5). Agents do not run etcd and do not count towards quorum.
 - Synchronised clocks (chrony is installed by host hardening).
 - A private network between the nodes is strongly recommended. Ingress `vip`
   mode needs all servers in one L2 subnet.
+- CPU: the ha profile reserves (Kubernetes CPU requests) about 4.8 cores across
+  the cluster. Three 2-vCPU nodes run it but leave little headroom for rolling
+  updates and load; use at least 4 vCPUs per node (for example three 4-vCPU
+  servers) for production. Check headroom with
+  `kubectl describe nodes | grep -A3 "Allocated resources"`.
 - Roughly 500 MB or more RAM per node for the storage services, plus disk
   overhead for Longhorn replicas, snapshots and rebuilds. Plan at least 100 GB
   of disk per node: Longhorn reserves 30% of each disk and, with the

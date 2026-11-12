@@ -135,6 +135,13 @@ func mongodbRelease(cfg *config.Config) helmRelease {
 		values["arbiter"] = map[string]any{"enabled": false}
 		values["global"] = map[string]any{"defaultStorageClass": HAStorageClass(cfg)}
 		values["persistence"] = map[string]any{"storageClass": LonghornSingleStorageClass}
+		// The chart's "small" preset requests 500m CPU per member (1.5 cores for
+		// the replica set) while a member used ~260m under the 3-node load test;
+		// with it, 2-vCPU nodes had no CPU left for rolling updates.
+		values["resources"] = map[string]any{
+			"requests": map[string]string{"cpu": "150m", "memory": "512Mi"},
+			"limits":   map[string]string{"cpu": "1", "memory": "1Gi"},
+		}
 		values["podAntiAffinityPreset"] = "soft"
 		values["pdb"] = map[string]any{"create": true, "maxUnavailable": 1}
 		restarts = "mongodb-0..2, one member at a time (the replica set elects a new primary; drivers retry)"

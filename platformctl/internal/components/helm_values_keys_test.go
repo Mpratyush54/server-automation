@@ -166,7 +166,7 @@ func TestHAMongoHelmKeysVerified(t *testing.T) {
 	paths = append(paths, setArgKeys(r.Args)...)
 	checkVerifiedKeys(t, "mongodb", paths,
 		[]string{"auth.rootPassword", "auth.replicaSetKey", "architecture", "replicaCount", "replicaSetName",
-			"arbiter.enabled", "global.defaultStorageClass", "persistence.storageClass", "podAntiAffinityPreset", "pdb.create", "pdb.maxUnavailable",
+			"arbiter.enabled", "global.defaultStorageClass", "persistence.storageClass", "resources", "podAntiAffinityPreset", "pdb.create", "pdb.maxUnavailable",
 			"persistence.size", "metrics.enabled", "metrics.resources", "metrics.service.annotations", "updateStrategy.type"},
 		[]string{"architecture", "replicaCount", "replicaSetName", "auth.replicaSetKey", "arbiter.enabled", "global.defaultStorageClass", "pdb.maxUnavailable"})
 }
