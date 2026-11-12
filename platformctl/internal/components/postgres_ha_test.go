@@ -55,7 +55,7 @@ func TestRenderPostgresCluster(t *testing.T) {
 			if !reflect.DeepEqual(pg["synchronous"], map[string]any{"method": "any", "number": 1, "dataDurability": "preferred"}) || !reflect.DeepEqual(pg["shared_preload_libraries"], []string{"pgaudit", "pg_stat_statements"}) {
 				t.Fatal(pg)
 			}
-			if spec["superuserSecret"].(map[string]string)["name"] != "postgresql" || spec["enableSuperuserAccess"] != true || spec["enablePDB"] != true || spec["primaryUpdateMethod"] != "switchover" {
+			if spec["superuserSecret"].(map[string]string)["name"] != "postgresql" || spec["enableSuperuserAccess"] != true || spec["enablePDB"] != true || spec["primaryUpdateMethod"] != "switchover" || spec["smartShutdownTimeout"] != 15 {
 				t.Fatal(spec)
 			}
 			if _, ok := spec["backup"]; ok != tc.backup {

@@ -112,7 +112,12 @@ func renderPostgresCluster(cfg *config.Config, opts pgClusterOptions) (map[strin
 	// nine times and send WAL fsync over the network, without extra recovery
 	// capacity when the three PostgreSQL instances already occupy three nodes.
 	spec := map[string]any{
-		"instances": 3, "imageName": versions.CNPGPostgresImage, "primaryUpdateStrategy": "unsupervised", "primaryUpdateMethod": "switchover", "enablePDB": true, "enableSuperuserAccess": true, "superuserSecret": map[string]string{"name": "postgresql"},
+		// A deleted or drained primary waits smartShutdownTimeout for clients
+		// to disconnect before failover can start. The API's connection pool
+		// never disconnects on its own, so CNPG's 180 s default delayed
+		// promotion by three minutes (measured on the 3-node test).
+		"smartShutdownTimeout": 15,
+		"instances":            3, "imageName": versions.CNPGPostgresImage, "primaryUpdateStrategy": "unsupervised", "primaryUpdateMethod": "switchover", "enablePDB": true, "enableSuperuserAccess": true, "superuserSecret": map[string]string{"name": "postgresql"},
 		"postgresql": map[string]any{"synchronous": map[string]any{"method": "any", "number": 1, "dataDurability": "preferred"}, "shared_preload_libraries": []string{"pgaudit", "pg_stat_statements"}, "parameters": map[string]string{"pg_stat_statements.max": "10000", "pg_stat_statements.track": "top", "max_connections": "200", "shared_buffers": "256MB", "archive_timeout": "5min"}},
 		"bootstrap":  map[string]any{"initdb": map[string]string{"database": "platform", "owner": "platform"}},
 		"storage":    map[string]string{"size": "10Gi", "storageClass": sc},
