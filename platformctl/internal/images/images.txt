@@ -11,6 +11,7 @@ docker.io/grafana/loki:3.5.0
 docker.io/grafana/promtail:3.5.1
 ecr-public.aws.com/docker/library/redis:8.6.4-alpine
 ghcr.io/jkroepke/kube-webhook-certgen:1.11.1
+ghcr.io/kube-vip/kube-vip:v1.3.1
 ghcr.io/kyverno/background-controller:v1.13.4
 ghcr.io/kyverno/cleanup-controller:v1.13.4
 ghcr.io/kyverno/kyverno-cli:v1.13.4

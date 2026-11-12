@@ -20,10 +20,12 @@ import (
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/helm"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ingressha"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/k3s"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ocifetch"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/preflight"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/runner"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/stack"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
@@ -187,6 +189,10 @@ func runProvision() error {
 		fmt.Printf("    ADMIN_PASSWORD=%s\n", cfg.AdminPassword)
 	}
 
+	if err := cfg.ValidateIngressHA(); err != nil {
+		return err
+	}
+
 	// Child steps load their config from this file — it must be written before
 	// any cluster step starts.
 	if err := cfg.SaveEnvFile("/etc/platform/.env"); err != nil {
@@ -269,6 +275,29 @@ func runProvision() error {
 	}()
 
 	if !cfg.SkipK8s {
+		// Ingress HA (#54): the k3s config fragment (ServiceLB off, API VIP in
+		// tls-san) and the kube-vip auto-deploy manifest must exist before k3s
+		// starts, so kube-vip already runs when ingress-nginx waits for its
+		// LoadBalancer address.
+		if cfg.IsHA() {
+			if err := hostStep("ingress-ha", func() error {
+				host := ingressha.Default()
+				restart, err := host.Prepare(cfg)
+				if err != nil || !restart {
+					return err
+				}
+				if err := shell.RunBash("systemctl restart k3s"); err != nil {
+					return fmt.Errorf("restart k3s: %w", err)
+				}
+				if err := k3s.WaitReady(); err != nil {
+					return err
+				}
+				host.CleanupServiceLB(cfg)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
 		if err := hostStep("k3s", func() error { return k3s.Install(cfg.Domain, cfg.GitHubToken) }); err != nil {
 			return err
 		}

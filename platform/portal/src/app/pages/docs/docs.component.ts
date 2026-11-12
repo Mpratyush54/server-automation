@@ -103,6 +103,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
         { label: 'Storage Providers', section: 'operations', page: 'storage-providers' },
         { label: 'Platform Stack', section: 'operations', page: 'platform-stack' },
         { label: 'Image Signing', section: 'operations', page: 'image-signing' },
+        { label: 'High Availability', section: 'operations', page: 'ha' },
         { label: 'Host Hardening', section: '', page: 'host-hardening' },
         { label: 'Namespace Isolation', section: '', page: 'namespace-isolation' },
         { label: 'GitOps Branches', section: '', page: 'gitops-branches' },

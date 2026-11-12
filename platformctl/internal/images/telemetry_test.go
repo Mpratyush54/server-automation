@@ -25,3 +25,20 @@ func TestFullOnlyTelemetryImages(t *testing.T) {
 		t.Fatal("missing telemetry images")
 	}
 }
+
+func TestListForInstallDropsKubeVIPUnlessHA(t *testing.T) {
+	nonHA := ListForInstall(true, false)
+	ha := ListForInstall(true, true)
+	if slices.Contains(nonHA, "ghcr.io/kube-vip/kube-vip:v1.3.1") {
+		t.Fatal("kube-vip must not pre-pull on non-ha")
+	}
+	if !slices.Contains(ha, "ghcr.io/kube-vip/kube-vip:v1.3.1") {
+		t.Fatal("kube-vip missing on ha")
+	}
+	if !slices.Equal(ListForTelemetry(true), List()) {
+		t.Fatal("ListForTelemetry must keep including kube-vip")
+	}
+	if len(ha) != len(nonHA)+1 {
+		t.Fatalf("ha=%d nonHA=%d", len(ha), len(nonHA))
+	}
+}

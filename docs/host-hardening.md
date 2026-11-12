@@ -67,12 +67,25 @@ restrictions and must be reconciled by their owner.
 Pod/service CIDRs default to k3s' standard IPv4 ranges and are read from
 `/etc/rancher/k3s/config.yaml` (scalar, comma-separated, inline-list, block-list,
 and dual-stack forms). CIDR source rules are constrained to internal interfaces
-to avoid trusting spoofed external source addresses. Config fragment directories
-are refused rather than guessed. Existing multi-node clusters are refused before
-any host changes. This is deliberately a single-node policy: use
+to avoid trusting spoofed external source addresses. Drop-ins under
+`/etc/rancher/k3s/config.yaml.d/` that set `cluster-cidr` or `service-cidr`
+(with or without a trailing `+`) are refused rather than guessed; other
+fragments, such as the ha-profile ingress HA drop-in that disables `servicelb`
+and appends `tls-san`, are allowed. Existing multi-node clusters are refused
+before any host changes. This is deliberately a single-node policy: use
 `--skip-hardening` and operator-managed node allowlists for multi-node/HA hosts,
 nonstandard SSH ports, or future `platformctl join` (#53). Remote kubectl clients
 need an SSH tunnel rather than direct public 6443 access.
+
+### Ingress VIP on the ha profile
+
+On `PLATFORM_PROFILE=ha` the existing TCP 80/443 rules already cover traffic to
+a floating ingress VIP: the input chain accepts 80/443 to any local address and
+kube-proxy translates the VIP to the local ingress-nginx pod, which the forward
+chain admits by original destination port. When `API_VIP` is set, hardening adds
+`ip saddr <node-subnet> ip daddr <API_VIP> tcp dport 6443 accept`, so nodes in
+the same subnet can reach the floating Kubernetes API address and nothing else
+can. See [high availability](operations/ha.md).
 
 The previous **owned table** is captured, generated rules are syntax-checked, and
 a transient systemd rollback is armed for 120 seconds **before** atomic policy

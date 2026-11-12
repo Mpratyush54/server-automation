@@ -29,26 +29,34 @@ func IngressSecurityValues(c *config.Config) map[string]any {
 			"limit_conn_zone $binary_remote_addr zone=platform_connections:10m;",
 			fmt.Sprintf("limit_conn platform_connections %d;", c.IngressIPConnections))
 	}
-	return map[string]any{"controller": map[string]any{
-		// externalTrafficPolicy Local keeps the client source IP: k3s routes
-		// traffic for the LoadBalancer address (the node IP) straight to the
-		// local controller pod without SNAT. With Cluster every request came
-		// from the CNI gateway (10.42.0.1), which made the per-IP limits below
-		// and the API's Express limiters one bucket shared by all clients.
-		// The controller is the only hop: it overwrites X-Forwarded-For with
-		// $remote_addr and ignores client-sent forwarding headers, so the API
-		// (trust proxy = 1) sees the real, unspoofable client address.
-		//
-		// With Local, the k3s ServiceLB (svclb) pods forward to <hostIP>:<nodePort>
-		// instead of the ClusterIP, so node ports are required: without them
-		// svclb gets port 0 and host-local access (127.0.0.1:443, used by
-		// `platformctl harden` readiness checks) breaks. The host firewall's
-		// forward chain only admits original ports 80/443, so node ports are
-		// not reachable from outside on hardened hosts.
-		"service": map[string]any{
-			"type": "LoadBalancer", "allocateLoadBalancerNodePorts": true,
-			"externalTrafficPolicy": "Local",
-		},
+	// externalTrafficPolicy Local keeps the client source IP: k3s routes
+	// traffic for the LoadBalancer address (the node IP) straight to the
+	// local controller pod without SNAT. With Cluster every request came
+	// from the CNI gateway (10.42.0.1), which made the per-IP limits below
+	// and the API's Express limiters one bucket shared by all clients.
+	// The controller is the only hop: it overwrites X-Forwarded-For with
+	// $remote_addr and ignores client-sent forwarding headers, so the API
+	// (trust proxy = 1) sees the real, unspoofable client address.
+	//
+	// With Local, the k3s ServiceLB (svclb) pods forward to <hostIP>:<nodePort>
+	// instead of the ClusterIP, so node ports are required: without them
+	// svclb gets port 0 and host-local access (127.0.0.1:443, used by
+	// `platformctl harden` readiness checks) breaks. The host firewall's
+	// forward chain only admits original ports 80/443, so node ports are
+	// not reachable from outside on hardened hosts.
+	//
+	// The trade-off of Local on several nodes: only a node with a ready local
+	// controller pod can serve the address. On the ha profile (#54) the
+	// controller is therefore a DaemonSet, so every health-checked node
+	// (external mode) and whichever node kube-vip elects for the VIP (vip
+	// mode; with svc_election kube-vip only elects nodes with a local
+	// endpoint) has one.
+	service := map[string]any{
+		"type": "LoadBalancer", "allocateLoadBalancerNodePorts": true,
+		"externalTrafficPolicy": "Local",
+	}
+	controller := map[string]any{
+		"service":        service,
 		"publishService": map[string]any{"enabled": true},
 		// ApplyServiceRouting needs configuration snippets to strip frame headers.
 		// Ingress write privileges must remain limited to trusted operators/API.
@@ -78,7 +86,16 @@ func IngressSecurityValues(c *config.Config) map[string]any {
 			"enable-owasp-modsecurity-crs": boolString(c.WAF),
 			"modsecurity-snippet":          "Include /etc/nginx/modsecurity/modsecurity.conf\nSecRuleEngine DetectionOnly",
 		},
-	}}
+	}
+	if c.IsHA() {
+		controller["kind"] = "DaemonSet"
+		if strings.ToLower(strings.TrimSpace(c.IngressHAMode)) == config.IngressHAModeVIP && c.IngressVIP != "" {
+			service["annotations"] = map[string]string{
+				"kube-vip.io/loadbalancerIPs": c.IngressVIP,
+			}
+		}
+	}
+	return map[string]any{"controller": controller}
 }
 
 func boolString(v bool) string {

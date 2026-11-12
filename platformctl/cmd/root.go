@@ -191,11 +191,12 @@ var chartsCmd = &cobra.Command{
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(map[string]any{
-				"k3s":         versions.K3sVersion,
-				"helm":        versions.HelmVersion,
-				"charts":      versions.All(),
-				"chartMirror": versions.ChartMirror,
-				"k3sMirror":   versions.K3sMirror,
+				"k3s":          versions.K3sVersion,
+				"helm":         versions.HelmVersion,
+				"charts":       versions.All(),
+				"chartMirror":  versions.ChartMirror,
+				"k3sMirror":    versions.K3sMirror,
+				"staticImages": versions.StaticImages(),
 			})
 		}
 		fmt.Printf("k3s  %s\nhelm %s\n", versions.K3sVersion, versions.HelmVersion)

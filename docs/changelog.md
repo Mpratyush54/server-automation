@@ -3,6 +3,7 @@
 ## Unreleased — Phase 4: observability, session replay, heatmaps, status pages
 
 ### New
+- **Ingress HA on the `ha` profile (#54):** kube-vip ARP VIP (`INGRESS_HA_MODE=vip`) or external LB/DNS failover (`external`), ingress-nginx DaemonSet with client-IP preservation, optional `API_VIP` + tls-san. See [operations/ha.md](operations/ha.md).
 - **Session replay** (opt-in, consent-based) for the React and Angular SDKs: rrweb recording with input masking, unload delivery via `sendBeacon` / keepalive, portal player with error/navigation/network markers, audited access (`replay.view`, `replay.chunk_view`, `replay.snapshot_view`); agent tokens need the `replays:read` scope. See [guides/frontend-rum.md](guides/frontend-rum.md).
 - **Heatmaps**: per-page click and scroll-depth aggregates with the newest replay snapshot of each page as the background; buffered, exact aggregation. See [guides/heatmaps.md](guides/heatmaps.md).
 - **Status pages**: public `/status/<slug>` pages fed by synthetic checks, incidents and scheduled maintenance, JSON/Atom/RSS feeds, light/dark themes. See [guides/status-pages.md](guides/status-pages.md).

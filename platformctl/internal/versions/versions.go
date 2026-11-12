@@ -45,6 +45,16 @@ func MirrorTag(version string) string {
 // Helm 4 changed flag semantics; stay on 3.x until the installer is validated on 4.
 const HelmVersion = "v3.22.1"
 
+// KubeVIPImage is the kube-vip DaemonSet image for ha-profile ingress VIP (#54).
+// Pinned so offline/pre-pull inventories stay reproducible without a Helm chart.
+const KubeVIPImage = "ghcr.io/kube-vip/kube-vip:v1.3.1"
+
+// StaticImages returns container images rendered by platformctl itself (not by
+// a Helm chart). scripts/gen-images.sh appends these to images.txt.
+func StaticImages() []string {
+	return []string{KubeVIPImage}
+}
+
 // ChartCacheDir holds pre-downloaded chart tarballs (<name>-<version>.tgz).
 // The offline bundle extracts charts here; Prefetch() also fills it.
 const ChartCacheDir = "/var/lib/platform/charts"
