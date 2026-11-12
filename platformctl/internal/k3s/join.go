@@ -58,6 +58,9 @@ func Join(role Role, serverURL, token, githubToken string, o ServerOptions) (err
 		if err != nil && strings.Contains(err.Error(), token) {
 			err = fmt.Errorf("%s", strings.ReplaceAll(err.Error(), token, "[redacted]"))
 		}
+		if err != nil && o.AgentToken != "" && strings.Contains(err.Error(), o.AgentToken) {
+			err = fmt.Errorf("%s", strings.ReplaceAll(err.Error(), o.AgentToken, "[redacted]"))
+		}
 	}()
 	path, service, exec := ServerTokenFile, "k3s", ""
 	var content string
@@ -65,6 +68,11 @@ func Join(role Role, serverURL, token, githubToken string, o ServerOptions) (err
 	case RoleServer:
 		o.HA, o.ClusterInit, o.ServerURL = true, false, normalized
 		o.TokenFile, o.AgentTokenFile = ServerTokenFile, ""
+		if o.AgentToken != "" {
+			// Same agent token as the other servers, in place before k3s
+			// starts (see ReadServerJoinTokens).
+			o.AgentTokenFile = AgentTokenFile
+		}
 		if err := o.Validate(); err != nil {
 			return err
 		}
@@ -82,6 +90,11 @@ func Join(role Role, serverURL, token, githubToken string, o ServerOptions) (err
 	}
 	if err := joinWriteToken(path, token); err != nil {
 		return err
+	}
+	if role == RoleServer && o.AgentToken != "" {
+		if err := joinWriteToken(AgentTokenFile, o.AgentToken); err != nil {
+			return err
+		}
 	}
 	registriesChanged, err := joinWriteRegistries(githubToken)
 	if err != nil {

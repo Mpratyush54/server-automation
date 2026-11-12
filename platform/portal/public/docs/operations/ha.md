@@ -148,6 +148,12 @@ sudo platformctl token create --role agent --ttl 2h --output /root/agent.token
 sudo platformctl token create --role agent --output /root/agent.token
 ```
 
+A server token file holds two lines: the server token and the cluster's agent
+token. Every k3s server must use the same agent token; `join --role server`
+writes it to `/etc/platform/k3s/agent-token` and sets `agent-token-file` before
+k3s starts. (A server joined without it runs, but k3s refuses to start on it
+after its next restart; see [Troubleshooting](#troubleshooting).)
+
 Without `--output` the token is printed once to standard output. Tokens use the
 k3s secure format (`K10<ca-hash>::...`): the joining node checks the cluster's CA
 against the hash before it sends any credential. Copy the file to the new node
@@ -1108,6 +1114,7 @@ Longhorn backups separately.
 
 | Symptom | Cause and fix |
 |---|---|
+| A joined server's k3s exits after a reboot with `cred/passwd newer than datastore` | The server was joined by a platformctl release that did not pass the agent token, so its agent credential differs from the cluster's. With the other servers healthy (etcd quorum), on the affected server only: copy `/var/lib/rancher/k3s/server/agent-token` from a healthy server to `/etc/platform/k3s/agent-token` (mode 0600), add `agent-token-file: /etc/platform/k3s/agent-token` to `/etc/rancher/k3s/config.yaml`, move `/var/lib/rancher/k3s/server/cred/passwd` aside and `systemctl restart k3s`. k3s recreates the file from the datastore. Repeat on each server joined that way, one at a time. |
 | PostgreSQL standbys stay Pending | Required anti-affinity needs three schedulable nodes. Join the other nodes and check CPU, memory and storage capacity. The first primary can accept writes alone. |
 | PostgreSQL WAL archiving is failing: archive is not empty | A new Cluster cannot reuse a populated serverName archive. Use a new bucket/prefix with `POSTGRES_BACKUP_DESTINATION`, preserving old backups for recovery. |
 | Applying the PostgreSQL Cluster fails: webhook not ready | Installer retries for about two minutes. Check `kubectl -n cnpg-system rollout status deploy/cnpg-cloudnative-pg`, endpoints and the Established CRD, then rerun. |

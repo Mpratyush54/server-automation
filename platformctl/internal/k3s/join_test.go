@@ -248,3 +248,58 @@ func TestInstallExecThreading(t *testing.T) {
 		t.Fatal("install environment")
 	}
 }
+
+// Joined servers must use the cluster's agent token, or k3s refuses to start
+// on them after a restart ("cred/passwd newer than datastore", 3-node test).
+func TestServerJoinTokenFileCarriesAgentToken(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "server.token")
+	if err := WriteServerJoinTokenFile(p, "K10abc::server:s3cret", "K10abc::node:ag3nt"); err != nil {
+		t.Fatal(err)
+	}
+	server, agent, err := ReadServerJoinTokens(p, nil)
+	if err != nil || server != "K10abc::server:s3cret" || agent != "K10abc::node:ag3nt" {
+		t.Fatalf("got %q %q %v", server, agent, err)
+	}
+	// Old single-line files keep working.
+	if err := WriteServerJoinTokenFile(p, "K10abc::server:s3cret", ""); err != nil {
+		t.Fatal(err)
+	}
+	if server, agent, err = ReadServerJoinTokens(p, nil); err != nil || server == "" || agent != "" {
+		t.Fatalf("single line: %q %q %v", server, agent, err)
+	}
+	if _, _, err := ReadServerJoinTokens("-", strings.NewReader("a\nb\nc\n")); err == nil {
+		t.Fatal("three lines must be rejected")
+	}
+}
+
+func TestJoinServerWritesAgentTokenBeforeStart(t *testing.T) {
+	tokenPaths(t)
+	state.SetPath(filepath.Join(t.TempDir(), "state"))
+	t.Cleanup(func() { state.SetPath(state.DefaultPath) })
+	a, b, c, d, e, f, g, h := joinWriteToken, joinWriteConfig, joinWriteRegistries, joinInstall, joinIsInstalled, joinRestart, joinWaitReady, joinSetupKubeconfig
+	t.Cleanup(func() {
+		joinWriteToken, joinWriteConfig, joinWriteRegistries, joinInstall, joinIsInstalled, joinRestart, joinWaitReady, joinSetupKubeconfig = a, b, c, d, e, f, g, h
+	})
+	var order []string
+	joinWriteToken = func(p, tok string) error { order = append(order, p+"="+tok); return nil }
+	joinWriteRegistries = func(string) (bool, error) { return false, nil }
+	var cfgText string
+	joinWriteConfig = func(content string, _ []string) (bool, error) { cfgText = content; order = append(order, "config"); return true, nil }
+	joinIsInstalled = func() bool { return false }
+	joinInstall = func(string) error { order = append(order, "install"); return nil }
+	joinRestart = func(string) error { return nil }
+	joinWaitReady = func() error { return nil }
+	joinSetupKubeconfig = func() error { return nil }
+	err := Join(RoleServer, "https://node:6443", "secret-token", "", ServerOptions{NodeIP: "10.0.0.2", AgentToken: "agent-token-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(order, " ")
+	if !strings.Contains(joined, AgentTokenFile+"=agent-token-1") || strings.Index(joined, "agent-token-1") > strings.Index(joined, "install") {
+		t.Fatalf("agent token must be written before k3s is installed: %s", joined)
+	}
+	if !strings.Contains(cfgText, "agent-token-file") || strings.Contains(cfgText, "agent-token-1") {
+		t.Fatalf("config must reference the agent token file, never the token:\n%s", cfgText)
+	}
+}

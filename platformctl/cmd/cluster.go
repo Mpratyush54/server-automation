@@ -251,7 +251,12 @@ func runJoin(stdin io.Reader) error {
 	if prev := joinedRole(); prev != "" && prev != string(role) {
 		return fmt.Errorf("this node already joined as %s; it cannot rejoin as %s", prev, role)
 	}
-	token, err := k3s.ReadToken(joinTokenFile, stdin)
+	var token, agentToken string
+	if role == k3s.RoleServer {
+		token, agentToken, err = k3s.ReadServerJoinTokens(joinTokenFile, stdin)
+	} else {
+		token, err = k3s.ReadToken(joinTokenFile, stdin)
+	}
 	if err != nil {
 		return fmt.Errorf("--token-file: %w", err)
 	}
@@ -282,6 +287,7 @@ func runJoin(stdin io.Reader) error {
 		return fmt.Errorf("host hardening needs the cluster node addresses for the firewall: pass --nodes (or PLATFORM_CLUSTER_NODES), or --skip-hardening")
 	}
 	opts := clusterServerOptions(cfg)
+	opts.AgentToken = agentToken
 	if role == k3s.RoleAgent {
 		opts = k3s.ServerOptions{NodeIP: cfg.Cluster.NodeIP}
 	}
@@ -466,6 +472,22 @@ func runTokenCreate(stdout io.Writer) error {
 		return fmt.Errorf("--ttl applies to agent tokens only; servers join with the server token")
 	case role == k3s.RoleServer:
 		token, err = k3s.ReadSecureToken(k3s.RoleServer)
+		if err == nil {
+			// Joining servers need the cluster's agent token too (second line).
+			if agent, aerr := k3s.ReadSecureToken(k3s.RoleAgent); aerr == nil {
+				if tokenOutput != "" {
+					if err := k3s.WriteServerJoinTokenFile(tokenOutput, token, agent); err != nil {
+						return err
+					}
+					fmt.Fprintf(os.Stderr, "Token written to %s (mode 0600; server token and the cluster's agent token). Copy it to the new server and delete it afterwards.\n", tokenOutput)
+				} else {
+					fmt.Fprintln(os.Stderr, "Server join token and the cluster's agent token (shown once; treat them like a root password):")
+					fmt.Fprintln(stdout, token)
+					fmt.Fprintln(stdout, agent)
+				}
+				return writeJoinSettings(os.Stderr, cfg, tokenSettingsOutput)
+			}
+		}
 	case tokenTTL != "":
 		os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
 		token, err = k3s.CreateBootstrapToken(tokenTTL)

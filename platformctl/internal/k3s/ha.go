@@ -58,9 +58,13 @@ type ServerOptions struct {
 	ClusterInit               bool
 	ServerURL                 string
 	TokenFile, AgentTokenFile string
-	TLSSANs                   []string
-	NodeIP                    string
-	Snapshots                 EtcdSnapshots
+	// AgentToken (join --role server only) is the cluster's agent token from
+	// the server join token file. It is written to AgentTokenFile before k3s
+	// starts and never rendered into config.yaml.
+	AgentToken string
+	TLSSANs    []string
+	NodeIP     string
+	Snapshots  EtcdSnapshots
 }
 
 // Validate rejects inconsistent HA settings before anything is written.
@@ -236,33 +240,96 @@ func ParseToken(data []byte) (string, error) {
 // ReadToken reads a token from a 0600 file or, for "-", from stdin. Tokens
 // never come from argv, where other local users could read them.
 func ReadToken(path string, stdin io.Reader) (string, error) {
-	if path == "-" {
-		if stdin == nil {
-			return "", fmt.Errorf("token input is missing")
-		}
-		b, err := io.ReadAll(io.LimitReader(stdin, 8192))
-		if err != nil {
-			return "", fmt.Errorf("read token input failed")
-		}
-		return ParseToken(b)
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return "", err
-	}
-	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
-		return "", fmt.Errorf("token file permissions are too wide; chmod 600 the token file")
-	}
-	b, err := io.ReadAll(f)
+	b, err := readTokenInput(path, stdin)
 	if err != nil {
 		return "", err
 	}
 	return ParseToken(b)
+}
+
+// ReadServerJoinTokens reads a server join token file: the server token on the
+// first line and, optionally, the cluster's agent token on the second.
+//
+// Every k3s server must use the same agent token. A first server provisioned
+// with agent-token-file but joined servers without it record a different
+// agent credential; k3s on such a joined server then refuses to start after
+// any restart ("cred/passwd newer than datastore"), found on the 3-node test.
+func ReadServerJoinTokens(path string, stdin io.Reader) (server, agent string, err error) {
+	b, err := readTokenInput(path, stdin)
+	if err != nil {
+		return "", "", err
+	}
+	var lines []string
+	for _, l := range strings.Split(string(b), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) == 0 || len(lines) > 2 {
+		return "", "", fmt.Errorf("server join token file must hold the server token and, optionally, the agent token on a second line")
+	}
+	if server, err = ParseToken([]byte(lines[0])); err != nil {
+		return "", "", err
+	}
+	if len(lines) == 2 {
+		if agent, err = ParseToken([]byte(lines[1])); err != nil {
+			return "", "", fmt.Errorf("agent token (second line): %w", err)
+		}
+	}
+	return server, agent, nil
+}
+
+// WriteServerJoinTokenFile writes the server token and, when set, the agent
+// token on a second line to a 0600 file.
+func WriteServerJoinTokenFile(path, server, agent string) error {
+	if err := WriteTokenFile(path, server); err != nil {
+		return err
+	}
+	if agent == "" {
+		return nil
+	}
+	if _, err := ParseToken([]byte(agent)); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(agent + "\n"); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+func readTokenInput(path string, stdin io.Reader) ([]byte, error) {
+	if path == "-" {
+		if stdin == nil {
+			return nil, fmt.Errorf("token input is missing")
+		}
+		b, err := io.ReadAll(io.LimitReader(stdin, 8192))
+		if err != nil {
+			return nil, fmt.Errorf("read token input failed")
+		}
+		return b, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
+		return nil, fmt.Errorf("token file permissions are too wide; chmod 600 the token file")
+	}
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
 }
 
 // WriteTokenFile atomically writes a token file with mode 0600.
