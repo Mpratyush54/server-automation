@@ -18,6 +18,10 @@ func tokenPaths(t *testing.T) {
 	dir := t.TempDir()
 	ServerTokenFile, AgentTokenFile = filepath.Join(dir, "config", "server"), filepath.Join(dir, "config", "agent")
 	DataTokenFile, DataAgentTokenFile = filepath.Join(dir, "data", "server"), filepath.Join(dir, "data", "agent")
+	// Join tunes kernel limits before k3s starts: keep tests off the host.
+	oldTune := joinTuneHost
+	t.Cleanup(func() { joinTuneHost = oldTune })
+	joinTuneHost = func() error { return nil }
 }
 
 func TestHAConfig(t *testing.T) {

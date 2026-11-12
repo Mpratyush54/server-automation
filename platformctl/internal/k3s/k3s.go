@@ -70,6 +70,9 @@ func InstallWith(domain, githubToken string, o ServerOptions) error {
 		}
 	}
 	color.Cyan("\n  ■ Installing K3s %s...", versions.K3sVersion)
+	if err := TuneHost(); err != nil {
+		color.Yellow("  ⚠ kernel limits not applied: %v", err)
+	}
 
 	changed, err := WriteRegistries(githubToken)
 	if err != nil {

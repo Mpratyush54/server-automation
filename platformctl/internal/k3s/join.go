@@ -12,6 +12,7 @@ import (
 // Keep host effects replaceable so join branching can be tested without root.
 var (
 	joinWriteToken      = WriteTokenFile
+	joinTuneHost        = TuneHost
 	joinWriteConfig     = WriteConfig
 	joinWriteRegistries = WriteRegistries
 	joinInstall         = installK3s
@@ -102,6 +103,9 @@ func Join(role Role, serverURL, token, githubToken string, o ServerOptions) (err
 	}
 	changed, err := joinWriteConfig(content, upstreamDNS())
 	if err != nil {
+		return err
+	}
+	if err := joinTuneHost(); err != nil {
 		return err
 	}
 	if !joinIsInstalled() {
