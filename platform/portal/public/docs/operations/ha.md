@@ -255,6 +255,12 @@ critical settings: disabled Traefik, Secrets encryption), installs the pinned
 k3s release and, unless `--skip-hardening` is given, applies the host security
 baseline with the cluster firewall.
 
+HA servers also set `kube-controller-manager-arg: node-monitor-grace-period=20s`
+(Kubernetes default 40 s): a node that stops renewing its lease (every 10 s)
+is marked NotReady after 20 s, so Service endpoints and the PostgreSQL failover,
+which wait for its pods to turn unready, react sooner. The cost is that a node
+whose kubelet is starved for two lease renewals is briefly marked NotReady.
+
 k3s merges `config.yaml.d` into `config.yaml`, and list keys ending in `+`
 append: the API certificate on every server covers `PLATFORM_API_SANS` and
 `API_VIP`, and the disabled components are `traefik` and `servicelb`. k3s

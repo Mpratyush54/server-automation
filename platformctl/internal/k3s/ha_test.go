@@ -29,7 +29,7 @@ func TestHAConfig(t *testing.T) {
 		t.Fatal(got)
 	}
 	o := ServerOptions{HA: true, ClusterInit: true, TokenFile: "/server", AgentTokenFile: "/agent", TLSSANs: []string{"a", "b"}, NodeIP: "10.0.0.1", Snapshots: EtcdSnapshots{Cron: "0 */12 * * *", Retention: 5, S3Endpoint: "s3.example", S3Bucket: "backups", S3Region: "region", S3Folder: "folder", S3AccessKey: "key", S3SecretKey: "secret\"\n"}}
-	want := ServerConfigYAML() + "cluster-init: true\ntoken-file: \"/server\"\nagent-token-file: \"/agent\"\ntls-san:\n  - \"a\"\n  - \"b\"\nnode-ip: \"10.0.0.1\"\netcd-snapshot-schedule-cron: \"0 */12 * * *\"\netcd-snapshot-retention: 5\netcd-s3: true\netcd-s3-endpoint: \"s3.example\"\netcd-s3-bucket: \"backups\"\netcd-s3-region: \"region\"\netcd-s3-folder: \"folder\"\netcd-s3-access-key: \"key\"\netcd-s3-secret-key: \"secret\\\"\\n\"\n"
+	want := ServerConfigYAML() + "cluster-init: true\ntoken-file: \"/server\"\nagent-token-file: \"/agent\"\ntls-san:\n  - \"a\"\n  - \"b\"\nnode-ip: \"10.0.0.1\"\nkube-controller-manager-arg:\n  - \"node-monitor-grace-period=20s\"\netcd-snapshot-schedule-cron: \"0 */12 * * *\"\netcd-snapshot-retention: 5\netcd-s3: true\netcd-s3-endpoint: \"s3.example\"\netcd-s3-bucket: \"backups\"\netcd-s3-region: \"region\"\netcd-s3-folder: \"folder\"\netcd-s3-access-key: \"key\"\netcd-s3-secret-key: \"secret\\\"\\n\"\n"
 	if got := RenderServerConfig(o); got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
@@ -246,5 +246,17 @@ func TestWriteConfigPermissions(t *testing.T) {
 				t.Fatal(path, info, err)
 			}
 		}
+	}
+}
+
+// Failover waits for a dead node's pods to turn unready; on ha the node grace
+// period is 20 s (3-node power-off test: 40 s default delayed Postgres failover).
+func TestHAServerConfigShortensNodeGracePeriod(t *testing.T) {
+	ha := RenderServerConfig(ServerOptions{HA: true, ClusterInit: true, TokenFile: "/t"})
+	if !strings.Contains(ha, "kube-controller-manager-arg:\n  - \"node-monitor-grace-period=20s\"") && !strings.Contains(ha, "kube-controller-manager-arg:\n  - node-monitor-grace-period=20s") {
+		t.Fatalf("ha config lacks the node grace period:\n%s", ha)
+	}
+	if strings.Contains(RenderServerConfig(ServerOptions{}), "node-monitor-grace-period") {
+		t.Fatal("single-node config must stay unchanged")
 	}
 }

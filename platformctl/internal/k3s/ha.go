@@ -99,6 +99,9 @@ func (o ServerOptions) Validate() error {
 
 func yamlQuote(s string) string { return strconv.Quote(s) }
 
+// NodeMonitorGracePeriod is the HA controller-manager node grace period.
+const NodeMonitorGracePeriod = "20s"
+
 // RenderServerConfig renders /etc/rancher/k3s/config.yaml. The single-node
 // base (critical settings that must match on every server) always comes first.
 func RenderServerConfig(o ServerOptions) string {
@@ -125,6 +128,11 @@ func RenderServerConfig(o ServerOptions) string {
 		}
 	}
 	field("node-ip", o.NodeIP)
+	// Mark a silent node NotReady after 20 s instead of the 40 s default, so
+	// failovers that wait for its pods to turn unready (CloudNativePG, Service
+	// endpoints) start sooner. Kubelets renew their node lease every 10 s, so
+	// two consecutive renewals must be missed. Same value on every server.
+	fmt.Fprintf(&b, "kube-controller-manager-arg:\n  - %s\n", yamlQuote("node-monitor-grace-period="+NodeMonitorGracePeriod))
 	e := o.Snapshots
 	field("etcd-snapshot-schedule-cron", e.Cron)
 	if e.Retention > 0 {
