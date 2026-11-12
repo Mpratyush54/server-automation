@@ -642,6 +642,12 @@ func (c *Config) SaveEnvFile(path string) error {
 	return os.WriteFile(path, []byte(b.String()), 0600)
 }
 
+// ResolveIngressHAMode is resolveIngressHAMode for callers that override
+// INGRESS_VIP after Load (e.g. `platformctl join --ingress-vip`).
+func ResolveIngressHAMode(mode, ingressVIP string) string {
+	return resolveIngressHAMode(mode, ingressVIP)
+}
+
 // resolveIngressHAMode lower-cases/trims INGRESS_HA_MODE; empty defaults to
 // vip when INGRESS_VIP is set, otherwise external.
 func resolveIngressHAMode(mode, ingressVIP string) string {

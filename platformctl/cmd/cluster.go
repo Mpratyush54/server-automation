@@ -13,6 +13,7 @@ import (
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/harden"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ingressha"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/k3s"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/preflight"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
@@ -31,6 +32,10 @@ var joinedRole = func() string { return state.Get(clusterRoleKey) }
 var (
 	joinRole, joinServer, joinTokenFile, joinNodes, joinNodeIP string
 	tokenRole, tokenTTL, tokenOutput, tokenFile                string
+	tokenSettingsOutput                                        string
+	// Ingress HA settings of a joining server ("" = keep the environment's).
+	joinIngressHAMode, joinIngressVIP, joinIngressVIPIface, joinAPIVIP string
+	joinSettingsFile                                                   string
 )
 
 var joinCmd = &cobra.Command{
@@ -43,6 +48,12 @@ The token is read from a file (mode 0600) or from standard input with
 existing server with:
 
   sudo platformctl token create --role agent --ttl 2h --output /root/agent.token
+
+A joining server must use the cluster's ingress HA settings (k3s refuses a
+server whose ServiceLB setting differs). Pass the settings file written by
+"platformctl token create --role server --settings-output <file>" with
+--join-settings: join compares it with this node's settings and stops before
+installing anything when they differ. Agents ignore these settings.
 
 See docs/operations/ha.md.`,
 	RunE: func(cmd *cobra.Command, args []string) error { return runJoin(os.Stdin) },
@@ -85,12 +96,18 @@ func init() {
 	joinCmd.Flags().StringVar(&joinNodeIP, "node-ip", "", "address k3s advertises for this node (default PLATFORM_NODE_IP)")
 	joinCmd.Flags().BoolVar(&cfg.SkipPreflight, "skip-preflight", cfg.SkipPreflight, "skip the join checks")
 	joinCmd.Flags().BoolVar(&cfg.SkipHardening, "skip-hardening", cfg.SkipHardening, "leave host security to the operator (PLATFORM_HARDEN=false)")
+	joinCmd.Flags().StringVar(&joinIngressHAMode, "ingress-ha-mode", "", "servers: vip or external, as on the cluster (default INGRESS_HA_MODE)")
+	joinCmd.Flags().StringVar(&joinIngressVIP, "ingress-vip", "", "servers: the cluster's ingress VIP (default INGRESS_VIP)")
+	joinCmd.Flags().StringVar(&joinIngressVIPIface, "ingress-vip-interface", "", "servers: the cluster's kube-vip interface name; empty = default-route autodetect (default INGRESS_VIP_INTERFACE)")
+	joinCmd.Flags().StringVar(&joinAPIVIP, "api-vip", "", "the cluster's API VIP (default API_VIP)")
+	joinCmd.Flags().StringVar(&joinSettingsFile, "join-settings", "", "servers: settings file from 'token create --role server --settings-output'; join refuses when this node's ingress HA settings differ")
 	_ = joinCmd.MarkFlagRequired("server")
 	_ = joinCmd.MarkFlagRequired("token-file")
 
 	tokenCreateCmd.Flags().StringVar(&tokenRole, "role", "agent", "server or agent")
 	tokenCreateCmd.Flags().StringVar(&tokenTTL, "ttl", "", "agent only: create an expiring bootstrap token (e.g. 2h; 10m-720h) instead of printing the static agent token")
 	tokenCreateCmd.Flags().StringVar(&tokenOutput, "output", "", "write the token to this file (mode 0600) instead of standard output")
+	tokenCreateCmd.Flags().StringVar(&tokenSettingsOutput, "settings-output", "", "server only: write the cluster's join settings (ingress HA mode, VIPs, interface; no secrets) to this file for 'join --join-settings'")
 	tokenRotateCmd.Flags().StringVar(&tokenOutput, "output", "", "write the new token to this file (mode 0600) instead of standard output")
 	tokenInstallCmd.Flags().StringVar(&tokenRole, "role", "server", "server or agent")
 	tokenInstallCmd.Flags().StringVar(&tokenFile, "token-file", "", "file holding the token (mode 0600), or - for standard input")
@@ -186,9 +203,9 @@ func printJoinHint(w io.Writer, c *config.Config) {
 	}
 	fmt.Fprintf(w, "    sudo platformctl join --role server|agent --server https://%s:6443 --token-file <file> --nodes %s\n",
 		server, strings.Join(c.Cluster.Nodes, ","))
-	if c.IngressHAMode == config.IngressHAModeVIP {
-		fmt.Fprintf(w, "  Export the same ingress HA settings on joining servers: INGRESS_HA_MODE=vip INGRESS_VIP=%s API_VIP=%s\n", c.IngressVIP, c.APIVIP)
-	}
+	fmt.Fprintln(w, "  Servers must use this cluster's ingress HA settings; write them next to the server token and pass them to join:")
+	fmt.Fprintln(w, "    sudo platformctl token create --role server --output /root/server.token --settings-output /root/join-settings")
+	fmt.Fprintln(w, "    sudo platformctl join --role server ... --join-settings /root/join-settings")
 	fmt.Fprintln(w, "  After joins, reconcile the Longhorn replica count: sudo platformctl install longhorn")
 	fmt.Fprintln(w, "  See docs/operations/ha.md.")
 }
@@ -248,6 +265,14 @@ func runJoin(stdin io.Reader) error {
 	}
 	if joinNodeIP != "" {
 		cfg.Cluster.NodeIP = strings.TrimSpace(joinNodeIP)
+	}
+	applyJoinIngressFlags(cfg)
+	if role == k3s.RoleServer {
+		if err := checkJoinIngressSettings(cfg, joinSettingsFile, os.Stderr); err != nil {
+			return err
+		}
+	} else if joinSettingsFile != "" {
+		fmt.Fprintln(os.Stderr, "  Note: --join-settings is ignored on agents (they run no ingress HA config).")
 	}
 	peers, err := clusterPeers(cfg)
 	if err != nil {
@@ -316,6 +341,65 @@ func runJoin(stdin io.Reader) error {
 	return nil
 }
 
+// applyJoinIngressFlags lets the join flags override the environment's ingress
+// HA settings. A VIP given without a mode re-derives the default mode (vip
+// when INGRESS_VIP is set) unless INGRESS_HA_MODE says otherwise.
+func applyJoinIngressFlags(c *config.Config) {
+	if v := strings.TrimSpace(joinIngressVIP); v != "" {
+		c.IngressVIP = v
+		if strings.TrimSpace(joinIngressHAMode) == "" && strings.TrimSpace(os.Getenv("INGRESS_HA_MODE")) == "" {
+			c.IngressHAMode = config.ResolveIngressHAMode("", v)
+		}
+	}
+	if v := strings.TrimSpace(joinIngressHAMode); v != "" {
+		c.IngressHAMode = strings.ToLower(v)
+	}
+	if v := strings.TrimSpace(joinIngressVIPIface); v != "" {
+		c.IngressVIPInterface = v
+	}
+	if v := strings.TrimSpace(joinAPIVIP); v != "" {
+		c.APIVIP = v
+	}
+}
+
+// checkJoinIngressSettings validates a joining server's ingress HA settings
+// and, when a join settings file is given, refuses to continue unless they
+// match the cluster's. It runs before any host change. Without credentials
+// for the cluster API, the settings file from `token create --role server` is
+// the record of the cluster's settings this node can check against.
+func checkJoinIngressSettings(c *config.Config, settingsFile string, warn io.Writer) error {
+	if err := c.ValidateIngressHA(); err != nil {
+		return fmt.Errorf("ingress HA settings: %w", err)
+	}
+	if settingsFile == "" {
+		fmt.Fprintf(warn, "  Warning: no --join-settings file; this server uses INGRESS_HA_MODE=%s without checking it against the cluster.\n", c.IngressHAMode)
+		fmt.Fprintln(warn, "  If it differs from the cluster's, k3s refuses to join (critical config mismatch).")
+		return nil
+	}
+	if settingsFile == "-" {
+		return fmt.Errorf("--join-settings needs a file path (standard input is reserved for the token)")
+	}
+	f, err := os.Open(settingsFile)
+	if err != nil {
+		return fmt.Errorf("--join-settings: %w", err)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, ingressha.MaxJoinSettingsSize+1))
+	if err != nil {
+		return fmt.Errorf("--join-settings: %w", err)
+	}
+	cluster, err := ingressha.ParseJoinSettings(data)
+	if err != nil {
+		return fmt.Errorf("--join-settings: %w", err)
+	}
+	if diff := ingressha.Mismatches(cluster, ingressha.JoinSettingsFromConfig(c)); len(diff) > 0 {
+		return fmt.Errorf("this server's ingress HA settings differ from the cluster's (k3s would refuse the server, or kube-vip would be configured differently):\n    %s\n  set --ingress-ha-mode, --ingress-vip, --ingress-vip-interface and --api-vip (or the matching environment variables) to the values in %s",
+			strings.Join(diff, "\n    "), settingsFile)
+	}
+	color.Green("  ✓ Ingress HA settings match the cluster (%s)", cluster.Mode)
+	return nil
+}
+
 // joinEnv are the .env keys a joined node keeps.
 func joinEnv(c *config.Config) map[string]string {
 	env := map[string]string{
@@ -373,6 +457,9 @@ func runTokenCreate(stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if tokenSettingsOutput != "" && role != k3s.RoleServer {
+		return fmt.Errorf("--settings-output applies to server tokens only; agents need no join settings")
+	}
 	var token string
 	switch {
 	case role == k3s.RoleServer && tokenTTL != "":
@@ -388,7 +475,30 @@ func runTokenCreate(stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return writeToken(stdout, token, tokenOutput)
+	if err := writeToken(stdout, token, tokenOutput); err != nil {
+		return err
+	}
+	if role == k3s.RoleServer {
+		return writeJoinSettings(os.Stderr, cfg, tokenSettingsOutput)
+	}
+	return nil
+}
+
+// writeJoinSettings writes the cluster's non-secret join settings to a file,
+// or prints them on stderr (stdout carries only the token) with a hint.
+func writeJoinSettings(stderr io.Writer, c *config.Config, output string) error {
+	body := ingressha.JoinSettingsFromConfig(c).Render()
+	if output == "" {
+		fmt.Fprintln(stderr, "Join settings for new servers (no secrets). Save them as a file and pass it to")
+		fmt.Fprintln(stderr, "`platformctl join --role server --join-settings <file>`, or rerun with --settings-output <file>:")
+		fmt.Fprint(stderr, body)
+		return nil
+	}
+	if err := os.WriteFile(output, []byte(body), 0o644); err != nil {
+		return fmt.Errorf("--settings-output: %w", err)
+	}
+	fmt.Fprintf(stderr, "Join settings written to %s (no secrets). Copy it to each new server with the token and pass --join-settings <file>.\n", output)
+	return nil
 }
 
 func runTokenRotate(stdout io.Writer) error {

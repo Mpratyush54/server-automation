@@ -51,13 +51,13 @@ func TestValidateVIP(t *testing.T) {
 func TestKubeVIPManifest(t *testing.T) {
 	for _, withAPI := range []bool{false, true} {
 		name := "without-api-vip"
-		c := &config.Config{Profile: config.ProfileHA, IngressHAMode: config.IngressHAModeVIP, IngressVIP: "10.0.0.50"}
+		c := &config.Config{Profile: config.ProfileHA, IngressHAMode: config.IngressHAModeVIP, IngressVIP: "10.0.0.50", IngressVIPInterface: "eth0"}
 		if withAPI {
 			name = "with-api-vip"
 			c.APIVIP = "10.0.0.60"
 		}
 		t.Run(name, func(t *testing.T) {
-			out, err := KubeVIPManifest(c, "eth0")
+			out, err := KubeVIPManifest(c)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -99,7 +99,7 @@ func TestKubeVIPManifest(t *testing.T) {
 			}
 		})
 	}
-	if _, err := KubeVIPManifest(&config.Config{}, "bad iface!"); err == nil {
+	if _, err := KubeVIPManifest(&config.Config{IngressVIPInterface: "bad iface!"}); err == nil {
 		t.Fatal("accepted invalid interface")
 	}
 }

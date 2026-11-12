@@ -26,6 +26,13 @@ func clusterTest(t *testing.T) {
 	oldRole, oldRoot, oldJoin, oldPre := joinedRole, requireRoot, k3sJoin, joinPreflight
 	oldHarden, oldUpsert, oldProv := joinHarden, upsertEnvKey, provisionedFn
 	oldFlags := []string{joinRole, joinServer, joinTokenFile, joinNodes, joinNodeIP}
+	oldIngressFlags := []string{joinIngressHAMode, joinIngressVIP, joinIngressVIPIface, joinAPIVIP, joinSettingsFile, tokenSettingsOutput}
+	t.Cleanup(func() {
+		joinIngressHAMode, joinIngressVIP, joinIngressVIPIface, joinAPIVIP, joinSettingsFile, tokenSettingsOutput =
+			oldIngressFlags[0], oldIngressFlags[1], oldIngressFlags[2], oldIngressFlags[3], oldIngressFlags[4], oldIngressFlags[5]
+	})
+	joinIngressHAMode, joinIngressVIP, joinIngressVIPIface, joinAPIVIP, joinSettingsFile, tokenSettingsOutput = "", "", "", "", "", ""
+	t.Setenv("INGRESS_HA_MODE", "")
 	oldLonghorn, oldSkip, oldFrag, oldInstalled, oldRestart := joinPrepareLonghorn, joinStorageSkip, joinIngressFragment, joinK3sInstalled, joinRestartServer
 	t.Cleanup(func() {
 		state.SetPath(state.DefaultPath)

@@ -70,7 +70,7 @@ the nodes. See [Host hardening](../host-hardening.md).
 | `ETCD_*` | cluster | etcd snapshot schedule and S3 target ([below](#etcd-snapshots)) |
 | `INGRESS_HA_MODE` | ingress | `vip` or `external` |
 | `INGRESS_VIP` | ingress | Floating IPv4 address for the ingress LoadBalancer Service (required in `vip` mode) |
-| `INGRESS_VIP_INTERFACE` | ingress | NIC that carries the VIP (default: the interface of the IPv4 default route) |
+| `INGRESS_VIP_INTERFACE` | ingress | NIC that carries the VIP; must have this name on every server (unset: kube-vip uses each node's default-route interface) |
 | `API_VIP` | ingress | Optional floating IPv4 address for the Kubernetes API (`vip` mode only) |
 | `LONGHORN_REPLICAS` | storage | `1`, `2` or `3`; unset = automatic |
 | `LONGHORN_BACKUP_TARGET` / `LONGHORN_BACKUP_SECRET` | storage | Longhorn S3 backup target and credentials Secret name |
@@ -116,7 +116,9 @@ On the first server:
 
 ```bash
 # Server token (joins servers). Written to a 0600 file, never printed to logs.
-sudo platformctl token create --role server --output /root/server.token
+# --settings-output also writes the cluster's join settings (no secrets).
+sudo platformctl token create --role server --output /root/server.token \
+  --settings-output /root/join-settings
 
 # Agent token: an expiring bootstrap token (recommended) ...
 sudo platformctl token create --role agent --ttl 2h --output /root/agent.token
@@ -129,23 +131,63 @@ k3s secure format (`K10<ca-hash>::...`): the joining node checks the cluster's C
 against the hash before it sends any credential. Copy the file to the new node
 over SSH (`scp`) and delete it afterwards.
 
+The join settings file holds only the cluster's ingress HA settings, as
+`KEY=VALUE` lines under a `# platformctl join settings v1` header:
+
+```
+# platformctl join settings v1
+# Cluster ingress HA settings for `platformctl join --role server --join-settings <file>`. No secrets.
+INGRESS_HA_MODE=vip
+INGRESS_VIP=10.0.0.50
+INGRESS_VIP_INTERFACE=
+API_VIP=10.0.0.60
+```
+
+Without `--settings-output`, `token create --role server` prints the same
+block on standard error (standard output carries only the token). Copy the
+file to new servers with the token. It is not secret, but keep it with the
+token so the two describe the same cluster. Agents need no settings file.
+
 ### 3. Join servers and agents
 
 On each new node (fresh Ubuntu, `platformctl` installed with `install.sh`),
-export the **same ingress HA settings as on the first server** (all servers
+give servers the **same ingress HA settings as the first server** (all servers
 must agree on them, see below) and join through the API VIP:
 
 ```bash
-export INGRESS_HA_MODE=vip INGRESS_VIP=10.0.0.50 API_VIP=10.0.0.60
-
 # second and third server
-sudo -E platformctl join --role server --server https://10.0.0.60:6443 \
-  --token-file /root/server.token --nodes 10.0.0.11,10.0.0.12,10.0.0.13,10.0.0.21
+sudo platformctl join --role server --server https://10.0.0.60:6443 \
+  --token-file /root/server.token --join-settings /root/join-settings \
+  --ingress-ha-mode vip --ingress-vip 10.0.0.50 --api-vip 10.0.0.60 \
+  --nodes 10.0.0.11,10.0.0.12,10.0.0.13,10.0.0.21
 
-# agent
-sudo -E platformctl join --role agent --server https://10.0.0.60:6443 \
+# agent (no ingress HA settings)
+sudo platformctl join --role agent --server https://10.0.0.60:6443 \
   --token-file /root/agent.token --nodes 10.0.0.11,10.0.0.12,10.0.0.13,10.0.0.21
 ```
+
+The ingress flags default to `INGRESS_HA_MODE`, `INGRESS_VIP`,
+`INGRESS_VIP_INTERFACE` and `API_VIP` from the environment, so
+`export ...; sudo -E platformctl join ...` works too. A `--ingress-vip` given
+without a mode selects `vip` mode, as `INGRESS_VIP` does.
+
+With `--join-settings`, a joining server compares its own settings with the
+file before it changes anything on the host, and stops when they differ:
+
+```
+Error: this server's ingress HA settings differ from the cluster's (k3s would refuse the server, or kube-vip would be configured differently):
+    INGRESS_HA_MODE: cluster "vip", this node "external"
+  set --ingress-ha-mode, --ingress-vip, --ingress-vip-interface and --api-vip (or the matching environment variables) to the values in /root/join-settings
+```
+
+In `vip` mode all four values must match (the VIPs and interface also end up
+in the kube-vip manifest, which must be identical on every server); in
+`external` mode only the mode is compared. A joining node has no credentials
+for the cluster API before k3s runs, so this file is how it learns the
+cluster's settings. Without `--join-settings`, `join` warns and uses its own
+settings unchecked; a mismatched mode then surfaces only as k3s refusing to
+start ("critical configuration value mismatch"). `--join-settings` is ignored
+for agents.
 
 `--server` takes `https://<API_VIP>:6443` (recommended once `API_VIP` is set:
 the join, and the node's later reconnects, then do not depend on the first
@@ -174,6 +216,7 @@ Then, **before k3s starts**, it prepares the node like the first server:
 | Longhorn prerequisites (`open-iscsi`, `nfs-common`, `iscsid`, `iscsi_tcp`, multipath blacklist) and the iscsid check | yes | yes |
 | `/var/lib/rancher/k3s/server/manifests/local-storage.yaml.skip` (keeps Longhorn the only default StorageClass) | yes | no |
 | Ingress HA fragment `/etc/rancher/k3s/config.yaml.d/60-platform-ingress-ha.yaml` (vip mode: `disable+: [servicelb]`, `tls-san+: [API_VIP]`; removed in external mode) | yes | no |
+| kube-vip manifest `/var/lib/rancher/k3s/server/manifests/platform-kube-vip.yaml`, byte-identical to the first server's (vip mode; removed in external mode) | yes | no |
 
 It then writes `/etc/rancher/k3s/config.yaml` (servers repeat the first server's
 critical settings: disabled Traefik, Secrets encryption), installs the pinned
@@ -185,8 +228,25 @@ append: the API certificate on every server covers `PLATFORM_API_SANS` and
 `API_VIP`, and the disabled components are `traefik` and `servicelb`. k3s
 refuses a server whose critical settings (including disabled components)
 differ from the cluster's, which is why every server needs the same
-`INGRESS_HA_MODE`. The kube-vip manifest stays on the first server: its
-DaemonSet already runs on every control-plane node.
+`INGRESS_HA_MODE`.
+
+Every server keeps a copy of the kube-vip manifest, so the k3s auto-deploy
+source survives losing any one server's disk. k3s applies the manifests
+directory of each server, so the copies must be identical: the manifest is
+rendered only from the shared settings, never from the host it is written on.
+In vip mode a joining server checks the VIP subnet on its own interface (as
+`provision` does on the first server) but does not ping the VIPs, which kube-vip
+already holds.
+
+**VIP interface.** With `INGRESS_VIP_INTERFACE` unset (recommended), the
+manifest has no `vip_interface` and kube-vip binds, on each node, the interface
+of the default gateway route, and follows it if that route moves. Servers may
+then use different interface names (`eth0` on one, `ens5` on another). When
+`INGRESS_VIP_INTERFACE` is set, kube-vip uses that name on every server, so the
+interface must exist with that name on all of them: `join --role server` refuses
+to continue when it does not exist locally. Either give the interface the same
+name on every server (for example with a systemd `.link` file) or leave
+`INGRESS_VIP_INTERFACE` unset on the whole cluster.
 
 A joined node only runs k3s: `platformctl provision` is refused there, the
 platform is managed from the first server. The ingress HA settings are saved to
@@ -200,6 +260,11 @@ use them.
 | `--token-file <path\|->` | Token file (mode 0600) or `-` for standard input |
 | `--nodes <list>` | Cluster node IPs/CIDRs for the firewall (`PLATFORM_CLUSTER_NODES`) |
 | `--node-ip <ip>` | Address to advertise (`PLATFORM_NODE_IP`) |
+| `--ingress-ha-mode <vip\|external>` | Servers: the cluster's ingress HA mode (`INGRESS_HA_MODE`) |
+| `--ingress-vip <ip>` | Servers: the cluster's ingress VIP (`INGRESS_VIP`) |
+| `--ingress-vip-interface <name>` | Servers: the cluster's kube-vip interface; empty = default-route autodetect (`INGRESS_VIP_INTERFACE`) |
+| `--api-vip <ip>` | The cluster's API VIP (`API_VIP`) |
+| `--join-settings <file>` | Servers: settings file from `token create --role server --settings-output`; join refuses when this node's settings differ |
 | `--skip-preflight` | Skip the join checks |
 | `--skip-hardening` | Leave host security to the operator |
 
@@ -277,13 +342,16 @@ The elected node binds `INGRESS_VIP` to its interface and announces it with
 gratuitous ARP. k3s ServiceLB is disabled so it does not also claim the Service,
 and the ingress-nginx Service carries `kube-vip.io/loadbalancerIPs: <INGRESS_VIP>`.
 
-platformctl writes two files on the first server before k3s starts:
+platformctl writes two files on the first server before k3s starts, and
+`platformctl join --role server` writes the same two files on every joining
+server:
 
 - `/etc/rancher/k3s/config.yaml.d/60-platform-ingress-ha.yaml`: `disable+: [servicelb]`
-  and, with `API_VIP`, `tls-san+: [<API_VIP>]`. `platformctl join --role server`
-  writes the same fragment on every joining server.
+  and, with `API_VIP`, `tls-san+: [<API_VIP>]`.
 - `/var/lib/rancher/k3s/server/manifests/platform-kube-vip.yaml`: kube-vip RBAC
-  and DaemonSet, applied by the k3s auto-deploy controller.
+  and DaemonSet, applied by the k3s auto-deploy controller. Identical on every
+  server; `vip_interface` is set only when `INGRESS_VIP_INTERFACE` is (see
+  [VIP interface](#3-join-servers-and-agents)).
 
 **Requirements**
 
@@ -373,8 +441,17 @@ in `/etc/platform/.env` and otherwise keeps its previous value) and run
   restarts with ServiceLB enabled, and the `kube-vip-ds` DaemonSet is deleted.
 
 Then re-run `platformctl join` with the same new settings on every other server
-(it rewrites the fragment and restarts k3s when it changed), so all servers
-agree on ServiceLB again.
+(it rewrites the fragment and the kube-vip manifest, and restarts k3s when the
+fragment changed), so all servers agree on ServiceLB again. Write a fresh
+settings file with `token create --role server --settings-output` and pass it
+with `--join-settings` to check each server against the new values.
+
+Clusters provisioned before kube-vip manifests were written on every server
+rendered `vip_interface` from the first server's default-route interface when
+`INGRESS_VIP_INTERFACE` was unset. Re-running `provision` on the first server
+rewrites the manifest without it (kube-vip then autodetects the same interface
+on that node); re-run `join --role server` on the other servers so their copies
+match.
 
 Anycast or global load balancing, BGP mode, and automating a provider's
 floating-IP API are out of scope.

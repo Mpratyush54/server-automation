@@ -47,6 +47,23 @@ func (h Host) exists(p string) bool {
 // true when the fragment changed on an installed k3s; the caller restarts k3s,
 // waits for it and then calls CleanupServiceLB.
 func (h Host) Prepare(c *config.Config) (restartK3s bool, err error) {
+	return h.prepare(c, false)
+}
+
+// PrepareJoinServer is Prepare for a server added with `platformctl join
+// --role server`, run before k3s starts there. It writes the same k3s
+// fragment (every server must agree on `disable: servicelb`, which k3s treats
+// as critical config, and serve API_VIP in its certificate) and the same
+// kube-vip manifest as the first server, so the auto-deploy source survives
+// the loss of any one server's disk. Unlike Prepare it skips the "VIP answers
+// ping" check (kube-vip already holds the VIPs in a running cluster) and, in
+// external mode, only removes local files: the cluster-wide kube-vip
+// DaemonSet is the first server's business.
+func (h Host) PrepareJoinServer(c *config.Config) (restartK3s bool, err error) {
+	return h.prepare(c, true)
+}
+
+func (h Host) prepare(c *config.Config, joining bool) (restartK3s bool, err error) {
 	if c == nil || !c.IsHA() {
 		return false, nil
 	}
@@ -65,7 +82,7 @@ func (h Host) Prepare(c *config.Config) (restartK3s bool, err error) {
 			return false, err
 		}
 		// k3s never deletes resources whose auto-deploy manifest was removed.
-		if manifestRemoved && k3sInstalled {
+		if manifestRemoved && k3sInstalled && !joining {
 			_, _ = h.Run("k3s", "kubectl", "-n", "kube-system", "delete", "daemonset", "kube-vip-ds", "--ignore-not-found")
 		}
 		return fragChanged && k3sInstalled, nil
@@ -82,13 +99,13 @@ func (h Host) Prepare(c *config.Config) (restartK3s bool, err error) {
 	// afterwards the VIP answers because kube-vip holds it. ICMP may be
 	// filtered, so silence does not prove the address is free.
 	vip := strings.TrimSpace(c.IngressVIP)
-	if !h.exists(ManifestPath) {
+	if !joining && !h.exists(ManifestPath) {
 		if out, err := h.Run("ping", "-c", "1", "-W", "1", vip); err == nil {
 			return false, fmt.Errorf("INGRESS_VIP %s answers ping, so another host uses it; choose an unused address (%s)", vip, strings.TrimSpace(out))
 		}
 	}
 
-	manifest, err := KubeVIPManifest(c, iface)
+	manifest, err := KubeVIPManifest(c)
 	if err != nil {
 		return false, err
 	}
@@ -113,9 +130,19 @@ func (h Host) CleanupServiceLB(c *config.Config) {
 	_, _ = h.Run("k3s", "kubectl", "-n", "kube-system", "delete", "daemonset", "-l", "svccontroller.k3s.cattle.io/svcname", "--ignore-not-found")
 }
 
-// Interface returns INGRESS_VIP_INTERFACE or the IPv4 default-route interface.
+// Interface returns INGRESS_VIP_INTERFACE or the IPv4 default-route interface
+// (the one kube-vip autodetects when vip_interface is unset). The VIP subnet
+// checks run against it. A set INGRESS_VIP_INTERFACE must exist on this node:
+// the manifest is shared by every server, so the name must be the same on all
+// of them.
 func (h Host) Interface(c *config.Config) (string, error) {
 	if iface := strings.TrimSpace(c.IngressVIPInterface); iface != "" {
+		if !ifaceNameRE.MatchString(iface) {
+			return "", fmt.Errorf("invalid INGRESS_VIP_INTERFACE %q", iface)
+		}
+		if _, err := h.InterfaceAddrs(iface); err != nil {
+			return "", fmt.Errorf("INGRESS_VIP_INTERFACE %s is not usable on this node (%v); kube-vip uses the same interface name on every server, so give the interface that name on all servers, or leave INGRESS_VIP_INTERFACE unset on the whole cluster so kube-vip uses each node's default-route interface", iface, err)
+		}
 		return iface, nil
 	}
 	iface, err := h.DefaultInterface()

@@ -15,12 +15,20 @@ var ifaceNameRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,14}$`)
 
 // KubeVIPManifest renders the kube-vip RBAC + DaemonSet multi-document YAML
 // for ARP mode with per-Service election (and optional control-plane VIP).
-func KubeVIPManifest(c *config.Config, iface string) (string, error) {
+//
+// The output depends only on cluster-wide settings, never on the host it is
+// rendered on, so every server writes a byte-identical auto-deploy manifest
+// (k3s applies server/manifests from each server; differing copies would
+// overwrite each other). vip_interface is INGRESS_VIP_INTERFACE when set;
+// when unset it is omitted and kube-vip (manager mode, v1.3.1) binds the
+// interface of the default gateway route on each node and follows it if that
+// route moves.
+func KubeVIPManifest(c *config.Config) (string, error) {
 	if c == nil {
 		return "", fmt.Errorf("nil config")
 	}
-	iface = strings.TrimSpace(iface)
-	if !ifaceNameRE.MatchString(iface) {
+	iface := strings.TrimSpace(c.IngressVIPInterface)
+	if iface != "" && !ifaceNameRE.MatchString(iface) {
 		return "", fmt.Errorf("invalid VIP interface name %q", iface)
 	}
 	apiVIP := strings.TrimSpace(c.APIVIP)
@@ -164,8 +172,10 @@ spec:
           env:
             - name: vip_arp
               value: "true"
+{{- if .Iface }}
             - name: vip_interface
               value: {{ q .Iface }}
+{{- end }}
             - name: svc_enable
               value: "true"
             - name: svc_election

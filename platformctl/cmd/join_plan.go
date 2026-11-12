@@ -19,7 +19,7 @@ import (
 var (
 	joinPrepareLonghorn = components.PrepareLonghornNode
 	joinStorageSkip     = func() error { return components.WriteLocalStorageSkip("") }
-	joinIngressFragment = func(c *config.Config) (bool, error) { return ingressha.Default().WriteK3sFragment(c) }
+	joinIngressFragment = func(c *config.Config) (bool, error) { return ingressha.Default().PrepareJoinServer(c) }
 	joinK3sInstalled    = k3s.IsInstalled
 	joinRestartServer   = func() error {
 		if err := shell.RunBash("systemctl restart k3s"); err != nil {
@@ -41,9 +41,11 @@ type joinStep struct {
 //   - every node: Longhorn prerequisites (open-iscsi, iscsid, iscsi_tcp, ...)
 //     and the iscsid check; Longhorn places replicas on agents too.
 //   - servers only: the local-storage skip file (otherwise this server's k3s
-//     restores local-path as a second default StorageClass) and the ingress HA
+//     restores local-path as a second default StorageClass), the ingress HA
 //     k3s config fragment (disable servicelb, tls-san API_VIP), so every server
-//     agrees on the ServiceLB setting, which k3s treats as critical.
+//     agrees on the ServiceLB setting, which k3s treats as critical, and the
+//     kube-vip auto-deploy manifest, identical to the first server's, so it
+//     survives the loss of any one server's disk.
 //
 // fragmentChanged reports whether the server fragment changed on disk.
 func joinPlan(role k3s.Role, c *config.Config, fragmentChanged *bool) []joinStep {
