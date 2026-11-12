@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/harden"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ingressha"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 	"github.com/spf13/cobra"
@@ -49,7 +51,38 @@ func hardeningHost() harden.Host {
 			keys = append(keys, filepath.Join(u.HomeDir, ".ssh", "authorized_keys"))
 		}
 	}
-	return harden.Host{Run: shell.Output, KeyFiles: keys, NginxAuth: cfg.NginxAuthJail, Warn: func(s string) { fmt.Println("WARNING: " + s) }}
+	h := harden.Host{Run: shell.Output, KeyFiles: keys, NginxAuth: cfg.NginxAuthJail, Warn: func(s string) { fmt.Println("WARNING: " + s) }}
+	if cfg.IsHA() && cfg.APIVIP != "" {
+		addr, err := netip.ParseAddr(strings.TrimSpace(cfg.APIVIP))
+		if err != nil || !addr.Is4() {
+			fmt.Println("WARNING: API_VIP is set but invalid; skipping control-plane VIP firewall rule")
+			return h
+		}
+		host := ingressha.Default()
+		iface, err := host.Interface(cfg)
+		if err != nil {
+			fmt.Println("WARNING: could not detect interface for API_VIP firewall rule:", err)
+			return h
+		}
+		// Skip the /32 VIPs kube-vip binds, or the API VIP would match itself.
+		prefixes, err := host.NodePrefixes(iface, cfg.IngressVIP, cfg.APIVIP)
+		if err != nil {
+			fmt.Println("WARNING: could not read interface addresses for API_VIP firewall rule:", err)
+			return h
+		}
+		h.APIVIP = addr
+		for _, p := range prefixes {
+			if p.Contains(addr) {
+				h.NodeSubnet = p.Masked()
+				break
+			}
+		}
+		if !h.NodeSubnet.IsValid() {
+			fmt.Println("WARNING: API_VIP not in a local interface subnet; skipping control-plane VIP firewall rule")
+			h.APIVIP = netip.Addr{}
+		}
+	}
+	return h
 }
 
 // existingInstall reports a host provisioned before (tests replace it).

@@ -17,9 +17,14 @@ type Host struct {
 	Root string
 	Run  Runner
 	// KeyFiles are root and SUDO_USER authorized_keys, resolved by the caller.
-	KeyFiles     []string
-	Warn         func(string)
-	NginxAuth    bool
+	KeyFiles  []string
+	Warn      func(string)
+	NginxAuth bool
+	// APIVIP and NodeSubnet enable the optional control-plane VIP firewall rule
+	// (ha profile with API_VIP). Both must be set for the rule to appear.
+	APIVIP     netip.Addr
+	NodeSubnet netip.Prefix
+	// ClusterPeers are the PLATFORM_CLUSTER_NODES prefixes (ha, #53).
 	ClusterPeers []netip.Prefix
 }
 
@@ -220,11 +225,11 @@ func (h Host) ApplyFirewall(confirm func() bool) error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	// Config fragments may override the main YAML; refuse rather than silently
-	// using incorrect CIDRs. Cluster peers are explicitly supplied by the caller.
-	fragments, err := filepath.Glob(h.Path("/etc/rancher/k3s/config.yaml.d/*.yaml"))
-	if err != nil || len(fragments) != 0 {
-		return fmt.Errorf("k3s config fragments require operator-managed firewall (--skip-hardening)")
+	// Fragments that override cluster/service CIDRs would make the firewall use
+	// the wrong pod networks. Other drop-ins (e.g. ingress-HA disable+/tls-san+)
+	// are allowed; CIDRs still come from the main config.yaml.
+	if err := h.refuseCIDRFragments(); err != nil {
+		return err
 	}
 	cidrs, err := CIDRs(data)
 	if err != nil {
@@ -245,7 +250,8 @@ func (h Host) ApplyFirewall(confirm func() bool) error {
 			return err
 		}
 	}
-	apply := "delete table inet platform_guard\n" + ClusterFirewall(cidrs, h.ClusterPeers)
+	rules := FirewallWith(cidrs, FirewallOptions{APIVIP: h.APIVIP, NodeSubnet: h.NodeSubnet, Peers: h.ClusterPeers})
+	apply := "delete table inet platform_guard\n" + rules
 	rollback := "delete table inet platform_guard\n" + prior + "\n"
 	persisted := map[string][]byte{}
 	for _, path := range []string{"/etc/platform/firewall.nft", "/etc/systemd/system/platform-firewall.service"} {
@@ -313,7 +319,7 @@ func (h Host) ApplyFirewall(confirm func() bool) error {
 	}
 	// Persist only the confirmed policy. Do not enable the distribution nftables
 	// service: its default flush-ruleset would erase k3s rules.
-	if err := h.write("/etc/platform/firewall.nft", ClusterFirewall(cidrs, h.ClusterPeers), 0600); err != nil {
+	if err := h.write("/etc/platform/firewall.nft", rules, 0600); err != nil {
 		return rollbackNow(err)
 	}
 	unit := `[Unit]
@@ -338,4 +344,42 @@ WantedBy=multi-user.target
 		return rollbackNow(err)
 	}
 	return os.Remove(h.Path(runtimeDir + "/pending"))
+}
+
+// refuseCIDRFragments errors when a config.yaml.d drop-in sets cluster-cidr or
+// service-cidr (with or without a trailing +). Other fragments are fine.
+func (h Host) refuseCIDRFragments() error {
+	fragments, err := filepath.Glob(h.Path("/etc/rancher/k3s/config.yaml.d/*.yaml"))
+	if err != nil {
+		return err
+	}
+	for _, path := range fragments {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if fragmentSetsPodCIDR(string(data)) {
+			return fmt.Errorf("k3s config fragment %s sets cluster/service CIDRs; use --skip-hardening", filepath.Base(path))
+		}
+	}
+	return nil
+}
+
+func fragmentSetsPodCIDR(data string) bool {
+	for _, raw := range strings.Split(data, "\n") {
+		line := strings.TrimSpace(strings.SplitN(raw, "#", 2)[0])
+		if line == "" {
+			continue
+		}
+		key, _, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		switch key {
+		case "cluster-cidr", "cluster-cidr+", "service-cidr", "service-cidr+":
+			return true
+		}
+	}
+	return false
 }

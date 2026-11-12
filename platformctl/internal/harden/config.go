@@ -113,12 +113,29 @@ func CIDRs(data []byte) ([]netip.Prefix, error) {
 	return result, nil
 }
 
-// Firewall renders the single-node policy.
-func Firewall(cidrs []netip.Prefix) string { return ClusterFirewall(cidrs, nil) }
+// FirewallOptions adds optional ha-profile rules (control-plane VIP).
+type FirewallOptions struct {
+	APIVIP     netip.Addr
+	NodeSubnet netip.Prefix
+	// Peers are the PLATFORM_CLUSTER_NODES prefixes (#53): the inter-node
+	// ports (etcd, API, kubelet, flannel) are accepted only from them.
+	Peers []netip.Prefix
+}
+
+// Firewall returns the single-node baseline ruleset (no API VIP extras).
+func Firewall(cidrs []netip.Prefix) string {
+	return FirewallWith(cidrs, FirewallOptions{})
+}
 
 // ClusterFirewall renders the policy plus the inter-node ports for the ha
 // profile, accepted only from the given peers.
 func ClusterFirewall(cidrs, peers []netip.Prefix) string {
+	return FirewallWith(cidrs, FirewallOptions{Peers: peers})
+}
+
+// FirewallWith is Firewall plus an optional rule allowing the node subnet to
+// reach the floating Kubernetes API VIP on 6443 (ha profile with API_VIP).
+func FirewallWith(cidrs []netip.Prefix, opt FirewallOptions) string {
 	var trusted strings.Builder
 	// Trust interfaces, not externally spoofable source addresses. CIDRs are
 	// constrained to internal-facing traffic (interfaces above are sufficient
@@ -130,6 +147,10 @@ func ClusterFirewall(cidrs, peers []netip.Prefix) string {
 		}
 		fmt.Fprintf(&trusted, "    iifname { \"cni0\", \"flannel.*\" } %s saddr %s accept\n", family, p)
 	}
+	var apiVIPRule string
+	if opt.APIVIP.IsValid() && opt.APIVIP.Is4() && opt.NodeSubnet.IsValid() && opt.NodeSubnet.Addr().Is4() {
+		apiVIPRule = fmt.Sprintf("    ip saddr %s ip daddr %s tcp dport 6443 accept\n", opt.NodeSubnet.Masked(), opt.APIVIP)
+	}
 	return `table inet platform_guard {
   chain input {
     type filter hook input priority 10; policy drop;
@@ -137,11 +158,11 @@ func ClusterFirewall(cidrs, peers []netip.Prefix) string {
     ct state established,related accept
     ct state invalid drop
     iifname { "cni0", "flannel.*" } accept
-` + trusted.String() + `    meta l4proto { icmp, ipv6-icmp } accept
+` + trusted.String() + apiVIPRule + `    meta l4proto { icmp, ipv6-icmp } accept
     udp sport 67 udp dport 68 accept
     udp sport 547 udp dport 546 accept
     tcp dport { 22, 80, 443 } accept
-` + clusterRules(peers) + `  }
+` + clusterRules(opt.Peers) + `  }
   chain forward {
     type filter hook forward priority 10; policy drop;
     ct state established,related accept

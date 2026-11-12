@@ -30,8 +30,16 @@ func TestLonghornImages(t *testing.T) {
 		if n != want {
 			t.Errorf("%+v: got %d Longhorn images", tc, n)
 		}
-		if !tc.ha && !slices.Equal(selected, ListForTelemetry(tc.full)) {
-			t.Error("telemetry wrapper changed")
+		if !tc.ha {
+			var want []string
+			for _, img := range ListForTelemetry(tc.full) {
+				if !isHAOnly(img) {
+					want = append(want, img)
+				}
+			}
+			if !slices.Equal(selected, want) {
+				t.Error("non-ha selection must be the telemetry list minus ha-only images")
+			}
 		}
 	}
 }

@@ -5,18 +5,29 @@ import (
 	"strings"
 )
 
-// ListForTelemetry selects images for a non-HA install, including full-only
-// telemetry images when requested. List retains the complete offline inventory.
-func ListForTelemetry(full bool) []string { return ListForProfile(full, false) }
+// haOnlyPrefixes mark images that only the ha profile needs: Longhorn
+// replicated storage (#50) and kube-vip for ingress HA (#54). Prefixes are
+// matched against the image reference with any "docker.io/" prefix removed.
+var haOnlyPrefixes = []string{"longhornio/", "ghcr.io/kube-vip/kube-vip:"}
 
-// ListForProfile selects telemetry and HA storage images for online installs.
-func ListForProfile(full, ha bool) []string {
+// isHAOnly reports whether img is only pulled on the ha profile.
+func isHAOnly(img string) bool {
+	normalized := strings.TrimPrefix(img, "docker.io/")
+	for _, prefix := range haOnlyPrefixes {
+		if strings.HasPrefix(normalized, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// ListForTelemetry keeps the complete offline inventory (including ha-only
+// images), but avoids downloading full-only telemetry images during a
+// minimal/standard online install.
+func ListForTelemetry(full bool) []string {
 	var out []string
 	for _, img := range List() {
 		normalized := strings.TrimPrefix(img, "docker.io/")
-		if !ha && strings.HasPrefix(normalized, "longhornio/") {
-			continue
-		}
 		telemetry := false
 		for _, prefix := range []string{"grafana/alloy:", "grafana/tempo:", "grafana/pyroscope:", "grafana/loki:3.", "quay.io/prometheus/blackbox-exporter:"} {
 			if strings.HasPrefix(normalized, prefix) {
@@ -27,6 +38,19 @@ func ListForProfile(full, ha bool) []string {
 		if full || !telemetry {
 			out = append(out, img)
 		}
+	}
+	return out
+}
+
+// ListForProfile is ListForTelemetry plus an ha gate: Longhorn and kube-vip
+// images are skipped unless ha.
+func ListForProfile(full, ha bool) []string {
+	var out []string
+	for _, img := range ListForTelemetry(full) {
+		if !ha && isHAOnly(img) {
+			continue
+		}
+		out = append(out, img)
 	}
 	return out
 }

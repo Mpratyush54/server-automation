@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -112,7 +113,22 @@ type Config struct {
 
 	// Cluster is the multi-node configuration of the ha profile (#53).
 	Cluster Cluster
+	// Ingress HA (ha profile only). See docs/operations/ha.md and #54.
+	// IngressHAMode is "vip" (kube-vip) or "external" (operator LB / DNS failover).
+	IngressHAMode string
+	// IngressVIP is the floating Service IP advertised by kube-vip (vip mode).
+	IngressVIP string
+	// IngressVIPInterface is the NIC for ARP; empty = default-route interface.
+	IngressVIPInterface string
+	// APIVIP is an optional floating Kubernetes API address (vip mode).
+	APIVIP string
 }
+
+// Ingress HA modes (INGRESS_HA_MODE).
+const (
+	IngressHAModeVIP      = "vip"
+	IngressHAModeExternal = "external"
+)
 
 func Load() *Config {
 	tagDefault := DefaultImageTag
@@ -167,7 +183,12 @@ func Load() *Config {
 		OIDCSecretPortainer:   os.Getenv("OIDC_SECRET_PORTAINER"),
 		OIDCSecretOAuth2Proxy: os.Getenv("OIDC_SECRET_OAUTH2_PROXY"),
 		OIDCSecretMinio:       os.Getenv("OIDC_SECRET_MINIO"),
+
+		IngressVIP:          strings.TrimSpace(os.Getenv("INGRESS_VIP")),
+		IngressVIPInterface: strings.TrimSpace(os.Getenv("INGRESS_VIP_INTERFACE")),
+		APIVIP:              strings.TrimSpace(os.Getenv("API_VIP")),
 	}
+	c.IngressHAMode = resolveIngressHAMode(os.Getenv("INGRESS_HA_MODE"), c.IngressVIP)
 	c.resolveProfile(explicit)
 	_, profileExplicit := explicit["PLATFORM_PROFILE"]
 	c.resolveAPIReplicas(explicitReplicas, profileExplicit)
@@ -610,7 +631,65 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("LONGHORN_REPLICAS=%d\n", c.LonghornReplicas))
 	b.WriteString(fmt.Sprintf("LONGHORN_BACKUP_TARGET=%s\n", c.LonghornBackupTarget))
 	b.WriteString(fmt.Sprintf("LONGHORN_BACKUP_SECRET=%s\n", c.LonghornBackupSecret))
+	// Ingress HA settings only belong on ha-profile installs; keep non-ha .env
+	// files byte-stable so profile switches do not leak VIP configuration.
+	if c.IsHA() {
+		b.WriteString(fmt.Sprintf("INGRESS_HA_MODE=%s\n", c.IngressHAMode))
+		b.WriteString(fmt.Sprintf("INGRESS_VIP=%s\n", c.IngressVIP))
+		b.WriteString(fmt.Sprintf("INGRESS_VIP_INTERFACE=%s\n", c.IngressVIPInterface))
+		b.WriteString(fmt.Sprintf("API_VIP=%s\n", c.APIVIP))
+	}
 	return os.WriteFile(path, []byte(b.String()), 0600)
+}
+
+// resolveIngressHAMode lower-cases/trims INGRESS_HA_MODE; empty defaults to
+// vip when INGRESS_VIP is set, otherwise external.
+func resolveIngressHAMode(mode, ingressVIP string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode != "" {
+		return mode
+	}
+	if strings.TrimSpace(ingressVIP) != "" {
+		return IngressHAModeVIP
+	}
+	return IngressHAModeExternal
+}
+
+// ValidateIngressHA checks ha-profile ingress HA settings. Non-ha profiles
+// always pass. Subnet/node-IP checks live in the ingressha package (need host data).
+func (c *Config) ValidateIngressHA() error {
+	if !c.IsHA() {
+		return nil
+	}
+	for _, v := range []string{c.IngressHAMode, c.IngressVIP, c.IngressVIPInterface, c.APIVIP} {
+		if strings.ContainsAny(v, "\r\n") {
+			return fmt.Errorf("ingress HA settings cannot contain line breaks")
+		}
+	}
+	mode := strings.ToLower(strings.TrimSpace(c.IngressHAMode))
+	switch mode {
+	case IngressHAModeVIP, IngressHAModeExternal:
+	default:
+		return fmt.Errorf("INGRESS_HA_MODE must be %q or %q (got %q)", IngressHAModeVIP, IngressHAModeExternal, c.IngressHAMode)
+	}
+	if mode != IngressHAModeVIP {
+		return nil
+	}
+	vip, err := netip.ParseAddr(strings.TrimSpace(c.IngressVIP))
+	if err != nil || !vip.Is4() {
+		return fmt.Errorf("INGRESS_VIP must be a valid IPv4 address (got %q)", c.IngressVIP)
+	}
+	if c.APIVIP == "" {
+		return nil
+	}
+	api, err := netip.ParseAddr(strings.TrimSpace(c.APIVIP))
+	if err != nil || !api.Is4() {
+		return fmt.Errorf("API_VIP must be a valid IPv4 address (got %q)", c.APIVIP)
+	}
+	if api == vip {
+		return fmt.Errorf("API_VIP must differ from INGRESS_VIP")
+	}
+	return nil
 }
 
 func getEnv(key, defaultVal string) string {

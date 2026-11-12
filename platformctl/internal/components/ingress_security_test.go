@@ -2,6 +2,8 @@ package components
 
 import (
 	"encoding/json"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -54,6 +56,57 @@ func TestIngressSecurityValues(t *testing.T) {
 	}
 }
 
+func TestIngressSecurityValuesNonHAUnchanged(t *testing.T) {
+	t.Setenv("INGRESS_IP_RATE_LIMIT", "")
+	t.Setenv("INGRESS_IP_BURST", "")
+	t.Setenv("INGRESS_IP_CONNECTIONS", "")
+	for _, profile := range []string{config.ProfileMinimal, config.ProfileStandard, config.ProfileFull} {
+		t.Run(profile, func(t *testing.T) {
+			cfg := &config.Config{Profile: profile, IngressIPRateLimit: 1000, IngressIPBurst: 2000, IngressIPConnections: 2000}
+			controller := IngressSecurityValues(cfg)["controller"].(map[string]any)
+			if _, ok := controller["kind"]; ok {
+				t.Fatal("non-ha must not set controller.kind")
+			}
+			service := controller["service"].(map[string]any)
+			if _, ok := service["annotations"]; ok {
+				t.Fatal("non-ha must not set service annotations")
+			}
+			if service["externalTrafficPolicy"] != "Local" || service["allocateLoadBalancerNodePorts"] != true {
+				t.Fatalf("%v", service)
+			}
+		})
+	}
+}
+
+func TestIngressSecurityValuesHA(t *testing.T) {
+	vip := &config.Config{
+		Profile: config.ProfileHA, IngressHAMode: config.IngressHAModeVIP, IngressVIP: "10.0.0.50",
+		IngressIPRateLimit: 1000, IngressIPBurst: 2000, IngressIPConnections: 2000,
+	}
+	controller := IngressSecurityValues(vip)["controller"].(map[string]any)
+	if controller["kind"] != "DaemonSet" {
+		t.Fatal(controller["kind"])
+	}
+	service := controller["service"].(map[string]any)
+	ann := service["annotations"].(map[string]string)
+	if ann["kube-vip.io/loadbalancerIPs"] != "10.0.0.50" {
+		t.Fatal(ann)
+	}
+	if service["externalTrafficPolicy"] != "Local" || service["allocateLoadBalancerNodePorts"] != true {
+		t.Fatal(service)
+	}
+
+	ext := &config.Config{Profile: config.ProfileHA, IngressHAMode: config.IngressHAModeExternal}
+	controller = IngressSecurityValues(ext)["controller"].(map[string]any)
+	if controller["kind"] != "DaemonSet" {
+		t.Fatal(controller["kind"])
+	}
+	service = controller["service"].(map[string]any)
+	if _, ok := service["annotations"]; ok {
+		t.Fatal("external mode must not set kube-vip annotation")
+	}
+}
+
 func TestIngressIPLimits(t *testing.T) {
 	tests := []struct {
 		name, rate, burst, connections, want string
@@ -76,5 +129,27 @@ func TestIngressIPLimits(t *testing.T) {
 				t.Fatalf("http-snippet = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// Ingress HA settings left in the environment must not leak into the values of
+// a non-ha install (switching profiles keeps .env keys around).
+func TestIngressSecurityValuesIgnoreHASettingsOffHA(t *testing.T) {
+	for _, profile := range []string{config.ProfileMinimal, config.ProfileStandard, config.ProfileFull} {
+		plain := &config.Config{Profile: profile, IngressIPRateLimit: 1000, IngressIPBurst: 2000, IngressIPConnections: 2000}
+		withHA := *plain
+		withHA.IngressHAMode, withHA.IngressVIP, withHA.APIVIP = config.IngressHAModeVIP, "10.0.0.50", "10.0.0.60"
+		if !reflect.DeepEqual(IngressSecurityValues(plain), IngressSecurityValues(&withHA)) {
+			t.Fatalf("%s: ha settings changed non-ha values", profile)
+		}
+		var keys []string
+		for k := range IngressSecurityValues(plain)["controller"].(map[string]any) {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		want := []string{"allowSnippetAnnotations", "config", "containerSecurityContext", "publishService", "resources", "service"}
+		if !reflect.DeepEqual(keys, want) {
+			t.Fatalf("%s: controller keys %v, want %v", profile, keys, want)
+		}
 	}
 }

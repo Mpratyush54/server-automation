@@ -20,10 +20,12 @@ import (
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/helm"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ingressha"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/k3s"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ocifetch"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/preflight"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/runner"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/stack"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
@@ -136,7 +138,7 @@ func provisionGraph(c *config.Config) []stepDef {
 		{name: "oauth2-proxy", deps: []string{"routing"}, args: install("oauth2-proxy"), fn: components.InstallOAuthProxy},
 		{name: "auto-update", deps: []string{"argocd", "platform"}, skip: !c.AutoUpdate,
 			args: install("auto-update"), fn: components.InstallAutoUpdate},
-		{name: "telemetry", deps: []string{"platform", "monitoring", "routing"}, skip: !components.FullTelemetry(c), args: install("telemetry"), fn: components.InstallTelemetry},
+		{name: "telemetry", deps: []string{"longhorn", "platform", "monitoring", "routing"}, skip: !components.FullTelemetry(c), args: install("telemetry"), fn: components.InstallTelemetry},
 		// Synthetic monitoring (#42): namespace, quotas, egress policies, API RBAC (full profile).
 		{name: "synthetics", deps: []string{"telemetry"}, skip: !components.FullTelemetry(c), args: install("synthetics"), fn: components.InstallSynthetics},
 		{name: "longhorn-monitoring", deps: []string{"longhorn", "monitoring"}, skip: !c.IsHA() || !c.InstallMonitoring, args: install("longhorn-monitoring"), fn: components.InstallLonghornMonitoring, warnOnly: true},
@@ -191,6 +193,10 @@ func runProvision() error {
 	if cfg.PasswordGenerated {
 		color.Green("  ✓ Admin password auto-generated (saved to /etc/platform/.env)")
 		fmt.Printf("    ADMIN_PASSWORD=%s\n", cfg.AdminPassword)
+	}
+
+	if err := cfg.ValidateIngressHA(); err != nil {
+		return err
 	}
 
 	// Child steps load their config from this file — it must be written before
@@ -275,6 +281,29 @@ func runProvision() error {
 	}()
 
 	if !cfg.SkipK8s {
+		// Ingress HA (#54): the k3s config fragment (ServiceLB off, API VIP in
+		// tls-san) and the kube-vip auto-deploy manifest must exist before k3s
+		// starts, so kube-vip already runs when ingress-nginx waits for its
+		// LoadBalancer address.
+		if cfg.IsHA() {
+			if err := hostStep("ingress-ha", func() error {
+				host := ingressha.Default()
+				restart, err := host.Prepare(cfg)
+				if err != nil || !restart {
+					return err
+				}
+				if err := shell.RunBash("systemctl restart k3s"); err != nil {
+					return fmt.Errorf("restart k3s: %w", err)
+				}
+				if err := k3s.WaitReady(); err != nil {
+					return err
+				}
+				host.CleanupServiceLB(cfg)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
 		if err := hostStep("k3s", func() error { return k3s.InstallWith(cfg.Domain, cfg.GitHubToken, k3sServerOptions(cfg)) }); err != nil {
 			return err
 		}

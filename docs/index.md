@@ -17,6 +17,7 @@ applications on Kubernetes (k3s).
 | [Deployment Guide](deployment/bootstrap.md) | Production deployment on k3s |
 | [Host hardening](host-hardening.md) | SSH safeguards, firewall rollback, security updates, ingress limits and WAF |
 | [Image signing](operations/image-signing.md) | Trivy, cosign, Kyverno admission |
+| [High availability](operations/ha.md) | `ha` profile: multi-node k3s (embedded etcd, `platformctl join`), ingress VIP or external load balancer, Longhorn replicated storage |
 | [Troubleshooting](troubleshooting/dns-ipv6-timeout.md) | Solutions to known issues |
 | [Guides](guides/authentication.md) | Authentication, [MFA](guides/mfa.md), secrets, monitoring, [observability views](guides/observability.md), [status pages](guides/status-pages.md), CI/CD |
 | [Contributing](contribution-guide.md) | How to contribute to Platform |

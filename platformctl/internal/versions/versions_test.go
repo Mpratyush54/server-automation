@@ -77,6 +77,16 @@ func TestSplitChartRef(t *testing.T) {
 	}
 }
 
+func TestStaticImages(t *testing.T) {
+	imgs := StaticImages()
+	if len(imgs) != 1 || imgs[0] != KubeVIPImage {
+		t.Fatalf("StaticImages = %v", imgs)
+	}
+	if !strings.HasPrefix(KubeVIPImage, "ghcr.io/kube-vip/kube-vip:v") {
+		t.Fatal(KubeVIPImage)
+	}
+}
+
 // The "loki" pin must never match a loki-stack release (prefix "loki-").
 func TestSplitChartRefNeverConfusesLokiStack(t *testing.T) {
 	n, _, _ := SplitChartRef("loki-stack-2.10.3")

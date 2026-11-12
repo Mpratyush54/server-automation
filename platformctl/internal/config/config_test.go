@@ -650,3 +650,78 @@ func TestHAProfileHasFullFeatures(t *testing.T) {
 		t.Fatal("FullFeatures must accept exactly full and ha")
 	}
 }
+
+func TestResolveIngressHAMode(t *testing.T) {
+	profileEnv(t, "")
+	t.Setenv("PLATFORM_PROFILE", "ha")
+	t.Setenv("INGRESS_VIP", "10.0.0.50")
+	t.Setenv("INGRESS_HA_MODE", "")
+	c := Load()
+	if c.IngressHAMode != IngressHAModeVIP || c.IngressVIP != "10.0.0.50" {
+		t.Fatalf("default vip: mode=%q vip=%q", c.IngressHAMode, c.IngressVIP)
+	}
+	t.Setenv("INGRESS_VIP", "")
+	t.Setenv("INGRESS_HA_MODE", "")
+	c = Load()
+	if c.IngressHAMode != IngressHAModeExternal {
+		t.Fatalf("default external: %q", c.IngressHAMode)
+	}
+	t.Setenv("INGRESS_HA_MODE", " EXTERNAL ")
+	c = Load()
+	if c.IngressHAMode != IngressHAModeExternal {
+		t.Fatalf("trim/lower: %q", c.IngressHAMode)
+	}
+}
+
+func TestValidateIngressHA(t *testing.T) {
+	ok := &Config{Profile: ProfileHA, IngressHAMode: IngressHAModeVIP, IngressVIP: "10.0.0.50"}
+	if err := ok.ValidateIngressHA(); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Config{Profile: ProfileStandard, IngressHAMode: "bogus"}).ValidateIngressHA(); err != nil {
+		t.Fatal("non-ha must pass")
+	}
+	if err := (&Config{Profile: ProfileHA, IngressHAMode: "bogus"}).ValidateIngressHA(); err == nil {
+		t.Fatal("bad mode")
+	}
+	if err := (&Config{Profile: ProfileHA, IngressHAMode: IngressHAModeVIP, IngressVIP: "not-an-ip"}).ValidateIngressHA(); err == nil {
+		t.Fatal("bad vip")
+	}
+	if err := (&Config{Profile: ProfileHA, IngressHAMode: IngressHAModeVIP, IngressVIP: "10.0.0.50", APIVIP: "10.0.0.50"}).ValidateIngressHA(); err == nil {
+		t.Fatal("same api vip")
+	}
+	if err := (&Config{Profile: ProfileHA, IngressHAMode: IngressHAModeVIP, IngressVIP: "10.0.0.50\n"}).ValidateIngressHA(); err == nil {
+		t.Fatal("line break")
+	}
+	if err := (&Config{Profile: ProfileHA, IngressHAMode: IngressHAModeExternal}).ValidateIngressHA(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSaveEnvFileIngressHAOnlyOnHA(t *testing.T) {
+	ha := &Config{
+		Profile: ProfileHA, IngressHAMode: IngressHAModeVIP,
+		IngressVIP: "10.0.0.50", IngressVIPInterface: "eth0", APIVIP: "10.0.0.60",
+	}
+	path := filepath.Join(t.TempDir(), "ha.env")
+	if err := ha.SaveEnvFile(path); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	for _, want := range []string{"INGRESS_HA_MODE=vip", "INGRESS_VIP=10.0.0.50", "INGRESS_VIP_INTERFACE=eth0", "API_VIP=10.0.0.60"} {
+		if !strings.Contains(string(data), want+"\n") {
+			t.Fatalf("missing %s in %s", want, data)
+		}
+	}
+	std := &Config{Profile: ProfileStandard, IngressVIP: "10.0.0.50", IngressHAMode: IngressHAModeVIP}
+	path2 := filepath.Join(t.TempDir(), "std.env")
+	if err := std.SaveEnvFile(path2); err != nil {
+		t.Fatal(err)
+	}
+	data2, _ := os.ReadFile(path2)
+	for _, bad := range []string{"INGRESS_HA_MODE", "INGRESS_VIP", "API_VIP"} {
+		if strings.Contains(string(data2), bad) {
+			t.Fatalf("non-ha .env must omit %s", bad)
+		}
+	}
+}

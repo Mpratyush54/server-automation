@@ -102,9 +102,9 @@ Set `PLATFORM_PROFILE` (or pass `--profile`) to `minimal`, `standard` (default)
   blackbox-exporter. See [Full-profile telemetry](../operations/telemetry.md) for
   memory estimates, token/CORS integration and the required legacy Loki migration.
 
-- `ha` adds Longhorn replicated storage as the default StorageClass to the full
-  feature set. See [High availability](../operations/ha.md) for prerequisites,
-  replica rules and migration guidance.
+- `ha` ? the full feature set on a multi-node cluster: embedded etcd, ingress HA
+  (kube-vip VIP or external load balancer) and Longhorn replicated storage as the
+  default StorageClass. See [High availability](../operations/ha.md).
 
 Saved explicit profiles remain in effect. Existing `loki-stack` installations
 must follow the telemetry migration procedure before selecting full.

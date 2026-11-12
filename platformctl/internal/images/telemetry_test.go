@@ -25,3 +25,27 @@ func TestFullOnlyTelemetryImages(t *testing.T) {
 		t.Fatal("missing telemetry images")
 	}
 }
+
+func TestListForProfileDropsKubeVIPUnlessHA(t *testing.T) {
+	nonHA := ListForProfile(true, false)
+	ha := ListForProfile(true, true)
+	if slices.Contains(nonHA, "ghcr.io/kube-vip/kube-vip:v1.3.1") {
+		t.Fatal("kube-vip must not pre-pull on non-ha")
+	}
+	if !slices.Contains(ha, "ghcr.io/kube-vip/kube-vip:v1.3.1") {
+		t.Fatal("kube-vip missing on ha")
+	}
+	if !slices.Equal(ListForTelemetry(true), List()) {
+		t.Fatal("ListForTelemetry must keep including kube-vip")
+	}
+	haOnly := 0
+	for _, img := range ha {
+		if isHAOnly(img) {
+			haOnly++
+		}
+	}
+	// kube-vip plus the Longhorn images (#50) are the only ha-only images.
+	if haOnly != 14 || len(ha) != len(nonHA)+haOnly {
+		t.Fatalf("ha=%d nonHA=%d", len(ha), len(nonHA))
+	}
+}
