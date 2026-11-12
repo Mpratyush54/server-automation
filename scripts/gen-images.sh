@@ -82,10 +82,13 @@ chart_args() {
     postgresql)
       echo "--set auth.postgresPassword=x --set auth.database=platform --set metrics.enabled=true" ;;
     mongodb)
+      # Mongo HA (#52) replica-set mode uses the same images as standalone.
       echo "--set auth.rootPassword=x --set metrics.enabled=true" ;;
     redis)
-      echo "--set auth.password=x --set metrics.enabled=true" ;;
+      # ha profile (#52) adds the sentinel image (redis/exporter images are the same in both modes).
+      echo "--set auth.password=x --set metrics.enabled=true --set sentinel.enabled=true" ;;
     minio)
+      # MinIO HA (#52) distributed mode uses the same images as standalone.
       echo "-f $(values minio-values.yaml) --set auth.rootUser=x --set auth.rootPassword=xxxxxxxx" \
            "--set image.repository=bitnamilegacy/minio" \
            "--set console.image.repository=bitnamilegacy/minio-object-browser" ;;

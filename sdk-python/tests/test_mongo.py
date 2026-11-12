@@ -73,3 +73,11 @@ class TestMongoManager:
     def test_disconnect_when_not_connected(self):
         manager = MongoManager()
         manager.disconnect()  # Should not raise
+
+    @patch('platform_sdk.db.mongo.pymongo.MongoClient')
+    def test_replica_set_uri_passed_through_unchanged(self, mock_client_class):
+        uri = "mongodb://plat_u:p@mongo-0:27017,mongo-1:27017/plat_db?replicaSet=rs0&authSource=plat_db"
+        mock_client_class.return_value = MagicMock()
+        manager = MongoManager({"uri": uri})
+        manager.connect()
+        mock_client_class.assert_called_once_with(uri)

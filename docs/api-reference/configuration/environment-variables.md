@@ -31,6 +31,9 @@
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `redis-master.databases.svc.cluster.local` / `6379` / `0` | Redis for login state, one-time codes, rate limits and permission-cache invalidation | |
 | `REDIS_PASSWORD` | — | Platform Redis password; the API derives and creates its own ACL user (`plat-api`, keys `plat:api:*`) from it | ✓ |
 | `REDIS_API_USERNAME` / `REDIS_API_PASSWORD` | — | Use an externally managed ACL user instead | |
+| `REDIS_SENTINEL_HOSTS` | — | Comma-separated Sentinel `host:port` list (default port 26379). When set, every API Redis client finds the master through Sentinel and ACL users are created on every node; platformctl sets it on the `ha` profile | |
+| `REDIS_SENTINEL_MASTER` | `mymaster` | Sentinel master set name | |
+| `REDIS_SENTINEL_USERNAME` / `REDIS_SENTINEL_PASSWORD` | — / `REDIS_PASSWORD` | Credentials the API uses for Sentinel | |
 | `REDIS_OP_TIMEOUT_MS` | `2000` | Deadline for one state-store operation before it counts as unavailable | |
 | `PLATFORM_STATE_STORE` | `redis` | `memory` = per-process state for single-process local development only | |
 | `SHUTDOWN_TIMEOUT_MS` | `25000` | Graceful-shutdown drain deadline after SIGTERM | |

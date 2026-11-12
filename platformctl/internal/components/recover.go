@@ -221,16 +221,22 @@ kubectl -n databases exec -i "$PG_POD" -- bash -lc 'cat > /tmp/platformctl-recov
 psql_with_pw "$WORKING" platform -f /tmp/platformctl-recover-admin.sql >/dev/null
 
 if [[ -n "$RD_PASS" ]]; then
-  RD_POD="$(kubectl -n databases get pod -l app.kubernetes.io/name=redis -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
-  if [[ -z "$RD_POD" ]]; then RD_POD=redis-master-0; fi
-  echo "  · using Redis pod $RD_POD"
-  kubectl -n databases exec "$RD_POD" -- redis-cli CONFIG SET requirepass "$RD_PASS" >/dev/null 2>&1 \
-    || kubectl -n databases exec "$RD_POD" -- redis-cli -a "$RD_OLD" CONFIG SET requirepass "$RD_PASS" >/dev/null 2>&1 \
-    || kubectl -n databases exec "$RD_POD" -- redis-cli -a "$RD_PASS" CONFIG SET requirepass "$RD_PASS" >/dev/null 2>&1 \
-    || echo "  · Redis CONFIG SET skipped (pod not ready)"
   RD_B64="$(b64 "$RD_PASS")"
   set_platform_credential REDIS_PASSWORD "$RD_B64" || true
   kubectl -n databases patch secret redis --type merge -p "{\"data\":{\"redis-password\":\"$RD_B64\"}}" || true
+  if kubectl -n databases get sts redis-node >/dev/null 2>&1; then
+    echo "  · Redis Sentinel mode: restarting redis-node so every node and sentinel re-read the password"
+    kubectl -n databases rollout restart sts/redis-node
+    kubectl -n databases rollout status sts/redis-node --timeout=300s
+  else
+    RD_POD="$(kubectl -n databases get pod -l app.kubernetes.io/name=redis -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+    if [[ -z "$RD_POD" ]]; then RD_POD=redis-master-0; fi
+    echo "  · using Redis pod $RD_POD"
+    kubectl -n databases exec "$RD_POD" -- redis-cli CONFIG SET requirepass "$RD_PASS" >/dev/null 2>&1 \
+      || kubectl -n databases exec "$RD_POD" -- redis-cli -a "$RD_OLD" CONFIG SET requirepass "$RD_PASS" >/dev/null 2>&1 \
+      || kubectl -n databases exec "$RD_POD" -- redis-cli -a "$RD_PASS" CONFIG SET requirepass "$RD_PASS" >/dev/null 2>&1 \
+      || echo "  · Redis CONFIG SET skipped (pod not ready)"
+  fi
 fi
 
 ADMIN_B64="$(b64 "${PLATFORM_RECOVER_ADMIN_PASS}")"

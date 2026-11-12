@@ -181,14 +181,23 @@ func InstallPostgreSQL(cfg *config.Config) error {
 }
 
 func InstallMongoDB(cfg *config.Config) error {
+	if err := checkHAMigration(cfg, "mongodb"); err != nil {
+		return err
+	}
 	return mongodbRelease(cfg).reconcile("--wait", "--timeout", "10m")
 }
 
 func InstallRedis(cfg *config.Config) error {
+	if err := checkHAMigration(cfg, "redis"); err != nil {
+		return err
+	}
 	return redisRelease(cfg).reconcile("--wait", "--timeout", "10m")
 }
 
 func InstallMinIO(cfg *config.Config) error {
+	if err := checkHAMigration(cfg, "minio"); err != nil {
+		return err
+	}
 	if doneOrSkip("minio", "MinIO") {
 		return nil
 	}
@@ -199,7 +208,11 @@ func InstallMinIO(cfg *config.Config) error {
 	}
 	defer os.Remove(tmpFile)
 
-	err = helmValues("minio", "minio", "storage", minioInstallValues(cfg), "-f", tmpFile, "--set", "persistence.size=50Gi", "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser", "--set", `defaultBuckets=platform-backups\,platform-logs\,platform-uploads`, "--wait", "--timeout", "10m")
+	persistSize := "50Gi"
+	if cfg.IsHA() {
+		persistSize = "25Gi"
+	}
+	err = helmValues("minio", "minio", "storage", minioInstallValues(cfg), "-f", tmpFile, "--set", "persistence.size="+persistSize, "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser", "--set", `defaultBuckets=platform-backups\,platform-logs\,platform-uploads`, "--wait", "--timeout", "10m")
 	if err != nil {
 		return err
 	}
@@ -782,6 +795,32 @@ var platformImages struct{ api, portal string }
 // UsePlatformImages pins the images InstallPlatform deploys in this process.
 func UsePlatformImages(api, portal string) { platformImages.api, platformImages.portal = api, portal }
 
+// platformEnvValues is the platform-env Secret data for InstallPlatform.
+func platformEnvValues(cfg *config.Config) map[string]string {
+	m := map[string]string{
+		"NODE_ENV": "production", "PORT": "3000", "JWT_SECRET": cfg.JWTSecret,
+		"SECRETS_ENCRYPTION_KEY": cfg.SecretsEncryptionKey, "PLATFORM_WEBHOOK_SECRET": cfg.WebhookSecret,
+		"POSTGRES_HOST": "postgresql.databases", "POSTGRES_PORT": "5432", "POSTGRES_DB": "platform", "POSTGRES_USER": "postgres",
+		"REDIS_HOST": "redis-master.databases", "REDIS_PORT": "6379",
+		// Telemetry block in /api/sdk/config (#49): on only when the full-profile backend (#37) is installed.
+		"PLATFORM_OBSERVABILITY": observabilityFlag(cfg),
+		// Global Loki/Tempo/Pyroscope retention: the API reports it as the logs/traces/profiles default.
+		"TELEMETRY_RETENTION_DAYS": cfg.TelemetryRetentionDays,
+		"MINIO_ENDPOINT":           "http://minio.storage:9000",
+		"MINIO_API_ACCESS_KEY":     kubeSecretValue("platform", "platform-storage", "MINIO_API_ACCESS_KEY"),
+		"MINIO_API_SECRET_KEY":     kubeSecretValue("platform", "platform-storage", "MINIO_API_SECRET_KEY"),
+		"UPLOADS_BUCKET":           "platform-uploads", "BACKUP_BUCKET": "platform-backups",
+		"PLATFORM_NAME": cfg.PlatformName, "DOMAIN": cfg.Domain, "ADMIN_EMAIL": cfg.AdminEmail,
+		"OIDC_ISSUER": cfg.OIDCIssuer(), "OIDC_CLIENTS": cfg.OIDCClientsJSON(),
+		"CORS_ORIGINS": "https://" + cfg.Domain,
+	}
+	if cfg.IsHA() {
+		m["REDIS_SENTINEL_HOSTS"] = RedisSentinelHosts()
+		m["REDIS_SENTINEL_MASTER"] = RedisSentinelMaster
+	}
+	return m
+}
+
 func InstallPlatform(cfg *config.Config) error {
 	// Always reconcile security settings on existing installations as well.
 	color.Cyan("\n  ■ Deploying Platform API + Portal...")
@@ -806,23 +845,7 @@ func InstallPlatform(cfg *config.Config) error {
 	if err := MigrateHostState(cfg); err != nil {
 		return err
 	}
-	if err := applySecret("platform", "platform-env", map[string]string{
-		"NODE_ENV": "production", "PORT": "3000", "JWT_SECRET": cfg.JWTSecret,
-		"SECRETS_ENCRYPTION_KEY": cfg.SecretsEncryptionKey, "PLATFORM_WEBHOOK_SECRET": cfg.WebhookSecret,
-		"POSTGRES_HOST": "postgresql.databases", "POSTGRES_PORT": "5432", "POSTGRES_DB": "platform", "POSTGRES_USER": "postgres",
-		"REDIS_HOST": "redis-master.databases", "REDIS_PORT": "6379",
-		// Telemetry block in /api/sdk/config (#49): on only when the full-profile backend (#37) is installed.
-		"PLATFORM_OBSERVABILITY": observabilityFlag(cfg),
-		// Global Loki/Tempo/Pyroscope retention: the API reports it as the logs/traces/profiles default.
-		"TELEMETRY_RETENTION_DAYS": cfg.TelemetryRetentionDays,
-		"MINIO_ENDPOINT": "http://minio.storage:9000",
-		"MINIO_API_ACCESS_KEY": kubeSecretValue("platform", "platform-storage", "MINIO_API_ACCESS_KEY"),
-		"MINIO_API_SECRET_KEY": kubeSecretValue("platform", "platform-storage", "MINIO_API_SECRET_KEY"),
-		"UPLOADS_BUCKET": "platform-uploads", "BACKUP_BUCKET": "platform-backups",
-		"PLATFORM_NAME": cfg.PlatformName, "DOMAIN": cfg.Domain, "ADMIN_EMAIL": cfg.AdminEmail,
-		"OIDC_ISSUER": cfg.OIDCIssuer(), "OIDC_CLIENTS": cfg.OIDCClientsJSON(),
-		"CORS_ORIGINS": "https://" + cfg.Domain,
-	}); err != nil {
+	if err := applySecret("platform", "platform-env", platformEnvValues(cfg)); err != nil {
 		return err
 	}
 	if err := applyAPIRBAC(); err != nil {

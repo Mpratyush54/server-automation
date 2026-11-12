@@ -170,3 +170,35 @@ func TestK3sSQLiteCaptureUsesSnapshotNotOnlineBackup(t *testing.T) {
 		t.Fatal("k3s SQLite capture must snapshot with VACUUM INTO and verify it")
 	}
 }
+
+func TestHADatastoreBackupHelpers(t *testing.T) {
+	for _, want := range []string{
+		"mongo_pod()",
+		"redis_master_pod()",
+		"isWritablePrimary",
+		"app.kubernetes.io/component=node",
+		"role:master",
+	} {
+		if !strings.Contains(commonScript, want) {
+			t.Fatalf("common.sh missing %q", want)
+		}
+	}
+	if !strings.Contains(captureScript, "p=$(mongo_pod)") || !strings.Contains(captureScript, "p=$(redis_master_pod)") {
+		t.Fatal("capture must use mongo_pod / redis_master_pod")
+	}
+	if !strings.Contains(captureScript, "-c redis") {
+		t.Fatal("redis capture must exec the redis container")
+	}
+	for _, want := range []string{
+		"p=$(mongo_pod)",
+		"p=$(redis_master_pod)",
+		"restore_redis_pvc()",
+		"redis-data-$sts-$i",
+		"sts/redis-node",
+		"sts/minio",
+	} {
+		if !strings.Contains(restoreScript, want) {
+			t.Fatalf("restore.sh missing %q", want)
+		}
+	}
+}

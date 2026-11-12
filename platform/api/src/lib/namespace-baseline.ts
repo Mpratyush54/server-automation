@@ -52,11 +52,19 @@ export function namespaceBaselineManifests(projectId: string, env: NamespaceEnvi
       { to: [nsPeer('monitoring', { 'app.kubernetes.io/name': 'alloy' })], ports: [{ protocol: 'TCP', port: 4317 }, { protocol: 'TCP', port: 4318 }] },
     ] }),
   ];
-  const databases = { postgres: { name: 'postgresql', port: 5432 }, mongo: { name: 'mongodb', port: 27017 }, redis: { name: 'redis', port: 6379 } };
+  const databases: Record<string, { name: string; ports: number[] }> = {
+    postgres: { name: 'postgresql', ports: [5432] },
+    mongo: { name: 'mongodb', ports: [27017] },
+    // 6379 data + 26379 Sentinel (HA profile); single-host Redis ignores 26379.
+    redis: { name: 'redis', ports: [6379, 26379] },
+  };
   policies.push(policy('allow-databases', { policyTypes: ['Egress'], egress: (settings.databases || ['postgres', 'mongo', 'redis']).map(type => {
     const db = databases[type];
     if (!db) throw new Error('Unknown database type');
-    return { to: [nsPeer('databases', { 'app.kubernetes.io/instance': db.name, 'app.kubernetes.io/name': db.name })], ports: [{ protocol: 'TCP', port: db.port }] };
+    return {
+      to: [nsPeer('databases', { 'app.kubernetes.io/instance': db.name, 'app.kubernetes.io/name': db.name })],
+      ports: db.ports.map((port) => ({ protocol: 'TCP', port })),
+    };
   }) }));
   // Keep an empty policy when disabled: updating settings must revoke old rules.
   const cidrs = settings.internetCidrs || ['0.0.0.0/0'];
