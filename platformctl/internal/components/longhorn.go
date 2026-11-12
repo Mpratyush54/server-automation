@@ -152,14 +152,8 @@ func InstallLonghorn(cfg *config.Config) error {
 		color.Yellow("  ○ longhorn skipped (ha profile only; single-node installs keep local-path)")
 		return nil
 	}
-	if err := apt.InstallLonghornPrereqs(); err != nil {
+	if err := PrepareLonghornNode(); err != nil {
 		return err
-	}
-	if !shell.Exists("iscsiadm") {
-		return fmt.Errorf("Longhorn preflight: iscsiadm missing from PATH (install open-iscsi)")
-	}
-	if err := shell.RunSilent("systemctl", "is-active", "--quiet", "iscsid"); err != nil {
-		return fmt.Errorf("Longhorn preflight: iscsid must be active: %w", err)
 	}
 	out, err := shell.Output("kubectl", "get", "nodes", "--no-headers")
 	if err != nil {
@@ -192,10 +186,7 @@ func InstallLonghorn(cfg *config.Config) error {
 		return fmt.Errorf("Longhorn CSI readiness timed out: %w", err)
 	}
 	// Every k3s server needs this file; otherwise k3s restores local-path's default annotation on restart.
-	if err := os.MkdirAll(filepath.Dir(LocalStorageSkipFile), 0755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(LocalStorageSkipFile, []byte("# HA storage: Longhorn is the default StorageClass.\n"), 0644); err != nil {
+	if err := WriteLocalStorageSkip(""); err != nil {
 		return err
 	}
 	out, err = shell.Output("kubectl", "patch", "storageclass", LocalPathStorageClass, "-p", `{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}`)
@@ -237,4 +228,37 @@ func InstallLonghornMonitoring(cfg *config.Config) error {
 	}
 	color.Green("  ✓ Longhorn ServiceMonitor and volume alerts applied")
 	return state.MarkDone("longhorn-monitoring")
+}
+
+// PrepareLonghornNode installs Longhorn's node prerequisites and checks that
+// iSCSI is usable. Every ha node runs it: the first server from the longhorn
+// step, joined servers and agents from `platformctl join` before k3s starts.
+func PrepareLonghornNode() error {
+	if err := apt.InstallLonghornPrereqs(); err != nil {
+		return err
+	}
+	if !shell.Exists("iscsiadm") {
+		return fmt.Errorf("Longhorn preflight: iscsiadm missing from PATH (install open-iscsi)")
+	}
+	if err := shell.RunSilent("systemctl", "is-active", "--quiet", "iscsid"); err != nil {
+		return fmt.Errorf("Longhorn preflight: iscsid must be active: %w", err)
+	}
+	return nil
+}
+
+// LocalStorageSkipContent is the marker written to LocalStorageSkipFile.
+const LocalStorageSkipContent = "# HA storage: Longhorn is the default StorageClass.\n"
+
+// WriteLocalStorageSkip writes LocalStorageSkipFile under root ("" = /). Every
+// k3s server needs it, including servers joined later; otherwise k3s restores
+// local-path's default annotation on restart.
+func WriteLocalStorageSkip(root string) error {
+	path := LocalStorageSkipFile
+	if root != "" {
+		path = filepath.Join(root, filepath.FromSlash(LocalStorageSkipFile))
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(LocalStorageSkipContent), 0644)
 }

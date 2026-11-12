@@ -26,6 +26,7 @@ func clusterTest(t *testing.T) {
 	oldRole, oldRoot, oldJoin, oldPre := joinedRole, requireRoot, k3sJoin, joinPreflight
 	oldHarden, oldUpsert, oldProv := joinHarden, upsertEnvKey, provisionedFn
 	oldFlags := []string{joinRole, joinServer, joinTokenFile, joinNodes, joinNodeIP}
+	oldLonghorn, oldSkip, oldFrag, oldInstalled, oldRestart := joinPrepareLonghorn, joinStorageSkip, joinIngressFragment, joinK3sInstalled, joinRestartServer
 	t.Cleanup(func() {
 		state.SetPath(state.DefaultPath)
 		state.SetLockPath(state.DefaultLockPath)
@@ -33,7 +34,14 @@ func clusterTest(t *testing.T) {
 		joinedRole, requireRoot, k3sJoin, joinPreflight = oldRole, oldRoot, oldJoin, oldPre
 		joinHarden, upsertEnvKey, provisionedFn = oldHarden, oldUpsert, oldProv
 		joinRole, joinServer, joinTokenFile, joinNodes, joinNodeIP = oldFlags[0], oldFlags[1], oldFlags[2], oldFlags[3], oldFlags[4]
+		joinPrepareLonghorn, joinStorageSkip, joinIngressFragment, joinK3sInstalled, joinRestartServer = oldLonghorn, oldSkip, oldFrag, oldInstalled, oldRestart
 	})
+	joinPrepareLonghorn = func() error { return nil }
+	joinStorageSkip = func() error { return nil }
+	joinIngressFragment = func(*config.Config) (bool, error) { return false, nil }
+	joinK3sInstalled = func() bool { return false }
+	joinRestartServer = func() error { t.Fatal("k3s restart not expected"); return nil }
+	cfg.IngressHAMode, cfg.IngressVIP, cfg.IngressVIPInterface, cfg.APIVIP = config.IngressHAModeExternal, "", "", ""
 	joinedRole = func() string { return "" }
 	requireRoot = func(string) error { return nil }
 	provisionedFn = func() bool { return false }

@@ -30,3 +30,20 @@ func K3sConfigFragment(c *config.Config) string {
 	}
 	return b.String()
 }
+
+// WriteK3sFragment writes (vip mode) or removes (external mode) only the k3s
+// config fragment, without the kube-vip manifest or the VIP subnet checks that
+// Prepare runs on the first server. `platformctl join --role server` calls it
+// before k3s starts so every server agrees on the ServiceLB setting (a critical
+// k3s setting: a mismatch makes k3s refuse the joining server) and serves the
+// API VIP in its certificate. The kube-vip manifest stays on the first server:
+// its DaemonSet already runs on every control-plane node.
+func (h Host) WriteK3sFragment(c *config.Config) (changed bool, err error) {
+	if c == nil || !c.IsHA() {
+		return false, nil
+	}
+	if err := c.ValidateIngressHA(); err != nil {
+		return false, err
+	}
+	return h.writeOrRemove(K3sFragmentPath, K3sConfigFragment(c))
+}

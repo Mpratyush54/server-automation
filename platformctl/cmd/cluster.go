@@ -180,15 +180,23 @@ func printJoinHint(w io.Writer, c *config.Config) {
 	fmt.Fprintln(w, "    sudo platformctl token create --role server --output /root/server.token")
 	fmt.Fprintln(w, "    sudo platformctl token create --role agent --ttl 2h --output /root/agent.token")
 	fmt.Fprintln(w, "  then on each new node (copy the token file first):")
-	fmt.Fprintf(w, "    sudo platformctl join --role server|agent --server https://<this-node>:6443 --token-file <file> --nodes %s\n",
-		strings.Join(c.Cluster.Nodes, ","))
+	server := "<this-node>"
+	if c.APIVIP != "" {
+		server = c.APIVIP
+	}
+	fmt.Fprintf(w, "    sudo platformctl join --role server|agent --server https://%s:6443 --token-file <file> --nodes %s\n",
+		server, strings.Join(c.Cluster.Nodes, ","))
+	if c.IngressHAMode == config.IngressHAModeVIP {
+		fmt.Fprintf(w, "  Export the same ingress HA settings on joining servers: INGRESS_HA_MODE=vip INGRESS_VIP=%s API_VIP=%s\n", c.IngressVIP, c.APIVIP)
+	}
+	fmt.Fprintln(w, "  After joins, reconcile the Longhorn replica count: sudo platformctl install longhorn")
 	fmt.Fprintln(w, "  See docs/operations/ha.md.")
 }
 
 // joinPreflight is swapped in tests.
 var joinPreflight = func(host, role, token string) *preflight.Result {
 	r := preflight.Check()
-	o := preflight.JoinOptions{ServerHost: host, Role: role, Token: token, LocalK3sVersion: versions.K3sVersion}
+	o := preflight.JoinOptions{ServerHost: host, Role: role, Token: token, LocalK3sVersion: versions.K3sVersion, ViaAPIVIP: joinViaAPIVIP(host, cfg)}
 	if k3s.IsInstalled() {
 		// Re-running join on this node: k3s itself holds the local ports.
 		o.PortInUse = func(int) bool { return false }
@@ -276,9 +284,25 @@ func runJoin(stdin io.Reader) error {
 		}
 	}
 
+	// Host preparation that must precede k3s (Longhorn prerequisites on every
+	// node; storage skip file and ingress HA fragment on servers).
+	wasInstalled := joinK3sInstalled()
+	fragmentChanged := false
+	color.Cyan("\n  ■ Preparing this node (%s)...", role)
+	if err := runJoinPlan(joinPlan(role, cfg, &fragmentChanged)); err != nil {
+		return err
+	}
+
 	color.Cyan("\n  ■ Joining %s as %s...", serverURL, role)
 	if err := k3sJoin(role, serverURL, token, cfg.GitHubToken, opts); err != nil {
 		return err
+	}
+	// Re-running join on a server whose ingress HA fragment changed: k3s only
+	// reads config.yaml.d at start.
+	if role == k3s.RoleServer && wasInstalled && fragmentChanged {
+		if err := joinRestartServer(); err != nil {
+			return err
+		}
 	}
 	color.Green("  ✓ Joined the cluster as %s", role)
 
@@ -287,6 +311,7 @@ func runJoin(stdin io.Reader) error {
 			return fmt.Errorf("host hardening: %w (k3s joined; fix and run `sudo platformctl harden --auto`)", err)
 		}
 	}
+	printLonghornJoinHint(os.Stdout)
 	fmt.Println("\n  Check the cluster from a server: sudo platformctl status")
 	return nil
 }
@@ -298,6 +323,12 @@ func joinEnv(c *config.Config) map[string]string {
 		"PLATFORM_CLUSTER_NODES": strings.Join(c.Cluster.Nodes, ","),
 		"PLATFORM_NODE_IP":       c.Cluster.NodeIP,
 		"PLATFORM_HARDEN":        fmt.Sprintf("%t", !c.SkipHardening),
+		// Ingress HA (#54): later `harden` runs need API_VIP for its 6443
+		// rule; re-running join must render the same k3s fragment.
+		"INGRESS_HA_MODE":       c.IngressHAMode,
+		"INGRESS_VIP":           c.IngressVIP,
+		"INGRESS_VIP_INTERFACE": c.IngressVIPInterface,
+		"API_VIP":               c.APIVIP,
 	}
 	for k, v := range env {
 		env[k] = strings.NewReplacer("\r", "", "\n", "").Replace(v)

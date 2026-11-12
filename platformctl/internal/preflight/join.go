@@ -46,6 +46,10 @@ type JoinOptions struct {
 	Now             func() time.Time
 	NTPSynced       func() (bool, error)
 	PortInUse       func(int) bool
+	// ViaAPIVIP is set when ServerHost is the floating API_VIP (kube-vip).
+	// etcd (2379/2380) listens on node addresses only, not on the VIP, so
+	// those ports are not dialled through it.
+	ViaAPIVIP bool
 }
 
 func joinGet(url string) (int, http.Header, []byte, error) {
@@ -91,7 +95,13 @@ func CheckJoin(o JoinOptions) *Result {
 		r.Errors = append(r.Errors, "role must be server or agent")
 		return r
 	}
+	if o.ViaAPIVIP && o.Role == "server" {
+		r.Warnings = append(r.Warnings, fmt.Sprintf("joining through the API VIP %s: etcd ports 2379/2380 are not checked (etcd listens on node addresses); make sure every server admits this node (PLATFORM_CLUSTER_NODES)", o.ServerHost))
+	}
 	for _, port := range ports {
+		if o.ViaAPIVIP && (port == 2379 || port == 2380) {
+			continue
+		}
 		address := net.JoinHostPort(o.ServerHost, strconv.Itoa(port))
 		conn, err := o.Dial("tcp", address, 5*time.Second)
 		if err != nil {

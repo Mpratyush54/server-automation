@@ -168,3 +168,35 @@ func TestClockSkew(t *testing.T) {
 		t.Fatal("unknown role")
 	}
 }
+
+func TestCheckJoinViaAPIVIPSkipsEtcdDial(t *testing.T) {
+	var dialled []string
+	r := CheckJoin(JoinOptions{
+		ServerHost: "10.0.0.60", Role: "server", Token: "K10x::server:y", LocalK3sVersion: "v1",
+		ViaAPIVIP: true,
+		Dial: func(network, addr string, timeout time.Duration) (net.Conn, error) {
+			dialled = append(dialled, addr)
+			return nil, nil
+		},
+		Get:       func(string) (int, http.Header, []byte, error) { return 0, nil, nil, errors.New("offline") },
+		NTPSynced: func() (bool, error) { return true, nil },
+		PortInUse: func(int) bool { return false },
+	})
+	for _, a := range dialled {
+		if strings.HasSuffix(a, ":2379") || strings.HasSuffix(a, ":2380") {
+			t.Fatalf("etcd port dialled through the VIP: %v", dialled)
+		}
+	}
+	if len(dialled) != 2 {
+		t.Fatalf("want 6443 and 10250 dialled, got %v", dialled)
+	}
+	found := false
+	for _, w := range r.Warnings {
+		if strings.Contains(w, "API VIP") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing VIP warning: %v", r.Warnings)
+	}
+}
