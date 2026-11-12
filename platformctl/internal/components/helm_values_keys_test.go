@@ -17,8 +17,9 @@ import (
 //   - cloudnative-pg 0.29.1     (cloudnative-pg/charts @ cloudnative-pg-v0.29.1)
 //   - bitnami minio 17.0.21     (bitnami/charts @ minio/17.0.21)
 //   - bitnami mongodb, redis    (bitnami/charts @ mongodb/17.0.2, redis/23.1.3:
-//     the newest public sources; the pinned OCI releases mongodb 20.0.17 and
-//     redis 28.3.12 have no public source tag)
+//     the newest public sources; the keys used were also checked against
+//     `helm show values` of the pinned OCI releases mongodb 20.0.17 and
+//     redis 28.3.12 on the 3-node ha test)
 //
 // The tests assert that (1) every key we rely on is present in the values we
 // render and (2) we render no key outside the verified set, so a new or
@@ -177,7 +178,7 @@ func TestHARedisHelmKeysVerified(t *testing.T) {
 	leafPaths(r.Values, "", &paths)
 	paths = append(paths, setArgKeys(r.Args)...)
 	checkVerifiedKeys(t, "redis", paths,
-		[]string{"auth.password", "architecture", "sentinel.enabled", "sentinel.masterSet", "sentinel.quorum", "sentinel.resources",
+		[]string{"auth.password", "architecture", "sentinel.enabled", "sentinel.masterSet", "sentinel.quorum", "sentinel.downAfterMilliseconds", "sentinel.failoverTimeout", "sentinel.resources",
 			"sentinel.masterService.enabled", "replica.replicaCount", "replica.persistence.size", "replica.persistence.storageClass", "replica.podAntiAffinityPreset",
 			"replica.automountServiceAccountToken", "rbac.create", "serviceAccount.automountServiceAccountToken",
 			"global.defaultStorageClass", "metrics.enabled", "metrics.resources", "metrics.service.annotations",
@@ -222,8 +223,8 @@ func TestHALonghornHelmKeysVerified(t *testing.T) {
 
 func TestHACloudNativePGHelmKeysVerified(t *testing.T) {
 	checkVerifiedKeys(t, "cloudnative-pg", yamlKeyPaths(readManifest("cnpg-values.yaml")),
-		[]string{"crds.create", "config.clusterWide", "monitoring.podMonitorEnabled", "resources"},
-		[]string{"crds.create", "config.clusterWide", "monitoring.podMonitorEnabled"})
+		[]string{"crds.create", "config.clusterWide", "monitoring.podMonitorEnabled", "resources", "replicaCount", "topologySpreadConstraints", "tolerations"},
+		[]string{"crds.create", "config.clusterWide", "monitoring.podMonitorEnabled", "replicaCount", "topologySpreadConstraints"})
 }
 
 // setArgKeys extracts the keys of `--set key=value` arguments.

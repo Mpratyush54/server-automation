@@ -165,6 +165,11 @@ func redisRelease(cfg *config.Config) helmRelease {
 			"enabled":   true,
 			"masterSet": RedisSentinelMaster,
 			"quorum":    2,
+			// Chart defaults (60 s down-after, 180 s failover timeout) kept
+			// Redis writes failing for ~60 s after the master's node was
+			// powered off (3-node test).
+			"downAfterMilliseconds": 5000,
+			"failoverTimeout":       20000,
 			"resources": map[string]any{
 				"requests": map[string]string{"cpu": "25m", "memory": "32Mi"},
 				"limits":   map[string]string{"cpu": "200m", "memory": "128Mi"},
