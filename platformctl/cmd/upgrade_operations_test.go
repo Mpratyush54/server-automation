@@ -30,6 +30,10 @@ func TestActiveOperationsCommandsAndResults(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			calls := 0
 			upgradeRun = func(name string, args ...string) (string, error) {
+				// Existing cases exercise the Bitnami fallback after an empty CNPG lookup.
+				if strings.Contains(strings.Join(args, " "), "cnpg.io/cluster=postgresql") {
+					return "", nil
+				}
 				calls++
 				want := []string{"-n", "databases", "get", "pods", "-l", "app.kubernetes.io/name=postgresql", "-o", "jsonpath={.items[0].metadata.name}"}
 				if calls == 2 {

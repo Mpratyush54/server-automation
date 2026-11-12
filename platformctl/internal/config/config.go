@@ -66,6 +66,15 @@ type Config struct {
 	LonghornBackupTarget string
 	// LonghornBackupSecret names an operator-created Secret; credentials stay out of .env.
 	LonghornBackupSecret string
+	// PostgreSQL HA (#51, ha profile only): storage class of the CloudNativePG
+	// instances and the WAL/base-backup target. The Secret is operator-created
+	// in namespace databases; credentials never go to .env.
+	PostgresHAStorageClass    string
+	PostgresBackupDestination string
+	PostgresBackupEndpoint    string
+	PostgresBackupSecret      string
+	PostgresBackupRetention   string
+
 	// SyntheticsBrowser enables browser synthetic checks (headless Chromium
 	// CronJobs, #42). Only honored on the full profile with SYNTHETICS_BROWSER=true.
 	SyntheticsBrowser bool
@@ -198,6 +207,11 @@ func Load() *Config {
 	if c.LonghornReplicas < 1 || c.LonghornReplicas > 3 {
 		c.LonghornReplicas = 0
 	}
+	c.PostgresHAStorageClass = getEnv("POSTGRES_HA_STORAGE_CLASS", "local-path")
+	c.PostgresBackupDestination = getEnv("POSTGRES_BACKUP_DESTINATION", "")
+	c.PostgresBackupEndpoint = getEnv("POSTGRES_BACKUP_ENDPOINT", "")
+	c.PostgresBackupSecret = getEnv("POSTGRES_BACKUP_SECRET", "")
+	c.PostgresBackupRetention = getEnv("POSTGRES_BACKUP_RETENTION", "14d")
 	c.LonghornBackupTarget = strings.TrimSpace(os.Getenv("LONGHORN_BACKUP_TARGET"))
 	c.LonghornBackupSecret = strings.TrimSpace(os.Getenv("LONGHORN_BACKUP_SECRET"))
 	return c
@@ -566,6 +580,9 @@ func (c *Config) SaveEnvFile(path string) error {
 		return fmt.Errorf("Longhorn backup settings cannot contain line breaks")
 	}
 
+	if strings.ContainsAny(c.PostgresHAStorageClass+c.PostgresBackupDestination+c.PostgresBackupEndpoint+c.PostgresBackupSecret+c.PostgresBackupRetention, "\r\n") {
+		return fmt.Errorf("PostgreSQL HA settings cannot contain line breaks")
+	}
 	if idx := strings.LastIndexAny(path, "/\\"); idx != -1 {
 		dir := path[:idx]
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -634,6 +651,11 @@ func (c *Config) SaveEnvFile(path string) error {
 	// Ingress HA settings only belong on ha-profile installs; keep non-ha .env
 	// files byte-stable so profile switches do not leak VIP configuration.
 	if c.IsHA() {
+		b.WriteString(fmt.Sprintf("POSTGRES_HA_STORAGE_CLASS=%s\n", c.PostgresHAStorageClass))
+		b.WriteString(fmt.Sprintf("POSTGRES_BACKUP_DESTINATION=%s\n", c.PostgresBackupDestination))
+		b.WriteString(fmt.Sprintf("POSTGRES_BACKUP_ENDPOINT=%s\n", c.PostgresBackupEndpoint))
+		b.WriteString(fmt.Sprintf("POSTGRES_BACKUP_SECRET=%s\n", c.PostgresBackupSecret))
+		b.WriteString(fmt.Sprintf("POSTGRES_BACKUP_RETENTION=%s\n", c.PostgresBackupRetention))
 		b.WriteString(fmt.Sprintf("INGRESS_HA_MODE=%s\n", c.IngressHAMode))
 		b.WriteString(fmt.Sprintf("INGRESS_VIP=%s\n", c.IngressVIP))
 		b.WriteString(fmt.Sprintf("INGRESS_VIP_INTERFACE=%s\n", c.IngressVIPInterface))

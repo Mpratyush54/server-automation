@@ -44,8 +44,16 @@ func TestListForProfileDropsKubeVIPUnlessHA(t *testing.T) {
 			haOnly++
 		}
 	}
-	// kube-vip plus the Longhorn images (#50) are the only ha-only images.
-	if haOnly != 14 || len(ha) != len(nonHA)+haOnly {
+	// kube-vip, Longhorn and both CloudNativePG images are ha-only.
+	if haOnly != 16 || len(ha) != len(nonHA)+haOnly {
 		t.Fatalf("ha=%d nonHA=%d", len(ha), len(nonHA))
+	}
+}
+
+func TestCloudNativePGImagesHAOnly(t *testing.T) {
+	for _, img := range []string{"ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1", "ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie"} {
+		if slices.Contains(ListForProfile(true, false), img) || !slices.Contains(ListForProfile(true, true), img) {
+			t.Fatal(img)
+		}
 	}
 }

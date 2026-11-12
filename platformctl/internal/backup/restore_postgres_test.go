@@ -31,7 +31,12 @@ func fakeRestoreEnv(t *testing.T) (src, remote, logf string) {
 		}
 	}
 	fake := map[string]string{
-		"kubectl": `case "$3" in
+		"kubectl": `args=()
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = -c ]; then shift 2; else args+=("$1"); shift; fi
+done
+set -- "${args[@]}"
+case "$3" in
   get) printf db-0 ;;
   cp) cp "$4" "${5#db-0:}" ;;
   exec)

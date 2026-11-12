@@ -104,11 +104,12 @@ persist_pg_now() {
   printf '%s' "$pw" > "$WORKING_OUT"
 }
 
-PG_POD="$(kubectl -n databases get pod -l app.kubernetes.io/name=postgresql -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+` + pgPrimaryPodShell + `
+pg_primary_pod
 if [[ -z "$PG_POD" ]]; then PG_POD=postgresql-0; fi
 echo "  · using Postgres pod $PG_POD"
 
-kubectl -n databases exec "$PG_POD" -- bash -lc '
+kubectl -n databases exec "$PG_POD" -c "$PG_CONTAINER" -- bash -lc '
   for v in "$POSTGRESQL_PASSWORD" "$POSTGRES_PASSWORD" "$POSTGRES_POSTGRES_PASSWORD"; do
     [ -n "$v" ] && printf "%s\n" "$v"
   done
@@ -125,9 +126,15 @@ psql_with_pw() {
   shift 2
   local pw_b64 extra
   pw_b64="$(b64 "$pw")"
-  extra=$(printf '%q ' "$@")
-  kubectl -n databases exec "$PG_POD" -- bash -lc \
-    "export PGPASSWORD=\$(printf '%s' '$pw_b64' | base64 -d 2>/dev/null || printf '%s' '$pw_b64' | base64 -D); exec psql -w -U postgres -d $(printf '%q' "$db") -v ON_ERROR_STOP=1 $extra"
+  local host=""
+  [[ "$PG_CONTAINER" != postgres ]] || host="-h 127.0.0.1"
+  if [[ "${1:-}" == -f && "${2:-}" == 'platformctl-recover-admin.sql' ]]; then
+    extra='-f "${TMPDIR:-/tmp}/platformctl-recover-admin.sql"'
+  else
+    extra=$(printf '%q ' "$@")
+  fi
+  kubectl -n databases exec "$PG_POD" -c "$PG_CONTAINER" -- bash -lc \
+    "export PGPASSWORD=\$(printf '%s' '$pw_b64' | base64 -d 2>/dev/null || printf '%s' '$pw_b64' | base64 -D); exec psql $host -w -U postgres -d $(printf '%q' "$db") -v ON_ERROR_STOP=1 $extra"
 }
 
 WORKING=""
@@ -142,7 +149,7 @@ while IFS= read -r cand || [[ -n "${cand:-}" ]]; do
 done < "$CAND_FILE"
 
 enable_trust() {
-  kubectl -n databases exec "$PG_POD" -- bash -lc '
+  kubectl -n databases exec "$PG_POD" -c "$PG_CONTAINER" -- bash -lc '
     set -euo pipefail
     HBA="$(find /opt/bitnami /bitnami -name pg_hba.conf -print -quit 2>/dev/null || true)"
     [ -n "$HBA" ] || exit 1
@@ -154,7 +161,7 @@ enable_trust() {
 }
 
 restore_trust() {
-  kubectl -n databases exec "$PG_POD" -- bash -lc '
+  kubectl -n databases exec "$PG_POD" -c "$PG_CONTAINER" -- bash -lc '
     set -euo pipefail
     [ -f /tmp/pg_hba.recover.bak ] || exit 0
     HBA="$(find /opt/bitnami /bitnami -name pg_hba.conf -print -quit 2>/dev/null || true)"
@@ -176,6 +183,17 @@ restore_on_exit() {
  exit "$rc"
 }
 trap restore_on_exit EXIT
+if [[ -z "$WORKING" && "$PG_CONTAINER" == postgres ]]; then
+  echo "  · no stored password worked — updating the CloudNativePG superuser Secret (the operator applies it)"
+  persist_pg_now "$PG_TARGET"
+  PG_B64="$(b64 "$PG_TARGET")"
+  printf '{"data":{"password":"%s","postgres-password":"%s"}}' "$PG_B64" "$PG_B64" | kubectl -n databases patch secret postgresql --type merge --patch-file=/dev/stdin
+  for _ in $(seq 1 30); do
+    if psql_with_pw "$PG_TARGET" postgres -tAc "SELECT 1" >/dev/null 2>&1; then WORKING="$PG_TARGET"; break; fi
+    sleep 2
+  done
+  [[ -n "$WORKING" ]] || { echo "CNPG did not apply the superuser Secret within 60s" >&2; exit 2; }
+fi
 if [[ -z "$WORKING" ]]; then
   echo "  · no stored password worked — will ALTER only after passwords are on disk"
   persist_pg_now "$PG_TARGET"
@@ -183,14 +201,14 @@ if [[ -z "$WORKING" ]]; then
   enable_trust || { echo "  ✗ could not enable local trust (pg_hba.conf not found)" >&2; exit 2; }
   USED_TRUST=1
   sleep 2
-  if ! kubectl -n databases exec "$PG_POD" -- psql -w -U postgres -d postgres -tAc 'SELECT 1' >/dev/null 2>&1; then
+  if ! kubectl -n databases exec "$PG_POD" -c "$PG_CONTAINER" -- psql -w -U postgres -d postgres -tAc 'SELECT 1' >/dev/null 2>&1; then
     restore_trust
     echo "  ✗ could not authenticate to Postgres" >&2
     exit 2
   fi
   echo "  · authenticated via local trust; setting role password to the on-disk value"
-  kubectl -n databases exec -i "$PG_POD" -- bash -lc 'cat > /tmp/platformctl-recover-alter.sql' < "$ALTER_FILE"
-  kubectl -n databases exec "$PG_POD" -- psql -w -U postgres -d postgres -v ON_ERROR_STOP=1 -f /tmp/platformctl-recover-alter.sql
+  kubectl -n databases exec -i "$PG_POD" -c "$PG_CONTAINER" -- bash -lc 'cat > "${TMPDIR:-/tmp}/platformctl-recover-alter.sql"' < "$ALTER_FILE"
+  kubectl -n databases exec "$PG_POD" -c "$PG_CONTAINER" -- bash -lc 'exec psql -w -U postgres -d postgres -v ON_ERROR_STOP=1 -f "${TMPDIR:-/tmp}/platformctl-recover-alter.sql"'
   restore_trust
   TRUST_ACTIVE=0
   if ! psql_with_pw "$PG_TARGET" postgres -tAc "SELECT 1" >/dev/null 2>&1; then
@@ -217,8 +235,8 @@ PG_B64="$(b64 "$WORKING")"
 set_platform_credential POSTGRES_PASSWORD "$PG_B64"
 kubectl -n databases patch secret postgresql --type merge -p "{\"data\":{\"postgres-password\":\"$PG_B64\",\"password\":\"$PG_B64\"}}" || true
 
-kubectl -n databases exec -i "$PG_POD" -- bash -lc 'cat > /tmp/platformctl-recover-admin.sql' < "$SQL_FILE"
-psql_with_pw "$WORKING" platform -f /tmp/platformctl-recover-admin.sql >/dev/null
+kubectl -n databases exec -i "$PG_POD" -c "$PG_CONTAINER" -- bash -lc 'cat > "${TMPDIR:-/tmp}/platformctl-recover-admin.sql"' < "$SQL_FILE"
+psql_with_pw "$WORKING" platform -f platformctl-recover-admin.sql >/dev/null
 
 if [[ -n "$RD_PASS" ]]; then
   RD_POD="$(kubectl -n databases get pod -l app.kubernetes.io/name=redis -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"

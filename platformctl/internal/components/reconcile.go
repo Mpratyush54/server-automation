@@ -139,5 +139,8 @@ func redisRelease(cfg *config.Config) helmRelease {
 
 // DatabaseReleases are the values-reconciled database components.
 func DatabaseReleases(cfg *config.Config) []helmRelease {
+	if cfg.IsHA() {
+		return []helmRelease{mongodbRelease(cfg), redisRelease(cfg)}
+	}
 	return []helmRelease{postgresqlRelease(cfg), mongodbRelease(cfg), redisRelease(cfg)}
 }

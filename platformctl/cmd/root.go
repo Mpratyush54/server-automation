@@ -68,6 +68,9 @@ var statusCmd = &cobra.Command{
 				color.Red("  ✗ cluster status: %v", err)
 			}
 		}
+		if cfg.IsHA() {
+			components.PrintPostgresHAStatus(os.Stdout)
+		}
 		if joinedRole() == "server" {
 			// Joined servers run k3s only; the platform is checked on the first server.
 			return nil
@@ -261,7 +264,7 @@ func runInstall(name string) error {
 	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
 	comp := components.Find(name)
 	if comp == nil {
-		return fmt.Errorf("unknown component: %s\nAvailable: longhorn, longhorn-monitoring, ingress-nginx, cert-manager, postgresql, mongodb, redis, minio, argocd, monitoring, oauth2-proxy, portainer, platform, ingress, routing, auto-update, kyverno", name)
+		return fmt.Errorf("unknown component: %s\nAvailable: longhorn, longhorn-monitoring, ingress-nginx, cert-manager, postgresql, postgresql-backup, postgresql-monitoring, mongodb, redis, minio, argocd, monitoring, oauth2-proxy, portainer, platform, ingress, routing, auto-update, kyverno", name)
 	}
 	cfg.GenerateSecrets()
 	if !isChild() {
