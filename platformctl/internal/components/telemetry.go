@@ -29,7 +29,7 @@ func observabilityFlag(c *config.Config) string {
 }
 
 func FullTelemetry(c *config.Config) bool {
-	return c.Profile == config.ProfileFull && c.InstallMonitoring
+	return config.FullFeatures(c.Profile) && c.Profile != "" && c.InstallMonitoring
 }
 
 func telemetryRetention(c *config.Config) (int, error) {

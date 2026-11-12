@@ -17,7 +17,7 @@ func TestTelemetryProfiles(t *testing.T) {
 	for _, profile := range []string{"", "minimal", "standard", "full", "ha"} {
 		for _, monitoring := range []bool{false, true} {
 			c := &config.Config{Profile: profile, InstallMonitoring: monitoring}
-			want := profile == "full" && monitoring
+			want := (profile == "full" || profile == "ha") && monitoring
 			if FullTelemetry(c) != want {
 				t.Fatalf("profile=%q monitoring=%v", profile, monitoring)
 			}

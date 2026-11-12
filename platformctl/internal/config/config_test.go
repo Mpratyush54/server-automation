@@ -335,6 +335,7 @@ func TestProfilesFromEnv(t *testing.T) {
 		"minimal":  {false, false, false, true},
 		"standard": {true, true, true, true}, // heavy full telemetry is selected separately
 		"full":     {true, true, true, true},
+		"ha":       {true, true, true, true},
 		"Minimal":  {false, false, false, true},
 	}
 	for name, want := range cases {
@@ -630,5 +631,22 @@ func TestTelemetrySettingsPersistForProvisionChildren(t *testing.T) {
 		if !strings.Contains(string(b), want) {
 			t.Fatalf("missing %s", want)
 		}
+	}
+}
+
+func TestHAProfileHasFullFeatures(t *testing.T) {
+	profileEnv(t, "")
+	t.Setenv("PLATFORM_PROFILE", "ha")
+	c := Load()
+	if !c.IsHA() || !FullFeatures(c.Profile) {
+		t.Fatalf("ha profile: IsHA=%v FullFeatures=%v", c.IsHA(), FullFeatures(c.Profile))
+	}
+	for _, p := range []string{"", "minimal", "standard"} {
+		if FullFeatures(p) {
+			t.Fatalf("FullFeatures(%q) must be false", p)
+		}
+	}
+	if !FullFeatures("full") || FullFeatures("FULLER") {
+		t.Fatal("FullFeatures must accept exactly full and ha")
 	}
 }

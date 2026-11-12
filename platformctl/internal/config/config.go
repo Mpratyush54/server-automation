@@ -629,10 +629,24 @@ const (
 	ProfileMinimal  = "minimal"  // core only: no monitoring, Portainer, ArgoCD
 	ProfileStandard = "standard" // default: existing light monitoring stack
 	ProfileFull     = "full"     // full telemetry backend (explicit opt-in)
+	// ProfileHA is the multi-node profile (Phase 5, #50-#54): everything in full,
+	// plus k3s HA (embedded etcd), ingress VIP, replicated storage and HA
+	// datastores. Single-node installs never select it implicitly.
+	ProfileHA = "ha"
 )
 
 // Profiles lists the valid profile names.
-var Profiles = []string{ProfileMinimal, ProfileStandard, ProfileFull}
+var Profiles = []string{ProfileMinimal, ProfileStandard, ProfileFull, ProfileHA}
+
+// FullFeatures reports whether a profile includes the full feature set
+// (telemetry backend, synthetics, ...): the full and ha profiles.
+func FullFeatures(profile string) bool {
+	n := normalizeProfile(profile)
+	return n == ProfileFull || n == ProfileHA
+}
+
+// IsHA reports whether this install uses the multi-node HA profile.
+func (c *Config) IsHA() bool { return normalizeProfile(c.Profile) == ProfileHA }
 
 // installKeys are the INSTALL_* variables a profile controls.
 var installKeys = []string{"INSTALL_ARGOCD", "INSTALL_MONITORING", "INSTALL_PORTAINER", "INSTALL_CERTMANAGER"}
@@ -650,7 +664,7 @@ func profileDefaults(name string) (map[string]bool, error) {
 			"INSTALL_ARGOCD": true, "INSTALL_MONITORING": true, "INSTALL_PORTAINER": true,
 			"INSTALL_CERTMANAGER": true,
 		}, nil
-	case ProfileFull:
+	case ProfileFull, ProfileHA:
 		return map[string]bool{
 			"INSTALL_ARGOCD": true, "INSTALL_MONITORING": true, "INSTALL_PORTAINER": true,
 			"INSTALL_CERTMANAGER": true,
@@ -742,8 +756,8 @@ func (c *Config) ApplyProfile(name string) error {
 // profile so single-server installs stay light.
 func (c *Config) resolveKyverno() {
 	// Browser synthetic checks (#42) follow the same rule: explicit opt-in, full profile only.
-	c.SyntheticsBrowser = normalizeProfile(c.Profile) == ProfileFull && getEnvBool("SYNTHETICS_BROWSER", false)
-	c.InstallKyverno = normalizeProfile(c.Profile) == ProfileFull && getEnvBool("INSTALL_KYVERNO", false)
+	c.SyntheticsBrowser = FullFeatures(c.Profile) && getEnvBool("SYNTHETICS_BROWSER", false)
+	c.InstallKyverno = FullFeatures(c.Profile) && getEnvBool("INSTALL_KYVERNO", false)
 	c.InstallKyvernoCVEPolicy = getEnvBool("INSTALL_KYVERNO_CVE_POLICY", false)
 	mode := strings.TrimSpace(getEnv("KYVERNO_POLICY_MODE", "Audit"))
 	switch strings.ToLower(mode) {
