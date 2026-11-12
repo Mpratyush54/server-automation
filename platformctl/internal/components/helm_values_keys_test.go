@@ -166,7 +166,7 @@ func TestHAMongoHelmKeysVerified(t *testing.T) {
 	paths = append(paths, setArgKeys(r.Args)...)
 	checkVerifiedKeys(t, "mongodb", paths,
 		[]string{"auth.rootPassword", "auth.replicaSetKey", "architecture", "replicaCount", "replicaSetName",
-			"arbiter.enabled", "global.defaultStorageClass", "podAntiAffinityPreset", "pdb.create", "pdb.maxUnavailable",
+			"arbiter.enabled", "global.defaultStorageClass", "persistence.storageClass", "podAntiAffinityPreset", "pdb.create", "pdb.maxUnavailable",
 			"persistence.size", "metrics.enabled", "metrics.resources", "metrics.service.annotations", "updateStrategy.type"},
 		[]string{"architecture", "replicaCount", "replicaSetName", "auth.replicaSetKey", "arbiter.enabled", "global.defaultStorageClass", "pdb.maxUnavailable"})
 }
@@ -178,7 +178,7 @@ func TestHARedisHelmKeysVerified(t *testing.T) {
 	paths = append(paths, setArgKeys(r.Args)...)
 	checkVerifiedKeys(t, "redis", paths,
 		[]string{"auth.password", "architecture", "sentinel.enabled", "sentinel.masterSet", "sentinel.quorum", "sentinel.resources",
-			"sentinel.masterService.enabled", "replica.replicaCount", "replica.persistence.size", "replica.podAntiAffinityPreset",
+			"sentinel.masterService.enabled", "replica.replicaCount", "replica.persistence.size", "replica.persistence.storageClass", "replica.podAntiAffinityPreset",
 			"replica.automountServiceAccountToken", "rbac.create", "serviceAccount.automountServiceAccountToken",
 			"global.defaultStorageClass", "metrics.enabled", "metrics.resources", "metrics.service.annotations",
 			"master.persistence.size"},
@@ -211,7 +211,7 @@ func TestHALonghornHelmKeysVerified(t *testing.T) {
 		[]string{"persistence.defaultClass", "persistence.defaultClassReplicaCount", "persistence.defaultFsType", "persistence.reclaimPolicy",
 			"defaultSettings.defaultReplicaCount", "defaultSettings.replicaAutoBalance", "defaultSettings.nodeDownPodDeletionPolicy",
 			"defaultSettings.upgradeChecker", "defaultSettings.allowCollectingLonghornUsageMetrics",
-			"defaultSettings.storageMinimalAvailablePercentage", "csi.attacherReplicaCount", "csi.provisionerReplicaCount",
+			"defaultSettings.storageMinimalAvailablePercentage", "defaultSettings.storageOverProvisioningPercentage", "csi.attacherReplicaCount", "csi.provisionerReplicaCount",
 			"csi.resizerReplicaCount", "csi.snapshotterReplicaCount", "longhornUI.replicas", "service.ui.type", "ingress.enabled",
 			"longhornManager.resources", "preUpgradeChecker.jobEnabled", "metrics.serviceMonitor.enabled",
 			"defaultBackupStore.backupTarget", "defaultBackupStore.backupTargetCredentialSecret"},

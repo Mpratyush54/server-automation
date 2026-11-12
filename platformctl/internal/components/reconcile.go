@@ -134,6 +134,7 @@ func mongodbRelease(cfg *config.Config) helmRelease {
 		values["replicaSetName"] = MongoReplicaSetName
 		values["arbiter"] = map[string]any{"enabled": false}
 		values["global"] = map[string]any{"defaultStorageClass": HAStorageClass(cfg)}
+		values["persistence"] = map[string]any{"storageClass": LonghornSingleStorageClass}
 		values["podAntiAffinityPreset"] = "soft"
 		values["pdb"] = map[string]any{"create": true, "maxUnavailable": 1}
 		restarts = "mongodb-0..2, one member at a time (the replica set elects a new primary; drivers retry)"
@@ -165,7 +166,7 @@ func redisRelease(cfg *config.Config) helmRelease {
 		}
 		values["replica"] = map[string]any{
 			"replicaCount":                 RedisNodeCount,
-			"persistence":                  map[string]any{"size": "5Gi"},
+			"persistence":                  map[string]any{"size": "5Gi", "storageClass": LonghornSingleStorageClass},
 			"podAntiAffinityPreset":        "soft",
 			"automountServiceAccountToken": true,
 		}

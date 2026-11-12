@@ -21,6 +21,11 @@ const (
 	// LonghornMinioStorageClass backs the distributed MinIO drives. Its
 	// replica count follows the node count (MinioStorageReplicaCount).
 	LonghornMinioStorageClass = "longhorn-minio"
+	// LonghornSingleStorageClass keeps one Longhorn replica next to the pod.
+	// It backs the MongoDB and Redis members on ha: the replica set and
+	// Sentinel already keep a copy per node, so three Longhorn replicas of
+	// each member would store every byte nine times.
+	LonghornSingleStorageClass = "longhorn-single"
 	LocalPathStorageClass     = "local-path"
 	LonghornNamespace         = "longhorn-system"
 	LocalStorageSkipFile      = "/var/lib/rancher/k3s/server/manifests/local-storage.yaml.skip"
@@ -102,10 +107,15 @@ func MinioStorageReplicaCount(nodes int) int {
 // longhornMinioStorageClassManifest renders the non-default Longhorn
 // StorageClass for the MinIO drives with the given replica count.
 func longhornMinioStorageClassManifest(replicas int) string {
+	return longhornStorageClassManifest(LonghornMinioStorageClass, replicas)
+}
+
+// longhornStorageClassManifest renders a non-default Longhorn StorageClass.
+func longhornStorageClassManifest(name string, replicas int) string {
 	return `apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: ` + LonghornMinioStorageClass + `
+  name: ` + name + `
   labels:
     app.kubernetes.io/managed-by: platformctl
 provisioner: driver.longhorn.io
@@ -144,6 +154,15 @@ var applyLonghornMinioStorageClass = func(replicas int) error {
 	}
 	if out, err := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, longhornMinioStorageClassManifest(replicas)); err != nil {
 		return fmt.Errorf("apply %s StorageClass: %w: %s", LonghornMinioStorageClass, err, out)
+	}
+	return nil
+}
+
+// applyLonghornSingleStorageClass creates the one-replica StorageClass for
+// the self-replicating datastores. Overridable in tests.
+var applyLonghornSingleStorageClass = func() error {
+	if out, err := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, longhornStorageClassManifest(LonghornSingleStorageClass, 1)); err != nil {
+		return fmt.Errorf("apply %s StorageClass: %w: %s", LonghornSingleStorageClass, err, out)
 	}
 	return nil
 }
@@ -254,6 +273,9 @@ func InstallLonghorn(cfg *config.Config) error {
 	}
 	minioReplicas := MinioStorageReplicaCount(nodes)
 	if err := applyLonghornMinioStorageClass(minioReplicas); err != nil {
+		return err
+	}
+	if err := applyLonghornSingleStorageClass(); err != nil {
 		return err
 	}
 	// Every k3s server needs this file; otherwise k3s restores local-path's default annotation on restart.

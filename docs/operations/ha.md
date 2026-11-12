@@ -45,7 +45,10 @@ of servers (3 or 5). Agents do not run etcd and do not count towards quorum.
 - A private network between the nodes is strongly recommended. Ingress `vip`
   mode needs all servers in one L2 subnet.
 - Roughly 500 MB or more RAM per node for the storage services, plus disk
-  overhead for Longhorn replicas, snapshots and rebuilds.
+  overhead for Longhorn replicas, snapshots and rebuilds. Plan at least 100 GB
+  of disk per node: Longhorn reserves 30% of each disk and, with the
+  installer's 200% over-provisioning, schedules volumes up to about 1.4 times
+  the disk size (volumes are thin-provisioned; real usage is what is written).
 - The same platformctl release on every node.
 
 ### Ports between nodes
@@ -518,9 +521,9 @@ printf '# HA storage: Longhorn is the default StorageClass.\n' | sudo tee /var/l
 
 Other HA components can use `components.HAStorageClass(cfg)` to request an explicit
 StorageClass: it returns `longhorn` for HA and an empty string for other profiles
-(use the cluster default/local-path). MongoDB and Redis use it. PostgreSQL
-explicitly defaults to local-path because it replicates its own data (see
-below).
+(use the cluster default/local-path). PostgreSQL explicitly defaults to
+local-path, and MongoDB and Redis use `longhorn-single`, because they replicate
+their own data (see below).
 
 The longhorn step also creates a second, non-default StorageClass,
 `longhorn-minio`, for the distributed MinIO drives (see
@@ -528,6 +531,19 @@ The longhorn step also creates a second, non-default StorageClass,
 replica follows the pod's node), `staleReplicaTimeout: "30"`, and a replica
 count chosen from the number of Ready schedulable nodes: 2 with fewer than 4
 nodes, 1 with 4 or more.
+
+A third non-default StorageClass, `longhorn-single`, keeps **one** Longhorn
+replica (`dataLocality: best-effort`) and backs the MongoDB and Redis members.
+The replica set and Sentinel already keep a full copy on each node, so three
+Longhorn replicas per member would store every byte nine times and exhaust the
+disks. When a node is lost, its member's volume is unavailable until the node
+returns, exactly like a PostgreSQL instance on local-path; the other two
+members keep serving.
+
+Longhorn is installed with `storageOverProvisioningPercentage: 200` (volumes
+are thin-provisioned, so scheduled size is not used size) and
+`storageMinimalAvailablePercentage: 15`, which stops new replicas on a disk that
+is actually filling up.
 
 The manager requests 100m CPU and 128Mi memory per node, limited to one CPU and
 1Gi memory. CSI attacher, provisioner, resizer and snapshotter each use two
@@ -579,8 +595,8 @@ Verify that only local-path is default before provisioning new PVCs.
 ## Datastores
 
 On the `ha` profile the installer deploys the bundled MongoDB, Redis and MinIO
-in replicated topologies on Longhorn volumes (`global.defaultStorageClass:
-longhorn`). The chart versions are the same pinned Bitnami charts the
+in replicated topologies on Longhorn volumes: MinIO on `longhorn-minio`,
+MongoDB and Redis on the one-replica `longhorn-single` class. The chart versions are the same pinned Bitnami charts the
 single-node profiles use; only their values change. Members are spread across
 nodes with soft pod anti-affinity, so a cluster that is still growing to three
 nodes installs and runs, and the pods spread out as nodes join. Each datastore
@@ -605,7 +621,7 @@ ready:
 | Replica set name | `rs0` |
 | Members | `mongodb-N.mongodb-headless.databases.svc.cluster.local:27017` |
 | Internal auth | Keyfile derived from the Mongo root password (no extra secret) |
-| Volume | 10Gi Longhorn volume per member |
+| Volume | 10Gi `longhorn-single` volume per member (one Longhorn replica; the replica set provides redundancy) |
 
 The platform API's `MONGODB_URI` lists all three members with
 `replicaSet=rs0`, and every project connection string returned by
@@ -638,7 +654,7 @@ primary stay on that member.
 | Master set | `mymaster`, quorum 2 |
 | Sentinel | port 26379 on every node (`redis-node-N.redis-headless.databases.svc.cluster.local:26379`) |
 | Compatibility service | `redis-master.databases` follows the current master (the chart's experimental master Service) |
-| Volume | 5Gi Longhorn volume per node |
+| Volume | 5Gi `longhorn-single` volume per node (one Longhorn replica; Sentinel replication provides redundancy) |
 
 The API finds the master through Sentinel (`REDIS_SENTINEL_HOSTS`, the three
 sentinels, and `REDIS_SENTINEL_MASTER` in `platform-env`). After a failover it reconnects to

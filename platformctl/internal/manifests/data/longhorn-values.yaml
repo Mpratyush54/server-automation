@@ -12,6 +12,9 @@ defaultSettings:
   upgradeChecker: false
   allowCollectingLonghornUsageMetrics: false
   storageMinimalAvailablePercentage: 15
+  # Volumes are thin-provisioned: allow scheduling up to twice the usable disk.
+  # storageMinimalAvailablePercentage still stops new replicas on a full disk.
+  storageOverProvisioningPercentage: 200
 csi:
   attacherReplicaCount: 2
   provisionerReplicaCount: 2
