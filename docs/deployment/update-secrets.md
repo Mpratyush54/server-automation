@@ -1,270 +1,133 @@
-# Updating Kubernetes Secrets
+# Rotate Cairn's own passwords
 
-Platform stores all environment configuration in a Kubernetes secret named `caps-platform-env` in the `caps` namespace (or `platform-env` in the `platform` namespace, depending on the deployment version). This document covers how to update those secrets and propagate changes.
+This page helps you replace the passwords Cairn itself uses, for example after someone leaves the team. Open **Settings** in the sidebar and choose the **Rotate secrets** tab. You need the DevOps or admin role.
 
----
+This is about Cairn's own passwords. To change your app's secrets, see [Store secrets and settings for your app](../guides/secrets-management.md).
 
-## Secret Overview
+## Rotate from the portal
 
-The relevant secrets in the cluster:
+1. Open **Settings** and choose **Rotate secrets**.
+2. Type `ROTATE` in the box.
+3. Choose **Rotate all secrets**. You are asked for a fresh two-factor code.
+4. Copy the new values into a password manager. They are shown **once**.
 
-| Secret | Namespace | Purpose |
+A progress panel shows each step. When it finishes, each item shows **Rotated** or **Failed**. The API restarts by itself at the end.
+
+Then, on the server, refresh the backup copy of the passwords:
+
+```bash
+sudo platformctl update
+```
+
+## What gets rotated
+
+| Rotated | Not rotated |
+|---|---|
+| Cairn admin password | MongoDB password |
+| PostgreSQL password | File-storage keys |
+| Redis password | Portainer password |
+| Webhook secret | `JWT_SECRET` |
+| Argo CD admin password | `SECRETS_ENCRYPTION_KEY` |
+
+MongoDB, file storage and Portainer are left alone so the API never restarts with a password those services would reject.
+
+On the high-availability install (Redis with Sentinel), the portal skips Redis. Rotate it with `platformctl recover` or `platformctl provision` so every node changes together.
+
+## If something goes wrong
+
+If PostgreSQL or Redis rejects the new password, the API tries every stored copy and fixes the cluster secrets by itself. You do not need SSH for this.
+
+If the API still cannot start, or you cannot sign in as admin, run on the server:
+
+```bash
+sudo platformctl recover
+sudo platformctl update
+```
+
+See [Database auth errors after rotating passwords](../troubleshooting/db-wrongpass-after-rotate.md) and [Recover](../operations/recover.md).
+
+## Rotate the sign-in signing key
+
+The key that signs sign-in tokens for Grafana, Argo CD and the other bundled tools can be rotated by an admin through the API (see [For developers / API](#for-developers--api); it needs a password sign-in, not an agent token). The previous key keeps working until the next rotation, and the API restarts so every replica loads the new key.
+
+## How it works
+
+### Where Cairn's settings live
+
+All of Cairn's settings are Kubernetes secrets. A secret here means a Kubernetes object that stores values for pods.
+
+| Secret | Namespace | Holds |
 |---|---|---|
-| `platform-env` | `platform` | Platform API configuration (non-credential: domain, OIDC clients, JWT/encryption keys, webhook secret) |
-| `platform-credentials` | `platform` | Admin and datastore credentials (`ADMIN_PASSWORD`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `MONGODB_URI`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`) plus rotation write-ahead copies (`*_PREV`, `*_NEXT`) |
-| `platform-oidc-signing-key` | `platform` | Built-in OIDC provider signing key (`private.pem`, `kid`; `previous.pem` / `previous-kid` after a rotation) |
-| `argocd-secret` | `argocd` | ArgoCD admin password |
-| `platform-tls` | `platform` | Let's Encrypt TLS certificate |
+| `platform-env` | `platform` | Settings that are not passwords: domain, sign-in clients, JWT and encryption keys, webhook secret |
+| `platform-credentials` | `platform` | `ADMIN_PASSWORD`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `MONGODB_URI`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, plus `*_PREV` / `*_NEXT` copies written during a rotation |
+| `platform-oidc-signing-key` | `platform` | Signing key for the built-in sign-in provider (`private.pem`, `kid`; `previous.pem` / `previous-kid` after a rotation) |
+| `argocd-secret` | `argocd` | Argo CD admin password |
+| `platform-tls` | `platform` | HTTPS certificate |
 
-### Where configuration lives (no host state)
+The API reads its settings only from these secrets. It has no folder mounted from the host, so the pod can run on any node, and several replicas share one signing key. The API may only read and update the secrets it needs.
 
-The API reads configuration **only** from these Secrets. The Deployment has no
-`hostPath` volume, so the pod can be rescheduled to any node and several
-replicas sign OIDC tokens with the same key. The API may `get`/`update`
-only the Secrets named above (RBAC `resourceNames`).
+`/etc/platform/.env`, `/etc/platform/credentials/` and `/etc/platform/oidc-signing-key.pem` are a root-only backup copy on the server. platformctl refreshes it on `provision`, `update`, `repair` and `recover`. `recover` uses it when the cluster is unhealthy. Rotating from the portal updates the cluster secrets only; the next `platformctl update` copies the new values to the server.
 
-`/etc/platform/.env`, `/etc/platform/credentials/` and
-`/etc/platform/oidc-signing-key.pem` are an operator-side, root-only
-**break-glass copy**. platformctl refreshes it on `provision`, `update`,
-`repair` and `recover`, and `recover` uses it when the cluster is unhealthy.
-Rotating secrets from the portal updates the Secrets only; the next
-`platformctl update` copies the new values back to the host.
+k3s runs with `secrets-encryption: true`, so these secrets are encrypted at rest. Secrets written before that was turned on are encrypted the next time they are written. To re-encrypt everything at once, run `sudo k3s secrets-encrypt reencrypt`.
 
-**Upgrading an existing install:** `platformctl update` (or `provision`)
-reads the live Secrets first and adopts any password rotated at runtime,
-writes `platform-credentials`, seeds `platform-oidc-signing-key` from the old
-`/etc/platform/oidc-signing-key.pem` (so existing SSO sessions stay valid),
-removes the `hostPath` from the API Deployment, and only then removes the
-credential keys from `platform-env`. No password changes. If the Secrets
-cannot be read, the update stops before writing anything.
+### Rotation steps
 
-k3s runs with `secrets-encryption: true`, so these Secrets are encrypted at
-rest. Secrets written before the upgrade are encrypted the next time they are
-written; to re-encrypt everything at once run `sudo k3s secrets-encrypt reencrypt`.
+The rotation runs as a tracked operation (`platform/api/src/lib/secret-rotate.ts`). Each step can be safely re-run after a crash:
 
-Rotate the OIDC signing key (admin, password login) with
-`POST /api/oauth/signing-key/rotate`. The previous key stays in JWKS until the
-next rotation, and the API restarts so every replica loads the new key.
+1. **admin-password** — the new admin password is hashed into every admin user.
+2. **write-ahead** — the previous and next datastore passwords are written to `platform-credentials` and to `platform-rotate-pending`. If neither can be written, the rotation stops and no datastore password changes.
+3. **redis-password** — the Redis password is changed.
+4. **postgres-password** — the PostgreSQL password is changed and the API reconnects.
+5. **patch-secrets** — the webhook secret in `platform-env`, and the `postgresql` and `redis` secrets in `databases`, are updated.
+6. **argocd-password** — `argocd-secret` and `argocd-initial-admin-secret` are updated.
+7. **finalize** — `platform-rotate-pending` is cleared when both datastores rotated, and admins and DevOps users get a notification.
+8. **restart-api** — the API deployment restarts. This step is not repeated after a crash.
 
-### Uploads and backups
+When the API starts, it also checks which stored password works and syncs the secrets to it.
 
-Uploaded files go to the bundled MinIO bucket `platform-uploads`; database
-backups without a configured storage provider go to the bucket
-`platform-backups`. Point either at another S3-compatible store with
-`UPLOADS_S3_ENDPOINT` / `UPLOADS_S3_ACCESS_KEY` / `UPLOADS_S3_SECRET_KEY` /
-`UPLOADS_BUCKET` and `BACKUP_S3_ENDPOINT` / `BACKUP_S3_ACCESS_KEY` /
-`BACKUP_S3_SECRET_KEY` / `BACKUP_BUCKET` in `platform-env`. Set
-`UPLOADS_S3_PUBLIC_ENDPOINT` to an externally reachable S3 URL to also return
-presigned PUT/GET URLs (`presignedUrl` from `POST /api/storage/upload-url`,
-`GET /api/storage/file/:id?presigned=1`). The local-directory adapters are for
-development only (`STORAGE_UPLOADS_BACKEND=local`, `BACKUP_STORAGE=local`).
+### Upgrading an older install
 
----
+`platformctl update` (or `provision`) reads the live secrets first and keeps any password rotated at runtime. It writes `platform-credentials`, seeds `platform-oidc-signing-key` from the old `/etc/platform/oidc-signing-key.pem` (so SSO sessions stay valid), removes the host folder from the API deployment, and only then removes the password keys from `platform-env`. No password changes. If the secrets cannot be read, the update stops before writing anything.
 
-## Method 1: `kubectl patch` with JSON Merge
+### Change a setting by hand
 
-This is the recommended approach for updating individual values.
-
-### Create a Patch File
+For settings that are not passwords (in `platform-env`), patch the secret with plain values and restart the API:
 
 ```bash
-# Create patch.json with the values you want to change
-cat > patch.json << 'EOF'
-{
-  "data": {
-    "POSTGRES_PASSWORD": "bmV3LXBhc3N3b3JkLTEyMzQ=",
-    "JWT_SECRET": "bmV3LWp3dC1zZWNyZXQ="
-  }
-}
-EOF
-```
-
-### Base64 Encoding on Linux
-
-```bash
-echo -n "new-password-1234" | base64
-# Output: bmV3LXBhc3N3b3JkLTEyMzQ=
-```
-
-### Base64 Encoding on Windows (PowerShell)
-
-```powershell
-# PowerShell
-[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("new-password-1234"))
-```
-
-### Base64 Encoding on Windows (cmd)
-
-```cmd
-# Using certutil
-echo new-password-1234 | certutil -encode - .\b64.tmp
-type b64.tmp | findstr /v "BEGIN CERTIFICATE" | findstr /v "END CERTIFICATE" | findstr /v "^$"
-del b64.tmp
-```
-
-> **Important:** `kubectl patch` with `--type merge` requires **base64-encoded values** in the `data` field. Use `stringData` instead if you want plaintext values (see below).
-
-### Apply the Patch
-
-```bash
-# Using data (base64 encoded)
-kubectl patch secret caps-platform-env -n caps \
-  --type merge \
-  -p "$(cat patch.json)"
-```
-
-### Simpler: Using `stringData` (plaintext)
-
-`stringData` allows you to pass plaintext values and Kubernetes handles the encoding:
-
-```bash
-kubectl patch secret caps-platform-env -n caps --type merge -p '{
-  "stringData": {
-    "POSTGRES_PASSWORD": "new-password-1234",
-    "JWT_SECRET": "new-jwt-secret-value"
-  }
+kubectl patch secret platform-env -n platform --type merge -p '{
+  "stringData": { "SOME_SETTING": "new-value" }
 }'
-```
-
----
-
-## Method 2: Recreate the Secret
-
-For bulk updates or when you want to replace the entire secret:
-
-```bash
-# Delete the existing secret
-kubectl delete secret platform-env -n platform
-
-# Recreate with new values
-kubectl create secret generic platform-env \
-  --namespace platform \
-  --from-literal=NODE_ENV=production \
-  --from-literal=PORT=3000 \
-  --from-literal=POSTGRES_PASSWORD="new-password-1234" \
-  --from-literal=JWT_SECRET="new-jwt-secret" \
-  --from-literal=DOMAIN="platform.example.com"
-```
-
----
-
-## Method 3: Update via Helm Values (for Helm-managed secrets)
-
-If the secret is managed by a Helm chart, update the values file and re-run Helm:
-
-```bash
-helm upgrade --install postgresql bitnami/postgresql \
-  --namespace databases \
-  --set auth.postgresPassword="new-password-1234" \
-  --wait
-```
-
----
-
-## Update `/etc/caps/.env` on Server
-
-The bootstrap script generates a `.env` file on the server at `/etc/platform/.env`. You must also update this file for future re-runs of the bootstrap script:
-
-```bash
-# Edit the env file directly
-sudo nano /etc/platform/.env
-
-# Or update a specific value
-sudo sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD='new-password-1234'/" /etc/platform/.env
-
-# Secure the file
-sudo chmod 600 /etc/platform/.env
-```
-
----
-
-## Restart Pods After Secret Change
-
-Secrets are mounted as environment variables at pod startup. **Pods must be restarted** to pick up the new values.
-
-### Restart via Rollout
-
-```bash
-# Restart all deployments in the platform namespace
-kubectl rollout restart deployment -n platform
-
-# Restart a specific deployment
 kubectl rollout restart deployment/platform-api -n platform
-kubectl rollout restart deployment/platform-portal -n platform
-```
-
-### Monitor the Restart
-
-```bash
 kubectl rollout status deployment/platform-api -n platform --timeout=300s
 ```
 
-### Verify New Values in Running Pod
+Pods read secrets when they start, so a restart is needed.
 
-```bash
-# Check the environment variable inside the running pod
-kubectl exec -n platform deploy/platform-api -- env | grep POSTGRES_PASSWORD
+> [!WARNING]
+> Do not change `POSTGRES_PASSWORD`, `REDIS_PASSWORD` or other datastore passwords by editing a secret. That changes the copy the API uses, not the password on the database, and the API stops connecting. Use **Rotate secrets** or `platformctl recover` instead.
 
-# Or dump the secret to verify
-kubectl get secret platform-env -n platform -o jsonpath='{.data.POSTGRES_PASSWORD}' | base64 -d
-```
+Do not change `SECRETS_ENCRYPTION_KEY` either: values already encrypted with the old key can no longer be read.
 
----
+### Uploads and backups storage
 
-## Restart Pods Only (if deployment spec unchanged)
+Uploaded files go to the bundled file storage, bucket `platform-uploads`. Database backups without a configured storage provider go to the bucket `platform-backups`. To use another S3-compatible store, set these in `platform-env`:
 
-If you only changed the secret and the deployment spec is identical, `rollout restart` forces new pods:
+- Uploads: `UPLOADS_S3_ENDPOINT`, `UPLOADS_S3_ACCESS_KEY`, `UPLOADS_S3_SECRET_KEY`, `UPLOADS_BUCKET` (and optionally `UPLOADS_S3_REGION`).
+- Backups: `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY`, `BACKUP_BUCKET` (and optionally `BACKUP_S3_REGION`).
 
-```bash
-kubectl rollout restart deployment -n platform
-```
+Set `UPLOADS_S3_PUBLIC_ENDPOINT` to an S3 address reachable from outside to also get presigned upload and download links (`presignedUrl` from `POST /api/storage/upload-url`, and `GET /api/storage/file/:id?presigned=1`). The local-folder options (`STORAGE_UPLOADS_BACKEND=local`, `BACKUP_STORAGE=local`) are for development only.
 
-Alternatively, delete pods directly (deployment will recreate):
-
-```bash
-kubectl delete pod -n platform -l app=platform-api
-kubectl delete pod -n platform -l app=platform-portal
-```
-
----
-
-## Full Workflow Example
-
-```bash
-# 1. Encode the new value
-NEW_PASS=$(echo -n "my-new-password" | base64)
-NEW_SECRET=$(echo -n "my-new-jwt-secret" | base64)
-
-# 2. Apply the patch
-kubectl patch secret platform-env -n platform --type merge -p "{
-  \"data\": {
-    \"POSTGRES_PASSWORD\": \"$NEW_PASS\",
-    \"JWT_SECRET\": \"$NEW_SECRET\"
-  }
-}"
-
-# 3. Verify the secret
-kubectl get secret platform-env -n platform -o jsonpath='{.data.POSTGRES_PASSWORD}' | base64 -d
-
-# 4. Update local env file
-sudo sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD='my-new-password'/" /etc/platform/.env
-
-# 5. Restart pods
-kubectl rollout restart deployment/platform-api -n platform
-
-# 6. Verify
-kubectl rollout status deployment/platform-api -n platform --timeout=120s
-kubectl exec -n platform deploy/platform-api -- env | grep POSTGRES_PASSWORD
-```
-
----
-
-## Troubleshooting
+### Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Pod env not updated | Secret was changed but pod not restarted | Run `kubectl rollout restart` |
-| `error: unable to decode` | Invalid JSON in patch | Validate with `echo '{"key":"val"}' \| python3 -m json.tool` |
-| Secret value is garbled | Wrong base64 encoding | Use `echo -n` (not `echo`) to avoid trailing newline |
-| `stringData` values not taking effect | Secret already exists with `immutable: true` | Check with `kubectl get secret platform-env -n platform -o yaml \| grep immutable` |
-| Permission denied reading `/etc/platform/.env` | File permissions too open | `sudo chmod 600 /etc/platform/.env` |
+| A pod still uses the old value | The secret changed but the pod was not restarted | `kubectl rollout restart deployment/<name> -n platform` |
+| `error: unable to decode` | Invalid JSON in the patch | Check the JSON, for example with `python3 -m json.tool` |
+| A value looks garbled | Wrong base64 when using `data` | Use `stringData` with plain values, or `echo -n` when encoding |
+| API cannot reach PostgreSQL or Redis after a manual edit | The secret and the database disagree | `sudo platformctl recover`, then `sudo platformctl update` |
+
+## For developers / API
+
+`POST /api/settings/rotate-secrets` with `{ "confirm": "ROTATE" }`. Needs the DevOps or admin role and a fresh two-factor code. It answers `409` while another rotation runs. The answer holds `results` (one `{ key, ok, detail }` per item), `values` (the new passwords, shown once), `operationId` and `status`.
+
+`POST /api/oauth/signing-key/rotate` (admin, password session) answers `{ kid, previousKidRetained: true }`.

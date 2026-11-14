@@ -1,33 +1,27 @@
-# Frontend RUM (React and Angular SDKs)
+# Monitor real users in the browser
 
-`@mpratyush54/sdk-react` and `@mpratyush54/sdk-angular` can collect real user monitoring
-(RUM) data with [Grafana Faro](https://grafana.com/oss/faro/) and send it to the platform
-collector (`https://otel.<DOMAIN>/collect`, Grafana Alloy, full install profile):
+See how fast your web app is for real visitors, which errors they hit, and what they did before a problem. Results appear in the project's **Monitoring** section, **Users** view: web vitals, session replays and heatmaps.
 
-| Signal | Details |
-|--------|---------|
-| Web vitals | LCP, INP, CLS, TTFB, FCP (`web-vitals` measurements, tagged with the view id) |
-| Errors | Uncaught errors and unhandled rejections with stack frames, plus errors caught by React `ErrorBoundary` / Angular `PlatformErrorHandler` |
-| Resource timings | Navigation and every resource (fetch/XHR, scripts, images...) |
-| User actions | `click` events with a CSS selector and tag; **no element text by default** |
-| Views | One view per route change (react-router v6/v7, Angular Router), with a fresh view id |
-| Session | Session id per browser tab; sampling decided once per session |
-| Traces | A client span per fetch/XHR/HttpClient call to allowed origins, with a W3C `traceparent` header so the backend span (sdk-node / sdk-python) joins the same trace in Tempo |
+This works with the React and Angular SDKs (`@mpratyush54/sdk-react`, `@mpratyush54/sdk-angular`). It needs the `full` install profile. It is off until you turn it on in your app.
 
-RUM is **off unless you set one option**, `rum`. When it is not set, or the platform reports
-`telemetry.enabled: false`, or the browser sends Do-Not-Track, or the session is sampled out,
-the SDK loads nothing: Faro lives in a separate lazy chunk (`import('./rum-faro')`) that is
-never fetched.
+## What you get
 
-## Configure
+| Data | Details |
+|---|---|
+| Web vitals | Page speed measures: LCP (largest paint), INP (input delay), CLS (layout shift), TTFB (time to first byte) and FCP (first paint), per page |
+| Errors | Uncaught errors and unhandled promise rejections, with stack frames. Also errors caught by React `ErrorBoundary` or Angular `PlatformErrorHandler`. |
+| Page loads and requests | Timing for the page and for every resource (fetch and XHR calls, scripts, images) |
+| Clicks | A CSS selector and tag for each click. No element text by default. |
+| Views | One view per route change, with the URL turned into a pattern such as `/orders/:id` |
+| Traces | A browser span for each call to your backend, joined to the backend's trace |
 
-The browser needs the `telemetry` block of `GET /api/sdk/config` (only `enabled`,
-`faroEndpoint`, `browserToken`, `samplingRatio`, `resource`). That endpoint takes the SDK token
-and also returns project config, so **do not call it from the browser**: have your backend (or
-your deploy step) hand the block to the frontend, either inline (`telemetry`) or as a small
-JSON file / endpoint (`telemetryUrl`, fetched without credentials). The browser token is
-public by design: it is scoped to one project/environment, rate limited and only accepted
-from the project's allowed origins.
+## Turn it on
+
+1. Install with the full profile: `sudo platformctl provision --profile full`.
+2. Tell the platform which sites your app runs on. The project's environment hosts and project domain count automatically. For any other origin, add a value named `TELEMETRY_ALLOWED_ORIGINS` in the project's **Configuration** section, for example `https://shop.example.com, https://*.preview.example.com, http://localhost:4200`. With no allowed origin, browser monitoring stays off.
+3. Give your frontend the telemetry settings. Your backend reads them from the platform with its SDK token (see [For developers / API](#for-developers--api)) and serves them to the browser, for example as `/rum-config.json`. Never put the SDK token itself in the browser.
+4. Add the `rum` option to the SDK, as in the examples below.
+5. Deploy, open your app, then open **Monitoring > Users** in the project.
 
 ### React
 
@@ -41,8 +35,8 @@ const config = {
   projectId: 'my-project',
   appName: 'shop-web',
   rum: {
-    telemetryUrl: '/rum-config.json', // or: telemetry: { enabled, faroEndpoint, browserToken, ... }
-    propagateTo: ['https://api.example.com'], // traceparent only to these origins
+    telemetryUrl: '/rum-config.json',          // or: telemetry: { ...the block... }
+    propagateTo: ['https://api.example.com'],  // send trace headers only here
   },
 };
 
@@ -59,202 +53,139 @@ function RumRoutes() {
 </PlatformProvider>;
 ```
 
-Without the provider: `initRum(options, { appName })` and `setRumView(name)`.
+Without the provider, call `initRum(options, { appName })` and `setRumView(name)`.
 
 ### Angular
 
 ```ts
 // NgModule / importProvidersFrom
-PlatformModule.forRoot({ apiBase, token, projectId, appName: 'shop-web', rum: { telemetryUrl: '/rum-config.json', propagateTo: ['https://api.example.com'] } });
+PlatformModule.forRoot({ apiBase, token, projectId, appName: 'shop-web',
+  rum: { telemetryUrl: '/rum-config.json', propagateTo: ['https://api.example.com'] } });
 
 // or standalone, RUM only
 bootstrapApplication(AppComponent, {
-  providers: [provideRouter(routes), provideHttpClient(), providePlatformRum({ telemetryUrl: '/rum-config.json' }, { appName: 'shop-web' })],
+  providers: [provideRouter(routes), provideHttpClient(),
+    providePlatformRum({ telemetryUrl: '/rum-config.json' }, { appName: 'shop-web' })],
 });
 
-// Router views (once, e.g. in AppComponent)
+// Track router views (once, for example in AppComponent)
 constructor(router: Router, rum: PlatformRumService) { rum.trackRouter(router); }
 ```
 
-The initializer never delays bootstrap. Angular catches errors inside its zone, so they reach
-RUM through `PlatformErrorHandler` (`forRoot`) or `PlatformRumErrorHandler` (installed by
-`providePlatformRum` unless `{ errorHandler: false }`; a custom handler can call
-`reportRumError(err)`). sdk-angular is compiled for JIT, so apps import
-`@angular/compiler` in `main.ts` (see the demo app).
+Startup is never delayed. Angular catches errors inside its zone, so they reach monitoring through `PlatformErrorHandler` (with `forRoot`) or `PlatformRumErrorHandler` (added by `providePlatformRum` unless you pass `{ errorHandler: false }`). A custom error handler can call `reportRumError(err)`. The Angular SDK is compiled for JIT, so import `@angular/compiler` in `main.ts`.
 
-## Options (`PlatformRumOptions`)
+## When nothing is collected
+
+The SDK loads nothing, not even its monitoring code, when:
+
+- the `rum` option is not set,
+- the platform reports monitoring as disabled (no full profile),
+- the browser sends Do Not Track or Global Privacy Control,
+- the session is sampled out.
+
+## Record sessions (session replay)
+
+A session replay is a recording of what a visitor saw and did, so you can watch the steps that led to an error. It is off unless you add `replay`, and by default it records only after the visitor agrees.
+
+```ts
+rum: {
+  telemetryUrl: '/rum-config.json',
+  replay: { sampleRate: 0.1, onErrorSampleRate: 1 }, // the defaults
+}
+// when the visitor agrees, for example in your consent banner:
+import { setConsent } from '@mpratyush54/sdk-react'; // or sdk-angular
+setConsent({ replay: true });   // setConsent({ replay: false }) stops recording at once
+```
+
+- **Consent.** Nothing is recorded until `setConsent({ replay: true })` is called, or consent was recorded for the visitor on the server (see [Privacy and data retention](../operations/telemetry-privacy.md)). A "no" always wins. Do Not Track and Global Privacy Control turn replay off.
+- **Masking.** All form field values are masked. Visible text has e-mails, tokens and credentials removed. Add the class `platform-mask` (or attribute `data-platform-mask`) to mask an element. Add `platform-block` (or `data-platform-block`) to leave it out entirely; it shows as a grey box. Canvas, fonts, images, cross-origin frames and scripts are never captured. URLs lose their query values.
+- **Sampling.** `sampleRate` is the share of sessions recorded in full. Of the rest, `onErrorSampleRate` keep the last 60 seconds in memory and upload them only when an error happens, then keep recording.
+- **Watching.** Replays are listed under **Monitoring > Users**, **Session replays**. Filter by page, errors, duration or environment. The player shows errors, page changes and network calls on the timeline, with links to the error and the trace. An error links to its replay.
+- **Who can watch.** Project members only. Every view is written to the audit log.
+- **Retention.** Replays are kept 7 days by default. Change it under the project's **Settings > Privacy**.
+
+| Replay option | Default | Meaning |
+|---|---|---|
+| `sampleRate` | 0.1 | Share of sessions recorded in full |
+| `onErrorSampleRate` | 1 | Share of the rest that buffer and upload on error |
+| `bufferSeconds` | 60 | On-error buffer length (10–300) |
+| `requireConsent` | `true` | Record only after consent |
+| `maskAllInputs` | `true` | Mask every form field value (passwords always) |
+| `maskText` | `pii` | `pii` removes personal data from text, `all` stars every character, `none` keeps text |
+| `blockClass`, `blockSelector`, `maskTextClass`, `maskTextSelector` | `platform-block`, `[data-platform-block]`, `platform-mask`, `[data-platform-mask]` | Extra classes and selectors |
+| `captureNetwork` | `true` | Show network calls on the timeline |
+| `snapshotOnNavigation` | `true` | Take a page snapshot after route changes |
+| `endpoint`, `userId`, `flushIntervalMs`, `maxChunkBytes` | — / — / 5000 / 65536 | Upload target, user id, upload interval, chunk size |
+
+The demo apps in `examples/sdk-apps/react-web` and `examples/sdk-apps/angular-web` show replay with a consent banner. See [examples/sdk-apps/README.md](../../examples/sdk-apps/README.md#session-replay-40).
+
+## Options
 
 | Option | Default | Meaning |
-|--------|---------|---------|
-| `telemetry` | — | The telemetry block. `null` / `enabled: false` / missing endpoint or token = off |
-| `telemetryUrl` | — | URL returning the block (or `{ telemetry }`), used when `telemetry` is not given |
-| `propagateTo` | page origin | Origins, URL prefixes (`https://gw.example.com/v1`) or RegExps that get `traceparent`. `[]` disables propagation. Nothing else ever gets the header |
-| `samplingRatio` | `telemetry.samplingRatio` or 1 | Session sampling 0..1 (sticky per tab) |
-| `respectDoNotTrack` | `true` | Off when `navigator.doNotTrack`/`globalPrivacyControl` is set |
-| `captureActionText` | `false` | Add redacted, truncated element text to clicks (never for inputs or masked fields) |
+|---|---|---|
+| `telemetry` | — | The telemetry settings block. Missing, `null` or `enabled: false` turns monitoring off. |
+| `telemetryUrl` | — | URL that returns the block (or `{ telemetry }`). Used when `telemetry` is not given. Fetched without credentials. |
+| `propagateTo` | page origin | Origins, URL prefixes or RegExps that receive the `traceparent` header. `[]` turns it off. No other URL gets the header. |
+| `samplingRatio` | from the block, or 1 | Share of sessions monitored, 0–1. Decided once per tab. |
+| `respectDoNotTrack` | `true` | Stay off when Do Not Track or Global Privacy Control is set |
+| `captureActionText` | `false` | Add redacted, shortened element text to clicks (never for form fields or masked elements) |
 | `captureQueryValues` | `false` | Keep URL query values (otherwise `?q=[REDACTED]`) |
-| `trackResources` | `true` | Report all resources, not only fetch/XHR |
-| `appName`, `appVersion`, `environment` | provider config | Faro app meta |
-| `beforeSend` | — | Extra filter run after the built-in redaction; return `null` to drop |
-| `heatmaps` | off | `true` or options: click / scroll-depth heatmaps, lazy-loaded (+~2.7 KB gzip chunk). See [Heatmaps](heatmaps.md) |
+| `trackResources` | `true` | Report all resources, not only fetch and XHR |
+| `appName`, `appVersion`, `environment` | from the provider config | App details attached to the data |
+| `beforeSend` | — | Your own filter, run after the built-in redaction. Return `null` to drop an item. |
+| `heatmaps` | off | `true` or options. See [Heatmaps](heatmaps.md). |
+| `replay` | off | Session replay options (above) |
 
-## Privacy defaults (no PII)
+## Privacy defaults
 
-Every item passes through `scrubTransportItem` before it leaves the browser: the SDK's
-`redactSensitive` (Authorization/Bearer values, SDK tokens, JWTs, cookies, password-like
-fields) plus e-mail addresses, URL userinfo and query values. User e-mail/username/full name
-are stripped from Faro's user meta. Click events carry only a selector and tag; elements
-matched by `SENSITIVE_INPUT_SELECTOR` (the same selector `maskSensitiveInputs` uses: password,
-credit-card and one-time-code fields, `data-platform-mask`) are flagged `masked` and never
-carry text. View names are normalized (`/users/42` -> `/users/:id`, e-mail segments ->
-`:email`). Faro's web-vitals attribution sources and geolocation are not collected.
+No personal data is sent by default. Before anything leaves the browser, the SDK removes authorization values, SDK tokens, JWTs, cookies, password-like fields, e-mail addresses, user info in URLs and URL query values. User e-mail, username and full name are removed from user details. Clicks carry only a selector and tag. Password, card and one-time-code fields, and elements marked `data-platform-mask`, never carry text. View names are turned into patterns (`/users/42` becomes `/users/:id`, e-mail segments become `:email`). Geolocation is not collected.
 
-## Bundle size
+## How it works
+
+- The SDK uses Grafana Faro in a separate, lazily loaded chunk (`import('./rum-faro')`). Apps that never use RUM contain no Faro code. Apps that use the provider or module without `rum` get the chunk built but never download it.
+- Data goes to the platform collector at `https://otel.<DOMAIN>/collect` (Grafana Alloy, full profile). Browser spans carry a W3C `traceparent` header, so the backend span from sdk-node or sdk-python joins the same trace in Tempo.
+- Web vitals use the `web-vitals` measurements, tagged with the view id. Faro's web-vitals attribution and geolocation are not collected.
+- Redaction: every item passes through `scrubTransportItem` (the SDK's `redactSensitive` plus e-mail, URL user info and query value removal). Masked click targets match `SENSITIVE_INPUT_SELECTOR`, the same selector `maskSensitiveInputs` uses.
+- The browser token in the telemetry block is public by design. It is short-lived, scoped to one project and environment, rate limited, and accepted only from the project's allowed origins.
+- Transport: the SDK has its own small Faro transport. It sends `Authorization: Bearer <browser token>`, batches items, uses `keepalive` on page hide, honours `Retry-After` on 429 and 503, backs off with jitter on network errors and 5xx, and keeps a bounded queue of 30 batches (overflow is dropped and counted). Other 4xx errors are not retried. It never throws into your app.
+- Allowed origins: the API keeps the collector's CORS list up to date from every project's environment hosts, project domain and `TELEMETRY_ALLOWED_ORIGINS`. Hosts ending in `example.com` are ignored. After a change, allow up to about two minutes before the collector accepts a new origin. The browser token picks it up at its next settings refresh. Details: [Full monitoring](../operations/telemetry.md).
+- The collector allows the `Authorization` and `Content-Type` request headers and exposes `Retry-After`. When a browser token exceeds its budget, it answers 429 with `Retry-After` and CORS headers.
+- Your backend must allow the `traceparent` header in `Access-Control-Allow-Headers` for cross-origin calls (the `cors` npm package reflects requested headers by default).
+
+### Bundle size
 
 Measured with `npm run size` in each SDK (esbuild, minified, gzip -9):
 
 | | sdk-react | sdk-angular |
 |---|---|---|
 | Initial chunk added by RUM | +0.9 KB | +0.9 KB |
-| Lazy Faro chunk (only when enabled + sampled) | 18.5 KB | 18.5 KB |
-| Total when enabled (budget < 30 KB) | 19.4 KB | 19.4 KB |
-| Lazy replay controller (only when `rum.replay` is set; budget < 8 KB) | 5.5 KB | 5.5 KB |
-| Lazy rrweb recorder + gzip (only after sampling + consent; budget < 40 KB) | 26.5 KB | 26.5 KB |
+| Lazy Faro chunk (only when enabled and sampled) | 18.5 KB | 18.5 KB |
+| Total when enabled (budget under 30 KB) | 19.4 KB | 19.4 KB |
+| Lazy replay controller (only when `replay` is set; budget under 8 KB) | 5.5 KB | 5.5 KB |
+| Lazy rrweb recorder and gzip (only after sampling and consent; budget under 40 KB) | 26.5 KB | 26.5 KB |
 
-In the demo apps the lazy chunk is 21.9 KB (Vite, ES2020 target) and 19.2 KB (Angular CLI).
-Apps that never use RUM (no provider/module/`initRum`) contain no Faro code at all; apps that
-use the provider/module without `rum` get the lazy chunk emitted but never download it.
-The size check fails if Faro reaches the initial chunks.
+In the demo apps the lazy chunk is 21.9 KB (Vite, ES2020 target) and 19.2 KB (Angular CLI). The size check fails if Faro reaches the initial chunks.
 
-## Session replay (#40)
+### Session replay internals
 
-Opt-in, privacy-first replay recorded with rrweb. Add `replay` to the `rum` options:
+- Recording uses rrweb. Sessions are sticky per tab: 30 minutes idle or 4 hours at most.
+- Upload: chunks of 64 KiB raw JSON or 5 seconds, gzipped (fflate), sent to `POST <replayEndpoint>/chunks` with the browser token (`telemetry.replayEndpoint`, present with the full profile), or to `apiBase` with the SDK token. Retries back off and honour `Retry-After`. The queue is bounded at 4 MiB.
+- Unload delivery: on `pagehide` or `visibilitychange` to hidden, the open chunk is cut into pieces of at most 40 KiB raw JSON and every queued chunk is sent at once, including one whose normal upload is still in flight. The server answers a re-sent chunk with 200 and stores it once. This keeps the last page of a session, and sessions shorter than 5 seconds.
+  - Unload uploads carry the token in the body, not a header: `Content-Type: text/plain`, body `{"v":1,"token":"<browser token>","chunk":"<base64 of the gzip chunk>"}`. That makes them CORS simple requests with no preflight that the unload could cancel. The token is never put in the URL. The API accepts this form only on `POST /api/sdk/replay/chunks` and checks it like the header form: same token kinds, same `Origin` check for `plat_ingest_web_` tokens, same size limit (on the decoded gzip bytes), validation, deduplication and rate limit. A request with both a body token and an `Authorization` header is refused (400).
+  - Transport: `navigator.sendBeacon` first; if it is missing, throws or returns `false`, then `fetch(..., { keepalive: true })` with the same body; if that fails, the chunk is queued again.
+  - Limits: browsers allow at most 64 KiB of beacon or keepalive bodies in flight per page. 40 KiB pieces keep one body under that even for data that does not compress. Chunks that do not fit get a best-effort normal request. Uploads while the page is visible use `application/octet-stream` with `Authorization: Bearer`.
+- Ordering: the API works out a chunk's pages from its snapshot URLs and navigation markers in time order, so a session's first page is where recording started, even if the only chunk is the final one. Chunks of one session are stored under a per-session lock, so parallel uploads cannot drop pages or exceed limits.
+- Markers: errors, route changes and network calls (method, redacted URL, status, duration, trace id) are recorded as rrweb custom events. RUM error events carry `replayId`.
+- Storage: object storage bucket `replays` (MinIO), keys `replays/<projectId>/<sessionId>/<seq>.json.gz`, plus `replay_sessions` and `replay_chunks` rows in Postgres. An hourly job deletes sessions older than the project's replay retention. A bucket lifecycle rule is the backstop. GDPR delete removes a subject's replays by user id, consent subject or session id.
+- Audit actions: `replay.view`, `replay.chunk_view` (per downloaded chunk), `replay.snapshot_view`, `replay.delete`. AI agent tokens (MCP) also need the `replays:read` scope, which is not in the default agent scopes; their audit entries carry the agent token id and name.
+- Server switch: on by default with the full profile (`PLATFORM_OBSERVABILITY`). `REPLAY_INGEST=off|on` overrides it. Limits: `REPLAY_MAX_CHUNK_BYTES` (2 MiB compressed), `REPLAY_MAX_RAW_BYTES` (16 MiB decompressed), `REPLAY_MAX_CHUNKS_PER_SESSION` (3000), `REPLAY_MAX_SESSION_BYTES` (100 MiB), `REPLAY_RATE_LIMIT` (600 per minute per IP).
+- Heatmap backgrounds come from replay snapshots: `GET /api/projects/:projectId/replays/:sessionId|latest/snapshot?page=/orders/:id` returns the first full page snapshot as inert HTML (no scripts, a CSP added) for a sandboxed iframe. With `latest` it is the newest snapshot of that page from any session. A page left within 300 ms of opening gets no snapshot.
+- Demo apps: set `RUM_REPLAY_ENDPOINT` (Kubernetes Secret `sdk-demo-rum`, key `replayEndpoint`). Each has a Playwright check, `e2e/replay.mjs` (Angular: `ANGULAR_URL`, `BROWSER=chromium|firefox|webkit`).
 
-```ts
-rum: {
-  telemetryUrl: '/rum-config.json',
-  replay: { sampleRate: 0.1, onErrorSampleRate: 1 }, // defaults
-}
-// when the visitor agrees (consent banner):
-import { setConsent } from '@mpratyush54/sdk-react'; // or sdk-angular
-setConsent({ replay: true });   // false stops a running recording at once
-```
+## For developers / API
 
-- **Consent.** `requireConsent` defaults to `true`: nothing is recorded, and rrweb is not even
-  downloaded, until `setConsent({ replay: true })` is called on the device or consent is
-  recorded server-side for the subject (`PUT /api/sdk/privacy/consent`, #47). An explicit
-  `setConsent({ replay: false })` always wins, and the API refuses further chunks of a subject
-  whose recorded consent is withdrawn. doNotTrack / Global Privacy Control disable replay.
-- **Masking.** All input, textarea and select values are masked (`maskAllInputs`, passwords
-  always). Visible text goes through the RUM redaction (`maskText: 'pii'`: e-mails, tokens,
-  credentials); `maskText: 'all'` stars every character. Elements with class `platform-mask` /
-  `rr-mask` or `[data-platform-mask]` (and the `SENSITIVE_INPUT_SELECTOR` fields) are fully
-  masked; `platform-block` / `rr-block` / `[data-platform-block]` are not recorded at all
-  (a grey box of the same size). Canvas, fonts, images, cross-origin iframes and scripts are
-  never captured; URLs lose query values.
-- **Sampling.** Per session (sticky per tab, 30 min idle / 4 h max): `sampleRate` records the
-  whole session; otherwise `onErrorSampleRate` keeps only the last `bufferSeconds` (60) in
-  memory and uploads them when an error happens, then keeps recording.
-- **Upload.** Chunks of 64 KiB raw JSON or 5 s, gzip (fflate), `POST <replayEndpoint>/chunks`
-  with the telemetry block's browser token (`telemetry.replayEndpoint`, present when the platform
-  runs the full profile) or `PlatformConfig.apiBase` + SDK token. Retries with backoff and
-  `Retry-After`, bounded 4 MiB queue, `keepalive` on page hide.
-- **Unload delivery.** On `pagehide` or `visibilitychange` -> `hidden` (whichever fires first)
-  the open chunk is cut into pieces of at most 40 KiB raw JSON and every queued chunk is sent
-  right away - including one whose normal upload is still in flight, because an unload may
-  cancel it. No normal fetch is started for the final chunk, so the last page of a session, and
-  sessions shorter than the 5 s flush interval, survive tab close and navigation away. The
-  server answers a re-sent chunk with 200 and stores it once.
-  - **Format (#154).** Unload uploads carry the token in the body, not in an `Authorization`
-    header: `Content-Type: text/plain`, body `{"v":1,"token":"<browser token>","chunk":"<base64
-    of the gzip chunk>"}`. That makes them CORS *simple requests* - no preflight that the
-    unload could cancel (Firefox often lost the final POST behind its preflight). The token is
-    never put in the URL (URLs end up in access logs). The API accepts this format only on
-    `POST /api/sdk/replay/chunks` and checks it exactly like the header form: same token kinds,
-    same `Origin` check for `plat_ingest_web_` tokens (browsers send `Origin` on simple
-    requests too), same size limit (on the decoded gzip bytes), validation, dedup and rate
-    limit. A request with both an envelope and an `Authorization` header is refused (400).
-  - **Transport.** `navigator.sendBeacon` first (survives unload best, especially in Firefox);
-    if it is missing, throws or returns `false` (quota), `fetch(..., { keepalive: true })`
-    with the same envelope; if that fails too, the chunk is requeued for the normal path.
-  - **Limits.** Browsers allow at most 64 KiB of beacon/keepalive bodies in flight per page. The
-    40 KiB piece size keeps one envelope under that even for incompressible data (gzip ~41 KiB,
-    base64 x4/3 ~55 KiB, plus token). Chunks that do not fit stay queued and get a best-effort
-    normal request (delivered when the page was only hidden, possibly lost on a real unload;
-    the queue is per page, not persisted). Uploads while the page is visible keep using
-    `application/octet-stream` with `Authorization: Bearer`.
-- **Ordering.** The API derives a chunk's pages from its Meta hrefs and navigation markers in
-  timestamp order (then the SDK's page list, then the page when the chunk was cut), so the
-  session's `first_page` is where recording started even when the only chunk is the final one.
-  Chunks of one session are stored under a per-session lock (duplicate check, limits, page
-  merge and counters are atomic), so parallel uploads cannot drop pages or exceed the limits.
-- **Markers.** Errors (uncaught, and framework-caught via `reportRumError`), SPA navigations and
-  network calls (method, redacted URL, status, duration, trace id from RUM client spans) are
-  recorded as rrweb custom events. RUM error events carry `replayId`, so an error issue links
-  to its replay.
-- **Portal.** Project -> Replays lists sessions (filters: page, errors, duration, environment);
-  the player (rrweb-player, lazy-loaded) shows the markers on the timeline with links to the
-  error issue and the Tempo trace. Project members only; every access is audited
-  (`replay.view`, `replay.chunk_view` per downloaded chunk, `replay.snapshot_view`,
-  `replay.delete`). Agent tokens (MCP) additionally need the `replays:read` scope, which is not
-  in the default agent scopes; their audit entries carry the agent token id and name.
-- **Storage and retention.** MinIO bucket `replays`, `replays/<projectId>/<sessionId>/<seq>.json.gz`,
-  plus `replay_sessions` / `replay_chunks` rows. An hourly job deletes sessions older than the
-  project's replay retention (privacy settings, default 7 days); the bucket lifecycle rule is the
-  backstop. GDPR delete removes a subject's replays by user id, consent subject or session id.
-- **API switch.** On by default with the full profile (`PLATFORM_OBSERVABILITY`);
-  `REPLAY_INGEST=off|on` overrides. Limits: `REPLAY_MAX_CHUNK_BYTES` (2 MiB compressed),
-  `REPLAY_MAX_RAW_BYTES` (16 MiB decompressed), `REPLAY_MAX_CHUNKS_PER_SESSION` (3000),
-  `REPLAY_MAX_SESSION_BYTES` (100 MiB), `REPLAY_RATE_LIMIT` (600/min per IP).
-- **Heatmap backgrounds.** `GET /api/projects/:projectId/replays/:sessionId|latest/snapshot?page=/orders/:id`
-  returns the first full DOM snapshot of that page as inert HTML (no scripts, CSP prepended) for a
-  sandboxed iframe, plus the rrweb events. With `latest` it is the newest snapshot of that page
-  (path or route name) from any session. A page that was left within 300 ms of navigating to it
-  (before it rendered) gets no snapshot.
+The telemetry block comes from `GET /api/sdk/config`. That endpoint takes the server SDK token and also returns project configuration, so call it from your backend or deploy step, never from the browser.
 
-| Replay option | Default | Meaning |
-|---------------|---------|---------|
-| `sampleRate` | 0.1 | Share of sessions recorded in full |
-| `onErrorSampleRate` | 1 | Share of the rest that buffer and upload on error |
-| `bufferSeconds` | 60 | On-error buffer length (10..300) |
-| `requireConsent` | `true` | Record only after consent |
-| `maskAllInputs` | `true` | Mask every input value |
-| `maskText` | `pii` | `pii` / `all` / `none` |
-| `blockClass`, `blockSelector`, `maskTextClass`, `maskTextSelector` | `platform-block`, `[data-platform-block]`, `platform-mask`, `[data-platform-mask]` | Extra classes/selectors |
-| `captureNetwork` | `true` | Network markers |
-| `snapshotOnNavigation` | `true` | DOM snapshot after SPA route changes |
-| `endpoint`, `userId`, `flushIntervalMs`, `maxChunkBytes` | — / — / 5000 / 65536 | |
+Pass these fields of the `telemetry` block to the browser: `enabled`, `faroEndpoint`, `browserToken`, `samplingRatio`, `resource` and `errorsEndpoint`, and, for replay and heatmaps, `replayEndpoint` and `heatmapsEndpoint`. Do not pass `ingestToken`: it is the server token.
 
-**Demo apps.** `examples/sdk-apps/react-web` and `examples/sdk-apps/angular-web` both enable
-replay with a consent banner (`Allow session replay` / `Decline`), a Checkout form with personal
-data and a `platform-mask` paragraph; set `RUM_REPLAY_ENDPOINT` (k8s Secret `sdk-demo-rum`, key
-`replayEndpoint`). Each has a Playwright check, `e2e/replay.mjs` (Angular: `ANGULAR_URL`,
-`BROWSER=chromium|firefox|webkit`; it also verifies the final short page and error linking).
-See [examples/sdk-apps/README.md](../../examples/sdk-apps/README.md#session-replay-40).
-
-## Backpressure
-
-The SDK ships its own small Faro transport: `Authorization: Bearer <browser token>`, batches
-from Faro's batch executor, `keepalive` for page-hide flushes, `Retry-After` honoured on
-429/503, exponential backoff with jitter on network errors/5xx, a bounded queue (30 batches)
-whose overflow is dropped and counted, and no retries for other 4xx. It never throws into
-the app.
-
-## Where the data shows up
-
-Web vitals appear per page (p75) in **Project → Observability → RUM**, and browser spans join
-backend traces in Tempo. See [Observability views](observability.md).
-
-## Collector notes
-
-- CORS on the Faro receiver allows the `Authorization` and `Content-Type` request headers
-  and exposes `Retry-After`. Its origin list is maintained by the platform API from every
-  project's browser origins: environment hosts, the project domain and
-  `TELEMETRY_ALLOWED_ORIGINS` (e.g. `https://shop.example.com, https://*.preview.example.com,
-  http://localhost:4200`). After you change the variable, allow up to about two minutes
-  before the collector accepts the new origin; the browser token picks it up at its next
-  config refresh.
-- When a browser token exceeds its ingest budget the collector answers `429` with
-  `Retry-After` and CORS headers, so the transport waits as asked.
-- Backends that receive `traceparent` cross-origin must allow it in
-  `Access-Control-Allow-Headers` (the `cors` npm package reflects requested headers by default).
+When the observability backend is not installed, `enabled` is `false` and every endpoint and token is `null`. `browserToken` is also `null` when the project has no allowed browser origin.

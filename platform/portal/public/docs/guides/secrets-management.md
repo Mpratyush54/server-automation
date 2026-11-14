@@ -1,233 +1,149 @@
-# Secrets Management
+# Store secrets and settings for your app
 
-The Platform secrets system provides AES-256-GCM encrypted storage for sensitive values (API keys, database passwords, tokens) with versioning, rollback, environment scoping, and full audit trails.
+This page helps you keep API keys, passwords and other settings in Cairn instead of in your code. Open your project and go to **Configuration**. The **Variables** list there holds both plain settings and encrypted secrets.
 
-> **Architecture:** Secrets are stored in a dedicated `secrets` PostgreSQL table. Each value is encrypted at rest using the `SECRETS_ENCRYPTION_KEY` master key. See [Secrets Encryption](../api-reference/configuration/secrets-encryption.md) for cryptographic details.
+## Add a secret
 
----
+1. Open the project and go to **Configuration**.
+2. Choose **Add variable**.
+3. Enter a key, for example `STRIPE_API_KEY`, and the value.
+4. Pick a scope: **Global (all environments)** or one environment, such as production.
+5. Tick **Encrypt as secret** and save.
 
-## Creating Secrets
+Without **Encrypt as secret** the value is stored as a plain setting, which anyone on the project can read. Use plain settings for things like `API_URL`, and secrets for anything private.
 
-### Via API
+Keys may use letters, digits, `_`, `.` and `-`, and must start with a letter or `_`.
 
-```http
-POST /api/projects/:projectId/secrets
-Authorization: Bearer <token>
-Content-Type: application/json
+## Read the value in your app
 
-{
-  "key": "DATABASE_URL",
-  "value": "postgresql://user:pass@host:5432/db",
-  "environmentId": "development"           // optional — scope to environment
-}
-```
+Your app reads variables through the Cairn SDK, using a server SDK token from the project's **Settings > SDK tokens**.
 
-**Response:**
+```js
+import platform from '@mpratyush54/sdk-node';
 
-```json
-{
-  "id": "uuid",
-  "key": "DATABASE_URL",
-  "environmentId": "development",
-  "version": 1
-}
-```
-
-The plaintext value is encrypted on the server with AES-256-GCM before storage. The plaintext is **never persisted** — only the ciphertext (`iv:authTag:ciphertext`) is saved.
-
-### Via Portal UI
-
-1. Navigate to **Project → Secrets**
-2. Click **Add Secret**
-3. Enter key-value pair and select environment scope
-4. Click **Save**
-
----
-
-## Environment Scoping
-
-Secrets can be scoped to a specific environment (development, staging, production, preview). This allows different values for the same key across environments.
-
-```http
-POST /api/projects/:projectId/secrets
-{
-  "key": "API_KEY",
-  "value": "sk-dev-xxx",
-  "environmentId": "development"
-}
-
-POST /api/projects/:projectId/secrets
-{
-  "key": "API_KEY",
-  "value": "sk-prod-xxx",
-  "environmentId": "production"
-}
-```
-
-### Resolving Secrets by Environment
-
-When fetching secrets, the `environmentId` field filters results. If `environmentId` is null/omitted, the secret is treated as global (available across all environments).
-
-| `environmentId` | Behavior |
-|---|---|
-| `null` / omitted | Global secret — returned for all environments |
-| Specific UUID | Only returned when that exact environment is queried |
-| Environment name | Resolved to UUID automatically via lookup |
-
----
-
-## Versioning and Rollback
-
-### Version History
-
-Every time a secret is updated, the **previous version** is archived to the `secret_versions` table before overwriting.
-
-```http
-GET /api/projects/:projectId/secrets/:secretId/versions
-```
-
-**Response:**
-
-```json
-{
-  "key": "DATABASE_URL",
-  "currentVersion": 5,
-  "history": [
-    { "version": 4, "changedById": "uuid", "changedAt": "2025-06-21T12:00:00Z" },
-    { "version": 3, "changedById": "uuid", "changedAt": "2025-06-20T10:00:00Z" },
-    { "version": 2, "changedById": "uuid", "changedAt": "2025-06-19T08:00:00Z" },
-    { "version": 1, "changedById": null, "changedAt": "2025-06-18T06:00:00Z" }
-  ]
-}
-```
-
-### Rollback
-
-```http
-POST /api/projects/:projectId/secrets/:secretId/rollback/:version
-```
-
-Rollback restores the encrypted value from a previous version. The **current value is saved to history first** (so a rollback is itself a new version).
-
-| Scenario | Version after rollback |
-|---|---|
-| Current is v5, rollback to v3 | v3's value is restored, version becomes v6 |
-| Rollback to v2 again | v2 restored, version becomes v7 |
-
-### Audit Trail
-
-All secret operations are logged to the `audit_logs` table:
-
-| Action | Logged |
-|---|---|
-| Create | `secrets.create` |
-| Update | `secrets.update` |
-| Reveal (decrypt) | `secrets.reveal` — includes key and environment |
-| Delete (soft) | `secrets.delete` |
-| Export | `secrets.export` — includes count of exported values |
-| Import (bulk) | `secrets.import` — includes count |
-| Rollback | `secrets.rollback` — includes source and target version |
-
----
-
-## Bulk Import / Export
-
-### Export as .env
-
-```http
-GET /api/projects/:projectId/secrets/export/:environmentId
-Authorization: Bearer <token>
-```
-
-Requires `secrets.export` permission. Decrypts all secrets for the given environment and returns them as `.env` format:
-
-```json
-{
-  "environmentId": "development",
-  "secrets": "DATABASE_URL=postgresql://...\nAPI_KEY=sk-dev-xxx\nREDIS_URL=redis://..."
-}
-```
-
-### Bulk Import
-
-```http
-POST /api/projects/:projectId/secrets/bulk
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "environmentId": "production",
-  "secrets": [
-    { "key": "DATABASE_URL", "value": "postgresql://prod:xxx@host:5432/db" },
-    { "key": "API_KEY", "value": "sk-prod-xxx" },
-    { "key": "REDIS_URL", "value": "redis://:pass@host:6379" }
-  ]
-}
-```
-
-**Response:**
-
-```json
-{
-  "imported": 3,
-  "results": [
-    { "key": "DATABASE_URL", "status": "updated", "version": 4 },
-    { "key": "API_KEY", "status": "created", "version": 1 },
-    { "key": "REDIS_URL", "status": "created", "version": 1 }
-  ]
-}
-```
-
-Requires `secrets.import` permission. Each item is individually encrypted and versioned.
-
----
-
-## SDK Secret Injection
-
-The Platform SDKs automatically inject secrets as environment variables into running services.
-
-### How It Works
-
-1. **SDK Registration** — When a service registers via the SDK (`POST /sdk/register`), it identifies itself with `projectName`, `environmentName`, and `envKeys` (the list of secret keys it needs).
-
-2. **Config Fetch** — The SDK calls `GET /sdk/config?projectId=...&environmentId=...` on startup.
-
-3. **Secret Resolution** — The API resolves the project name to UUID, finds the environment, and:
-   - Reads `ProjectConfig` entries matching the environment
-   - Decrypts `Secret` entries matching the environment
-   - Returns all values as a flat JSON object
-
-4. **Environment Variable Injection** — The SDK sets the returned key-value pairs as `process.env` (Node.js), `os.environ` (Python), etc.
-
-### Node.js SDK Example
-
-```typescript
-import { PlatformClient } from '@mpratyush54/sdk-node';
-
-const client = new PlatformClient({
-  token: 'sdk_live_your_project_token_here',
-  projectName: 'my-app',
+await platform.init({
+  projectName: 'my-api',
+  platformUrl: process.env.PLATFORM_URL,
+  sdkToken: process.env.PLATFORM_SDK_TOKEN,
   environmentName: 'production',
 });
 
-await client.start();
-// process.env now has DATABASE_URL, API_KEY, etc.
+const stripeKey = platform.config('STRIPE_API_KEY');
 ```
 
-### Runtime Refresh
+The SDK loads all variables at startup and refreshes them every 30 seconds, so a changed value reaches the app without a restart. The app gets the global variables plus the ones for its own environment.
 
-The SDK periodically re-fetches config (configurable interval, default 5 minutes) to pick up updated secrets without restarting the service.
+## See, change or undo a secret
 
-### Required Permissions
+- **See a value:** choose **Reveal** on the row. You are asked for a fresh two-factor code. See [Two-factor sign-in](mfa.md).
+- **Change a value:** choose **Edit**, enter the new value and save. Leave the value empty to keep the current one.
+- **Undo a change:** choose **History** on the row, then **Rollback** on the version you want. The rollback is saved as a new version, so you can undo it too.
+- **Delete:** choose **Delete** on the row.
 
-For SDK token-based injection, the `SdkCredential` entity stores a token in format `sdk_live_<uuid>` or `sdk_test_<uuid>`. These tokens have access to secrets belonging to the project they were created for — no additional RBAC check is performed (the token itself IS the authorization).
+## Add many at once
+
+Choose **Paste .env** and paste `KEY=VALUE` lines. Tick **Secret** for the lines that should be encrypted, then choose **Import**.
+
+To copy all secrets of one environment out, choose **Export secrets**. You are asked for a fresh two-factor code.
+
+## Who can do what
+
+| Action | Needs |
+|---|---|
+| See keys | Any project member |
+| Read plain values | Developer or higher on the project (`config.read`) |
+| Add or change plain settings | `config.update` (tech lead, DevOps, admin) |
+| Add or change secrets | `secrets.create` (tech lead, DevOps, admin) |
+| Reveal or export secrets | `secrets.reveal` or `secrets.export`, plus a fresh two-factor code |
+| Roll back a secret | `secrets.rollback` (DevOps, admin) |
+
+Viewers see keys and types only. See [Permissions](../api-reference/configuration/permissions.md).
+
+## How it works
+
+- Secrets are encrypted on the server with AES-256-GCM before they are saved. The key is derived (SHA-256) from `SECRETS_ENCRYPTION_KEY`. The stored form is `iv:authTag:ciphertext`. The plain value is never saved. See [Secrets encryption](../api-reference/configuration/secrets-encryption.md).
+- Plain settings are stored in the project configuration table. Secrets are stored in a separate `secrets` table in PostgreSQL. The **Variables** list shows both, merged. Turning a plain setting into a secret moves it to the encrypted store and removes the plain copy. Turning a secret into a plain setting needs `secrets.delete`, `secrets.reveal` and a fresh two-factor code.
+- Every change to a secret saves the previous encrypted value to `secret_versions` first. A rollback copies an old version back and increases the version number. For example, if the current version is 5 and you roll back to 3, version 3's value becomes version 6.
+- Deleting a secret is a soft delete: it is marked inactive.
+- A global secret (no environment) is returned for every environment. A secret scoped to an environment is returned only for that environment.
+- Only **server** SDK tokens can read variables. Browser tokens cannot. A token can only read its own project. Cairn's own credentials are never sent to the SDK, even if they were copied into a project.
+- Secret values are not added to the app's Kubernetes deployment. The app gets them from the SDK at run time.
+- The SDK token is shown only once, when you create it.
+
+### Audit log
+
+| Action | Entry |
+|---|---|
+| Create | `secrets.create` |
+| Update | `secrets.update` |
+| Reveal | `secrets.reveal`, with key and environment |
+| Delete | `secrets.delete` |
+| Export | `secrets.export`, with the number of values |
+| Bulk import | `secrets.import`, with the number of values |
+| Rollback | `secrets.rollback` |
+
+## For developers / API
+
+The portal uses the merged variables API:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/projects/:projectId/environment?environmentId=` | Merged list. Secrets are always masked. `global` or empty = global rows only. |
+| `PUT` | `/api/projects/:projectId/environment/:key` | Write a plain setting or a secret (moves it between stores) |
+| `DELETE` | `/api/projects/:projectId/environment/:key?environmentId=&type=plain\|secret` | Delete |
+
+The secrets API (kept for SDK and CLI use):
+
+| Method | Path | Needs |
+|---|---|---|
+| `GET` | `/api/projects/:projectId/secrets` | `secrets.list`. Values masked. |
+| `POST` | `/api/projects/:projectId/secrets` | `secrets.create`. Creates, or updates and bumps the version. |
+| `POST` | `/api/projects/:projectId/secrets/reveal` | `secrets.reveal`, fresh code. Body `{ key, environmentId }`. |
+| `DELETE` | `/api/projects/:projectId/secrets/:secretId` | `secrets.delete` |
+| `GET` | `/api/projects/:projectId/secrets/export/:environmentId` | `secrets.export`, fresh code. Returns `{ environmentId, secrets: "KEY=value\n..." }`. |
+| `POST` | `/api/projects/:projectId/secrets/bulk` | `secrets.import` |
+| `GET` | `/api/projects/:projectId/secrets/:secretId/versions` | `secrets.list` |
+| `POST` | `/api/projects/:projectId/secrets/:secretId/rollback/:version` | `secrets.rollback` |
+
+Create a secret:
+
+```http
+POST /api/projects/:projectId/secrets
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "key": "DATABASE_URL", "value": "postgresql://user:pass@host:5432/db", "environmentId": "<environment id>" }
+```
+
+Answer: `201 { "id": "...", "key": "DATABASE_URL", "environmentId": "...", "version": 1 }`. Omit `environmentId` for a global secret.
+
+Bulk import:
+
+```http
+POST /api/projects/:projectId/secrets/bulk
+Content-Type: application/json
+
+{
+  "environmentId": "<environment id>",
+  "secrets": [
+    { "key": "DATABASE_URL", "value": "postgresql://..." },
+    { "key": "API_KEY", "value": "sk-prod-xxx" }
+  ]
+}
+```
+
+Answer: `{ "imported": 2, "results": [{ "key": "DATABASE_URL", "status": "updated", "version": 4 }, ...] }`.
+
+The SDK reads `GET /api/sdk/config?projectId=<name or id>&environmentId=<name or id>` with a server SDK token. Environment names are resolved to IDs on this endpoint. The answer is a flat object of keys and values, plus a `telemetry` block.
+
+Create an SDK token (DevOps or tech lead):
 
 ```http
 POST /api/projects/:projectId/tokens
 Authorization: Bearer <token>
-{ "name": "production-token" }
+Content-Type: application/json
 
-→ 201 { "token": "sdk_live_abc123def456..." }
+{ "name": "production-token" }
 ```
 
-> The plaintext token is returned **only once** at creation time. Store it securely.
+Answer: `201` with `token` (`sdk_live_<32 hex characters>`) and `kind` (`server` by default, or `browser`).

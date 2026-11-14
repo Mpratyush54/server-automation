@@ -1,295 +1,133 @@
-# Monitoring and alerts
+# See what your apps are doing
 
-This page helps you see what your apps are doing and get told when something breaks.
+This page shows where to find logs, errors, speed and resource use for your apps, and how to get told when something breaks. For one project, open the project and choose **Monitoring**. For all projects at once, choose **Monitoring** in the sidebar.
 
 ## Where to look
 
-- **One project:** open the project and go to **Monitoring**. You see logs, request latency by route, CPU and memory, and service heartbeats.
-- **All projects:** open **Observability** in the sidebar for health, traffic, errors and alerts across every project.
-- **Dashboards:** Grafana runs at `https://<your-domain>/grafana/`. Sign in with your Platform account.
+| You want to see | Go to |
+|---|---|
+| Health, traffic and errors for every project | Sidebar **Monitoring** |
+| One project at a glance | Project page, **Monitoring**, view **Overview** |
+| Application errors, grouped | **Monitoring**, view **Errors** |
+| Log lines | **Monitoring**, view **Logs** |
+| Request speed and traces | **Monitoring**, view **Traces** |
+| Real users: page speed, session replays, heatmaps | **Monitoring**, view **Users** |
+| Uptime checks and the public status page | **Monitoring**, view **Uptime** |
+| CPU, memory and restarts | **Monitoring**, view **Resources** |
+| AI agent tokens and commands waiting for approval | **Monitoring**, view **AI agents** |
+| Incidents, alert rules and who gets notified | Sidebar **Alerts** |
+| Dashboards | Sidebar **Grafana** (also at `https://<your-domain>/grafana/`) |
 
-Logs and request metrics appear once your app uses a Platform SDK. See the [Node.js quickstart](../getting-started/node-sdk-quickstart.md). Traces and profiles need the `full` install profile.
+## Start sending data
+
+Most views fill in once your app uses a Cairn SDK.
+
+1. Create an SDK token in the project's **Settings**, under **SDK tokens**.
+2. Add the SDK to your app. For Node.js with Express:
+
+   ```js
+   const platform = require('@mpratyush54/sdk-node');
+   await platform.init({
+     projectName: 'shop',
+     platformUrl: 'https://platform.example.com',
+     environmentName: 'production',
+   });
+   app.use(platform.expressMiddleware()); // request speed per route
+   platform.captureConsole();             // send console.* as logs
+   ```
+
+3. Call a few routes, then open **Monitoring**. Logs appear under **Logs**, request speed under **Traces**, and CPU and memory under **Resources**.
+
+Full steps: [Node.js quickstart](../getting-started/node-sdk-quickstart.md).
+
+> [!NOTE]
+> On the default install you get basic logs, request speed by route and heartbeats (CPU, memory and error counts the SDK reports). Traces, the service map, log search with live tail, pod metrics and profiles need the **full** install profile: `sudo platformctl provision --profile full`. Each view tells you when it needs it.
 
 ## Get alerted
 
-1. Open **Alerting** in the portal and pick the project.
-2. Add a **notification channel**: Slack, PagerDuty, Microsoft Teams, Discord, a webhook or email.
-3. Add a **monitor**, for example "memory above 90% of the limit for 5 minutes".
+1. Choose **Alerts** in the sidebar and pick your project.
+2. On **Channels**, add where alerts should go: Slack, PagerDuty, Microsoft Teams, Discord, a webhook or email.
+3. On **Monitors**, add a rule. Example: kind **CPU / memory**, resource **Memory % of limits**, condition `> 90`, for `300` seconds.
 
-Full guide: [Alerts and on-call](../operations/alerting.md).
+Full guide: [Get alerts when something breaks](../operations/alerting.md).
 
 ## More monitoring
 
 | You want to | Read |
 |---|---|
-| Search traces, logs and metrics in the portal | [Observability views](observability.md) |
-| Group and track application errors | [Error tracking](../observability/error-tracking.md) |
-| Check a URL every minute from outside | [Synthetic checks](../operations/synthetics.md) |
+| Search logs, traces and metrics | [Search logs, traces and metrics](observability.md) |
+| Group and fix application errors | [Track and fix errors](../observability/error-tracking.md) |
+| Check a URL on a schedule | [Check that your site is up](../operations/synthetics.md) |
 | Publish a public status page | [Status pages](status-pages.md) |
-| Measure real browser performance | [Frontend monitoring](frontend-rum.md) |
+| Measure real browser performance | [Monitor real users in the browser](frontend-rum.md) |
 | Control what data is kept, and for how long | [Privacy and retention](../operations/telemetry-privacy.md) |
 
-## How the monitoring stack works
+## How it works
 
-The rest of this page describes the components behind the views above: **Grafana** for dashboards, **Loki** for logs and **Prometheus** for metrics, installed with the `kube-prometheus-stack` Helm chart.
+### Components
 
----
+`platformctl` installs the monitoring stack in the `monitoring` namespace:
 
-## Grafana Dashboards
+- **Prometheus** (kube-prometheus-stack Helm chart) stores metrics. It scrapes kube-state-metrics (pods, deployments), the kubelet and cAdvisor (container CPU, memory, disk, network) and node-exporter (node disk, network and load). Node-exporter also publishes `platformctl backup` metrics written to `/var/lib/platform/metrics` on the host.
+- **Loki** stores logs.
+- **Grafana** shows dashboards. It ships with the chart's default Kubernetes dashboards. The full profile adds a **Platform Telemetry** dashboard (request rate, error rate, service graph, telemetry disk space, dropped spans, collector export failures) and Loki and Tempo data sources.
+- The full profile also adds **Tempo** (traces) and **Pyroscope** (profiles). See [Turn on full monitoring](../operations/telemetry.md).
 
-Grafana is deployed in the `monitoring` namespace and configured with OIDC SSO (see [OIDC/SSO](./authentication.md#oidcsso)).
+Prometheus keeps metrics for 30 days on the default profile. On the full profile the retention is `TELEMETRY_RETENTION_DAYS` (default 30).
 
-### Pre-Configured Dashboards
+### Grafana sign-in
 
-| Dashboard | Source | Description |
-|---|---|---|
-| **Platform Overview** | Prometheus + Loki | Cluster-wide view: pod health, resource usage, error rates |
-| **API Performance** | `ApiMetric` MongoDB collection | p50/p95/p99 latency per route, 4xx/5xx rates, RPM |
-| **Service Health** | SDK heartbeats | Service registration status, last seen, DB connection health |
-| **Database Metrics** | Prometheus (exporters) | PostgreSQL queries/s, MongoDB ops, Redis hit rates |
-| **Preview Environments** | Deployment records | Active preview counts, age distribution, decay stats |
+Grafana uses Cairn as its single sign-on provider (generic OAuth against the Cairn API; the sign-in button is labelled **Platform**). Your Grafana role comes from your Cairn group:
 
-### Access
-
-```
-https://{DOMAIN}/grafana/
-```
-
-Grafana is configured with OAuth2 proxy authentication. Users are automatically provisioned based on their Platform role:
-
-| Platform Role | Grafana Role |
+| Cairn group | Grafana role |
 |---|---|
-| `admin` | Admin |
-| `devops` | Admin |
-| `tech_lead` | Editor |
-| `developer` | Viewer |
-| `viewer` | Viewer |
+| Admin | Admin |
+| DevOps | Admin |
+| Tech Lead | Editor |
+| Anyone else | Viewer |
 
----
+### Where SDK data goes
 
-## Loki Log Aggregation
+- **Logs** sent by the SDK are stored in MongoDB (`LogModel`) and forwarded to Loki on a best-effort basis, labelled with `project_id`, `environment_id`, `service_name`, `level` and `telemetry_type` (`errors` for `ERROR` lines, otherwise `logs`).
+- **Request speed** per route is stored in MongoDB (`ApiMetric`). The portal shows count, average, p50, p95, p99, 4xx and 5xx per route.
+- **Heartbeats** (CPU, memory, uptime, response time, error counts) are stored in MongoDB. The **Resources** view averages the last 100.
 
-### Architecture
+Prometheus does not scrape these. The API's own Prometheus-format metrics (background jobs, telemetry pipeline, synthetic checks) are at `GET /api/metrics/jobs`, which needs the DevOps role; `platformctl` does not set up a scrape for it.
 
-```mermaid
-graph LR
-    Services["Services"]
-    SDK["Platform SDK"]
-    API["POST /api/sdk/logs"]
-    Mongo["MongoDB (LogModel)"]
-    Loki["Loki (HTTP push)"]
-    Grafana["Grafana (Loki datasource)"]
+## For developers / API
 
-    Services --> SDK
-    SDK --> API
-    API --> Mongo
-    API --> Loki
-    Loki --> Grafana
-```
+### Send logs
 
-### Log Ingestion
+`POST /api/sdk/logs` (or `POST /api/logs/ingest`) with an SDK token. Body: `{ "logs": [ { "message": "...", "level": "INFO" } ] }`. Every entry needs a `message`. Levels are upper-cased; `environment` defaults to `development`.
 
-The SDK forwards logs via `POST /api/sdk/logs` or `POST /api/logs/ingest`. The API:
-
-1. Stores logs in MongoDB's `LogModel` collection
-2. Forwards them to Loki via the `forwardToLoki()` function
-
-```typescript
-// platform/api/src/lib/lokilog.ts
-export async function forwardToLoki(logs) {
-  const streams = logs.map(log => ({
-    stream: {
-      project_id: log.projectId,
-      environment_id: log.environmentId,
-      service_name: log.serviceName,
-      level: log.level,
-    },
-    values: [[String(Date.now() * 1e6), JSON.stringify(log)]],
-  }));
-  await axios.post(`${lokiUrl}/loki/api/v1/push`, { streams });
-}
-```
-
-### Log Search
+### Search logs
 
 ```http
-GET /api/logs/search?projectId=<uuid>&environmentId=<uuid>&level=ERROR&search=timeout&limit=50&offset=0
+GET /api/logs/search?projectId=<uuid>&level=ERROR&search=timeout&limit=50&offset=0
 ```
 
 | Parameter | Description |
 |---|---|
-| `projectId` | Filter by project (UUID or name) |
-| `environmentId` | Filter by environment |
-| `serviceName` | Filter by service name |
-| `level` | Filter by log level (`INFO`, `WARN`, `ERROR`) |
-| `search` | Full-text regex search in message field |
-| `limit` | Results per page (default 50, max 1000) |
+| `projectId` | Project UUID or name. Without it, all projects you can access |
+| `environmentId` | Environment name stored with the log |
+| `serviceName` | Service name |
+| `level` | `INFO`, `WARN` or `ERROR` |
+| `search` | Text the message contains (case-insensitive, matched literally) |
+| `limit` | Results per page (default 50, max 500) |
 | `offset` | Pagination offset |
 
----
+Returns `{ logs, total }`. Agent tokens need the `logs:read` scope.
 
-## Prometheus Metrics
+### Request speed by route
 
-Prometheus scrapes metrics from:
-
-- **kube-state-metrics** — Cluster-level pod, node, and deployment metrics
-- **kubelet / cAdvisor** — Container resource usage (CPU, memory, disk, network)
-- **node-exporter** — Node-level metrics (disk I/O, network, load)
-- **Platform API** — `/api/metrics` endpoint exposes application-level metrics
-- **SDK Heartbeats** — Per-service CPU, memory, request counts, error rates
-
-### Key Metrics
-
-| Metric | Source | Type |
-|---|---|---|
-| `container_cpu_usage_seconds_total` | cAdvisor | Counter |
-| `container_memory_working_set_bytes` | cAdvisor | Gauge |
-| `kube_deployment_status_replicas_ready` | kube-state | Gauge |
-| `node_load1` / `node_load5` / `node_load15` | node-exporter | Gauge |
-| `node_filesystem_avail_bytes` | node-exporter | Gauge |
-
-Retention: **30 days** (configured in `bootstrap.sh` via `prometheus.prometheusSpec.retention=30d`).
-
----
-
-## API p50/p95/p99 Latency Tracking
-
-The Platform SDK collects per-route latency metrics and sends them to the API:
-
-```http
-POST /api/sdk/api-metrics
-Authorization: Bearer <sdk-token>
-Content-Type: application/json
-
-{
-  "metrics": [
-    {
-      "route": "/api/users",
-      "method": "GET",
-      "statusCode": 200,
-      "durationMs": 42,
-      "environment": "production"
-    }
-  ]
-}
-```
-
-### Aggregated Metrics
-
-```http
-GET /api/sdk/api-metrics?projectId=<uuid>&environment=production&from=2025-06-01&to=2025-06-21
-```
-
-Returns percentiles computed via MongoDB aggregation:
+The SDK sends `POST /api/sdk/api-metrics` with an SDK token:
 
 ```json
-{
-  "metrics": [
-    {
-      "_id": { "route": "/api/users", "method": "GET" },
-      "count": 1523,
-      "avgDuration": 38.2,
-      "p50": 32,
-      "p95": 78,
-      "p99": 245,
-      "errors4xx": 12,
-      "errors5xx": 0,
-      "lastSeen": "2025-06-21T12:00:00Z"
-    }
-  ]
-}
+{ "metrics": [ { "route": "/api/users", "method": "GET", "statusCode": 200, "durationMs": 42, "environment": "production" } ] }
 ```
 
-Percentiles are calculated by sorting durations and picking the element at the 50th/95th/99th percentile index:
+Read the aggregate with `GET /api/sdk/api-metrics?projectId=<uuid>&environment=production&from=2026-11-01&to=2026-11-15`. Each row has `_id.route`, `_id.method`, `count`, `avgDuration`, `p50`, `p95`, `p99`, `errors4xx`, `errors5xx` and `lastSeen`.
 
-```typescript
-// platform/api/src/routes/sdk.ts:573-575
-p50: { $arrayElemAt: ['$durations', { $floor: { $multiply: [0.50, { $size: '$durations' }] } }] },
-p95: { $arrayElemAt: ['$durations', { $floor: { $multiply: [0.95, { $size: '$durations' }] } }] },
-p99: { $arrayElemAt: ['$durations', { $floor: { $multiply: [0.99, { $size: '$durations' }] } }] },
-```
+### Legacy alert rules
 
----
-
-## Alert Rules Configuration
-
-### Creating Alert Rules
-
-```http
-POST /api/alerts
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "projectId": "<uuid>",
-  "severity": "warning",
-  "config": {
-    "metric": "cpuPct",
-    "operator": ">",
-    "threshold": 90
-  }
-}
-```
-
-### Supported Operators
-
-| Operator | Meaning |
-|---|---|
-| `>` | Greater than threshold |
-| `<` | Less than threshold |
-| `==` | Equal to threshold |
-
-### Severity Levels
-
-| Severity | Color | Notification |
-|---|---|---|
-| `info` | Blue | Logged only |
-| `warning` | Yellow | Email notification to tech_leads |
-| `critical` | Red | Email + in-app notification |
-
-### Alert Evaluation
-
-```http
-POST /api/alerts/evaluate
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "projectId": "<uuid>",
-  "metrics": {
-    "cpuPct": 95,
-    "memoryMb": 512,
-    "errors5xx": 3
-  }
-}
-```
-
-Returns triggered alerts:
-
-```json
-{
-  "evaluatedCount": 5,
-  "triggered": [
-    {
-      "ruleId": "uuid",
-      "metric": "cpuPct",
-      "value": 95,
-      "threshold": 90,
-      "severity": "warning"
-    }
-  ]
-}
-```
-
-### Predefined Alert Templates
-
-| Template | Metric | Threshold | Severity |
-|---|---|---|---|
-| High CPU | `cpuPct` | `> 90` | warning |
-| High Memory | `memoryMb` | `> 1024` | warning |
-| Error Spike | `errors5xx` | `> 10` | critical |
-| High Latency | `avgResponseMs` | `> 500` | warning |
-
-### Dashboard Integration
-
-Alert rules created via the API appear in the **Alerts** tab in the Portal and in the **Alert Rules** section of the Grafana dashboards. Grafana alerting requires separate configuration within the Grafana UI for Prometheus-based alerting.
+`/api/alerts` (rules with `metric`, `operator` `>`, `<` or `==`, and `threshold`) still works. Use [alerting](../operations/alerting.md#legacy-alert-rules) for new rules. `POST /api/alerts/evaluate` only reports which rules match the metrics you send; it notifies nobody.

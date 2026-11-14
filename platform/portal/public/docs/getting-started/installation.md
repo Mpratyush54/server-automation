@@ -71,7 +71,7 @@ sudo platformctl provision --profile minimal
 |---|---|
 | `minimal` | The core platform only. No monitoring stack, Portainer or Argo CD. |
 | `standard` | The default. Adds Grafana, Prometheus and Loki, Portainer and Argo CD. |
-| `full` | Everything in standard, plus traces, profiles and uptime probes. See [Full-profile telemetry](../operations/telemetry.md). |
+| `full` | Everything in standard, plus traces, profiles and uptime probes. See [Turn on full monitoring](../operations/telemetry.md). |
 | `ha` | Everything in full, on several servers. See [High availability](../operations/ha.md). |
 
 ## If something goes wrong

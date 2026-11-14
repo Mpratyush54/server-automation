@@ -1,31 +1,124 @@
-# Error tracking
+# Track and fix errors
 
-The API groups frontend and backend exceptions per project and environment. It
-uses existing Postgres, the telemetry Redis Streams worker, and the private
-MinIO uploads bucket. No additional workload or install step is required. Redis
-queue mode runs in the existing leader worker; memory mode and Redis outages
-process inline. The full profile supplies RUM/trace backends; explicit SDK error
-capture also works on lighter profiles.
+This page helps you see which errors your users hit, how often, and in which release, so you can fix the worst first. Open the project, choose **Monitoring**, then the **Errors** view. The **Overview** view also lists the latest errors.
 
-## Capture
+Cairn groups repeats of the same error into one **issue**, even across browsers and deploys.
 
-Node: `await platform.captureException(error, { userId: 'opaque-id' })` after
-initialization. Python: `platform.capture_exception(error, userId='opaque-id')`.
-Neither installs process termination handlers. Configure the SDK application
-version for release association. Use opaque user/session identifiers, avoid PII,
-and redact exception messages/breadcrumbs at source.
+## Send errors from your app
 
-React and Angular RUM mirror their already scrubbed Faro exceptions to the
-`errorsEndpoint` supplied in the telemetry config. Set `API_PUBLIC_URL` to the
-public API origin for custom collector setups without `DOMAIN`. Supply `appVersion` in RUM
-options; the environment/project come from the signed browser ingest credential.
-Existing sampling, DNT/consent behavior and `beforeSend` filters apply before
-mirroring. RUM mirroring is best effort (bounded to 20 items per send), while the
-collector transport retains its existing retry behavior. React ErrorBoundary
-and Angular ErrorHandler already feed Faro when RUM is enabled.
+**Node.js**, after `platform.init(...)`:
 
-For other integrations, `POST /api/sdk/errors` accepts a stored, project-bound
-server or browser SDK bearer credential and the version 1 ErrorEvent JSON:
+```js
+try {
+  await chargeCard(order);
+} catch (error) {
+  await platform.captureException(error, { userId: 'u_8f3a' });
+  throw error;
+}
+```
+
+**Python**:
+
+```python
+platform.capture_exception(error, userId='u_8f3a')
+```
+
+**React and Angular**: when browser monitoring is on, errors your app throws are sent automatically, including those caught by the React `ErrorBoundary` and the Angular error handler. See [Monitor real users in the browser](../guides/frontend-rum.md).
+
+Tips:
+
+- Set your app version in the SDK (for example `version: '1.4.0'` in the Node.js options; `appVersion` for React and Angular). Errors are then grouped by release, and a fixed error that comes back in a newer release is flagged.
+- Use made-up user ids (such as `u_8f3a`), not emails or names.
+- Remove personal data from error messages before you send them.
+
+## Fix an error
+
+1. Open **Monitoring**, view **Errors**.
+2. Filter by **Release**, **Environment** or **Status**, then choose **Apply filters**.
+3. Choose an issue. You see the stack trace (original source when source maps are uploaded), recent events, breadcrumbs (what happened just before), first and last seen, counts per release, and links to the trace or session replay.
+4. Pick an **Assignee** and choose **Assign**. When the fix is out, choose **Resolve**. Use **Ignore** for noise, **Reopen** to undo.
+
+Viewers can read issues. You need the project role **developer** or higher to assign, resolve, ignore or reopen.
+
+What happens next:
+
+- A resolved issue reopens, marked **Regression**, if it happens again in a higher release (for example resolved in `1.4.0`, seen in `1.5.0`). The same or an older release only adds to the count.
+- An ignored issue keeps counting but never reopens.
+- New issues and regressions raise an alert. Set up where it goes in [Get alerts when something breaks](../operations/alerting.md). Resolving the issue resolves the alert.
+
+## See your original code (source maps)
+
+Production JavaScript is minified, so stack traces point at unreadable code. Upload the source maps from your build and Cairn shows your original files and lines.
+
+Run this in CI after the build and before the deploy:
+
+```sh
+export PLATFORM_API_URL=https://platform.example.com
+export PLATFORM_CI_TOKEN="$CI_SOURCE_MAP_TOKEN"
+npm run platform-sourcemaps -- upload "$PROJECT_UUID" "$APP_VERSION" dist /assets
+```
+
+- `$APP_VERSION` must match the version your app reports.
+- `dist` is the build folder; `/assets` is the public path the files are served from.
+- Keep source maps private. They can contain your source code.
+
+For the token, create an agent token whose only scope is `errors:sourcemaps:<project id>` (see [For developers / API](#for-developers--api)). It can upload maps for that project and nothing else. Store it as a CI secret. People with the project role developer can also upload with their own sign-in.
+
+## How it works
+
+### Storage
+
+The API stores issues and events in PostgreSQL: `error_issues` holds totals per issue, `error_events` holds bounded events in eight hash partitions by project (idempotent `(project_id, id)` keys), and `error_sourcemaps` holds references to private objects. Source map files are stored, content-addressed, in the private uploads bucket (MinIO or S3; local storage is for development only). Deleting a project removes its rows from all three tables; source map objects need bucket lifecycle rules.
+
+Events are processed by the telemetry Redis Streams worker in the leader replica. In memory mode or during a Redis outage they are processed inline. No extra workload or install step is needed. Explicit SDK capture works on every profile; browser monitoring and trace links need the full profile.
+
+Events older than the project's error retention (default 90 days, set in the project's **Settings**, **Privacy**) are deleted by the hourly `error-retention` job. An issue whose last event aged out disappears; if the error comes back it opens a new issue. See [Privacy and retention](../operations/telemetry-privacy.md).
+
+### Browser errors
+
+React and Angular browser monitoring (built on Grafana Faro) sends its already scrubbed exceptions to the `errorsEndpoint` in the telemetry config, at most 20 per send, on a best-effort basis. Sampling, Do Not Track and consent settings and `beforeSend` filters apply first. The project and environment come from the signed browser ingest token. For custom collector setups without `DOMAIN`, set `API_PUBLIC_URL` to the public API origin.
+
+### Grouping
+
+Issues use a fingerprint that does not depend on the browser engine or the build (`v2:` prefix), so one bug in Chromium, Firefox and Safari, across deploys, lands in one issue:
+
+- Frames from the Cairn SDKs and Faro, browser internals (`[native code]`, `<anonymous>`, extension URLs) and `Error` constructor frames are dropped.
+- Your own (in-app) frames are used. `node_modules`, vendor, framework, polyfill and runtime bundles only count when no in-app frame remains.
+- Each frame contributes its URL path with build hashes removed (`main.3f2a1b9c.js`, `main.3f2a1b9c.chunk.js`, `chunk-ABCD1234.js`, `index-B_xY3a9Z.js` and hashed build-id folders all become one name), plus its function name when the engine reports one (`Object.fn`, `async fn`, `fn [as x]` and `outer/fn` all become `fn`).
+- The source line is included only for source-mapped frames. Minified line and column numbers change per build and differ between engines, so they never split groups. Columns are never used.
+- The first five distinct frames plus the exception type (an `Uncaught ` prefix is ignored) are hashed. Messages do not split errors that have frames. Errors without frames use the message, with numbers, UUIDs and long hex values normalized.
+
+Without source maps, minifiers may rename functions between builds, and different errors in the same bundle function can group together.
+
+Every event also stores the older fingerprints (raw and mapped frames: path, line, column) as aliases, and joins the oldest issue matching any of them. Issues created before `v2` keep receiving events and pick up the `v2` alias on their next event. Late source map uploads find the existing raw group. Issues that were already separate are not merged afterwards. Each environment has its own issues.
+
+### Regressions and releases
+
+Releases are compared as `major.minor.patch`. For other versions, such as git SHAs, a version not seen before the issue was resolved counts as newer; versions seen before do not reopen it. Use numbered releases if you need strict ordering. Release comparison is by version string only.
+
+### Source maps
+
+Only flat source map v3 files up to 5 MiB each are accepted. Indexed or remote maps are rejected, and the API never fetches source URLs. The deployed file path must match the uploaded `file` exactly (URL origin, query and fragment are ignored). The upload script requires HTTPS (except localhost) and refuses redirects. The API symbolicates with the lockfile-pinned `source-map` 0.6.1 package and caches up to 16 maps per process by immutable object key, so replacing maps invalidates caches on all replicas. Maps uploaded after an error arrived also apply when you open the issue. If a map is missing or storage is down, raw frames are shown.
+
+The trace link opens Grafana Explore with the Tempo data source. The replay link opens the session replay player.
+
+### Alerts
+
+New issues and regressions publish an alert event (source `error-tracking`) with project, environment, a stable dedupe key, the release and a portal link. Resolving publishes the matching resolved event. Publishing is best effort and never blocks ingest.
+
+### Not provided
+
+Sentry envelope compatibility and native crash symbolication are not provided. Legacy log, error and bug report APIs are unchanged.
+
+### Tests
+
+Unit and route tests cover fingerprint stability, symbolication, caching, validation, grouping of 100 events, retry deduplication, regressions and access checks. Set `MIGRATION_TEST_PG_HOST`, `MIGRATION_TEST_PG_PORT`, `MIGRATION_TEST_PG_USER` and `MIGRATION_TEST_PG_PASSWORD` for the real PostgreSQL concurrency test and the migration drift suite. Migration `1798000000041` is additive and idempotent.
+
+## For developers / API
+
+### Send an error
+
+`POST /api/sdk/errors` with a project-bound server or browser SDK token and a version 1 error event:
 
 ```json
 {
@@ -42,127 +135,25 @@ server or browser SDK bearer credential and the version 1 ErrorEvent JSON:
 }
 ```
 
-Frames are innermost first, lines one-based, columns zero-based. Optional
-`replayId` reserves the link for #40. The server generates an event UUID if
-omitted; integrations retrying a request should retain the original UUID.
-`release` is optional and defaults to `unknown` (as the SDKs send when no app
-version is configured); `type`, `message`, `environment` and each frame `file`
-are required. A rejected event returns 400 naming the offending field.
-Clients that only have the browser's `Error.stack` string may send it as
-`stack` instead of `frames` (or with an empty `frames` array); the server parses
-both V8 (`at fn (url:line:col)`) and SpiderMonkey/JavaScriptCore
-(`fn@url:line:col`) lines into the same frames, up to 64 KiB.
-At most 100 frames/breadcrumbs are accepted, with bounded string fields. Only
-`{accepted:true}` is returned. `/api/errors/rum` accepts short-lived `web` ingest
-tokens with origin checks; it derives project and environment from claims.
+- `type`, `message`, `environment` and each frame's `file` are required. A rejected event returns 400 naming the field.
+- Frames are innermost first; lines start at 1, columns at 0.
+- `eventId` is generated if missing. Keep the same id when you retry a request.
+- `release` defaults to `unknown`. `replayId` links the event to a session replay.
+- Instead of `frames` (or with an empty `frames` array) you can send the browser's `Error.stack` string as `stack`, up to 64 KiB. V8 (`at fn (url:line:col)`) and SpiderMonkey/JavaScriptCore (`fn@url:line:col`) formats are parsed.
+- At most 100 frames and 100 breadcrumbs; string fields are bounded. The response is `{ "accepted": true }`.
 
-## Upload source maps in CI
+`POST /api/errors/rum` accepts short-lived `web` ingest tokens with origin checks and takes the project and environment from the token.
 
-Create an agent token with the single scope
-`errors:sourcemaps:PROJECT_UUID`. It can upload maps only for that project;
-`projects:read` does not grant upload. Protect the token as a CI secret. Humans
-with project developer access can also upload using their session JWT.
+### Upload a source map
 
-```sh
-export PLATFORM_API_URL=https://platform.example.test
-export PLATFORM_CI_TOKEN="$CI_SOURCE_MAP_TOKEN"
-npm run platform-sourcemaps -- upload "$PROJECT_UUID" "$APP_VERSION" dist /assets
-```
+`POST /api/projects/<id>/releases/<version>/sourcemaps` with JSON `{ "file": "/assets/app.js", "map": { ... } }`. The script `scripts/platform-sourcemaps.mjs` (run as `node scripts/platform-sourcemaps.mjs upload PROJECT_UUID RELEASE DIST_DIR [PUBLIC_PATH]`) sends one request per `.map` file.
 
-Equivalent: `node scripts/platform-sourcemaps.mjs upload PROJECT_UUID RELEASE
-DIST_DIR [PUBLIC_PATH]`. Run after bundling and before deploying. Each `.map`
-becomes `POST /api/projects/:id/releases/:version/sourcemaps` with JSON
-`{file:"/assets/app.js",map:{...}}`. Uploads require HTTPS except localhost and
-refuse redirects. Flat source-map v3 only, maximum 5 MiB per map. Indexed/remote
-maps are rejected; the API never fetches source URLs. The original deployment
-must match the uploaded release and generated asset path exactly (URL origin,
-query and fragment are ignored). Keep maps private; they may contain source code.
+Create the CI token with `POST /api/agent-tokens`, signed in as a Cairn admin or DevOps user who has recently confirmed a second factor, with body `{ "name": "ci-sourcemaps", "scopes": ["errors:sourcemaps:<project id>"] }`. The `projects:read` scope does not allow uploads. The token picker in the portal does not offer this scope.
 
-Objects are content-addressed in the existing uploads store, MinIO/S3 required
-in production; local storage is development-only. The existing MinIO setup runs
-after platform API startup; this feature does not create IAM users or buckets.
-Runtime uses the lockfile-pinned `source-map` 0.6.1 copied from the Docker build
-tree, preserving the immutable lockfile. A bounded 16-map process cache uses
-immutable object keys, so replacing maps invalidates caches across replicas.
-Maps uploaded after ingest also apply when opening an issue. Missing maps or
-storage outages preserve raw frames.
+### Read and triage
 
-## Triage
-
-Open **Errors** in the sidebar, or `/projects/PROJECT_UUID/errors`. Filter by
-release, environment or status. Select an issue for original/raw stacks, recent
-events, breadcrumbs, first/last seen, counts per release, assignee and trace link.
-Developer access is required to assign, resolve, ignore or reopen. Viewers can
-read. The API is `PATCH /api/projects/:projectId/errors/:issueId` with `status`
-(`open`, `resolved`, `ignored`) and/or `assigneeId` (a user with project access, or
-`null`); it returns the updated issue, or `404` when the issue does not exist in
-that project. The trace opens Grafana Explore using the Tempo datasource; replay links
-target the future #40 replay route and will work when that feature is installed.
-
-Grouping uses an engine- and build-neutral fingerprint (`v2:` prefix, #156) so
-one bug in Chromium, Firefox and Safari, across deploys, lands in one issue:
-
-- Frames from the platform SDKs and Faro, browser internals (`[native code]`,
-  `<anonymous>`, extension URLs) and constructor `Error` frames are dropped.
-- In-app frames are used; `node_modules`, vendor/framework/polyfill/runtime
-  bundles only count when no in-app frame remains.
-- Each frame contributes its normalized URL path with build content hashes
-  stripped (`main.3f2a1b9c.js`, `main.3f2a1b9c.chunk.js`, `chunk-ABCD1234.js`,
-  `index-B_xY3a9Z.js`, hashed build-id directories all collapse to one name)
-  plus its function name when the engine reports one (`Object.fn`, `async fn`,
-  `fn [as x]` and `outer/fn` all become `fn`; anonymous frames have none).
-- The source line is included only for source-mapped frames. Generated
-  line/column of minified bundles change per build and differ by one column
-  between engines, so they never split groups; columns are never hashed.
-- The first five distinct frame keys plus the exception type (an `Uncaught `
-  prefix is ignored) are hashed. Messages do not split framed errors; frameless
-  errors use the message with numbers, UUIDs and long hex values normalized.
-
-Upload source maps for the best results: without them, minifiers may rename
-functions between builds, and different errors in the same bundle function
-group together.
-
-Every event also stores the legacy fingerprints (raw and mapped frames: path,
-line, column) as issue aliases, and an event joins the oldest issue matching any
-of its aliases. Issues created before `v2` therefore keep receiving events and
-pick up the `v2` alias on their next event, after which other engines and builds
-join them. Late source-map uploads find the existing raw group. Already separate
-historical issues are not merged retroactively. Environment isolates triage.
-
-Resolved issues reopen with a regression flag on a greater `major.minor.patch`
-release. Same/older release occurrences count without reopening. For opaque
-versions such as git SHAs, an unseen version after resolution is considered
-newer; previously observed versions do not reopen. Set numbered releases if
-strict ordering is needed. Ignored issues continue counting without reopening.
-
-New issues and regressions publish the shared #43 alert-event contract, with
-project/environment, stable dedupe key, release label and portal link. Resolving
-publishes the matching resolved event. Configure channels/rules in #43. Alert
-publication is best effort, as defined by that contract, and never breaks ingest.
-
-## Storage and upgrades
-
-Migration `1798000000041` is additive and idempotent. `error_issues` stores
-aggregates; `error_events` stores bounded structured events in eight Postgres
-hash partitions by project, with idempotent `(project_id,id)` keys.
-`error_sourcemaps` stores private object references. Project deletion cascades
-through the three tables; source objects require bucket lifecycle management.
-There is no replacement of legacy logs, ErrorDoc or bug-report APIs.
-
-Privacy/retention integration (#47) must include `error_events.payload`
-(`userId`, `sessionId`, `release`, `environment`, `replayId`) and the error tables
-in project/user deletion and per-type retention. Source-map object cleanup must
-respect live `error_sourcemaps.object_key` references. #44 release integration
-is by version string only; no shared release entities are changed. Optional
-Sentry envelope compatibility and native crash symbolication are not provided.
-
-## Verification
-
-Unit and route tests cover fingerprint stability, fixture symbolication, cache,
-validation, 100-event grouping, retry deduplication, regression and access checks.
-Set `MIGRATION_TEST_PG_HOST/PORT/USER/PASSWORD` for the real Postgres concurrency
-test and existing migration drift suite. On a fresh Ubuntu 24.04 full-profile VM,
-deploy an app with matching `appVersion`, upload its maps, trigger the same error
-100 times, inspect original source frames and count, resolve, deploy a greater
-release and repeat. Verify configured #43 channels receive new/regression alerts;
-verify trace links against the installed Tempo datasource and replay after #40.
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/projects/<id>/errors` | List issues (filter by release, environment, status) |
+| `GET` | `/api/projects/<id>/errors/<issueId>` | One issue with recent events |
+| `PATCH` | `/api/projects/<id>/errors/<issueId>` | Set `status` (`open`, `resolved`, `ignored`) and/or `assigneeId` (a user with project access, or `null`). Returns the updated issue, or 404 if the issue is not in that project |

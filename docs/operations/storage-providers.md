@@ -1,17 +1,69 @@
-# Storage providers
+# Store files in S3, R2 or another bucket
 
-Provision reconciles the bundled MinIO buckets `platform-uploads` and `platform-backups`, a dedicated API user, and a policy limited to those buckets. It runs `mc` in the existing MinIO pod and reuses credentials from the `platform-storage` Kubernetes Secret on repeated runs. The API receives scoped `MINIO_API_ACCESS_KEY` and `MINIO_API_SECRET_KEY` through `platform-env`; the root credentials remain available only to the existing administrative backup/recovery paths.
+Choose where Cairn keeps files your apps upload through the SDK, and where project database backups go. Go to **Settings** in the sidebar and open the **Storage** tab. You need the DevOps role.
 
-After the schema migration, API startup encrypts legacy provider credentials with `SECRETS_ENCRYPTION_KEY` and registers **Bundled MinIO** using a fixed identity under a PostgreSQL transaction advisory lock. A partial unique index permits only one default across replicas. Existing operator-selected defaults are preserved. Keep the encryption key when restoring a database. The API does not require MinIO in development: registration is skipped when scoped credentials are absent.
+Every install starts with **Bundled MinIO**, storage that runs on your own server. Add an outside bucket when you want files to survive losing the server, or to keep them in a cloud you already use.
 
-In **Settings > Storage Providers**, select AWS S3, Cloudflare R2, Google Cloud Storage HMAC, Backblaze B2, generic S3, or MinIO. Supply an existing bucket and a key with bucket-scoped put/get/delete permissions. R2 needs only account ID, access key, secret and bucket; its endpoint and `auto` region are derived. GCS uses S3 interoperability HMAC keys, not a service account JSON key. B2 needs its region. AWS uses virtual-host addressing; MinIO uses path addressing. Secrets never appear in provider list or save responses.
+## Add a provider
 
-**Test connection** writes a uniquely named `__platform_probe/` object, reads and verifies it, then deletes it. Failures identify the operation and distinguish authentication, bucket/region, permission and network failures without returning service messages or credentials. Cleanup is attempted even when PUT times out. A delete failure is reported explicitly; an operator may need to remove the probe object. Each request times out after ten seconds and has no retry. Only the elected API leader runs periodic checks (every five minutes, first check after one second); portal health badges show the result, check time and last error. A newly saved provider starts as unknown until tested.
+1. Create a bucket at your provider, and an access key that can put, get and delete objects in that bucket only.
+2. In **Settings > Storage**, under **Add a storage provider**, pick the **Provider**: AWS S3, Cloudflare R2, Google Cloud Storage (HMAC), Backblaze B2, Generic S3 or MinIO.
+3. Fill in the fields the form shows, then select **Save provider**.
+4. Select **Test connection** on the new provider. It stays "unknown" until tested.
+5. To use it for new uploads and backups, select **Make default**.
 
-**Make default** affects subsequent SDK upload registrations and database backups. Each new file records its original provider, so reading, uploading a registered file, or deleting it still uses that provider after another default is chosen. The bundled provider, default provider, and providers referenced by files or backups cannot be deleted. Existing files without a provider ID retain their original environment-based store; preserve `MINIO_ENDPOINT` / `UPLOADS_S3_*` when upgrading.
+What each provider needs:
 
-**Copy local files here** explicitly starts a `storage.migrate-local` operation. It copies live local upload rows in batches of 100 into the chosen object store; completed row updates serve as checkpoints. It is registered with the operations worker and resumes after process interruption. After a terminal failure, fix the cause and click again: already copied rows are skipped. Originals are retained. This migrates SDK uploads, not local backup dump files. Before starting, mount the old uploads directory on every API replica using the same `UPLOADS_DIR`. Missing local files stop the operation with an actionable error. No migration happens automatically. Progress is visible in the portal and `/api/operations`.
+| Provider | Fields |
+|---|---|
+| AWS S3 | Region, access key ID, secret access key, bucket |
+| Cloudflare R2 | Account ID (32 hexadecimal characters), access key ID, secret access key, bucket. The endpoint and region are filled in for you. |
+| Google Cloud Storage | An HMAC key (from the bucket's interoperability settings), not a service account JSON key. Bucket. |
+| Backblaze B2 | Region (for example `us-west-004`), access key ID, secret access key, bucket |
+| Generic S3 | Endpoint URL, region (optional), access key ID, secret access key, bucket |
+| MinIO | Endpoint URL, access key ID, secret access key, bucket |
 
-Upgrade: run the standard pre-rollout migration Job (`1790000036000-StorageProviders`) and `platformctl provision` to reconcile scoped credentials. Existing local/Google Drive provider configurations remain readable; Google Drive remains a backup-only target and cannot be selected as the SDK default. Existing Google Drive backup defaults leave SDK uploads on the environment-configured store until a compatible default is selected. No additional services, images, or dependencies are introduced.
+Example: to move uploads to Cloudflare R2, create an R2 bucket and an API token scoped to it, add it as **Cloudflare R2**, test it, then select **Make default**. New uploads go to R2. Files already uploaded stay readable where they are.
 
-VM/cloud verification: on Ubuntu 24.04, provision, wait for Bundled MinIO to report healthy, upload and read a file via an SDK, create and test an R2 provider, select it as default, upload a second file, and confirm both files remain readable. Interrupt a local migration and verify the operation resumes without losing local originals. Real MinIO chart/client availability, cluster networking and R2 credentials require this environment.
+## Switch the default safely
+
+- **Make default** affects new SDK uploads and new project database backups only.
+- Each file remembers the provider it was stored with. Reading or deleting it still uses that provider.
+- You cannot delete Bundled MinIO, the current default, or a provider that files or backups still use.
+
+## Move old local files into a bucket
+
+Older installs may have uploads on local disk. To copy them:
+
+1. Make sure every API replica can read the old uploads folder at the same `UPLOADS_DIR` path.
+2. On an S3-compatible or MinIO provider, select **Copy local files here**.
+3. Watch the progress in the portal.
+
+Nothing moves automatically. The originals are kept. If the copy stops with an error, fix the cause and select **Copy local files here** again: files already copied are skipped. This copies SDK uploads only, not local backup files.
+
+## How it works
+
+- **Bundled storage.** `platformctl provision` creates two MinIO buckets, `platform-uploads` and `platform-backups`, plus an API user whose policy allows only those buckets. It runs `mc` inside the MinIO pod and reuses the credentials in the `platform-storage` Kubernetes Secret on later runs. The API gets these scoped keys as `MINIO_API_ACCESS_KEY` and `MINIO_API_SECRET_KEY` in `platform-env`. The MinIO root credentials stay with the admin backup and recovery tools.
+- **Registration.** On start, the API encrypts any older provider credentials with `SECRETS_ENCRYPTION_KEY` and registers **Bundled MinIO** with a fixed ID, under a database lock so several replicas agree. Only one provider can be the default. A default you chose earlier is kept. Keep the same encryption key when you restore a database. In development, registration is skipped when the scoped MinIO keys are missing.
+- **Secrets.** Provider secrets never appear in list or save responses.
+- **Addressing.** AWS uses virtual-hosted bucket addresses. All other providers use path-style addresses.
+- **Test connection** writes a uniquely named object under `__platform_probe/`, reads it back, checks it and deletes it. Each step times out after ten seconds, with no retry. Errors say which step failed and whether it was sign-in, bucket or region, permission or network, without passing on the provider's message or credentials. Cleanup is tried even if the write timed out. If the delete fails, the result says so; you may need to remove the probe object yourself.
+- **Health checks.** Only the elected API leader checks providers: one second after start, then every five minutes. The portal shows the result, the check time and the last error.
+- **Copy local files** runs as a `storage.migrate-local` operation in the operations worker. It copies live local upload rows in batches of 100, records each finished row as a checkpoint, and resumes after a restart. If a local file is missing, it stops with an error that names the problem.
+- **Older files.** Files saved before providers existed have no provider ID and keep using the store set by the environment. Keep `MINIO_ENDPOINT` and `UPLOADS_S3_*` when upgrading.
+- **Google Drive** providers created on older installs stay readable. Google Drive is for backups only and cannot be the default for uploads. While a Google Drive provider is the default, SDK uploads use the environment-configured store until you choose a compatible default.
+- **Upgrading** to this feature needs the normal pre-rollout migration job (`1790000036000-StorageProviders`) and `platformctl provision` to create the scoped credentials. No extra services or images are added.
+- Not yet verified on a fresh server: a full run of provision, an R2 provider as default, and an interrupted local copy resuming.
+
+## For developers / API
+
+All routes need the DevOps role.
+
+| Action | Request |
+|---|---|
+| List providers | `GET /api/settings/storage` |
+| Add a provider | `POST /api/settings/storage` with `preset` (`aws`, `r2`, `gcs`, `b2`, `s3`, `minio`), `name`, `bucketName`, `endpointUrl`, `accountId` (R2), `credentials` (`accessKeyId`, `secretAccessKey`, `region`) and `isDefault` |
+| Test | `POST /api/settings/storage/<id>/test` |
+| Make default | `PATCH /api/settings/storage/<id>/set-default` |
+| Copy local files | `POST /api/settings/storage/<id>/migrate-local` (returns an operation; follow it at `/api/operations`) |
+| Delete | `DELETE /api/settings/storage/<id>` |

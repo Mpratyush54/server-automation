@@ -1,473 +1,181 @@
-# Scaling & Resource Management
+# Scale Cairn and your apps
 
-This document covers resource limits, Horizontal Pod Autoscaling (HPA), node scaling, and monitoring resource usage in the Platform stack.
+This page helps you give your apps and the platform more room: more copies of the platform API, more copies of an app, bigger disks, or more servers. You make most of these changes with `platformctl` and `kubectl` on the server. To see how busy each server is, open **Infrastructure** in the portal sidebar (DevOps role) for CPU, memory and pods, or **Grafana** for detailed dashboards.
 
----
+## Run more copies of the platform API
 
-## Resource Limits in Helm Values
-
-### Current Default Limits
-
-Platform components shipped with the following resource requests and limits:
-
-| Component | Request CPU | Request Memory | Limit CPU | Limit Memory |
-|---|---|---|---|---|
-| Platform API | 250m | 256Mi | 1000m | 1Gi |
-| Platform Portal | 50m | 64Mi | 200m | 256Mi |
-| PostgreSQL | 250m (default) | 256Mi (default) | — | 20Gi disk |
-| MongoDB | 250m (default) | 256Mi (default) | — | 20Gi disk |
-| Redis | 100m (default) | 128Mi (default) | — | 8Gi disk |
-| MinIO | 250m (default) | 256Mi (default) | — | 50Gi disk |
-| Prometheus | 200m | 1Gi | — | 30Gi disk |
-| Grafana | 200m | 200Mi | — | — |
-| Loki | 200m | 512Mi | — | 20Gi disk |
-
-### Adjusting Limits for Platform Deployments
-
-Edit the deployment YAML and re-apply:
-
-```yaml
-# patch-resources.yaml
-spec:
-  template:
-    spec:
-      containers:
-      - name: api
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "500m"
-          limits:
-            memory: "2Gi"
-            cpu: "2000m"
-```
+The API runs 2 copies by default (1 on the `minimal` profile). With two or more, updates and server maintenance cause no downtime. To change the number, set `API_REPLICAS` (1 to 10) and run `provision` again:
 
 ```bash
-kubectl patch deployment platform-api -n platform --patch-file patch-resources.yaml
+sudo API_REPLICAS=3 platformctl provision
 ```
 
-### Adjusting Limits for Bitnami Helm Charts
+The value is saved in `/etc/platform/.env`, so later runs keep it. Each extra copy uses about 150 to 250 MB of memory.
+
+> [!NOTE]
+> Do not change the API's copy count with `kubectl scale` or an autoscaler. `provision` and `platformctl update` set it back to `API_REPLICAS`.
+
+## Run more copies of an app
+
+There is no portal control for this yet. A user with the DevOps role can set the number of copies of an environment's app through the API. See [For developers / API](#for-developers--api). Argo CD is told to leave the new count alone, so it is not reset by the next sync.
+
+## Add servers
+
+Use the `ha` profile and `platformctl join`. **Infrastructure** in the portal shows the join command, and [Run Cairn on several servers](../operations/ha.md) explains every step. In short, on an existing server:
 
 ```bash
-helm upgrade --install postgresql bitnami/postgresql \
-  --namespace databases \
-  --set primary.resources.requests.memory=512Mi \
-  --set primary.resources.requests.cpu=500m \
-  --set primary.resources.limits.memory=2Gi \
-  --set primary.resources.limits.cpu=2000m \
-  --set primary.persistence.size=50Gi \
-  --reuse-values
+sudo platformctl token create --role agent --ttl 2h --output /root/agent.token
 ```
 
-### Adjusting Prometheus/Grafana Resources
+Copy the file to the new machine, install `platformctl`, and run:
 
 ```bash
-helm upgrade --install kube-prometheus prometheus-community/kube-prometheus-stack \
-  --namespace monitoring \
-  --set prometheus.prometheusSpec.resources.requests.memory=2Gi \
-  --set prometheus.prometheusSpec.resources.requests.cpu=500m \
-  --set prometheus.prometheusSpec.resources.limits.memory=4Gi \
-  --set prometheus.prometheusSpec.retention=60d \
-  --reuse-values
+sudo platformctl join --role agent --server https://<server-ip>:6443 \
+  --token-file /root/agent.token --nodes <all-node-ips>
 ```
 
----
+A cluster of more than one machine needs the `ha` profile with `PLATFORM_CLUSTER_NODES` set, because the host firewall otherwise blocks the other machines. Without it, `harden` refuses to run and you must manage the firewall yourself (`--skip-hardening`).
 
-## API Replicas, Shared State and Zero-Downtime Deploys
+## Grow a disk
 
-The Platform API keeps no request-spanning state in process memory, so it runs as several
-replicas behind the `platform-api` Service.
+1. Check that the storage can grow volumes:
+
+   ```bash
+   kubectl get storageclass
+   ```
+
+   Look for `ALLOWVOLUMEEXPANSION` `true` on the class your volume uses. On a single server, volumes use `local-path`. On the `ha` profile they use Longhorn classes.
+
+2. Ask for the bigger size. For example, the platform's PostgreSQL volume on a single server:
+
+   ```bash
+   kubectl -n databases patch pvc data-postgresql-0 -p '{"spec":{"resources":{"requests":{"storage":"50Gi"}}}}'
+   kubectl -n databases get pvc data-postgresql-0
+   ```
+
+If the class cannot grow volumes, move the data to a new, larger volume with a [backup and restore](../operations/backups.md).
+
+## See resource usage
+
+- **Infrastructure** (sidebar, DevOps role): nodes, namespaces, pods and their logs, and CPU, memory and network charts.
+- **Grafana** (sidebar): sign in with your Cairn account. Admin and DevOps users are Grafana admins, Tech Leads are editors, everyone else can view. The standard Kubernetes dashboards are included, such as *Kubernetes / Compute Resources / Namespace (Pods)*.
+- **Command line:** `kubectl top nodes` and `kubectl top pods -A`.
+
+Useful queries in Grafana's Explore view:
+
+```promql
+# CPU use of platform pods as a percentage of their request
+sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="platform", container!=""}[5m]))
+/ sum by (pod) (kube_pod_container_resource_requests{resource="cpu", namespace="platform"}) * 100
+
+# Memory use of platform pods as a percentage of their request
+sum by (pod) (container_memory_working_set_bytes{namespace="platform", container!=""})
+/ sum by (pod) (kube_pod_container_resource_requests{resource="memory", namespace="platform"}) * 100
+
+# Volume fill level (%) in the databases namespace
+kubelet_volume_stats_used_bytes{namespace="databases"} / kubelet_volume_stats_capacity_bytes{namespace="databases"} * 100
+```
+
+To get notified, create an alert in **Alerts** in the portal. See [Get alerts when something breaks](../operations/alerting.md).
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Pod `OOMKilled` | Memory limit too low | `kubectl describe pod -n <namespace> <pod>`, then raise the limit |
+| Pod `CrashLoopBackOff` | Crash, out of memory or slow start | `kubectl logs -n <namespace> <pod> --previous` |
+| Autoscaler shows `<unknown>` targets | No metrics, or the pods have no CPU request | Check `kubectl top pods -n <namespace>` and the pods' resource requests |
+| Node `NotReady` | Out of memory or disk | `kubectl describe node <node>`; see [Disk pressure](../troubleshooting/disk-pressure.md) |
+| Volume claim `Pending` | No matching storage class, or no space | `kubectl get storageclass`; `kubectl describe pvc -n <namespace> <pvc>` |
+| A new machine cannot join | Firewall or token | See the troubleshooting table in [Run Cairn on several servers](../operations/ha.md#troubleshooting) |
+
+## How it works
+
+### Default sizes
+
+| Component | CPU request | Memory request | CPU limit | Memory limit | Disk |
+|---|---|---|---|---|---|
+| Cairn API | 250m | 256Mi | 1000m | 1Gi | none |
+| Cairn portal | 50m | 64Mi | 200m | 256Mi | none |
+| PostgreSQL (single server) | chart default | chart default | | | 10Gi |
+| MongoDB (single server) | chart default | chart default | | | 10Gi |
+| Redis (single server) | chart default | chart default | | | 5Gi, plus one read replica |
+| MinIO | chart default | chart default | | | 50Gi (4 x 25Gi on `ha`) |
+
+Prometheus keeps metrics for 30 days. On the `ha` profile the databases have their own sizes; see [Run Cairn on several servers](../operations/ha.md#datastores). The portal runs 1 copy, 2 on `ha`.
+
+`platformctl` owns the platform's own Deployments and Helm releases. It re-applies the platform manifest on every `provision`, and it installs Helm releases with its own values (without `--reuse-values`), so changes made by hand with `kubectl patch` or `helm upgrade --set` can be lost the next time `platformctl` applies them.
+
+### API replicas, shared state and zero-downtime deploys
+
+The API keeps no request-spanning state in process memory, so it runs as several replicas behind its Service.
 
 | Setting | Value |
 |---|---|
-| Replicas | `2` (`standard` / `full` profiles); `1` on `minimal`. Override with `API_REPLICAS=<1-10>` when running `platformctl` (saved in `/etc/platform/.env`). |
-| Rolling update | `maxUnavailable: 0`, `maxSurge: 1` — a new pod must be ready before an old one stops |
-| PodDisruptionBudget | `platform-api`, `minAvailable: 1` (only when replicas ≥ 2; a single-replica PDB would block node drains) |
-| Readiness probe | `GET /api/health/ready` — PostgreSQL reachable and the pod is not draining (Redis is reported, not required) |
-| Liveness probe | `GET /api/health` — process only; a database or Redis outage never restarts the API |
+| Replicas | `2` on `standard`, `full` and `ha`; `1` on `minimal`. Override with `API_REPLICAS=<1-10>` (saved in `/etc/platform/.env`) |
+| Placement on `ha` | Spread across nodes with a topology spread constraint, so one node loss leaves a replica running |
+| Rolling update | `maxUnavailable: 0`, `maxSurge: 1`: a new pod must be ready before an old one stops |
+| PodDisruptionBudget | `platform-api`, `minAvailable: 1`, only with 2 or more replicas (a single-replica PDB would block node drains) |
+| Readiness probe | `GET /api/health/ready`: PostgreSQL reachable and the pod is not draining (Redis is reported, not required) |
+| Liveness probe | `GET /api/health`: process only; a database or Redis outage never restarts the API |
 | Shutdown | `preStop` sleep 10 s, then SIGTERM: readiness turns 503, new connections are refused, in-flight requests finish (up to `SHUTDOWN_TIMEOUT_MS`, default 25 s), then Redis, PostgreSQL and MongoDB connections close. `terminationGracePeriodSeconds: 45` |
 
-Each extra API replica costs roughly 150–250 MB of memory (request 256Mi).
+#### What lives in Redis
 
-### What lives in Redis
+All keys use the prefix `plat:api:`. The API connects as a dedicated ACL user (`plat-api`, limited to `plat:api:*` keys and channels, no admin commands). The user is created from the platform Redis password at startup, and again if Redis restarts without it. Set `REDIS_API_USERNAME` and `REDIS_API_PASSWORD` to use a user you manage yourself.
 
-All keys use the prefix `plat:api:` and the API connects as a dedicated ACL user
-(`plat-api`, limited to `plat:api:*` keys and channels, no admin commands). The user is
-created idempotently from the platform Redis secret (`REDIS_PASSWORD`) at startup and again
-automatically if Redis restarts without an ACL file; set `REDIS_API_USERNAME` /
-`REDIS_API_PASSWORD` to use an externally managed user instead.
-
-| State | Key / channel | Semantics |
+| State | Key or channel | Behaviour |
 |---|---|---|
-| GitHub/GitLab login `state` | `plat:api:oauth-state:<state>` | `SET … PX 10min NX`, redeemed with `GETDEL` (single use) |
-| Portal login exchange codes | `plat:api:login-code:<code>` | 60 s, `GETDEL` |
+| GitHub/GitLab sign-in `state` | `plat:api:oauth-state:<state>` | Set with `PX` and `NX`, 10 min, redeemed with `GETDEL` (single use) |
+| Portal sign-in exchange codes | `plat:api:login-code:<code>` | 60 s, `GETDEL` |
 | OIDC authorization codes | `plat:api:oidc-code:<code>` | 2 min, `GETDEL` |
-| Rate-limit counters | `plat:api:rl:credential:*`, `plat:api:rl:issue:*` | `rate-limit-redis`, shared by all replicas |
-| Permission-cache invalidation | channel `plat:api:perm-invalidate` | pub/sub; each replica keeps a 60 s local cache |
+| Rate-limit counters | `plat:api:rl:<name>:*` | Shared by all replicas |
+| Permission-cache invalidation | channel `plat:api:perm-invalidate` | Pub/sub; each replica keeps a 60 s local cache |
 
-### Behaviour when Redis is unavailable
+#### When Redis is unavailable
 
 | State | Behaviour | Why |
 |---|---|---|
-| Login state, exchange codes, OIDC codes | **Fail closed**: `/api/auth/github|gitlab` and `/api/auth/exchange` answer `503`, `/api/oauth/authorize` and `/api/oauth/token` answer `503 temporarily_unavailable`, an OAuth callback redirects to the login page with an error | A code kept only in one pod's memory could be replayed or fail on the other replica |
-| Permission cache | **Fail open to the database**: the local cache is bypassed until the invalidation subscription is back, so permissions are read from PostgreSQL on every request | A missed invalidation must never keep a revoked permission alive |
-| Rate limits | **Degrade to per-replica limits** (in-memory) with a logged warning; Redis is retried every 10 s | Brute-force protection never switches off, and password login keeps working |
-| Readiness | **Unaffected**: `/api/health/ready` stays `200` and reports `checks.redis: "unavailable"`, so every replica keeps serving | Gating readiness on a shared dependency would remove all replicas from the Service at once and turn a partial outage (OAuth/OIDC logins) into a full one |
+| Sign-in state, exchange codes, OIDC codes | Fail closed: GitHub/GitLab sign-in and the code exchange answer `503`; the OAuth authorize and token endpoints answer `503 temporarily_unavailable`; an OAuth callback returns to the sign-in page with an error | A code kept in one pod's memory could be replayed, or fail on another replica |
+| Permission cache | Read from PostgreSQL on every request until the invalidation subscription is back | A missed invalidation must never keep a revoked permission alive |
+| Rate limits | Fall back to per-replica limits in memory, with a logged warning; Redis is retried every 10 s | Brute-force protection never switches off |
+| Readiness | Unaffected: `/api/health/ready` stays `200` and reports `checks.redis: "unavailable"` | Failing readiness on a shared dependency would remove every replica at once |
 
-Password login and requests authenticated with existing session tokens do not need Redis, so
-they keep working through a Redis outage. Alert on the `[health] redis unavailable` log line
-or on `checks.redis` from `/api/health/ready`.
+Password sign-in and requests with existing session tokens do not need Redis. Alert on the `[health] redis unavailable` log line, or on `checks.redis`.
 
-`PLATFORM_STATE_STORE=memory` keeps all of this in process memory for single-process local
-development only; never use it with more than one replica.
+`PLATFORM_STATE_STORE=memory` keeps all of this in process memory. It is for single-process local development only; never use it with more than one replica.
 
-### Verifying a zero-downtime rollout
+#### Checking a zero-downtime rollout
 
 ```bash
-# 20 rps against readiness while restarting the API — expect no non-2xx responses
+# 20 requests per second against readiness while restarting the API; expect no non-2xx responses
 hey -z 60s -q 20 -c 1 https://$DOMAIN/api/health/ready &
 kubectl -n platform rollout restart deploy/platform-api
 kubectl -n platform rollout status deploy/platform-api
 kubectl -n platform get pdb platform-api
 ```
 
-## Horizontal Pod Autoscaling (HPA)
+### Autoscaling
 
-### Platform API
+k3s includes metrics-server, so Kubernetes HorizontalPodAutoscalers work for your own app Deployments. Do not put one on `platform-api`: `provision` and `platformctl update` set its replica count from `API_REPLICAS`. Databases are stateful; give them more resources rather than more copies.
 
-```bash
-# Create HPA for Platform API
-kubectl autoscale deployment platform-api -n platform \
-  --cpu-percent=75 \
-  --min=2 \
-  --max=10
+### Node scheduling
+
+On a single server, the k3s server also runs workloads. On the `ha` profile, servers and agents both run workloads; agents add capacity without taking part in the cluster vote. Labels and node selectors work as in any Kubernetes cluster, but `platformctl` re-applies the platform's own Deployments, so a node selector patched onto them by hand does not last.
+
+## For developers / API
+
+Set the number of copies of an app:
+
+```http
+PATCH /api/deployments/<deploymentId>/scale
+Content-Type: application/json
+
+{ "replicas": 3 }
 ```
 
-Verify:
+- Needs the DevOps role and DevOps access to the project.
+- `replicas` is an integer from 0 to 1000.
+- It scales every Deployment in that environment's namespace, adds `/spec/replicas` to the Argo CD application's ignored differences (with `RespectIgnoreDifferences=true`) so the next sync keeps the count, saves the count on the deployment record and writes a `deployment.scaled` audit entry.
 
-```bash
-kubectl get hpa -n platform
-# NAME           REFERENCE                 TARGETS   MINPODS   MAXPODS   REPLICAS   AGE
-# platform-api   Deployment/platform-api   45%/75%   2         10        2          5m
-```
-
-### Platform Portal
-
-```bash
-kubectl autoscale deployment platform-portal -n platform \
-  --cpu-percent=80 \
-  --min=1 \
-  --max=5
-```
-
-### Custom HPA with Multiple Metrics
-
-```yaml
-# api-hpa.yaml
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: platform-api
-  namespace: platform
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: platform-api
-  minReplicas: 2
-  maxReplicas: 20
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
-  - type: Pods
-    pods:
-      metric:
-        name: http_requests_per_second
-      target:
-        type: AverageValue
-        averageValue: 500
-  behavior:
-    scaleDown:
-      stabilizationWindowSeconds: 300
-      policies:
-      - type: Percent
-        value: 50
-        periodSeconds: 60
-    scaleUp:
-      stabilizationWindowSeconds: 60
-      policies:
-      - type: Percent
-        value: 100
-        periodSeconds: 60
-```
-
-```bash
-kubectl apply -f api-hpa.yaml
-```
-
-### Database HPA
-
-For stateful workloads like databases, use **vertical scaling** (increase resources) rather than horizontal scaling. Most Bitnami charts support `readReplicas` for PostgreSQL for read scaling:
-
-```bash
-helm upgrade --install postgresql bitnami/postgresql \
-  --namespace databases \
-  --set readReplicas.replicaCount=2 \
-  --set readReplicas.resources.requests.memory=512Mi \
-  --reuse-values
-```
-
-> **Warning:** HPA for stateful databases is not recommended. Scale databases vertically by increasing resource limits.
-
----
-
-## Node Scaling
-
-### Single-Node (k3s Default)
-
-The bootstrap script installs k3s as a single-node cluster. To add worker nodes:
-
-```bash
-# On the master node, get the token
-NODE_TOKEN=$(sudo cat /var/lib/rancher/k3s/server/node-token)
-MASTER_IP=$(hostname -I | awk '{print $1}')
-
-# On each worker node (fresh Ubuntu)
-curl -sfL https://get.k3s.io | K3S_URL=https://$MASTER_IP:6443 \
-  K3S_TOKEN=$NODE_TOKEN sh -
-```
-
-### Verify Node Join
-
-```bash
-kubectl get nodes
-# NAME         STATUS   ROLES                  AGE   VERSION
-# master       Ready    control-plane,master   1d    v1.29.0+k3s1
-# worker-01    Ready    <none>                 10m   v1.29.0+k3s1
-# worker-02    Ready    <none>                 5m    v1.29.0+k3s1
-```
-
-### Taint Management
-
-Control-plane nodes have a taint that prevents workloads from scheduling on them by default. To allow workloads on the control-plane node:
-
-```bash
-kubectl taint nodes --all node-role.kubernetes.io/control-plane-  # Remove taint
-kubectl taint nodes master node-role.kubernetes.io/control-plane=true:NoSchedule  # Re-add
-```
-
-### Node Labels for Workload Scheduling
-
-```bash
-# Label nodes
-kubectl label node worker-01 node.kubernetes.io/role=worker
-kubectl label node worker-01 topology.kubernetes.io/zone=us-east-1a
-
-# Schedule API pods to specific nodes
-kubectl patch deployment platform-api -n platform -p '{
-  "spec": {
-    "template": {
-      "spec": {
-        "nodeSelector": {
-          "node.kubernetes.io/role": "worker"
-        }
-      }
-    }
-  }
-}'
-```
-
----
-
-## Monitoring Resource Usage via Grafana
-
-### Access Grafana
-
-- **URL:** `https://grafana.$DOMAIN` (in-cluster) or port-forward:
-  ```bash
-  kubectl port-forward -n monitoring svc/kube-prometheus-grafana 3000:80 &
-  ```
-- **Username:** `admin`
-- **Password:** stored in `/etc/platform/.env` as `GRAFANA_PASSWORD`
-
-### Pre-Installed Dashboards
-
-The kube-prometheus-stack ships with these dashboards:
-
-| Dashboard | Description |
-|---|---|
-| **Kubernetes / Compute Resources / Namespace (Pods)** | CPU/Memory per pod per namespace |
-| **Kubernetes / Compute Resources / Node** | Node-level CPU, memory, disk, network |
-| **Kubernetes / Networking** | Network I/O per pod |
-| **Node Exporter / Full** | Detailed node metrics |
-| **Prometheus / Overview** | Prometheus performance |
-
-### Custom Dashboard for Platform
-
-```json
-// Import via Grafana UI: Create → Import → Paste JSON
-// Key panels to add:
-
-// Panel 1: API CPU usage (rate(container_cpu_usage_seconds_total{namespace="platform", container="api"}[5m]))
-// Panel 2: API Memory (container_memory_usage_bytes{namespace="platform", container="api"})
-// Panel 3: Request rate (rate(nginx_ingress_controller_requests{namespace="ingress-nginx"}[5m]))
-// Panel 4: PostgreSQL active connections (pg_stat_activity_count)
-```
-
-### Add PromQL Queries for Resource Monitoring
-
-```promql
-# CPU usage by pod (percentage of request)
-rate(container_cpu_usage_seconds_total{namespace="platform"}[5m]) /
-on(namespace,pod) kube_pod_container_resource_requests{resource="cpu", namespace="platform"}
-* 100
-
-# Memory usage by pod (percentage of request)
-container_memory_usage_bytes{namespace="platform"} /
-on(namespace,pod) kube_pod_container_resource_requests{resource="memory", namespace="platform"}
-* 100
-
-# Disk usage per persistent volume
-kubelet_volume_stats_used_bytes{namespace="platform"}
-/
-kubelet_volume_stats_capacity_bytes{namespace="platform"}
-* 100
-
-# Request latency (p95)
-histogram_quantile(0.95,
-  rate(nginx_ingress_controller_request_duration_seconds_bucket{namespace="ingress-nginx"}[5m])
-)
-```
-
-### Set Up Alerts
-
-```yaml
-# platform-alerts.yaml
-apiVersion: monitoring.coreos.com/v1
-kind: PrometheusRule
-metadata:
-  name: platform-alerts
-  namespace: monitoring
-spec:
-  groups:
-  - name: platform
-    rules:
-    - alert: HighCPUUsage
-      expr: |
-        rate(container_cpu_usage_seconds_total{namespace="platform"}[5m]) /
-        on(namespace,pod) kube_pod_container_resource_requests{resource="cpu", namespace="platform"}
-        * 100 > 80
-      for: 5m
-      labels:
-        severity: warning
-      annotations:
-        summary: "Pod {{ $labels.pod }} CPU usage > 80%"
-
-    - alert: HighMemoryUsage
-      expr: |
-        container_memory_usage_bytes{namespace="platform"} /
-        on(namespace,pod) kube_pod_container_resource_requests{resource="memory", namespace="platform"}
-        * 100 > 85
-      for: 5m
-      labels:
-        severity: warning
-      annotations:
-        summary: "Pod {{ $labels.pod }} memory usage > 85%"
-
-    - alert: PodNotRunning
-      expr: |
-        kube_deployment_status_replicas_available{namespace="platform"} <
-        kube_deployment_spec_replicas{namespace="platform"}
-      for: 2m
-      labels:
-        severity: critical
-```
-
-```bash
-kubectl apply -f platform-alerts.yaml
-```
-
----
-
-## Vertical Scaling Guidelines
-
-| Component | Scale Trigger | Action |
-|---|---|---|
-| Platform API | CPU > 70% for 5m | Increase `limits.cpu` to 2000m, then 4000m |
-| Platform API | Memory > 80% for 5m | Increase `limits.memory` to 2Gi, then 4Gi |
-| PostgreSQL | Disk > 70% | Increase `primary.persistence.size` and PVC |
-| MongoDB | Disk > 70% | Increase `persistence.size` and PVC |
-| Prometheus | Retention needs > 30d | Increase `prometheus.prometheusSpec.retention` and disk |
-| Loki | Disk > 70% | Increase `loki.persistence.size` |
-
-### Resizing Persistent Volumes
-
-```bash
-# 1. Find the PVC
-kubectl get pvc -n databases data-postgresql-0
-
-# 2. Edit the PVC to request more storage
-kubectl patch pvc data-postgresql-0 -n databases -p '{
-  "spec": {
-    "resources": {
-      "requests": {
-        "storage": "50Gi"
-      }
-    }
-  }
-}'
-
-# 3. If using a CSI driver, the volume will expand automatically
-# 4. If not, you may need to delete/recreate the StatefulSet
-# 5. Verify the new size
-kubectl get pvc data-postgresql-0 -n databases
-```
-
-> **Note:** Not all storage provisioners support online resizing. Check `kubectl get storageclass` for `allowVolumeExpansion: true`.
-
----
-
-## Resource Sizing Recommendations
-
-| Environment | API Replicas | API CPU/Memory | Portal Replicas | PostgreSQL Disk | MongoDB Disk |
-|---|---|---|---|---|---|
-| **Development** | 1 | 250m / 256Mi | 1 | 10Gi | 10Gi |
-| **Staging** | 2 | 500m / 512Mi | 1 | 20Gi | 20Gi |
-| **Production (small)** | 2–3 | 1 / 1Gi | 2 | 50Gi | 50Gi |
-| **Production (medium)** | 3–5 | 2 / 2Gi | 2 | 100Gi | 100Gi |
-| **Production (large)** | 5–10 | 4 / 4Gi | 3 | 500Gi | 500Gi |
-
-### Total Resource Estimation
-
-| Environment | vCPUs | RAM | Disk |
-|---|---|---|---|
-| **Development** | 4 | 8Gi | 80Gi |
-| **Staging** | 8 | 16Gi | 160Gi |
-| **Production (small)** | 16 | 32Gi | 300Gi |
-| **Production (medium)** | 32 | 64Gi | 600Gi |
-| **Production (large)** | 64 | 128Gi | 2Ti |
-
----
-
-## Troubleshooting
-
-| Symptom | Cause | Fix |
-|---|---|---|
-| Pod `OOMKilled` | Memory limit too low | `kubectl describe pod -n platform <pod>`; increase `limits.memory` |
-| Pod `CrashLoopBackOff` | Out of memory or startup timeout | Check logs: `kubectl logs -n platform <pod> --previous` |
-| HPA not scaling | Metrics not available | `kubectl get --raw /apis/metrics.k8s.io/v1beta1` |
-| Node `NotReady` | Node out of memory or disk | `kubectl describe node <node>`; free disk space |
-| PV `Pending` | No storage class or out of capacity | `kubectl get storageclass`; `kubectl describe pvc` |
-| k3s agent won't join | Token mismatch or firewall | Verify `NODE_TOKEN` and port `6443` is open |
-| HPA shows `<unknown>` targets | Metrics server not installed | `kubectl top nodes`; install metrics-server |
-| Disk pressure on node | Logs or images filling disk | `docker system prune -a`; `k3s ctr images prune` |
+See [Deployments API](../api-reference/platform-api/deployments.md).

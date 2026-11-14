@@ -1,31 +1,52 @@
-# Upgrade Guide: Caps → Platform
+# Move an app from Caps to Cairn
 
-Platform was originally branded as **Caps**. This guide helps you migrate from the old packages, imports, and environment variables to the current Platform naming.
+This page helps you update an app that still uses the old Caps SDK packages so it works with the current Cairn SDKs. You change your app's code and settings; nothing changes in the portal, where SDK tokens are under your project's **Settings**, **SDK tokens**.
 
-## Package Renames
+Cairn was first called Caps, and later Platform. Only the SDK packages and settings changed. The SDK classes still carry the Platform name (`PlatformClient`, `PlatformProvider`, `PlatformModule`).
 
-| Old Package | New Package |
+## Steps
+
+1. Swap the packages:
+
+   ```bash
+   npm uninstall @caps/sdk-node @caps/sdk-react @caps/sdk-angular
+   npm install @mpratyush54/sdk-node @mpratyush54/sdk-react @mpratyush54/sdk-angular
+   ```
+
+   For Python: `pip uninstall` the old package and `pip install mpratyush54-sdk`.
+
+2. Change your code to the new names and options. Examples for each SDK are below.
+3. Rename your settings: `CAPS_TOKEN` becomes `PLATFORM_SDK_TOKEN`. See the table below.
+4. Start your app and check the project's **Monitoring** section in the portal for its logs and requests.
+
+## Package names
+
+| Old | New |
 |---|---|
 | `@caps/sdk-node` | `@mpratyush54/sdk-node` |
-| `@caps/sdk-python` | `mpratyush54-sdk` |
 | `@caps/sdk-react` | `@mpratyush54/sdk-react` |
 | `@caps/sdk-angular` | `@mpratyush54/sdk-angular` |
+| `@caps/sdk-python` | `mpratyush54-sdk` (import `platform_sdk`) |
 
-## Import Renames
+## Code changes
 
-### Node.js SDK
+### Node.js
 
 ```typescript
 // Old
 import { CapsClient } from '@caps/sdk-node';
-const client = new CapsClient({ apiUrl: '...', capsToken: '...' });
 
-// New
-import { PlatformClient } from '@mpratyush54/sdk-node';
-const client = new PlatformClient({ apiUrl: '...', sdkToken: '...' });
+// New: the package exports a ready-made client
+import platform from '@mpratyush54/sdk-node';
+
+await platform.init({
+  projectName: 'my-api',
+  platformUrl: process.env.PLATFORM_URL,
+  sdkToken: process.env.PLATFORM_SDK_TOKEN,
+});
 ```
 
-### React SDK
+### React
 
 ```tsx
 // Old
@@ -33,111 +54,71 @@ import { CapsProvider, useCaps } from '@caps/sdk-react';
 
 // New
 import { PlatformProvider, usePlatform } from '@mpratyush54/sdk-react';
+
+<PlatformProvider config={{ apiBase: 'https://platform.example.com', token: 'sdk_live_...', projectId: '<project id>' }}>
+  <App />
+</PlatformProvider>
 ```
 
-### Angular SDK
+### Angular
 
 ```typescript
 // Old
 import { CapsModule } from '@caps/sdk-angular';
-CapsModule.forRoot({ capsToken: '...' });
 
 // New
 import { PlatformModule } from '@mpratyush54/sdk-angular';
-PlatformModule.forRoot({ sdkToken: '...' });
+
+PlatformModule.forRoot({ apiBase: 'https://platform.example.com', token: 'sdk_live_...', projectId: '<project id>' });
 ```
 
-### Python SDK
+### Python
 
 ```python
 # Old
 from caps_sdk import CapsClient
-client = CapsClient(caps_token='...')
 
 # New
+import os
 from platform_sdk import PlatformClient
-client = PlatformClient(sdk_token='...')
+
+client = PlatformClient()
+client.init(
+    project_name="my-service",
+    platform_url=os.environ["PLATFORM_URL"],
+    sdk_token=os.environ["PLATFORM_SDK_TOKEN"],
+)
 ```
 
-## Environment Variable Renames
-
-| Old Variable | New Variable |
-|---|---|
-| `CAPS_API_URL` | `PLATFORM_API_URL` |
-| `CAPS_TOKEN` | `PLATFORM_SDK_TOKEN` |
-| `CAPS_PROJECT_ID` | `PLATFORM_PROJECT_ID` |
-| `CAPS_ENVIRONMENT` | `PLATFORM_ENVIRONMENT` |
-| `CAPS_LOG_LEVEL` | `PLATFORM_LOG_LEVEL` |
-
-## Migration Steps
-
-### 1. Update package.json
-
-Replace all `@caps/*` dependencies with their Platform equivalents:
-
-```bash
-npm uninstall @caps/sdk-node @caps/sdk-react @caps/sdk-angular
-npm install @mpratyush54/sdk-node @mpratyush54/sdk-react @mpratyush54/sdk-angular
-```
-
-### 2. Update Environment Variables
-
-```bash
-# Old .env
-CAPS_API_URL=http://localhost:3000
-CAPS_TOKEN=sdk_xxxxx
-
-# New .env
-PLATFORM_API_URL=http://localhost:3000
-PLATFORM_SDK_TOKEN=sdk_xxxxx
-```
-
-### 3. Update Imports
-
-Use your IDE's search-and-replace to rename imports across your codebase:
+## Find and replace
 
 | Find | Replace |
 |---|---|
-| `CapsClient` | `PlatformClient` |
+| `CapsClient` | `PlatformClient` (Node: the default export `platform`) |
 | `CapsProvider` | `PlatformProvider` |
 | `CapsModule` | `PlatformModule` |
 | `useCaps` | `usePlatform` |
-| `capsToken` | `sdkToken` |
+| `capsToken` | `sdkToken` (Node) or `token` (React, Angular) |
 | `caps_token` | `sdk_token` |
-| `CAPS_` | `PLATFORM_` |
 
-### 4. Update Config Objects
+## Settings
 
-```typescript
-// Old
-{ capsToken: 'sdk_xxxxx', capsProjectId: 'proj-xxxxx' }
+| Old | New | Read by |
+|---|---|---|
+| `CAPS_TOKEN` | `PLATFORM_SDK_TOKEN` | Node.js and Python SDKs, when you do not pass a token |
+| `CAPS_API_URL` | `PLATFORM_URL` | The quickstarts pass it to `init`; the Node.js preload reads it |
+| `CAPS_ENVIRONMENT` | `PLATFORM_ENVIRONMENT` | The Node.js preload |
+| `CAPS_PROJECT_ID` | none | React and Angular take `projectId` in their config |
+| `CAPS_LOG_LEVEL` | none | No current SDK reads a log level setting |
 
-// New
-{ sdkToken: 'sdk_xxxxx', projectId: 'proj-xxxxx' }
-```
+## More help
 
-## Backward Compatibility
+- SDK reference: [Node.js PlatformClient](../api-reference/sdk-node/PlatformClient.md), [React](../getting-started/react-sdk-quickstart.md), [Angular](../getting-started/angular-sdk-quickstart.md), [Python](../getting-started/python-sdk-quickstart.md).
+- Open an issue: [github.com/Mpratyush54/SERVER-automation/issues](https://github.com/Mpratyush54/SERVER-automation/issues).
 
-The Platform API still accepts the old `capsToken` field in requests for a transition period. You will see a deprecation warning in the response headers:
+## How it works
 
-```
-Warning: 299 - "capsToken is deprecated, use sdkToken instead"
-```
-
-This compatibility layer will be removed in a future major release. Migrate as soon as possible.
-
-## Verification
-
-After migration, verify your application starts correctly:
-
-```bash
-# Run your app and check the startup log
-node dist/index.js
-# Expected: "PlatformClient initialized successfully"
-# If you see "CapsClient is deprecated" — update your imports
-```
-
-## Need Help?
-
-- Check the [SDK API References](../api-reference/sdk-node/PlatformClient.md) for updated configuration options
-- Open an issue at [github.com/Mpratyush54/SERVER-automation/issues](https://github.com/Mpratyush54/SERVER-automation/issues)
+- The API has no compatibility layer for Caps names. It does not accept a `capsToken` field and sends no deprecation header. Apps must send the new SDK token as `Authorization: Bearer <token>`, which the new SDKs do.
+- The Node.js SDK reads `PLATFORM_SDK_TOKEN` when `sdkToken` is not passed, and logs a warning when no token is set. The Python SDK does the same with `sdk_token`.
+- The Node.js preload (`@mpratyush54/sdk-node/dist/register`) calls `init` from settings: `PLATFORM_PROJECT_NAME` (or `PROJECT_NAME`), `PLATFORM_ENVIRONMENT` (or `ENVIRONMENT_NAME`), `PLATFORM_URL`, `APP_VERSION`, `GIT_SHA`.
+- The old Caps package and variable names on this page come from earlier releases and could not be checked against current code.

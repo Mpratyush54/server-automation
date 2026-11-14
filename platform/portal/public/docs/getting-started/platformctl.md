@@ -107,7 +107,7 @@ Set `PLATFORM_PROFILE` (or pass `--profile`) to `minimal`, `standard` (default)
 - `minimal`: core only; no monitoring, Portainer or ArgoCD.
 - `standard`: the existing Grafana/Prometheus/Loki stack, Portainer and ArgoCD.
 - `full`: standard services plus Alloy, S3-backed Loki, Tempo, Pyroscope and
-  blackbox-exporter. See [Full-profile telemetry](../operations/telemetry.md) for
+  blackbox-exporter. See [Turn on full monitoring](../operations/telemetry.md) for
   memory estimates, token/CORS integration and the required legacy Loki migration.
 
 - `ha`: the full feature set on a multi-node cluster: embedded etcd, ingress HA

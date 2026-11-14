@@ -60,37 +60,37 @@ export const DOC_GROUPS: DocGroup[] = [
     pages: [
       p('Databases', 'guides/databases', {
         children: [
-          p('Database monitoring', 'operations/database-monitoring'),
+          p('Slow queries and database health', 'operations/database-monitoring'),
           p('File storage providers', 'operations/storage-providers'),
         ],
       }),
       p('Backups and restore', 'operations/backups', {
-        children: [p('Manual backup procedures', 'deployment/backup-and-restore')],
+        children: [p('Back up a database by hand', 'deployment/backup-and-restore')],
       }),
       p('Monitoring and alerts', 'guides/monitoring', {
         children: [
-          p('Observability views', 'guides/observability'),
-          p('Alerts and on-call', 'operations/alerting'),
-          p('Error tracking', 'observability/error-tracking'),
-          p('Synthetic checks', 'operations/synthetics'),
+          p('Logs, traces and metrics', 'guides/observability'),
+          p('Get alerts', 'operations/alerting'),
+          p('Track and fix errors', 'observability/error-tracking'),
+          p('Uptime checks', 'operations/synthetics'),
           p('Status pages', 'guides/status-pages'),
-          p('Frontend monitoring', 'guides/frontend-rum'),
+          p('Browser monitoring', 'guides/frontend-rum'),
           p('Heatmaps', 'guides/heatmaps'),
-          p('Releases and comparisons', 'observability-releases'),
-          p('Full-profile telemetry', 'operations/telemetry'),
+          p('Releases and rollback', 'observability-releases'),
+          p('Full monitoring', 'operations/telemetry'),
           p('Privacy and retention', 'operations/telemetry-privacy'),
         ],
       }),
-      p('High availability', 'operations/ha', {
+      p('Run on several servers', 'operations/ha', {
         children: [p('Scaling', 'deployment/scaling')],
       }),
       p('Security and sign-in', 'guides/authentication', {
         children: [
           p('Two-factor sign-in', 'guides/mfa'),
-          p('Secrets', 'guides/secrets-management'),
-          p('Rotate cluster secrets', 'deployment/update-secrets'),
-          p('Host hardening', 'host-hardening'),
-          p('Namespace isolation', 'namespace-isolation'),
+          p('App secrets and settings', 'guides/secrets-management'),
+          p('Rotate passwords', 'deployment/update-secrets'),
+          p('Secure the server', 'host-hardening'),
+          p('Project isolation', 'namespace-isolation'),
           p('Image signing', 'operations/image-signing'),
         ],
       }),
@@ -109,8 +109,8 @@ export const DOC_GROUPS: DocGroup[] = [
     pages: [
       p('Upgrade', 'operations/upgrades', {
         children: [
-          p('Bundled components', 'operations/platform-stack'),
-          p('Rebuild and redeploy', 'deployment/rebuild-and-deploy'),
+          p('What the installer downloads', 'operations/platform-stack'),
+          p('Ship an API or portal change', 'deployment/rebuild-and-deploy'),
           p('Moving from Caps', 'getting-started/upgrade-guide'),
         ],
       }),
