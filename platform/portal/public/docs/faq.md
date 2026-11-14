@@ -18,8 +18,8 @@ k3s automatically.
 
 **Q: How does authentication work?**
 
-Passwordless email-based JWT. Users enter their email and get a token — no password
-prompt anywhere in the flow. In production you can add OIDC/SSO from Settings →
+Users sign in with an email or username and a password, then a two-factor code if
+two-factor is on for their account (admins can require it for everyone). In production you can add OIDC/SSO from Settings →
 Authentication, and the Platform ships oauth2-proxy on-cluster so services that
 don't ship SSO in their OSS build (Portainer, MinIO) can still sit
 behind the same single sign-on.

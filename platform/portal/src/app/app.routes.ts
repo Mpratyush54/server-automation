@@ -35,7 +35,7 @@ import { MonitoringView, viewForObsTab } from './pages/observability/monitoring-
 
 import { authGuard } from './guards/auth.guard';
 import { docsMatcher } from './guards/docs.matcher';
-import { appHostGuard, marketingOnlyGuard } from './guards/public-domain.guard';
+import { appHostGuard, marketingOnlyGuard, docsGuard } from './guards/public-domain.guard';
 import { homeGuard, legacyLandingGuard } from './guards/home.guard';
 
 /**
@@ -58,7 +58,7 @@ export const routes: Routes = [
   // Marketing site only (platform.pratyushes.dev)
   { path: 'landing', canActivate: [marketingOnlyGuard, legacyLandingGuard], children: [] },
   { path: 'about', component: AboutComponent, canActivate: [marketingOnlyGuard], title: 'About Platform' },
-  { matcher: docsMatcher, component: DocsComponent, canActivate: [marketingOnlyGuard] },
+  { matcher: docsMatcher, component: DocsComponent, canActivate: [docsGuard] },
 
   // App / server hosts only
   { path: 'login', component: LoginComponent, canActivate: [appHostGuard] },

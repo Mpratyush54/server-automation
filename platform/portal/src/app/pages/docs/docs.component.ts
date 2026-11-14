@@ -629,8 +629,8 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
         textColor: fg,
         mainBkg: raised,
         nodeBorder: lineStrong,
-        clusterBkg: canvas,
-        clusterBorder: hex('--line', '#dbdee3'),
+        clusterBkg: surface,
+        clusterBorder: lineStrong,
         edgeLabelBackground: surface,
         actorBkg: raised,
         actorBorder: lineStrong,
@@ -638,6 +638,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
         noteBkgColor: surface,
         noteBorderColor: hex('--accent', '#f2b53a'),
         fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
+        fontSize: '14px',
       },
     };
   }
@@ -684,112 +685,102 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.enhanceDiagramViewers();
   }
 
+  /** Full-size diagram overlay: scrollable, closes on Esc, backdrop or Close. */
+  private openDiagram(svg: SVGSVGElement, naturalWidth: number, returnFocus: HTMLElement) {
+    const doc = this.document;
+    const overlay = doc.createElement('div');
+    overlay.className = 'docs-diagram-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', 'Diagram, full size');
+    const panel = doc.createElement('div');
+    panel.className = 'docs-diagram-overlay-panel';
+    const head = doc.createElement('div');
+    head.className = 'docs-diagram-overlay-head';
+    const label = doc.createElement('span');
+    label.textContent = 'Diagram';
+    const close = doc.createElement('button');
+    close.type = 'button';
+    close.className = 'docs-diagram-btn';
+    close.textContent = 'Close';
+    head.append(label, close);
+    const body = doc.createElement('div');
+    body.className = 'docs-diagram-overlay-body';
+    const copy = svg.cloneNode(true) as SVGSVGElement;
+    copy.style.width = Math.round(naturalWidth) + 'px';
+    copy.style.height = 'auto';
+    body.appendChild(copy);
+    panel.append(head, body);
+    overlay.appendChild(panel);
+    const prevOverflow = doc.body.style.overflow;
+    doc.body.style.overflow = 'hidden';
+    const done = () => {
+      overlay.remove();
+      doc.body.style.overflow = prevOverflow;
+      doc.removeEventListener('keydown', onKey, true);
+      returnFocus.focus();
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); done(); } };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(); });
+    close.addEventListener('click', done);
+    doc.addEventListener('keydown', onKey, true);
+    doc.body.appendChild(overlay);
+    close.focus();
+  }
+
   private enhanceDiagramViewers() {
     const container = this.el.nativeElement.querySelector('.docs-markdown') as HTMLElement | null;
     if (!container) return;
-
     const diagramNodes = Array.from(container.querySelectorAll<HTMLElement>('.mermaid')).filter(
       (node) => !node.closest('.docs-diagram-viewer') && !node.classList.contains('mermaid-error')
     );
 
     diagramNodes.forEach((node) => {
+      const svg = node.querySelector('svg') as SVGSVGElement | null;
+      if (!svg) return;
+      // Natural size from the viewBox; Mermaid's own width/max-width are dropped
+      // so the diagram is drawn at a readable size instead of being shrunk.
+      const vb = svg.viewBox?.baseVal;
+      const naturalWidth = vb && vb.width ? vb.width : svg.getBoundingClientRect().width;
+      svg.removeAttribute('width');
+      svg.removeAttribute('height');
+      svg.style.removeProperty('max-width');
+
       const viewer = document.createElement('figure');
       viewer.className = 'docs-diagram-viewer';
-
-      const toolbar = document.createElement('div');
-      toolbar.className = 'docs-diagram-toolbar';
-
-      const title = document.createElement('span');
-      title.className = 'docs-diagram-title';
-      title.textContent = 'Diagram';
-
-      const controls = document.createElement('div');
-      controls.className = 'docs-diagram-controls';
-
       const canvas = document.createElement('div');
       canvas.className = 'docs-diagram-canvas';
-
-      const viewport = document.createElement('div');
-      viewport.className = 'docs-diagram-viewport';
-
+      canvas.tabIndex = 0;
+      canvas.setAttribute('role', 'group');
+      canvas.setAttribute('aria-label', 'Diagram');
       node.parentNode?.insertBefore(viewer, node);
-      viewport.appendChild(node);
-      canvas.appendChild(viewport);
-
-      let scale = 1;
-      let translateX = 0;
-      let translateY = 0;
-      let isDragging = false;
-      let dragStartX = 0;
-      let dragStartY = 0;
-
-      const applyTransform = () => {
-        viewport.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
-      };
-
-      const fitToCanvas = () => {
-        const content = (node.querySelector('svg') || node) as HTMLElement;
-        const contentWidth = content.getBoundingClientRect().width || content.scrollWidth || 1;
-        const availableWidth = Math.max(canvas.clientWidth - 16, 280);
-        scale = Math.min(1, Math.max(0.5, Number((availableWidth / contentWidth).toFixed(2))));
-        translateX = 0;
-        translateY = 0;
-        applyTransform();
-      };
-
-      const makeButton = (label: string, aria: string, action: () => void) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'docs-diagram-btn';
-        btn.textContent = label;
-        btn.setAttribute('aria-label', aria);
-        btn.addEventListener('click', action);
-        return btn;
-      };
-
-      controls.appendChild(makeButton('−', 'Zoom out', () => {
-        scale = Math.max(0.5, Number((scale - 0.1).toFixed(2)));
-        applyTransform();
-      }));
-      controls.appendChild(makeButton('+', 'Zoom in', () => {
-        scale = Math.min(1.8, Number((scale + 0.1).toFixed(2)));
-        applyTransform();
-      }));
-      controls.appendChild(makeButton('Reset', 'Reset zoom', () => fitToCanvas()));
-
-      canvas.addEventListener('pointerdown', (event) => {
-        isDragging = true;
-        dragStartX = event.clientX - translateX;
-        dragStartY = event.clientY - translateY;
-        canvas.setPointerCapture(event.pointerId);
-        canvas.classList.add('is-panning');
-      });
-      canvas.addEventListener('pointermove', (event) => {
-        if (!isDragging) return;
-        translateX = event.clientX - dragStartX;
-        translateY = event.clientY - dragStartY;
-        applyTransform();
-      });
-      const stopDragging = (event: PointerEvent) => {
-        isDragging = false;
-        canvas.releasePointerCapture(event.pointerId);
-        canvas.classList.remove('is-panning');
-      };
-      canvas.addEventListener('pointerup', stopDragging);
-      canvas.addEventListener('pointercancel', stopDragging);
-      // Zoom with Ctrl + wheel only, so scrolling the page over a diagram still scrolls.
-      canvas.addEventListener('wheel', (event) => {
-        if (!event.ctrlKey) return;
-        event.preventDefault();
-        scale = Math.min(1.8, Math.max(0.5, Number((scale + (event.deltaY > 0 ? -0.08 : 0.08)).toFixed(2))));
-        applyTransform();
-      }, { passive: false });
-
-      toolbar.appendChild(title);
-      toolbar.appendChild(controls);
-      viewer.appendChild(toolbar);
+      canvas.appendChild(node);
       viewer.appendChild(canvas);
-      requestAnimationFrame(fitToCanvas);
+
+      // On the page the whole diagram fits the column; "View full size" opens it
+      // at its natural size in an overlay where it can be read and scrolled.
+      const layout = () => {
+        const available = Math.max(canvas.clientWidth - 32, 240);
+        const width = Math.min(naturalWidth, available);
+        svg.style.width = Math.round(width) + 'px';
+        svg.style.height = 'auto';
+        bar.hidden = naturalWidth <= available * 1.15;
+      };
+
+      const bar = document.createElement('figcaption');
+      bar.className = 'docs-diagram-bar';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'docs-diagram-btn';
+      btn.textContent = 'View full size';
+      btn.addEventListener('click', () => this.openDiagram(svg, naturalWidth, btn));
+      bar.appendChild(btn);
+      viewer.appendChild(bar);
+      canvas.addEventListener('click', () => { if (!bar.hidden) this.openDiagram(svg, naturalWidth, btn); });
+      canvas.classList.add('is-zoomable');
+
+      requestAnimationFrame(layout);
+      if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => layout()).observe(canvas);
     });
   }
 }

@@ -2,7 +2,7 @@
 
 Complete list of all 48 permissions and their assignment to built-in role presets. Custom roles can contain any combination of these permissions.
 
-> **Legend:** ✓ = Granted | — = Denied
+> **Legend:** Yes = granted, blank or — = not granted
 
 ---
 
@@ -82,84 +82,84 @@ Complete list of all 48 permissions and their assignment to built-in role preset
 
 | Permission | admin | devops | tech_lead | developer | viewer |
 |---|---|---|---|---|---|
-| `auth.login` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `auth.manage-tokens` | ✓ | ✓ | | | |
+| `auth.login` | Yes | Yes | Yes | Yes | Yes |
+| `auth.manage-tokens` | Yes | Yes | | | |
 
 ### User Management
 
 | Permission | admin | devops | tech_lead | developer | viewer |
 |---|---|---|---|---|---|
-| `users.list` | ✓ | ✓ | ✓ | | |
-| `users.create` | ✓ | ✓ | | | |
-| `users.update` | ✓ | ✓ | | | |
-| `users.delete` | ✓ | ✓ | | | |
-| `users.assign-role` | ✓ | ✓ | | | |
-| `users.read-profile` | ✓ | ✓ | ✓ | ✓ | |
+| `users.list` | Yes | Yes | Yes | | |
+| `users.create` | Yes | Yes | | | |
+| `users.update` | Yes | Yes | | | |
+| `users.delete` | Yes | Yes | | | |
+| `users.assign-role` | Yes | Yes | | | |
+| `users.read-profile` | Yes | Yes | Yes | Yes | |
 
 ### Projects
 
 | Permission | admin | devops | tech_lead | developer | viewer |
 |---|---|---|---|---|---|
-| `projects.list` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `projects.create` | ✓ | ✓ | ✓ | | |
-| `projects.update` | ✓ | ✓ | ✓ | | |
-| `projects.delete` | ✓ | ✓ | | | |
-| `projects.read` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `projects.list` | Yes | Yes | Yes | Yes | Yes |
+| `projects.create` | Yes | Yes | Yes | | |
+| `projects.update` | Yes | Yes | Yes | | |
+| `projects.delete` | Yes | Yes | | | |
+| `projects.read` | Yes | Yes | Yes | Yes | Yes |
 
 ### Deployments
 
 | Permission | admin | devops | tech_lead | developer | viewer |
 |---|---|---|---|---|---|
-| `deployments.trigger` | ✓ | ✓ | ✓ | ✓ | |
-| `deployments.terminate` | ✓ | ✓ | ✓ | | |
-| `deployments.restart` | ✓ | ✓ | | | |
-| `deployments.scale` | ✓ | ✓ | | | |
-| `deployments.read` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `deployments.rollback` | ✓ | ✓ | ✓ | | |
+| `deployments.trigger` | Yes | Yes | Yes | Yes | |
+| `deployments.terminate` | Yes | Yes | Yes | | |
+| `deployments.restart` | Yes | Yes | | | |
+| `deployments.scale` | Yes | Yes | | | |
+| `deployments.read` | Yes | Yes | Yes | Yes | Yes |
+| `deployments.rollback` | Yes | Yes | Yes | | |
 
 ### Databases
 
 | Permission | admin | devops | tech_lead | developer | viewer |
 |---|---|---|---|---|---|
-| `databases.provision` | ✓ | ✓ | | | |
-| `databases.backup` | ✓ | ✓ | | | |
-| `databases.restore` | ✓ | ✓ | | | |
-| `databases.delete` | ✓ | ✓ | | | |
-| `databases.create-connection` | ✓ | ✓ | | | |
-| `databases.delete-connection` | ✓ | ✓ | | | |
-| `databases.read` | ✓ | ✓ | ✓ | ✓ | |
+| `databases.provision` | Yes | Yes | | | |
+| `databases.backup` | Yes | Yes | | | |
+| `databases.restore` | Yes | Yes | | | |
+| `databases.delete` | Yes | Yes | | | |
+| `databases.create-connection` | Yes | Yes | | | |
+| `databases.delete-connection` | Yes | Yes | | | |
+| `databases.read` | Yes | Yes | Yes | Yes | |
 
 ### Config / Feature Flags
 
 | Permission | admin | devops | tech_lead | developer | viewer |
 |---|---|---|---|---|---|
-| `config.read` | ✓ | ✓ | ✓ | ✓ | |
-| `config.update` | ✓ | ✓ | ✓ | | |
-| `config.delete` | ✓ | ✓ | | | |
-| `config.manage-feature-flags` | ✓ | ✓ | ✓ | | |
+| `config.read` | Yes | Yes | Yes | Yes | |
+| `config.update` | Yes | Yes | Yes | | |
+| `config.delete` | Yes | Yes | | | |
+| `config.manage-feature-flags` | Yes | Yes | Yes | | |
 
 ### Secrets
 
 | Permission | admin | devops | tech_lead | developer | viewer |
 |---|---|---|---|---|---|
-| `secrets.list` | ✓ | ✓ | ✓ | | |
-| `secrets.read` | ✓ | ✓ | ✓ | | |
-| `secrets.reveal` | ✓ | ✓ | | | |
-| `secrets.create` | ✓ | ✓ | ✓ | | |
-| `secrets.update` | ✓ | ✓ | ✓ | | |
-| `secrets.delete` | ✓ | ✓ | | | |
-| `secrets.export` | ✓ | ✓ | ✓ | | |
-| `secrets.import` | ✓ | ✓ | ✓ | | |
-| `secrets.rollback` | ✓ | ✓ | | | |
+| `secrets.list` | Yes | Yes | Yes | | |
+| `secrets.read` | Yes | Yes | Yes | | |
+| `secrets.reveal` | Yes | Yes | | | |
+| `secrets.create` | Yes | Yes | Yes | | |
+| `secrets.update` | Yes | Yes | Yes | | |
+| `secrets.delete` | Yes | Yes | | | |
+| `secrets.export` | Yes | Yes | Yes | | |
+| `secrets.import` | Yes | Yes | Yes | | |
+| `secrets.rollback` | Yes | Yes | | | |
 
 ### Alerts
 
 | Permission | admin | devops | tech_lead | developer | viewer |
 |---|---|---|---|---|---|
-| `alerts.list` | ✓ | ✓ | ✓ | ✓ | |
-| `alerts.create` | ✓ | ✓ | ✓ | | |
-| `alerts.update` | ✓ | ✓ | ✓ | | |
-| `alerts.delete` | ✓ | ✓ | | | |
+| `alerts.list` | Yes | Yes | Yes | Yes | |
+| `alerts.create` | Yes | Yes | Yes | | |
+| `alerts.update` | Yes | Yes | Yes | | |
+| `alerts.delete` | Yes | Yes | | | |
 
 These cover the legacy `/alerts` API. Per-project alerting configuration (`/projects/:id/alerting/*`:
 channels, policies, schedules, silences, SLOs, monitors) follows **project** roles: project devops or
@@ -170,56 +170,56 @@ platform admin / devops only. See [Alerting](../../operations/alerting.md#permis
 
 | Permission | admin | devops | tech_lead | developer | viewer |
 |---|---|---|---|---|---|
-| `logs.read` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `logs.search` | ✓ | ✓ | ✓ | | |
-| `metrics.read` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `metrics.read-rpm` | ✓ | ✓ | ✓ | | |
+| `logs.read` | Yes | Yes | Yes | Yes | Yes |
+| `logs.search` | Yes | Yes | Yes | | |
+| `metrics.read` | Yes | Yes | Yes | Yes | Yes |
+| `metrics.read-rpm` | Yes | Yes | Yes | | |
 
 ### Settings
 
 | Permission | admin | devops | tech_lead | developer | viewer |
 |---|---|---|---|---|---|
-| `settings.smtp.read` | ✓ | ✓ | | | |
-| `settings.smtp.manage` | ✓ | ✓ | | | |
-| `settings.storage.read` | ✓ | ✓ | | | |
-| `settings.storage.manage` | ✓ | ✓ | | | |
+| `settings.smtp.read` | Yes | Yes | | | |
+| `settings.smtp.manage` | Yes | Yes | | | |
+| `settings.storage.read` | Yes | Yes | | | |
+| `settings.storage.manage` | Yes | Yes | | | |
 
 ### Cluster / Infrastructure
 
 | Permission | admin | devops | tech_lead | developer | viewer |
 |---|---|---|---|---|---|
-| `cluster.read` | ✓ | ✓ | | | |
-| `cluster.manage` | ✓ | ✓ | | | |
-| `cluster.pods.read` | ✓ | ✓ | | | |
-| `cluster.pods.delete` | ✓ | ✓ | | | |
+| `cluster.read` | Yes | Yes | | | |
+| `cluster.manage` | Yes | Yes | | | |
+| `cluster.pods.read` | Yes | Yes | | | |
+| `cluster.pods.delete` | Yes | Yes | | | |
 
 ### CI/CD
 
 | Permission | admin | devops | tech_lead | developer | viewer |
 |---|---|---|---|---|---|
-| `cicd.register-webhook` | ✓ | ✓ | | | |
-| `cicd.read` | ✓ | ✓ | ✓ | | |
+| `cicd.register-webhook` | Yes | Yes | | | |
+| `cicd.read` | Yes | Yes | Yes | | |
 
 ### Bootstrap
 
 | Permission | admin | devops | tech_lead | developer | viewer |
 |---|---|---|---|---|---|
-| `bootstrap.init` | ✓ | ✓ | | | |
-| `bootstrap.read` | ✓ | ✓ | | | |
+| `bootstrap.init` | Yes | Yes | | | |
+| `bootstrap.read` | Yes | Yes | | | |
 
 ### Audit
 
 | Permission | admin | devops | tech_lead | developer | viewer |
 |---|---|---|---|---|---|
-| `audit.read` | ✓ | ✓ | ✓ | | |
+| `audit.read` | Yes | Yes | Yes | | |
 
 ### SDK
 
 | Permission | admin | devops | tech_lead | developer | viewer |
 |---|---|---|---|---|---|
-| `sdk.send-logs` | ✓ | ✓ | | | |
-| `sdk.send-metrics` | ✓ | ✓ | | | |
-| `sdk.send-bug-reports` | ✓ | ✓ | | | |
+| `sdk.send-logs` | Yes | Yes | | | |
+| `sdk.send-metrics` | Yes | Yes | | | |
+| `sdk.send-bug-reports` | Yes | Yes | | | |
 
 ---
 

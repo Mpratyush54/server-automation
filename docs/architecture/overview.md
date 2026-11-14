@@ -41,7 +41,6 @@ graph TB
 
 <div class="dashboard-card">
   <div class="dashboard-card-header">
-    <div class="dashboard-card-icon">⚡</div>
     <h4>Platform API</h4>
   </div>
   <p><strong>Express 4 + TypeScript + TypeORM + Mongoose</strong> — REST backend handling auth, CRUD, secrets, deployments, SDK endpoints, and audit logging. Connects to PostgreSQL for relational data and MongoDB for time-series/logs.</p>
@@ -49,7 +48,6 @@ graph TB
 
 <div class="dashboard-card">
   <div class="dashboard-card-header">
-    <div class="dashboard-card-icon">🖥️</div>
     <h4>Portal</h4>
   </div>
   <p><strong>Angular 19 + Tailwind + Standalone Components</strong> — Web UI providing dashboards, project management, secret editor, and OAuth consent screens. Thin client with no direct data store.</p>
@@ -57,7 +55,6 @@ graph TB
 
 <div class="dashboard-card">
   <div class="dashboard-card-header">
-    <div class="dashboard-card-icon">🗄️</div>
     <h4>PostgreSQL 16</h4>
   </div>
   <p><strong>Primary data store</strong> — Users, projects, secrets, roles, deployments, and audit logs. Schema managed by versioned TypeORM migrations, applied by a Job before each API rollout. Persistent volume.</p>
@@ -65,7 +62,6 @@ graph TB
 
 <div class="dashboard-card">
   <div class="dashboard-card-header">
-    <div class="dashboard-card-icon">📊</div>
     <h4>MongoDB 7.x</h4>
   </div>
   <p><strong>Time-series & unstructured data</strong> — Logs, API metrics, bug reports, SDK events, and raw metrics. Non-blocking Mongoose connection. Persistent volume.</p>
@@ -73,7 +69,6 @@ graph TB
 
 <div class="dashboard-card">
   <div class="dashboard-card-header">
-    <div class="dashboard-card-icon">⚡</div>
     <h4>Redis 7</h4>
   </div>
   <p><strong>In-memory cache + pub/sub</strong> — Permission cache (60s TTL), session store, pub/sub for real-time events. Ephemeral with optional AOF persistence.</p>
@@ -81,7 +76,6 @@ graph TB
 
 <div class="dashboard-card">
   <div class="dashboard-card-header">
-    <div class="dashboard-card-icon">📦</div>
     <h4>MinIO / S3</h4>
   </div>
   <p><strong>Object storage</strong> — File uploads, database backups, bug report screenshots, and SDK artifacts. S3-compatible API. Persistent volume.</p>
@@ -167,17 +161,16 @@ Which SDK uses which endpoint:
 
 | Endpoint | Node | Python | React | Angular |
 |---|:-:|:-:|:-:|:-:|
-| `POST /api/sdk/register` | ✅ | ✅ | ✅ | ✅ |
-| `POST /api/sdk/heartbeat` | ✅ | ✅ | ✅ | ✅ |
-| `POST /api/sdk/logs` | ✅ | ✅ | — | — |
-| `POST /api/sdk/api-metrics` | ✅ | — | ✅ | ✅ |
-| `POST /api/sdk/bug-report` | ✅ | — | ✅ | ✅ |
-| `GET  /api/sdk/config` | ✅ | ✅ | ✅ | ✅ |
-| `GET  /api/sdk/db-credentials` | ✅ | ✅ | — | — |
+| `POST /api/sdk/register` | Yes | Yes | Yes | Yes |
+| `POST /api/sdk/heartbeat` | Yes | Yes | Yes | Yes |
+| `POST /api/sdk/logs` | Yes | Yes | — | — |
+| `POST /api/sdk/api-metrics` | Yes | — | Yes | Yes |
+| `POST /api/sdk/bug-report` | Yes | — | Yes | Yes |
+| `GET  /api/sdk/config` | Yes | Yes | Yes | Yes |
+| `GET  /api/sdk/db-credentials` | Yes | Yes | — | — |
 
 <div class="dashboard-card">
   <div class="dashboard-card-header">
-    <div class="dashboard-card-icon">🟢</div>
     <h4>Node.js SDK — <code>@mpratyush54/sdk-node</code></h4>
   </div>
   <p><strong>Auth:</strong> <code>sdk-{projectId}:{secret}</code> or <code>sdk_live_{uuid}</code>. <strong>Key feature:</strong> <code>PlatformClient.init()</code> auto-registers, sends heartbeats, provides Express metrics middleware, captures console logs, Winston/Pino transports, and database managers (pg, mongo, redis).</p>
@@ -185,7 +178,6 @@ Which SDK uses which endpoint:
 
 <div class="dashboard-card">
   <div class="dashboard-card-header">
-    <div class="dashboard-card-icon">🔵</div>
     <h4>Python SDK — <code>platform-sdk</code></h4>
   </div>
   <p><strong>Auth:</strong> SDK token. <strong>Key feature:</strong> <code>PlatformClient()</code> provides registration, metrics reporting, logging, and config fetching.</p>
@@ -193,7 +185,6 @@ Which SDK uses which endpoint:
 
 <div class="dashboard-card">
   <div class="dashboard-card-header">
-    <div class="dashboard-card-icon">⚛️</div>
     <h4>React SDK — <code>@mpratyush54/sdk-react</code></h4>
   </div>
   <p><strong>Auth:</strong> SDK token. <strong>Key feature:</strong> <code>&lt;PlatformProvider&gt;</code> wraps your app with hook-based API access, <code>&lt;ErrorBoundary&gt;</code> for crash interception, <code>&lt;BugReporterWidget&gt;</code>, <code>usePlatform()</code>, and <code>useBugReporter()</code> hooks.</p>
@@ -201,7 +192,6 @@ Which SDK uses which endpoint:
 
 <div class="dashboard-card">
   <div class="dashboard-card-header">
-    <div class="dashboard-card-icon">🅰️</div>
     <h4>Angular SDK — <code>@mpratyush54/sdk-angular</code></h4>
   </div>
   <p><strong>Auth:</strong> SDK token. <strong>Key feature:</strong> <code>PlatformModule</code> provides an HTTP interceptor for metrics, <code>ErrorHandler</code> for global error capture, and <code>BugReporterComponent</code> for user feedback.</p>
@@ -244,13 +234,13 @@ graph LR
 
 ## Key Design Decisions
 
-### <span class="decision-badge">#1</span> Password-less Authentication
+### <span class="decision-badge">#1</span> Password sign-in with optional two-factor
 
-`POST /api/auth/login` accepts **only email** — no password. If the email exists in the `users` table, a JWT is issued immediately. Rationale: Simplifies auth for internal PaaS; relies on network-level security (ingress TLS, mTLS for production). Demo seeding creates 4 users on first boot.
+`POST /api/auth/login` takes an email or username **and a password** (bcrypt hashes). Accounts with two-factor enabled get an MFA challenge before a session is issued, and admins can require two-factor for everyone. The installer creates the first admin account; there are no demo users (leftover demo users are removed at start-up). GitHub and GitLab sign-in can be added under Settings.
 
 ### <span class="decision-badge">#2</span> JWT-based Sessions
 
-Tokens are signed with `JWT_SECRET` (default: `plat-super-secret-key`). Expiry: **24 hours** for login JWT, **1 hour** for OIDC access tokens. Payload: `{ id, email, name, role }` — no password hash needed. The `expressAuthenticate` middleware verifies the JWT on every protected route and attaches `req.user`.
+Tokens are signed with `JWT_SECRET`, which the installer generates. The API refuses to start if it is missing, shorter than 32 characters, or a known default. Expiry: **24 hours** for login JWT, **1 hour** for OIDC access tokens. Payload: `{ id, email, name, role }` — no password hash needed. The `expressAuthenticate` middleware verifies the JWT on every protected route and attaches `req.user`.
 
 ### <span class="decision-badge">#3</span> RBAC with Cached Permissions
 

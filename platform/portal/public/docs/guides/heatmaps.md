@@ -1,7 +1,7 @@
 # Heatmaps (click and scroll depth)
 
 Per-page click heatmaps and scroll-depth charts, captured by the React / Angular browser SDKs
-and shown in the portal under **Project → 🔥 Heatmaps**. Data is stored only as anonymous
+and shown in the portal under **Project → Monitoring → Users**. Data is stored only as anonymous
 aggregates in Postgres (no raw events, no user or session ids, no IPs).
 
 ## Enable in the SDK

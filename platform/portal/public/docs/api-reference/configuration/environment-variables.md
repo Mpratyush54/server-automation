@@ -13,14 +13,14 @@
 | `PLATFORM_URL` | — | Full platform URL for portal builds | |
 | `KUBECONFIG` | `~/.kube/config` | Path to Kubernetes kubeconfig | |
 | **PostgreSQL** | | | |
-| `PLATFORM_PG_HOST` | — | PostgreSQL hostname | ✓ |
+| `PLATFORM_PG_HOST` | — | PostgreSQL hostname | Yes |
 | `PLATFORM_PG_PORT` | `5432` | PostgreSQL port | |
 | `PLATFORM_PG_USER` | `platform` | PostgreSQL user | |
-| `PLATFORM_PG_PASSWORD` | — | PostgreSQL password | ✓ |
+| `PLATFORM_PG_PASSWORD` | — | PostgreSQL password | Yes |
 | `PLATFORM_PG_DB` | `platform` | PostgreSQL database name | |
 | `PLATFORM_PG_POOL` | `10` | Connection pool size | |
 | **MongoDB** | | | |
-| `PLATFORM_MONGO_URI` | — | MongoDB connection URI | ✓ |
+| `PLATFORM_MONGO_URI` | — | MongoDB connection URI | Yes |
 | `PLATFORM_MONGO_POOL` | `5` | Connection pool size | |
 | **Redis** | | | |
 | `PLATFORM_REDIS_HOST` | — | Redis hostname | |
@@ -29,7 +29,7 @@
 | `PLATFORM_REDIS_DB` | `0` | Redis database index | |
 | **Shared API state (Redis)** | | | |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `redis-master.databases.svc.cluster.local` / `6379` / `0` | Redis for login state, one-time codes, rate limits and permission-cache invalidation | |
-| `REDIS_PASSWORD` | — | Platform Redis password; the API derives and creates its own ACL user (`plat-api`, keys `plat:api:*`) from it | ✓ |
+| `REDIS_PASSWORD` | — | Platform Redis password; the API derives and creates its own ACL user (`plat-api`, keys `plat:api:*`) from it | Yes |
 | `REDIS_API_USERNAME` / `REDIS_API_PASSWORD` | — | Use an externally managed ACL user instead | |
 | `REDIS_SENTINEL_HOSTS` | — | Comma-separated Sentinel `host:port` list (default port 26379). When set, every API Redis client finds the master through Sentinel and ACL users are created on every node; platformctl sets it on the `ha` profile | |
 | `REDIS_SENTINEL_MASTER` | `mymaster` | Sentinel master set name | |
@@ -38,7 +38,7 @@
 | `PLATFORM_STATE_STORE` | `redis` | `memory` = per-process state for single-process local development only | |
 | `SHUTDOWN_TIMEOUT_MS` | `25000` | Graceful-shutdown drain deadline after SIGTERM | |
 | **Secrets Encryption** | | | |
-| `SECRETS_ENCRYPTION_KEY` | — | 32-byte master key for AES-256-GCM (base64 or hex) | ✓ |
+| `SECRETS_ENCRYPTION_KEY` | — | 32-byte master key for AES-256-GCM (base64 or hex) | Yes |
 | **JWT** | | | |
 | `JWT_SECRET` | `plat-super-secret-key` | JWT signing secret | |
 | **GitLab** | | | |
@@ -80,8 +80,8 @@
 | Variable | Default | Description | Required |
 |---|---|---|---|
 | **Domain & Identity** | | | |
-| `DOMAIN` | — | Primary domain (e.g. `platform.company.com`) | ✓ |
-| `ADMIN_EMAIL` | — | Admin email for Let's Encrypt + notifications | ✓ |
+| `DOMAIN` | — | Primary domain (e.g. `platform.company.com`) | Yes |
+| `ADMIN_EMAIL` | — | Admin email for Let's Encrypt + notifications | Yes |
 | `PLATFORM_NAME` | `Platform` | Display name for the platform | |
 | **Bootstrap Behaviour** | | | |
 | `NON_INTERACTIVE` | `false` | Skip all prompts (CI mode) | |
@@ -95,7 +95,7 @@
 | `INSTALL_PORTAINER` | `y` | Install Portainer | |
 | `INSTALL_CERTMANAGER` | `y` | Install cert-manager | |
 | **Let's Encrypt** | | | |
-| `LE_EMAIL` | — | Email for Let's Encrypt certificate registration | ✓ |
+| `LE_EMAIL` | — | Email for Let's Encrypt certificate registration | Yes |
 | **Generated Secrets** | | | |
 | `POSTGRES_PASSWORD` | — | PostgreSQL admin password (auto-generated if blank) | |
 | `MONGO_PASSWORD` | — | MongoDB root password | |

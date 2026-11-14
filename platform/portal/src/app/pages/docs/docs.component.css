@@ -826,81 +826,86 @@
 /* ── Diagrams ───────────────────────────────────────────────────────────── */
 
 .docs-diagram-viewer {
-  margin: 0 0 20px;
+  margin: 8px 0 24px;
   border: 1px solid rgb(var(--line));
   border-radius: 10px;
   background: rgb(var(--surface));
   overflow: hidden;
 }
 
-.docs-diagram-toolbar {
+.docs-diagram-canvas {
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px;
+}
+.docs-diagram-canvas.is-zoomable:has(+ .docs-diagram-bar:not([hidden])) { cursor: zoom-in; }
+
+.docs-diagram-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  height: 36px;
-  padding: 0 6px 0 14px;
-  border-bottom: 1px solid rgb(var(--line));
-  background: rgb(var(--raised) / 0.5);
+  justify-content: flex-end;
+  min-height: 36px;
+  padding: 0 8px;
+  border-top: 1px solid rgb(var(--line));
 }
-
-.docs-diagram-title {
-  font-size: 12px;
-  color: rgb(var(--fg-3));
-}
-
-.docs-diagram-controls {
-  display: flex;
-  gap: 2px;
-}
+.docs-diagram-bar[hidden] { display: none; }
 
 .docs-diagram-btn {
-  min-width: 28px;
   height: 26px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: 5px;
+  padding: 0 10px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 6px;
   background: transparent;
   color: rgb(var(--fg-2));
   font: inherit;
   font-size: 12.5px;
   cursor: pointer;
-  transition: color 120ms var(--docs-ease), background-color 120ms var(--docs-ease), border-color 120ms var(--docs-ease);
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
 }
+.docs-diagram-btn:hover { color: rgb(var(--fg)); background: rgb(var(--raised)); }
+.docs-diagram-btn:focus-visible { outline: none; border-color: rgb(var(--accent)); }
 
-.docs-diagram-btn:hover {
-  color: rgb(var(--fg));
-  background: rgb(var(--raised));
+.docs-diagram-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 0.5);
 }
-
-.docs-diagram-btn:focus-visible {
-  border-color: rgb(var(--accent));
-}
-
-.docs-diagram-canvas {
+.docs-diagram-overlay-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 1400px);
+  max-height: 100%;
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--line-strong));
+  border-radius: 10px;
   overflow: hidden;
-  padding: 16px;
-  cursor: grab;
-  touch-action: none;
 }
-
-.docs-diagram-canvas.is-panning {
-  cursor: grabbing;
+.docs-diagram-overlay-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid rgb(var(--line));
+  font-size: 13px;
+  color: rgb(var(--fg-2));
 }
-
-.docs-diagram-viewport {
-  transform-origin: top left;
-  width: max-content;
+.docs-diagram-overlay-body {
+  overflow: auto;
+  padding: 24px;
 }
+.docs-diagram-overlay-body svg { display: block; margin: 0 auto; max-width: none !important; }
 
 .docs-markdown .mermaid {
   margin: 0;
   background: transparent;
+  flex: none;
 }
-
-.docs-markdown .mermaid svg {
-  max-width: none !important;
-  height: auto;
-}
+.docs-markdown .mermaid svg { display: block; max-width: none !important; }
 
 .docs-markdown .mermaid-error {
   margin: 0 0 20px;

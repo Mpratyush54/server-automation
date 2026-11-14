@@ -40,7 +40,7 @@ platform/api/tests/
 │   └── routes/                   # Per-route handler unit tests
 └── integration/                  # End-to-end against a live API
     ├── api.test.ts               # Health + general endpoints
-    ├── auth-users.test.ts        # Passwordless login + user CRUD
+    ├── auth-users.test.ts        # Password login + user CRUD
     ├── frontend-backend.test.ts  # Portal → API connectivity
     ├── oauth.test.ts             # OAuth2 authz code flow
     ├── projects-deployments.test.ts  # Project + deployment lifecycle
