@@ -44,9 +44,10 @@ func TestListForProfileDropsKubeVIPUnlessHA(t *testing.T) {
 			haOnly++
 		}
 	}
-	// kube-vip, Longhorn (#50), both CloudNativePG images (#51), and
-	// redis-sentinel (#52) are the ha-only images.
-	if haOnly != 17 || len(ha) != len(nonHA)+haOnly {
+	// kube-vip, Longhorn (#50), both CloudNativePG images (#51), the Barman
+	// Cloud plugin and its sidecar (#181), and redis-sentinel (#52) are the
+	// ha-only images.
+	if haOnly != 19 || len(ha) != len(nonHA)+haOnly {
 		t.Fatalf("ha=%d nonHA=%d haOnly=%d", len(ha), len(nonHA), haOnly)
 	}
 	if slices.Contains(nonHA, "registry-1.docker.io/bitnami/redis-sentinel:latest") {
