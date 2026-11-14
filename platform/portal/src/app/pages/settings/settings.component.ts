@@ -1,4 +1,5 @@
 import { StorageSettingsComponent } from './storage-settings.component';
+import { UsageSettingsComponent } from './usage-settings.component';
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -15,7 +16,7 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, OperationProgressComponent, GitConnectComponent, StorageSettingsComponent],
+  imports: [CommonModule, FormsModule, OperationProgressComponent, GitConnectComponent, StorageSettingsComponent, UsageSettingsComponent],
   styleUrl: './settings.component.css',
   template: `
 <div class="page-header">
@@ -33,6 +34,7 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
   @if (isDevOps) {
     <button type="button" [class.active]="activeTab === 'smtp'" [attr.aria-current]="activeTab === 'smtp' ? 'page' : null" (click)="activeTab = 'smtp'">Email</button>
     <button type="button" [class.active]="activeTab === 'storage'" [attr.aria-current]="activeTab === 'storage' ? 'page' : null" (click)="activeTab = 'storage'">Storage</button>
+    <button type="button" [class.active]="activeTab === 'usage'" [attr.aria-current]="activeTab === 'usage' ? 'page' : null" (click)="activeTab = 'usage'">Usage and costs</button>
     <button type="button" [class.active]="activeTab === 'rotate'" [attr.aria-current]="activeTab === 'rotate' ? 'page' : null" (click)="activeTab = 'rotate'">Rotate passwords</button>
     <button type="button" [class.active]="activeTab === 'security'" [attr.aria-current]="activeTab === 'security' ? 'page' : null" (click)="activeTab = 'security'">Security</button>
   }
@@ -248,6 +250,8 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
 
 <!-- Storage -->
 @if (activeTab === 'storage' && isDevOps) { <app-storage-settings /> }
+
+@if (activeTab === 'usage' && isDevOps) { <app-usage-settings /> }
 
 <!-- Git access -->
 @if (activeTab === 'integrations') {
@@ -591,7 +595,7 @@ export class SettingsComponent implements OnInit {
     // Deep link from global search: /settings?tab=<activeTab>, only tabs this role can see.
     this.route?.queryParamMap.subscribe((q) => {
       const tab = q.get('tab');
-      if (tab && (tab === 'integrations' || (this.isDevOps && ['login', 'smtp', 'storage', 'rotate', 'security'].includes(tab)))) {
+      if (tab && (tab === 'integrations' || (this.isDevOps && ['login', 'smtp', 'storage', 'usage', 'rotate', 'security'].includes(tab)))) {
         this.activeTab = tab;
       }
     });

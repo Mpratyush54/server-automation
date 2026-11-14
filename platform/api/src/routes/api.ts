@@ -44,6 +44,7 @@ import syntheticRoutes from './synthetics';
 import observabilityRoutes from './observability';
 import statusPageRoutes from './status-pages';
 import heatmapRoutes from './heatmaps';
+import usageRoutes from './usage';
 
 router.use('/', errorTrackingRoutes);
 router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB only; Redis reported, not gating)
@@ -86,6 +87,7 @@ router.use('/', syntheticRoutes); // synthetic checks, results, status feed, bro
 router.use('/', observabilityRoutes); // project-scoped Prometheus/Loki/Tempo/Pyroscope query proxies, fleet view (#48)
 router.use('/', statusPageRoutes); // public status pages + incidents (#46)
 router.use('/', heatmapRoutes); // click/scroll heatmaps: SDK ingest + project queries (Phase 4 B2)
+router.use('/', usageRoutes); // per-project usage metering, quotas, cost reports (#57)
 router.use('/', topologyRoutes); // GET /projects/:projectId/environments/:envId/topology (#31)
 
 /** GET /api/openapi.json — OpenAPI 3 spec derived from openapi.yaml (parsed once, cached). */

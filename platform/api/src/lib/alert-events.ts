@@ -3,7 +3,7 @@
 import { redisKey, stateBackend, withRedis } from './redis';
 
 export type AlertSeverity = 'info' | 'warning' | 'critical';
-export type AlertSource = 'error-tracking' | 'synthetics' | 'deploy' | 'database' | 'slo' | 'monitor' | 'status-page';
+export type AlertSource = 'error-tracking' | 'synthetics' | 'deploy' | 'database' | 'slo' | 'monitor' | 'status-page' | 'usage';
 
 export interface AlertEvent {
   projectId: string;

@@ -25,6 +25,7 @@ import { HeatmapsComponent } from '../heatmaps/heatmaps.component';
 import { SyntheticsComponent } from '../synthetics/synthetics.component';
 import { StatusPageEditorComponent } from '../status-page/status-page-editor.component';
 import { ProjectAgentsComponent } from './project-agents.component';
+import { ProjectUsageComponent } from './project-usage.component';
 import { ToastService, DialogService, errorText } from '../../shared/feedback/feedback.service';
 
 /** Query params that belong to a monitoring view; cleared when leaving it. */
@@ -34,7 +35,7 @@ const MONITORING_PARAMS = ['view', 'issue', 'check', 'trace', 'logTrace', 'servi
   selector: 'app-project-detail',
   standalone: true,
   imports: [DatabaseInsightsPanelComponent, ReleasesPanelComponent, CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent, ArgocdPanelComponent, ProjectOverviewComponent, ProjectSettingsSectionComponent,
-    ObsProjectComponent, ErrorsComponent, ReplaysComponent, HeatmapsComponent, SyntheticsComponent, StatusPageEditorComponent, ProjectAgentsComponent],
+    ObsProjectComponent, ErrorsComponent, ReplaysComponent, HeatmapsComponent, SyntheticsComponent, StatusPageEditorComponent, ProjectAgentsComponent, ProjectUsageComponent],
   templateUrl: './project-detail.component.html',
   styleUrls: ['./project-section-shared.css', './project-detail.component.css']
 })

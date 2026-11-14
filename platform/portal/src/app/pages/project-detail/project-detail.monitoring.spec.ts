@@ -22,7 +22,17 @@ describe('Project detail monitoring views', () => {
           provide: ActivatedRoute,
           useValue: { snapshot: { queryParamMap: convertToParamMap({ tab: 'monitoring', view, ...query }), paramMap: convertToParamMap({ id: 'p1' }) } },
         },
-        { provide: ApiService, useValue: { getObservabilityStatus: () => of({ enabled: observability }) } },
+        {
+          provide: ApiService,
+          useValue: {
+            getObservabilityStatus: () => of({ enabled: observability }),
+            getProjectUsage: () => of({
+              currency: 'USD', from: '2026-03-01', to: '2026-03-15',
+              totals: { cpuCoreHours: 0, memoryGbHours: 0, pvcStorageGb: 0, objectStorageGb: 0, ingressBandwidthGb: 0, buildMinutes: 0 },
+              cost: { total: 0 }, daily: [], quota: {}, quotaBars: {},
+            }),
+          },
+        },
         { provide: AuthService, useValue: { getRole: () => 'devops', canManageUsers: () => false, isTechLeadOrDevOps: () => true, isDevOps: () => true, isAdmin: () => false, getUser: () => null } },
       ],
     });
@@ -100,6 +110,13 @@ describe('Project detail monitoring views', () => {
     TestBed.resetTestingModule();
     fixture = await render('agents', true);
     expect(fixture.nativeElement.querySelector('app-project-agents')).toBeTruthy();
+    fixture.destroy();
+  });
+
+  it('usage embeds the project usage panel', async () => {
+    const fixture = await render('usage', true);
+    expect(fixture.nativeElement.querySelector('app-project-usage')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="monitoring-views"] .active')!.textContent!.trim()).toBe('Usage');
     fixture.destroy();
   });
 

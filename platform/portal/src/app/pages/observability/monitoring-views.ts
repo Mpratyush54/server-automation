@@ -4,7 +4,7 @@
  */
 import { ProjectTab } from './observability-api';
 
-export type MonitoringView = 'overview' | 'errors' | 'logs' | 'traces' | 'users' | 'uptime' | 'resources' | 'agents';
+export type MonitoringView = 'overview' | 'errors' | 'logs' | 'traces' | 'users' | 'uptime' | 'resources' | 'usage' | 'agents';
 
 export const MONITORING_VIEWS: { id: MonitoringView; label: string }[] = [
   { id: 'overview', label: 'Overview' },
@@ -14,6 +14,7 @@ export const MONITORING_VIEWS: { id: MonitoringView; label: string }[] = [
   { id: 'users', label: 'Users' },
   { id: 'uptime', label: 'Uptime' },
   { id: 'resources', label: 'Resources' },
+  { id: 'usage', label: 'Usage' },
   { id: 'agents', label: 'AI agents' },
 ];
 
@@ -49,5 +50,6 @@ export const VIEW_OBS_TABS: Record<MonitoringView, ProjectTab[]> = {
   users: ['rum'],
   uptime: [],
   resources: ['infra', 'profiles'],
+  usage: [],
   agents: [],
 };

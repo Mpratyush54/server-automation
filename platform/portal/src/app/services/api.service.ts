@@ -77,6 +77,40 @@ export class ApiService {
   getProjectFiles(projectId: string): Observable<any> { return this.http.get(`${this.base}/storage/project/${projectId}`); }
   getStorageAnalytics(projectId: string): Observable<any> { return this.http.get(`${this.base}/storage/analytics/${projectId}`); }
 
+  // Usage metering (#57)
+  getProjectUsage(projectId: string, from?: string, to?: string): Observable<any> {
+    const params: Record<string, string> = {};
+    if (from) params['from'] = from;
+    if (to) params['to'] = to;
+    return this.http.get(`${this.base}/projects/${projectId}/usage`, { params });
+  }
+  exportProjectUsageCsv(projectId: string, from?: string, to?: string): Observable<Blob> {
+    const params: Record<string, string> = {};
+    if (from) params['from'] = from;
+    if (to) params['to'] = to;
+    return this.http.get(`${this.base}/projects/${projectId}/usage/export.csv`, { params, responseType: 'blob' });
+  }
+  getProjectUsageQuota(projectId: string): Observable<any> {
+    return this.http.get(`${this.base}/projects/${projectId}/usage/quota`);
+  }
+  updateProjectUsageQuota(projectId: string, data: any): Observable<any> {
+    return this.http.put(`${this.base}/projects/${projectId}/usage/quota`, data);
+  }
+  getFleetUsage(from?: string, to?: string): Observable<any> {
+    const params: Record<string, string> = {};
+    if (from) params['from'] = from;
+    if (to) params['to'] = to;
+    return this.http.get(`${this.base}/usage`, { params });
+  }
+  exportFleetUsageCsv(from?: string, to?: string): Observable<Blob> {
+    const params: Record<string, string> = {};
+    if (from) params['from'] = from;
+    if (to) params['to'] = to;
+    return this.http.get(`${this.base}/usage/export.csv`, { params, responseType: 'blob' });
+  }
+  getUsageSettings(): Observable<any> { return this.http.get(`${this.base}/usage/settings`); }
+  updateUsageSettings(data: any): Observable<any> { return this.http.put(`${this.base}/usage/settings`, data); }
+
   // Bootstrap & Kubernetes
   bootstrapInit(data: any): Observable<any> { return this.http.post(`${this.base}/bootstrap/init`, data); }
   getBootstrapStatus(): Observable<any> { return this.http.get(`${this.base}/bootstrap/status`); }

@@ -45,6 +45,9 @@ import { StatusIncident } from '../entities/StatusIncident';
 import { OAuthClient } from '../entities/OAuthClient';
 import { McpGrant } from '../entities/McpGrant';
 import { McpToken } from '../entities/McpToken';
+import { UsageDailyRollup } from '../entities/UsageDailyRollup';
+import { UsageQuota } from '../entities/UsageQuota';
+import { UsageSettings } from '../entities/UsageSettings';
 
 export const MIGRATIONS_TABLE = 'migrations';
 
@@ -76,6 +79,8 @@ export const AppDataSource = new DataSource({
     StatusPage, StatusIncident,
     // Remote MCP (#193): dynamically registered assistants, their grants and tokens.
     OAuthClient, McpGrant, McpToken,
+    // Usage metering (#57): daily rollups, quotas, unit prices.
+    UsageDailyRollup, UsageQuota, UsageSettings,
     // Alerting and on-call (#43).
     ...ALERTING_ENTITIES],
   // Schema changes ship as reviewed, versioned migrations (src/migrations),
