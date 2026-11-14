@@ -584,6 +584,16 @@ func LivePGMigrateOps(fullBackup func() error, saveConfig func(*config.Config) e
 					return fmt.Errorf("kubectl %s: %w: %s", strings.Join(args, " "), err, out)
 				}
 			}
+			// The superuser Secret and monitoring ConfigMap written for the
+			// Cluster block the Bitnami chart ("Secret postgresql exists and
+			// cannot be imported into the current release", found on the #186
+			// rollback test). The password stays in .env and platform-env.
+			if err := deleteUnlessHelmManaged("secret", "postgresql"); err != nil {
+				return err
+			}
+			if err := deleteUnlessHelmManaged("configmap", "postgresql-monitoring"); err != nil {
+				return err
+			}
 			_ = state.Clear("postgresql")
 			_ = state.Clear("postgresql-backup")
 			return nil
@@ -594,4 +604,26 @@ func LivePGMigrateOps(fullBackup func() error, saveConfig func(*config.Config) e
 			return postgresqlRelease(cfg).reconcile("--wait", "--timeout", "10m")
 		},
 	}
+}
+
+// deleteUnlessHelmManaged removes a databases-namespace object that
+// platformctl created for CloudNativePG, leaving Helm-owned objects alone.
+func deleteUnlessHelmManaged(kind, name string) error {
+	out, err := shell.Output("kubectl", "-n", "databases", "get", kind, name, "--ignore-not-found", "-o", `jsonpath={.metadata.name}/{.metadata.labels.app\.kubernetes\.io/managed-by}`)
+	if err != nil {
+		return fmt.Errorf("read %s databases/%s: %w: %s", kind, name, err, out)
+	}
+	if !pgShouldDelete(out) {
+		return nil
+	}
+	if out, err := shell.Output("kubectl", "-n", "databases", "delete", kind, name, "--ignore-not-found"); err != nil {
+		return fmt.Errorf("delete %s databases/%s: %w: %s", kind, name, err, out)
+	}
+	return nil
+}
+
+// pgShouldDelete reads "<name>/<managed-by>": present and not Helm-managed.
+func pgShouldDelete(nameManagedBy string) bool {
+	name, managedBy, _ := strings.Cut(strings.TrimSpace(nameManagedBy), "/")
+	return name != "" && managedBy != "Helm"
 }

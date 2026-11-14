@@ -210,3 +210,13 @@ func TestDollarQuoteAndInventoryCompare(t *testing.T) {
 		}
 	}
 }
+
+// Rollback deletes the Cluster's superuser Secret (it blocked the Bitnami
+// chart on the #186 rollback test) but never a Helm-managed object.
+func TestPGShouldDelete(t *testing.T) {
+	for in, want := range map[string]bool{"postgresql/": true, "postgresql/Helm": false, "": false, "/": false, "postgresql-monitoring/kubectl": true} {
+		if got := pgShouldDelete(in); got != want {
+			t.Fatalf("%q: got %v", in, got)
+		}
+	}
+}
