@@ -250,6 +250,28 @@ describe('OAuth2 / OIDC SSO Integration Tests', () => {
   });
 
   describe('POST /api/oauth/token and GET /api/oauth/userinfo flow', () => {
+    it.each([
+      ['admin', 'admin'], ['Admin', 'admin'], ['ADMIN', 'admin'], ['aDmIn', 'admin'],
+      ['devops', 'devops'], ['DevOps', 'devops'], ['DEVOPS', 'devops'],
+      ['tech_lead', 'tech_lead'], ['Tech Lead', 'tech_lead'], ['TECH_LEAD', 'tech_lead'],
+      ['developer', 'developer'], ['viewer', 'viewer'],
+    ])('normalizes %s groups for Grafana in ID tokens and userinfo', async (role, group) => {
+      mockUserRepository.findOne.mockResolvedValue({ ...mockUser, role });
+      const redirect = 'https://platform.example.test/grafana/login/generic_oauth';
+      const code = await issueCode({}, 'grafana', redirect);
+      const res = await request(app)
+        .post('/api/oauth/token')
+        .set('Authorization', basic('grafana', GRAFANA_SECRET))
+        .type('form')
+        .send({ code, redirect_uri: redirect, grant_type: 'authorization_code' });
+      expect(res.status).toBe(200);
+      expect((jwt.decode(res.body.id_token) as any).groups).toEqual([group]);
+      const userinfo = await request(app).get('/api/oauth/userinfo')
+        .set('Authorization', `Bearer ${res.body.access_token}`);
+      expect(userinfo.status).toBe(200);
+      expect(userinfo.body.groups).toEqual([group]);
+    });
+
     it('includes amr and the portal auth_time in the ID token (#24)', async () => {
       const authTime = Math.floor(Date.now() / 1000) - 120;
       const mfaPortal = jwt.sign(

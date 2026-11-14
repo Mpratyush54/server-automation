@@ -114,7 +114,7 @@ func wrapProvisionRestore() {
 			id = args[0]
 		}
 		if id == "" {
-			return fmt.Errorf("--restore-from needs a backup ID (positional or --restore-id); list them with `platformctl backup list --target ...`")
+			return fmt.Errorf("--restore-from needs a backup ID (positional or --restore-id); on a configured server, list them with `platformctl backup list`; on a fresh server, inspect the target with `ls <backup-directory>/` (file://) or `mc ls <alias>/<bucket>/<prefix>/` (s3://) and choose a backup ID directory containing backup.json")
 		}
 		if !cfg.NonInteractive {
 			return fmt.Errorf("--restore-from requires --auto: stdin carries the age identity, not interactive answers")
