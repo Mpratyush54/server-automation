@@ -53,6 +53,10 @@ const ALLOWED: Record<string, string> = {
   'mcp/registry.ts': 'code registry',
   // Connected assistants listing (#193): per-response lookup tables (clients/users by id).
   'routes/mcp-connections.ts': 'request-scoped',
+  'lib/node-metrics.ts': 'function-local lookup while merging node usage and capacity',
+  'lib/usage-collector.ts': 'function-local maps for one collection run',
+  'lib/usage-metrics.ts': 'function-local aggregation of one Prometheus response',
+  'routes/usage.ts': 'request-scoped grouping for one response',
 };
 
 function walk(dir: string): string[] {
