@@ -222,3 +222,14 @@ func TestPWHelperIsAlwaysFollowedBySeparator(t *testing.T) {
 		}
 	}
 }
+
+// The k3s server writes etcd snapshots and refuses a missing directory
+// ("failed to get etcd-snapshot-dir"), so capture creates it first.
+func TestCaptureCreatesEtcdSnapshotDir(t *testing.T) {
+	s := strings.ReplaceAll(captureScript, "\r\n", "\n")
+	mk := strings.Index(s, `mkdir -p "$dest/etcd"`)
+	save := strings.Index(s, "k3s etcd-snapshot save")
+	if mk < 0 || save < 0 || mk > save {
+		t.Fatal("capture must create $dest/etcd before k3s etcd-snapshot save")
+	}
+}

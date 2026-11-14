@@ -83,6 +83,9 @@ k3s)
   cp /etc/rancher/k3s/k3s.yaml "$dest/k3s.yaml"
   if [ -d /var/lib/rancher/k3s/server/db/etcd ]; then
     # Use a unique private snapshot directory; do not collect stale snapshots.
+    # The k3s server writes the snapshot and refuses a directory that does not
+    # exist yet (found on the 3-node ha test).
+    mkdir -p "$dest/etcd"
     k3s etcd-snapshot save --name platform-backup --etcd-snapshot-dir "$dest/etcd"
     printf 'etcd\n' > "$dest/datastore"
   else
