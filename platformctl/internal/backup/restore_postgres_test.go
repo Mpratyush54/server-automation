@@ -98,6 +98,13 @@ func TestRestorePostgresBranchRuns(t *testing.T) {
 	if strings.Contains(first, "ROLE postgres") || !strings.Contains(first, "CREATE ROLE platform;") {
 		t.Fatalf("globals must be applied without the bootstrap superuser lines:\n%s", log)
 	}
+	// A fresh CloudNativePG cluster already has some roles (found on the #186
+	// rebuild: role "cnpg_metrics_exporter" already exists), so CREATE ROLE
+	// must tolerate them while ALTER ROLE still applies.
+	if !strings.Contains(first, "DO $restore$ BEGIN CREATE ROLE platform; EXCEPTION WHEN duplicate_object THEN NULL; END $restore$;") ||
+		!strings.Contains(first, "ALTER ROLE platform WITH LOGIN PASSWORD 'p';") {
+		t.Fatalf("CREATE ROLE must skip existing roles and keep ALTER ROLE:\n%s", log)
+	}
 	if !strings.Contains(log, "datname <> 'template1'") {
 		t.Fatalf("session cleanup query lost its quoting:\n%s", log)
 	}
@@ -133,7 +140,7 @@ func TestRestoreMongoRestoresUsersLast(t *testing.T) {
 	if !strings.Contains(calls[1], "--drop --nsInclude=admin.system.users --nsInclude=admin.system.roles") || !strings.Contains(calls[1], archive) {
 		t.Fatalf("second pass must restore users and roles:\n%s", calls[1])
 	}
-	if !strings.Contains(calls[0], "--password current") {
+	if !strings.Contains(calls[0], "--password=current") {
 		t.Fatalf("restore must authenticate with the running cluster's root password:\n%s", calls[0])
 	}
 }

@@ -53,8 +53,12 @@ postgres)
     work=$1
     # The bootstrap superuser already exists. Keep its current password until
     # all restores finish, then restore its original credentials last.
+    # A fresh CloudNativePG cluster already has its own roles
+    # (streaming_replica, cnpg_metrics_exporter): CREATE ROLE skips roles that
+    # exist, and the ALTER ROLE lines that follow still apply the backed-up
+    # attributes and passwords.
     # This script is one single-quoted argument: embed single quotes as '\''.
-    sed '\''/^CREATE ROLE postgres;$/d; /^ALTER ROLE postgres /d'\'' "$work/globals.sql" | psql -U postgres -d template1 -v ON_ERROR_STOP=1
+    sed '\''/^CREATE ROLE postgres;$/d; /^ALTER ROLE postgres /d; s/^CREATE ROLE \(.*\);$/DO $restore$ BEGIN CREATE ROLE \1; EXCEPTION WHEN duplicate_object THEN NULL; END $restore$;/'\'' "$work/globals.sql" | psql -U postgres -d template1 -v ON_ERROR_STOP=1
     tar -C "$work" -xf "$work/databases.tar"
     # Writers are stopped; drop leftover sessions so --clean can drop databases.
     psql -U postgres -d template1 -v ON_ERROR_STOP=1 -Atc "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND datname IS NOT NULL AND datname <> '\''template1'\''" >/dev/null
