@@ -1,20 +1,131 @@
-<div class="card">
-  <h2>Bootstrap Server</h2>
-  <div class="form-group"><label>Hostname</label><input [(ngModel)]="initData.hostname" placeholder="server.internal"></div>
-  <div class="form-group"><label>Components</label><input [(ngModel)]="initData.components" placeholder="docker,kubernetes,helm,argocd"></div>
-  <button class="btn btn-primary" (click)="init()" [disabled]="!initData.hostname">Bootstrap</button>
-</div>
-
-<div class="card" *ngIf="result">
-  <h2>Result</h2>
-  <pre>{{ result | json }}</pre>
-</div>
-
-<div class="card">
-  <h2>System Status</h2>
-  <button class="btn btn-primary" (click)="checkStatus()">Check Status</button>
-  <div *ngFor="let s of statusServices" style="padding:8px 0;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;">
-    <span>{{ s.name }}</span>
-    <span class="badge" [class.badge-active]="s.status==='running'" [class.badge-failed]="s.status!=='running'">{{ s.status }}</span>
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Server bootstrap</h1>
+    <p class="page-subtitle">Get a fresh Ubuntu server running Platform end to end with a single command.</p>
   </div>
 </div>
+
+<nav class="subnav" aria-label="Bootstrap sections">
+  <button type="button" [class.active]="tab === 'start'" [attr.aria-current]="tab === 'start' ? 'page' : null" (click)="tab = 'start'">Quick start</button>
+  <button type="button" [class.active]="tab === 'integrations'" [attr.aria-current]="tab === 'integrations' ? 'page' : null" (click)="tab = 'integrations'; loadStatus()">Integrations</button>
+  <button type="button" [class.active]="tab === 'status'" [attr.aria-current]="tab === 'status' ? 'page' : null" (click)="tab = 'status'; loadStatus()">System status</button>
+</nav>
+
+<!-- Quick start -->
+@if (tab === 'start') {
+  <section class="card bs-panel" aria-labelledby="bs-install">
+    <div class="bs-panel-head">
+      <h2 id="bs-install">Install with one command</h2>
+      <span class="badge">Ubuntu 22.04+</span>
+    </div>
+    <div class="bs-code-wrap">
+      <pre class="bs-code">{{ installCmd }}</pre>
+      <button type="button" class="btn btn-sm bs-copy" (click)="copyInstallCmd()">{{ copied ? 'Copied' : 'Copy' }}</button>
+    </div>
+    <p class="bs-note">The first line installs <span class="mono">platformctl</span>; the second sets up the server and asks for your domain and admin account. See <a routerLink="/docs/getting-started/installation">installation</a> for profiles and options.</p>
+  </section>
+
+  <section class="card bs-panel" aria-labelledby="bs-reqs">
+    <h2 id="bs-reqs">Server requirements</h2>
+    <dl class="facts">
+      <dt>Operating system</dt><dd>Ubuntu 22.04 LTS</dd>
+      <dt>CPU</dt><dd>4 cores minimum</dd>
+      <dt>Memory</dt><dd>8 GB minimum</dd>
+      <dt>Disk</dt><dd>80 GB SSD minimum</dd>
+      <dt>Open ports</dt><dd>80 and 443 inbound</dd>
+      <dt>Privileges</dt><dd>root or sudo</dd>
+    </dl>
+  </section>
+}
+
+<!-- Integrations -->
+@if (tab === 'integrations') {
+  <p class="bs-intro">
+    Connect these after install in <a routerLink="/settings">Settings</a>. None of them is required to run apps.
+  </p>
+
+  <div class="bs-grid">
+    @for (item of integrations; track item) {
+      <section class="card bs-integration" [attr.aria-label]="item.label">
+        <div class="bs-integration-head">
+          <div class="bs-integration-title">
+            <h3>{{ item.label }}</h3>
+            <p>{{ item.description }}</p>
+          </div>
+          <span class="status" [class.status-ok]="item.configured">{{ item.configured ? 'Configured' : 'Not set' }}</span>
+        </div>
+        @if (item.webhookPath) {
+          <div class="bs-field">
+            <span class="bs-field-label">Webhook URL</span>
+            <code class="bs-field-value">{{ platformUrl }}{{ item.webhookPath }}</code>
+          </div>
+        }
+        <div class="bs-field">
+          <span class="bs-field-label">Environment variables</span>
+          <span class="bs-env">
+            @for (v of item.envVars; track v) {
+              <code>{{ v }}</code>
+            }
+          </span>
+        </div>
+        <div class="bs-integration-actions">
+          <a [href]="item.docsUrl" target="_blank" rel="noopener" class="btn btn-sm">Docs</a>
+          <a routerLink="/settings" class="btn btn-sm">Configure</a>
+        </div>
+      </section>
+    }
+  </div>
+
+}
+
+<!-- System status -->
+@if (tab === 'status') {
+  <section class="card card-flush" aria-labelledby="bs-health">
+    <div class="card-header">
+      <h2 id="bs-health">Service health</h2>
+      <button type="button" class="btn btn-sm" (click)="loadStatus()" [disabled]="loadingStatus">
+        {{ loadingStatus ? 'Refreshing…' : 'Refresh' }}
+      </button>
+    </div>
+    @if (statusServices.length === 0 && !loadingStatus) {
+      <div class="empty-state">
+        <strong>No status yet</strong>
+        Select Refresh to check each service. If nothing appears, the API could not report service health.
+      </div>
+    } @else {
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Service</th>
+              <th>Namespace</th>
+              <th>Status</th>
+              <th class="bs-right">Pods running</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (s of statusServices; track s) {
+              <tr>
+                <td>
+                  <span class="bs-service">{{ s.label }}</span>
+                  @if (s.detail) {
+                    <span class="bs-service-detail">{{ s.detail }}</span>
+                  }
+                </td>
+                <td class="mono secondary">{{ s.namespace }}</td>
+                <td>
+                  <span class="status"
+                    [class.status-ok]="s.status === 'running'"
+                    [class.status-warn]="s.status === 'degraded'"
+                    [class.status-down]="s.status !== 'running' && s.status !== 'degraded' && s.status !== 'unknown'">{{ s.status }}</span>
+                </td>
+                <td class="bs-right secondary">{{ s.pods || '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </section>
+}
+
