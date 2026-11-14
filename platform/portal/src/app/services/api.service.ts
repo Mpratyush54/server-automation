@@ -80,7 +80,6 @@ export class ApiService {
   // Bootstrap & Kubernetes
   bootstrapInit(data: any): Observable<any> { return this.http.post(`${this.base}/bootstrap/init`, data); }
   getBootstrapStatus(): Observable<any> { return this.http.get(`${this.base}/bootstrap/status`); }
-  getBootstrapToken(): Observable<any> { return this.http.get(`${this.base}/bootstrap/token`); }
   getNodes(): Observable<any> { return this.http.get(`${this.base}/bootstrap/nodes`); }
   getBootstrapHistory(): Observable<any> { return this.http.get(`${this.base}/bootstrap/history`); }
   getNamespaces(): Observable<any> { return this.http.get(`${this.base}/bootstrap/namespaces`); }

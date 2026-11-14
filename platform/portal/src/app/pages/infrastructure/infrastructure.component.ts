@@ -117,7 +117,7 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
   async loadNodes() {
     try {
       const res = await firstValueFrom(this.api.getNodes());
-      this.nodes = res.nodes || [];
+      this.nodes = res.k8sConnected ? res.nodes || [] : [];
       this.k8sConnected = res.k8sConnected;
     } catch {
       this.nodes = [];
@@ -138,10 +138,11 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
     try {
       const ns = this.selectedNamespace === 'all' ? undefined : this.selectedNamespace;
       const res = await firstValueFrom(this.api.getPods(ns));
-      this.pods = res.pods || [];
+      this.pods = res.k8sConnected ? res.pods || [] : [];
       this.k8sConnected = res.k8sConnected;
     } catch {
       this.pods = [];
+      this.k8sConnected = false;
     }
   }
 
