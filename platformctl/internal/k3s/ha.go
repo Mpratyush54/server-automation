@@ -102,6 +102,10 @@ func yamlQuote(s string) string { return strconv.Quote(s) }
 // NodeMonitorGracePeriod is the HA controller-manager node grace period.
 const NodeMonitorGracePeriod = "20s"
 
+// DefaultEvictionSeconds is the HA default toleration for not-ready and
+// unreachable nodes (kube-apiserver), in seconds.
+const DefaultEvictionSeconds = "60"
+
 // RenderServerConfig renders /etc/rancher/k3s/config.yaml. The single-node
 // base (critical settings that must match on every server) always comes first.
 func RenderServerConfig(o ServerOptions) string {
@@ -133,6 +137,12 @@ func RenderServerConfig(o ServerOptions) string {
 	// endpoints) start sooner. Kubelets renew their node lease every 10 s, so
 	// two consecutive renewals must be missed. Same value on every server.
 	fmt.Fprintf(&b, "kube-controller-manager-arg:\n  - %s\n", yamlQuote("node-monitor-grace-period="+NodeMonitorGracePeriod))
+	// Evict pods from a node that stays NotReady/unreachable after 60 s instead
+	// of the 300 s default. Longhorn only force-deletes (and re-attaches the
+	// volumes of) pods that are already being evicted; on the power-off test a
+	// single-instance workload was down 8m39s, most of it waiting for eviction.
+	// Pods that set their own tolerations keep them.
+	fmt.Fprintf(&b, "kube-apiserver-arg:\n  - %s\n  - %s\n", yamlQuote("default-not-ready-toleration-seconds="+DefaultEvictionSeconds), yamlQuote("default-unreachable-toleration-seconds="+DefaultEvictionSeconds))
 	e := o.Snapshots
 	field("etcd-snapshot-schedule-cron", e.Cron)
 	if e.Retention > 0 {

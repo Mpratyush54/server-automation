@@ -260,6 +260,11 @@ HA servers also set `kube-controller-manager-arg: node-monitor-grace-period=20s`
 is marked NotReady after 20 s, so Service endpoints and the PostgreSQL failover,
 which wait for its pods to turn unready, react sooner. The cost is that a node
 whose kubelet is starved for two lease renewals is briefly marked NotReady.
+They also set `kube-apiserver-arg: default-not-ready-toleration-seconds=60` and
+`default-unreachable-toleration-seconds=60` (default 300): pods on a node that
+stays down are evicted after about 80 s in total, so their replacements start
+and Longhorn re-attaches their volumes elsewhere sooner. Pods that declare
+their own tolerations keep them.
 
 k3s merges `config.yaml.d` into `config.yaml`, and list keys ending in `+`
 append: the API certificate on every server covers `PLATFORM_API_SANS` and
