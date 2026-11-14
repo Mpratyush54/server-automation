@@ -1,14 +1,16 @@
-import { Component, Input, Output, EventEmitter, OnDestroy, OnInit, HostListener } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnDestroy, OnInit, HostListener, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
 import { ApiService } from '../../services/api.service';
+import { SearchService } from '../../services/search.service';
+import { SearchPaletteComponent } from '../../shared/search/search-palette.component';
 
 @Component({
   selector: 'app-header',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [CommonModule, RouterModule, SearchPaletteComponent],
   templateUrl: './header.component.html',
   styleUrl: './header.component.css'
 })
@@ -25,6 +27,9 @@ export class HeaderComponent implements OnInit, OnDestroy {
   unreadCount = 0;
   inboxOpen = false;
   private poll: ReturnType<typeof setInterval> | null = null;
+  readonly search = inject(SearchService);
+  /** Shortcut hint shown in the search field. */
+  readonly shortcutHint = isApplePlatform() ? '⌘K' : 'Ctrl K';
 
   constructor(private auth: AuthService, private api: ApiService, private router: Router) {}
 
@@ -42,6 +47,27 @@ export class HeaderComponent implements OnInit, OnDestroy {
   @HostListener('document:click')
   closeInbox() {
     this.inboxOpen = false;
+  }
+
+  /** Ctrl+K / Cmd+K anywhere, or "/" when not typing in a field, opens the search palette. */
+  @HostListener('document:keydown', ['$event'])
+  onGlobalKeydown(event: KeyboardEvent) {
+    const key = (event.key || '').toLowerCase();
+    if (key === 'k' && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
+      event.preventDefault();
+      if (this.search.isOpen()) this.search.close();
+      else this.openSearch();
+      return;
+    }
+    if (key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey && !this.search.isOpen() && !isTypingTarget(event.target)) {
+      event.preventDefault();
+      this.openSearch();
+    }
+  }
+
+  openSearch() {
+    this.inboxOpen = false;
+    this.search.open();
   }
 
   get initials(): string {
@@ -99,4 +125,18 @@ export class HeaderComponent implements OnInit, OnDestroy {
     try { await firstValueFrom(this.api.markAllNotificationsRead()); } catch {}
     await this.loadNotifications();
   }
+}
+
+function isApplePlatform(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const p = (navigator as any).userAgentData?.platform || navigator.platform || navigator.userAgent || '';
+  return /mac|iphone|ipad|ipod/i.test(p);
+}
+
+/** True when the key press belongs to a text field, select or editable region. */
+export function isTypingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.closest !== 'function') return false;
+  if (el.isContentEditable) return true;
+  return !!el.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
 }

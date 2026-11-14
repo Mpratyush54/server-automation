@@ -6,16 +6,26 @@ import { HeaderComponent } from './header.component';
 import { AuthService } from '../../services/auth.service';
 import { ApiService } from '../../services/api.service';
 import { of } from 'rxjs';
+import { SearchService } from '../../services/search.service';
+import { signal } from '@angular/core';
 
 describe('HeaderComponent', () => {
   let authService: jasmine.SpyObj<AuthService>;
   let apiService: jasmine.SpyObj<ApiService>;
+  let searchStub: { isOpen: ReturnType<typeof signal<boolean>>; open: jasmine.Spy; close: jasmine.Spy; search: jasmine.Spy };
 
   beforeEach(async () => {
     const authSpy = jasmine.createSpyObj('AuthService', ['getUser', 'getRole', 'login', 'setUser']);
     const apiSpy = jasmine.createSpyObj('ApiService', ['getMe', 'getNotifications', 'markNotificationRead', 'markAllNotificationsRead']);
     apiSpy.getMe.and.returnValue(of({ name: 'Test User', email: 't@t.io', role: 'developer', avatarUrl: null }));
     apiSpy.getNotifications.and.returnValue(of({ items: [], unreadCount: 0 }));
+
+    searchStub = {
+      isOpen: signal(false),
+      open: jasmine.createSpy('open').and.callFake(() => searchStub.isOpen.set(true)),
+      close: jasmine.createSpy('close').and.callFake(() => searchStub.isOpen.set(false)),
+      search: jasmine.createSpy('search').and.returnValue([]),
+    };
 
     await TestBed.configureTestingModule({
       imports: [HeaderComponent],
@@ -25,6 +35,7 @@ describe('HeaderComponent', () => {
         provideRouter([]),
         { provide: AuthService, useValue: authSpy },
         { provide: ApiService, useValue: apiSpy },
+        { provide: SearchService, useValue: searchStub },
       ],
     }).compileComponents();
 
@@ -83,5 +94,53 @@ describe('HeaderComponent', () => {
     fixture.componentInstance.toggleSidebar.subscribe(spy);
     btn.click();
     expect(spy).toHaveBeenCalled();
+  });
+
+  it('shows a search field with a shortcut hint on desktop and an icon button on mobile', () => {
+    const fixture = TestBed.createComponent(HeaderComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const field = el.querySelector('[data-testid="search-field"]') as HTMLButtonElement;
+    expect(field.textContent).toContain('Search');
+    expect(field.textContent).toMatch(/Ctrl K|⌘K/);
+    expect(el.querySelector('[data-testid="search-button"]')).toBeNull();
+    field.click();
+    expect(searchStub.open).toHaveBeenCalled();
+
+    fixture.componentRef.setInput('isMobile', true);
+    fixture.detectChanges();
+    expect(el.querySelector('[data-testid="search-field"]')).toBeNull();
+    expect(el.querySelector('[data-testid="search-button"]')!.getAttribute('aria-label')).toBe('Search');
+  });
+
+  it('opens the palette with Ctrl+K, Cmd+K and "/" outside text fields', () => {
+    const fixture = TestBed.createComponent(HeaderComponent);
+    fixture.detectChanges();
+    const ctrlK = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, cancelable: true });
+    document.dispatchEvent(ctrlK);
+    expect(ctrlK.defaultPrevented).toBeTrue();
+    expect(searchStub.isOpen()).toBeTrue();
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('app-search-palette')).toBeTruthy();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }));
+    expect(searchStub.isOpen()).toBeFalse();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'K', metaKey: true }));
+    expect(searchStub.isOpen()).toBeTrue();
+    searchStub.close();
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }));
+    expect(searchStub.isOpen()).toBeTrue();
+    searchStub.close();
+  });
+
+  it('ignores "/" while typing in a field', () => {
+    const fixture = TestBed.createComponent(HeaderComponent);
+    fixture.detectChanges();
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }));
+    expect(searchStub.open).not.toHaveBeenCalled();
+    input.remove();
   });
 });

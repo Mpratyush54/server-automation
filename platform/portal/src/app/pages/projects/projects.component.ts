@@ -1,6 +1,6 @@
 import { Component, HostListener, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { ActivatedRoute, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
@@ -27,9 +27,11 @@ export class ProjectsComponent implements OnInit {
     nodejs: 'Node.js', angular: 'Angular', python: 'Python', static: 'Static site', react: 'React', go: 'Go',
   };
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, private route: ActivatedRoute) {}
 
   async ngOnInit() {
+    // Global search's "New project" opens the form directly.
+    if (this.route.snapshot?.queryParamMap?.get('new') === '1') this.showCreate = true;
     try { this.projects = await firstValueFrom(this.api.getProjects()); } catch { this.projects = []; }
     this.loaded = true;
   }

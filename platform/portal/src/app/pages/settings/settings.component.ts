@@ -2,6 +2,7 @@ import { StorageSettingsComponent } from './storage-settings.component';
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
@@ -419,6 +420,7 @@ export class SettingsComponent implements OnInit {
   rotationOperationId: string | null = null;
 
   private stepUp = inject(StepUpService);
+  private route = inject(ActivatedRoute, { optional: true });
   private mfa = inject(MfaService);
   readonly allRoles = ['admin', 'devops', 'tech_lead', 'developer', 'viewer'];
   isAdmin = false;
@@ -472,11 +474,17 @@ export class SettingsComponent implements OnInit {
     if (this.isDevOps) void this.loadMfaPolicy();
     this.isTechLeadOrDevOps = this.auth.isTechLeadOrDevOps();
 
+    this.activeTab = this.isDevOps ? 'login' : 'integrations';
+    // Deep link from global search: /settings?tab=<activeTab>, only tabs this role can see.
+    this.route?.queryParamMap.subscribe((q) => {
+      const tab = q.get('tab');
+      if (tab && (tab === 'integrations' || (this.isDevOps && ['login', 'smtp', 'storage', 'rotate', 'security'].includes(tab)))) {
+        this.activeTab = tab;
+      }
+    });
+
     if (this.isDevOps) {
-      this.activeTab = 'login';
       await Promise.all([this.loadSmtp(), this.loadStorage(), this.loadIntegrations(), this.loadBackups()]);
-    } else {
-      this.activeTab = 'integrations';
     }
 
     this.apiBase = (window.location.origin.includes('4200')

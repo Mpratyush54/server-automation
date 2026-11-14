@@ -9,7 +9,21 @@
     <span class="top-title">{{ title }}</span>
   </div>
 
+  @if (!isMobile) {
+    <button type="button" class="top-search" data-testid="search-field" aria-haspopup="dialog"
+      [attr.aria-keyshortcuts]="shortcutHint === 'Ctrl K' ? 'Control+K /' : 'Meta+K /'" (click)="openSearch()">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      <span class="top-search-text">Search</span>
+      <kbd class="top-search-kbd">{{ shortcutHint }}</kbd>
+    </button>
+  }
+
   <div class="top-right">
+    @if (isMobile) {
+      <button type="button" class="top-icon" data-testid="search-button" aria-label="Search" aria-haspopup="dialog" (click)="openSearch()">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      </button>
+    }
     <nav class="top-links" aria-label="Help">
       <a href="https://github.com/Mpratyush54/server-automation/releases" target="_blank" rel="noopener">What's new</a>
       <a href="https://github.com/Mpratyush54/server-automation/issues" target="_blank" rel="noopener">Feedback</a>
@@ -57,3 +71,7 @@
     </a>
   </div>
 </header>
+
+@if (search.isOpen()) {
+  <app-search-palette></app-search-palette>
+}
