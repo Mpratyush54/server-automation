@@ -53,7 +53,7 @@ interface ScrubRule {
       }
       <div class="actions">
         <button type="button" class="btn btn-sm" (click)="addRule()">Add rule</button>
-        <button type="button" class="btn btn-sm btn-primary" [disabled]="busy" (click)="saveScrubbing()">Save scrubbing</button>
+        <button type="button" class="btn btn-sm" [disabled]="busy" (click)="saveScrubbing()">Save scrubbing</button>
       </div>
     </section>
 
@@ -77,7 +77,7 @@ interface ScrubRule {
           <input type="text" disabled [value]="(settings?.retentionDays?.traces ?? '') + ' (cluster)'" />
         </label>
       </div>
-      <button type="button" class="btn btn-sm btn-primary" [disabled]="busy" (click)="saveRetention()">Save retention</button>
+      <button type="button" class="btn btn-sm" [disabled]="busy" (click)="saveRetention()">Save retention</button>
     </section>
 
     <section class="card">
@@ -88,7 +88,7 @@ interface ScrubRule {
       </p>
       <label class="check"><input type="checkbox" [(ngModel)]="consent.replay" /> Replay allowed by default (opt-in recommended: off)</label>
       <label class="check"><input type="checkbox" [(ngModel)]="consent.analytics" /> Analytics allowed by default</label>
-      <button type="button" class="btn btn-sm btn-primary" [disabled]="busy" (click)="saveConsentDefaults()">Save consent defaults</button>
+      <button type="button" class="btn btn-sm" [disabled]="busy" (click)="saveConsentDefaults()">Save consent defaults</button>
     </section>
 
     <section class="card">
@@ -112,19 +112,22 @@ interface ScrubRule {
 </div>
   `,
   styles: [`
-    .privacy-tab { display: flex; flex-direction: column; gap: 1.25rem; }
-    .card { padding: 1rem 1.25rem; }
-    .hint { color: var(--color-text-secondary); font-size: 0.85rem; }
-    .check { display: flex; gap: 0.5rem; align-items: center; margin: 0.4rem 0; }
-    .builtins { font-size: 0.85rem; }
+    .privacy-tab { display: flex; flex-direction: column; gap: 1.5rem; }
+    .card { padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
+    .card h2, .card h3 { margin: 0; }
+    .card h3 { font-size: 0.875rem; font-weight: 600; }
+    .hint { color: rgb(var(--fg-2)); font-size: 0.8125rem; margin: 0; }
+    .check { display: flex; gap: 0.5rem; align-items: center; margin: 0; }
+    .builtins { font-size: 0.8125rem; margin: 0; padding-left: 1.25rem; }
     .rule-row { display: flex; gap: 0.5rem; margin-bottom: 0.4rem; flex-wrap: wrap; }
     .rule-row .grow { flex: 1; min-width: 12rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 0.75rem; margin: 0.75rem 0; }
-    .actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
-    .err { color: #f87171; }
-    .ok { color: #34d399; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 1rem; }
+    .grid label { display: flex; flex-direction: column; gap: 0.375rem; font-size: 0.8125rem; color: rgb(var(--fg-2)); }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .err { color: rgb(var(--down)); margin: 0; }
+    .ok { color: rgb(var(--ok)); margin: 0; }
     .result { font-size: 0.8rem; overflow: auto; max-height: 16rem; }
-    .btn-danger { background: #7f1d1d; color: #fecaca; border-color: #991b1b; }
+    .card > .btn { align-self: flex-start; }
   `],
 })
 export class PrivacyTabComponent implements OnChanges {

@@ -1,216 +1,160 @@
-<div class="mb-8 flex justify-between items-end">
+<div class="page-header">
   <div>
-    <h2 class="text-2xl font-semibold tracking-tight text-white mb-2">Cluster Overview</h2>
-    <p class="text-sm text-[#a1a1aa]">Real-time telemetry and deployments @if (platformName) { for <code class="bg-[#111] border border-[#333] rounded px-1.5 py-0.5 text-[#ededed]">{{ platformName }}</code> }</p>
+    <h1 class="page-title">Dashboard</h1>
+    <p class="page-subtitle">
+      Your apps, their latest deployments and how they are running@if (platformName) { on <span class="mono">{{ platformName }}</span>}.
+    </p>
   </div>
-  <div class="flex items-center gap-3 text-xs text-[#a1a1aa]">
-    @if (platformVersion) {
-      <span class="flex items-center gap-1.5 border-l border-[#333] pl-3">
-        @if (releasesUrl) {
-          <a [href]="releasesUrl" target="_blank" class="hover:text-white transition-colors">v{{ platformVersion }}</a>
-        }
-        @if (!releasesUrl) {
-          <span>v{{ platformVersion }}</span>
-        }
-      </span>
+  @if (platformVersion) {
+    @if (releasesUrl) {
+      <a class="db-version mono" [href]="releasesUrl" target="_blank" rel="noopener">v{{ platformVersion }}</a>
+    } @else {
+      <span class="db-version mono">v{{ platformVersion }}</span>
     }
-  </div>
+  }
 </div>
 
 @if (updateAvailable && latestRelease) {
-  <div class="card mb-6 p-4" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.35);">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
-      <div>
-        <div style="font-weight:700;color:#34d399;">Platform update available from GitHub</div>
-        <div style="font-size:0.85rem;color:#a1a1aa;margin-top:4px;">
-          Running <code>v{{ platformVersion }}</code> → latest <code>{{ latestRelease.tag }}</code>
-        </div>
-      </div>
-      <a [href]="releasesUrl || 'https://github.com/Mpratyush54/SERVER-automation/releases'" target="_blank" class="btn btn-sm btn-primary">
-        View release &amp; update
-      </a>
+  <section class="card db-update" aria-label="Platform update">
+    <div>
+      <strong>An update is available</strong>
+      <p class="secondary">You run <span class="mono">v{{ platformVersion }}</span>; the latest is <span class="mono">{{ latestRelease.tag }}</span>.</p>
     </div>
-  </div>
+    @if (releasesUrl) {
+      <a [href]="releasesUrl" target="_blank" rel="noopener" class="btn btn-sm">See what changed</a>
+    }
+  </section>
 }
 
-<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-  <div class="card p-5 relative overflow-hidden group">
-    <div class="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all duration-500"></div>
-    <div class="text-sm font-medium text-[#a1a1aa] mb-1">Cluster Pods</div>
-    <div class="text-3xl font-semibold text-white font-mono tracking-tight">{{ stats.podsText }}</div>
-    <div class="mt-4 h-1 w-full bg-[#111] rounded-full overflow-hidden">
-      <div class="h-full bg-blue-500 rounded-full" [style.width.%]="stats.podsProgress"></div>
-    </div>
+<section class="card db-stats" aria-label="Summary">
+  <div class="db-stat">
+    <span class="db-stat-label">Projects</span>
+    <span class="db-stat-value">{{ stats.projects ?? '—' }}</span>
+    <span class="db-stat-note">
+      @if (projectTrend) {
+        <span title="Change in the number of projects since seven days ago">{{ projectTrend > 0 ? '+' : '' }}{{ projectTrend }}% projects vs last week</span>
+      } @else {
+        Apps you can see
+      }
+    </span>
   </div>
-
-  <div class="card p-5 relative overflow-hidden group">
-    <div class="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl group-hover:bg-purple-500/20 transition-all duration-500"></div>
-    <div class="text-sm font-medium text-[#a1a1aa] mb-1">Active Projects</div>
-    <div class="text-3xl font-semibold text-white font-mono tracking-tight">{{ stats.projects ?? '—' }}</div>
-    @if (projectTrend !== null) {
-      <div class="mt-4 text-xs text-[#a1a1aa]" title="Growth of accessible active projects since seven days ago">
-        {{ projectTrend > 0 ? '+' : '' }}{{ projectTrend }}% projects vs last week
-      </div>
+  <div class="db-stat">
+    <span class="db-stat-label">Deployments</span>
+    <span class="db-stat-value">{{ stats.deployments ?? '—' }}</span>
+    <span class="db-stat-note" title="Average time from start to finish of completed deployments">{{ avgDeployTime }} avg deploy time</span>
+  </div>
+  <div class="db-stat">
+    <span class="db-stat-label">Pods running</span>
+    <span class="db-stat-value">{{ stats.podsText }}</span>
+    @if (stats.podsText !== '—') {
+      <span class="db-meter" role="img" [attr.aria-label]="stats.podsProgress + '% of pods running'">
+        <span [style.width.%]="stats.podsProgress"></span>
+      </span>
+    } @else {
+      <span class="db-stat-note">Not available right now</span>
     }
   </div>
+</section>
 
-  <div class="card p-5 relative overflow-hidden group">
-    <div class="absolute top-0 right-0 w-32 h-32 bg-zinc-500/10 rounded-full blur-3xl group-hover:bg-zinc-500/20 transition-all duration-500"></div>
-    <div class="text-sm font-medium text-[#a1a1aa] mb-1">Deployments</div>
-    <div class="text-3xl font-semibold text-white font-mono tracking-tight">{{ stats.deployments ?? '—' }}</div>
-    <div class="mt-4 flex items-center gap-2 text-xs text-[#a1a1aa]">
-      <span class="text-blue-500 flex items-center" title="Mean creation-to-completion duration of accessible completed deployments">{{ avgDeployTime }}</span> avg deploy time
+<div class="db-grid">
+  <section class="card card-flush" aria-labelledby="db-apps">
+    <div class="card-header">
+      <h2 id="db-apps">Projects</h2>
+      <a routerLink="/projects" class="db-link">All projects</a>
     </div>
-  </div>
-</div>
-
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-  <!-- Projects List -->
-  <div class="card">
-    <div class="p-5 border-b border-[#333] flex justify-between items-center">
-      <h3 class="font-medium text-white">Applications</h3>
-      <a routerLink="/projects" class="text-sm text-blue-500 hover:text-blue-400 transition-colors">View All &rarr;</a>
-    </div>
-    <div class="divide-y divide-[#222]">
-      @for (p of projectsList; track p) {
-        <div class="p-5 hover:bg-[#111] transition-colors cursor-pointer group flex justify-between items-center" [routerLink]="['/projects', p.id]">
-          <div class="flex items-center gap-4">
-            <div class="w-10 h-10 rounded-md bg-[#222] border border-[#333] flex items-center justify-center text-lg shadow-sm group-hover:border-blue-500/50 transition-colors">
-              {{ p.name.charAt(0).toUpperCase() }}
-            </div>
-            <div>
-              <h4 class="font-medium text-white mb-0.5 group-hover:text-blue-400 transition-colors">{{ p.name }}</h4>
-              <div class="text-xs text-[#a1a1aa] flex items-center gap-2">
-                <span class="font-mono bg-[#222] px-1 rounded text-[#ededed]">{{ p.stack }}</span>
-                <span>•</span>
-                <span>Created {{ p.createdAt | date:'shortDate' }}</span>
-              </div>
-            </div>
-          </div>
-          @if (p.isActive) { <span class="badge badge-active">Active</span> }
-        </div>
-      }
-
-      @if (projectsList.length === 0) {
-        <div class="p-12 text-center">
-          <div class="w-12 h-12 rounded-full bg-[#111] border border-[#333] flex items-center justify-center mx-auto mb-4 text-[#666]">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
-          </div>
-          <h4 class="font-medium text-white mb-2">No Projects</h4>
-          <p class="text-sm text-[#a1a1aa] mb-4">Get started by creating a new project.</p>
-          <button class="btn btn-primary btn-sm">Create Project</button>
-        </div>
-      }
-    </div>
-  </div>
-
-  <!-- Recent Deployments -->
-  <div class="card">
-    <div class="p-5 border-b border-[#333] flex justify-between items-center">
-      <h3 class="font-medium text-white">Recent Deployments</h3>
-    </div>
-    <table class="w-full">
-      <thead class="bg-[#111]/50">
-        <tr>
-          <th class="py-2.5 px-4 text-xs font-medium text-[#a1a1aa]">Project</th>
-          <th class="py-2.5 px-4 text-xs font-medium text-[#a1a1aa]">Commit</th>
-          <th class="py-2.5 px-4 text-xs font-medium text-[#a1a1aa]">Status</th>
-          <th class="py-2.5 px-4 text-xs font-medium text-[#a1a1aa] text-right">Time</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (d of recentDeployments; track d) {
-          <tr class="hover:bg-[#111] transition-colors border-b border-[#222] last:border-0">
-            <td class="py-3 px-4">
-              <div class="font-medium text-sm text-white">{{ d.projectName }}</div>
-            </td>
-            <td class="py-3 px-4">
-              <code class="text-xs bg-[#222] border border-[#333] px-1.5 py-0.5 rounded text-[#ededed] font-mono">{{ d.version }}</code>
-            </td>
-            <td class="py-3 px-4">
-              <span class="badge"
-                [class.badge-active]="d.status === 'deployed' || d.status === 'active' || d.status === 'success'"
-                [class.badge-pending]="d.status === 'pending' || d.status === 'building'"
-                [class.badge-failed]="d.status === 'failed'">
-                {{ d.status }}
+    @if (projectsList.length === 0) {
+      <div class="empty-state">
+        <strong>No projects yet</strong>
+        Create a project to connect a repository and deploy your first app.
+        <div class="db-empty-action"><a routerLink="/projects" class="btn btn-primary btn-sm">New project</a></div>
+      </div>
+    } @else {
+      <ul class="db-list">
+        @for (p of projectsList.slice(0, 6); track p.id) {
+          <li>
+            <a [routerLink]="['/projects', p.id]" class="db-row">
+              <span class="db-row-main">
+                <span class="db-row-name">{{ p.name }}</span>
+                <span class="db-row-meta">{{ p.stack }} · created {{ p.createdAt | date: 'mediumDate' }}</span>
               </span>
-            </td>
-            <td class="py-3 px-4 text-right text-xs text-[#a1a1aa]">
-              {{ d.createdAt | date:'shortTime' }}
-            </td>
-          </tr>
+              <span class="status" [ngClass]="projectTone(p)">{{ projectLabel(p) }}</span>
+            </a>
+          </li>
         }
-        @if (recentDeployments.length === 0) {
-          <tr>
-            <td colspan="4" class="py-12 text-center text-sm text-[#a1a1aa]">No recent deployments.</td>
-          </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<div class="card overflow-hidden">
-  <div class="p-5 border-b border-[#333] flex justify-between items-center bg-[#0a0a0a]">
-    <h3 class="font-medium text-white flex items-center gap-2">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-[#a1a1aa]"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-      Telemetry
-    </h3>
-    <div class="flex gap-2 items-center">
-      <button class="px-2 py-1 text-xs border rounded"
-        [class.bg-[#222]]="telemetryWindow === '1h'"
-        [class.border-[#333]]="true"
-        [class.text-[#ededed]]="telemetryWindow === '1h'"
-        [class.text-[#a1a1aa]]="telemetryWindow !== '1h'"
-      (click)="setTelemetryWindow('1h')">1h</button>
-      <button class="px-2 py-1 text-xs border rounded"
-        [class.bg-[#222]]="telemetryWindow === '24h'"
-        [class.border-[#333]]="true"
-        [class.text-[#ededed]]="telemetryWindow === '24h'"
-        [class.text-[#a1a1aa]]="telemetryWindow !== '24h'"
-      (click)="setTelemetryWindow('24h')">24h</button>
-      <a [href]="grafanaFullUrl" target="_blank" class="px-2 py-1 text-xs text-blue-400 hover:text-blue-300">Open Grafana →</a>
-    </div>
-  </div>
-
-  <div class="p-5 grid grid-cols-1 md:grid-cols-3 gap-4 border-b border-[#222]">
-    <div>
-      <div class="text-xs text-[#a1a1aa] mb-1">Heartbeats</div>
-      <div class="text-2xl font-mono text-white">{{ telemetry.heartbeats }}</div>
-      <div class="text-xs text-[#666] mt-1">{{ telemetry.projectsWithData }} project(s) reporting</div>
-    </div>
-    <div>
-      <div class="text-xs text-[#a1a1aa] mb-1">Avg CPU</div>
-      <div class="text-2xl font-mono text-white">@if (telemetry.heartbeats) { {{ telemetry.cpuAvg | number:'1.0-1' }}% } @else { — }</div>
-    </div>
-    <div>
-      <div class="text-xs text-[#a1a1aa] mb-1">Avg Memory</div>
-      <div class="text-2xl font-mono text-white">@if (telemetry.heartbeats) { {{ telemetry.memoryAvg | number:'1.0-0' }} MB } @else { — }</div>
-    </div>
-  </div>
-
-  <div class="relative w-full h-[280px] bg-[#000] flex items-center justify-center">
-    <div class="absolute inset-0 bg-[linear-gradient(to_right,#333_1px,transparent_1px),linear-gradient(to_bottom,#333_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-20"></div>
-
-    @if (telemetryLoading) {
-      <div class="z-10 text-sm text-[#a1a1aa]">Loading telemetry…</div>
+      </ul>
     }
-    @if (!telemetryLoading && telemetryError) {
-      <div class="z-10 text-sm text-red-400">{{ telemetryError }}</div>
-    }
-    @if (!telemetryLoading && !telemetryError && telemetry.heartbeats === 0) {
-      <div class="z-10 text-center px-6">
-        <div class="text-white font-medium mb-2">No SDK heartbeats yet</div>
-        <p class="text-sm text-[#a1a1aa] max-w-md">
-          Start a service with the Platform SDK (or open a project → Metrics). Cluster Grafana charts need a separate Grafana login.
-        </p>
+  </section>
+
+  <section class="card card-flush" aria-labelledby="db-deploys">
+    <div class="card-header">
+      <h2 id="db-deploys">Recent deployments</h2>
+    </div>
+    @if (recentDeployments.length === 0) {
+      <p class="empty-state">No deployments yet. They show here as soon as a project deploys.</p>
+    } @else {
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Project</th><th>Version</th><th>Status</th><th class="db-right">When</th></tr>
+          </thead>
+          <tbody>
+            @for (d of recentDeployments; track d.id) {
+              <tr>
+                <td>{{ d.projectName }}</td>
+                <td class="mono">{{ d.version || (d.commitSha || '').slice(0, 7) || '—' }}</td>
+                <td><span class="status" [ngClass]="deployTone(d.status)">{{ deployLabel(d.status) }}</span></td>
+                <td class="db-right muted">{{ d.createdAt | date: 'MMM d, HH:mm' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
       </div>
     }
+  </section>
+</div>
 
-    @if (!telemetryLoading && telemetry.sparkPath) {
-      <svg viewBox="0 0 600 120" class="z-10 relative w-full h-full px-4 py-6" preserveAspectRatio="none">
-        <path [attr.d]="telemetry.sparkPath" fill="none" stroke="#0070F3" stroke-width="2" vector-effect="non-scaling-stroke"/>
+<section class="card card-flush" aria-labelledby="db-telemetry">
+  <div class="card-header">
+    <h2 id="db-telemetry">App telemetry</h2>
+    <div class="db-tools">
+      <div class="db-seg" role="group" aria-label="Time window">
+        <button type="button" [class.on]="telemetryWindow === '1h'" [attr.aria-pressed]="telemetryWindow === '1h'" (click)="setTelemetryWindow('1h')">1 hour</button>
+        <button type="button" [class.on]="telemetryWindow === '24h'" [attr.aria-pressed]="telemetryWindow === '24h'" (click)="setTelemetryWindow('24h')">24 hours</button>
+      </div>
+      <a [href]="grafanaFullUrl" target="_blank" rel="noopener" class="db-link">Open Grafana</a>
+    </div>
+  </div>
+
+  <div class="db-tele-nums">
+    <div>
+      <span class="db-stat-label">Heartbeats</span>
+      <span class="db-tele-value">{{ telemetry.heartbeats }}</span>
+      <span class="db-stat-note">{{ telemetry.projectsWithData }} {{ telemetry.projectsWithData === 1 ? 'project' : 'projects' }} reporting</span>
+    </div>
+    <div>
+      <span class="db-stat-label">Average CPU</span>
+      <span class="db-tele-value">@if (telemetry.heartbeats) {{{ telemetry.cpuAvg | number: '1.0-1' }}%} @else {—}</span>
+    </div>
+    <div>
+      <span class="db-stat-label">Average memory</span>
+      <span class="db-tele-value">@if (telemetry.heartbeats) {{{ telemetry.memoryAvg | number: '1.0-0' }} MB} @else {—}</span>
+    </div>
+  </div>
+
+  <div class="db-chart">
+    @if (telemetryLoading && !telemetry.sparkPath) {
+      <p class="muted">Loading telemetry…</p>
+    } @else if (telemetryError) {
+      <p class="db-error">Telemetry could not be loaded: {{ telemetryError }}</p>
+    } @else if (telemetry.heartbeats === 0) {
+      <div class="db-chart-empty">
+        <strong>No app telemetry yet</strong>
+        <p class="secondary">Apps send CPU and memory once they use the Platform SDK. Cluster-wide charts are in Grafana.</p>
+      </div>
+    } @else if (telemetry.sparkPath) {
+      <svg viewBox="0 0 600 120" preserveAspectRatio="none" role="img" aria-label="CPU use over the selected window">
+        <path [attr.d]="telemetry.sparkPath" fill="none" class="db-spark" stroke-width="2" vector-effect="non-scaling-stroke" />
       </svg>
     }
   </div>
-</div>
+</section>

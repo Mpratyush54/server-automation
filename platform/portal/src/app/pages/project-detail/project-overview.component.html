@@ -1,0 +1,132 @@
+<div class="ov-grid">
+  <div class="ov-main">
+    <section class="card card-flush" aria-labelledby="ov-envs-title" data-testid="overview-environments">
+      <div class="card-header">
+        <h2 id="ov-envs-title">Environments</h2>
+        <button type="button" class="btn btn-sm btn-ghost" (click)="navigate.emit('deployments')">All deployments</button>
+      </div>
+      @if (envRows.length) {
+        <ul class="ov-envs">
+          @for (row of envRows; track row.env.id) {
+            <li class="ov-env" [attr.data-env]="row.env.name">
+              <div class="ov-env-head">
+                <h3 class="ov-env-name">{{ row.env.name }}</h3>
+                @if (row.current) {
+                  <span [class]="statusClass(depStatus(row.current).tone)">{{ depStatus(row.current).label }}</span>
+                } @else {
+                  <span class="status">Not deployed</span>
+                }
+              </div>
+              @if (row.current; as dep) {
+                <dl class="facts">
+                  <dt>Version</dt>
+                  <dd>{{ dep.version || 'Unlabelled' }}
+                    @if (dep.commitSha) { <span class="mono muted">{{ shortSha(dep.commitSha) }}</span> }
+                  </dd>
+                  <dt>When</dt>
+                  <dd>{{ (dep.deployedAt || dep.createdAt) | date:'medium' }}</dd>
+                  <dt>By</dt>
+                  <dd>{{ who(dep) }}</dd>
+                  <dt>URL</dt>
+                  <dd>
+                    @if (row.url) { <a class="mono po-url" [title]="row.url" [href]="row.url" target="_blank" rel="noopener">{{ row.url }}</a> }
+                    @else { <span class="muted">No domain</span> }
+                  </dd>
+                </dl>
+              } @else {
+                <p class="ov-note">Nothing has been deployed to this environment yet.
+                  @if (row.url) { It will be served at <a class="mono" [href]="row.url" target="_blank" rel="noopener">{{ row.url }}</a>. }
+                </p>
+              }
+            </li>
+          }
+        </ul>
+      } @else {
+        <div class="empty-state"><strong>No environments</strong>This project has no environments configured.</div>
+      }
+    </section>
+
+    <section class="card card-flush" aria-labelledby="ov-recent-title" data-testid="overview-recent">
+      <div class="card-header">
+        <h2 id="ov-recent-title">Recent deployments</h2>
+        <button type="button" class="btn btn-sm btn-ghost" (click)="navigate.emit('deployments')">History</button>
+      </div>
+      @if (recent.length) {
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Version</th><th>Environment</th><th>Status</th><th>When</th><th>By</th></tr></thead>
+            <tbody>
+              @for (dep of recent; track dep.id) {
+                <tr>
+                  <td>{{ dep.version || 'Unlabelled' }} @if (dep.commitSha) { <span class="mono muted">{{ shortSha(dep.commitSha) }}</span> }</td>
+                  <td>{{ envName(dep.environmentId) }}</td>
+                  <td><span [class]="statusClass(depStatus(dep).tone)">{{ depStatus(dep).label }}</span></td>
+                  <td class="secondary">{{ (dep.deployedAt || dep.createdAt) | date:'short' }}</td>
+                  <td class="secondary">{{ who(dep) }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else {
+        <div class="empty-state"><strong>No deployments yet</strong>Deploy a branch, commit or release to create the first one.</div>
+      }
+    </section>
+  </div>
+
+  <div class="ov-side">
+    <section class="card card-flush" aria-labelledby="ov-facts-title">
+      <div class="card-header"><h2 id="ov-facts-title">Project</h2></div>
+      <div class="ov-body">
+        <dl class="facts" data-testid="overview-facts">
+          <dt>Repository</dt>
+          <dd>
+            @if (repoHref) { <a [href]="repoHref" target="_blank" rel="noopener">{{ project?.repositoryUrl }}</a> }
+            @else if (project?.repositoryUrl) { <span class="mono">{{ project.repositoryUrl }}</span> }
+            @else { <span class="muted">Not set</span> }
+          </dd>
+          <dt>Default branch</dt>
+          <dd>@if (project?.defaultBranch) { <span class="mono">{{ project.defaultBranch }}</span> } @else { <span class="muted">Resolved on deploy</span> }</dd>
+          <dt>Domain</dt>
+          <dd>@if (project?.domain) { <span class="mono">{{ project.domain }}</span> } @else { <span class="muted">Not set</span> }</dd>
+          <dt>Namespace</dt>
+          <dd>
+            @for (ns of namespaces; track ns) { <span class="mono ov-ns">{{ ns }}</span> }
+            @empty { <span class="muted">None</span> }
+          </dd>
+          <dt>Created</dt>
+          <dd>{{ project?.createdAt ? (project.createdAt | date:'mediumDate') : '—' }}</dd>
+        </dl>
+      </div>
+    </section>
+
+    <section class="card card-flush" aria-labelledby="ov-health-title">
+      <div class="card-header"><h2 id="ov-health-title">Health</h2></div>
+      <div class="ov-body">
+        <dl class="facts">
+          <dt>Argo CD</dt>
+          <dd>
+            @if (argoTone; as a) { <span [class]="statusClass(a.tone)">{{ a.label }}</span> }
+            @else { <span class="muted">Loading</span> }
+          </dd>
+          <dt>5xx error rate</dt>
+          <dd>
+            @if (metricsCount > 0 && aggregatedMetrics) { {{ aggregatedMetrics.errorRate | number:'1.2-2' }}% }
+            @else { <span class="muted">No heartbeat data</span> }
+          </dd>
+        </dl>
+      </div>
+    </section>
+
+    <section class="card card-flush" aria-labelledby="ov-links-title">
+      <div class="card-header"><h2 id="ov-links-title">Go to</h2></div>
+      <nav class="ov-links" aria-label="Project sections">
+        <button type="button" (click)="navigate.emit('deployments')">Deployments, releases and Argo CD</button>
+        <button type="button" (click)="navigate.emit('configuration')">Environment variables, Git and domain</button>
+        <button type="button" (click)="navigate.emit('data')">Databases, backups and storage</button>
+        <button type="button" (click)="navigate.emit('monitoring')">{{ observabilityEnabled ? 'Monitoring and observability' : 'Metrics, API latency and logs' }}</button>
+        <button type="button" (click)="navigate.emit('settings')">Access, SDK tokens and privacy</button>
+      </nav>
+    </section>
+  </div>
+</div>

@@ -87,7 +87,7 @@ export function parseDotEnv(text: string): BulkLine[] {
       </div>
       <div class="env-actions">
         @if (canWriteAny) {
-          <button class="btn btn-sm btn-primary" (click)="openForm()">+ Add variable</button>
+          <button class="btn btn-sm" (click)="openForm()">Add variable</button>
           <button class="btn btn-sm" (click)="openBulk()">Paste .env</button>
         }
         @if (caps.canExport && selectedEnvId) {
@@ -253,7 +253,7 @@ export function parseDotEnv(text: string): BulkLine[] {
                   }
                   @if (row.conflict) {
                     @if (row.type === 'secret' && caps.canDeletePlain) {
-                      <button class="btn btn-sm btn-primary" (click)="remove(row, 'plain')">Keep secret</button>
+                      <button class="btn btn-sm" (click)="remove(row, 'plain')">Keep secret</button>
                     }
                     @if (row.type === 'plain' && caps.canDeleteSecret) {
                       <button class="btn btn-sm" (click)="remove(row, 'secret')">Keep plain</button>
@@ -278,7 +278,7 @@ export function parseDotEnv(text: string): BulkLine[] {
     <aside class="env-drawer" role="dialog" aria-label="Version history">
       <div class="env-drawer-head">
         <h2>History: <span class="env-mono">{{ history.row.key }}</span></h2>
-        <button class="btn btn-sm" (click)="history = null" aria-label="Close">✕</button>
+        <button class="btn btn-sm btn-ghost" (click)="history = null" aria-label="Close history">Close</button>
       </div>
       <p class="env-muted">Current version v{{ history.currentVersion }} · {{ envName(history.row.environmentId) }}</p>
       <table class="env-table">
@@ -308,23 +308,23 @@ export function parseDotEnv(text: string): BulkLine[] {
 .env-actions, .env-row-actions, .env-form-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .env-form-actions { margin-top: 12px; }
 .env-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-.env-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-primary, #ededed); font-size: 0.875rem; }
+.env-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; color: rgb(var(--fg)); font-size: 0.875rem; }
 .env-toggle input, .env-check { width: auto; }
-.env-mono { font-family: var(--font-code, monospace); }
+.env-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
 .env-key { font-weight: 600; word-break: break-all; }
 .env-value { max-width: 360px; word-break: break-all; }
-.env-revealed { color: var(--accent-success, #0070F3); font-weight: 600; }
-.env-muted { color: var(--text-muted, #71717a); font-size: 0.8rem; margin: 8px 0 0; }
+.env-revealed { color: rgb(var(--fg)); font-weight: 600; }
+.env-muted { color: rgb(var(--fg-3)); font-size: 0.8rem; margin: 8px 0 0; }
 .env-small { font-size: 0.75rem; line-height: 1.3; }
-.env-warn { color: var(--accent-warning, #F5A623); font-size: 0.8rem; margin: 10px 0 0; }
-.env-error { color: var(--accent-danger, #E00000); font-size: 0.8rem; }
-.env-empty { text-align: center; color: var(--text-muted, #71717a); }
+.env-warn { color: rgb(var(--warn)); font-size: 0.8rem; margin: 10px 0 0; }
+.env-error { color: rgb(var(--down)); font-size: 0.8rem; }
+.env-empty { text-align: center; color: rgb(var(--fg-3)); }
 .env-scroll { overflow-x: auto; }
-.env-conflict-row td { background: color-mix(in srgb, var(--accent-danger, #E00000) 6%, transparent); }
-.env-badge-secret { background: color-mix(in srgb, #a855f7 12%, transparent); color: #c084fc; border-color: color-mix(in srgb, #a855f7 30%, transparent); }
-.env-drawer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 998; }
+.env-conflict-row td { background: rgb(var(--down) / 0.06); }
+.env-badge-secret { background: rgb(var(--accent) / 0.12); color: rgb(var(--accent-text)); border-color: rgb(var(--accent) / 0.35); }
+.env-drawer-backdrop { position: fixed; inset: 0; background: rgb(var(--canvas) / 0.75); z-index: 998; }
 .env-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100%); z-index: 999; overflow-y: auto;
-  background: var(--bg-surface, #0a0a0a); border-left: 1px solid var(--border-subtle, #333); padding: 20px; color: var(--text-primary, #ededed); }
+  background: rgb(var(--surface)); border-left: 1px solid rgb(var(--line)); padding: 20px; color: rgb(var(--fg)); box-shadow: var(--shadow); }
 .env-drawer-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .env-drawer-head h2 { margin: 0; border: 0; padding: 0; font-size: 1rem; }
 `],

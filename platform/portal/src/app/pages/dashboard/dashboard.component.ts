@@ -234,6 +234,37 @@ export class DashboardComponent implements OnInit, OnDestroy {
       .join(' ');
   }
 
+  /** Deployment status as a dot and a plain word. */
+  deployTone(status: string): string {
+    const s = String(status || '').toLowerCase();
+    if (['deployed', 'active', 'success'].includes(s)) return 'status-ok';
+    if (['pending', 'building', 'deploying', 'running'].includes(s)) return 'status-warn';
+    if (['failed', 'error'].includes(s)) return 'status-down';
+    return '';
+  }
+
+  deployLabel(status: string): string {
+    const s = String(status || '').toLowerCase();
+    if (['deployed', 'active', 'success'].includes(s)) return 'Live';
+    if (['pending', 'building', 'deploying', 'running'].includes(s)) return 'In progress';
+    if (['failed', 'error'].includes(s)) return 'Failed';
+    return s ? s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ') : 'Unknown';
+  }
+
+  projectTone(p: any): string {
+    const s = String(p?.status || '').toLowerCase();
+    if (['failed', 'error', 'degraded'].includes(s)) return 'status-down';
+    if (['deploying', 'pending', 'syncing'].includes(s)) return 'status-warn';
+    return p?.isActive || s === 'active' ? 'status-ok' : '';
+  }
+
+  projectLabel(p: any): string {
+    const s = String(p?.status || '').toLowerCase();
+    if (['failed', 'error', 'degraded'].includes(s)) return 'Needs attention';
+    if (['deploying', 'pending', 'syncing'].includes(s)) return 'Deploying';
+    return p?.isActive || s === 'active' ? 'Running' : 'Idle';
+  }
+
   onIframeLoad() {
     this.iframeLoaded = true;
   }

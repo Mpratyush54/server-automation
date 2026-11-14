@@ -1,25 +1,25 @@
 /*
- * Colours come only from the theme tokens in styles.css (:root). Fallbacks
- * match the dark defaults; a light token set (or [data-theme="light"]) re-themes
+ * Colours come only from the theme tokens in styles.css (:root), so light
+ * and dark themes (data-theme or the OS preference) re-theme
  * the graph without changes here. No hard-coded dark backgrounds.
  */
 :host {
   display: block;
-  --topo-bg: var(--bg-surface, #0a0a0a);
-  --topo-canvas: var(--bg-canvas, #000);
-  --topo-node: var(--bg-elevated, #111);
-  --topo-border: var(--border-subtle, #333);
-  --topo-text: var(--text-primary, #ededed);
-  --topo-text-2: var(--text-secondary, #a1a1aa);
-  --topo-muted: var(--text-muted, #71717a);
-  --topo-healthy: var(--accent-success, #0070f3);
-  --topo-progressing: var(--accent-warning, #f5a623);
-  --topo-degraded: var(--accent-danger, #e00000);
-  --topo-oos: var(--accent-warning, #f5a623);
-  --topo-font-code: var(--font-code, monospace);
+  --topo-bg: rgb(var(--surface));
+  --topo-canvas: rgb(var(--canvas));
+  --topo-node: rgb(var(--raised));
+  --topo-border: rgb(var(--line));
+  --topo-text: rgb(var(--fg));
+  --topo-text-2: rgb(var(--fg-2));
+  --topo-muted: rgb(var(--fg-3));
+  --topo-healthy: rgb(var(--ok));
+  --topo-progressing: rgb(var(--warn));
+  --topo-degraded: rgb(var(--down));
+  --topo-oos: rgb(var(--warn));
+  --topo-font-code: 'IBM Plex Mono', ui-monospace, monospace;
 }
 
-.topo { margin-top: 20px; padding: 20px; background: var(--topo-bg); border-color: var(--topo-border); color: var(--topo-text); }
+.topo { margin-top: 0; padding: 1rem 1.25rem; background: var(--topo-bg); border-color: var(--topo-border); color: var(--topo-text); }
 .topo-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
 .topo-title { margin: 0; padding: 0; border: 0; font-size: 1.05rem; font-weight: 600; color: var(--topo-text); }
 .topo .topo-title { border: 0; padding: 0; margin: 0; }

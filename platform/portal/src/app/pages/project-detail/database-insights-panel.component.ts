@@ -7,18 +7,19 @@ import { firstValueFrom } from 'rxjs';
 @Component({
   selector: 'app-database-insights-panel', standalone: true,
   imports: [CommonModule, FormsModule],
-  template: `<section class="card dbi" aria-label="Database insights">
-    <div class="dbi-head">
+  template: `<section class="card card-flush" aria-label="Database insights">
+    <div class="card-header">
       <h2>Database insights</h2>
       <div class="dbi-controls">
-        <label class="dbi-env">Environment
-          <select [(ngModel)]="environment" (change)="reset()">
+        <label class="dbi-env">
+          <select [(ngModel)]="environment" (change)="reset()" aria-label="Database insights environment">
             @for (e of project?.environments || []; track e.name) { <option [value]="e.name">{{e.name}}</option> }
           </select>
         </label>
         <button class="btn btn-sm" type="button" (click)="load()" [disabled]="busy">{{ busy ? 'Loading…' : 'Refresh' }}</button>
       </div>
     </div>
+    <div class="dbi-body">
     @if (message) { <p class="dbi-msg" role="status">{{message}}</p> }
     @if (data?.enabled) {
       <p class="dbi-muted">Collected {{data.collectedAt | date:'medium'}} · {{environment}}</p>
@@ -74,32 +75,33 @@ import { firstValueFrom } from 'rxjs';
           </p>
         }
       </div>
+    } @else if (!message) {
+      <p class="dbi-empty">No query statistics for this environment yet. They appear once the database has served traffic.</p>
     }
+    </div>
   </section>`,
   styles: [`
-    .dbi { padding: 24px; }
-    .dbi-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; margin-bottom: 8px; }
-    .dbi-head h2 { margin: 0; font-size: 1.1rem; }
-    .dbi-controls { display: flex; align-items: flex-end; gap: 8px; }
-    .dbi-env { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: var(--text-secondary); }
-    .dbi-env select { min-width: 160px; }
-    .dbi-msg { color: var(--text-secondary); }
-    .dbi-muted { color: var(--text-muted); font-size: 0.82rem; margin: 4px 0 8px; }
-    .dbi-trend-empty { color: var(--text-muted); font-size: 0.82rem; border: 1px dashed #333; border-radius: 6px; padding: 20px; text-align: center; margin: 0; }
-    .dbi-engine { border-top: 1px solid #222; padding-top: 16px; margin-top: 16px; }
-    .dbi-engine-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-    .dbi-engine h3 { margin: 0; font-size: 0.95rem; }
-    .dbi-stat { font-size: 0.82rem; color: var(--text-secondary); }
-    .dbi-stat b { color: var(--text-primary); font-weight: 600; }
+    :host { display: block; }
+    .dbi-body { padding: 1rem 1.25rem; }
+    .dbi-controls { display: flex; align-items: center; gap: 0.5rem; }
+    .dbi-env select { min-width: 10rem; height: 2rem; padding-top: 0; padding-bottom: 0; }
+    .dbi-msg { color: rgb(var(--fg-2)); font-size: 0.8125rem; margin: 0 0 0.75rem; }
+    .dbi-muted { color: rgb(var(--fg-3)); font-size: 0.8125rem; margin: 0.25rem 0 0.5rem; }
+    .dbi-trend-empty { color: rgb(var(--fg-3)); font-size: 0.8125rem; border: 1px dashed rgb(var(--line-strong)); border-radius: 6px; padding: 1.25rem; text-align: center; margin: 0; }
+    .dbi-engine { border-top: 1px solid rgb(var(--line)); padding-top: 1rem; margin-top: 1rem; }
+    .dbi-engine-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+    .dbi-engine h3 { margin: 0; font-size: 0.875rem; font-weight: 600; }
+    .dbi-stat { font-size: 0.8125rem; color: rgb(var(--fg-2)); }
+    .dbi-stat b { color: rgb(var(--fg)); font-weight: 600; }
     .dbi-scroll { overflow-x: auto; }
-    .dbi-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-    .dbi-table th { text-align: left; color: var(--text-muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid #222; }
-    .dbi-table td { padding: 6px 8px; border-bottom: 1px solid #1a1a1a; vertical-align: top; }
-    .dbi-table code { font-family: var(--font-code); font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; }
+    .dbi-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+    .dbi-table th { text-align: left; color: rgb(var(--fg-3)); font-weight: 500; padding: 0.375rem 0.5rem; border-bottom: 1px solid rgb(var(--line)); }
+    .dbi-table td { padding: 0.375rem 0.5rem; border-bottom: 1px solid rgb(var(--line)); vertical-align: top; }
+    .dbi-table code { font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; }
     .dbi-table .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-    .dbi-empty { color: var(--text-muted); font-size: 0.85rem; padding: 8px 0; }
-    .dbi-trend { max-width: 600px; width: 100%; color: var(--accent-success); }
-  `],
+    .dbi-empty { color: rgb(var(--fg-3)); font-size: 0.8125rem; padding: 0.5rem 0; margin: 0; }
+    .dbi-trend { max-width: 600px; width: 100%; color: rgb(var(--accent)); }
+  `]
 })
 export class DatabaseInsightsPanelComponent implements OnChanges, OnDestroy {
   @Input() project: any;

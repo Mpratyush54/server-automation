@@ -1,7 +1,7 @@
 <section class="topo card" aria-label="Application resource topology">
   <header class="topo-head">
     <div>
-      <h2 class="topo-title">Application Resource Topology</h2>
+      <h2 class="topo-title">Application resource topology</h2>
       <p class="topo-sub">
         Live resources in
         <code>{{ data?.namespace || '…' }}</code>
@@ -140,7 +140,7 @@
               <div class="drawer-kind">{{ n.kind }}</div>
               <div class="drawer-name">{{ n.name }}</div>
             </div>
-            <button type="button" class="btn btn-sm" (click)="closeDrawer()" aria-label="Close details">✕</button>
+            <button type="button" class="btn btn-sm" (click)="closeDrawer()" aria-label="Close details">Close</button>
           </div>
           <div class="drawer-badges">
             <span [class]="'pill ' + healthClass(n)">{{ n.health || 'no health' }}</span>

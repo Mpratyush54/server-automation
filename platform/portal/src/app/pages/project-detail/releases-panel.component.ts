@@ -8,8 +8,9 @@ import { OperationProgressComponent } from '../../shared/operation-progress.comp
   selector: 'app-releases-panel', standalone: true,
   imports: [CommonModule, FormsModule, OperationProgressComponent],
   template: `
-    <section class="card rp" aria-label="Release tracking">
-      <h2>Releases and deploy markers</h2>
+    <section class="card card-flush" aria-label="Release tracking">
+      <div class="card-header"><h2>Releases and deploy markers</h2></div>
+      <div class="rp-body">
       <p class="rp-hint">Compare error rate, p95 latency and throughput before and after a deployment.</p>
       @if (message) { <p class="rp-msg" role="status">{{message}}</p> }
       <div class="rp-controls">
@@ -28,8 +29,8 @@ import { OperationProgressComponent } from '../../shared/operation-progress.comp
         <svg viewBox="0 0 600 180" role="img" aria-label="p95 latency before and after deployment" class="rp-chart">
           <line x1="300" x2="300" y1="10" y2="150" stroke="currentColor" stroke-dasharray="4" />
           <text x="305" y="20" fill="currentColor">Deploy marker</text>
-          <rect x="100" [attr.y]="150-bar(c.before.p95LatencyMs)" width="100" [attr.height]="bar(c.before.p95LatencyMs)" fill="#38bdf8" />
-          <rect x="400" [attr.y]="150-bar(c.after.p95LatencyMs)" width="100" [attr.height]="bar(c.after.p95LatencyMs)" fill="#a78bfa" />
+          <rect x="100" [attr.y]="150-bar(c.before.p95LatencyMs)" width="100" [attr.height]="bar(c.before.p95LatencyMs)" class="rp-before" />
+          <rect x="400" [attr.y]="150-bar(c.after.p95LatencyMs)" width="100" [attr.height]="bar(c.after.p95LatencyMs)" class="rp-after" />
           <text x="100" y="175" fill="currentColor">Before p95</text><text x="400" y="175" fill="currentColor">After p95</text>
         </svg>
         <div class="table-scroll">
@@ -47,19 +48,22 @@ import { OperationProgressComponent } from '../../shared/operation-progress.comp
         </div>
       }
       @if (operationId) { <app-operation-progress [operationId]="operationId" /> }
+      </div>
     </section>
   `,
   styles: [`
-    .rp { margin-bottom: 20px; }
-    .rp-hint { color: #a1a1aa; font-size: 0.85rem; margin: 0 0 12px; }
-    .rp-msg { color: #a1a1aa; font-size: 0.85rem; margin: 0 0 12px; }
-    .rp-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 12px; }
+    :host { display: block; }
+    .rp-body { padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
+    .rp-hint, .rp-msg { color: rgb(var(--fg-2)); font-size: 0.8125rem; margin: 0; }
+    .rp-controls { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
     .rp-controls .form-group { margin: 0; flex: 1 1 240px; }
     .rp-controls .rp-minutes { flex: 0 1 180px; }
     .rp-controls .rp-reason { flex: 1 1 320px; }
-    .rp-chart { width: 100%; max-width: 600px; color: #a1a1aa; font-size: 12px; margin: 8px 0; }
+    .rp-chart { width: 100%; max-width: 600px; color: rgb(var(--fg-3)); font-size: 12px; }
+    .rp-before { fill: rgb(var(--fg-3)); }
+    .rp-after { fill: rgb(var(--accent)); }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
-  `],
+  `]
 })
 export class ReleasesPanelComponent implements OnChanges, OnDestroy {
   @Input() projectId = '';

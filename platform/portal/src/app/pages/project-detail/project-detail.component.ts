@@ -10,15 +10,20 @@ import { AuthService } from '../../services/auth.service';
 import { ArgocdPanelComponent } from './argocd-panel.component';
 import { OperationProgressComponent } from '../../shared/operation-progress.component';
 import { EnvironmentTabComponent } from './environment-tab/environment-tab.component';
-import { PrivacyTabComponent } from './privacy-tab/privacy-tab.component';
 import { TopologyGraphComponent } from './topology/topology-graph.component';
+import { ProjectOverviewComponent } from './project-overview.component';
+import { ProjectSettingsSectionComponent } from './project-settings-section.component';
+import {
+  PROJECT_SECTIONS, ProjectSection, StatusView, anchorForTab, currentDeployment, deploymentStatus,
+  projectStatus, sectionForTab, statusClass,
+} from './project-sections';
 
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [DatabaseInsightsPanelComponent, ReleasesPanelComponent, CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, PrivacyTabComponent, TopologyGraphComponent, ArgocdPanelComponent],
+  imports: [DatabaseInsightsPanelComponent, ReleasesPanelComponent, CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent, ArgocdPanelComponent, ProjectOverviewComponent, ProjectSettingsSectionComponent],
   templateUrl: './project-detail.component.html',
-  styleUrl: './project-detail.component.css'
+  styleUrls: ['./project-section-shared.css', './project-detail.component.css']
 })
 export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit {
   project: any;
@@ -30,8 +35,15 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
   storageAnalytics: any = { totalBytes: 0, count: 0, providerBreakdown: {} };
   dbConnections: any[] = [];
 
-  activeTab = 'deployments';
+  /** Current section (#185); kept in `?tab=` so links and reloads land on it. */
+  section: ProjectSection = 'overview';
+  readonly sections = PROJECT_SECTIONS;
+  readonly statusClass = statusClass;
+  /** True once the first fetch finished (distinguishes "loading" from "not found"). */
+  loaded = false;
+  readonly storageQuotaBytes = 1024 * 1024 * 1024;
   @ViewChild('tabBar') private tabBar?: ElementRef<HTMLElement>;
+  private pendingAnchor: string | null = null;
   /** #48: the Observability page replaces Metrics / API Latency / Logs when telemetry is installed. */
   observabilityEnabled = false;
   role = 'devops';
@@ -94,16 +106,21 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
 
   constructor(private route: ActivatedRoute, private api: ApiService, private auth: AuthService) {}
 
-  /** ?tab= deep link; the old Config/Secrets tabs were merged into Environment (#29). */
+  /**
+   * ?tab= deep link. Pre-#185 tab names (and the #29 config/secrets aliases) map
+   * onto the new sections; the URL is rewritten to the canonical section id and
+   * the page scrolls to the panel the old tab pointed at.
+   */
   private applyTabParam() {
     const tab = this.route.snapshot?.queryParamMap?.get('tab');
     if (!tab) return;
-    if (tab === 'config' || tab === 'secrets') {
-      this.activeTab = 'environment';
-      this.router.navigate([], { relativeTo: this.route, queryParams: { tab: 'environment' }, queryParamsHandling: 'merge', replaceUrl: true });
-      return;
-    }
-    this.activeTab = tab;
+    this.section = sectionForTab(tab);
+    this.pendingAnchor = anchorForTab(tab);
+    if (tab !== this.section) this.writeTabParam(this.section);
+  }
+
+  private writeTabParam(section: ProjectSection) {
+    this.router.navigate([], { relativeTo: this.route, queryParams: { tab: section }, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
   async ngOnInit() {
@@ -113,6 +130,8 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
     this.api.getObservabilityStatus?.()?.subscribe({ next: (s: any) => { this.observabilityEnabled = !!s?.enabled; }, error: () => {} });
 
     await this.fetchData();
+    if (this.section === 'monitoring' && !this.observabilityEnabled) await this.loadApiMetrics();
+    if (this.section === 'data') await this.loadBackups();
     this.refreshTimer = setInterval(() => this.pollData(), 5000);
   }
 
@@ -145,6 +164,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
     await this.loadK8sPods();
     await this.loadArgoStatus();
     await this.loadMembers();
+    this.loaded = true;
   }
 
   async loadMembers() {
@@ -202,14 +222,17 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
   }
 
   async pollData() {
-    if (this.activeTab === 'deployments' || this.hasInFlightDeploy()) {
+    const s = this.section;
+    if (s === 'overview' || s === 'deployments' || this.hasInFlightDeploy()) {
       await this.loadDeployments();
     }
-    if (this.activeTab === 'logs') await this.loadLogs();
-    if (this.activeTab === 'metrics') await this.loadMetrics();
-    if (this.activeTab === 'api-metrics') await this.loadApiMetrics();
-    if (this.activeTab === 'databases') await this.loadBackups();
-    if (this.activeTab === 'gitops') {
+    if (s === 'monitoring' && !this.observabilityEnabled) {
+      await this.loadLogs();
+      await this.loadMetrics();
+      await this.loadApiMetrics();
+    }
+    if (s === 'data') await this.loadBackups();
+    if (s === 'deployments') {
       await this.loadK8sPods();
       await this.loadArgoStatus();
     }
@@ -399,7 +422,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
 
   async deploy() {
     if (!this.project?.repositoryUrl && !this.projectSettings.repositoryUrl) {
-      alert('Set a Git repository URL on this project first (Project Settings below), then Pull from Git & Deploy.');
+      alert('Set a Git repository URL on this project first (Configuration, Git and domain), then pull from Git and deploy.');
       return;
     }
     if (!this.project.repositoryUrl && this.projectSettings.repositoryUrl) {
@@ -425,7 +448,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
       const started: any = await firstValueFrom(this.api.deploy(payload));
       this.deployOperationId = started?.operationId || null;
       await this.loadDeployments();
-      this.activeTab = 'deployments';
+      this.section = 'deployments';
     } catch (err: any) {
       alert('Deploy failed: ' + (err.error?.error || err.message));
     } finally {
@@ -706,6 +729,61 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
 
   ngAfterViewInit() {
     this.scrollActiveTabIntoView();
+    if (this.pendingAnchor) {
+      const anchor = this.pendingAnchor;
+      this.pendingAnchor = null;
+      this.scrollToAnchor(anchor);
+    }
+  }
+
+  get projectStatusView(): StatusView {
+    return projectStatus(this.project);
+  }
+
+  depStatus(status: string): StatusView {
+    return deploymentStatus(status);
+  }
+
+  /** Newest live deployment for an environment (else the newest attempt). */
+  envCurrent(environmentId: string): any | null {
+    return currentDeployment(this.deployments, environmentId);
+  }
+
+  get appUrl(): string | null {
+    const d = String(this.project?.domain || '').trim();
+    if (!d) return null;
+    return /^https?:\/\//.test(d) ? d : `https://${d}`;
+  }
+
+  get repoHref(): string | null {
+    const url = String(this.project?.repositoryUrl || '').trim();
+    return /^https?:\/\//.test(url) ? url.replace(/\.git$/, '') : null;
+  }
+
+  /** `owner/repo` for the header line, or the URL without the scheme. */
+  get repoLabel(): string {
+    const href = this.repoHref || '';
+    return href.replace(/^https?:\/\/(www\.)?(github\.com|gitlab\.com)\//, '').replace(/^https?:\/\//, '');
+  }
+
+  dbTypeLabel(t: string): string {
+    const map: Record<string, string> = { postgres: 'PostgreSQL', mongo: 'MongoDB', redis: 'Redis', mysql: 'MySQL' };
+    return map[String(t || '').toLowerCase()] || String(t || 'Unknown');
+  }
+
+  /** Header "Deploy": open the Deployments section and bring the deploy form into view. */
+  openDeployForm() {
+    this.switchSection('deployments');
+    this.scrollToAnchor('deploy-form', true);
+  }
+
+  private scrollToAnchor(id: string, focus = false) {
+    setTimeout(() => {
+      const el = typeof document !== 'undefined' ? document.getElementById(id) : null;
+      if (!el) return;
+      el.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+      if (focus) el.querySelector<HTMLElement>('select, input')?.focus({ preventScroll: true });
+    });
   }
 
   /** SDK token create: API allows platform admin, devops and tech_lead. */
@@ -722,27 +800,32 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
   scrollActiveTabIntoView() {
     setTimeout(() => {
       const bar = this.tabBar?.nativeElement;
-      const active = bar?.querySelector<HTMLElement>('.btn-primary');
+      const active = bar?.querySelector<HTMLElement>('.active');
       if (!bar || !active) return;
-      const left = active.offsetLeft; // .pd-tabs is position:relative (the offsetParent)
+      const left = active.offsetLeft; // .subnav is position:relative here (the offsetParent)
       const right = left + active.offsetWidth;
       if (left < bar.scrollLeft) bar.scrollLeft = Math.max(0, left - 16);
       else if (right > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = right - bar.clientWidth + 16;
     });
   }
 
-  switchTab(tab: string) {
-    this.activeTab = tab;
+  switchSection(section: ProjectSection) {
+    const changed = section !== this.section;
+    this.section = section;
+    if (changed) this.writeTabParam(section);
     this.scrollActiveTabIntoView();
-    if (tab === 'api-metrics') this.loadApiMetrics();
-    if (tab === 'metrics') this.loadMetrics();
-    if (tab === 'deployments') this.loadDeployments();
-    if (tab === 'logs') this.loadLogs();
-    if (tab === 'access') this.loadMembers();
-    if (tab === 'gitops') {
+    if (section === 'overview' || section === 'deployments') this.loadDeployments();
+    if (section === 'deployments') {
       this.loadK8sPods();
       this.loadArgoStatus();
     }
+    if (section === 'monitoring' && !this.observabilityEnabled) {
+      this.loadApiMetrics();
+      this.loadMetrics();
+      this.loadLogs();
+    }
+    if (section === 'data') this.loadBackups();
+    if (section === 'settings') this.loadMembers();
   }
 
   formatBytes(bytes: number): string {

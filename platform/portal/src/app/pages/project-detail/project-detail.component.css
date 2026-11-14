@@ -1,15 +1,85 @@
-/* Project sections: one scrolling row so the last tab is reachable, never clipped. */
-.pd-tabs {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
-  margin-bottom: 24px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #333;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  position: relative;
+/* Project page (#185). Shared helpers live in project-section-shared.css;
+   colours come only from the design tokens in src/styles.css.
+   Rhythm: 24px between panels, 20px horizontal padding inside panels, 16px grid gaps. */
+
+.title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
+.title-row .page-title { overflow-wrap: anywhere; }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; overflow-wrap: anywhere; }
+.meta a { text-decoration: none; }
+.meta a:hover { text-decoration: underline; }
+
+/* Keep the section row scrollable and the active item measurable. */
+.subnav { position: relative; }
+
+.release-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
+
+.deploy-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+@media (min-width: 1100px) {
+  .deploy-grid { grid-template-columns: minmax(20rem, 2fr) minmax(0, 3fr); }
 }
-.pd-tabs > .btn {
-  flex: 0 0 auto;
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 1rem; }
+.form-grid .form-group { margin-bottom: 0; }
+.dep-error { max-width: 28rem; }
+
+.link-button {
+  background: none; border: 0; padding: 0; font: inherit; cursor: pointer;
+  color: rgb(var(--accent-text)); text-decoration: underline;
 }
+
+.topology-placeholder { min-height: 10rem; }
+
+.env-list { list-style: none; margin: 0; padding: 1rem 1.25rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; }
+.env-item { padding: 1rem 1.25rem; border: 1px solid rgb(var(--line)); border-radius: 8px; display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+.env-item-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.env-item-head h3 { margin: 0; font-size: 0.875rem; font-weight: 600; text-transform: capitalize; }
+
+.db-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+@media (min-width: 1100px) {
+  .db-grid-split { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
+}
+.secret-value { background: rgb(var(--raised)); border-radius: 4px; padding: 0 0.375rem; user-select: all; }
+.backup-input { width: 12rem; height: 2rem; padding-top: 0; padding-bottom: 0; }
+
+.quota { display: block; width: 100%; height: 0.5rem; appearance: none; border: 0; border-radius: 999px; overflow: hidden; background: rgb(var(--raised)); }
+.quota::-webkit-progress-bar { background: rgb(var(--raised)); border-radius: 999px; }
+.quota::-webkit-progress-value { background: rgb(var(--accent)); border-radius: 999px; }
+.quota::-moz-progress-bar { background: rgb(var(--accent)); border-radius: 999px; }
+
+.stat-label { margin: 0; font-size: 0.8125rem; font-weight: 500; color: rgb(var(--fg-2)); }
+.card .stat-label { margin: 0; }
+
+.api-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 1rem; margin: 0; }
+.api-summary dt { font-size: 0.8125rem; color: rgb(var(--fg-2)); }
+.api-summary dd { margin: 0; }
+.api-summary .stat { font-size: 1.5rem; margin-top: 0.25rem; }
+.num { text-align: right; white-space: nowrap; }
+.sub-title { margin: 0; font-size: 0.875rem; font-weight: 600; }
+.code-block {
+  margin: 0; padding: 1rem 1.25rem; overflow-x: auto; border-radius: 6px;
+  background: rgb(var(--raised)); border: 1px solid rgb(var(--line)); color: rgb(var(--fg)); font-size: 0.8125rem;
+}
+
+.log-stream {
+  height: 22rem; overflow-y: auto; padding: 0.75rem 1rem; border-radius: 6px;
+  background: rgb(var(--canvas)); border: 1px solid rgb(var(--line));
+  font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 0.8125rem; line-height: 1.6;
+}
+.log-line { display: flex; flex-wrap: wrap; gap: 0 0.75rem; }
+.log-level { font-weight: 600; min-width: 3rem; }
+.log-msg { color: rgb(var(--fg)); overflow-wrap: anywhere; min-width: 0; }
+
+.link-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); padding: 0.75rem 1.25rem; gap: 0.5rem 1rem; }
+.link-list a { display: block; padding: 0.5rem 0.75rem; margin: 0 -0.75rem; border-radius: 6px; text-decoration: none; font-size: 0.875rem; font-weight: 500; }
+.link-list a:hover { background: rgb(var(--raised)); }
+
+/* Pod logs dialog */
+.modal-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgb(var(--canvas) / 0.75); }
+.modal {
+  position: fixed; z-index: 1001; inset: 0; margin: auto; width: min(56rem, calc(100% - 2rem)); height: min(44rem, 85vh);
+  display: flex; flex-direction: column; box-shadow: var(--shadow);
+}
+.pod-name { margin: 0.125rem 0 0; font-size: 1rem; overflow-wrap: anywhere; }
+.modal-body { position: relative; flex: 1 1 auto; overflow-y: auto; background: rgb(var(--canvas)); padding: 1rem 1.25rem; }
+.pod-logs { margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 0.8125rem; line-height: 1.5; color: rgb(var(--fg)); }
+.tailing { position: absolute; right: 1.25rem; bottom: 0.75rem; background: rgb(var(--surface)); border: 1px solid rgb(var(--line)); border-radius: 4px; padding: 0.125rem 0.5rem; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 0.75rem 1.25rem; border-top: 1px solid rgb(var(--line)); }
