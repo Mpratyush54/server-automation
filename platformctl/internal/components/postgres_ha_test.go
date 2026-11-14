@@ -328,3 +328,13 @@ func TestPGFirstBackupScript(t *testing.T) {
 		}
 	}
 }
+
+// PITR to a time after the last transaction failed: recovery needs a commit
+// record after the target, so the switch script commits one first.
+func TestPGPITRWritesCommitBeforeSwitch(t *testing.T) {
+	s := pgPITRWALSwitchScript
+	commit, sw := strings.Index(s, `sql "SELECT txid_current()"`), strings.Index(s, `sql "SELECT pg_switch_wal()"`)
+	if commit < 0 || sw < 0 || commit > sw {
+		t.Fatal("PITR must commit a transaction before switching WAL")
+	}
+}

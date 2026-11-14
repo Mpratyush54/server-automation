@@ -740,6 +740,12 @@ pod=$(kubectl -n databases get pod -l cnpg.io/cluster=postgresql,cnpg.io/instanc
 test -n "$pod"
 sql() { kubectl -n databases exec "$pod" -c postgres -- psql -U postgres -d postgres -Atc "$1"; }
 old=$(sql "SELECT last_archived_wal FROM pg_stat_archiver")
+# Recovery to a target time stops only at a commit record after the target. On
+# an idle database the last commit can precede it, and recovery then fails
+# ("recovery ended before configured recovery target was reached", 3-node
+# test): txid_current() assigns a transaction id, so this commit is logged
+# with the current time, which is after the (past) target.
+sql "SELECT txid_current()"
 # CHECKPOINT always writes WAL, so the switch below closes a new segment even when idle.
 sql "CHECKPOINT"
 sql "SELECT pg_switch_wal()"
