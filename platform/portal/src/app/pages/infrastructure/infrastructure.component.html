@@ -36,7 +36,7 @@
   <button type="button" [class.active]="activeTab === 'namespaces'" [attr.aria-current]="activeTab === 'namespaces' ? 'page' : null" (click)="selectTab('namespaces')">Namespaces</button>
   <button type="button" [class.active]="activeTab === 'pods'" [attr.aria-current]="activeTab === 'pods' ? 'page' : null" (click)="selectTab('pods')">Containers</button>
   <button type="button" [class.active]="activeTab === 'bootstrap'" [attr.aria-current]="activeTab === 'bootstrap' ? 'page' : null" (click)="selectTab('bootstrap')">Add a server</button>
-  <button type="button" [class.active]="activeTab === 'metrics'" [attr.aria-current]="activeTab === 'metrics' ? 'page' : null" (click)="selectTab('metrics')">Usage preview</button>
+  <button type="button" [class.active]="activeTab === 'metrics'" [attr.aria-current]="activeTab === 'metrics' ? 'page' : null" (click)="selectTab('metrics')">Usage</button>
 </nav>
 
 <!-- Nodes -->
@@ -273,59 +273,64 @@
 
 <!-- Metrics -->
 @if (activeTab === 'metrics') {
-  <p class="card in-notice in-notice-quiet" role="note">
-    Sample data generated in your browser, not your real usage. Live numbers are in Grafana.
-  </p>
-  <div class="in-charts">
-    <section class="card in-chart" aria-labelledby="in-cpu">
-      <div class="in-chart-head">
-        <h2 id="in-cpu">CPU</h2>
-        <span class="in-chart-value">{{ cpuHistory[cpuHistory.length - 1].toFixed(1) }}%</span>
-      </div>
-      <svg viewBox="0 0 600 200" preserveAspectRatio="none" role="img" aria-label="Simulated CPU use">
-        <line class="in-grid" x1="15" y1="15" x2="585" y2="15"></line>
-        <line class="in-grid" x1="15" y1="65" x2="585" y2="65"></line>
-        <line class="in-grid" x1="15" y1="115" x2="585" y2="115"></line>
-        <line class="in-grid" x1="15" y1="165" x2="585" y2="165"></line>
-        <line class="in-axis" x1="15" y1="185" x2="585" y2="185"></line>
-        <path class="in-area in-area-accent" [attr.d]="cpuAreaPath"></path>
-        <path class="in-line in-line-accent" [attr.d]="cpuPath" vector-effect="non-scaling-stroke"></path>
-      </svg>
-      <p class="in-chart-note">Updates every 3 seconds</p>
+  @if (!metricsFetched) {
+    <p class="secondary in-metrics-loading" role="status">Loading node metrics…</p>
+  } @else if (!metricsAvailable) {
+    <section class="card in-notice in-notice-quiet" role="status" aria-label="Node metrics unavailable">
+      <strong>Node metrics are unavailable</strong>
+      <p>
+        The API could not read live CPU and memory from metrics-server.
+        Open <a routerLink="/grafana">Grafana</a> for cluster dashboards, or check that metrics-server is running in the cluster.
+      </p>
     </section>
-
-    <section class="card in-chart" aria-labelledby="in-mem">
-      <div class="in-chart-head">
-        <h2 id="in-mem">Memory</h2>
-        <span class="in-chart-value">{{ memoryHistory[memoryHistory.length - 1].toFixed(1) }}%</span>
+  } @else {
+    <section class="card card-flush" aria-labelledby="in-node-metrics">
+      <div class="card-header">
+        <h2 id="in-node-metrics">Node use</h2>
+        <span class="badge">{{ nodeMetrics.length }}</span>
       </div>
-      <svg viewBox="0 0 600 200" preserveAspectRatio="none" role="img" aria-label="Simulated memory use">
-        <line class="in-grid" x1="15" y1="15" x2="585" y2="15"></line>
-        <line class="in-grid" x1="15" y1="65" x2="585" y2="65"></line>
-        <line class="in-grid" x1="15" y1="115" x2="585" y2="115"></line>
-        <line class="in-grid" x1="15" y1="165" x2="585" y2="165"></line>
-        <line class="in-axis" x1="15" y1="185" x2="585" y2="185"></line>
-        <path class="in-area in-area-ok" [attr.d]="memoryAreaPath"></path>
-        <path class="in-line in-line-ok" [attr.d]="memoryPath" vector-effect="non-scaling-stroke"></path>
-      </svg>
-      <p class="in-chart-note">{{ ((memoryHistory[memoryHistory.length - 1] / 100) * 16).toFixed(1) }} GB of 16.0 GB</p>
-    </section>
-
-    <section class="card in-chart" aria-labelledby="in-net">
-      <div class="in-chart-head">
-        <h2 id="in-net">Network</h2>
-        <span class="in-chart-value">{{ networkHistory[networkHistory.length - 1].toFixed(0) }} Mbps</span>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Node</th>
+              <th>CPU</th>
+              <th>Memory</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (n of nodeMetrics; track n.name) {
+              <tr>
+                <td class="in-strong mono">{{ n.name }}</td>
+                <td>
+                  <div class="in-usage">
+                    <svg class="in-bar" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" [attr.aria-label]="'CPU ' + cpuPct(n).toFixed(0) + ' percent'">
+                      <rect class="in-bar-track" x="0" y="0" width="100" height="6"></rect>
+                      <rect class="in-bar-fill in-bar-cpu" x="0" y="0" [attr.width]="cpuPct(n)" height="6"></rect>
+                    </svg>
+                    <span class="in-usage-value">{{ formatCores(n.cpuUsedCores) }} / {{ formatCores(n.cpuCapacityCores) }} cores ({{ cpuPct(n) | number:'1.0-0' }}%)</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="in-usage">
+                    <svg class="in-bar" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" [attr.aria-label]="'Memory ' + memoryPct(n).toFixed(0) + ' percent'">
+                      <rect class="in-bar-track" x="0" y="0" width="100" height="6"></rect>
+                      <rect class="in-bar-fill in-bar-mem" x="0" y="0" [attr.width]="memoryPct(n)" height="6"></rect>
+                    </svg>
+                    <span class="in-usage-value">{{ formatBytes(n.memoryUsedBytes) }} / {{ formatBytes(n.memoryCapacityBytes) }} ({{ memoryPct(n) | number:'1.0-0' }}%)</span>
+                  </div>
+                </td>
+              </tr>
+            }
+            @if (nodeMetrics.length === 0) {
+              <tr class="empty-row">
+                <td colspan="3">Metrics-server responded but reported no node usage yet.</td>
+              </tr>
+            }
+          </tbody>
+        </table>
       </div>
-      <svg viewBox="0 0 600 200" preserveAspectRatio="none" role="img" aria-label="Simulated network traffic">
-        <line class="in-grid" x1="15" y1="15" x2="585" y2="15"></line>
-        <line class="in-grid" x1="15" y1="65" x2="585" y2="65"></line>
-        <line class="in-grid" x1="15" y1="115" x2="585" y2="115"></line>
-        <line class="in-grid" x1="15" y1="165" x2="585" y2="165"></line>
-        <line class="in-axis" x1="15" y1="185" x2="585" y2="185"></line>
-        <path class="in-area in-area-info" [attr.d]="networkAreaPath"></path>
-        <path class="in-line in-line-info" [attr.d]="networkPath" vector-effect="non-scaling-stroke"></path>
-      </svg>
-      <p class="in-chart-note">Traffic in and out of your apps</p>
+      <p class="in-chart-note in-metrics-note">Refreshes every 15 seconds while this tab is open.</p>
     </section>
-  </div>
+  }
 }

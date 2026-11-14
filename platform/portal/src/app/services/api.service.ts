@@ -81,6 +81,7 @@ export class ApiService {
   bootstrapInit(data: any): Observable<any> { return this.http.post(`${this.base}/bootstrap/init`, data); }
   getBootstrapStatus(): Observable<any> { return this.http.get(`${this.base}/bootstrap/status`); }
   getNodes(): Observable<any> { return this.http.get(`${this.base}/bootstrap/nodes`); }
+  getNodeMetrics(): Observable<any> { return this.http.get(`${this.base}/bootstrap/node-metrics`); }
   getBootstrapHistory(): Observable<any> { return this.http.get(`${this.base}/bootstrap/history`); }
   getNamespaces(): Observable<any> { return this.http.get(`${this.base}/bootstrap/namespaces`); }
   getPods(namespace?: string): Observable<any> { return this.http.get(`${this.base}/bootstrap/pods`, { params: namespace ? { namespace } : {} }); }

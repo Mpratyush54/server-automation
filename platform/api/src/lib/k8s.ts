@@ -6,6 +6,10 @@ import * as k8s from '@kubernetes/client-node';
 import { PassThrough } from 'stream';
 import { deploymentRestartAnnotationsPatch, deploymentRestartJsonPatch } from './deployment-restart-patch';
 import { loadKubeConfig } from './kube-config';
+import { buildNodeResourceMetrics, type NodeResourceMetrics } from './node-metrics';
+
+export type { NodeResourceMetrics } from './node-metrics';
+export { parseResourceQuantity, buildNodeResourceMetrics } from './node-metrics';
 
 // ── Kubernetes client (in-cluster when running in a pod, local kubeconfig otherwise) ──
 function makeKubeConfig(): k8s.KubeConfig {
@@ -55,6 +59,30 @@ export async function getK8sNodes(): Promise<any[]> {
   } catch (err: any) {
     console.warn(`[k8s] getK8sNodes failed: ${err.message}`);
     return [];
+  }
+}
+
+/**
+ * Live node CPU/memory from metrics.k8s.io (metrics-server) plus allocatable capacity.
+ * Returns metricsAvailable=false and an empty list when the metrics API is missing — never invents data.
+ */
+export async function getK8sNodeMetrics(
+  deps?: {
+    listNodes?: () => Promise<{ items?: any[] }>;
+    getNodeMetrics?: () => Promise<{ items?: any[] }>;
+  },
+): Promise<{ metricsAvailable: boolean; nodes: NodeResourceMetrics[] }> {
+  try {
+    const listNodes = deps?.listNodes ?? (() => coreApi.listNode());
+    const getNodeMetrics = deps?.getNodeMetrics ?? (() => new k8s.Metrics(kc).getNodeMetrics());
+    const [nodeRes, metricsRes] = await Promise.all([listNodes(), getNodeMetrics()]);
+    return {
+      metricsAvailable: true,
+      nodes: buildNodeResourceMetrics(nodeRes.items || [], metricsRes.items || []),
+    };
+  } catch (err: any) {
+    console.warn(`[k8s] getK8sNodeMetrics failed: ${err.message}`);
+    return { metricsAvailable: false, nodes: [] };
   }
 }
 

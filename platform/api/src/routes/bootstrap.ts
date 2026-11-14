@@ -7,7 +7,7 @@ import { ClickupTaskLink } from '../entities/ClickupTaskLink';
 import { UserRole } from '../entities/User';
 import { expressAuthenticate, expressRequireRole, requireAgentScopeOrRole, logAudit, AuthenticatedRequest } from '../middleware/auth';
 import { triggerPipeline } from '../lib/gitlab';
-import { getK8sNodes, getK8sNamespaces, getK8sPods, getPodLogs, deletePod, checkK8sConnection } from '../lib/k8s';
+import { getK8sNodes, getK8sNodeMetrics, getK8sNamespaces, getK8sPods, getPodLogs, deletePod, checkK8sConnection } from '../lib/k8s';
 import { withTimeout } from '../lib/with-timeout';
 import { resolveIntegrations } from '../lib/integrations';
 
@@ -136,6 +136,15 @@ router.get('/bootstrap/nodes', expressAuthenticate, requireAgentScopeOrRole(['cl
   const isConnected = await checkK8sConnection();
   const nodes = await getK8sNodes();
   return res.json({ k8sConnected: isConnected, nodes });
+});
+
+router.get('/bootstrap/node-metrics', expressAuthenticate, requireAgentScopeOrRole(['cluster:read', 'bootstrap:read'], [UserRole.DEVOPS]), async (_req: Request, res: Response) => {
+  const k8sConnected = await checkK8sConnection();
+  if (!k8sConnected) {
+    return res.json({ k8sConnected: false, metricsAvailable: false, nodes: [] });
+  }
+  const { metricsAvailable, nodes } = await getK8sNodeMetrics();
+  return res.json({ k8sConnected: true, metricsAvailable, nodes });
 });
 
 router.get('/bootstrap/namespaces', expressAuthenticate, requireAgentScopeOrRole(['cluster:read', 'bootstrap:read'], [UserRole.DEVOPS]), async (req: Request, res: Response) => {
