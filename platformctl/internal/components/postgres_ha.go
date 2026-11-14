@@ -599,10 +599,73 @@ func InstallPostgresBackup(cfg *config.Config) error {
 	if err = shell.RunBash(pgFirstBackupScript); err != nil {
 		return fmt.Errorf("first PostgreSQL base backup: %w", err)
 	}
+	if err = pgEnsureRecoveryWindow(server); err != nil {
+		color.Yellow("  ⚠ %v", err)
+	}
 	if err = ApplyBackupAlerts(); err != nil {
 		color.Yellow("  · backup alert rules not applied: %v", err)
 	}
 	return state.MarkDone("postgresql-backup")
+}
+
+// pgWindowReady reports whether the ObjectStore records a recovery window
+// (first recoverability point) for server. Replaceable in tests.
+var pgWindowReady = func(server string) bool {
+	out, err := shell.Output("kubectl", "-n", "databases", "get", "objectstores.barmancloud.cnpg.io", PGObjectStoreName, "-o", "json")
+	if err != nil {
+		return false
+	}
+	var s pgObjectStoreState
+	if json.Unmarshal([]byte(out), &s) != nil {
+		return false
+	}
+	return s.Status.ServerRecoveryWindow[server].FirstRecoverabilityPoint != ""
+}
+
+// pgRequestBackup creates a plugin Backup and waits for it. Replaceable in tests.
+var pgRequestBackup = func(name string) error {
+	m := pgResource("Backup", name)
+	m["spec"] = pgPluginBackupSpec(map[string]any{})
+	if err := kubeApplyJSON(m); err != nil {
+		return err
+	}
+	return shell.RunBash(fmt.Sprintf(`export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+for _ in $(seq 1 180); do
+  phase=$(kubectl -n databases get backups.postgresql.cnpg.io %[1]s -o jsonpath='{.status.phase}' 2>/dev/null || true)
+  case "$phase" in completed) exit 0 ;; failed) echo "backup %[1]s failed" >&2; exit 1 ;; esac
+  sleep 5
+done
+echo "backup %[1]s did not complete in 15 minutes" >&2; exit 1`, name))
+}
+
+// pgWindowWait is how long to wait for the plugin to record the window.
+var pgWindowWait, pgWindowPoll = 90 * time.Second, 5 * time.Second
+
+// pgEnsureRecoveryWindow makes sure the recovery window of server is recorded
+// after the first base backup. The Barman Cloud plugin refreshes it only at
+// the end of a base backup and skips the refresh when its status update
+// conflicts ("the object has been modified ... Skipping", seen on the #186
+// migration test). `restore --pitr <time>` then refused to run until the next
+// daily backup. Another base backup is requested, at most twice.
+func pgEnsureRecoveryWindow(server string) error {
+	for attempt := 0; ; attempt++ {
+		for deadline := time.Now().Add(pgWindowWait); ; {
+			if pgWindowReady(server) {
+				return nil
+			}
+			if !time.Now().Before(deadline) {
+				break
+			}
+			time.Sleep(pgWindowPoll)
+		}
+		if attempt == 2 {
+			return fmt.Errorf("the PostgreSQL recovery window is not recorded yet; `restore --pitr latest` works, a specific time works after the next base backup (daily at 03:00 UTC)")
+		}
+		color.Yellow("  · the PostgreSQL recovery window was not recorded; requesting another base backup")
+		if err := pgRequestBackup(fmt.Sprintf("postgresql-window-%d", time.Now().Unix())); err != nil {
+			return fmt.Errorf("PostgreSQL base backup for the recovery window: %w", err)
+		}
+	}
 }
 
 // pgFirstBackupScript waits until a base backup exists in the recovery window.

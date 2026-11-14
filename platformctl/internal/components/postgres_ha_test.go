@@ -338,3 +338,31 @@ func TestPGPITRWritesCommitBeforeSwitch(t *testing.T) {
 		t.Fatal("PITR must commit a transaction before switching WAL")
 	}
 }
+
+// The Barman Cloud plugin can skip recording the recovery window after a
+// base backup (status update conflict, #186 migration test); another base
+// backup is requested until the window shows up, at most twice.
+func TestPGEnsureRecoveryWindowRequestsBackup(t *testing.T) {
+	oldReady, oldReq, oldWait, oldPoll := pgWindowReady, pgRequestBackup, pgWindowWait, pgWindowPoll
+	t.Cleanup(func() { pgWindowReady, pgRequestBackup, pgWindowWait, pgWindowPoll = oldReady, oldReq, oldWait, oldPoll })
+	pgWindowWait, pgWindowPoll = time.Millisecond, time.Millisecond
+	var requested []string
+	pgRequestBackup = func(name string) error { requested = append(requested, name); return nil }
+
+	pgWindowReady = func(server string) bool { return server == "s1" && len(requested) == 1 }
+	if err := pgEnsureRecoveryWindow("s1"); err != nil || len(requested) != 1 {
+		t.Fatalf("err=%v requested=%v", err, requested)
+	}
+
+	requested = nil
+	pgWindowReady = func(string) bool { return false }
+	if err := pgEnsureRecoveryWindow("s1"); err == nil || len(requested) != 2 || !strings.Contains(err.Error(), "--pitr latest") {
+		t.Fatalf("err=%v requested=%v", err, requested)
+	}
+
+	requested = nil
+	pgWindowReady = func(string) bool { return true }
+	if err := pgEnsureRecoveryWindow("s1"); err != nil || len(requested) != 0 {
+		t.Fatalf("a recorded window needs no extra backup: err=%v requested=%v", err, requested)
+	}
+}
