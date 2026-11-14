@@ -53,16 +53,16 @@ export class UsersComponent implements OnInit {
     const ok = await this.dialog.confirm({
       title: `Reset two-factor authentication for ${u.email}?`,
       message: 'Their authenticator is removed. They enrol a new one at next sign-in if their role requires it.',
-      confirmLabel: 'Reset MFA',
+      confirmLabel: 'Reset two-factor',
       danger: true,
     });
     if (!ok) return;
     try {
-      await this.stepUp.run(() => firstValueFrom(this.mfa.adminReset(u.id, 'reset from portal')), `Reset MFA for ${u.email}`);
+      await this.stepUp.run(() => firstValueFrom(this.mfa.adminReset(u.id, 'reset from portal')), `Reset two-factor for ${u.email}`);
       this.toast.ok(`Two-factor authentication reset for ${u.email}`);
       await this.loadUsers();
     } catch (err: any) {
-      this.toast.error('MFA was not reset: ' + errorText(err));
+      this.toast.error('Two-factor was not reset: ' + errorText(err));
     }
   }
 

@@ -25,7 +25,7 @@ const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown
     <div class="obs-head">
       <div>
         <h1 class="page-title">Monitoring</h1>
-        <p class="page-subtitle">Health, traffic, errors and latency across {{ scope === 'all' ? 'all projects' : 'your projects' }}. Open a project to see its errors, logs and traces.</p>
+        <p class="page-subtitle">How {{ scope === 'all' ? 'all projects are' : 'your projects are' }} doing. Open one for its errors, logs and traces.</p>
       </div>
       <div class="obs-controls">
         <label class="obs-field">Time range
@@ -40,8 +40,8 @@ const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown
     @if (error) { <div class="obs-banner error" role="alert">{{ error }}</div> }
     @if (!loading && telemetryEnabled === false) {
       <div class="obs-banner" data-testid="telemetry-disabled">
-        Traces, logs, metrics and profiles need the full install profile (<span class="obs-code">platformctl provision --profile full</span>).
-        Alerts, errors, synthetics and SLOs are shown below.
+        Traffic charts, logs and traces need full monitoring on the server (<span class="obs-code">platformctl provision --profile full</span>).
+        Alerts, errors, uptime checks and goals still show below.
       </div>
     }
     @if (telemetryError) { <div class="obs-banner error">{{ telemetryError }}</div> }
@@ -57,7 +57,7 @@ const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown
       @if (loading && !rows.length) {
         <div class="obs-empty">Loading…</div>
       } @else if (!rows.length) {
-        <div class="obs-empty"><strong>No projects</strong>You are not a member of any project yet.</div>
+        <div class="obs-empty"><strong>No projects</strong>Create a project, or ask an owner to add you to one, to see its health here.</div>
       } @else {
         <div class="table-scroll"><table class="obs-table">
           <thead><tr>
@@ -68,8 +68,8 @@ const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown
             <th class="obs-num"><button (click)="sortBy('p95Ms')">p95</button></th>
             <th class="obs-num"><button (click)="sortBy('activeAlerts')">Alerts</button></th>
             <th class="obs-num">Open errors</th>
-            <th>Synthetics</th>
-            <th>SLOs</th>
+            <th>Uptime</th>
+            <th>Goals</th>
           </tr></thead>
           <tbody>
             @for (r of sorted(); track r.projectId) {

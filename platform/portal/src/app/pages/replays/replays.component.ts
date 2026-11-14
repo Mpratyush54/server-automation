@@ -30,16 +30,10 @@ import { browserLabel, formatDuration, listParams, ReplayFilters, ReplaySessionR
       color: rgb(var(--fg-2));
     }
     .rp-notice.rp-error { border-left-color: rgb(var(--down)); color: rgb(var(--down)); }
-    .rp-filters {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-      gap: 16px;
-      align-items: end;
-      margin-bottom: 24px;
-      padding: 20px;
-    }
-    .rp-filters .form-group { margin-bottom: 0; }
-    .rp-filters button { align-self: end; }
+    .rp-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgb(var(--line)); }
+    .rp-filters input, .rp-filters select { width: auto; flex: 1 1 140px; max-width: 200px; height: 32px; }
+    .rp-filters .rp-num { flex: 0 1 110px; }
+    @media (max-width: 640px) { .rp-filters input, .rp-filters select, .rp-filters .rp-num { max-width: none; flex-basis: 100%; } }
     .rp-sub { display: block; margin-top: 2px; font-size: 0.8125rem; color: rgb(var(--fg-3)); }
     .rp-nowrap { white-space: nowrap; }
     .rp-err { color: rgb(var(--down)); font-weight: 600; }
@@ -58,50 +52,34 @@ import { browserLabel, formatDuration, listParams, ReplayFilters, ReplaySessionR
       <div class="page-header">
         <div>
           <h1 class="page-title">Session replays</h1>
-          <p class="page-subtitle">Watch what users did before an error. Inputs are masked, recordings follow the project's replay retention and every view is audited.</p>
+          <p class="page-subtitle">Watch what users did before an error. Typed text is hidden and every view is logged.</p>
         </div>
       </div>
     } @else {
       <div class="rp-embed-head">
         <h2>Session replays</h2>
-        <p>Watch what users did before an error. Inputs are masked and every view is audited.</p>
+        <p>Watch what users did before an error. Typed text is hidden and every view is logged.</p>
       </div>
     }
 
     @if (!enabled && loaded) {
-      <div class="rp-notice" data-test="disabled">Recording new sessions is off: session replay needs the full observability profile and replay storage. Existing recordings are still listed.</div>
+      <div class="rp-notice" data-test="disabled">New sessions are not being recorded: this needs full monitoring turned on for the server. Earlier recordings are still listed.</div>
     }
     @if (error) { <div class="rp-notice rp-error" role="alert">{{ error }}</div> }
 
-    <form class="card rp-filters" (ngSubmit)="offset = 0; load()" aria-label="Filter sessions">
-      <div class="form-group">
-        <label for="rp-page">Page contains</label>
-        <input id="rp-page" name="page" [(ngModel)]="filters.page" placeholder="/checkout">
-      </div>
-      <div class="form-group">
-        <label for="rp-errors">Errors</label>
-        <select id="rp-errors" name="errors" [(ngModel)]="filters.errors">
-          <option value="">Any</option><option value="true">With errors</option><option value="false">Without errors</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label for="rp-min">Min duration (s)</label>
-        <input id="rp-min" name="min" type="number" min="0" [(ngModel)]="filters.minDurationSec">
-      </div>
-      <div class="form-group">
-        <label for="rp-max">Max duration (s)</label>
-        <input id="rp-max" name="max" type="number" min="0" [(ngModel)]="filters.maxDurationSec">
-      </div>
-      <div class="form-group">
-        <label for="rp-env">Environment</label>
-        <input id="rp-env" name="env" [(ngModel)]="filters.environment" placeholder="production">
-      </div>
-      <button type="submit" class="btn" [disabled]="busy">Filter</button>
-    </form>
-
     <section class="card card-flush" aria-label="Sessions">
+      <form class="rp-filters" (ngSubmit)="offset = 0; load()" aria-label="Filter sessions">
+        <input id="rp-page" name="page" aria-label="Page contains" [(ngModel)]="filters.page" placeholder="Page, e.g. /checkout">
+        <select id="rp-errors" name="errors" aria-label="Errors" [(ngModel)]="filters.errors">
+          <option value="">With or without errors</option><option value="true">With errors</option><option value="false">Without errors</option>
+        </select>
+        <input id="rp-env" name="env" aria-label="Environment" [(ngModel)]="filters.environment" placeholder="Environment">
+        <input id="rp-min" name="min" class="rp-num" type="number" min="0" aria-label="Min duration (s)" placeholder="Min s" [(ngModel)]="filters.minDurationSec">
+        <input id="rp-max" name="max" class="rp-num" type="number" min="0" aria-label="Max duration (s)" placeholder="Max s" [(ngModel)]="filters.maxDurationSec">
+        <button type="submit" class="btn btn-sm" [disabled]="busy">Filter</button>
+      </form>
       @if (busy) { <p class="empty-state">Loading sessions…</p> }
-      @if (loaded && !busy && !sessions.length) { <p class="empty-state" data-test="empty">No sessions match these filters.</p> }
+      @if (loaded && !busy && !sessions.length) { <p class="empty-state" data-test="empty">No sessions match. Recordings appear once the browser SDK has replay turned on.</p> }
       @if (sessions.length) {
         <div class="table-scroll"><table>
           <thead><tr><th>Started</th><th>Duration</th><th>Pages</th><th>Errors</th><th>User</th><th>Browser</th><th class="rp-right"><span class="rp-sr">Actions</span></th></tr></thead>

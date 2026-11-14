@@ -196,7 +196,7 @@ describe('ObsProjectComponent (#48)', () => {
     fixture.detectChanges();
     const note = fixture.nativeElement.querySelector('[data-testid="telemetry-disabled"]');
     expect(note.tagName).toBe('P');
-    expect(note.textContent).toContain('full install profile');
+    expect(note.textContent).toContain('full monitoring');
     http.expectNone((r) => r.url.startsWith(BASE));
   });
 });

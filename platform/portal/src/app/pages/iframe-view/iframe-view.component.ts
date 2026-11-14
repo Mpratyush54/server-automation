@@ -41,7 +41,7 @@ export class IframeViewComponent implements OnInit {
   /** Plain URL for the "open in a new tab" link. */
   openUrl = '';
   title = 'Grafana';
-  subtitle = 'Dashboards for your cluster and apps, shown inside the portal.';
+  subtitle = 'Charts for your server and apps.';
   private readonly destroyRef = inject(DestroyRef);
 
   constructor(private route: ActivatedRoute, private sanitizer: DomSanitizer) {}

@@ -124,3 +124,10 @@
   color: rgb(var(--fg));
 }
 .pg-console-note { margin: 0; padding: 96px 0; text-align: center; font-size: 0.875rem; color: rgb(var(--fg-3)); }
+
+.pg-link { color: rgb(var(--accent-text)); }
+.pg-auth > summary { cursor: pointer; list-style: none; }
+.pg-auth > summary::-webkit-details-marker { display: none; }
+.pg-auth:not([open]) > summary { border-bottom: 0; }
+.pg-auth-state { font-size: 0.8125rem; color: rgb(var(--fg-3)); }
+.pg-auth > summary:hover .pg-auth-state { color: rgb(var(--fg)); }

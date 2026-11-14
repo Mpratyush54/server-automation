@@ -1,7 +1,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">API playground</h1>
-    <p class="page-subtitle">Try platform API calls from the browser and see the live response.</p>
+    <p class="page-subtitle">Try Cairn API calls and see the real response. <a class="pg-link" href="https://platform.pratyushes.dev/docs/api-reference/platform-api/auth" target="_blank" rel="noopener">API reference</a></p>
   </div>
 </div>
 
@@ -105,18 +105,19 @@
 
       <!-- Token -->
       <section class="card card-flush" aria-labelledby="pg-auth-title">
-        <div class="card-header">
-          <h2 id="pg-auth-title">Authorization</h2>
-        </div>
-        <div class="pg-panel-body">
-          <div class="form-group pg-flush">
-            <label for="pg-token">Bearer token</label>
-            <input id="pg-token" class="mono pg-token" [(ngModel)]="authToken" placeholder="Session token or plat_agent_… token" autocomplete="off" spellcheck="false">
-            <span class="form-hint">
-              Filled with your session token. Paste an agent token (<span class="mono">plat_agent_…</span>) to test it instead: agent tokens only reach endpoints their scopes allow and cannot call role-restricted ones. Leave empty to send the request unauthenticated.
-            </span>
+        <details class="pg-auth">
+          <summary class="card-header">
+            <h2 id="pg-auth-title">Sign-in token</h2>
+            <span class="pg-auth-state">{{ authToken ? 'Using a token' : 'No token' }}</span>
+          </summary>
+          <div class="pg-panel-body">
+            <div class="form-group pg-flush">
+              <label for="pg-token">Bearer token</label>
+              <input id="pg-token" class="mono pg-token" [(ngModel)]="authToken" placeholder="Session token or plat_agent_… token" autocomplete="off" spellcheck="false">
+              <span class="form-hint">Your session is used by default. Paste an AI agent token (<span class="mono">plat_agent_…</span>) to see what it can reach, or clear it to call without signing in.</span>
+            </div>
           </div>
-        </div>
+        </details>
       </section>
 
       <!-- Response -->

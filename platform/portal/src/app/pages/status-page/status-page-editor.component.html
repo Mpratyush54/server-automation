@@ -5,15 +5,13 @@
   <div>
     @if (embedded) { <h2>Status page</h2> } @else { <h1 class="page-title">Status page</h1> }
     <p [class.page-subtitle]="!embedded">
-      A public page that shows your users whether the app is up, fed by synthetic checks. It shows
-      component names, uptime and incidents you write, never URLs, hosts, errors or secrets.
+      A public page that tells your users whether the app is up. It never shows addresses, errors or secrets.
     </p>
   </div>
   <div class="sp-head-actions">
     @if (page && page.published && page.publicPath) {
       <a class="btn" [routerLink]="['/status', page.slug]" target="_blank" rel="noopener">Open public page</a>
     }
-    <button class="btn btn-primary" type="button" [disabled]="busy || !page" (click)="save()">Save changes</button>
   </div>
 </div>
 
@@ -21,44 +19,51 @@
 @if (notice) { <div class="card sp-msg sp-msg-ok" role="status">{{ notice }}</div> }
 
 @if (page) {
-  <section class="card sp-section" aria-labelledby="sp-settings">
-    <h2 id="sp-settings">Settings</h2>
-    <div class="form-group"><label><input type="checkbox" [(ngModel)]="page.published" /> Published</label></div>
-    <div class="sp-grid">
-      <div class="form-group">
-        <label for="sp-slug">Slug</label>
+  <section class="card card-flush sp-section" aria-labelledby="sp-settings">
+    <div class="card-header"><h2 id="sp-settings">Page</h2></div>
+    <div class="sp-row">
+      <div class="sp-label"><label for="sp-published">Published</label><p>Anyone with the link can see it.</p></div>
+      <div class="sp-field"><label class="sp-check"><input id="sp-published" type="checkbox" [(ngModel)]="page.published" /> Show the page publicly</label></div>
+    </div>
+    <div class="sp-row">
+      <div class="sp-label"><label for="sp-title">Title</label><p>The heading your users see.</p></div>
+      <div class="sp-field"><input id="sp-title" [(ngModel)]="page.title" maxlength="120" /></div>
+    </div>
+    <div class="sp-row">
+      <div class="sp-label"><label for="sp-slug">Address</label><p>The last part of the page link.</p></div>
+      <div class="sp-field">
         <input id="sp-slug" [(ngModel)]="page.slug" maxlength="63" pattern="[a-z0-9-]+" />
-        <span class="form-hint">Public path: <span class="mono">/status/{{ page.slug || '…' }}</span></span>
-      </div>
-      <div class="form-group"><label for="sp-title">Title</label><input id="sp-title" [(ngModel)]="page.title" maxlength="120" /></div>
-      <div class="form-group">
-        <label for="sp-domain">Custom domain (optional)</label>
-        <input id="sp-domain" [(ngModel)]="page.domain" placeholder="status.example.com" />
-        <span class="form-hint">Saved for a future dedicated hostname and must be unique. Today the page is live at the path above over TLS.</span>
-      </div>
-      <div class="form-group">
-        <label for="sp-logo">Logo URL (https)</label>
-        <input id="sp-logo" [(ngModel)]="page.branding.logoUrl" placeholder="https://…" />
-      </div>
-      <div class="form-group">
-        <label for="sp-primary">Primary colour</label>
-        <input id="sp-primary" [(ngModel)]="page.branding.primaryColor" placeholder="#102030" />
-      </div>
-      <div class="form-group">
-        <label for="sp-accent">Accent colour</label>
-        <input id="sp-accent" [(ngModel)]="page.branding.accentColor" placeholder="#16a34a" />
+        <span class="form-hint">Lowercase letters, digits and dashes. Link: <span class="mono">/status/{{ page.slug || '…' }}</span></span>
       </div>
     </div>
+    <details class="sp-adv">
+      <summary>Advanced: logo, colours and domain</summary>
+      <div class="sp-row">
+        <div class="sp-label"><label for="sp-logo">Logo</label><p>An https link to an image.</p></div>
+        <div class="sp-field"><input id="sp-logo" [(ngModel)]="page.branding.logoUrl" placeholder="https://…" /></div>
+      </div>
+      <div class="sp-row">
+        <div class="sp-label"><label for="sp-primary">Colours</label><p>Main and accent colour, as hex codes.</p></div>
+        <div class="sp-field sp-pair">
+          <input id="sp-primary" aria-label="Primary colour" [(ngModel)]="page.branding.primaryColor" placeholder="#102030" />
+          <input id="sp-accent" aria-label="Accent colour" [(ngModel)]="page.branding.accentColor" placeholder="#16a34a" />
+        </div>
+      </div>
+      <div class="sp-row">
+        <div class="sp-label"><label for="sp-domain">Custom domain</label><p>Optional. Reserved for later use.</p></div>
+        <div class="sp-field">
+          <input id="sp-domain" [(ngModel)]="page.domain" placeholder="status.example.com" />
+          <span class="form-hint">Must be unique. Today the page is served at the link above.</span>
+        </div>
+      </div>
+    </details>
   </section>
 
   <section class="card card-flush sp-section" aria-labelledby="sp-components">
     <div class="card-header"><h2 id="sp-components">Components</h2></div>
     <div class="sp-pad">
-      <p class="form-hint sp-hint">
-        Each component is a synthetic check. To hide a check from every status page, add
-        <code>"statusPage": {{ '{' }} "visible": false {{ '}' }}</code> to its config.
-      </p>
-      <label><input type="checkbox" [(ngModel)]="useAllComponents" /> Show all visible checks</label>
+      <p class="form-hint sp-hint">Each component is one uptime check. Choose which ones the page lists.</p>
+      <label class="sp-check"><input type="checkbox" [(ngModel)]="useAllComponents" /> Show all checks</label>
     </div>
     @if (!useAllComponents) {
       <ul class="sp-list">
@@ -80,9 +85,12 @@
         }
       </ul>
       @if (!checks.length) {
-        <div class="empty-state"><strong>No synthetic checks yet</strong>Create checks under Synthetic monitoring first.</div>
+        <div class="empty-state"><strong>No uptime checks yet</strong>Add an uptime check first; each one becomes a line on this page.</div>
       }
     }
+  <div class="sp-footer">
+      <button class="btn btn-primary" type="button" [disabled]="busy || !page" (click)="save()">Save changes</button>
+    </div>
   </section>
 
   <section class="card card-flush sp-section" aria-labelledby="sp-incidents">
@@ -94,10 +102,10 @@
         <div class="form-group">
           <label for="sp-inc-impact">Impact</label>
           <select id="sp-inc-impact" [(ngModel)]="draftIncident.impact">
-            <option value="none">none</option>
-            <option value="minor">minor</option>
-            <option value="major">major</option>
-            <option value="critical">critical</option>
+            <option value="none">None</option>
+            <option value="minor">Minor</option>
+            <option value="major">Major</option>
+            <option value="critical">Critical</option>
           </select>
         </div>
       </div>
@@ -111,7 +119,7 @@
           <div class="form-group">
             <label for="sp-inc-end">Ends (local time)</label>
             <input id="sp-inc-end" type="datetime-local" [(ngModel)]="draftIncident.scheduledEnd" />
-            <span class="form-hint">Shown as upcoming until it starts and completed automatically after it ends.</span>
+            <span class="form-hint">Marked complete automatically when it ends.</span>
           </div>
         </div>
       }
@@ -119,7 +127,7 @@
         <label for="sp-inc-body">Update</label>
         <textarea id="sp-inc-body" [(ngModel)]="draftIncident.body" rows="2" maxlength="4000"></textarea>
       </div>
-      <button class="btn btn-primary btn-sm" type="button" [disabled]="busy || !draftIncident.title.trim()" (click)="createIncident()">
+      <button class="btn btn-sm" type="button" [disabled]="busy || !draftIncident.title.trim()" (click)="createIncident()">
         Create incident
       </button>
     </div>
@@ -161,15 +169,15 @@
           }
           <div class="sp-actions">
             @if (isOpenIncident(inc)) {
-              <button class="btn btn-sm btn-primary" type="button"
+              <button class="btn btn-sm" type="button"
                 [disabled]="busy || !updateDrafts[inc.id]?.body?.trim()" (click)="postUpdate(inc)">Post update</button>
               <button class="btn btn-sm" type="button" [disabled]="busy" (click)="resolveIncident(inc)">Resolve</button>
             }
-            <button class="btn btn-sm btn-danger" type="button" [disabled]="busy" (click)="deleteIncident(inc)">Delete</button>
+            <button class="btn btn-sm btn-ghost sp-danger" type="button" [disabled]="busy" (click)="deleteIncident(inc)">Delete</button>
           </div>
         </li>
       } @empty {
-        <li class="sp-empty muted">No incidents yet.</li>
+        <li class="sp-empty muted">No incidents. When something breaks or you plan downtime, post it here so users know.</li>
       }
     </ul>
   </section>

@@ -1,52 +1,49 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Infrastructure</h1>
-    <p class="page-subtitle">Cluster nodes, namespaces and pods, and how the control plane's own services are connected.</p>
+    <p class="page-subtitle">The servers Cairn runs on, what is running on them, and the services Cairn itself depends on.</p>
   </div>
 </div>
 
 <section class="card in-health" aria-label="Connections">
   <div class="in-health-item">
-    <span class="in-label">PostgreSQL</span>
+    <span class="in-label">Main database (PostgreSQL)</span>
     <span class="status" [ngClass]="systemStatus.postgres === 'connected' ? 'status-ok' : systemStatus.postgres ? 'status-down' : ''">{{ (systemStatus.postgres || 'unknown') | titlecase }}</span>
   </div>
   <div class="in-health-item">
-    <span class="in-label">MongoDB</span>
+    <span class="in-label">Event store (MongoDB)</span>
     <span class="status" [ngClass]="systemStatus.mongodb === 'connected' ? 'status-ok' : systemStatus.mongodb ? 'status-down' : ''">{{ (systemStatus.mongodb || 'unknown') | titlecase }}</span>
   </div>
   <div class="in-health-item">
-    <span class="in-label">Kubernetes</span>
+    <span class="in-label" title="Kubernetes (k3s) runs your apps">Cluster</span>
     <span class="status" [ngClass]="k8sConnected ? 'status-ok' : 'status-warn'">{{ k8sConnected ? 'Connected' : 'Not connected' }}</span>
   </div>
 </section>
 
 @if (!k8sConnected) {
   <section class="card in-notice" role="status" aria-label="Cluster not connected">
-    <strong>Live cluster data is unavailable</strong>
+    <strong>Can't reach the cluster</strong>
     <p>
-      The API could not reach Kubernetes, so nodes, namespaces and pods may be missing or out of date,
-      and restarting pods or reading their logs will not work.
-    </p>
-    <p>
-      Check that k3s is running on the server (<code>sudo systemctl status k3s</code>) and that
-      <code>kubectl get nodes</code> works there. This page retries every few seconds.
+      Server and container data may be missing, and restarts and logs won't work. On the server, check
+      <code>sudo systemctl status k3s</code>; this page retries every few seconds.
+      <a class="in-link" href="https://platform.pratyushes.dev/docs/troubleshooting/README" target="_blank" rel="noopener">Troubleshooting</a>
     </p>
   </section>
 }
 
 <nav class="subnav" aria-label="Infrastructure sections">
-  <button type="button" [class.active]="activeTab === 'nodes'" [attr.aria-current]="activeTab === 'nodes' ? 'page' : null" (click)="selectTab('nodes')">Nodes</button>
+  <button type="button" [class.active]="activeTab === 'nodes'" [attr.aria-current]="activeTab === 'nodes' ? 'page' : null" (click)="selectTab('nodes')">Servers</button>
   <button type="button" [class.active]="activeTab === 'namespaces'" [attr.aria-current]="activeTab === 'namespaces' ? 'page' : null" (click)="selectTab('namespaces')">Namespaces</button>
-  <button type="button" [class.active]="activeTab === 'pods'" [attr.aria-current]="activeTab === 'pods' ? 'page' : null" (click)="selectTab('pods')">Pods</button>
-  <button type="button" [class.active]="activeTab === 'bootstrap'" [attr.aria-current]="activeTab === 'bootstrap' ? 'page' : null" (click)="selectTab('bootstrap')">Add a node</button>
-  <button type="button" [class.active]="activeTab === 'metrics'" [attr.aria-current]="activeTab === 'metrics' ? 'page' : null" (click)="selectTab('metrics')">Metrics</button>
+  <button type="button" [class.active]="activeTab === 'pods'" [attr.aria-current]="activeTab === 'pods' ? 'page' : null" (click)="selectTab('pods')">Containers</button>
+  <button type="button" [class.active]="activeTab === 'bootstrap'" [attr.aria-current]="activeTab === 'bootstrap' ? 'page' : null" (click)="selectTab('bootstrap')">Add a server</button>
+  <button type="button" [class.active]="activeTab === 'metrics'" [attr.aria-current]="activeTab === 'metrics' ? 'page' : null" (click)="selectTab('metrics')">Usage preview</button>
 </nav>
 
 <!-- Nodes -->
 @if (activeTab === 'nodes') {
   <section class="card card-flush" aria-labelledby="in-nodes">
     <div class="card-header">
-      <h2 id="in-nodes">Nodes</h2>
+      <h2 id="in-nodes">Servers</h2>
       <span class="badge">{{ nodes.length }}</span>
     </div>
     <div class="table-scroll">
@@ -84,7 +81,7 @@
           }
           @if (nodes.length === 0) {
             <tr class="empty-row">
-              <td colspan="6">No nodes to show. If Kubernetes is not connected, nodes appear once it is.</td>
+              <td colspan="6">No servers to show. They appear once the cluster is reachable.</td>
             </tr>
           }
         </tbody>
@@ -97,7 +94,7 @@
 @if (activeTab === 'namespaces') {
   <section class="card card-flush" aria-labelledby="in-namespaces">
     <div class="card-header">
-      <h2 id="in-namespaces">Namespaces</h2>
+      <h2 id="in-namespaces">Namespaces <span class="in-h-note">each project runs in its own isolated namespace</span></h2>
       <span class="badge">{{ namespaces.length }}</span>
     </div>
     <div class="table-scroll">
@@ -132,31 +129,31 @@
 @if (activeTab === 'pods') {
   <section class="card card-flush" aria-labelledby="in-pods">
     <div class="card-header">
-      <h2 id="in-pods">Pods</h2>
+      <h2 id="in-pods">Containers</h2>
       <div class="in-tools">
         <label class="in-filter">
-          <span>Namespace</span>
-          <select [(ngModel)]="selectedNamespace" (change)="loadPods()">
+          <span class="in-sr">Namespace</span>
+          <select [(ngModel)]="selectedNamespace" (change)="loadPods()" aria-label="Namespace">
             <option value="all">All namespaces</option>
             @for (ns of namespaces; track ns) {
               <option [value]="ns.name">{{ ns.name }}</option>
             }
           </select>
         </label>
-        <button type="button" class="btn btn-sm" (click)="loadPods()">Refresh</button>
+        <button type="button" class="btn btn-sm btn-ghost" (click)="loadPods()">Refresh</button>
       </div>
     </div>
     @if (pods.length === 0) {
       <div class="empty-state">
-        <strong>No pods to show</strong>
-        Nothing is running in this namespace, or the cluster is not connected.
+        <strong>No containers to show</strong>
+        Containers (pods) appear here once an app is deployed to this namespace.
       </div>
     } @else {
       <div class="table-scroll">
         <table>
           <thead>
             <tr>
-              <th>Pod</th>
+              <th>Container (pod)</th>
               <th>Status</th>
               <th>Node</th>
               <th class="in-right">Restarts</th>
@@ -220,10 +217,10 @@
 <!-- Add a node -->
 @if (activeTab === 'bootstrap') {
   <section class="card in-section" aria-labelledby="in-join">
-    <h2 id="in-join">Add a node</h2>
+    <h2 id="in-join">Add a server</h2>
     <p class="secondary in-lead">
-      Nodes join with <code>platformctl join</code> on a server installed with the <code>ha</code> profile.
-      Join tokens are created on an existing server and never pass through the browser.
+      Run these two commands in a terminal. The join token stays on your servers and never passes through the browser.
+      <a class="in-link" href="https://platform.pratyushes.dev/docs/operations/ha" target="_blank" rel="noopener">Learn more</a>
     </p>
     <ol class="in-steps">
       <li>
@@ -231,12 +228,12 @@
         <pre class="in-code">sudo platformctl token create --role agent --ttl 2h --output /root/agent.token</pre>
       </li>
       <li>
-        <span class="in-step-label">Copy the token file to the new node, then run</span>
+        <span class="in-step-label">Copy the token file to the new server, then run</span>
         <pre class="in-code">sudo platformctl join --role agent --server https://&lt;server-ip&gt;:6443 --token-file /root/agent.token --nodes &lt;node-ips&gt;</pre>
       </li>
     </ol>
     <p class="form-hint in-hint">
-      To add an etcd server instead, use <code>--role server</code> with a server token. See <a href="/docs/operations/ha">High availability</a>.
+      Needs the <code>ha</code> install profile. For an extra control server, use <code>--role server</code> with a server token.
     </p>
   </section>
 
@@ -265,7 +262,7 @@
           }
           @if (bootstrapHistory.length === 0) {
             <tr class="empty-row">
-              <td colspan="4">No nodes have joined yet.</td>
+              <td colspan="4">No servers have joined yet.</td>
             </tr>
           }
         </tbody>
@@ -277,8 +274,7 @@
 <!-- Metrics -->
 @if (activeTab === 'metrics') {
   <p class="card in-notice in-notice-quiet" role="note">
-    These charts are a simulated preview generated in your browser; they do not show your cluster's real usage.
-    Use Grafana for live cluster metrics.
+    Sample data generated in your browser, not your real usage. Live numbers are in Grafana.
   </p>
   <div class="in-charts">
     <section class="card in-chart" aria-labelledby="in-cpu">
@@ -329,7 +325,7 @@
         <path class="in-area in-area-info" [attr.d]="networkAreaPath"></path>
         <path class="in-line in-line-info" [attr.d]="networkPath" vector-effect="non-scaling-stroke"></path>
       </svg>
-      <p class="in-chart-note">Traffic in and out through the ingress load balancer</p>
+      <p class="in-chart-note">Traffic in and out of your apps</p>
     </section>
   </div>
 }

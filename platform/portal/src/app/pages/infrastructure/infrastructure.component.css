@@ -170,3 +170,7 @@
 .in-area-ok { fill: rgb(var(--ok) / 0.12); }
 .in-area-info { fill: rgb(var(--info) / 0.12); }
 .in-chart-note { margin: 8px 0 0; font-size: 0.8125rem; color: rgb(var(--fg-3)); }
+
+.in-link { color: rgb(var(--accent-text)); }
+.in-h-note { margin-left: 8px; font-size: 0.8125rem; font-weight: 400; color: rgb(var(--fg-3)); }
+@media (max-width: 640px) { .in-h-note { display: block; margin: 2px 0 0; } }

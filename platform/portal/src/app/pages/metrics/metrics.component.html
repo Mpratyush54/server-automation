@@ -1,17 +1,25 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Metrics</h1>
-    <p class="page-subtitle">Average CPU, memory, latency and error rate per service for a project.</p>
+    <p class="page-subtitle">Average CPU, memory, response time and error rate per service.</p>
   </div>
 </div>
 
-<section class="card mt-section" aria-labelledby="mt-query">
-  <h2 id="mt-query">Query metrics</h2>
-  <div class="mt-form">
-    <div class="form-group"><label for="mt-project">Project ID</label><input id="mt-project" [(ngModel)]="query.projectId" autocomplete="off"></div>
-    <div class="form-group"><label for="mt-service">Service name</label><input id="mt-service" [(ngModel)]="query.serviceName" autocomplete="off"></div>
+<section class="card card-flush mt-panel" aria-labelledby="mt-query">
+  <div class="card-header">
+    <h2 id="mt-query">Services</h2>
+    <div class="mt-bar">
+      <input id="mt-project" class="mono" aria-label="Project ID" placeholder="Project ID" [(ngModel)]="query.projectId" autocomplete="off" (keyup.enter)="query.projectId && load()">
+      <input id="mt-service" aria-label="Service name" placeholder="Any service" [(ngModel)]="query.serviceName" autocomplete="off">
+      <button type="button" class="btn btn-sm btn-primary" (click)="load()" [disabled]="!query.projectId">Load</button>
+    </div>
   </div>
-  <button type="button" class="btn btn-primary" (click)="load()" [disabled]="!query.projectId">Load metrics</button>
+  @if (!aggregated.length) {
+    <div class="empty-state">
+      <strong>No metrics loaded</strong>
+      Enter a project ID (shown on the project's page) and select Load to see how its services are doing.
+    </div>
+  }
 </section>
 
 @if (aggregated.length) {
@@ -22,7 +30,7 @@
         <dl class="facts mt-facts">
           <dt>CPU</dt><dd>{{ a.avgCpu?.toFixed(2) }}%</dd>
           <dt>Memory</dt><dd>{{ a.avgMemory?.toFixed(2) }} MB</dd>
-          <dt>Latency</dt><dd>{{ a.avgLatency?.toFixed(2) }} ms</dd>
+          <dt>Response time</dt><dd>{{ a.avgLatency?.toFixed(2) }} ms</dd>
           <dt>Error rate</dt><dd>{{ a.avgErrorRate?.toFixed(4) }}%</dd>
           <dt>Total requests</dt><dd>{{ a.totalRequests }}</dd>
         </dl>

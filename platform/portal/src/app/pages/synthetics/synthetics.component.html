@@ -3,7 +3,7 @@
   <div class="page-header">
     <div>
       <h1 class="page-title">Synthetic monitoring</h1>
-      <p class="page-subtitle">Scheduled checks that call your app from this cluster and alert when it stops answering. Browser checks need the full profile.</p>
+      <p class="page-subtitle">Checks that call your app on a schedule and alert you when it stops answering.</p>
     </div>
     <button type="button" class="btn btn-primary" (click)="newCheck()">New check</button>
   </div>
@@ -11,9 +11,9 @@
   <div class="sy-embed-head">
     <div>
       <h2>Uptime checks</h2>
-      <p>Scheduled checks that call your app from this cluster and alert when it stops answering. Browser checks need the full profile.</p>
+      <p>Checks that call your app on a schedule and alert you when it stops answering.</p>
     </div>
-    <button type="button" class="btn" (click)="newCheck()">New check</button>
+    <button type="button" class="btn btn-primary btn-sm" (click)="newCheck()">New check</button>
   </div>
 }
 
@@ -40,7 +40,7 @@
           }
         </select>
       </div>
-      <div class="form-group"><label for="sy-interval">Interval (seconds)</label>
+      <div class="form-group"><label for="sy-interval">Run every (seconds)</label>
         @if (draft.type === 'browser') {
           <select id="sy-interval" [(ngModel)]="draft.intervalSeconds">
             @for (s of capabilities?.browserIntervals || [300, 600, 900, 1800, 3600]; track s) { <option [ngValue]="s">{{ interval(s) }}</option> }
@@ -49,24 +49,24 @@
           <input id="sy-interval" type="number" [(ngModel)]="draft.intervalSeconds" [min]="capabilities?.minIntervalSeconds?.[draft.type] || 60" max="86400">
         }
       </div>
-      <div class="form-group"><label for="sy-timeout">Timeout (ms)</label><input id="sy-timeout" type="number" [(ngModel)]="draft.timeoutMs" min="1000" [max]="capabilities?.maxTimeoutMs?.[draft.type] || 30000"></div>
+      <div class="form-group"><label for="sy-timeout">Give up after (ms)</label><input id="sy-timeout" type="number" [(ngModel)]="draft.timeoutMs" min="1000" [max]="capabilities?.maxTimeoutMs?.[draft.type] || 30000"></div>
       <div class="form-group sy-check"><label><input type="checkbox" [(ngModel)]="draft.enabled"> Enabled</label></div>
     </div>
 
     <div class="form-group">
-      <label for="sy-config">Definition (JSON)</label>
+      <label for="sy-config">What to check (JSON)</label>
       <textarea id="sy-config" class="mono sy-code" rows="14" spellcheck="false" [(ngModel)]="draft.configText"></textarea>
       <p class="form-hint sy-hint">
-        Assertions: <code>{{ '{' }} source: status|latency|header|body|json|ssl_days, property?, comparison: eq|neq|lt|lte|gt|gte|contains|not_contains|matches|exists|not_exists, target {{ '}' }}</code>.
-        Multi-step: extract variables with <code>extract: [{{ '{' }} name, source: json|header|body_regex|status, property {{ '}' }}]</code> and use them as <code>{{ varSyntax }}</code>.
-        Secrets: <code>{{ secretSyntax }}</code>. Private and cluster-internal targets are refused (your project's own ingress hosts are allowed).
-        Hide a check from status pages with <code>"statusPage": {{ '{' }} "visible": false {{ '}' }}</code>.
+        The address to call and the rules a good answer must pass. Use <code>{{ varSyntax }}</code> for values from earlier steps and <code>{{ secretSyntax }}</code> for secrets.
+        <a href="https://platform.pratyushes.dev/docs/operations/synthetics" target="_blank" rel="noopener">Learn more</a>
       </p>
     </div>
 
+    <details class="sy-adv" [open]="draft.secretNames.length > 0">
+    <summary>Secrets</summary>
     <fieldset class="sy-fieldset">
-      <legend>Secrets</legend>
-      <p class="form-hint sy-legend-hint">Write-only. Stored values are never shown again.</p>
+      <legend class="sy-sr">Secrets</legend>
+      <p class="form-hint sy-legend-hint">Passwords or tokens the check sends. Saved values are never shown again.</p>
       @for (n of draft.secretNames; track n) {
         <div class="sy-secret">
           <code [class.sy-struck]="draft.removedSecrets.includes(n)">{{ n }}</code>
@@ -83,17 +83,18 @@
       }
       <button class="btn btn-sm" type="button" (click)="addSecret()">Add secret</button>
     </fieldset>
+    </details>
 
     <fieldset class="sy-fieldset">
-      <legend>Alerting</legend>
+      <legend>Alerts</legend>
       <div class="sy-grid">
         <div class="form-group sy-check"><label><input type="checkbox" [(ngModel)]="draft.alertEnabled"> Raise alerts</label></div>
-        <div class="form-group"><label for="sy-threshold">Consecutive failures before alerting</label><input id="sy-threshold" type="number" min="1" max="10" [(ngModel)]="draft.failureThreshold"></div>
+        <div class="form-group"><label for="sy-threshold">Failures in a row before alerting</label><input id="sy-threshold" type="number" min="1" max="10" [(ngModel)]="draft.failureThreshold"></div>
         <div class="form-group"><label for="sy-sev">Severity</label>
-          <select id="sy-sev" [(ngModel)]="draft.severity"><option value="critical">critical</option><option value="warning">warning</option></select>
+          <select id="sy-sev" [(ngModel)]="draft.severity"><option value="critical">Critical</option><option value="warning">Warning</option></select>
         </div>
       </div>
-      <p class="form-hint">SSL checks raise a warning when the certificate is within its warning window (14 days by default).</p>
+      <p class="form-hint">Certificate checks warn 14 days before expiry by default.</p>
     </fieldset>
 
     <div class="sy-actions">
@@ -108,7 +109,7 @@
     <div class="card-header"><h2 id="sy-checks">Checks</h2></div>
     @if (loading) { <p class="sy-pad muted">Loading…</p> }
     @if (!loading && checks.length === 0) {
-      <div class="empty-state"><strong>No checks yet</strong>Choose New check to start from a template.</div>
+      <div class="empty-state"><strong>No checks yet</strong>Add a check to find out when your app stops answering, before your users do.<button type="button" class="btn btn-sm sy-empty-btn" (click)="newCheck()">New check</button></div>
     }
     <ul class="sy-list">
       @for (c of checks; track c.id) {
@@ -136,7 +137,7 @@
           <div class="sy-meta">
             <span [class]="'sy-status ' + statusClass(selected.lastStatus)">{{ selected.lastStatus }}</span>
             @if (selected.lastRunAt) { <span>Last run {{ selected.lastRunAt }}</span> }
-            @if (selected.consecutiveFailures) { <span>{{ selected.consecutiveFailures }} consecutive failure(s)</span> }
+            @if (selected.consecutiveFailures) { <span>{{ selected.consecutiveFailures }} failure(s) in a row</span> }
             @if (selected.sslExpiresAt) { <span>Certificate expires {{ selected.sslExpiresAt.slice(0, 10) }}</span> }
           </div>
         </div>
@@ -150,7 +151,7 @@
       <div class="sy-body">
         @if (selected.lastError) { <div class="sy-err">{{ selected.lastError }}</div> }
 
-        <h3>Timeline <span class="muted sy-h-note">Last {{ bars.length }} runs, height shows latency</span></h3>
+        <h3>Recent runs <span class="muted sy-h-note">Last {{ bars.length }}; taller bars took longer</span></h3>
         <div class="sy-timeline" role="list">
           @for (b of bars; track b.id) {
             <button type="button" role="listitem" class="sy-bar" [class]="statusClass(b.status)" [style.height.%]="b.height" [title]="b.title" [attr.aria-label]="b.title" (click)="showResult(b.id)"></button>

@@ -2,17 +2,14 @@
   <!-- Access -->
   <section id="access" class="card card-flush" aria-labelledby="set-access-title">
     <div class="card-header">
-      <h2 id="set-access-title">Project access</h2>
+      <h2 id="set-access-title">Who has access</h2>
     </div>
     <div class="panel-body">
-      <p class="hint">
-        Project roles: <strong>owner</strong>, <strong>devops</strong>, <strong>developer</strong> or <strong>viewer</strong>.
-        Platform admins and devops can always manage every project.
-      </p>
+      <p class="hint">Each person's role decides what they can change here. Admins can always manage every project. <a href="https://platform.pratyushes.dev/docs/api-reference/configuration/permissions" target="_blank" rel="noopener">Learn more</a></p>
       @if (canManageAccess) {
         <div class="inline-form">
           <div class="form-group grow">
-            <label for="member-email">User email</label>
+            <label for="member-email">Email</label>
             <input id="member-email" [(ngModel)]="newMember.email" type="email" placeholder="dev@company.com">
           </div>
           <div class="form-group">
@@ -26,7 +23,7 @@
           </div>
           <div class="form-group">
             <button type="button" class="btn" (click)="grantMember.emit()" [disabled]="!newMember.email || memberBusy">
-              {{ memberBusy ? 'Saving…' : 'Grant access' }}
+              {{ memberBusy ? 'Adding…' : 'Add person' }}
             </button>
           </div>
         </div>
@@ -37,10 +34,10 @@
       <table>
         <thead>
           <tr>
-            <th>User</th>
+            <th>Name</th>
             <th>Email</th>
-            <th>Project role</th>
-            @if (canManageAccess) { <th class="text-right">Actions</th> }
+            <th>Role</th>
+            @if (canManageAccess) { <th class="text-right"><span class="sr-only">Actions</span></th> }
           </tr>
         </thead>
         <tbody>
@@ -63,13 +60,13 @@
               </td>
               @if (canManageAccess) {
                 <td class="text-right">
-                  <button type="button" class="btn btn-danger btn-sm" (click)="revokeMember.emit(m)">Revoke</button>
+                  <button type="button" class="btn btn-danger btn-sm" (click)="revokeMember.emit(m)">Remove</button>
                 </td>
               }
             </tr>
           }
           @if (members.length === 0) {
-            <tr class="empty-row"><td [attr.colspan]="canManageAccess ? 4 : 3">No project members yet.@if (canManageAccess) { Grant access by email above.}</td></tr>
+            <tr class="empty-row"><td [attr.colspan]="canManageAccess ? 4 : 3">Only admins can open this project so far.@if (canManageAccess) { Add teammates by email above.}</td></tr>
           }
         </tbody>
       </table>
@@ -82,62 +79,52 @@
       <section class="card card-flush" aria-labelledby="set-token-new-title">
         <div class="card-header"><h2 id="set-token-new-title">Generate SDK token</h2></div>
         <div class="panel-body">
-          <p class="hint">Generate an API key for the platform SDKs. Pick the kind by where the token will run.</p>
+          <p class="hint">A token lets your app talk to Cairn through the SDK. <a href="https://platform.pratyushes.dev/docs/getting-started/sdk-examples" target="_blank" rel="noopener">Learn more</a></p>
           <div class="form-group">
             <label for="sdk-token-name">Name</label>
             <input id="sdk-token-name" [ngModel]="newKeyName" (ngModelChange)="setKeyName($event)" placeholder="e.g. Production service key">
+            <span class="form-hint">So you can tell tokens apart later.</span>
           </div>
           <div class="form-group">
-            <label for="sdk-token-kind">Token kind</label>
+            <label for="sdk-token-kind">Where it runs</label>
             <select id="sdk-token-kind" [ngModel]="newKeyKind" (ngModelChange)="setKeyKind($event)">
               <option value="server">Server: backend SDKs (Node, Python)</option>
               <option value="browser">Browser: frontend SDKs (React, Angular)</option>
             </select>
+            @if (newKeyKind === 'server') {
+              <span class="sdk-token-kind-hint warn">Can read this project's settings and secrets. Keep it on your backend, never in frontend code.</span>
+            } @else {
+              <span class="sdk-token-kind-hint hint">Can only send errors, logs and metrics, so it is safe in frontend code.</span>
+            }
           </div>
-          @if (newKeyKind === 'server') {
-            <p class="sdk-token-kind-hint warn">
-              Server tokens can read this project's config and secrets. Keep them on your backend and
-              never ship them to browsers or mobile apps (frontend env vars such as VITE_* end up in public JavaScript).
-            </p>
-          } @else {
-            <p class="sdk-token-kind-hint hint">
-              Browser tokens can only send bug reports, logs and API metrics. They cannot read config,
-              secrets or database credentials, so they are safe to embed in frontend code.
-            </p>
-          }
-          <button type="button" class="btn" (click)="createToken.emit()" [disabled]="!newKeyName.trim()">Generate token</button>
           @if (generatedKeyPlaintext) {
             <div class="token-reveal" role="status">
-              <strong>Copy this token now. It will not be shown again.</strong>
-              <p class="hint">
-                @if (generatedKeyKind === 'server') {
-                  This is a <strong>server</strong> token: never put it in frontend code.
-                } @else {
-                  This is a <strong>browser</strong> token for the React/Angular SDKs.
-                }
-              </p>
+              <strong>Copy this {{ generatedKeyKind === 'server' ? 'server' : 'browser' }} token now. It will not be shown again.</strong>
               <code class="mono token-value">{{ generatedKeyPlaintext }}</code>
               <div><button type="button" class="btn btn-sm" (click)="clearGeneratedToken.emit()">Dismiss</button></div>
             </div>
           }
+        </div>
+        <div class="panel-footer">
+          <button type="button" class="btn btn-primary" (click)="createToken.emit()" [disabled]="!newKeyName.trim()">Generate token</button>
         </div>
       </section>
     }
     <section class="card card-flush" aria-labelledby="set-tokens-title">
       <div class="card-header">
         <h2 id="set-tokens-title">SDK tokens</h2>
-        <span class="muted text-sm">Active keys for this project</span>
+
       </div>
       <div class="table-scroll">
         <table>
           <thead>
             <tr>
               <th>Name</th>
-              <th>Token prefix</th>
-              <th>Kind</th>
+              <th>Starts with</th>
+              <th>Runs in</th>
               <th>Status</th>
               <th>Created</th>
-              @if (canRevokeSdkTokens) { <th>Actions</th> }
+              @if (canRevokeSdkTokens) { <th><span class="sr-only">Actions</span></th> }
             </tr>
           </thead>
           <tbody>
@@ -154,7 +141,7 @@
               </tr>
             }
             @if (tokens.length === 0) {
-              <tr class="empty-row"><td [attr.colspan]="canRevokeSdkTokens ? 6 : 5">No SDK tokens for this project.</td></tr>
+              <tr class="empty-row"><td [attr.colspan]="canRevokeSdkTokens ? 6 : 5">No tokens yet.@if (canCreateSdkTokens) { Generate one so your app can send errors and logs and read its settings.}</td></tr>
             }
           </tbody>
         </table>
@@ -174,39 +161,39 @@
   @if (project?.namespaceBaselines?.length) {
     <section id="namespace-isolation" class="card card-flush" aria-label="Namespace isolation">
       <div class="card-header">
-        <h2>Namespace isolation</h2>
-        <span class="muted text-sm">Network policies, Pod Security and quotas per environment</span>
+        <h2>Isolation</h2>
+        <span class="muted text-sm">Keeps each environment walled off from other projects. <a href="https://platform.pratyushes.dev/docs/namespace-isolation" target="_blank" rel="noopener">Learn more</a></span>
       </div>
       @for (baseline of project.namespaceBaselines; track baseline.namespace) {
         <div class="ns-block">
           <div class="ns-head">
             <span class="mono ns-name">{{ baseline.namespace }}</span>
             <span class="status" [class.status-ok]="baseline.policyApplied" [class.status-warn]="!baseline.policyApplied">
-              Network policies: {{ baseline.policyApplied ? 'Applied' : 'Missing or changed' }}
+              Network rules: {{ baseline.policyApplied ? 'Applied' : 'Missing or changed' }}
             </span>
             <span class="status" [class.status-ok]="baseline.psa === 'restricted'" [class.status-warn]="baseline.psa && baseline.psa !== 'restricted'">
-              Pod Security: {{ baseline.psa || 'Unknown' }}
+              Security level: {{ baseline.psa || 'Unknown' }}
             </span>
           </div>
           @if (baseline.ownerMatches === false) {
-            <p class="warn">Namespace ownership labels do not match this project.</p>
+            <p class="warn">This space's ownership labels do not match this project.</p>
           }
           @if (baseline.additionalPolicies?.length) {
-            <p class="warn">Additional policies require review: <span class="mono">{{ baseline.additionalPolicies.join(', ') }}</span></p>
+            <p class="warn">Extra network rules need a review: <span class="mono">{{ baseline.additionalPolicies.join(', ') }}</span></p>
           }
           @if (baseline.quota && (!baseline.quotaApplied || !baseline.limitsApplied)) {
-            <p class="warn">Quota or resource defaults differ from the configured baseline.</p>
+            <p class="warn">Resource limits differ from the expected defaults.</p>
           }
           @if (baseline.error) {
             <p class="error">{{ baseline.error }}</p>
           }
           @if (baseline.psa && baseline.psa !== 'restricted') {
-            <p class="hint">Restricted Pod Security is in warn/audit mode. Review deployment warnings before enforcing.</p>
+            <p class="hint">The restricted level is in warn/audit mode: apps still run, but check deployment warnings before turning it on.</p>
           }
           @if (baseline.quota) {
             <div class="table-scroll">
               <table>
-                <thead><tr><th>Resource</th><th>Used</th><th>Quota</th></tr></thead>
+                <thead><tr><th>Resource</th><th>Used</th><th>Limit</th></tr></thead>
                 <tbody>
                   @for (resource of baseline.quota.hard | keyvalue; track resource.key) {
                     <tr><td>{{ resource.key }}</td><td>{{ baseline.quota.used[$any(resource.key)] || '0' }}</td><td>{{ resource.value }}</td></tr>

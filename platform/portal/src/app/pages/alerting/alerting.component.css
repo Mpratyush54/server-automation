@@ -21,7 +21,35 @@
 .ag-msg-text { min-width: 0; overflow-wrap: anywhere; }
 
 .ag-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.ag-filter { width: auto; max-width: 160px; height: 32px; padding-top: 0; padding-bottom: 0; }
+
+/* Segmented switcher in a panel header (matches the environment tab) */
+.ag-seg { display: inline-flex; flex-wrap: wrap; border: 1px solid rgb(var(--line)); border-radius: 6px; overflow: hidden; }
+.ag-seg button { padding: 5px 12px; border: 0; background: transparent; color: rgb(var(--fg-2)); font: inherit; font-size: 0.8125rem; cursor: pointer; }
+.ag-seg button + button { border-left: 1px solid rgb(var(--line)); }
+.ag-seg button:hover { color: rgb(var(--fg)); }
+.ag-seg button.on { background: rgb(var(--raised)); color: rgb(var(--fg)); }
+.ag-seg button:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: -2px; }
+
+.ag-learn { margin-left: 4px; color: rgb(var(--accent-text)); }
+.ag-body { padding: 20px; }
+.ag-intro { margin: 0 0 16px; font-size: 0.875rem; color: rgb(var(--fg-2)); }
+.ag-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 12px 20px;
+  border-top: 1px solid rgb(var(--line));
+  background: rgb(var(--raised) / 0.35);
+}
+.ag-adv { margin-top: 4px; }
+.ag-adv summary { cursor: pointer; font-size: 0.875rem; font-weight: 500; color: rgb(var(--fg-2)); }
+.ag-adv summary:hover { color: rgb(var(--fg)); }
+.ag-adv[open] summary { margin-bottom: 16px; }
+.ag-check { display: inline-flex; align-items: center; gap: 8px; font-weight: 400; }
+.ag-check input { width: auto; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 
 .ag-form {
   display: grid;

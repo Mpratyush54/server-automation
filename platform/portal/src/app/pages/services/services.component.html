@@ -1,9 +1,42 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Services</h1>
-    <p class="page-subtitle">Services that report to the platform, the databases they use and when each last checked in.</p>
+    <p class="page-subtitle">Services that report to Cairn, the databases they use, and when each last checked in.</p>
   </div>
 </div>
+
+<section class="card card-flush sv-list" aria-labelledby="sv-list-title">
+  <div class="card-header">
+    <h2 id="sv-list-title">Registered services</h2>
+    @if (registrations.length > 0) {
+      <span class="badge">{{ registrations.length }}</span>
+    }
+  </div>
+  @if (registrations.length === 0) {
+    <div class="empty-state">
+      <strong>No services yet</strong>
+      Services that use the SDK register themselves when they start. You can also register one below.
+    </div>
+  } @else {
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Service</th><th>Project</th><th>Version</th><th>Databases</th><th>Last check-in</th><th>Status</th></tr></thead>
+        <tbody>
+          @for (s of registrations; track s) {
+            <tr>
+              <td class="sv-strong">{{ s.serviceName }}</td>
+              <td class="mono sv-id">{{ s.projectId }}</td>
+              <td class="mono">{{ s.version }}</td>
+              <td>{{ s.dbTypes?.join(', ') || '—' }}</td>
+              <td class="muted sv-nowrap">{{ s.lastHeartbeat ? (s.lastHeartbeat | date:'short') : 'Never' }}</td>
+              <td><span class="status" [class.status-ok]="s.isActive" [class.status-down]="!s.isActive">{{ s.isActive ? 'Active' : 'Inactive' }}</span></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>
 
 <section class="card card-flush sv-form" aria-labelledby="sv-reg-title">
   <div class="card-header">
@@ -30,39 +63,11 @@
       <div class="form-group sv-wide">
         <label for="sv-db">Databases</label>
         <input id="sv-db" [(ngModel)]="reg.dbTypes" placeholder="postgres,redis,mongo" autocomplete="off">
-        <span class="form-hint">Comma-separated database types the service uses.</span>
+        <span class="form-hint">Separate with commas.</span>
       </div>
     </div>
+  </div>
+  <div class="sv-footer">
     <button type="button" class="btn btn-primary" (click)="register()" [disabled]="!reg.serviceName">Register service</button>
   </div>
-</section>
-
-<section class="card card-flush" aria-labelledby="sv-list-title">
-  <div class="card-header">
-    <h2 id="sv-list-title">Registered services</h2>
-    @if (registrations.length > 0) {
-      <span class="badge">{{ registrations.length }}</span>
-    }
-  </div>
-  @if (registrations.length === 0) {
-    <p class="empty-state">No services registered yet. Register one above, or let the SDK register it when the service starts.</p>
-  } @else {
-    <div class="table-scroll">
-      <table>
-        <thead><tr><th>Service</th><th>Project</th><th>Version</th><th>Databases</th><th>Last heartbeat</th><th>Status</th></tr></thead>
-        <tbody>
-          @for (s of registrations; track s) {
-            <tr>
-              <td class="sv-strong">{{ s.serviceName }}</td>
-              <td class="mono sv-id">{{ s.projectId }}</td>
-              <td class="mono">{{ s.version }}</td>
-              <td>{{ s.dbTypes?.join(', ') || '—' }}</td>
-              <td class="muted sv-nowrap">{{ s.lastHeartbeat ? (s.lastHeartbeat | date:'short') : 'Never' }}</td>
-              <td><span class="status" [class.status-ok]="s.isActive" [class.status-down]="!s.isActive">{{ s.isActive ? 'Active' : 'Inactive' }}</span></td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-  }
 </section>

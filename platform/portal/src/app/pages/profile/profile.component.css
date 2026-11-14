@@ -43,7 +43,6 @@
 .pf-name { font-weight: 600; color: rgb(var(--fg)); }
 .pf-email { font-size: 0.8125rem; color: rgb(var(--fg-3)); overflow-wrap: anywhere; }
 
-.pf-readonly { background: rgb(var(--raised)); color: rgb(var(--fg-2)); cursor: not-allowed; }
 
 .pf-intro { margin: 0 0 16px; font-size: 0.875rem; color: rgb(var(--fg-2)); }
 .pf-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
@@ -76,3 +75,14 @@
   color: rgb(var(--fg));
 }
 .pf-codes li { padding: 2px 0; }
+
+.pf-meta { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 0.8125rem; color: rgb(var(--fg-2)); }
+.pf-fixed { margin: 0; }
+.pf-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 20px;
+  border-top: 1px solid rgb(var(--line));
+  background: rgb(var(--raised) / 0.35);
+}

@@ -28,3 +28,6 @@
   white-space: pre;
 }
 .ci-empty { margin: 0; font-size: 0.875rem; color: rgb(var(--fg-3)); }
+
+.ci-title { min-width: 0; }
+.ci-title p { margin: 2px 0 0; font-size: 0.8125rem; font-weight: 400; color: rgb(var(--fg-3)); }

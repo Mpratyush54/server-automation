@@ -58,3 +58,18 @@
 
 /* No trailing gap when stacked inside the project page. */
 :host > :last-child { margin-bottom: 0; }
+
+.sp-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 24px; padding: 20px; }
+.sp-row + .sp-row, .sp-adv .sp-row { border-top: 1px solid rgb(var(--line)); }
+.sp-label label { display: block; font-size: 0.9375rem; font-weight: 500; color: rgb(var(--fg)); }
+.sp-label p { margin: 4px 0 0; font-size: 0.8125rem; color: rgb(var(--fg-3)); }
+.sp-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.sp-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.sp-check { display: inline-flex; align-items: center; gap: 8px; font-size: 0.875rem; color: rgb(var(--fg)); }
+.sp-check input { width: auto; }
+.sp-adv { border-top: 1px solid rgb(var(--line)); }
+.sp-adv summary { padding: 12px 20px; cursor: pointer; font-size: 0.875rem; color: rgb(var(--fg-2)); }
+.sp-adv summary:hover { color: rgb(var(--fg)); }
+.sp-footer { display: flex; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid rgb(var(--line)); background: rgb(var(--raised) / 0.35); }
+.sp-danger { color: rgb(var(--down)); }
+@media (max-width: 720px) { .sp-row { grid-template-columns: 1fr; gap: 10px; } .sp-pair { grid-template-columns: 1fr; } }

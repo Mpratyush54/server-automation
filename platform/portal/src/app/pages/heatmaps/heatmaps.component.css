@@ -118,3 +118,9 @@
 
 /* No trailing gap when stacked inside the project page. */
 :host > :last-child { margin-bottom: 0; }
+.hm-adv { margin-left: auto; font-size: 0.8125rem; }
+.hm-adv summary { cursor: pointer; color: rgb(var(--fg-2)); padding: 4px 0; }
+.hm-adv summary:hover { color: rgb(var(--fg)); }
+.hm-adv[open] .hm-session { margin-top: 8px; }
+.hm-empty a { color: rgb(var(--accent-text)); }
+@media (max-width: 640px) { .hm-adv { margin-left: 0; } }

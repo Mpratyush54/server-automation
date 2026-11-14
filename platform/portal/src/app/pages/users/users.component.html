@@ -1,7 +1,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Users</h1>
-    <p class="page-subtitle">Create accounts with a role and password so people can sign in. Admins and DevOps can manage them.</p>
+    <p class="page-subtitle">People who can sign in, and what each one is allowed to do. <a class="us-link" href="https://platform.pratyushes.dev/docs/api-reference/configuration/permissions" target="_blank" rel="noopener">What each role can do</a></p>
   </div>
   @if (canManage) {
     <button type="button" class="btn btn-primary" (click)="openCreateModal()">New user</button>
@@ -15,7 +15,11 @@
   </div>
 }
 
-<section class="card card-flush" aria-label="User list">
+<section class="card card-flush" aria-labelledby="us-list-title">
+  <div class="card-header">
+    <h2 id="us-list-title">People</h2>
+    <span class="badge">{{ users.length }}</span>
+  </div>
   <div class="table-scroll">
     <table>
       <thead>
@@ -26,7 +30,7 @@
           <th>Status</th>
           <th>Last sign-in</th>
           @if (canManage) {
-            <th class="us-right">Actions</th>
+            <th class="us-right"><span class="us-sr">Actions</span></th>
           }
         </tr>
       </thead>
@@ -56,7 +60,7 @@
                 <div class="us-actions">
                   <button type="button" class="btn btn-sm" (click)="openEditModal(u)">Edit</button>
                   @if (isAdmin && u.mfaEnabled) {
-                    <button type="button" class="btn btn-sm mfa-reset" (click)="resetMfa(u)" title="Remove this user's authenticator (lost device). Audit-logged.">Reset MFA</button>
+                    <button type="button" class="btn btn-sm mfa-reset" (click)="resetMfa(u)" title="Remove this user's authenticator app, for a lost phone. This is recorded in the audit log.">Reset two-factor</button>
                   }
                   <button type="button" class="btn btn-danger btn-sm" (click)="deleteUser(u.id)">Delete</button>
                 </div>
@@ -67,7 +71,7 @@
         @if (users.length === 0 && !loadError) {
           <tr class="empty-row">
             <td [attr.colspan]="canManage ? 6 : 5">
-              No users yet. Create one with a password so they can sign in.
+              No other people yet. Add someone with a role and a password so they can sign in.
             </td>
           </tr>
         }
@@ -104,22 +108,27 @@
             <option value="devops">DevOps</option>
             <option value="admin">Admin</option>
           </select>
+          <span class="form-hint">Viewers can look; developers deploy; DevOps and admins also manage the server and users.</span>
         </div>
         <div class="form-group">
           <label for="us-password">{{ isEditMode ? 'New password (optional)' : 'Password' }}</label>
           <input id="us-password" [(ngModel)]="currentUser.password" type="password" autocomplete="new-password" [placeholder]="isEditMode ? 'Leave blank to keep current' : 'At least 8 characters'">
         </div>
-        <div class="us-pair">
-          <div class="form-group">
-            <label for="us-github">GitHub user ID (optional)</label>
-            <input id="us-github" [(ngModel)]="currentUser.githubId" placeholder="123456">
+        <label class="us-check"><input type="checkbox" [(ngModel)]="currentUser.isActive" id="userActive"> Can sign in</label>
+        <details class="us-adv">
+          <summary>Advanced</summary>
+          <p class="form-hint">Link a Git account so this person can sign in with GitHub or GitLab.</p>
+          <div class="us-pair">
+            <div class="form-group">
+              <label for="us-github">GitHub user ID</label>
+              <input id="us-github" [(ngModel)]="currentUser.githubId" placeholder="123456">
+            </div>
+            <div class="form-group">
+              <label for="us-gitlab">GitLab user ID</label>
+              <input id="us-gitlab" [(ngModel)]="currentUser.gitlabId" placeholder="123456">
+            </div>
           </div>
-          <div class="form-group">
-            <label for="us-gitlab">GitLab user ID (optional)</label>
-            <input id="us-gitlab" [(ngModel)]="currentUser.gitlabId" placeholder="123456">
-          </div>
-        </div>
-        <label class="us-check"><input type="checkbox" [(ngModel)]="currentUser.isActive" id="userActive"> Account active</label>
+        </details>
       </div>
       <div class="us-dialog-foot">
         <button type="button" class="btn" (click)="closeModal()">Cancel</button>

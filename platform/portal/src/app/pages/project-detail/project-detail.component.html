@@ -63,12 +63,8 @@
     @if (updateAvailable && latestRelease) {
       <div class="notice notice-ok release-banner" role="status">
         <div class="min-w-0">
-          <strong>New release available</strong>
-          <p class="hint">
-            Running <span class="mono">{{ currentDeployedVersion || 'none' }}</span>,
-            latest is <span class="mono">{{ latestRelease.tag }}</span>
-            @if (latestRelease.name) { ({{ latestRelease.name }}) }
-          </p>
+          <strong>{{ latestRelease.tag }} is available</strong>
+          <p class="hint">You are running <span class="mono">{{ currentDeployedVersion || 'nothing yet' }}</span>.</p>
         </div>
         <div class="actions">
           @if (latestRelease.htmlUrl) {
@@ -83,18 +79,24 @@
 
     <div class="deploy-grid">
       <section id="deploy-form" class="card card-flush" aria-labelledby="deploy-title">
-        <div class="card-header"><h2 id="deploy-title">Deploy</h2></div>
+        <div class="card-header">
+          <h2 id="deploy-title">Deploy</h2>
+          @if (gitMeta.ownerRepo) {
+            <button type="button" class="btn btn-sm btn-ghost" (click)="loadGitInfo()" [disabled]="gitLoading">Refresh from Git</button>
+          }
+        </div>
         <div class="panel-body">
-          <p class="hint">Values are loaded from Git: pick a real branch and commit, or deploy a release below.</p>
           @if (!project?.repositoryUrl && !projectSettings.repositoryUrl) {
             <div class="notice notice-warn">
-              Set a Git repository URL in
+              Add your repository in
               <button type="button" class="link-button" (click)="switchSection('configuration')">Configuration</button>
-              before deploying.
+              first. Deployments come from there.
             </div>
+          } @else if (gitMeta.ownerRepo) {
+            <p class="hint">From <a [href]="'https://github.com/' + gitMeta.ownerRepo" target="_blank" rel="noopener" class="mono">{{ gitMeta.ownerRepo }}</a>. Pick what to ship and where.</p>
           }
           @if (gitLoading) {
-            <p class="hint" role="status">Loading branches and releases from Git…</p>
+            <p class="hint" role="status">Loading branches and releases…</p>
           }
           @if (gitError) {
             <div class="notice notice-down actions" role="alert">
@@ -102,14 +104,8 @@
               <button type="button" class="btn btn-sm" (click)="loadGitInfo()">Retry</button>
             </div>
           }
-          @if (gitMeta.ownerRepo) {
-            <div class="actions hint">
-              <span>Repository <a [href]="'https://github.com/' + gitMeta.ownerRepo" target="_blank" rel="noopener" class="mono">{{ gitMeta.ownerRepo }}</a></span>
-              <button type="button" class="btn btn-sm btn-ghost" (click)="loadGitInfo()" [disabled]="gitLoading">Refresh from Git</button>
-            </div>
-          }
           <div class="form-group">
-            <label for="deploy-env">Target environment</label>
+            <label for="deploy-env">Environment</label>
             <select id="deploy-env" [(ngModel)]="deployDto.environmentId">
               @for (env of project?.environments; track env.id) {
                 <option [value]="env.id">{{ env.name }}</option>
@@ -139,47 +135,55 @@
             } @else {
               <input id="deploy-commit" [(ngModel)]="deployDto.commitSha" (change)="onCommitChange()" placeholder="Leave blank for the branch tip">
             }
+            <span class="form-hint">Leave as is to ship the newest commit on the branch.</span>
           </div>
-          <div class="form-grid">
-            <div class="form-group">
-              <label for="deploy-version">Version label</label>
-              <input id="deploy-version" [(ngModel)]="deployDto.version" placeholder="From commit or release tag">
+          <details class="advanced">
+            <summary>Advanced</summary>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="deploy-version">Version label</label>
+                <input id="deploy-version" [(ngModel)]="deployDto.version" placeholder="From commit or release tag">
+                <span class="form-hint">Name shown in the history.</span>
+              </div>
+              <div class="form-group">
+                <label for="deploy-path">Folder with deploy files</label>
+                <input id="deploy-path" [(ngModel)]="deployDto.gitPath" placeholder="k8s">
+                <span class="form-hint">Path in the repository.</span>
+              </div>
+              <div class="form-group">
+                <label for="deploy-image">Image tag</label>
+                <input id="deploy-image" [(ngModel)]="deployDto.imageTag" placeholder="latest">
+                <span class="form-hint">Only for apps packaged as a Helm chart.</span>
+              </div>
             </div>
-            <div class="form-group">
-              <label for="deploy-path">Manifests path in repo</label>
-              <input id="deploy-path" [(ngModel)]="deployDto.gitPath" placeholder="k8s">
-            </div>
-            <div class="form-group">
-              <label for="deploy-image">Image tag</label>
-              <input id="deploy-image" [(ngModel)]="deployDto.imageTag" placeholder="latest">
-              <span class="form-hint">Helm apps only</span>
-            </div>
-          </div>
-          <button type="button" class="btn btn-primary" (click)="deploy()"
-            [disabled]="deployInProgress || gitLoading || !deployDto.branch || !deployDto.environmentId || (!project?.repositoryUrl && !projectSettings.repositoryUrl)">
-            {{ deployInProgress ? 'Pulling from Git…' : 'Pull from Git and deploy' }}
-          </button>
+          </details>
           @if (deployOperationId) {
             <app-operation-progress [operationId]="deployOperationId" title="Deploy"
               (finished)="loadDeployments()"></app-operation-progress>
           }
         </div>
+        <div class="panel-footer">
+          <button type="button" class="btn btn-primary" (click)="deploy()"
+            [disabled]="deployInProgress || gitLoading || !deployDto.branch || !deployDto.environmentId || (!project?.repositoryUrl && !projectSettings.repositoryUrl)">
+            {{ deployInProgress ? 'Deploying…' : 'Deploy' }}
+          </button>
+        </div>
       </section>
 
       <section class="card card-flush" aria-labelledby="history-title">
         <div class="card-header">
-          <h2 id="history-title">Deployment history</h2>
-          <button type="button" class="btn btn-sm" (click)="loadDeployments()">Refresh</button>
+          <h2 id="history-title">History</h2>
+          <button type="button" class="btn btn-sm btn-ghost" (click)="loadDeployments()">Refresh</button>
         </div>
         <div class="table-scroll">
           <table>
             <thead>
               <tr>
                 <th>Version</th>
-                <th>Branch and commit</th>
+                <th>From</th>
                 <th>Status</th>
-                <th>Deployed</th>
-                <th>Actions</th>
+                <th>When</th>
+                <th><span class="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -219,7 +223,7 @@
                 </tr>
               }
               @if (deployments.length === 0) {
-                <tr class="empty-row"><td colspan="5">No deployments yet. Pull from Git and deploy to create the first one.</td></tr>
+                <tr class="empty-row"><td colspan="5">Nothing deployed yet. Each deployment appears here so you can roll back to it later.</td></tr>
               }
             </tbody>
           </table>
@@ -230,13 +234,13 @@
     @if (gitReleases.length) {
       <section class="card card-flush" aria-labelledby="git-releases-title">
         <div class="card-header">
-          <h2 id="git-releases-title">Git releases</h2>
-          <button type="button" class="btn btn-sm" (click)="loadGitInfo()" [disabled]="gitLoading">Refresh</button>
+          <h2 id="git-releases-title">Releases</h2>
+          <span class="muted text-sm">Tagged releases from your repository</span>
         </div>
         <div class="table-scroll">
           <table>
             <thead>
-              <tr><th>Tag</th><th>Name</th><th>Published</th><th>Actions</th></tr>
+              <tr><th>Tag</th><th>Name</th><th>Published</th><th><span class="sr-only">Actions</span></th></tr>
             </thead>
             <tbody>
               @for (r of gitReleases; track r.tag) {
@@ -250,7 +254,7 @@
                   <td class="secondary">{{ r.publishedAt | date:'short' }}</td>
                   <td>
                     <button type="button" class="btn btn-sm" (click)="deployRelease(r)" [disabled]="deployInProgress || !deployDto.environmentId">
-                      Deploy this version
+                      Deploy
                     </button>
                   </td>
                 </tr>
@@ -278,7 +282,7 @@
     <section id="environments" class="card card-flush" aria-labelledby="envs-title">
       <div class="card-header">
         <h2 id="envs-title">Environments</h2>
-        <span class="muted text-sm">Namespaces are assigned by the server as <span class="mono">{{ '{' }}project{{ '}' }}-{{ '{' }}environment{{ '}' }}</span></span>
+        <span class="muted text-sm">Each one runs separately, with its own address</span>
       </div>
       @if (project?.environments?.length) {
         <ul class="env-list">
@@ -293,20 +297,16 @@
                 }
               </div>
               <dl class="facts">
-                <dt>Namespace</dt>
+                <dt>Address</dt>
+                <dd>@if (env.domain) { <a class="mono" href="https://{{ env.domain }}" target="_blank" rel="noopener">{{ env.domain }}</a> } @else { <span class="muted">None. Set a domain in Configuration.</span> }</dd>
+                <dt title="The isolated space this environment runs in on the server">Namespace</dt>
                 <dd class="mono">{{ env.namespace }}</dd>
-                <dt>Domain</dt>
-                <dd>@if (env.domain) { <a class="mono" href="https://{{ env.domain }}" target="_blank" rel="noopener">{{ env.domain }}</a> } @else { <span class="muted">None</span> }</dd>
-                @if (project?.domain) {
-                  <dt>Base domain</dt>
-                  <dd class="mono">{{ project.domain }}</dd>
-                }
               </dl>
             </li>
           }
         </ul>
       } @else {
-        <div class="empty-state">No environments configured.</div>
+        <div class="empty-state">No environments yet. Environments such as production and staging let you test a change before your users see it.</div>
       }
     </section>
   </div>
@@ -385,11 +385,11 @@
             @if (provisionedCreds) {
               <section class="card card-flush creds" aria-labelledby="creds-title" role="status">
                 <div class="card-header">
-                  <h2 id="creds-title">Database provisioned</h2>
+                  <h2 id="creds-title">Database created</h2>
                   <button type="button" class="btn btn-sm" (click)="dismissProvisionedCreds()">Dismiss</button>
                 </div>
                 <div class="panel-body">
-                  <p class="warn">Save these credentials now. The password will not be shown again.</p>
+                  <p class="warn">Copy the password now. It will not be shown again.</p>
                   <dl class="facts">
                     <dt>Database</dt><dd class="mono">{{ provisionedCreds.dbName }}</dd>
                     <dt>Username</dt><dd class="mono">{{ provisionedCreds.username }}</dd>
@@ -397,29 +397,27 @@
                     <dt>Host</dt><dd class="mono">{{ provisionedCreds.host }}:{{ provisionedCreds.port }}</dd>
                     <dt>Connection string</dt><dd class="mono">{{ provisionedCreds.connectionString }}</dd>
                   </dl>
-                  <p class="hint">These credentials were also stored in the platform's encrypted secrets store for this project's environment.</p>
+                  <p class="hint">Your app already gets these as encrypted secrets for this environment.</p>
                 </div>
               </section>
             }
             <section class="card card-flush" aria-labelledby="provision-title">
-              <div class="card-header"><h2 id="provision-title">Provision database</h2></div>
+              <div class="card-header"><h2 id="provision-title">New database</h2></div>
               <div class="panel-body">
-                <p class="hint">Creates an isolated PostgreSQL database with a unique user scoped to this project and environment. Credentials are saved to the encrypted secrets store.</p>
-                <div class="inline-form">
-                  <div class="form-group grow">
-                    <label for="provision-env">Environment</label>
-                    <select id="provision-env" [(ngModel)]="newDb.dbType">
-                      <option value="production">Production</option>
-                      <option value="staging">Staging</option>
-                      <option value="preview">Preview / feature</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
-                    <button type="button" class="btn" (click)="provisionDb(newDb.dbType)" [disabled]="provisioningDb">
-                      {{ provisioningDb ? 'Creating…' : 'Provision database' }}
-                    </button>
-                  </div>
+                <div class="form-group">
+                  <label for="provision-env">Environment</label>
+                  <select id="provision-env" [(ngModel)]="newDb.dbType">
+                    <option value="production">Production</option>
+                    <option value="staging">Staging</option>
+                    <option value="preview">Preview / feature</option>
+                  </select>
+                  <span class="form-hint">Creates a private PostgreSQL database for this environment and gives the password to your app as a secret. <a href="https://platform.pratyushes.dev/docs/guides/databases" target="_blank" rel="noopener">Learn more</a></span>
                 </div>
+              </div>
+              <div class="panel-footer">
+                <button type="button" class="btn" (click)="provisionDb(newDb.dbType)" [disabled]="provisioningDb">
+                  {{ provisioningDb ? 'Creating…' : 'Create database' }}
+                </button>
               </div>
             </section>
           </div>
@@ -427,8 +425,7 @@
 
         <section class="card card-flush" aria-labelledby="db-conn-title">
           <div class="card-header">
-            <h2 id="db-conn-title">Database connections</h2>
-            <span class="muted text-sm">Pools allocated to this project's environments</span>
+            <h2 id="db-conn-title">Connected databases</h2>
           </div>
           <div class="table-scroll">
             <table>
@@ -436,10 +433,9 @@
                 <tr>
                   <th>Type</th>
                   <th>Status</th>
-                  <th>Pool size</th>
-                  <th>Active / idle</th>
-                  <th>Connection test</th>
-                  @if (role === 'devops') { <th>Actions</th> }
+                  <th>Max connections</th>
+                  <th>In use / idle</th>
+                  <th><span class="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -447,20 +443,22 @@
                   <tr>
                     <td><span class="badge">{{ dbTypeLabel(db.dbType) }}</span></td>
                     <td><span class="status" [class.status-ok]="db.status === 'connected'" [class.status-down]="db.status !== 'connected'">{{ db.status | titlecase }}</span></td>
-                    <td>{{ db.poolSize }} connections</td>
+                    <td>{{ db.poolSize }}</td>
                     <td class="mono">{{ db.activeCount || 0 }} / {{ db.idleCount || 0 }}</td>
                     <td>
-                      <button type="button" class="btn btn-sm" (click)="testDbConnection(db.id)" [disabled]="testingDbId === db.id">
-                        {{ testingDbId === db.id ? 'Testing…' : 'Test connection' }}
-                      </button>
+                      <div class="actions row-actions">
+                        <button type="button" class="btn btn-sm" (click)="testDbConnection(db.id)" [disabled]="testingDbId === db.id">
+                          {{ testingDbId === db.id ? 'Testing…' : 'Test' }}
+                        </button>
+                        @if (role === 'devops') {
+                          <button type="button" class="btn btn-sm btn-danger" (click)="deleteDbConnection(db.id)">Remove</button>
+                        }
+                      </div>
                     </td>
-                    @if (role === 'devops') {
-                      <td><button type="button" class="btn btn-sm btn-danger" (click)="deleteDbConnection(db.id)">Remove</button></td>
-                    }
                   </tr>
                 }
                 @if (dbConnections.length === 0) {
-                  <tr class="empty-row"><td [attr.colspan]="role === 'devops' ? 6 : 5">No database connections configured.</td></tr>
+                  <tr class="empty-row"><td colspan="5">No databases yet. A database keeps your app's data between deployments.@if (role === 'devops') { Create one above for an environment.} @else { Ask a DevOps member to create one.}</td></tr>
                 }
               </tbody>
             </table>
@@ -471,7 +469,7 @@
       @if (role === 'devops') {
         <section class="card card-flush" aria-labelledby="backups-title">
           <div class="card-header">
-            <h2 id="backups-title">Database backups</h2>
+            <h2 id="backups-title">Backups</h2>
             <div class="actions">
               <input class="backup-input" [(ngModel)]="backupDbName" placeholder="Database name" aria-label="Database name to back up">
               <button type="button" class="btn btn-sm" (click)="triggerBackup()" [disabled]="backupInProgress">
@@ -480,13 +478,12 @@
               <button type="button" class="btn btn-sm btn-ghost" (click)="loadBackups()">Refresh</button>
             </div>
           </div>
-          <div class="panel-body"><p class="hint">Back up and restore project databases using the configured storage provider.</p></div>
           <div class="table-scroll">
             <table>
               <thead>
                 <tr>
                   <th>Database</th><th>Environment</th><th>Status</th>
-                  <th>Size</th><th>Provider</th><th>Created</th><th>Restored</th><th>Actions</th>
+                  <th>Size</th><th>Stored in</th><th>Created</th><th>Restored</th><th><span class="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -508,7 +505,7 @@
                   </tr>
                 }
                 @if (dbBackups.length === 0) {
-                  <tr class="empty-row"><td colspan="8">No backups yet. Enter a database name above and choose "Back up now".</td></tr>
+                  <tr class="empty-row"><td colspan="8">No backups yet. A backup lets you undo a bad change to a database: type its name above and choose Back up now. <a href="https://platform.pratyushes.dev/docs/operations/backups" target="_blank" rel="noopener">Learn more</a></td></tr>
                 }
               </tbody>
             </table>
@@ -520,7 +517,7 @@
     <div id="storage" class="stack">
       <section class="card card-flush" aria-labelledby="quota-title">
         <div class="card-header">
-          <h2 id="quota-title">Storage</h2>
+          <h2 id="quota-title">Files</h2>
           <span class="muted text-sm">{{ formatBytes(storageAnalytics.totalBytes) }} of 1.00 GB used</span>
         </div>
         <div class="panel-body">
@@ -531,11 +528,11 @@
             <thead>
               <tr>
                 <th>File</th>
-                <th>Category and type</th>
-                <th>Provider</th>
+                <th>Type</th>
+                <th>Stored in</th>
                 <th>Size</th>
                 <th>Uploaded</th>
-                <th>Actions</th>
+                <th><span class="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -561,7 +558,7 @@
                 </tr>
               }
               @if (files.length === 0) {
-                <tr class="empty-row"><td colspan="6">No files uploaded for this project. Use <code>platform.storage.upload</code> to store logs, certificates or media.</td></tr>
+                <tr class="empty-row"><td colspan="6">No files yet. Your app can keep uploads, reports or media here with <code>platform.storage.upload</code>. <a href="https://platform.pratyushes.dev/docs/api-reference/sdk-node/storage" target="_blank" rel="noopener">Learn more</a></td></tr>
               }
             </tbody>
           </table>

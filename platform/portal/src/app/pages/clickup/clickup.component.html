@@ -1,7 +1,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">ClickUp</h1>
-    <p class="page-subtitle">Link ClickUp tasks to preview deployments so task comments and pipelines stay in step with your branches.</p>
+    <p class="page-subtitle">Post preview links to ClickUp tasks and build when a task moves to review.</p>
   </div>
 </div>
 
@@ -15,15 +15,15 @@
       <div class="cu-field">
         <span class="cu-label">Webhook URL</span>
         <code class="cu-url">{{ webhookUrl || fallbackWebhookUrl }}</code>
-        <span class="form-hint">Add this URL as a webhook in ClickUp. It fires when a task moves to “In Review”.</span>
+        <span class="form-hint">Add this address as a webhook in ClickUp.</span>
       </div>
 
       <div class="cu-field">
         <span class="cu-label">What happens</span>
         <ul class="cu-list">
-          <li>Pushing a branch named <code class="mono">feature/CU-&#123;id&#125;</code> posts the preview URL as a comment on that task.</li>
-          <li>Moving a task to “In Review” starts a CI pipeline for the linked branch.</li>
-          <li>Removing a preview deployment posts a comment saying the environment was taken down.</li>
+          <li>Push <code class="mono">feature/CU-&#123;id&#125;</code>: the preview link is posted on that task.</li>
+          <li>Move the task to “In Review”: its branch is built.</li>
+          <li>Remove the preview: the task gets a note.</li>
         </ul>
       </div>
     </div>
@@ -35,7 +35,7 @@
         <h2 id="cu-test-title">Test the webhook</h2>
       </div>
       <div class="cu-body">
-        <p class="cu-intro">Send a sample ClickUp event to check that a task status change reaches the platform.</p>
+        <p class="cu-intro">Send a sample status change to check the connection.</p>
         <div class="form-group">
           <label for="cu-task">Task ID</label>
           <input id="cu-task" [(ngModel)]="simulatedTask.task_id" placeholder="CU-842">
@@ -47,7 +47,7 @@
             <option value="Open">Open</option>
             <option value="Closed">Closed</option>
           </select>
-          <span class="form-hint">The webhook only accepts events signed with your ClickUp webhook secret, so an unsigned test is refused with “Invalid signature”.</span>
+          <span class="form-hint">Unsigned tests are refused with “Invalid signature”; that still means the address works.</span>
         </div>
         <button type="button" class="btn btn-primary cu-send" (click)="triggerWebhook()">Send test event</button>
       </div>

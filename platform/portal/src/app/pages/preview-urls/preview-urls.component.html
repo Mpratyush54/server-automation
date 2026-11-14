@@ -1,7 +1,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Preview URLs</h1>
-    <p class="page-subtitle">Running branch previews. Each one is removed automatically 72 hours after it was deployed.</p>
+    <p class="page-subtitle">A temporary copy of your app for each branch. Each one is removed after 72 hours.</p>
   </div>
 </div>
 
@@ -9,7 +9,7 @@
   @if (previews.length === 0) {
     <div class="empty-state">
       <strong>No previews running</strong>
-      Deploy a branch to the preview environment and its URL shows here.
+      Push a branch to a project with previews turned on, and its link shows here so you can test before merging.
     </div>
   } @else {
     <div class="table-scroll">
@@ -18,11 +18,11 @@
           <tr>
             <th>Project</th>
             <th>Branch</th>
-            <th>Preview URL</th>
+            <th>Link</th>
             <th>ClickUp task</th>
             <th>Deployed</th>
             <th>Time left</th>
-            <th class="pv-right">Actions</th>
+            <th class="pv-right"><span class="pv-sr">Actions</span></th>
           </tr>
         </thead>
         <tbody>
@@ -55,7 +55,7 @@
                 }">{{ p.remainingTime }}</span>
               </td>
               <td class="pv-right">
-                <button type="button" class="btn btn-danger btn-sm" (click)="terminate(p.id)">Terminate</button>
+                <button type="button" class="btn btn-danger btn-sm" (click)="terminate(p.id)">Remove</button>
               </td>
             </tr>
           }

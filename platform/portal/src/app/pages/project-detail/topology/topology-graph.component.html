@@ -1,12 +1,10 @@
-<section class="topo card" aria-label="Application resource topology">
+<section class="topo card" aria-label="What is running">
   <header class="topo-head">
     <div>
-      <h2 class="topo-title">Application resource topology</h2>
+      <h2 class="topo-title">What is running</h2>
       <p class="topo-sub">
-        Live resources in
-        <code>{{ data?.namespace || '…' }}</code>
-        @if (lastUpdated) { <span>· updated {{ lastUpdated.toLocaleTimeString() }}</span> }
-        <span>· refreshes every {{ refreshMs / 1000 }} s while this tab is visible</span>
+        The parts of your app and how they connect. Updates every {{ refreshMs / 1000 }} seconds.
+        @if (lastUpdated) { <span>Last update {{ lastUpdated.toLocaleTimeString() }}.</span> }
       </p>
     </div>
     <div class="topo-actions">
@@ -28,13 +26,13 @@
 
   @if (data && !data.argo.found && !data.notDeployed) {
     <div class="topo-banner warn" data-test="argo-missing">
-      ArgoCD Application <code>{{ data.appName }}</code> not found{{ data.argo.error ? ': ' + data.argo.error : '' }}.
-      Showing live namespace objects without sync status.
+      The deploy record <code>{{ data.appName }}</code> was not found{{ data.argo.error ? ': ' + data.argo.error : '' }}.
+      Showing what is running, without the in-sync check.
     </div>
   }
   @if (data?.warnings?.length) {
     <div class="topo-banner muted" data-test="warnings">
-      Partial data: {{ data!.warnings!.join(' · ') }}
+      Some details are missing: {{ data!.warnings!.join(' · ') }}
     </div>
   }
 
@@ -42,25 +40,25 @@
     <div class="topo-state" data-test="no-env">This project has no environments yet.</div>
   } @else if (error && !data) {
     <div class="topo-state error" data-test="error">
-      <strong>Could not load the topology.</strong>
+      <strong>Could not load what is running.</strong>
       <span>{{ error }}</span>
       <button type="button" class="btn btn-sm" (click)="refresh()">Retry</button>
     </div>
   } @else if (!data) {
-    <div class="topo-state" data-test="loading">Loading resources…</div>
+    <div class="topo-state" data-test="loading">Loading…</div>
   } @else if (data.notDeployed) {
     <div class="topo-state" data-test="not-deployed">
       <strong>This environment has not been deployed yet.</strong>
-      <span>Deploy it and its Deployments, Pods, Services and Ingresses appear here.</span>
+      <span>Deploy it and its running parts show here.</span>
     </div>
   } @else if (!nodes.length) {
     <div class="topo-state" data-test="empty">
-      <strong>No resources in this environment yet.</strong>
-      <span>Deploy the application and its Deployments, Pods, Services and Ingresses appear here.</span>
+      <strong>Nothing is running in this environment yet.</strong>
+      <span>Deploy the app and its running parts show here.</span>
     </div>
   } @else {
     @if (error) {
-      <div class="topo-banner error" data-test="stale">Refresh failed ({{ error }}); showing the last good data.</div>
+      <div class="topo-banner error" data-test="stale">Could not update ({{ error }}). Showing the last data.</div>
     }
     <div class="topo-summary" data-test="summary">
       @for (c of countSummary; track c.kind) {
@@ -124,10 +122,10 @@
 
       <div class="topo-legend" aria-hidden="true">
         <span><i class="dot h-healthy"></i>Healthy</span>
-        <span><i class="dot h-progressing"></i>Progressing</span>
-        <span><i class="dot h-degraded"></i>Degraded</span>
+        <span><i class="dot h-progressing"></i>Starting</span>
+        <span><i class="dot h-degraded"></i>Unhealthy</span>
         <span><i class="dot h-missing"></i>Missing / Suspended</span>
-        <span><i class="dot oos-dot"></i>OutOfSync</span>
+        <span><i class="dot oos-dot"></i>Not in sync with Git</span>
         <span><svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" class="edge edge-owns" /></svg>owns</span>
         <span><svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" class="edge edge-routes" /></svg>routes</span>
         <span><svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" class="edge edge-selects" /></svg>selects</span>

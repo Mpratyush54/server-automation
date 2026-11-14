@@ -1,7 +1,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">CI/CD templates</h1>
-    <p class="page-subtitle">Generate a Dockerfile, pipeline file, Helm chart and Kubernetes manifests to start a new service from.</p>
+    <p class="page-subtitle">Starter files to build and deploy a new service. Copy them into your repository.</p>
   </div>
 </div>
 
@@ -17,7 +17,7 @@
     </div>
   </div>
   @if (!projectName) {
-    <p class="form-hint ci-hint">Enter a project name to generate templates.</p>
+    <p class="form-hint ci-hint">Enter a project name to see the files you can generate.</p>
   }
 </section>
 
@@ -25,53 +25,53 @@
   <div class="ci-grid">
     <section class="card card-flush" aria-labelledby="ci-docker">
       <div class="card-header">
-        <h2 id="ci-docker">Dockerfile</h2>
+        <div class="ci-title"><h2 id="ci-docker">Dockerfile</h2><p>Builds your app into an image.</p></div>
         <button type="button" class="btn btn-sm" (click)="loadDockerfile()" [disabled]="loading">Generate</button>
       </div>
       <div class="ci-body">
         @if (dockerfile) {
           <pre class="ci-code">{{ dockerfile }}</pre>
         } @else {
-          <p class="ci-empty">Not generated yet.</p>
+          <p class="ci-empty">Select Generate to create this file for {{ projectName }}.</p>
         }
       </div>
     </section>
     <section class="card card-flush" aria-labelledby="ci-gitlab">
       <div class="card-header">
-        <h2 id="ci-gitlab" class="mono">.gitlab-ci.yml</h2>
+        <div class="ci-title"><h2 id="ci-gitlab" class="mono">.gitlab-ci.yml</h2><p>Builds and deploys on every push (GitLab).</p></div>
         <button type="button" class="btn btn-sm" (click)="loadGitlabCi()" [disabled]="loading">Generate</button>
       </div>
       <div class="ci-body">
         @if (gitlabCi) {
           <pre class="ci-code">{{ gitlabCi }}</pre>
         } @else {
-          <p class="ci-empty">Not generated yet.</p>
+          <p class="ci-empty">Select Generate to create this file for {{ projectName }}.</p>
         }
       </div>
     </section>
     <section class="card card-flush" aria-labelledby="ci-helm">
       <div class="card-header">
-        <h2 id="ci-helm">Helm chart</h2>
+        <div class="ci-title"><h2 id="ci-helm">Helm chart</h2><p>Deployment package the server installs.</p></div>
         <button type="button" class="btn btn-sm" (click)="loadHelm()" [disabled]="loading">Generate</button>
       </div>
       <div class="ci-body">
         @if (helm) {
           <pre class="ci-code">{{ helm | json }}</pre>
         } @else {
-          <p class="ci-empty">Not generated yet.</p>
+          <p class="ci-empty">Select Generate to create this file for {{ projectName }}.</p>
         }
       </div>
     </section>
     <section class="card card-flush" aria-labelledby="ci-k8s">
       <div class="card-header">
-        <h2 id="ci-k8s">Kubernetes manifests</h2>
+        <div class="ci-title"><h2 id="ci-k8s">Kubernetes manifests</h2><p>Plain deployment files, if you skip Helm.</p></div>
         <button type="button" class="btn btn-sm" (click)="loadK8s()" [disabled]="loading">Generate</button>
       </div>
       <div class="ci-body">
         @if (k8s) {
           <pre class="ci-code">{{ k8s | json }}</pre>
         } @else {
-          <p class="ci-empty">Not generated yet.</p>
+          <p class="ci-empty">Select Generate to create this file for {{ projectName }}.</p>
         }
       </div>
     </section>

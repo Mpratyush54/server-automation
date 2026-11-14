@@ -7,3 +7,5 @@
 .pv-ext { width: 14px; height: 14px; flex: none; }
 .pv-nowrap { white-space: nowrap; }
 .pv-right { text-align: right; }
+
+.pv-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

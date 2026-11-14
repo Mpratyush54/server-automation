@@ -42,10 +42,15 @@ export class AlertingComponent implements OnInit {
   readonly tabs: { id: Tab; label: string }[] = [
     { id: 'incidents', label: 'Incidents' },
     { id: 'monitors', label: 'Monitors' },
-    { id: 'slos', label: 'SLOs' },
-    { id: 'silences', label: 'Silences' },
-    { id: 'channels', label: 'Channels' },
-    { id: 'oncall', label: 'Escalation & on-call' },
+    { id: 'slos', label: 'Reliability goals' },
+    { id: 'silences', label: 'Mute' },
+    { id: 'channels', label: 'Notifications' },
+    { id: 'oncall', label: 'On-call' },
+  ];
+  readonly incidentFilters = [
+    { id: 'open', label: 'Open' },
+    { id: 'resolved', label: 'Resolved' },
+    { id: 'all', label: 'All' },
   ];
   readonly channelFields = CHANNEL_FIELDS;
   readonly channelTypes = Object.keys(CHANNEL_FIELDS);

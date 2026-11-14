@@ -1,7 +1,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Server bootstrap</h1>
-    <p class="page-subtitle">Get a fresh Ubuntu server running Platform end to end with a single command.</p>
+    <p class="page-subtitle">Install Cairn on a fresh Ubuntu server and check that it is healthy.</p>
   </div>
 </div>
 
@@ -22,7 +22,7 @@
       <pre class="bs-code">{{ installCmd }}</pre>
       <button type="button" class="btn btn-sm bs-copy" (click)="copyInstallCmd()">{{ copied ? 'Copied' : 'Copy' }}</button>
     </div>
-    <p class="bs-note">The first line installs <span class="mono">platformctl</span>; the second sets up the server and asks for your domain and admin account. See <a routerLink="/docs/getting-started/installation">installation</a> for profiles and options.</p>
+    <p class="bs-note">It asks for your domain and admin account. <a href="https://platform.pratyushes.dev/docs/getting-started/installation" target="_blank" rel="noopener">Learn more</a></p>
   </section>
 
   <section class="card bs-panel" aria-labelledby="bs-reqs">
@@ -61,7 +61,7 @@
           </div>
         }
         <div class="bs-field">
-          <span class="bs-field-label">Environment variables</span>
+          <span class="bs-field-label">Server settings</span>
           <span class="bs-env">
             @for (v of item.envVars; track v) {
               <code>{{ v }}</code>
@@ -69,8 +69,8 @@
           </span>
         </div>
         <div class="bs-integration-actions">
-          <a [href]="item.docsUrl" target="_blank" rel="noopener" class="btn btn-sm">Docs</a>
           <a routerLink="/settings" class="btn btn-sm">Configure</a>
+          <a [href]="item.docsUrl" target="_blank" rel="noopener" class="btn btn-sm btn-ghost">Learn more</a>
         </div>
       </section>
     }
@@ -90,7 +90,7 @@
     @if (statusServices.length === 0 && !loadingStatus) {
       <div class="empty-state">
         <strong>No status yet</strong>
-        Select Refresh to check each service. If nothing appears, the API could not report service health.
+        Select Refresh to check each built-in service. If nothing appears, the server could not report health.
       </div>
     } @else {
       <div class="table-scroll">
@@ -98,9 +98,9 @@
           <thead>
             <tr>
               <th>Service</th>
-              <th>Namespace</th>
+              <th>Area</th>
               <th>Status</th>
-              <th class="bs-right">Pods running</th>
+              <th class="bs-right">Copies running</th>
             </tr>
           </thead>
           <tbody>

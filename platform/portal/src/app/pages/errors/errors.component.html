@@ -1,24 +1,14 @@
 <div *ngIf="!embedded" class="page-header">
   <div>
     <h1 class="page-title">Errors</h1>
-    <p class="page-subtitle">Exceptions grouped into issues by environment and release, with original stack frames for triage.</p>
+    <p class="page-subtitle">Errors from your apps, grouped into issues you can assign and resolve.</p>
   </div>
 </div>
 <div *ngIf="error" class="card er-banner" role="alert">{{error}}</div>
 
-<section *ngIf="!compact" class="card er-filters" aria-label="Filters">
-  <div *ngIf="!embedded" class="form-group"><label for="err-project">Project</label>
-    <select id="err-project" [(ngModel)]="project" (change)="offset=0; load()" data-testid="errors-project"><option value="">Choose project</option><option *ngFor="let p of projects" [value]="p.id">{{p.name}}</option></select></div>
-  <div class="form-group"><label for="err-release">Release</label><input id="err-release" [(ngModel)]="release" placeholder="All releases" [disabled]="!project"></div>
-  <div class="form-group"><label for="err-env">Environment</label><input id="err-env" [(ngModel)]="environment" placeholder="All environments" [disabled]="!project"></div>
-  <div class="form-group"><label for="err-status">Status</label>
-    <select id="err-status" [(ngModel)]="status" [disabled]="!project"><option value="">All</option><option>open</option><option>resolved</option><option>ignored</option></select></div>
-  <div class="er-filter-action"><button type="button" class="btn btn-primary" (click)="offset=0; load()" [disabled]="busy || !project">Apply filters</button></div>
-</section>
-
-<div *ngIf="!project" class="card er-section empty-state" data-testid="errors-choose-project">
+<div *ngIf="!project && compact" class="card er-section empty-state" data-testid="errors-choose-project">
   <strong>Choose a project</strong>
-  Error issues are grouped per project. Select one above to see its issues.
+  Errors are grouped per project.
 </div>
 
 <section *ngIf="project && compact" class="card card-flush er-section" aria-labelledby="er-recent" data-testid="errors-compact">
@@ -43,15 +33,26 @@
   </div>
 </section>
 
-<section *ngIf="project && !compact" class="card card-flush er-section" aria-labelledby="er-issues">
+<section *ngIf="!compact" class="card card-flush er-section" aria-labelledby="er-issues">
   <div class="card-header">
     <h2 id="er-issues">Issues</h2>
-    <div class="er-pager">
+    <div *ngIf="project" class="er-pager">
       <button type="button" class="btn btn-sm" (click)="page(-1)" [disabled]="offset === 0">Previous</button>
       <button type="button" class="btn btn-sm" (click)="page(1)" [disabled]="issues.length < 50">Next</button>
     </div>
   </div>
-  <div class="table-scroll">
+  <div class="er-filters" role="group" aria-label="Filters">
+    <select *ngIf="!embedded" id="err-project" aria-label="Project" [(ngModel)]="project" (change)="offset=0; load()" data-testid="errors-project"><option value="">Choose project</option><option *ngFor="let p of projects" [value]="p.id">{{p.name}}</option></select>
+    <input id="err-release" aria-label="Release" [(ngModel)]="release" placeholder="All releases" [disabled]="!project">
+    <input id="err-env" aria-label="Environment" [(ngModel)]="environment" placeholder="All environments" [disabled]="!project">
+    <select id="err-status" aria-label="Status" [(ngModel)]="status" [disabled]="!project"><option value="">Any status</option><option value="open">Open</option><option value="resolved">Resolved</option><option value="ignored">Ignored</option></select>
+    <button type="button" class="btn btn-sm" (click)="offset=0; load()" [disabled]="busy || !project">Apply</button>
+  </div>
+  <div *ngIf="!project" class="empty-state" data-testid="errors-choose-project">
+    <strong>Choose a project</strong>
+    Errors from your app are grouped into issues per project. Pick one to see what needs fixing.
+  </div>
+  <div *ngIf="project" class="table-scroll">
     <table>
       <thead><tr><th>Issue</th><th>Status</th><th class="er-num">Events</th><th>Last seen</th></tr></thead>
       <tbody>
@@ -81,15 +82,15 @@
       <div class="form-group"><label for="err-assignee">Assignee</label>
         <select id="err-assignee" [(ngModel)]="assignee"><option value="">Unassigned</option><option *ngFor="let m of members" [value]="m.userId || m.user_id">{{m.user?.name || m.user?.email || m.userId || m.user_id}}</option></select></div>
       <button type="button" class="btn" (click)="triage(undefined)">Assign</button>
-      <button type="button" class="btn" (click)="triage('open')">Reopen</button>
-      <button type="button" class="btn" (click)="triage('resolved')">Resolve</button>
-      <button type="button" class="btn" (click)="triage('ignored')">Ignore</button>
+      <button type="button" class="btn btn-primary" (click)="triage('resolved')">Resolve</button>
+      <button type="button" class="btn btn-ghost" (click)="triage('open')">Reopen</button>
+      <button type="button" class="btn btn-ghost" (click)="triage('ignored')">Ignore</button>
     </div>
   </div>
 
   <div *ngIf="!detail.events?.length" class="empty-state er-no-events" data-testid="error-detail-no-events">
     <strong>No stored events for this issue</strong>
-    Events may have expired under the retention policy.
+    Older events are removed under the retention policy.
   </div>
 
   <article class="er-event" *ngFor="let e of detail.events">

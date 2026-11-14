@@ -141,3 +141,11 @@
 
 /* No trailing gap when stacked inside the project page. */
 :host > :last-child { margin-bottom: 0; }
+
+.sy-adv { margin: 16px 0; }
+.sy-adv summary { cursor: pointer; font-size: 0.875rem; font-weight: 500; color: rgb(var(--fg-2)); padding: 4px 0; }
+.sy-adv summary:hover { color: rgb(var(--fg)); }
+.sy-adv[open] .sy-fieldset { margin-top: 8px; }
+.sy-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.sy-hint a { color: rgb(var(--accent-text)); }
+.sy-empty-btn { display: block; margin: 12px auto 0; }

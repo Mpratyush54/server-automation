@@ -1,14 +1,9 @@
 /* Storage (st-) */
 
-.st-lookup {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 16px;
-  margin-bottom: 24px;
-  padding: 20px;
-}
-.st-field { flex: 1 1 280px; max-width: 28rem; margin-bottom: 0; }
+#st-files-title { display: inline-flex; align-items: center; gap: 8px; }
+.st-lookup { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.st-lookup input { width: 220px; height: 32px; }
+@media (max-width: 640px) { .st-lookup, .st-lookup input { width: 100%; } }
 
 /* Summary: one panel split into three, like the dashboard. */
 .st-stats {

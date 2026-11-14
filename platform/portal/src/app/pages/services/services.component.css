@@ -1,7 +1,8 @@
 /* Services (sv-) */
 
-.sv-form { margin-bottom: 24px; }
-.sv-body { padding: 20px; }
+.sv-list { margin-bottom: 24px; }
+.sv-body { padding: 20px 20px 4px; }
+.sv-footer { display: flex; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid rgb(var(--line)); background: rgb(var(--raised) / 0.35); }
 .sv-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 .sv-wide { grid-column: 1 / -1; }
 @media (max-width: 640px) { .sv-grid { grid-template-columns: 1fr; } }

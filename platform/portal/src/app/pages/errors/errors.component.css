@@ -9,15 +9,15 @@
 }
 
 .er-filters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px;
-  align-items: end;
-  margin-bottom: 24px;
-  padding: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid rgb(var(--line));
 }
-.er-filters .form-group { margin: 0; }
-.er-filter-action .btn { width: 100%; }
+.er-filters input, .er-filters select { width: auto; flex: 1 1 150px; max-width: 220px; height: 32px; }
+@media (max-width: 640px) { .er-filters input, .er-filters select { max-width: none; } }
 
 .er-section { margin-bottom: 24px; }
 .er-pager { display: flex; gap: 8px; }

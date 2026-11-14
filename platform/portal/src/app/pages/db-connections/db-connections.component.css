@@ -1,7 +1,8 @@
 /* Database connections (dc-) */
 
-.dc-form { margin-bottom: 24px; }
-.dc-body { padding: 20px; }
+.dc-list { margin-bottom: 24px; }
+.dc-footer { display: flex; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid rgb(var(--line)); background: rgb(var(--raised) / 0.35); }
+.dc-body { padding: 20px 20px 4px; }
 .dc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 16px; }
 @media (max-width: 760px) { .dc-grid { grid-template-columns: 1fr; } }
 

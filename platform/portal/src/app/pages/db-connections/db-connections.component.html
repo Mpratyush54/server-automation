@@ -1,34 +1,11 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Database connections</h1>
-    <p class="page-subtitle">Connection pools your services hold open, and whether each one is healthy.</p>
+    <p class="page-subtitle">Database connections your services keep open, and whether each one is healthy.</p>
   </div>
 </div>
 
-<section class="card card-flush dc-form" aria-labelledby="dc-new-title">
-  <div class="card-header">
-    <h2 id="dc-new-title">Register a connection</h2>
-  </div>
-  <div class="dc-body">
-    <div class="dc-grid">
-      <div class="form-group">
-        <label for="dc-project">Project ID</label>
-        <input id="dc-project" class="mono" [(ngModel)]="newConn.projectId" autocomplete="off">
-      </div>
-      <div class="form-group">
-        <label for="dc-type">Database</label>
-        <select id="dc-type" [(ngModel)]="newConn.dbType"><option value="postgres">PostgreSQL</option><option value="mongo">MongoDB</option><option value="redis">Redis</option></select>
-      </div>
-      <div class="form-group">
-        <label for="dc-pool">Pool size</label>
-        <input id="dc-pool" type="number" [(ngModel)]="newConn.poolSize">
-      </div>
-    </div>
-    <button type="button" class="btn btn-primary" (click)="create()" [disabled]="!newConn.projectId">Register connection</button>
-  </div>
-</section>
-
-<section class="card card-flush" aria-labelledby="dc-list-title">
+<section class="card card-flush dc-list" aria-labelledby="dc-list-title">
   <div class="card-header">
     <h2 id="dc-list-title">Connections</h2>
     @if (connections.length > 0) {
@@ -36,11 +13,14 @@
     }
   </div>
   @if (connections.length === 0) {
-    <p class="empty-state">No connections registered yet.</p>
+    <div class="empty-state">
+      <strong>No connections yet</strong>
+      Register a service's database connection below to watch whether it stays healthy.
+    </div>
   } @else {
     <div class="table-scroll">
       <table>
-        <thead><tr><th>Project</th><th>Database</th><th class="dc-right">Pool size</th><th>Status</th><th>Last heartbeat</th><th class="dc-right"><span class="dc-sr">Actions</span></th></tr></thead>
+        <thead><tr><th>Project</th><th>Database</th><th class="dc-right">Max open</th><th>Status</th><th>Last check-in</th><th class="dc-right"><span class="dc-sr">Actions</span></th></tr></thead>
         <tbody>
           @for (c of connections; track c) {
             <tr>
@@ -56,4 +36,30 @@
       </table>
     </div>
   }
+</section>
+
+<section class="card card-flush dc-form" aria-labelledby="dc-new-title">
+  <div class="card-header">
+    <h2 id="dc-new-title">Register a connection</h2>
+  </div>
+  <div class="dc-body">
+    <div class="dc-grid">
+      <div class="form-group">
+        <label for="dc-project">Project ID</label>
+        <input id="dc-project" class="mono" [(ngModel)]="newConn.projectId" autocomplete="off">
+        <span class="form-hint">Shown on the project's page.</span>
+      </div>
+      <div class="form-group">
+        <label for="dc-type">Database</label>
+        <select id="dc-type" [(ngModel)]="newConn.dbType"><option value="postgres">PostgreSQL</option><option value="mongo">MongoDB</option><option value="redis">Redis</option></select>
+      </div>
+      <div class="form-group">
+        <label for="dc-pool">Max open connections</label>
+        <input id="dc-pool" type="number" [(ngModel)]="newConn.poolSize">
+      </div>
+    </div>
+  </div>
+  <div class="dc-footer">
+    <button type="button" class="btn btn-primary" (click)="create()" [disabled]="!newConn.projectId">Register connection</button>
+  </div>
 </section>

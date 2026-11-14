@@ -17,7 +17,7 @@ import { DialogService } from '../../shared/feedback/feedback.service';
 <div class="page-header">
   <div>
     <h1 class="page-title">Profile</h1>
-    <p class="page-subtitle">Your account details, linked Git sign-ins, two-factor authentication and password.</p>
+    <p class="page-subtitle">Your name, how you sign in, and your password.</p>
   </div>
 </div>
 
@@ -44,28 +44,26 @@ import { DialogService } from '../../shared/feedback/feedback.service';
         <div class="pf-identity-text">
           <span class="pf-name">{{ me.name || '—' }}</span>
           <span class="mono pf-email">{{ me.email }}</span>
-          @if (me.role) { <span><span class="badge">{{ me.role }}</span></span> }
+          <span class="pf-meta">
+            @if (me.username) { <span class="mono">{{ me.username }}</span> }
+            @if (me.role) { <span class="badge">{{ me.role }}</span> }
+          </span>
         </div>
       </div>
       <div class="form-group">
         <label for="pf-name">Name</label>
         <input id="pf-name" [(ngModel)]="me.name">
+        <span class="form-hint">Shown to your team in the audit log and on deployments.</span>
       </div>
       <div class="form-group">
-        <label for="pf-avatar">Avatar URL</label>
+        <label for="pf-avatar">Picture URL</label>
         <input id="pf-avatar" [(ngModel)]="me.avatarUrl" placeholder="https://…">
+        <span class="form-hint">Optional. A link to a square image.</span>
       </div>
-      <div class="form-group">
-        <label for="pf-email">Email</label>
-        <input id="pf-email" class="pf-readonly" [value]="me.email" [readonly]="true">
-      </div>
-      <div class="form-group">
-        <label for="pf-username">Username</label>
-        <input id="pf-username" class="pf-readonly" [value]="me.username || '—'" [readonly]="true">
-      </div>
-      <div class="pf-actions">
-        <button type="button" class="btn btn-primary" (click)="saveProfile()" [disabled]="saving">Save profile</button>
-      </div>
+      <p class="form-hint pf-fixed">Email and username can only be changed by an admin.</p>
+    </div>
+    <div class="pf-footer">
+      <button type="button" class="btn btn-primary" (click)="saveProfile()" [disabled]="saving">{{ saving ? 'Saving…' : 'Save changes' }}</button>
     </div>
   </section>
 
@@ -73,7 +71,7 @@ import { DialogService } from '../../shared/feedback/feedback.service';
     <section class="card card-flush" aria-labelledby="pf-linked">
       <div class="card-header"><h2 id="pf-linked">Linked sign-ins</h2></div>
       <div class="pf-body">
-        <p class="pf-intro">An admin sets up GitHub and GitLab sign-in under Settings, Sign-in. When you sign in with either provider, that identity is linked here.</p>
+        <p class="pf-intro">Signing in once with GitHub or GitLab links that account, so you can use it next time.</p>
       </div>
       <ul class="pf-list">
         <li>
@@ -97,7 +95,7 @@ import { DialogService } from '../../shared/feedback/feedback.service';
 
     <section class="card card-flush mfa-card" aria-labelledby="pf-mfa">
       <div class="card-header">
-        <h2 id="pf-mfa">Two-factor authentication</h2>
+        <h2 id="pf-mfa">Two-factor sign-in</h2>
         @if (mfaStatus) {
           <span class="status" [class.status-ok]="mfaStatus.enabled" [class.status-warn]="!mfaStatus.enabled && mfaStatus.required">{{ mfaStatus.enabled ? 'On' : 'Off' }}</span>
         }
@@ -127,7 +125,7 @@ import { DialogService } from '../../shared/feedback/feedback.service';
             }
           </div>
         } @else if (mfaStatus) {
-          <p class="pf-intro">{{ mfaStatus.required ? 'Your role requires it. Set up an authenticator app to continue.' : 'Revealing secrets needs it. Set up an authenticator app to turn it on.' }}</p>
+          @if (mfaStatus.required) { <p class="pf-intro">Your role requires it. Set it up to keep using Cairn.</p> }
           <app-mfa-enrollment [account]="me.email" (completed)="loadMfa()"></app-mfa-enrollment>
         }
         @if (mfaMessage) {
@@ -150,9 +148,9 @@ import { DialogService } from '../../shared/feedback/feedback.service';
           <input id="pf-new" type="password" [(ngModel)]="newPassword" autocomplete="new-password">
           <span class="form-hint">At least 8 characters.</span>
         </div>
-        <div class="pf-actions">
-          <button type="button" class="btn btn-primary" (click)="changePassword()" [disabled]="savingPassword">{{ me.hasPassword ? 'Change password' : 'Set password' }}</button>
-        </div>
+      </div>
+      <div class="pf-footer">
+        <button type="button" class="btn btn-primary" (click)="changePassword()" [disabled]="savingPassword">{{ me.hasPassword ? 'Change password' : 'Set password' }}</button>
       </div>
     </section>
   </div>

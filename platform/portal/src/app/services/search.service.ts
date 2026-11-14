@@ -150,8 +150,8 @@ const SETTINGS_TABS: { tab: string; label: string; keywords: string[]; devOps: b
   { tab: 'integrations', label: 'Git linking', keywords: ['github', 'gitlab', 'git', 'integrations'], devOps: false },
   { tab: 'smtp', label: 'Email', keywords: ['smtp', 'mail'], devOps: true },
   { tab: 'storage', label: 'Storage', keywords: ['s3', 'minio', 'backup'], devOps: true },
-  { tab: 'rotate', label: 'Rotate secrets', keywords: ['keys', 'rotation', 'secrets'], devOps: true },
-  { tab: 'security', label: 'Security', keywords: ['mfa', 'two-factor', '2fa', 'policy'], devOps: true },
+  { tab: 'rotate', label: 'Rotate passwords', keywords: ['keys', 'rotation', 'secrets', 'passwords'], devOps: true },
+  { tab: 'security', label: 'Security', keywords: ['mfa', 'two-factor', '2fa', 'policy', 'backups', 'recovery'], devOps: true },
 ];
 
 const PAGE_KEYWORDS: Record<string, string[]> = {

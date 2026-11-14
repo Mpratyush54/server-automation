@@ -51,7 +51,7 @@
 }
 
 @if (embedded && enabled === false && needsTelemetry()) {
-  <p class="obs-quiet" data-testid="telemetry-disabled">These charts need the full install profile (<span class="obs-code">platformctl provision --profile full</span>) and the platform SDK in your services.</p>
+  <p class="obs-quiet" data-testid="telemetry-disabled">These charts need full monitoring on the server (<span class="obs-code">platformctl provision --profile full</span>) and the Cairn SDK in your services. <a href="https://platform.pratyushes.dev/docs/operations/telemetry" target="_blank" rel="noopener">Learn more</a></p>
 } @else if (!embedded && enabled === false && tab !== 'errors' && tab !== 'synthetics' && tab !== 'sessions') {
   <div class="obs-banner" data-testid="telemetry-disabled">
     <strong>Telemetry is not enabled on this platform.</strong>
@@ -84,15 +84,15 @@
       <div class="obs-card"><app-obs-line-chart title="Error rate" unit="pct" [series]="redSeries.errors" [markers]="markers" /></div>
       <div class="obs-card"><app-obs-line-chart title="p95 latency" unit="ms" [series]="redSeries.latency" [markers]="markers" /></div>
       <section class="obs-card flush">
-        <div class="obs-card-head"><h3>SLOs</h3></div>
+        <div class="obs-card-head"><h3>Service goals (SLOs)</h3></div>
         @if (summary?.slos?.length) {
-          <div class="table-scroll"><table class="obs-table"><thead><tr><th>SLO</th><th class="obs-num">Target</th><th class="obs-num">SLI</th><th class="obs-num">Budget left</th></tr></thead><tbody>
+          <div class="table-scroll"><table class="obs-table"><thead><tr><th>Goal</th><th class="obs-num">Target</th><th class="obs-num">Actual</th><th class="obs-num">Room left</th></tr></thead><tbody>
             @for (s of summary.slos; track s.id) {
               <tr><td [class.obs-bad]="s.breaching">{{ s.name }}</td><td class="obs-num">{{ s.target }}%</td><td class="obs-num">{{ s.sli != null ? (s.sli * 100 | number: '1.2-3') + '%' : '—' }}</td><td class="obs-num">{{ s.errorBudgetRemaining != null ? (s.errorBudgetRemaining * 100 | number: '1.0-1') + '%' : '—' }}</td></tr>
             }
           </tbody></table></div>
         } @else {
-          <div class="obs-empty"><strong>No SLOs yet</strong><a routerLink="/alerting" [queryParams]="{ projectId, tab: 'slos' }">Define one in Alerts</a>.</div>
+          <div class="obs-empty"><strong>No goals yet</strong>Set a target such as 99.9% of requests succeeding. <a routerLink="/alerting" [queryParams]="{ projectId, tab: 'slos' }">Add one in Alerts</a>.</div>
         }
       </section>
     </div>
@@ -121,7 +121,7 @@
     <section class="obs-card flush">
       <div class="obs-card-head"><h3>Services</h3></div>
       @if (!services.length) {
-        <div class="obs-empty"><strong>No services reporting</strong>Install the platform SDK (Node / Python) with telemetry enabled.</div>
+        <div class="obs-empty"><strong>No services reporting</strong>Add the Cairn SDK (Node or Python) to a service to see its traffic here.</div>
       } @else {
         <div class="table-scroll"><table class="obs-table"><thead><tr><th>Service</th><th class="obs-num">Requests</th><th class="obs-num">Errors</th><th class="obs-num">p95</th></tr></thead><tbody>
           @for (s of services; track s.name) {
@@ -135,7 +135,7 @@
     <section class="obs-card flush">
       <div class="obs-card-head"><h3>Endpoints @if (selectedService) { <span class="obs-faint">· {{ selectedService }}</span> }</h3></div>
       @if (!endpoints.length) {
-        <div class="obs-empty">No server spans in this time range.</div>
+        <div class="obs-empty">No requests recorded in this time range.</div>
       } @else {
         <div class="table-scroll"><table class="obs-table"><thead><tr><th>Endpoint</th><th class="obs-num">Requests</th><th class="obs-num">Errors</th><th class="obs-num">p95</th><th></th></tr></thead><tbody>
           @for (e of endpoints; track e.service + e.name) {
@@ -160,15 +160,15 @@
     <section class="obs-card">
       <div class="obs-mode">
         <label><input type="radio" name="tracemode" value="filters" [(ngModel)]="traceMode"> Filters</label>
-        <label><input type="radio" name="tracemode" value="traceql" [(ngModel)]="traceMode"> TraceQL</label>
+        <label><input type="radio" name="tracemode" value="traceql" [(ngModel)]="traceMode"> Query (TraceQL)</label>
         <span class="obs-faint">Searches are always limited to this project.</span>
       </div>
       @if (traceMode === 'filters') {
         <div class="obs-search">
           <label class="obs-field">Service <input class="obs-input" [(ngModel)]="traceForm.service" placeholder="any"></label>
-          <label class="obs-field">Span name <input class="obs-input" [(ngModel)]="traceForm.name" placeholder="e.g. GET /orders"></label>
+          <label class="obs-field">Operation <input class="obs-input" [(ngModel)]="traceForm.name" placeholder="e.g. GET /orders"></label>
           <label class="obs-field">Min duration <input class="obs-input" [(ngModel)]="traceForm.minDuration" placeholder="e.g. 250ms"></label>
-          <label class="obs-field">Status <select class="obs-select" [(ngModel)]="traceForm.status"><option value="">any</option><option value="error">error</option><option value="ok">ok</option></select></label>
+          <label class="obs-field">Status <select class="obs-select" [(ngModel)]="traceForm.status"><option value="">Any</option><option value="error">Failed</option><option value="ok">Succeeded</option></select></label>
         </div>
       } @else {
         <textarea class="obs-input code" [(ngModel)]="traceForm.q" aria-label="TraceQL query" placeholder="{ span.http.status_code >= 500 }"></textarea>
@@ -180,7 +180,7 @@
         @if (!traces.length) {
           <div class="obs-empty"><strong>No traces</strong>Nothing matched in this time range.</div>
         } @else {
-          <div class="table-scroll"><table class="obs-table"><thead><tr><th>Trace</th><th>Root service</th><th>Matched span</th><th>Start</th><th class="obs-num">Duration</th></tr></thead><tbody>
+          <div class="table-scroll"><table class="obs-table"><thead><tr><th>Trace</th><th>Root service</th><th>Matched step</th><th>Start</th><th class="obs-num">Duration</th></tr></thead><tbody>
             @for (t of traces; track t.traceId) {
               <tr class="clickable" (click)="openTrace(t.traceId)">
                 <td><span class="obs-code">{{ t.traceId.slice(0, 16) }}</span></td>
@@ -211,7 +211,7 @@
     @if (summary) {
       <p>{{ summary?.errors?.open }} open issues · {{ summary?.errors?.regressions }} regressions</p>
     }
-    <p class="obs-muted">Grouped exceptions with symbolicated stack traces, releases and triage.</p>
+    <p class="obs-muted">Errors grouped into issues, with the code that failed.</p>
     <a class="obs-btn primary" [routerLink]="['/projects', projectId, 'errors']">Open error tracking</a>
   </section>
 }
@@ -221,7 +221,7 @@
   <section class="obs-card flush">
     <div class="obs-card-head"><h3>Web vitals by page (p75)</h3></div>
     @if (rumLoaded && !rum.length) {
-      <div class="obs-empty"><strong>No RUM data</strong>Add the platform React or Angular SDK with RUM enabled to your frontend.</div>
+      <div class="obs-empty"><strong>No browser data yet</strong>Add the Cairn React or Angular SDK with <span class="obs-code">rum</span> turned on to see page speed here.</div>
     } @else if (rum.length) {
       <div class="table-scroll"><table class="obs-table"><thead><tr><th>Page</th>@for (v of vitals; track v) { <th class="obs-num">{{ v.toUpperCase() }}</th> }</tr></thead><tbody>
         @for (r of rum; track r.page) {
@@ -240,7 +240,7 @@
       <p class="obs-muted">Browse recorded sessions with error and network markers.</p>
       <a class="obs-btn primary" [routerLink]="['/projects', projectId, 'replays']">Open session replays</a>
     } @else {
-      <div class="obs-empty"><strong>Session replay is not available</strong>Session replay ships with the replay feature; errors with a replay id will link here once it is installed.</div>
+      <div class="obs-empty"><strong>Session replay is not available</strong>Turn on full monitoring to record sessions; errors will then link to them.</div>
     }
   </section>
 }
@@ -248,7 +248,7 @@
 <!-- SYNTHETICS (#42) -->
 @if (shows('synthetics')) {
   <section class="obs-card">
-    <h3>Synthetics</h3>
+    <h3>Uptime checks</h3>
     @if (summary) { <p>Overall status: <strong>{{ humanize(summary.synthetics) || 'No checks' }}</strong></p> }
     <div class="obs-links">
       <a class="obs-btn primary" [routerLink]="['/projects', projectId, 'synthetics']">Open synthetic checks</a>
@@ -260,7 +260,7 @@
 <!-- INFRA -->
 @if (shows('infra') && enabled) {
   @if (!infra.namespaces.length && !loading) {
-    <section class="obs-card"><div class="obs-empty"><strong>No environments deployed</strong>Pod metrics appear once the project has a running environment.</div></section>
+    <section class="obs-card"><div class="obs-empty"><strong>Nothing running yet</strong>CPU and memory appear once the project has a deployed environment.</div></section>
   } @else {
     <div class="obs-grid-2">
       <div class="obs-card"><app-obs-line-chart title="CPU (cores) by pod" unit="cores" [series]="infra.cpu" /></div>
@@ -268,7 +268,7 @@
     </div>
     <section class="obs-card flush">
       <div class="obs-card-head"><h3>Restarts in range</h3></div>
-      <div class="table-scroll"><table class="obs-table"><thead><tr><th>Namespace</th><th>Pod</th><th class="obs-num">Restarts</th></tr></thead><tbody>
+      <div class="table-scroll"><table class="obs-table"><thead><tr><th>Area</th><th>Copy</th><th class="obs-num">Restarts</th></tr></thead><tbody>
         @for (r of infra.restarts; track r.pod) { <tr><td>{{ r.namespace }}</td><td>{{ r.pod }}</td><td class="obs-num" [class.obs-bad]="(r.restarts ?? 0) >= 1">{{ r.restarts | number: '1.0-0' }}</td></tr> }
       </tbody></table></div>
     </section>

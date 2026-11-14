@@ -92,18 +92,18 @@ export class PreviewUrlsComponent implements OnInit, OnDestroy {
 
   async terminate(id: string) {
     const ok = await this.dialog.confirm({
-      title: 'Terminate this preview?',
+      title: 'Remove this preview?',
       message: 'The preview deployment and its URL are removed right away. Push to the branch again to get a new one.',
-      confirmLabel: 'Terminate preview',
+      confirmLabel: 'Remove preview',
       danger: true,
     });
     if (!ok) return;
     try {
       await firstValueFrom(this.api.terminateDeployment(id));
-      this.toast.ok('Preview terminated');
+      this.toast.ok('Preview removed');
       await this.loadPreviews();
     } catch (err: any) {
-      this.toast.error('Preview was not terminated: ' + errorText(err));
+      this.toast.error('Preview was not removed: ' + errorText(err));
     }
   }
 }

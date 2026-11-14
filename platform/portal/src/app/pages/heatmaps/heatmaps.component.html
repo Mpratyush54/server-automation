@@ -3,13 +3,13 @@
   <div class="page-header">
     <div>
       <h1 class="page-title">Heatmaps</h1>
-      <p class="page-subtitle">Where visitors click and how far they scroll on each page, from anonymous browser SDK data (<code>rum.heatmaps</code>).</p>
+      <p class="page-subtitle">Where visitors click and how far they scroll on each page. No personal data is kept.</p>
     </div>
   </div>
 } @else {
   <div class="hm-embed-head">
     <h2>Heatmaps</h2>
-    <p>Where visitors click and how far they scroll on each page, from anonymous browser SDK data (<code>rum.heatmaps</code>).</p>
+    <p>Where visitors click and how far they scroll on each page.</p>
   </div>
 }
 
@@ -26,10 +26,13 @@
       <button type="button" [class.on]="rangeDays === d" [attr.aria-pressed]="rangeDays === d" (click)="setRange(d)">{{ d === 1 ? 'Today' : d + ' days' }}</button>
     }
   </div>
-  <label class="hm-session">
-    <span>Replay session</span>
-    <input [(ngModel)]="replaySession" placeholder="Automatic" maxlength="128" (keyup.enter)="useSession()">
-  </label>
+  <details class="hm-adv">
+    <summary>Advanced</summary>
+    <label class="hm-session">
+      <span>Page picture from session</span>
+      <input [(ngModel)]="replaySession" placeholder="Automatic" maxlength="128" (keyup.enter)="useSession()">
+    </label>
+  </details>
 </div>
 
 <div class="hm-layout">
@@ -39,7 +42,7 @@
       @if (pages.length) { <span class="badge">{{ pages.length }}</span> }
     </div>
     @if (!pages.length) {
-      <p class="hm-empty">No heatmap data in this range. Turn on <code>heatmaps: true</code> in the SDK's <code>rum</code> options.</p>
+      <p class="hm-empty">No clicks recorded in this range. To start collecting, set <code>heatmaps: true</code> in the browser SDK's <code>rum</code> options. <a href="https://platform.pratyushes.dev/docs/guides/heatmaps" target="_blank" rel="noopener">Learn more</a></p>
     }
     <ul>
       @for (p of pages; track p.page) {
@@ -125,7 +128,7 @@
       </div>
     } @else if (pages.length) {
       <section class="card">
-        <p class="empty-state">Choose a page to see its heatmap.</p>
+        <p class="empty-state">Choose a page on the left to see where people click.</p>
       </section>
     }
   </div>

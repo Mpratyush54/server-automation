@@ -1,42 +1,15 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Alert rules</h1>
-    <p class="page-subtitle">Legacy threshold rules on a project's metrics. They move to monitors automatically.</p>
+    <p class="page-subtitle">Old-style limits on a project's numbers. They are turned into monitors automatically; manage alerts on the <a class="al-link" routerLink="/alerting">Alerts</a> page instead.</p>
   </div>
 </div>
 
-<section class="card al-note" aria-label="About legacy rules">
-  <p>Manage monitors, SLOs, silences and channels on the <a routerLink="/alerting">Alerts</a> page instead. Rules you create here are migrated to monitors.</p>
-</section>
-
-<section class="card al-section" aria-labelledby="al-create">
-  <h2 id="al-create">New alert rule</h2>
-  <div class="al-form">
-    <div class="form-group">
-      <label for="al-project">Project ID</label>
-      <input id="al-project" [(ngModel)]="newAlert.projectId" autocomplete="off">
-    </div>
-    <div class="form-group">
-      <label for="al-metric">Metric</label>
-      <select id="al-metric" [(ngModel)]="newAlert.metric"><option>cpu</option><option>memory</option><option>latency</option><option>errorRate</option></select>
-    </div>
-    <div class="form-group">
-      <label for="al-op">Operator</label>
-      <select id="al-op" [(ngModel)]="newAlert.operator"><option value=">">Greater than</option><option value="<">Less than</option><option value="==">Equal to</option></select>
-    </div>
-    <div class="form-group">
-      <label for="al-threshold">Threshold</label>
-      <input id="al-threshold" type="number" [(ngModel)]="newAlert.threshold" step="0.1">
-    </div>
-  </div>
-  <button type="button" class="btn btn-primary" (click)="createAlert()" [disabled]="!newAlert.projectId || !newAlert.threshold">Create rule</button>
-</section>
-
-<section class="card card-flush" aria-labelledby="al-list">
+<section class="card card-flush al-section" aria-labelledby="al-list">
   <div class="card-header"><h2 id="al-list">Alert rules</h2></div>
   <div class="table-scroll">
     <table>
-      <thead><tr><th>Project</th><th>Metric</th><th>Condition</th><th>Threshold</th><th>Enabled</th><th></th></tr></thead>
+      <thead><tr><th>Project</th><th>Measure</th><th>Condition</th><th>Limit</th><th>On</th><th><span class="sr-only">Actions</span></th></tr></thead>
       <tbody>
         @for (a of alerts; track a) {
           <tr>
@@ -46,8 +19,35 @@
             <td class="al-actions"><button type="button" class="btn btn-danger btn-sm" (click)="deleteAlert(a.id)">Delete</button></td>
           </tr>
         }
-        @if (!alerts.length) { <tr class="empty-row"><td colspan="6">No legacy alert rules.</td></tr> }
+        @if (!alerts.length) { <tr class="empty-row"><td colspan="6">No old-style rules. New alerts are set up as monitors on the Alerts page.</td></tr> }
       </tbody>
     </table>
+  </div>
+</section>
+
+<section class="card card-flush" aria-labelledby="al-create">
+  <div class="card-header"><h2 id="al-create">New alert rule</h2></div>
+  <div class="al-body">
+    <div class="al-form">
+      <div class="form-group">
+        <label for="al-project">Project ID</label>
+        <input id="al-project" [(ngModel)]="newAlert.projectId" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label for="al-metric">Measure</label>
+        <select id="al-metric" [(ngModel)]="newAlert.metric"><option>cpu</option><option>memory</option><option>latency</option><option>errorRate</option></select>
+      </div>
+      <div class="form-group">
+        <label for="al-op">Condition</label>
+        <select id="al-op" [(ngModel)]="newAlert.operator"><option value=">">Greater than</option><option value="<">Less than</option><option value="==">Equal to</option></select>
+      </div>
+      <div class="form-group">
+        <label for="al-threshold">Limit</label>
+        <input id="al-threshold" type="number" [(ngModel)]="newAlert.threshold" step="0.1">
+      </div>
+    </div>
+  </div>
+  <div class="al-footer">
+    <button type="button" class="btn btn-primary" (click)="createAlert()" [disabled]="!newAlert.projectId || !newAlert.threshold">Create rule</button>
   </div>
 </section>

@@ -1,9 +1,7 @@
-.mt-section { margin-bottom: 24px; padding: 20px; }
-.mt-form {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 0 16px;
-}
+.mt-panel { margin-bottom: 24px; }
+.mt-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mt-bar input { width: 180px; height: 32px; }
+@media (max-width: 640px) { .mt-bar, .mt-bar input { width: 100%; } }
 .mt-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

@@ -34,13 +34,13 @@ export interface LogEntry { ts: string; line: string; labels: Record<string, str
   template: `
     <div class="obs-mode">
       <label><input type="radio" name="logmode" value="filters" [(ngModel)]="mode"> Filters</label>
-      <label><input type="radio" name="logmode" value="logql" [(ngModel)]="mode"> LogQL</label>
-      <span class="obs-faint">Queries are always limited to this project.</span>
+      <label><input type="radio" name="logmode" value="logql" [(ngModel)]="mode"> Query (LogQL)</label>
+      <span class="obs-faint">Only this project's logs are searched.</span>
     </div>
     @if (mode === 'filters') {
       <div class="filters">
         <label class="obs-field">Service <input class="obs-input" [(ngModel)]="service" placeholder="any"></label>
-        <label class="obs-field">Level <select class="obs-select" [(ngModel)]="level"><option value="">any</option><option>error</option><option>warn</option><option>info</option><option>debug</option></select></label>
+        <label class="obs-field">Level <select class="obs-select" [(ngModel)]="level"><option value="">Any</option><option value="error">Error</option><option value="warn">Warning</option><option value="info">Info</option><option value="debug">Debug</option></select></label>
         <label class="obs-field">Contains <input class="obs-input" [(ngModel)]="search" placeholder="text"></label>
         <label class="obs-field">Trace ID <input class="obs-input code" [(ngModel)]="traceIdFilter" placeholder="32 hex chars"></label>
       </div>
@@ -55,10 +55,10 @@ export interface LogEntry { ts: string; line: string; labels: Record<string, str
     @if (error) { <div class="obs-banner error inset" role="alert">{{ error }}</div> }
     @if (rangeNote) { <div class="obs-banner inset" role="status">{{ rangeNote }}</div> }
     @if (metricResult) {
-      <div class="obs-banner inset">This LogQL is a metric query ({{ metricResult.length }} series). Use the APM or Overview tabs for charts.</div>
+      <div class="obs-banner inset">This query returns numbers ({{ metricResult.length }} series), not log lines. See the charts on the other tabs.</div>
     }
     @if (!loading && !entries.length && !error && ran && !metricResult) {
-      <div class="obs-empty"><strong>No log lines</strong>Nothing matched in this time range.</div>
+      <div class="obs-empty"><strong>No log lines</strong>Nothing matched in this time range. Try a longer range or fewer filters.</div>
     }
     @if (entries.length) {
       <div class="lines" role="log" aria-label="Log lines">

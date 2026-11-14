@@ -53,3 +53,11 @@
   padding: 16px 20px;
   border-top: 1px solid rgb(var(--line));
 }
+
+.us-link { color: rgb(var(--accent-text)); }
+.us-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+.us-adv { margin-top: 16px; }
+.us-adv summary { cursor: pointer; font-size: 0.875rem; font-weight: 500; color: rgb(var(--fg-2)); }
+.us-adv summary:hover { color: rgb(var(--fg)); }
+.us-adv[open] summary { margin-bottom: 10px; }
+.us-adv .form-hint { margin: 0 0 12px; }

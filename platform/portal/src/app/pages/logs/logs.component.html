@@ -1,24 +1,22 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Logs</h1>
-    <p class="page-subtitle">Search a project's stored log lines by service, level or keyword.</p>
+    <p class="page-subtitle">Search a project's log lines by service, level or keyword.</p>
   </div>
 </div>
 
-<section class="card lg-section" aria-labelledby="lg-search">
-  <h2 id="lg-search">Search logs</h2>
-  <div class="lg-form">
-    <div class="form-group"><label for="lg-project">Project ID</label><input id="lg-project" [(ngModel)]="query.projectId" autocomplete="off"></div>
-    <div class="form-group"><label for="lg-service">Service name</label><input id="lg-service" [(ngModel)]="query.serviceName" autocomplete="off"></div>
-    <div class="form-group"><label for="lg-level">Level</label><select id="lg-level" [(ngModel)]="query.level"><option value="">All</option><option>info</option><option>warn</option><option>error</option><option>debug</option></select></div>
-    <div class="form-group"><label for="lg-q">Search</label><input id="lg-q" [(ngModel)]="query.search" placeholder="Keyword"></div>
+<section class="card card-flush" aria-labelledby="lg-results">
+  <div class="card-header">
+    <h2 id="lg-results">Log lines @if (logs.length) { <span class="badge">{{ total }}</span> }</h2>
   </div>
-  <button type="button" class="btn btn-primary" (click)="search()" [disabled]="!query.projectId">Search</button>
-</section>
-
-@if (logs.length) {
-  <section class="card card-flush" aria-labelledby="lg-results">
-    <div class="card-header"><h2 id="lg-results">Results</h2><span class="badge">{{ total }}</span></div>
+  <div class="lg-bar" role="search" aria-label="Search logs">
+    <input id="lg-project" class="mono" aria-label="Project ID" placeholder="Project ID" [(ngModel)]="query.projectId" autocomplete="off" (keyup.enter)="query.projectId && search()">
+    <input id="lg-service" aria-label="Service name" placeholder="Any service" [(ngModel)]="query.serviceName" autocomplete="off">
+    <select id="lg-level" aria-label="Level" [(ngModel)]="query.level"><option value="">Any level</option><option value="info">Info</option><option value="warn">Warning</option><option value="error">Error</option><option value="debug">Debug</option></select>
+    <input id="lg-q" type="search" aria-label="Search" [(ngModel)]="query.search" placeholder="Keyword" (keyup.enter)="query.projectId && search()">
+    <button type="button" class="btn btn-sm btn-primary" (click)="search()" [disabled]="!query.projectId">Search</button>
+  </div>
+  @if (logs.length) {
     <ul class="lg-list">
       @for (l of logs; track l) {
         <li>
@@ -31,5 +29,10 @@
         </li>
       }
     </ul>
-  </section>
-}
+  } @else {
+    <div class="empty-state">
+      <strong>No log lines to show</strong>
+      Enter a project ID (shown on the project's page) and select Search. Your app's output appears here.
+    </div>
+  }
+</section>

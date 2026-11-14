@@ -10,79 +10,114 @@ import { OperationProgressComponent } from '../../shared/operation-progress.comp
   imports: [CommonModule, FormsModule, OperationProgressComponent],
   styleUrl: './settings.component.css',
   template: `
-    <div class="st-grid">
-      <form class="card card-flush" (ngSubmit)="save()" aria-labelledby="st-storage-add">
-        <div class="card-header"><h2 id="st-storage-add">Add a storage provider</h2></div>
-        <div class="st-body">
-          <div class="form-group"><label for="storage-preset">Provider</label>
-            <select id="storage-preset" name="preset" [(ngModel)]="form.preset">
-              <option value="aws">AWS S3</option><option value="r2">Cloudflare R2</option>
-              <option value="gcs">Google Cloud Storage (HMAC)</option><option value="b2">Backblaze B2</option>
-              <option value="s3">Generic S3</option><option value="minio">MinIO</option>
-            </select>
-          </div>
-          <div class="form-group"><label for="storage-name">Label (optional)</label><input id="storage-name" name="name" [(ngModel)]="form.name"></div>
-          @if (form.preset === 'r2') {
-            <div class="form-group"><label for="storage-account">Account ID</label><input id="storage-account" name="account" [(ngModel)]="form.accountId" required pattern="[a-fA-F0-9]{32}"></div>
-          }
-          @if (form.preset === 's3' || form.preset === 'minio') {
-            <div class="form-group"><label for="storage-endpoint">Endpoint URL</label><input id="storage-endpoint" name="endpoint" type="url" [(ngModel)]="form.endpointUrl" required></div>
-          }
-          @if (form.preset === 'aws' || form.preset === 'b2' || form.preset === 's3') {
-            <div class="form-group"><label for="storage-region">Region</label><input id="storage-region" name="region" [(ngModel)]="form.credentials.region" [required]="form.preset !== 's3'"></div>
-          }
-          <div class="form-group"><label for="storage-key">Access key ID</label><input id="storage-key" name="key" [(ngModel)]="form.credentials.accessKeyId" required autocomplete="off"></div>
-          <div class="form-group"><label for="storage-secret">Secret access key</label><input id="storage-secret" name="secret" type="password" [(ngModel)]="form.credentials.secretAccessKey" required autocomplete="new-password"></div>
-          <div class="form-group"><label for="storage-bucket">Bucket</label><input id="storage-bucket" name="bucket" [(ngModel)]="form.bucketName" required></div>
-          <label class="st-check check-row"><input name="default" type="checkbox" [(ngModel)]="form.isDefault"> Use as default for new uploads and backups</label>
-          <div class="st-actions"><button class="btn btn-primary" type="submit" [disabled]="busy">Save provider</button></div>
-        </div>
-      </form>
-      <section class="card card-flush" aria-labelledby="st-storage-list">
-        <div class="card-header"><h2 id="st-storage-list">Storage providers</h2></div>
-        <div class="st-body">
-          <p class="st-note">Changing the default affects new files. Existing files stay where they are.</p>
-        </div>
-        @if (providers.length) {
-          <ul class="st-list st-list-ruled">
-            @for (p of providers; track p.id) {
-              <li>
-                <div class="st-item-head">
-                  <div class="st-item-main">
-                    <span class="st-item-tags">
-                      <span class="st-item-name">{{p.name}}</span>
-                      @if (p.isDefault) { <span class="badge badge-active">Default</span> }
-                    </span>
-                    <span class="st-item-meta"><span class="mono">{{p.bucketName}}</span> @if (p.checkedAt) { &middot; Checked {{p.checkedAt | date:'short'}} }</span>
-                  </div>
-                  <span class="status" [class.status-ok]="p.healthStatus === 'healthy'" [class.status-down]="p.healthStatus === 'unhealthy'">{{ healthLabel(p.healthStatus) }}</span>
-                </div>
-                @if (p.lastError) { <p class="st-item-result st-msg st-err">{{p.lastError}}</p> }
-                <div class="st-item-actions st-item-actions-below">
-                  <button type="button" class="btn btn-sm" [disabled]="busy" (click)="action(p, 'test')">Test connection</button>
-                  @if (!p.isDefault) { <button type="button" class="btn btn-sm" [disabled]="busy" (click)="action(p, 'set-default')">Make default</button> }
-                  @if (p.providerType === 's3' || p.providerType === 'minio') { <button type="button" class="btn btn-sm" [disabled]="busy" (click)="action(p, 'migrate-local')">Copy local files here</button> }
-                  @if (!p.isDefault && p.name !== 'Bundled MinIO') { <button type="button" class="btn btn-sm btn-danger" [disabled]="busy" (click)="action(p, 'delete')">Delete</button> }
-                </div>
-              </li>
-            }
-          </ul>
-        } @else {
-          <p class="st-empty">No storage providers yet.</p>
+    @if (providers.length || !showForm) {
+    <section class="card card-flush st-section" aria-labelledby="st-storage-list">
+      <div class="card-header">
+        <h2 id="st-storage-list">File storage</h2>
+        @if (providers.length && !showForm) {
+          <button type="button" class="btn btn-sm btn-primary" (click)="showForm = true">Add storage</button>
         }
+      </div>
+      @if (message) { <p class="st-body st-msg" role="status">{{message}}</p> }
+      @if (providers.length) {
+        <ul class="st-list st-list-ruled">
+          @for (p of providers; track p.id) {
+            <li>
+              <div class="st-item-head">
+                <div class="st-item-main">
+                  <span class="st-item-tags">
+                    <span class="st-item-name">{{p.name}}</span>
+                    @if (p.isDefault) { <span class="badge badge-active">Default</span> }
+                  </span>
+                  <span class="st-item-meta"><span class="mono">{{p.bucketName}}</span> @if (p.checkedAt) { &middot; Checked {{p.checkedAt | date:'short'}} }</span>
+                </div>
+                <span class="status" [class.status-ok]="p.healthStatus === 'healthy'" [class.status-down]="p.healthStatus === 'unhealthy'">{{ healthLabel(p.healthStatus) }}</span>
+              </div>
+              @if (p.lastError) { <p class="st-item-result st-msg st-err">{{p.lastError}}</p> }
+              <div class="st-item-actions st-item-actions-below">
+                <button type="button" class="btn btn-sm" [disabled]="busy" (click)="action(p, 'test')">Test connection</button>
+                @if (!p.isDefault) { <button type="button" class="btn btn-sm btn-ghost" [disabled]="busy" (click)="action(p, 'set-default')">Make default</button> }
+                @if (p.providerType === 's3' || p.providerType === 'minio') { <button type="button" class="btn btn-sm btn-ghost" [disabled]="busy" (click)="action(p, 'migrate-local')" title="Copies files saved on the server's disk into this storage. Originals are kept.">Copy local files here</button> }
+                @if (!p.isDefault && p.name !== 'Bundled MinIO') { <button type="button" class="btn btn-sm btn-ghost st-danger-text" [disabled]="busy" (click)="action(p, 'delete')">Delete</button> }
+              </div>
+            </li>
+          }
+        </ul>
         <div class="st-body">
-          @if (message) { <p class="st-msg" role="status">{{message}}</p> }
-          <p class="st-note">Copying local files keeps the originals, resumes after an API restart, and can be retried after you fix a failure. The local upload directory must be mounted on every API replica.</p>
+          <p class="st-note">The default is used for new uploads and backups. Existing files stay where they are.</p>
           <app-operation-progress [operationId]="operationId" title="Copy local files" (finished)="load()" />
         </div>
-      </section>
-    </div>
+      } @else if (!showForm) {
+        <div class="st-empty">
+          <strong>No file storage yet</strong>
+          <span>Add an S3-compatible bucket to keep uploads and backups off the server's disk.</span>
+          <button type="button" class="btn btn-primary btn-sm" (click)="showForm = true">Add storage</button>
+        </div>
+      }
+    </section>
+    }
+
+    @if (showForm) {
+      <form class="card card-flush st-section" (ngSubmit)="save()" aria-labelledby="st-storage-add">
+        <div class="card-header"><h2 id="st-storage-add">Add storage</h2></div>
+        <div class="st-rows">
+          <div class="st-row">
+            <div class="st-label">
+              <label for="storage-preset">Service</label>
+              <p>Any S3-compatible storage works.</p>
+            </div>
+            <div class="st-field">
+              <select id="storage-preset" name="preset" [(ngModel)]="form.preset">
+                <option value="aws">AWS S3</option><option value="r2">Cloudflare R2</option>
+                <option value="gcs">Google Cloud Storage (HMAC)</option><option value="b2">Backblaze B2</option>
+                <option value="s3">Other S3-compatible</option><option value="minio">MinIO (self-hosted)</option>
+              </select>
+              <input id="storage-name" name="name" [(ngModel)]="form.name" placeholder="Name (optional)" aria-label="Name">
+            </div>
+          </div>
+          <div class="st-row">
+            <div class="st-label">
+              <label for="storage-bucket">Bucket</label>
+              <p>Where files are kept.</p>
+            </div>
+            <div class="st-field">
+              <input id="storage-bucket" name="bucket" [(ngModel)]="form.bucketName" required>
+              @if (form.preset === 'r2') {
+                <input id="storage-account" name="account" [(ngModel)]="form.accountId" required pattern="[a-fA-F0-9]{32}" placeholder="Cloudflare account ID" aria-label="Account ID">
+              }
+              @if (form.preset === 's3' || form.preset === 'minio') {
+                <input id="storage-endpoint" name="endpoint" type="url" [(ngModel)]="form.endpointUrl" required placeholder="Endpoint URL, e.g. https://s3.example.com" aria-label="Endpoint URL">
+              }
+              @if (form.preset === 'aws' || form.preset === 'b2' || form.preset === 's3') {
+                <input id="storage-region" name="region" [(ngModel)]="form.credentials.region" [required]="form.preset !== 's3'" placeholder="Region, e.g. us-east-1" aria-label="Region">
+              }
+            </div>
+          </div>
+          <div class="st-row">
+            <div class="st-label">
+              <label for="storage-key">Access key</label>
+              <p>Stored encrypted.</p>
+            </div>
+            <div class="st-field">
+              <input id="storage-key" name="key" [(ngModel)]="form.credentials.accessKeyId" required autocomplete="off" placeholder="Access key ID">
+              <input id="storage-secret" name="secret" type="password" [(ngModel)]="form.credentials.secretAccessKey" required autocomplete="new-password" placeholder="Secret access key" aria-label="Secret access key">
+              <label class="st-check st-check-inline check-row"><input name="default" type="checkbox" [(ngModel)]="form.isDefault"> Use for new uploads and backups</label>
+            </div>
+          </div>
+        </div>
+        <div class="st-footer">
+          <a class="st-learn" href="https://platform.pratyushes.dev/docs/operations/storage-providers" target="_blank" rel="noopener">Learn more</a>
+          <button class="btn btn-ghost" type="button" (click)="showForm = false">Cancel</button>
+          <button class="btn btn-primary" type="submit" [disabled]="busy">{{ busy ? 'Saving…' : 'Save storage' }}</button>
+        </div>
+      </form>
+    }
   `,
 })
 export class StorageSettingsComponent implements OnInit, OnDestroy {
   private http = inject(HttpClient);
   private timer?: ReturnType<typeof setInterval>;
-  providers: any[] = []; busy = false; message = ''; operationId: string | null = null;
+  providers: any[] = []; busy = false; showForm = false; message = ''; operationId: string | null = null;
   form = this.emptyForm();
   healthLabel(s?: string) { return s === 'healthy' ? 'Healthy' : s === 'unhealthy' ? 'Unhealthy' : s || 'Unknown'; }
   emptyForm() { return { preset: 'aws', name: '', accountId: '', endpointUrl: '', bucketName: '', isDefault: false, credentials: { accessKeyId: '', secretAccessKey: '', region: 'us-east-1' } }; }
@@ -90,15 +125,15 @@ export class StorageSettingsComponent implements OnInit, OnDestroy {
   ngOnDestroy() { clearInterval(this.timer); }
   async load() {
     try { this.providers = await firstValueFrom(this.http.get<any[]>('/api/settings/storage')); }
-    catch { this.message = 'Could not load storage providers'; }
+    catch { this.message = 'Could not load file storage. Refresh the page to try again.'; }
   }
   async save() {
     this.busy = true;
     try {
       await firstValueFrom(this.http.post('/api/settings/storage', this.form));
-      this.form = this.emptyForm(); this.message = 'Provider saved. Test the connection to verify access.';
+      this.form = this.emptyForm(); this.showForm = false; this.message = 'Storage saved. Test the connection to make sure it works.';
       await this.load();
-    } catch (e: any) { this.message = e.error?.error || 'Could not save provider'; }
+    } catch (e: any) { this.message = e.error?.error || 'Storage was not saved. Check the details and try again.'; }
     finally { this.busy = false; }
   }
   async action(p: any, action: string) {
