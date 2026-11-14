@@ -11,125 +11,149 @@ import { MfaEnrollmentComponent } from '../../shared/mfa-enrollment.component';
   selector: 'app-profile',
   standalone: true,
   imports: [FormsModule, MfaEnrollmentComponent],
+  styleUrl: './profile.component.css',
   template: `
-<div>
-  <div class="card" style="background:linear-gradient(135deg, rgba(91,110,245,0.05), rgba(45,212,160,0.02)); border-color:var(--border-subtle); margin-bottom:20px;">
-    <h1 style="margin:0 0 4px 0; font-size:1.3rem; font-family:var(--font-heading);">Profile</h1>
-    <p style="margin:0; color:var(--text-secondary); font-size:0.8rem;">Your account, linked GitHub / GitLab identities, and password.</p>
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Profile</h1>
+    <p class="page-subtitle">Your account details, linked Git sign-ins, two-factor authentication and password.</p>
   </div>
+</div>
 
-  @if (error) {
-    <div class="card" style="margin-bottom:16px; color:var(--accent-danger);">{{ error }}</div>
-  }
-  @if (success) {
-    <div class="card" style="margin-bottom:16px; color:var(--accent-success);">{{ success }}</div>
-  }
+@if (error) {
+  <p class="pf-banner pf-banner-err" role="alert">{{ error }}</p>
+}
+@if (success) {
+  <p class="pf-banner pf-banner-ok" role="status">{{ success }}</p>
+}
 
-  <div class="grid-2" style="align-items:start;">
-    <div class="card" style="padding:20px;">
-      <h2>Account</h2>
-      <div style="display:flex; gap:14px; align-items:center; margin-bottom:16px;">
-        <div style="width:56px; height:56px; border-radius:50%; overflow:hidden; background:#111; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-subtle);">
+<div class="pf-grid">
+  <section class="card card-flush" aria-labelledby="pf-account">
+    <div class="card-header"><h2 id="pf-account">Account</h2></div>
+    <div class="pf-body">
+      <div class="pf-identity">
+        <div class="pf-avatar">
           @if (me.avatarUrl) {
-            <img [src]="me.avatarUrl" alt="" style="width:100%; height:100%; object-fit:cover;">
+            <img [src]="me.avatarUrl" alt="">
           }
           @if (!me.avatarUrl) {
-            <span style="font-weight:700;">{{ initials }}</span>
+            <span>{{ initials }}</span>
           }
         </div>
-        <div>
-          <div style="font-weight:700; color:#fff;">{{ me.name || '—' }}</div>
-          <div style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-code);">{{ me.email }}</div>
-          <div class="badge badge-active" style="font-size:0.6rem; margin-top:6px;">{{ me.role }}</div>
+        <div class="pf-identity-text">
+          <span class="pf-name">{{ me.name || '—' }}</span>
+          <span class="mono pf-email">{{ me.email }}</span>
+          @if (me.role) { <span><span class="badge">{{ me.role }}</span></span> }
         </div>
       </div>
       <div class="form-group">
-        <label>Name</label>
-        <input [(ngModel)]="me.name" style="width:100%;">
+        <label for="pf-name">Name</label>
+        <input id="pf-name" [(ngModel)]="me.name">
       </div>
       <div class="form-group">
-        <label>Avatar URL</label>
-        <input [(ngModel)]="me.avatarUrl" placeholder="https://…" style="width:100%;">
+        <label for="pf-avatar">Avatar URL</label>
+        <input id="pf-avatar" [(ngModel)]="me.avatarUrl" placeholder="https://…">
       </div>
       <div class="form-group">
-        <label>Email</label>
-        <input [value]="me.email" [readonly]="true" style="width:100%; background:rgba(0,0,0,0.15); cursor:not-allowed;">
+        <label for="pf-email">Email</label>
+        <input id="pf-email" class="pf-readonly" [value]="me.email" [readonly]="true">
       </div>
       <div class="form-group">
-        <label>Username</label>
-        <input [value]="me.username || '—'" [readonly]="true" style="width:100%; background:rgba(0,0,0,0.15); cursor:not-allowed;">
+        <label for="pf-username">Username</label>
+        <input id="pf-username" class="pf-readonly" [value]="me.username || '—'" [readonly]="true">
       </div>
-      <button class="btn btn-primary" (click)="saveProfile()" [disabled]="saving">Save profile</button>
+      <div class="pf-actions">
+        <button type="button" class="btn btn-primary" (click)="saveProfile()" [disabled]="saving">Save profile</button>
+      </div>
     </div>
+  </section>
 
-    <div>
-      <div class="card" style="padding:20px; margin-bottom:16px;">
-        <h2>Linked logins</h2>
-        <p style="color:var(--text-secondary); font-size:0.78rem;">GitHub and GitLab login are configured by an admin under Settings → Login. Signing in with either provider links that identity here.</p>
-        <div style="display:flex; flex-direction:column; gap:10px; margin-top:12px;">
-          <div style="background:rgba(0,0,0,0.15); border:1px solid var(--border-subtle); border-radius:6px; padding:12px;">
-            <div style="font-weight:700; font-size:0.82rem;">GitHub</div>
-            <div style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-code);">{{ me.githubId ? ('linked · ' + me.githubId) : 'Not linked' }}</div>
-          </div>
-          <div style="background:rgba(0,0,0,0.15); border:1px solid var(--border-subtle); border-radius:6px; padding:12px;">
-            <div style="font-weight:700; font-size:0.82rem;">GitLab</div>
-            <div style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-code);">{{ me.gitlabId ? ('linked · ' + me.gitlabId) : 'Not linked' }}</div>
-          </div>
-        </div>
+  <div class="pf-stack">
+    <section class="card card-flush" aria-labelledby="pf-linked">
+      <div class="card-header"><h2 id="pf-linked">Linked sign-ins</h2></div>
+      <div class="pf-body">
+        <p class="pf-intro">An admin sets up GitHub and GitLab sign-in under Settings, Sign-in. When you sign in with either provider, that identity is linked here.</p>
       </div>
-
-      <div class="card mfa-card" style="padding:20px; margin-bottom:16px;">
-        <h2>Two-factor authentication</h2>
-        @if (mfaStatus?.enabled) {
-          <p class="mfa-on" style="font-size:0.82rem; margin:0 0 8px;">
-            <span style="color:var(--accent-success);">● On</span>
-            · {{ mfaStatus!.recoveryCodesRemaining }} recovery code{{ mfaStatus!.recoveryCodesRemaining === 1 ? '' : 's' }} left
-          </p>
-          @if (mfaStatus!.required) {
-            <p style="font-size:0.75rem; color:var(--text-muted); margin:0 0 8px;">Required for your role ({{ me.role }}).</p>
+      <ul class="pf-list">
+        <li>
+          <span class="pf-list-name">GitHub</span>
+          @if (me.githubId) {
+            <span class="pf-list-value"><span class="status status-ok">Linked</span> <span class="mono muted">{{ me.githubId }}</span></span>
+          } @else {
+            <span class="status">Not linked</span>
           }
+        </li>
+        <li>
+          <span class="pf-list-name">GitLab</span>
+          @if (me.gitlabId) {
+            <span class="pf-list-value"><span class="status status-ok">Linked</span> <span class="mono muted">{{ me.gitlabId }}</span></span>
+          } @else {
+            <span class="status">Not linked</span>
+          }
+        </li>
+      </ul>
+    </section>
+
+    <section class="card card-flush mfa-card" aria-labelledby="pf-mfa">
+      <div class="card-header">
+        <h2 id="pf-mfa">Two-factor authentication</h2>
+        @if (mfaStatus) {
+          <span class="status" [class.status-ok]="mfaStatus.enabled" [class.status-warn]="!mfaStatus.enabled && mfaStatus.required">{{ mfaStatus.enabled ? 'On' : 'Off' }}</span>
+        }
+      </div>
+      <div class="pf-body">
+        @if (mfaStatus?.enabled) {
+          <p class="mfa-on pf-intro">
+            {{ mfaStatus!.recoveryCodesRemaining }} recovery code{{ mfaStatus!.recoveryCodesRemaining === 1 ? '' : 's' }} left.
+            @if (mfaStatus!.required) { Required for your role ({{ me.role }}). }
+          </p>
           @if (newRecoveryCodes.length) {
-            <ul class="mfa-new-codes" style="columns:2; list-style:none; padding:10px; font-family:var(--font-code); background:rgba(0,0,0,0.2); border-radius:6px;">
+            <ul class="mfa-new-codes pf-codes mono">
               @for (c of newRecoveryCodes; track c) { <li>{{ c }}</li> }
             </ul>
-            <button class="btn btn-sm" type="button" (click)="downloadCodes()">Download codes</button>
+            <div class="pf-actions pf-actions-tight">
+              <button class="btn btn-sm" type="button" (click)="downloadCodes()">Download codes</button>
+            </div>
           }
-          <div class="form-group" style="margin-top:10px;">
-            <label>Current code (authenticator or recovery code)</label>
-            <input [(ngModel)]="mfaCode" autocomplete="one-time-code" style="width:100%;">
+          <div class="form-group pf-code-field">
+            <label for="pf-mfa-code">Current code (authenticator or recovery code)</label>
+            <input id="pf-mfa-code" [(ngModel)]="mfaCode" autocomplete="one-time-code">
           </div>
-          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <div class="pf-actions pf-actions-tight">
             <button class="btn btn-sm mfa-regenerate" type="button" (click)="regenerateCodes()" [disabled]="mfaBusy || !mfaCode">New recovery codes</button>
             @if (!mfaStatus!.required) {
               <button class="btn btn-sm btn-danger mfa-disable" type="button" (click)="disableMfa()" [disabled]="mfaBusy || !mfaCode">Turn off</button>
             }
           </div>
         } @else if (mfaStatus) {
-          <p style="font-size:0.82rem; color:var(--text-secondary); margin:0 0 10px;">
-            Off. {{ mfaStatus.required ? 'Your role requires it.' : 'Revealing secrets needs it.' }}
-          </p>
+          <p class="pf-intro">{{ mfaStatus.required ? 'Your role requires it. Set up an authenticator app to continue.' : 'Revealing secrets needs it. Set up an authenticator app to turn it on.' }}</p>
           <app-mfa-enrollment [account]="me.email" (completed)="loadMfa()"></app-mfa-enrollment>
         }
         @if (mfaMessage) {
-          <div style="font-size:0.8rem; margin-top:8px;">{{ mfaMessage }}</div>
+          <p class="pf-msg" role="status">{{ mfaMessage }}</p>
         }
       </div>
+    </section>
 
-      <div class="card" style="padding:20px;">
-        <h2>Password</h2>
+    <section class="card card-flush" aria-labelledby="pf-password">
+      <div class="card-header"><h2 id="pf-password">Password</h2></div>
+      <div class="pf-body">
         @if (me.hasPassword) {
           <div class="form-group">
-            <label>Current password</label>
-            <input type="password" [(ngModel)]="currentPassword" style="width:100%;" autocomplete="current-password">
+            <label for="pf-current">Current password</label>
+            <input id="pf-current" type="password" [(ngModel)]="currentPassword" autocomplete="current-password">
           </div>
         }
         <div class="form-group">
-          <label>New password</label>
-          <input type="password" [(ngModel)]="newPassword" style="width:100%;" autocomplete="new-password">
+          <label for="pf-new">New password</label>
+          <input id="pf-new" type="password" [(ngModel)]="newPassword" autocomplete="new-password">
+          <span class="form-hint">At least 8 characters.</span>
         </div>
-        <button class="btn btn-primary" (click)="changePassword()" [disabled]="savingPassword">{{ me.hasPassword ? 'Change password' : 'Set password' }}</button>
+        <div class="pf-actions">
+          <button type="button" class="btn btn-primary" (click)="changePassword()" [disabled]="savingPassword">{{ me.hasPassword ? 'Change password' : 'Set password' }}</button>
+        </div>
       </div>
-    </div>
+    </section>
   </div>
 </div>
 `

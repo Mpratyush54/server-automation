@@ -9,15 +9,39 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
   standalone: true,
   imports: [],
   template: `
-    <div style="width: 100%; height: calc(100vh - 100px); background: #0D0F14; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-subtle);">
-      @if (safeUrl) {
-        <iframe [src]="safeUrl" style="width: 100%; height: 100%; border: none;"></iframe>
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">{{ title }}</h1>
+        <p class="page-subtitle">{{ subtitle }}</p>
+      </div>
+      @if (openUrl) {
+        <a class="btn btn-sm" [href]="openUrl" target="_blank" rel="noopener">Open in a new tab</a>
       }
     </div>
-    `
+    <div class="ifv-frame">
+      @if (safeUrl) {
+        <iframe [src]="safeUrl" [title]="title"></iframe>
+      }
+    </div>
+    `,
+  styles: [`
+    .ifv-frame {
+      height: calc(100vh - 220px);
+      min-height: 480px;
+      overflow: hidden;
+      border: 1px solid rgb(var(--line));
+      border-radius: 10px;
+      background: rgb(var(--surface));
+    }
+    .ifv-frame iframe { display: block; width: 100%; height: 100%; border: 0; }
+  `]
 })
 export class IframeViewComponent implements OnInit {
   safeUrl?: SafeResourceUrl;
+  /** Plain URL for the "open in a new tab" link. */
+  openUrl = '';
+  title = 'Grafana';
+  subtitle = 'Dashboards for your cluster and apps, shown inside the portal.';
   private readonly destroyRef = inject(DestroyRef);
 
   constructor(private route: ActivatedRoute, private sanitizer: DomSanitizer) {}
@@ -25,7 +49,9 @@ export class IframeViewComponent implements OnInit {
   ngOnInit() {
     this.route.data.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(data => {
       let path = data['url'] || '/';
-      
+      if (data['title']) this.title = data['title'];
+      if (data['subtitle']) this.subtitle = data['subtitle'];
+
       if (window.location.hostname === 'localhost') {
         const portMap: Record<string, string> = {
           '/grafana/': 'http://localhost:3000/grafana/',
@@ -40,7 +66,8 @@ export class IframeViewComponent implements OnInit {
         const host = window.location.host;
         path = `${protocol}//${host}${path}`;
       }
-      
+
+      this.openUrl = path;
       this.safeUrl = this.sanitizer.bypassSecurityTrustResourceUrl(path);
     });
   }

@@ -1,58 +1,60 @@
-<div style="margin-bottom:24px;">
-  <h2 style="margin:0;font-size:1.5rem;font-weight:700;">Audit Logs</h2>
-  <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:4px 0 0 0;">Chronological system action logs for tracking administrator operations</p>
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Audit log</h1>
+    <p class="page-subtitle">Who changed what on the platform, and when, newest first.</p>
+  </div>
 </div>
 
-<div class="card" style="padding:0;overflow:hidden;">
-  <table>
-    <thead>
-      <tr>
-        <th>User</th>
-        <th>Action</th>
-        <th>Target Type</th>
-        <th>Client IP</th>
-        <th>Timestamp</th>
-        <th>Metadata Detail</th>
-      </tr>
-    </thead>
-    <tbody>
-      @for (log of logs; track log) {
-        <tr>
-          <td>
-            <div style="line-height:1.2;">
-              <span style="font-weight:600;color:#fff;">{{ log.userName }}</span>
-              <div style="font-size:0.75rem;color:var(--color-text-secondary);">{{ log.userEmail }}</div>
-            </div>
-          </td>
-          <td>
-            <span style="font-family:monospace;font-size:0.85rem;font-weight:600;color:var(--primary);">
-              {{ log.action }}
-            </span>
-          </td>
-          <td>
-            <span class="badge badge-pending" style="font-size:0.7rem;">
-              {{ log.targetType }}
-            </span>
-          </td>
-          <td style="font-family:monospace;font-size:0.85rem;">{{ log.ip || '127.0.0.1' }}</td>
-          <td>{{ log.performedAt | date:'medium' }}</td>
-          <td>
-            @if (log.metadataStr) {
-              <pre style="margin:0;font-family:monospace;font-size:0.75rem;background:rgba(0,0,0,0.3);padding:6px;border-radius:6px;border:1px solid var(--border-glass);color:var(--color-text-secondary);max-width:300px;overflow-x:auto;">{{ log.metadataStr }}</pre>
-            }
-            @if (!log.metadataStr) {
-              <span style="color:var(--color-text-muted);">—</span>
-            }
-          </td>
-        </tr>
-      }
-      @if (logs.length === 0) {
-        <tr>
-          <td colspan="6" style="text-align:center;color:var(--color-text-muted);padding:32px;">
-            No audit log actions recorded in control plane database.
-          </td>
-        </tr>
-      }
-    </tbody>
-  </table>
-</div>
+<section class="card card-flush" aria-label="Audit log entries">
+  @if (logs.length === 0) {
+    <div class="empty-state">
+      <strong>No entries yet</strong>
+      Actions such as deployments, user changes and settings updates are recorded here as they happen.
+    </div>
+  } @else {
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Action</th>
+            <th>Target</th>
+            <th>IP address</th>
+            <th>When</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (log of logs; track log) {
+            <tr>
+              <td>
+                <div class="al-user">
+                  <span class="al-name">{{ log.userName }}</span>
+                  <span class="al-email">{{ log.userEmail }}</span>
+                </div>
+              </td>
+              <td class="mono al-action">{{ log.action }}</td>
+              <td>
+                @if (log.targetType) {
+                  <span class="badge">{{ log.targetType }}</span>
+                } @else {
+                  <span class="muted">—</span>
+                }
+              </td>
+              <td class="mono al-ip">{{ log.ip || '127.0.0.1' }}</td>
+              <td class="muted al-when">{{ log.performedAt | date:'medium' }}</td>
+              <td>
+                @if (log.metadataStr) {
+                  <pre class="al-meta">{{ log.metadataStr }}</pre>
+                }
+                @if (!log.metadataStr) {
+                  <span class="muted">—</span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>

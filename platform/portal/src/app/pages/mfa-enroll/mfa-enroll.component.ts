@@ -11,19 +11,22 @@ import { AuthService } from '../../services/auth.service';
   selector: 'app-mfa-enroll',
   standalone: true,
   imports: [MfaEnrollmentComponent],
+  styleUrl: './mfa-enroll.component.css',
   template: `
-<div class="min-h-screen flex items-center justify-center p-4" style="min-height:100vh; display:flex; align-items:center; justify-content:center;">
-  <div class="card mfa-enroll-page" style="width:min(560px, calc(100vw - 32px)); padding:28px;">
-    <h1 style="margin:0 0 6px; font-size:1.3rem;">Set up two-factor authentication</h1>
-    <p style="color:var(--text-secondary); font-size:0.85rem; margin:0 0 18px;">
-      Your role ({{ role }}) requires two-factor authentication. Finish this step to continue to the portal.
-    </p>
-    <app-mfa-enrollment [account]="email" (completed)="done()"></app-mfa-enrollment>
-    <div style="margin-top:18px; text-align:right;">
-      <button class="btn btn-sm mfa-signout" type="button" (click)="signOut()">Sign out</button>
-    </div>
+<main class="mfe-page">
+  <div class="mfe-panel">
+    <section class="mfe-card mfa-enroll-page" aria-labelledby="mfe-title">
+      <h1 id="mfe-title" class="mfe-title">Set up two-factor authentication</h1>
+      <p class="mfe-sub">
+        Your role ({{ role }}) requires two-factor authentication. Finish this step to continue to the portal.
+      </p>
+      <app-mfa-enrollment [account]="email" (completed)="done()"></app-mfa-enrollment>
+      <div class="mfe-foot">
+        <button class="btn btn-ghost btn-sm mfa-signout" type="button" (click)="signOut()">Sign out</button>
+      </div>
+    </section>
   </div>
-</div>
+</main>
 `,
 })
 export class MfaEnrollComponent implements OnInit {

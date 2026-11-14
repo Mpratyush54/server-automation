@@ -87,12 +87,12 @@ export class PreviewUrlsComponent implements OnInit, OnDestroy {
   }
 
   async terminate(id: string) {
-    if (!confirm('Are you sure you want to terminate this preview environment? This action is immediate.')) return;
+    if (!confirm('Terminate this preview? It is removed right away.')) return;
     try {
       await firstValueFrom(this.api.terminateDeployment(id));
       await this.loadPreviews();
     } catch (err: any) {
-      alert('Failed to terminate preview environment: ' + (err.error?.error || err.message));
+      alert('Could not terminate the preview: ' + (err.error?.error || err.message));
     }
   }
 }

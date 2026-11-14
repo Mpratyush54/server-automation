@@ -1,0 +1,39 @@
+/* Storage (st-) */
+
+.st-lookup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 20px;
+}
+.st-field { flex: 1 1 280px; max-width: 28rem; margin-bottom: 0; }
+
+/* Summary: one panel split into three, like the dashboard. */
+.st-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+  margin-bottom: 24px;
+}
+.st-stat { display: flex; flex-direction: column; gap: 6px; padding: 20px 24px; min-width: 0; }
+.st-stat + .st-stat { border-left: 1px solid rgb(var(--line)); }
+.st-stat-label { font-size: 0.8125rem; color: rgb(var(--fg-2)); }
+.st-stat-value {
+  font-size: 1.875rem;
+  font-weight: 600;
+  line-height: 1.1;
+  color: rgb(var(--fg));
+  font-variant-numeric: tabular-nums;
+}
+.st-stat-note { font-size: 0.8125rem; color: rgb(var(--fg-3)); }
+.st-providers { gap: 6px 16px; }
+@media (max-width: 720px) {
+  .st-stats { grid-template-columns: 1fr; }
+  .st-stat + .st-stat { border-left: 0; border-top: 1px solid rgb(var(--line)); }
+}
+
+.st-name { font-weight: 500; overflow-wrap: anywhere; }
+.st-right { text-align: right; }
+.st-nowrap { white-space: nowrap; }

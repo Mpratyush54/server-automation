@@ -39,6 +39,10 @@ export class UsersComponent implements OnInit {
 
   constructor(private api: ApiService, private auth: AuthService) {}
 
+  roleLabel(role: string): string {
+    return ({ admin: 'Admin', devops: 'DevOps', tech_lead: 'Tech lead', developer: 'Developer', viewer: 'Viewer' } as Record<string, string>)[role] || role;
+  }
+
   /** Admin reset of a user's MFA (lost device); needs the admin's own recent second factor (#24). */
   async resetMfa(u: any) {
     if (!this.isAdmin) return;

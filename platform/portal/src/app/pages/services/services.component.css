@@ -1,0 +1,11 @@
+/* Services (sv-) */
+
+.sv-form { margin-bottom: 24px; }
+.sv-body { padding: 20px; }
+.sv-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.sv-wide { grid-column: 1 / -1; }
+@media (max-width: 640px) { .sv-grid { grid-template-columns: 1fr; } }
+
+.sv-strong { font-weight: 500; }
+.sv-id { font-size: 0.8125rem; overflow-wrap: anywhere; }
+.sv-nowrap { white-space: nowrap; }

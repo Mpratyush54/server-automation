@@ -15,138 +15,151 @@ import { StepUpService } from '../../services/step-up.service';
   selector: 'app-git-connect',
   standalone: true,
   imports: [CommonModule, FormsModule],
+  styleUrl: './settings.component.css',
   template: `
-<div class="card" style="margin-bottom:16px; padding:16px;">
-  <h2 style="margin-top:0;">Connect Git providers</h2>
-  <p style="margin:0; color:var(--text-secondary); font-size:0.8rem;">
-    GitHub: one click creates a private GitHub App on your account or organization (nothing to copy).
-    GitLab: paste a token with the <code>api</code> scope once and the platform creates the login application.
-    GitHub and GitLab must reach this install's public URL; an sslip.io domain works.
+<section class="st-section" aria-labelledby="st-connect-title">
+  <h2 id="st-connect-title" class="st-advanced">Connect Git providers</h2>
+  <p class="st-intro">
+    GitHub: one click creates a private GitHub App on your account or organization, with nothing to copy.
+    GitLab: paste a token with the <code>api</code> scope once and the platform creates the sign-in application.
+    Both need to reach this install's public URL; an sslip.io domain works.
   </p>
   @for (w of status?.warnings || []; track w) {
-    <div style="margin-top:8px; font-size:0.78rem; color:var(--accent-warning);">⚠ {{ w }}</div>
+    <p class="st-msg st-warn-text">{{ w }}</p>
   }
   @if (message) {
-    <div style="margin-top:10px; font-size:0.8rem;" [style.color]="messageOk ? 'var(--accent-success)' : 'var(--accent-danger)'">{{ message }}</div>
+    <p class="st-msg" [class.st-ok]="messageOk" [class.st-err]="!messageOk" role="status">{{ message }}</p>
   }
-</div>
+</section>
 
-<div class="grid-2" style="align-items:start; margin-bottom:16px;">
+<div class="st-grid">
   <!-- GitHub -->
-  <div class="card" style="padding:20px;">
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-      <h2 style="margin:0;">GitHub App</h2>
-      <span class="badge" [class.badge-active]="gh?.connected && gh?.health?.ok !== false" [class.badge-failed]="gh?.connected && gh?.health?.ok === false" [class.badge-pending]="!gh?.connected">
+  <section class="card card-flush" aria-labelledby="st-gh-app">
+    <div class="card-header">
+      <h2 id="st-gh-app">GitHub App</h2>
+      <span class="status" [class.status-ok]="gh?.connected && gh?.health?.ok !== false" [class.status-down]="gh?.connected && gh?.health?.ok === false">
         {{ !gh?.connected ? 'Not connected' : gh?.health?.ok === false ? 'Unhealthy' : 'Connected' }}
       </span>
     </div>
-    @if (gh?.connected) {
-      <div style="font-size:0.8rem; margin-top:10px; line-height:1.7;">
-        <div>App: <a [href]="gh.htmlUrl" target="_blank" rel="noopener">{{ gh.slug }}</a> (id {{ gh.appId }})</div>
-        <div>Owner: {{ gh.owner || '—' }} {{ gh.ownerType ? '(' + gh.ownerType + ')' : '' }}</div>
-        <div>Installations: {{ gh.installations }}</div>
-        <div>Login: {{ gh.loginEnabled ? 'live' : 'off' }} (credentials from {{ sourceLabel(gh.loginSource) }})</div>
-        @if (gh.health?.checkedAt) {
-          <div style="color:var(--text-muted);">Last check {{ gh.health.checkedAt | date:'short' }}{{ gh.health.error ? ': ' + gh.health.error : '' }}</div>
-        }
-      </div>
-      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:12px;">
-        <a class="btn btn-sm btn-primary" [href]="gh.installUrl" target="_blank" rel="noopener">Install on repositories</a>
-        <button class="btn btn-sm" (click)="check('github')" [disabled]="!isAdmin || busy">Check health</button>
-        <button class="btn btn-sm" (click)="syncInstallations()" [disabled]="!isAdmin || busy">Sync installations</button>
-        <button class="btn btn-sm" (click)="disconnect('github')" [disabled]="!isAdmin || busy">Disconnect</button>
-      </div>
-    } @else {
-      <p style="font-size:0.78rem; color:var(--text-secondary);">Login with GitHub, repository access and deploy webhooks without personal tokens.</p>
-    }
-    <details style="margin-top:12px;" [open]="!gh?.connected">
-      <summary style="cursor:pointer; font-size:0.8rem;">{{ gh?.connected ? 'Reconnect (create a new App)' : 'Connect GitHub' }}</summary>
-      <div class="form-group" style="margin-top:10px;">
-        <label>Owner</label>
-        <select [(ngModel)]="ghForm.ownerType" style="width:100%;">
-          <option value="user">My personal account</option>
-          <option value="org">An organization</option>
-        </select>
-      </div>
-      @if (ghForm.ownerType === 'org') {
-        <div class="form-group">
-          <label>Organization login</label>
-          <input [(ngModel)]="ghForm.org" placeholder="my-org" style="width:100%;">
+    <div class="st-body">
+      @if (gh?.connected) {
+        <dl class="facts st-facts">
+          <dt>App</dt><dd><a [href]="gh.htmlUrl" target="_blank" rel="noopener">{{ gh.slug }}</a> <span class="muted">(id {{ gh.appId }})</span></dd>
+          <dt>Owner</dt><dd>{{ gh.owner || '—' }} {{ gh.ownerType ? '(' + gh.ownerType + ')' : '' }}</dd>
+          <dt>Installations</dt><dd>{{ gh.installations }}</dd>
+          <dt>Sign-in</dt><dd>{{ gh.loginEnabled ? 'Live' : 'Off' }} <span class="muted">(credentials from {{ sourceLabel(gh.loginSource) }})</span></dd>
+          @if (gh.health?.checkedAt) {
+            <dt>Last check</dt><dd>{{ gh.health.checkedAt | date:'short' }}{{ gh.health.error ? ': ' + gh.health.error : '' }}</dd>
+          }
+        </dl>
+        <div class="st-item-actions">
+          <a class="btn btn-sm btn-primary" [href]="gh.installUrl" target="_blank" rel="noopener">Install on repositories</a>
+          <button type="button" class="btn btn-sm" (click)="check('github')" [disabled]="!isAdmin || busy">Check health</button>
+          <button type="button" class="btn btn-sm" (click)="syncInstallations()" [disabled]="!isAdmin || busy">Sync installations</button>
+          <button type="button" class="btn btn-sm btn-danger" (click)="disconnect('github')" [disabled]="!isAdmin || busy">Disconnect</button>
         </div>
+      } @else {
+        <p class="st-intro">Sign in with GitHub, repository access and deploy webhooks without personal tokens.</p>
       }
-      <div class="form-group">
-        <label>App name (optional, unique on GitHub, max 34)</label>
-        <input [(ngModel)]="ghForm.name" maxlength="34" placeholder="Generated if empty" style="width:100%;">
-      </div>
-      <button class="btn btn-primary btn-sm" (click)="connectGithub()" [disabled]="!isAdmin || busy">Create GitHub App on GitHub</button>
-      @if (!isAdmin) { <div style="font-size:0.72rem; color:var(--text-muted); margin-top:6px;">Only admins can connect providers.</div> }
-    </details>
-  </div>
+      <details class="st-details" [open]="!gh?.connected">
+        <summary>{{ gh?.connected ? 'Reconnect (create a new App)' : 'Connect GitHub' }}</summary>
+        <div class="form-group">
+          <label for="st-gc-owner">Owner</label>
+          <select id="st-gc-owner" [(ngModel)]="ghForm.ownerType">
+            <option value="user">My personal account</option>
+            <option value="org">An organization</option>
+          </select>
+        </div>
+        @if (ghForm.ownerType === 'org') {
+          <div class="form-group">
+            <label for="st-gc-org">Organization login</label>
+            <input id="st-gc-org" [(ngModel)]="ghForm.org" placeholder="my-org">
+          </div>
+        }
+        <div class="form-group">
+          <label for="st-gc-name">App name (optional)</label>
+          <input id="st-gc-name" [(ngModel)]="ghForm.name" maxlength="34" placeholder="Generated if empty">
+          <span class="form-hint">Must be unique on GitHub, up to 34 characters.</span>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" (click)="connectGithub()" [disabled]="!isAdmin || busy">Create GitHub App on GitHub</button>
+        @if (!isAdmin) { <p class="st-note">Only admins can connect providers.</p> }
+      </details>
+    </div>
+  </section>
 
   <!-- GitLab -->
-  <div class="card" style="padding:20px;">
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-      <h2 style="margin:0;">GitLab application</h2>
-      <span class="badge" [class.badge-active]="gl?.connected && gl?.health?.ok !== false" [class.badge-failed]="gl?.connected && gl?.health?.ok === false" [class.badge-pending]="!gl?.connected">
+  <section class="card card-flush" aria-labelledby="st-gl-app">
+    <div class="card-header">
+      <h2 id="st-gl-app">GitLab application</h2>
+      <span class="status" [class.status-ok]="gl?.connected && gl?.health?.ok !== false" [class.status-down]="gl?.connected && gl?.health?.ok === false">
         {{ !gl?.connected ? 'Not connected' : gl?.health?.ok === false ? 'Unhealthy' : 'Connected' }}
       </span>
     </div>
-    @if (gl?.connected) {
-      <div style="font-size:0.8rem; margin-top:10px; line-height:1.7;">
-        <div>GitLab: {{ gl.baseUrl }}</div>
-        <div>Application: {{ gl.ownerType === 'group' ? 'group ' + gl.owner : 'instance-wide' }}</div>
-        <div>Webhook token: {{ gl.hasApiToken ? 'kept (encrypted) for project webhooks' : 'not kept — webhooks use the linking token' }}</div>
-        <div>Login: {{ gl.loginEnabled ? 'live' : 'off' }} (credentials from {{ sourceLabel(gl.loginSource) }})</div>
-        @if (gl.health?.checkedAt) {
-          <div style="color:var(--text-muted);">Last check {{ gl.health.checkedAt | date:'short' }}{{ gl.health.error ? ': ' + gl.health.error : '' }}</div>
-        }
-      </div>
-      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:12px;">
-        <button class="btn btn-sm" (click)="check('gitlab')" [disabled]="!isAdmin || busy">Check health</button>
-        <button class="btn btn-sm" (click)="disconnect('gitlab')" [disabled]="!isAdmin || busy">Disconnect</button>
-      </div>
-    }
-    <details style="margin-top:12px;" [open]="!gl?.connected">
-      <summary style="cursor:pointer; font-size:0.8rem;">{{ gl?.connected ? 'Reconnect' : 'Connect GitLab' }}</summary>
-      <div class="form-group" style="margin-top:10px;">
-        <label>GitLab URL</label>
-        <input [(ngModel)]="glForm.baseUrl" placeholder="https://gitlab.com" style="width:100%;">
-      </div>
-      <div class="form-group">
-        <label>Token with api scope</label>
-        <input type="password" [(ngModel)]="glForm.token" placeholder="glpat-…" autocomplete="off" style="width:100%;">
-      </div>
-      <div class="form-group">
-        <label>Group path (if you are not an instance admin)</label>
-        <input [(ngModel)]="glForm.groupPath" placeholder="my-group/sub-group" style="width:100%;">
-      </div>
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-        <input type="checkbox" id="glKeep" [(ngModel)]="glForm.keepToken" style="width:14px; height:14px;">
-        <label for="glKeep" style="margin:0; cursor:pointer; text-transform:none; letter-spacing:0; font-size:0.78rem;">Keep this token (encrypted) to register project webhooks automatically</label>
-      </div>
-      <button class="btn btn-primary btn-sm" (click)="connectGitlab()" [disabled]="!isAdmin || busy || !glForm.token">Create GitLab application</button>
-      <div style="font-size:0.72rem; color:var(--text-muted); margin-top:6px;">Without "keep", the token is used once and discarded.</div>
-    </details>
-  </div>
+    <div class="st-body">
+      @if (gl?.connected) {
+        <dl class="facts st-facts">
+          <dt>GitLab</dt><dd class="mono">{{ gl.baseUrl }}</dd>
+          <dt>Application</dt><dd>{{ gl.ownerType === 'group' ? 'Group ' + gl.owner : 'Instance-wide' }}</dd>
+          <dt>Webhook token</dt><dd>{{ gl.hasApiToken ? 'Kept (encrypted) for project webhooks' : 'Not kept; webhooks use the linking token' }}</dd>
+          <dt>Sign-in</dt><dd>{{ gl.loginEnabled ? 'Live' : 'Off' }} <span class="muted">(credentials from {{ sourceLabel(gl.loginSource) }})</span></dd>
+          @if (gl.health?.checkedAt) {
+            <dt>Last check</dt><dd>{{ gl.health.checkedAt | date:'short' }}{{ gl.health.error ? ': ' + gl.health.error : '' }}</dd>
+          }
+        </dl>
+        <div class="st-item-actions">
+          <button type="button" class="btn btn-sm" (click)="check('gitlab')" [disabled]="!isAdmin || busy">Check health</button>
+          <button type="button" class="btn btn-sm btn-danger" (click)="disconnect('gitlab')" [disabled]="!isAdmin || busy">Disconnect</button>
+        </div>
+      }
+      <details class="st-details" [open]="!gl?.connected">
+        <summary>{{ gl?.connected ? 'Reconnect' : 'Connect GitLab' }}</summary>
+        <div class="form-group">
+          <label for="st-gc-glurl">GitLab URL</label>
+          <input id="st-gc-glurl" [(ngModel)]="glForm.baseUrl" placeholder="https://gitlab.com">
+        </div>
+        <div class="form-group">
+          <label for="st-gc-gltoken">Token with api scope</label>
+          <input id="st-gc-gltoken" type="password" [(ngModel)]="glForm.token" placeholder="glpat-…" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="st-gc-glgroup">Group path (if you are not an instance admin)</label>
+          <input id="st-gc-glgroup" [(ngModel)]="glForm.groupPath" placeholder="my-group/sub-group">
+        </div>
+        <label class="st-check"><input type="checkbox" id="glKeep" [(ngModel)]="glForm.keepToken"> Keep this token (encrypted) to register project webhooks automatically</label>
+        <div>
+          <button type="button" class="btn btn-primary btn-sm" (click)="connectGitlab()" [disabled]="!isAdmin || busy || !glForm.token">Create GitLab application</button>
+        </div>
+        <p class="st-note">If you don't keep it, the token is used once and discarded.</p>
+      </details>
+    </div>
+  </section>
 </div>
 
 @if (installations.length) {
-  <div class="card" style="padding:16px; margin-bottom:16px;">
-    <h2 style="margin-top:0;">GitHub App installations</h2>
-    @for (i of installations; track i.installationId) {
-      <div style="font-size:0.8rem; padding:8px 0; border-top:1px solid var(--border-subtle);">
-        <strong>{{ i.account }}</strong> ({{ i.accountType }}) — {{ i.repositorySelection === 'all' ? 'all repositories' : (i.repositories.length + ' selected repositories') }}
-        @if (i.suspended) { <span class="badge badge-failed">suspended</span> }
-        @if (i.repositorySelection !== 'all' && i.repositories.length) {
-          <div style="color:var(--text-secondary);">{{ i.repositories.join(', ') }}</div>
-        }
-        <div style="color:var(--text-muted);">Projects: {{ i.projects.length ? projectNames(i.projects) : 'none linked yet' }}</div>
-      </div>
-    }
-  </div>
+  <section class="card card-flush st-section" aria-labelledby="st-gc-inst">
+    <div class="card-header"><h2 id="st-gc-inst">GitHub App installations</h2></div>
+    <ul class="st-list">
+      @for (i of installations; track i.installationId) {
+        <li>
+          <div class="st-item-main">
+            <span class="st-item-tags">
+              <span class="st-item-name">{{ i.account }}</span>
+              <span class="muted">({{ i.accountType }})</span>
+              @if (i.suspended) { <span class="status status-down">Suspended</span> }
+            </span>
+            <span class="secondary">{{ i.repositorySelection === 'all' ? 'All repositories' : (i.repositories.length + ' selected repositories') }}</span>
+            @if (i.repositorySelection !== 'all' && i.repositories.length) {
+              <span class="st-item-meta mono">{{ i.repositories.join(', ') }}</span>
+            }
+            <span class="st-item-meta">Projects: {{ i.projects.length ? projectNames(i.projects) : 'none linked yet' }}</span>
+          </div>
+        </li>
+      }
+    </ul>
+  </section>
 }
 
-<h3 style="font-size:0.9rem; margin:8px 0;">Advanced: manual OAuth app entry</h3>
+<h2 class="st-advanced">Manual OAuth app entry</h2>
 `,
 })
 export class GitConnectComponent implements OnInit {

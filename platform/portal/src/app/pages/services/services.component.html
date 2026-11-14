@@ -1,29 +1,68 @@
-<div class="card">
-  <h2>Register Service</h2>
-  <div class="form-group"><label>Service Name</label><input [(ngModel)]="reg.serviceName" placeholder="my-api-service"></div>
-  <div class="form-group"><label>Project Name</label><input [(ngModel)]="reg.projectName" placeholder="my-project"></div>
-  <div class="form-group"><label>Environment</label><select [(ngModel)]="reg.environmentName"><option>development</option><option>staging</option><option>production</option></select></div>
-  <div class="form-group"><label>Version</label><input [(ngModel)]="reg.version" placeholder="1.0.0"></div>
-  <div class="form-group"><label>DB Types (comma-separated)</label><input [(ngModel)]="reg.dbTypes" placeholder="postgres,redis,mongo"></div>
-  <button class="btn btn-primary" (click)="register()" [disabled]="!reg.serviceName">Register</button>
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Services</h1>
+    <p class="page-subtitle">Services that report to the platform, the databases they use and when each last checked in.</p>
+  </div>
 </div>
 
-<div class="card">
-  <h2>Registered Services</h2>
-  <table>
-    <thead><tr><th>Service</th><th>Project</th><th>Version</th><th>DB Types</th><th>Last Heartbeat</th><th>Status</th></tr></thead>
-    <tbody>
-      @for (s of registrations; track s) {
-        <tr>
-          <td>{{ s.serviceName }}</td><td>{{ s.projectId }}</td><td>{{ s.version }}</td>
-          <td>{{ s.dbTypes?.join(', ') || '-' }}</td>
-          <td>{{ s.lastHeartbeat ? (s.lastHeartbeat | date:'short') : 'never' }}</td>
-          <td><span class="badge" [class.badge-active]="s.isActive" [class.badge-failed]="!s.isActive">{{ s.isActive ? 'Active' : 'Inactive' }}</span></td>
-        </tr>
-      }
-      @if (registrations.length === 0) {
-        <tr><td colspan="6">No services registered yet</td></tr>
-      }
-    </tbody>
-  </table>
-</div>
+<section class="card card-flush sv-form" aria-labelledby="sv-reg-title">
+  <div class="card-header">
+    <h2 id="sv-reg-title">Register a service</h2>
+  </div>
+  <div class="sv-body">
+    <div class="sv-grid">
+      <div class="form-group">
+        <label for="sv-name">Service name</label>
+        <input id="sv-name" [(ngModel)]="reg.serviceName" placeholder="my-api-service" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label for="sv-project">Project name</label>
+        <input id="sv-project" [(ngModel)]="reg.projectName" placeholder="my-project" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label for="sv-env">Environment</label>
+        <select id="sv-env" [(ngModel)]="reg.environmentName"><option>development</option><option>staging</option><option>production</option></select>
+      </div>
+      <div class="form-group">
+        <label for="sv-version">Version</label>
+        <input id="sv-version" [(ngModel)]="reg.version" placeholder="1.0.0" autocomplete="off">
+      </div>
+      <div class="form-group sv-wide">
+        <label for="sv-db">Databases</label>
+        <input id="sv-db" [(ngModel)]="reg.dbTypes" placeholder="postgres,redis,mongo" autocomplete="off">
+        <span class="form-hint">Comma-separated database types the service uses.</span>
+      </div>
+    </div>
+    <button type="button" class="btn btn-primary" (click)="register()" [disabled]="!reg.serviceName">Register service</button>
+  </div>
+</section>
+
+<section class="card card-flush" aria-labelledby="sv-list-title">
+  <div class="card-header">
+    <h2 id="sv-list-title">Registered services</h2>
+    @if (registrations.length > 0) {
+      <span class="badge">{{ registrations.length }}</span>
+    }
+  </div>
+  @if (registrations.length === 0) {
+    <p class="empty-state">No services registered yet. Register one above, or let the SDK register it when the service starts.</p>
+  } @else {
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Service</th><th>Project</th><th>Version</th><th>Databases</th><th>Last heartbeat</th><th>Status</th></tr></thead>
+        <tbody>
+          @for (s of registrations; track s) {
+            <tr>
+              <td class="sv-strong">{{ s.serviceName }}</td>
+              <td class="mono sv-id">{{ s.projectId }}</td>
+              <td class="mono">{{ s.version }}</td>
+              <td>{{ s.dbTypes?.join(', ') || '—' }}</td>
+              <td class="muted sv-nowrap">{{ s.lastHeartbeat ? (s.lastHeartbeat | date:'short') : 'Never' }}</td>
+              <td><span class="status" [class.status-ok]="s.isActive" [class.status-down]="!s.isActive">{{ s.isActive ? 'Active' : 'Inactive' }}</span></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>

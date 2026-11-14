@@ -12,71 +12,110 @@ import { browserLabel, formatDuration, listParams, ReplayFilters, ReplaySessionR
   standalone: true,
   imports: [FormsModule, RouterLink, DatePipe],
   styles: [`
-    :host { display: block; color: #e4e4e7; }
-    .muted { color: #a1a1aa; font-size: 13px; }
-    form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin: 16px 0; }
-    label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #a1a1aa; }
-    input, select { background: #111; border: 1px solid #333; color: #e4e4e7; border-radius: 6px; padding: 7px 9px; min-width: 120px; }
-    button, a.btn { background: #18181b; border: 1px solid #3f3f46; color: #e4e4e7; border-radius: 6px; padding: 7px 12px; cursor: pointer; text-decoration: none; font-size: 13px; }
-    button:disabled { opacity: .5; cursor: default; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #27272a; vertical-align: top; }
-    th { color: #a1a1aa; font-weight: 500; }
-    .err { color: #f87171; font-weight: 600; }
-    .net { color: #fbbf24; }
-    .pages { color: #a1a1aa; font-size: 12px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .notice { border: 1px solid #3f3f46; border-radius: 8px; padding: 12px 14px; margin: 12px 0; background: #111; font-size: 13px; }
-    .pager { display: flex; gap: 8px; margin-top: 12px; }
+    :host { display: block; }
+    .rp-back { display: inline-block; margin-bottom: 12px; font-size: 0.875rem; color: rgb(var(--fg-2)); text-decoration: none; }
+    .rp-back:hover { color: rgb(var(--fg)); text-decoration: underline; }
+    .rp-notice {
+      margin-bottom: 24px;
+      padding: 12px 20px;
+      border: 1px solid rgb(var(--line));
+      border-left: 3px solid rgb(var(--warn));
+      border-radius: 10px;
+      background: rgb(var(--surface));
+      font-size: 0.875rem;
+      color: rgb(var(--fg-2));
+    }
+    .rp-notice.rp-error { border-left-color: rgb(var(--down)); color: rgb(var(--down)); }
+    .rp-filters {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 24px;
+      padding: 20px;
+    }
+    .rp-filters .form-group { margin-bottom: 0; }
+    .rp-filters button { align-self: end; }
+    .rp-sub { display: block; margin-top: 2px; font-size: 0.8125rem; color: rgb(var(--fg-3)); }
+    .rp-nowrap { white-space: nowrap; }
+    .rp-err { color: rgb(var(--down)); font-weight: 600; }
+    .rp-net { color: rgb(var(--warn)); }
+    .rp-pages { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; color: rgb(var(--fg-2)); }
+    .rp-right { text-align: right; }
+    .rp-pager { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid rgb(var(--line)); }
+    .rp-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   `],
   template: `
-    <a class="btn" [routerLink]="['/projects', projectId]">&larr; Project</a>
-    <h1 class="page-title">Session replays</h1>
-    <p class="muted">Recorded with inputs masked. Replays are kept for the project's replay retention and every view is audited.</p>
+    <a class="rp-back" [routerLink]="['/projects', projectId]">Back to project</a>
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Session replays</h1>
+        <p class="page-subtitle">Watch what users did before an error. Inputs are masked, recordings follow the project's replay retention and every view is audited.</p>
+      </div>
+    </div>
 
     @if (!enabled && loaded) {
-      <div class="notice" data-test="disabled">Session replay ingest is not enabled on this platform (full observability profile), or no
-        replay storage is configured. Existing recordings are still listed.</div>
+      <div class="rp-notice" data-test="disabled">Recording new sessions is off: session replay needs the full observability profile and replay storage. Existing recordings are still listed.</div>
     }
-    @if (error) { <div class="notice err" role="alert">{{ error }}</div> }
+    @if (error) { <div class="rp-notice rp-error" role="alert">{{ error }}</div> }
 
-    <form (ngSubmit)="offset = 0; load()">
-      <label>Page contains <input name="page" [(ngModel)]="filters.page" placeholder="e.g. /checkout"></label>
-      <label>Errors
-        <select name="errors" [(ngModel)]="filters.errors">
+    <form class="card rp-filters" (ngSubmit)="offset = 0; load()" aria-label="Filter sessions">
+      <div class="form-group">
+        <label for="rp-page">Page contains</label>
+        <input id="rp-page" name="page" [(ngModel)]="filters.page" placeholder="/checkout">
+      </div>
+      <div class="form-group">
+        <label for="rp-errors">Errors</label>
+        <select id="rp-errors" name="errors" [(ngModel)]="filters.errors">
           <option value="">Any</option><option value="true">With errors</option><option value="false">Without errors</option>
         </select>
-      </label>
-      <label>Min duration (s) <input name="min" type="number" min="0" [(ngModel)]="filters.minDurationSec"></label>
-      <label>Max duration (s) <input name="max" type="number" min="0" [(ngModel)]="filters.maxDurationSec"></label>
-      <label>Environment <input name="env" [(ngModel)]="filters.environment" placeholder="e.g. production"></label>
-      <button type="submit" [disabled]="busy">Filter</button>
+      </div>
+      <div class="form-group">
+        <label for="rp-min">Min duration (s)</label>
+        <input id="rp-min" name="min" type="number" min="0" [(ngModel)]="filters.minDurationSec">
+      </div>
+      <div class="form-group">
+        <label for="rp-max">Max duration (s)</label>
+        <input id="rp-max" name="max" type="number" min="0" [(ngModel)]="filters.maxDurationSec">
+      </div>
+      <div class="form-group">
+        <label for="rp-env">Environment</label>
+        <input id="rp-env" name="env" [(ngModel)]="filters.environment" placeholder="production">
+      </div>
+      <button type="submit" class="btn" [disabled]="busy">Filter</button>
     </form>
 
-    @if (busy) { <p class="muted">Loading…</p> }
-    <div class="table-scroll"><table>
-      <thead><tr><th>Started</th><th>Duration</th><th>Pages</th><th>Errors</th><th>User</th><th>Browser</th><th></th></tr></thead>
-      <tbody>
-        @for (s of sessions; track s.session_id) {
-          <tr data-test="session-row">
-            <td>{{ s.started_at | date:'medium' }}<br><span class="muted">{{ s.environment || '—' }}{{ s.release ? ' · ' + s.release : '' }}</span></td>
-            <td>{{ duration(s.duration_ms) }}</td>
-            <td><div class="pages" [title]="s.pages.join(', ')">{{ s.first_page || '/' }}@if (s.pages.length > 1) { <span> +{{ s.pages.length - 1 }}</span> }</div></td>
-            <td>
-              @if (s.error_count > 0) { <span class="err">{{ s.error_count }}</span> } @else { 0 }
-              @if (s.network_error_count > 0) { <span class="net"> · {{ s.network_error_count }} net</span> }
-            </td>
-            <td>{{ s.user_id || 'anonymous' }}</td>
-            <td>{{ browser(s.user_agent) }}</td>
-            <td><a class="btn" [routerLink]="['/projects', projectId, 'replays', s.session_id]">Play</a></td>
-          </tr>
-        }
-      </tbody>
-    </table></div>
-    @if (loaded && !busy && !sessions.length) { <p class="muted" data-test="empty">No sessions for these filters.</p> }
-    <div class="pager">
-      <button type="button" (click)="page(-1)" [disabled]="offset === 0 || busy">Previous</button>
-      <button type="button" (click)="page(1)" [disabled]="sessions.length < 50 || busy">Next</button>
-    </div>
+    <section class="card card-flush" aria-label="Sessions">
+      @if (busy) { <p class="empty-state">Loading sessions…</p> }
+      @if (loaded && !busy && !sessions.length) { <p class="empty-state" data-test="empty">No sessions match these filters.</p> }
+      @if (sessions.length) {
+        <div class="table-scroll"><table>
+          <thead><tr><th>Started</th><th>Duration</th><th>Pages</th><th>Errors</th><th>User</th><th>Browser</th><th class="rp-right"><span class="rp-sr">Actions</span></th></tr></thead>
+          <tbody>
+            @for (s of sessions; track s.session_id) {
+              <tr data-test="session-row">
+                <td class="rp-nowrap">{{ s.started_at | date:'medium' }}<span class="rp-sub">{{ s.environment || '—' }}{{ s.release ? ' · ' + s.release : '' }}</span></td>
+                <td class="rp-nowrap">{{ duration(s.duration_ms) }}</td>
+                <td><div class="rp-pages mono" [title]="s.pages.join(', ')">{{ s.first_page || '/' }}@if (s.pages.length > 1) { <span> +{{ s.pages.length - 1 }}</span> }</div></td>
+                <td class="rp-nowrap">
+                  @if (s.error_count > 0) { <span class="rp-err">{{ s.error_count }}</span> } @else { 0 }
+                  @if (s.network_error_count > 0) { <span class="rp-net"> · {{ s.network_error_count }} network</span> }
+                </td>
+                <td>{{ s.user_id || 'Anonymous' }}</td>
+                <td>{{ browser(s.user_agent) }}</td>
+                <td class="rp-right"><a class="btn btn-sm" [routerLink]="['/projects', projectId, 'replays', s.session_id]">Play</a></td>
+              </tr>
+            }
+          </tbody>
+        </table></div>
+      }
+      @if (offset > 0 || sessions.length >= 50) {
+        <div class="rp-pager">
+          <button type="button" class="btn btn-sm" (click)="page(-1)" [disabled]="offset === 0 || busy">Previous</button>
+          <button type="button" class="btn btn-sm" (click)="page(1)" [disabled]="sessions.length < 50 || busy">Next</button>
+        </div>
+      }
+    </section>
   `,
 })
 export class ReplaysComponent implements OnInit {

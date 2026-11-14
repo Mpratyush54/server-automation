@@ -1,0 +1,52 @@
+/* SSO consent (standalone page, same frame as sign-in). */
+.oa-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  background: rgb(var(--canvas));
+}
+.oa-panel { width: 100%; max-width: 420px; }
+.oa-card {
+  padding: 28px;
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--line));
+  border-radius: 10px;
+}
+.oa-title { margin: 0 0 6px; font-size: 1.375rem; font-weight: 600; color: rgb(var(--fg)); }
+.oa-sub { margin: 0 0 16px; font-size: 0.875rem; color: rgb(var(--fg-2)); line-height: 1.5; }
+.oa-sub strong { color: rgb(var(--fg)); font-weight: 600; }
+.oa-note { margin: 0 0 6px; font-size: 0.8125rem; color: rgb(var(--fg-3)); }
+.oa-host {
+  margin: 0 0 24px;
+  padding: 8px 12px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 6px;
+  background: rgb(var(--raised));
+  font-size: 0.8125rem;
+  color: rgb(var(--fg));
+  overflow-wrap: anywhere;
+}
+.oa-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.oa-error {
+  margin: 0 0 24px;
+  padding: 10px 12px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: rgb(var(--down));
+  background: rgb(var(--down) / 0.08);
+  border: 1px solid rgb(var(--down) / 0.3);
+  border-radius: 6px;
+}
+.oa-spinner {
+  width: 28px;
+  height: 28px;
+  margin: 8px 0 0;
+  border: 3px solid rgb(var(--line));
+  border-top-color: rgb(var(--accent));
+  border-radius: 50%;
+  animation: oa-spin 1s linear infinite;
+}
+@keyframes oa-spin { to { transform: rotate(360deg); } }
+@media (max-width: 480px) { .oa-card { padding: 20px; } }

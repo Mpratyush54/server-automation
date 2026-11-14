@@ -36,7 +36,7 @@ export function webVitalQuery(vital: string, seconds: number): string {
   standalone: true,
   imports: [CommonModule, FormsModule, RouterModule, ObsLineChartComponent, ObsTraceViewComponent, ObsLogsComponent, ObsServiceMapComponent, ObsFlamegraphComponent],
   styleUrls: ['./obs-theme.css'],
-  styles: [`h1 { margin: 0; } .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; } .back { font-size: 0.85rem; } .search { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: end; } .search label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--obs-muted); } textarea.obs-input { width: 100%; box-sizing: border-box; min-height: 48px; }`],
+  styles: [`.obs-search { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; align-items: end; } .obs-search .obs-field input, .obs-search .obs-field select { width: 100%; min-width: 0; } textarea.obs-input { width: 100%; box-sizing: border-box; min-height: 56px; } .obs-profile-controls { margin-bottom: 16px; }`],
   templateUrl: './obs-project.component.html',
 })
 export class ObsProjectComponent implements OnInit, OnDestroy {

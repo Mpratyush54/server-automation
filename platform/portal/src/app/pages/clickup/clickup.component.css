@@ -1,1 +1,40 @@
-/* ClickUp integration page styles */
+/* ClickUp (cu-) */
+
+.cu-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-bottom: 24px;
+  align-items: start;
+}
+@media (max-width: 1024px) { .cu-grid { grid-template-columns: 1fr; } }
+
+.cu-body { padding: 20px; }
+.cu-field { display: flex; flex-direction: column; gap: 6px; }
+.cu-field + .cu-field { margin-top: 24px; }
+.cu-label { font-size: 0.8125rem; font-weight: 500; color: rgb(var(--fg-2)); }
+.cu-url {
+  display: block;
+  padding: 10px 12px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 6px;
+  background: rgb(var(--canvas));
+  color: rgb(var(--fg));
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+.cu-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: rgb(var(--fg-2));
+}
+.cu-list li + li { margin-top: 6px; }
+
+.cu-intro { margin: 0 0 16px; font-size: 0.875rem; color: rgb(var(--fg-2)); }
+.cu-send { width: 100%; }
+
+.cu-strong { font-weight: 500; }
+.cu-branch { font-size: 0.8125rem; overflow-wrap: anywhere; }
+.cu-nowrap { white-space: nowrap; }

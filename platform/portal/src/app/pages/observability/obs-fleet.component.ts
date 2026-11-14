@@ -15,20 +15,20 @@ const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown
   standalone: true,
   imports: [CommonModule, FormsModule, RouterModule],
   styleUrls: ['./obs-theme.css'],
-  styles: [`h1 { margin: 0 0 4px; } .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; } th button { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 0; }`],
+  styles: [`th button { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 0; } th button:hover { color: var(--obs-text); } th button:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: 2px; border-radius: 2px; } .obs-note { margin: -12px 0 24px; font-size: 0.8125rem; }`],
   template: `
-    <div class="head">
+    <div class="obs-head">
       <div>
         <h1 class="page-title">Observability</h1>
-        <p class="obs-muted" style="margin:0">Health, traffic, errors and latency across {{ scope === 'all' ? 'all projects' : 'your projects' }}.</p>
+        <p class="page-subtitle">Health, traffic, errors and latency across {{ scope === 'all' ? 'all projects' : 'your projects' }}.</p>
       </div>
-      <div class="obs-row">
-        <label class="obs-muted">Time range
+      <div class="obs-controls">
+        <label class="obs-field">Time range
           <select class="obs-select" [(ngModel)]="since" (ngModelChange)="onSince()" aria-label="Time range">
             @for (o of sinceOptions; track o.value) { <option [value]="o.value">{{ o.label }}</option> }
           </select>
         </label>
-        <button class="obs-btn" (click)="load()" [disabled]="loading">Refresh</button>
+        <button type="button" class="obs-btn" (click)="load()" [disabled]="loading">Refresh</button>
       </div>
     </div>
 
@@ -41,14 +41,14 @@ const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown
     }
     @if (telemetryError) { <div class="obs-banner error">{{ telemetryError }}</div> }
 
-    <div class="obs-grid" style="margin-bottom:16px">
-      <div class="obs-stat"><div class="label">Projects</div><div class="value">{{ rows.length }}</div></div>
-      <div class="obs-stat"><div class="label">Critical</div><div class="value obs-bad">{{ count('critical') }}</div></div>
-      <div class="obs-stat"><div class="label">Degraded</div><div class="value obs-warn">{{ count('degraded') }}</div></div>
-      <div class="obs-stat"><div class="label">Active alerts</div><div class="value">{{ totalAlerts() }}</div></div>
-    </div>
+    <section class="obs-stats" aria-label="Summary">
+      <div class="obs-stat"><span class="label">Projects</span><span class="value">{{ rows.length }}</span></div>
+      <div class="obs-stat"><span class="label">Critical</span><span class="value" [class.obs-bad]="count('critical') > 0">{{ count('critical') }}</span></div>
+      <div class="obs-stat"><span class="label">Degraded</span><span class="value" [class.obs-warn]="count('degraded') > 0">{{ count('degraded') }}</span></div>
+      <div class="obs-stat"><span class="label">Active alerts</span><span class="value">{{ totalAlerts() }}</span></div>
+    </section>
 
-    <div class="obs-card" style="padding:0;overflow-x:auto">
+    <section class="obs-card flush" aria-label="Projects">
       @if (loading && !rows.length) {
         <div class="obs-empty">Loading…</div>
       } @else if (!rows.length) {
@@ -69,7 +69,7 @@ const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown
           <tbody>
             @for (r of sorted(); track r.projectId) {
               <tr class="clickable" (click)="open(r)" [attr.data-project]="r.projectId">
-                <td><span class="obs-row" style="gap:6px"><span class="obs-dot" [class]="'obs-dot ' + r.health"></span>{{ label(r.health) }}</span></td>
+                <td><span class="obs-row tight"><span class="obs-dot" [class]="'obs-dot ' + r.health"></span>{{ label(r.health) }}</span></td>
                 <td><a [routerLink]="['/projects', r.projectId, 'observability']" [queryParams]="{ since }" (click)="$event.stopPropagation()">{{ r.name }}</a></td>
                 <td class="obs-num">{{ rate(r.requestRate) }}</td>
                 <td class="obs-num" [class.obs-bad]="(r.errorRate ?? 0) >= 5" [class.obs-warn]="(r.errorRate ?? 0) >= 1 && (r.errorRate ?? 0) < 5">{{ pct(r.errorRate) }}</td>
@@ -83,8 +83,8 @@ const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown
           </tbody>
         </table></div>
       }
-    </div>
-    @if (truncated) { <p class="obs-faint">Only the first projects are shown.</p> }
+    </section>
+    @if (truncated) { <p class="obs-faint obs-note">Only the first projects are shown.</p> }
   `,
 })
 export class ObsFleetComponent implements OnInit {

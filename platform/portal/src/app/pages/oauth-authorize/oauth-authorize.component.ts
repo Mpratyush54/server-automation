@@ -20,66 +20,40 @@ const FORWARDED_PARAMS = ['client_id', 'redirect_uri', 'response_type', 'scope',
   selector: 'app-oauth-authorize',
   standalone: true,
   imports: [],
+  styleUrl: './oauth-authorize.component.css',
   template: `
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background: #0D0F14; color: #fff; font-family: sans-serif; padding: 16px; box-sizing: border-box;">
-      <div style="text-align: center; padding: 40px; background: #14171F; border: 1px solid #1C2030; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); max-width: 420px; width: 100%; box-sizing: border-box;">
-        <span style="font-size: 3rem; margin-bottom: 20px; display: inline-block;">⚡</span>
-        <h2 style="margin: 0 0 10px 0; font-size: 1.5rem; color: #fff;">Single sign-on</h2>
-    
-        @switch (status) {
-          @case ('loading') {
-            <div>
-              <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 24px;">Checking the application…</p>
-              <div class="spinner"></div>
-            </div>
-          }
-          @case ('consent') {
-            <div>
-              <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 8px; line-height: 1.5;">
-                <strong style="color: #fff;">{{ clientName }}</strong> wants to sign you in with your Platform account.
+    <main class="oa-page">
+      <div class="oa-panel">
+        <section class="oa-card" aria-labelledby="oa-title">
+          <h1 id="oa-title" class="oa-title">Single sign-on</h1>
+
+          @switch (status) {
+            @case ('loading') {
+              <p class="oa-sub">Checking the application…</p>
+              <div class="oa-spinner" role="status" aria-label="Loading"></div>
+            }
+            @case ('consent') {
+              <p class="oa-sub">
+                <strong>{{ clientName }}</strong> wants to sign you in with your Platform account.
               </p>
-              <p style="color: #64748b; font-size: 0.8rem; margin-bottom: 8px; line-height: 1.5;">
-                It will receive your name, email and role. You will be sent back to:
-              </p>
-              <p data-testid="redirect-host" style="color: #cbd5e1; font-size: 0.8rem; margin-bottom: 24px; word-break: break-all;">{{ redirectHost }}</p>
-              <div style="display: flex; gap: 12px; justify-content: center;">
-                <button type="button" class="btn-secondary" (click)="deny()" [disabled]="busy">Cancel</button>
-                <button type="button" class="btn-primary" (click)="allow()" [disabled]="busy">Allow</button>
+              <p class="oa-note">It will receive your name, email and role. You will be sent back to:</p>
+              <p data-testid="redirect-host" class="oa-host mono">{{ redirectHost }}</p>
+              <div class="oa-actions">
+                <button type="button" class="btn" (click)="deny()" [disabled]="busy">Cancel</button>
+                <button type="button" class="btn btn-primary" (click)="allow()" [disabled]="busy">Allow</button>
               </div>
-            </div>
+            }
+            @case ('error') {
+              <p data-testid="oauth-error" class="oa-error" role="alert">{{ errorMessage }}</p>
+              <div class="oa-actions">
+                <button type="button" class="btn" (click)="goHome()">Back to Platform</button>
+              </div>
+            }
           }
-          @case ('error') {
-            <div>
-              <p data-testid="oauth-error" style="color: #f87171; font-size: 0.9rem; margin-bottom: 24px; line-height: 1.5;">{{ errorMessage }}</p>
-              <button type="button" class="btn-secondary" (click)="goHome()">Back to Platform</button>
-            </div>
-          }
-        }
+        </section>
       </div>
-    </div>
+    </main>
     `,
-  styles: [`
-    .spinner {
-      border: 3px solid rgba(91, 110, 245, 0.1);
-      border-top-color: #5b6ef5;
-      border-radius: 50%;
-      width: 36px;
-      height: 36px;
-      animation: spin 1s linear infinite;
-      margin: 0 auto;
-    }
-    .btn-primary, .btn-secondary {
-      padding: 10px 22px;
-      border-radius: 8px;
-      font-size: 0.9rem;
-      cursor: pointer;
-      border: 1px solid #2a3042;
-    }
-    .btn-primary { background: #5b6ef5; color: #fff; border-color: #5b6ef5; }
-    .btn-secondary { background: transparent; color: #cbd5e1; }
-    button[disabled] { opacity: 0.6; cursor: default; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-  `]
 })
 export class OauthAuthorizeComponent implements OnInit {
   status: 'loading' | 'consent' | 'error' = 'loading';

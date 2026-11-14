@@ -1,0 +1,30 @@
+/* CI/CD templates (ci-) */
+
+.ci-setup { margin-bottom: 24px; padding: 20px; }
+.ci-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; max-width: 48rem; }
+.ci-fields .form-group { margin-bottom: 0; }
+@media (max-width: 640px) { .ci-fields { grid-template-columns: 1fr; gap: 16px; } }
+.ci-hint { margin: 12px 0 0; }
+
+.ci-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 1024px) { .ci-grid { grid-template-columns: 1fr; } }
+
+.ci-body { padding: 20px; }
+.ci-code {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 6px;
+  background: rgb(var(--canvas));
+  color: rgb(var(--fg));
+  font-size: 0.8125rem;
+  white-space: pre;
+}
+.ci-empty { margin: 0; font-size: 0.875rem; color: rgb(var(--fg-3)); }

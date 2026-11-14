@@ -51,7 +51,7 @@ export class AppComponent implements OnDestroy {
     'clickup': 'ClickUp Integration',
     'infrastructure': 'Infrastructure',
     'audit-logs': 'Audit Logs',
-    'users': 'User Management',
+    'users': 'Users',
     'playground': 'API Documentation & Playground',
     'settings': 'Settings',
     'profile': 'Profile'

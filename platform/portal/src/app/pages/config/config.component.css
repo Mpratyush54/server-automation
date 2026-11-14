@@ -1,0 +1,20 @@
+/* Configuration (cf-) */
+
+.cf-lookup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 20px;
+}
+.cf-field { flex: 1 1 280px; max-width: 28rem; margin-bottom: 0; }
+
+.cf-values { margin-bottom: 24px; }
+.cf-key { font-size: 0.8125rem; }
+.cf-value { overflow-wrap: anywhere; }
+
+.cf-body { padding: 20px; }
+.cf-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+@media (max-width: 640px) { .cf-grid { grid-template-columns: 1fr; } }
+.cf-hint { margin-left: 12px; }

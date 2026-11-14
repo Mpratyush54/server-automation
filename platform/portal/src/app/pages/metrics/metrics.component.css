@@ -1,0 +1,14 @@
+.mt-section { margin-bottom: 24px; padding: 20px; }
+.mt-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0 16px;
+}
+.mt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.mt-env { font-weight: 400; font-size: 0.8125rem; }
+.mt-facts { padding: 16px 20px; }
+.mt-facts dd { text-align: right; font-variant-numeric: tabular-nums; }

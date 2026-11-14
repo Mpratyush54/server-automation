@@ -1,38 +1,79 @@
-<div class="card">
-  <h2>CI/CD Templates</h2>
-  <div class="form-group"><label>Project Name</label><input [(ngModel)]="projectName" placeholder="my-service"></div>
-  <div class="form-group"><label>Stack</label><select [(ngModel)]="stack"><option value="nodejs">Node.js</option><option value="angular">Angular</option><option value="python">Python</option><option value="static">Static</option></select></div>
+<div class="page-header">
+  <div>
+    <h1 class="page-title">CI/CD templates</h1>
+    <p class="page-subtitle">Generate a Dockerfile, pipeline file, Helm chart and Kubernetes manifests to start a new service from.</p>
+  </div>
 </div>
 
+<section class="card ci-setup" aria-label="Service details">
+  <div class="ci-fields">
+    <div class="form-group">
+      <label for="ci-name">Project name</label>
+      <input id="ci-name" [(ngModel)]="projectName" placeholder="my-service" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label for="ci-stack">Stack</label>
+      <select id="ci-stack" [(ngModel)]="stack"><option value="nodejs">Node.js</option><option value="angular">Angular</option><option value="python">Python</option><option value="static">Static site</option></select>
+    </div>
+  </div>
+  @if (!projectName) {
+    <p class="form-hint ci-hint">Enter a project name to generate templates.</p>
+  }
+</section>
+
 @if (projectName) {
-  <div class="grid-2">
-    <div class="card">
-      <h2>Dockerfile</h2>
-      <button class="btn btn-primary btn-sm" (click)="loadDockerfile()">Generate</button>
-      @if (dockerfile) {
-        <pre>{{ dockerfile }}</pre>
-      }
-    </div>
-    <div class="card">
-      <h2>.gitlab-ci.yml</h2>
-      <button class="btn btn-primary btn-sm" (click)="loadGitlabCi()">Generate</button>
-      @if (gitlabCi) {
-        <pre>{{ gitlabCi }}</pre>
-      }
-    </div>
-    <div class="card">
-      <h2>Helm Chart</h2>
-      <button class="btn btn-primary btn-sm" (click)="loadHelm()">Generate</button>
-      @if (helm) {
-        <pre>{{ helm | json }}</pre>
-      }
-    </div>
-    <div class="card">
-      <h2>Kubernetes Manifests</h2>
-      <button class="btn btn-primary btn-sm" (click)="loadK8s()">Generate</button>
-      @if (k8s) {
-        <pre>{{ k8s | json }}</pre>
-      }
-    </div>
+  <div class="ci-grid">
+    <section class="card card-flush" aria-labelledby="ci-docker">
+      <div class="card-header">
+        <h2 id="ci-docker">Dockerfile</h2>
+        <button type="button" class="btn btn-sm" (click)="loadDockerfile()" [disabled]="loading">Generate</button>
+      </div>
+      <div class="ci-body">
+        @if (dockerfile) {
+          <pre class="ci-code">{{ dockerfile }}</pre>
+        } @else {
+          <p class="ci-empty">Not generated yet.</p>
+        }
+      </div>
+    </section>
+    <section class="card card-flush" aria-labelledby="ci-gitlab">
+      <div class="card-header">
+        <h2 id="ci-gitlab" class="mono">.gitlab-ci.yml</h2>
+        <button type="button" class="btn btn-sm" (click)="loadGitlabCi()" [disabled]="loading">Generate</button>
+      </div>
+      <div class="ci-body">
+        @if (gitlabCi) {
+          <pre class="ci-code">{{ gitlabCi }}</pre>
+        } @else {
+          <p class="ci-empty">Not generated yet.</p>
+        }
+      </div>
+    </section>
+    <section class="card card-flush" aria-labelledby="ci-helm">
+      <div class="card-header">
+        <h2 id="ci-helm">Helm chart</h2>
+        <button type="button" class="btn btn-sm" (click)="loadHelm()" [disabled]="loading">Generate</button>
+      </div>
+      <div class="ci-body">
+        @if (helm) {
+          <pre class="ci-code">{{ helm | json }}</pre>
+        } @else {
+          <p class="ci-empty">Not generated yet.</p>
+        }
+      </div>
+    </section>
+    <section class="card card-flush" aria-labelledby="ci-k8s">
+      <div class="card-header">
+        <h2 id="ci-k8s">Kubernetes manifests</h2>
+        <button type="button" class="btn btn-sm" (click)="loadK8s()" [disabled]="loading">Generate</button>
+      </div>
+      <div class="ci-body">
+        @if (k8s) {
+          <pre class="ci-code">{{ k8s | json }}</pre>
+        } @else {
+          <p class="ci-empty">Not generated yet.</p>
+        }
+      </div>
+    </section>
   </div>
 }

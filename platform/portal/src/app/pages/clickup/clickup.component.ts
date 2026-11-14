@@ -18,7 +18,7 @@ export class ClickupComponent implements OnInit {
   linkedTasks: any[] = [];
   isDevOps = false;
   webhookUrl = '';
-  fallbackWebhookUrl = 'https://<your-platform-domain>/integrations/clickup/webhook';
+  fallbackWebhookUrl = 'https://<your-platform-domain>/api/integrations/clickup/webhook';
 
   // Mock task simulator payload
   simulatedTask = {

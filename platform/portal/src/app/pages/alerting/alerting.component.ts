@@ -35,6 +35,7 @@ const CHANNEL_FIELDS: Record<string, { key: string; label: string; secret: boole
   standalone: true,
   imports: [FormsModule, DatePipe, DecimalPipe, JsonPipe, RouterLink],
   templateUrl: './alerting.component.html',
+  styleUrl: './alerting.component.css',
 })
 export class AlertingComponent implements OnInit {
   readonly tabs: { id: Tab; label: string }[] = [

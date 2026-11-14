@@ -1,31 +1,62 @@
-<div class="card">
-  <h2>Runtime Configuration</h2>
-  <div class="form-group"><label>Project ID</label><input [(ngModel)]="projectId" placeholder="Enter project ID"></div>
-  <button class="btn btn-primary" (click)="load()" [disabled]="!projectId">Load Config</button>
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Configuration</h1>
+    <p class="page-subtitle">Runtime settings your app reads for a project. Secret values stay hidden on this page.</p>
+  </div>
 </div>
+
+<section class="card cf-lookup" aria-label="Choose a project">
+  <div class="form-group cf-field">
+    <label for="cf-project">Project ID</label>
+    <input id="cf-project" class="mono" [(ngModel)]="projectId" placeholder="Enter project ID" autocomplete="off" (keyup.enter)="projectId && load()">
+  </div>
+  <button type="button" class="btn" (click)="load()" [disabled]="!projectId">Load config</button>
+</section>
 
 @if (configEntries.length) {
-  <div class="card">
-    <h2>Config Values</h2>
-    <table>
-      <thead><tr><th>Key</th><th>Value</th><th>Secret</th></tr></thead>
-      <tbody>
-        @for (c of configEntries; track c) {
-          <tr>
-            <td><code>{{ c.key }}</code></td>
-            <td>{{ c.isSecret ? '••••••••' : c.value }}</td>
-            <td>{{ c.isSecret ? 'Yes' : 'No' }}</td>
-          </tr>
-        }
-      </tbody>
-    </table>
-  </div>
+  <section class="card card-flush cf-values" aria-labelledby="cf-values-title">
+    <div class="card-header">
+      <h2 id="cf-values-title">Values</h2>
+      <span class="badge">{{ configEntries.length }}</span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Key</th><th>Value</th><th>Secret</th></tr></thead>
+        <tbody>
+          @for (c of configEntries; track c) {
+            <tr>
+              <td class="mono cf-key">{{ c.key }}</td>
+              <td class="cf-value" [class.muted]="c.isSecret">{{ c.isSecret ? '••••••••' : c.value }}</td>
+              <td>{{ c.isSecret ? 'Yes' : 'No' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
 }
 
-<div class="card">
-  <h2>Set Config</h2>
-  <div class="form-group"><label>Key</label><input [(ngModel)]="newConfig.key" placeholder="storage.bucket"></div>
-  <div class="form-group"><label>Value</label><input [(ngModel)]="newConfig.value" placeholder="my-bucket"></div>
-  <div class="form-group"><label><input type="checkbox" [(ngModel)]="newConfig.isSecret"> Secret</label></div>
-  <button class="btn btn-primary" (click)="setConfig()" [disabled]="!projectId || !newConfig.key">Save</button>
-</div>
+<section class="card card-flush" aria-labelledby="cf-set-title">
+  <div class="card-header">
+    <h2 id="cf-set-title">Set a value</h2>
+  </div>
+  <div class="cf-body">
+    <div class="cf-grid">
+      <div class="form-group">
+        <label for="cf-key">Key</label>
+        <input id="cf-key" class="mono" [(ngModel)]="newConfig.key" placeholder="storage.bucket" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label for="cf-val">Value</label>
+        <input id="cf-val" [(ngModel)]="newConfig.value" placeholder="my-bucket" autocomplete="off">
+      </div>
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" [(ngModel)]="newConfig.isSecret"> Secret (hide the value after saving)</label>
+    </div>
+    <button type="button" class="btn btn-primary" (click)="setConfig()" [disabled]="!projectId || !newConfig.key">Save</button>
+    @if (!projectId) {
+      <span class="form-hint cf-hint">Enter a project ID above first.</span>
+    }
+  </div>
+</section>

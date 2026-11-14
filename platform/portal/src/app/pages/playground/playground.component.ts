@@ -38,88 +38,89 @@ interface ApiGroup {
 export class PlaygroundComponent implements OnInit {
   groups: ApiGroup[] = [
     {
-      name: 'Authentication & Users',
+      name: 'Sign-in and users',
       endpoints: [
         {
           method: 'POST',
           path: '/api/auth/login',
-          description: 'Authenticate with email/username and password; returns a human JWT. Password is required (passwordless login is not supported).',
+          description: 'Sign in with an email or username and password. Returns a session token, or an MFA challenge to finish with POST /api/auth/mfa/challenge when the account uses an authenticator app.',
           parameters: [
-            { name: 'email', type: 'body', required: true, value: 'john@@pratyushes.dev', description: 'User login email address' },
+            { name: 'email', type: 'body', required: true, value: '', placeholder: 'you@example.com', description: 'Email address or username' },
             { name: 'password', type: 'body', required: true, value: '', placeholder: 'Account password', description: 'Account password' }
           ]
         },
         {
           method: 'GET',
           path: '/api/agent-tokens/me',
-          description: 'Return the current agent token identity (plat_agent_*) or human JWT profile.',
+          description: 'Show who the token belongs to: an agent token (plat_agent_…) with its scopes, or the signed-in person for a session token.',
           parameters: []
         },
         {
           method: 'GET',
-          path: '/api/users/init-demo',
-          description: 'Create or update the single ADMIN_EMAIL admin account (no demo users).',
+          path: '/api/users/me',
+          description: 'Return the signed-in user\'s profile.',
           parameters: []
         },
         {
           method: 'GET',
           path: '/api/users',
-          description: 'Retrieve a list of all registered portal users (restricted to DevOps/Tech Lead).',
+          description: 'List every portal user. Admins, DevOps and tech leads only; agent tokens are refused.',
           parameters: []
         },
         {
           method: 'POST',
           path: '/api/users',
-          description: 'Create a new user profile (restricted to DevOps).',
+          description: 'Create a user who can sign in with the given password. Admins and DevOps only; agent tokens are refused.',
           parameters: [
             { name: 'name', type: 'body', required: true, value: 'New Developer' },
-            { name: 'email', type: 'body', required: true, value: 'newdev@@pratyushes.dev' },
-            { name: 'role', type: 'body', required: true, value: 'developer', description: 'developer, tech_lead, or devops' },
-            { name: 'gitlabId', type: 'body', required: false, value: '' }
+            { name: 'email', type: 'body', required: true, value: 'newdev@example.com' },
+            { name: 'password', type: 'body', required: true, value: '', placeholder: 'At least 8 characters', description: 'At least 8 characters' },
+            { name: 'role', type: 'body', required: false, value: 'developer', description: 'viewer, developer, tech_lead, devops or admin (default developer)' },
+            { name: 'username', type: 'body', required: false, value: '', description: 'Defaults to the part of the email before @' }
           ]
         }
       ]
     },
     {
-      name: 'Projects Engine',
+      name: 'Projects',
       endpoints: [
         {
           method: 'GET',
           path: '/api/projects',
-          description: 'Retrieve all projects including their environment lists and deployment histories.',
+          description: 'List the projects you can see, with their environments.',
           parameters: []
         },
         {
           method: 'POST',
           path: '/api/projects',
-          description: 'Provision a new project and initialize staging/production environments (restricted to DevOps/Tech Lead).',
+          description: 'Create a project with staging and production environments. Admins, DevOps and tech leads only.',
           parameters: [
             { name: 'name', type: 'body', required: true, value: 'payment-gateway' },
-            { name: 'stack', type: 'body', required: true, value: 'nodejs', description: 'nodejs, angular, python, static' },
-            { name: 'repositoryUrl', type: 'body', required: true, value: 'https://gitlab.@pratyushes.dev/payments/gateway.git' }
+            { name: 'stack', type: 'body', required: true, value: 'nodejs', description: 'nodejs, angular, python or static' },
+            { name: 'repositoryUrl', type: 'body', required: false, value: '', placeholder: 'https://github.com/acme/gateway', description: 'GitHub or GitLab repository; can be connected later' }
           ]
         },
         {
           method: 'GET',
           path: '/api/projects/:id',
-          description: 'Retrieve detailed config, metadata, environments, and deployments for a specific project.',
+          description: 'Get one project with its settings, environments and deployments.',
           parameters: [
-            { name: 'id', type: 'path', required: true, value: '', placeholder: 'Project UUID' }
+            { name: 'id', type: 'path', required: true, value: '', placeholder: 'Project ID' }
           ]
         }
       ]
     },
     {
-      name: 'Deployment Engine',
+      name: 'Deployments',
       endpoints: [
         {
           method: 'POST',
           path: '/api/deploy',
-          description: 'Trigger a deployment to Kubernetes. Automatically creates preview instances if branch contains task tags.',
+          description: 'Deploy a version to an environment. Set environmentName to preview and leave environmentId empty to create a preview environment.',
           parameters: [
             { name: 'projectId', type: 'body', required: true, value: '' },
-            { name: 'environmentId', type: 'body', required: false, value: '', description: 'Empty for preview deployment creation' },
-            { name: 'environmentName', type: 'body', required: false, value: 'preview', description: 'preview, staging, or production' },
+            { name: 'environmentId', type: 'body', required: false, value: '', description: 'Required unless environmentName is preview' },
+            { name: 'environmentName', type: 'body', required: false, value: 'preview', description: 'preview, staging or production' },
             { name: 'version', type: 'body', required: true, value: '1.2.0' },
             { name: 'branch', type: 'body', required: true, value: 'feature/CU-842-payment-auth' },
             { name: 'commitSha', type: 'body', required: true, value: 'd3f23a1a' }
@@ -128,7 +129,7 @@ export class PlaygroundComponent implements OnInit {
         {
           method: 'POST',
           path: '/api/rollback',
-          description: 'Rollback environment deployment to a previous release tag (restricted to DevOps/Tech Lead).',
+          description: 'Roll an environment back to an earlier release. DevOps and tech leads only.',
           parameters: [
             { name: 'deploymentId', type: 'body', required: true, value: '' },
             { name: 'previousVersion', type: 'body', required: false, value: '1.1.0' }
@@ -137,35 +138,35 @@ export class PlaygroundComponent implements OnInit {
       ]
     },
     {
-      name: 'Bootstrap & Node Engine',
+      name: 'Cluster',
       endpoints: [
         {
           method: 'GET',
           path: '/api/bootstrap/status',
-          description: 'Check connectivity status of central services like Prometheus, Loki, and ArgoCD.',
+          description: 'Check whether the platform services (Prometheus, Loki, Argo CD and others) are reachable.',
           parameters: []
         },
         {
           method: 'GET',
           path: '/api/bootstrap/nodes',
-          description: 'List all physical/virtual VPS nodes attached to the Hostinger KVM8 master cluster.',
+          description: 'List the cluster\'s nodes. DevOps, or an agent token with the cluster:read scope.',
           parameters: []
         },
         {
           method: 'GET',
           path: '/api/bootstrap/token',
-          description: 'Generate a one-time provisioning join token for adding fresh VPS machines (restricted to DevOps).',
+          description: 'Get a join token for adding a new server to the cluster. DevOps only.',
           parameters: []
         }
       ]
     },
     {
-      name: 'Config & Storage Gateway',
+      name: 'Config and storage',
       endpoints: [
         {
           method: 'GET',
           path: '/api/config',
-          description: 'Load config key/values for a project and environment.',
+          description: 'Load config keys and values for a project and environment.',
           parameters: [
             { name: 'projectId', type: 'query', required: true, value: '' },
             { name: 'environmentId', type: 'query', required: false, value: '' }
@@ -174,7 +175,7 @@ export class PlaygroundComponent implements OnInit {
         {
           method: 'POST',
           path: '/api/config',
-          description: 'Register or update configuration variables (restricted to DevOps/Tech Lead).',
+          description: 'Add or update a config value. DevOps and tech leads only.',
           parameters: [
             { name: 'projectId', type: 'body', required: true, value: '' },
             { name: 'key', type: 'body', required: true, value: 'DATABASE_TIMEOUT' },
@@ -185,11 +186,11 @@ export class PlaygroundComponent implements OnInit {
         {
           method: 'POST',
           path: '/api/storage/upload-url',
-          description: 'Request a signed upload URL redirect path from MinIO, S3, or Google Drive.',
+          description: 'Get a signed upload URL for a file. Also accepts a server SDK token (sdk_live_… or sdk_test_…) for its own project.',
           parameters: [
             { name: 'projectId', type: 'body', required: true, value: '' },
             { name: 'fileName', type: 'body', required: true, value: 'invoice.pdf' },
-            { name: 'category', type: 'body', required: true, value: 'uploads', description: 'certificates, media, or uploads' }
+            { name: 'category', type: 'body', required: true, value: 'uploads', description: 'certificates, media or uploads' }
           ]
         }
       ]

@@ -1,0 +1,74 @@
+.ag-project { margin: 0; min-width: min(260px, 100%); }
+.ag-mode { margin-left: 6px; vertical-align: middle; }
+
+.ag-section { margin-bottom: 24px; }
+.card.ag-section:not(.card-flush) { padding: 20px; }
+.ag-section h2 { margin: 0 0 16px; }
+.card-header h2 { margin: 0; }
+
+.ag-msg {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 12px 20px;
+  font-size: 0.875rem;
+  border-left: 3px solid rgb(var(--line-strong));
+}
+.ag-msg-error { color: rgb(var(--down)); border-left-color: rgb(var(--down)); }
+.ag-msg-ok { color: rgb(var(--fg)); border-left-color: rgb(var(--ok)); }
+.ag-msg-text { min-width: 0; overflow-wrap: anywhere; }
+
+.ag-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ag-filter { width: auto; max-width: 160px; height: 32px; padding-top: 0; padding-bottom: 0; }
+
+.ag-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0 16px;
+}
+.ag-cond { display: flex; gap: 6px; }
+.ag-op { flex: 0 0 72px; }
+.ag-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+
+.ag-title-cell { min-width: 200px; }
+.ag-title { font-weight: 500; }
+.ag-link { color: rgb(var(--fg)); text-decoration: underline; text-decoration-color: rgb(var(--line-strong)); text-underline-offset: 2px; }
+.ag-link:hover { text-decoration-color: rgb(var(--fg)); }
+.ag-sub { font-size: 0.75rem; color: rgb(var(--fg-3)); }
+.ag-title + .ag-sub { margin-top: 2px; }
+.ag-inline { margin-left: 6px; }
+.ag-code { font-size: 0.8125rem; overflow-wrap: anywhere; }
+.ag-nowrap { white-space: nowrap; }
+.ag-right { text-align: right; }
+.ag-row-actions { display: flex; justify-content: flex-end; gap: 8px; white-space: nowrap; }
+.ag-err { color: rgb(var(--down)); font-size: 0.8125rem; }
+.ag-err-mark { margin-left: 6px; font-size: 0.75rem; font-weight: 500; color: rgb(var(--down)); cursor: help; }
+
+/* SLO summaries */
+.ag-slo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+@media (max-width: 400px) { .ag-slo-grid { grid-template-columns: 1fr; } }
+.ag-slo { padding: 20px; display: flex; flex-direction: column; gap: 6px; }
+.ag-slo-head { display: flex; justify-content: space-between; gap: 12px; font-size: 0.875rem; }
+.ag-slo-budget { margin-top: 6px; font-size: 0.8125rem; color: rgb(var(--fg-2)); }
+.ag-slo-budget strong { color: rgb(var(--fg)); }
+.ag-meter { display: block; height: 6px; border-radius: 3px; background: rgb(var(--raised)); overflow: hidden; }
+.ag-meter span { display: block; height: 100%; background: rgb(var(--ok)); }
+.ag-meter span.ag-meter-low { background: rgb(var(--down)); }
+.ag-slo-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ag-slo-empty { margin: 6px 0; }
+.ag-slo-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+/* Forms that live under a table inside one panel */
+.ag-subform { padding: 20px; border-top: 1px solid rgb(var(--line)); }
+.ag-subform h3 { margin: 0 0 16px; font-size: 0.9375rem; font-weight: 600; color: rgb(var(--fg)); }
+.ag-fieldset { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }
+.ag-fieldset legend { padding: 0; margin-bottom: 6px; font-size: 0.875rem; font-weight: 500; color: rgb(var(--fg-2)); }
+.ag-checks { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 0.875rem; }
+.ag-schedule { max-width: 260px; margin-top: 10px; }

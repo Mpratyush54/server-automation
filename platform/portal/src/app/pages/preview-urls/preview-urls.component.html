@@ -1,69 +1,66 @@
-<div style="margin-bottom:24px;">
-  <h2 style="margin:0;font-size:1.5rem;font-weight:700;">Preview Environments</h2>
-  <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:4px 0 0 0;">Active feature branch deployments with 72-hour automated decay</p>
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Preview URLs</h1>
+    <p class="page-subtitle">Running branch previews. Each one is removed automatically 72 hours after it was deployed.</p>
+  </div>
 </div>
 
-<div class="card" style="padding:0;overflow:hidden;">
-  <table>
-    <thead>
-      <tr>
-        <th>Project</th>
-        <th>Branch Name</th>
-        <th>Live Preview URL</th>
-        <th>ClickUp Task ID</th>
-        <th>Deployed At</th>
-        <th>TTL Remaining</th>
-        <th style="text-align:right;">Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      @for (p of previews; track p) {
-        <tr>
-          <td style="font-weight:600;color:#fff;">{{ p.projectName }}</td>
-          <td>
-            <span style="font-family: monospace; background: rgba(255,255,255,0.05); padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; border: 1px solid var(--border-glass);">
-              {{ p.branch }}
-            </span>
-          </td>
-          <td>
-            <a [href]="p.previewUrl" target="_blank" style="display:inline-flex;align-items:center;gap:6px;">
-              {{ p.previewUrl }}
-              <svg style="width:14px;height:14px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-            </a>
-          </td>
-          <td>
-            @if (p.clickupTaskId) {
-              <span class="badge badge-pending" style="font-size:0.7rem;">
-                CU-{{ p.clickupTaskId }}
-              </span>
-            }
-            @if (!p.clickupTaskId) {
-              <span style="color:var(--color-text-muted);">—</span>
-            }
-          </td>
-          <td>{{ p.deployedAt | date:'medium' }}</td>
-          <td>
-          <span class="badge" [ngClass]="{
-            'badge-active': p.remainingTime !== 'Expired' && !p.remainingTime.startsWith('0'),
-            'badge-failed': p.remainingTime === 'Expired'
-          }" style="font-size:0.7rem;">
-              {{ p.remainingTime }}
-            </span>
-          </td>
-          <td style="text-align:right;">
-            <button class="btn btn-danger btn-sm" (click)="terminate(p.id)">Terminate</button>
-          </td>
-        </tr>
-      }
-      @if (previews.length === 0) {
-        <tr>
-          <td colspan="7" style="text-align:center;color:var(--color-text-muted);padding:32px;">
-            No active preview environments running on Kubernetes namespace.
-          </td>
-        </tr>
-      }
-    </tbody>
-  </table>
-</div>
+<section class="card card-flush" aria-label="Preview environments">
+  @if (previews.length === 0) {
+    <div class="empty-state">
+      <strong>No previews running</strong>
+      Deploy a branch to the preview environment and its URL shows here.
+    </div>
+  } @else {
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>Branch</th>
+            <th>Preview URL</th>
+            <th>ClickUp task</th>
+            <th>Deployed</th>
+            <th>Time left</th>
+            <th class="pv-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (p of previews; track p) {
+            <tr>
+              <td class="pv-strong">{{ p.projectName }}</td>
+              <td class="mono pv-branch">{{ p.branch }}</td>
+              <td>
+                <a class="pv-link" [href]="p.previewUrl" target="_blank" rel="noopener">
+                  <span class="pv-url">{{ p.previewUrl }}</span>
+                  <svg class="pv-ext" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+              </td>
+              <td>
+                @if (p.clickupTaskId) {
+                  <span class="mono">CU-{{ p.clickupTaskId }}</span>
+                }
+                @if (!p.clickupTaskId) {
+                  <span class="muted">—</span>
+                }
+              </td>
+              <td class="muted pv-nowrap">{{ p.deployedAt | date:'medium' }}</td>
+              <td>
+                <span class="status" [ngClass]="{
+                  'status-ok': p.remainingTime !== 'Expired' && !p.remainingTime.startsWith('0'),
+                  'status-warn': p.remainingTime.startsWith('0'),
+                  'status-down': p.remainingTime === 'Expired'
+                }">{{ p.remainingTime }}</span>
+              </td>
+              <td class="pv-right">
+                <button type="button" class="btn btn-danger btn-sm" (click)="terminate(p.id)">Terminate</button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>

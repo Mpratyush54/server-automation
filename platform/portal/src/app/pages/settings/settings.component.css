@@ -1,0 +1,141 @@
+/* Settings page (settings, git-connect and storage-settings share this file). */
+
+.st-section { margin-bottom: 24px; }
+.st-section:last-child { margin-bottom: 0; }
+.st-section > p:last-child { margin-bottom: 0; }
+
+.st-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  align-items: start;
+  margin-bottom: 24px;
+}
+.st-grid:last-child { margin-bottom: 0; }
+@media (max-width: 1024px) { .st-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.st-narrow { max-width: 720px; }
+
+/* Panel body: 20px from every edge, matching .card-header. */
+.st-body { padding: 20px; }
+.st-body > :first-child { margin-top: 0; }
+.st-body > :last-child { margin-bottom: 0; }
+.st-body + .st-body { border-top: 1px solid rgb(var(--line)); }
+
+.st-intro {
+  margin: 0 0 16px;
+  font-size: 0.875rem;
+  color: rgb(var(--fg-2));
+  max-width: 72ch;
+}
+.st-note { margin: 6px 0 0; font-size: 0.8125rem; color: rgb(var(--fg-3)); }
+.st-warn-text { color: rgb(var(--warn)); }
+
+.st-check { margin: 0 0 16px; font-size: 0.875rem; color: rgb(var(--fg-2)); }
+
+.st-readonly {
+  background: rgb(var(--raised));
+  color: rgb(var(--fg-2));
+  font-size: 0.8125rem;
+  cursor: text;
+}
+
+.st-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+.st-actions-end { justify-content: flex-end; }
+
+.st-msg { margin: 12px 0 0; font-size: 0.875rem; color: rgb(var(--fg-2)); }
+.st-msg.st-ok { color: rgb(var(--ok)); }
+.st-msg.st-err { color: rgb(var(--down)); }
+
+.st-callout {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid rgb(var(--line));
+  border-left: 3px solid rgb(var(--warn));
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: rgb(var(--fg));
+}
+
+/* Lists of configured items inside a panel. */
+.st-list { list-style: none; margin: 0; padding: 0; }
+.st-list > li {
+  padding: 16px 20px;
+  border-top: 1px solid rgb(var(--line));
+}
+.st-list > li:first-child { border-top: 0; }
+.st-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.st-item-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.st-item-name { font-weight: 500; color: rgb(var(--fg)); overflow-wrap: anywhere; }
+.st-item-meta { font-size: 0.8125rem; color: rgb(var(--fg-3)); overflow-wrap: anywhere; }
+.st-item-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.st-item-actions { display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
+.st-item-result { margin: 12px 0 0; font-size: 0.8125rem; overflow-wrap: anywhere; }
+
+.st-empty { padding: 32px 20px; text-align: center; font-size: 0.875rem; color: rgb(var(--fg-3)); }
+
+/* Backups strip. */
+.st-backups { list-style: none; margin: 0; padding: 0; }
+.st-backups li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 16px;
+  padding: 12px 20px;
+  border-top: 1px solid rgb(var(--line));
+  font-size: 0.875rem;
+}
+.st-backups li:first-child { border-top: 0; }
+.st-backups-label { min-width: 10rem; color: rgb(var(--fg-2)); }
+
+/* Role checkboxes. */
+.st-roles { border: 0; padding: 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 12px 20px; margin: 0 0 16px; }
+.st-roles label { font-size: 0.875rem; color: rgb(var(--fg)); }
+
+.st-pre {
+  margin: 6px 0 0;
+  padding: 12px 16px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 6px;
+  background: rgb(var(--raised));
+  color: rgb(var(--fg));
+  font-size: 0.8125rem;
+  overflow: auto;
+  max-width: 100%;
+}
+.st-subhead { margin: 20px 0 0; font-size: 0.875rem; font-weight: 600; color: rgb(var(--fg)); }
+
+.st-results { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.st-results li { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; font-size: 0.8125rem; }
+.st-results .st-result-detail { color: rgb(var(--fg-2)); overflow-wrap: anywhere; }
+
+/* Git connect. */
+.st-facts { margin: 0 0 16px; }
+.st-details { margin-top: 16px; }
+.st-details > summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: rgb(var(--accent-text));
+}
+.st-details[open] > summary { margin-bottom: 16px; }
+.st-advanced { margin: 0 0 6px; font-size: 1rem; font-weight: 600; }
+.st-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Storage list sits between two panel bodies. */
+.st-list-ruled > li:first-child { border-top: 1px solid rgb(var(--line)); }
+.st-list + .st-body, .st-empty + .st-body { border-top: 1px solid rgb(var(--line)); }
+.st-item-actions-below { margin-top: 12px; }
+.st-body app-operation-progress { display: block; margin-top: 12px; }

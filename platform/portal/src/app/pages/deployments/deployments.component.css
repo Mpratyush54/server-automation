@@ -1,0 +1,21 @@
+/* Deployments (dp-) */
+
+.dp-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-bottom: 24px;
+  align-items: start;
+}
+@media (max-width: 1024px) { .dp-grid { grid-template-columns: 1fr; } }
+
+.dp-body { padding: 20px; }
+.dp-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+@media (max-width: 560px) { .dp-row { grid-template-columns: 1fr; } }
+.dp-progress { margin-top: 16px; }
+
+.dp-strong { font-weight: 500; }
+.dp-branch { font-size: 0.8125rem; overflow-wrap: anywhere; }
+.dp-nowrap { white-space: nowrap; }
+.dp-right { text-align: right; }
+.dp-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
