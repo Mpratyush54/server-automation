@@ -155,6 +155,12 @@ export class PlaygroundComponent implements OnInit {
         },
         {
           method: 'GET',
+          path: '/api/bootstrap/node-metrics',
+          description: 'Live node CPU and memory from metrics-server. DevOps, or an agent token with the cluster:read scope.',
+          parameters: []
+        },
+        {
+          method: 'GET',
           path: '/api/bootstrap/token',
           description: 'Get a join token for adding a new server to the cluster. DevOps only.',
           parameters: []

@@ -103,6 +103,15 @@ describe('ApiService', () => {
     });
   });
 
+  describe('Bootstrap', () => {
+    it('should get node metrics', () => {
+      service.getNodeMetrics().subscribe();
+      const req = httpMock.expectOne('/api/bootstrap/node-metrics');
+      expect(req.request.method).toBe('GET');
+      req.flush({ k8sConnected: true, metricsAvailable: true, nodes: [] });
+    });
+  });
+
   describe('SDK', () => {
     it('should register service', () => {
       service.registerService({ serviceName: 'svc' }).subscribe();

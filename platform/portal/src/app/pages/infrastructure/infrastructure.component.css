@@ -149,24 +149,29 @@
 }
 .in-hint { margin: 16px 0 0; }
 
-/* Metrics charts. */
-.in-charts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-  gap: 16px;
+/* Live node metrics bars. */
+.in-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
 }
-.in-chart { padding: 20px; min-width: 0; }
-.in-chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.in-chart-head h2 { margin: 0; font-size: 0.875rem; color: rgb(var(--fg-2)); font-weight: 500; }
-.in-chart-value { font-size: 1.375rem; font-weight: 600; color: rgb(var(--fg)); font-variant-numeric: tabular-nums; }
-.in-chart svg { display: block; width: 100%; height: 160px; }
-.in-grid { stroke: rgb(var(--line)); stroke-dasharray: 3; vector-effect: non-scaling-stroke; }
-.in-axis { stroke: rgb(var(--line-strong)); vector-effect: non-scaling-stroke; }
-.in-line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.in-line-accent { stroke: rgb(var(--accent)); }
-.in-line-ok { stroke: rgb(var(--ok)); }
-.in-line-info { stroke: rgb(var(--info)); }
-.in-area-accent { fill: rgb(var(--accent) / 0.12); }
-.in-area-ok { fill: rgb(var(--ok) / 0.12); }
-.in-area-info { fill: rgb(var(--info) / 0.12); }
+.in-bar {
+  display: block;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.in-bar-track { fill: rgb(var(--raised)); }
+.in-bar-cpu { fill: rgb(var(--accent)); }
+.in-bar-mem { fill: rgb(var(--ok)); }
+.in-usage-value {
+  font-size: 0.8125rem;
+  color: rgb(var(--fg-2));
+  font-variant-numeric: tabular-nums;
+}
 .in-chart-note { margin: 8px 0 0; font-size: 0.8125rem; color: rgb(var(--fg-3)); }
+.in-metrics-note { padding: 0 20px 16px; }
+.in-metrics-loading { margin: 0 0 16px; font-size: 0.875rem; }
+.in-notice a { color: rgb(var(--accent)); }
