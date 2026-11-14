@@ -1,3 +1,4 @@
+import { applySourceWorkload, sourceWorkloadReady } from './source-deploy';
 import { releaseVersion } from './release-version';
 import { injectRelease } from './release-workloads';
 import * as k8s from '@kubernetes/client-node';
@@ -18,6 +19,7 @@ export const DEPLOY_OPERATION = 'deployment.deploy';
 type DeployState = {
   deploymentId: string;
   preview?: boolean;
+  source?: boolean;
   appName?: string;
   destNs?: string;
   host?: string;
@@ -111,6 +113,16 @@ export const deployOperation = defineOperation<DeployState>({
         dep.status = DeploymentStatus.DEPLOYING;
         await repo.save(dep);
 
+        if (dep.metadata?.sourceBuild) {
+          const name = `source-${env.id}`;
+          if (env.namespace !== target.namespace) { env.namespace = target.namespace; await ds.getRepository(Environment).save(env); }
+          await applySourceWorkload(env.namespace, name, dep.imageTag, project.id, String(env.name));
+          ctx.state.source = true; ctx.state.appName = name; ctx.state.destNs = env.namespace;
+          if (env.domain) await ensureProjectIngress({ projectId: project.id, environmentName: String(env.name),
+            name, namespace: env.namespace, host: env.domain, serviceName: name, servicePort: 80 });
+          return;
+        }
+
         if (env.name === EnvironmentName.PREVIEW) {
           ctx.state.preview = true;
           const ok = await deployK8sPreview(project.name, dep.branch, dep.imageTag, project.id, releaseVersion(dep));
@@ -166,6 +178,13 @@ export const deployOperation = defineOperation<DeployState>({
     {
       name: 'wait-healthy',
       async run(ctx) {
+        if (ctx.state.source) {
+          for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
+            if (await sourceWorkloadReady(ctx.state.destNs!, ctx.state.appName!)) return;
+            await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+          }
+          throw new Error('Source workload readiness timed out');
+        }
         if (ctx.state.preview) {
           ctx.setOutput({ note: 'preview workload applied synchronously' });
           return;

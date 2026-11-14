@@ -1,3 +1,4 @@
+import { PushBuildResult, queuePushBuilds } from '../lib/build-op';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { Project } from '../entities/Project';
@@ -38,6 +39,13 @@ async function verifyGitLabToken(token: string | undefined): Promise<boolean> {
   return verifyGitlabTokenAgainst(token, await gitlabWebhookSecrets());
 }
 
+/** Source-build environments never fall through to the legacy flow, even when a push is rejected. */
+function pushBuildResponse(result: PushBuildResult) {
+  if (result === 'queued') return { success: true, message: 'Source build queued' };
+  if (result === 'limited') return { success: false, message: 'Source build not queued: project build queue is full' };
+  return { success: false, message: 'Source build rejected: commit is not on the linked branch' };
+}
+
 const router = Router();
 
 router.post('/webhooks/github', async (req: Request, res: Response) => {
@@ -68,7 +76,10 @@ router.post('/webhooks/github', async (req: Request, res: Response) => {
 
       if (!project) return res.json({ success: false, message: 'No matching project' });
 
+      if (payload.deleted || !String(payload.ref).startsWith('refs/heads/')) return res.json({ success: true, message: 'Ref ignored' });
       const commitSha = payload.after || 'unknown';
+      const sourceBuild = await queuePushBuilds(project, branch, commitSha);
+      if (sourceBuild !== 'none') return res.json(pushBuildResponse(sourceBuild));
 
       if (branch === 'main' || branch === 'master') {
         const deployment = ds.getRepository(Deployment).create({
@@ -207,7 +218,10 @@ router.post('/webhooks/gitlab', async (req: Request, res: Response) => {
 
       if (!project) return res.json({ success: false, message: 'No matching project' });
 
+      if (!String(payload.ref).startsWith('refs/heads/') || /^0+$/.test(payload.after || '')) return res.json({ success: true, message: 'Ref ignored' });
       const commitSha = payload.after || payload.checkout_sha || 'unknown';
+      const sourceBuild = await queuePushBuilds(project, branch, commitSha);
+      if (sourceBuild !== 'none') return res.json(pushBuildResponse(sourceBuild));
 
       if (branch === 'main' || branch === 'master') {
         const deployment = ds.getRepository(Deployment).create({

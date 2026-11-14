@@ -28,6 +28,10 @@ export function isOperationLeader(): boolean {
 }
 
 export async function runOperationResume(): Promise<void> {
+  if (process.env.BUILDS_ENABLED === 'true') {
+    const { recoverBuildQueue } = await import('./build-op');
+    await recoverBuildQueue();
+  }
   await resumeOperations();
 }
 

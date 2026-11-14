@@ -190,8 +190,15 @@ it('grants exactly the verbs the baseline uses, namespaced only, with no broad R
     { apiGroups: ['apps'], resources: ['deployments', 'replicasets'], verbs: ['list'] },
     { apiGroups: ['networking.k8s.io'], resources: ['ingresses'], verbs: ['list'] },
     { apiGroups: ['cert-manager.io'], resources: ['certificates'], verbs: ['list'] },
+    // #55 source deployments: workload reads and one managed pull Secret.
+    { apiGroups: ['apps'], resources: ['deployments'], verbs: ['get'] },
+    { apiGroups: [''], resources: ['services'], verbs: ['get'] },
+    { apiGroups: [''], resources: ['secrets'], resourceNames: ['source-registry'], verbs: ['get', 'update'] },
+    { apiGroups: [''], resources: ['secrets'], verbs: ['create'] },
   ]);
-  expect(baseline.rules.flatMap((r: any) => r.resources)).not.toContain('secrets');
+  const secretReads = baseline.rules.filter((r: any) => r.resources.includes('secrets') && r.verbs.includes('get'));
+  expect(secretReads).toEqual([{ apiGroups: [''], resources: ['secrets'], resourceNames: ['source-registry'], verbs: ['get', 'update'] }]);
+  expect(baseline.rules.filter((r: any) => r.resources.includes('secrets')).flatMap((r: any) => r.verbs)).not.toContain('list');
   const api = docs.find(d => d.kind === 'ClusterRole' && d.metadata.name === 'platform-api');
   const rule = (resource: string) => api.rules.find((r: any) => r.resources.includes(resource));
   expect(rule('namespaces').verbs).toEqual(['get', 'list', 'create', 'update']);
@@ -279,4 +286,8 @@ it('reports the baseline applied when specs come back in typed client shape', as
   };
   const status: any = await namespaceBaselineStatus('project-a', env, { core: api, network: api, rbac: api } as any);
   expect(status).toMatchObject({ policyApplied: true, limitsApplied: true, quotaApplied: true });
+});
+
+it('reserves build and registry namespaces for platform infrastructure', () => {
+  expect(reservedNamespaces).toEqual(expect.arrayContaining(['builds', 'registry']));
 });

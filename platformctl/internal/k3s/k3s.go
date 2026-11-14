@@ -1,6 +1,7 @@
 package k3s
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,7 +41,13 @@ func RegistriesYAML(githubToken string) string {
 // WriteRegistries writes registries.yaml before k3s starts. It reports whether
 // the file changed; a running k3s must be restarted to pick up a change.
 func WriteRegistries(githubToken string) (bool, error) {
-	content := RegistriesYAML(githubToken)
+	var settings BuildRegistrySettings
+	if data, err := os.ReadFile(buildRegistrySettingsPath); err == nil {
+		if err := json.Unmarshal(data, &settings); err != nil {
+			return false, err
+		}
+	}
+	content := BuildRegistriesYAML(githubToken, settings)
 	if content == "" {
 		return false, nil
 	}

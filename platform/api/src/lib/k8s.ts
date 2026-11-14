@@ -645,12 +645,13 @@ export function previewResourceName(projectId: string, branch: string): string {
   return `preview-${createHash('sha256').update(projectId).digest('hex').slice(0, 16)}-${createHash('sha256').update(branch).digest('hex').slice(0, 16)}`;
 }
 
-export async function operateProjectWorkloads(namespace: string, appName: string, operation: 'restart' | 'scale' | 'terminate', replicas?: number): Promise<void> {
+export async function operateProjectWorkloads(namespace: string, appName: string, operation: 'restart' | 'scale' | 'terminate', replicas?: number, sourceBuild = false): Promise<void> {
   if (!namespace || ['default', 'platform', 'kube-system', 'preview'].includes(namespace)) throw new Error('Dedicated project namespace required');
   const response: any = await appsApi.listNamespacedDeployment({ namespace });
-  const deployments = (response.body || response).items || [];
+  const allDeployments = (response.body || response).items || [];
+  const deployments = sourceBuild ? allDeployments.filter((d: any) => d.metadata?.name === appName) : allDeployments;
   if (!deployments.length) throw new Error('No deployments found in project namespace');
-  if (operation === 'scale') {
+  if (operation === 'scale' && !sourceBuild) {
     const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
     const response: any = await customApi.getNamespacedCustomObject({ group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd', plural: 'applications', name: appName });
     const app = response.body || response;
@@ -661,7 +662,7 @@ export async function operateProjectWorkloads(namespace: string, appName: string
     app.spec.syncPolicy.syncOptions = Array.from(new Set([...(app.spec.syncPolicy.syncOptions || []), 'RespectIgnoreDifferences=true']));
     await customApi.replaceNamespacedCustomObject({ group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd', plural: 'applications', name: appName, body: app });
   }
-  if (operation === 'terminate') {
+  if (operation === 'terminate' && !sourceBuild) {
     const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
     // Delete the reconciler first so it cannot recreate the terminated workloads.
     await customApi.deleteNamespacedCustomObject({ group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd', plural: 'applications', name: appName });

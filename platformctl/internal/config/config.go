@@ -78,6 +78,13 @@ type Config struct {
 	// SyntheticsBrowser enables browser synthetic checks (headless Chromium
 	// CronJobs, #42). Only honored on the full profile with SYNTHETICS_BROWSER=true.
 	SyntheticsBrowser bool
+	BuildsEnabled     bool
+	BuildsEgressCIDRs string
+	BuildsS3Endpoint  string
+	BuildsS3Bucket    string
+	// BuildsRegistryNodeCIDRs lists node addresses allowed to pull from the
+	// in-cluster build registry besides the local node (needed on ha).
+	BuildsRegistryNodeCIDRs string
 
 	// Profile is the install profile (minimal|standard|full) that set the
 	// Install* defaults. See ApplyProfile.
@@ -202,6 +209,10 @@ func Load() *Config {
 	_, profileExplicit := explicit["PLATFORM_PROFILE"]
 	c.resolveAPIReplicas(explicitReplicas, profileExplicit)
 	c.resolveKyverno()
+	c.BuildsEgressCIDRs = getEnv("BUILDS_EGRESS_CIDRS", "")
+	c.BuildsS3Endpoint = getEnv("BUILDS_S3_ENDPOINT", "")
+	c.BuildsS3Bucket = getEnv("BUILDS_S3_BUCKET", "platform-registry")
+	c.BuildsRegistryNodeCIDRs = getEnv("BUILDS_REGISTRY_NODE_CIDRS", "")
 	c.loadCluster()
 	c.LonghornReplicas, _ = strconv.Atoi(strings.TrimSpace(os.Getenv("LONGHORN_REPLICAS")))
 	if c.LonghornReplicas < 1 || c.LonghornReplicas > 3 {
@@ -621,6 +632,7 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("INGRESS_IP_BURST=%d\n", c.IngressIPBurst))
 	b.WriteString(fmt.Sprintf("INGRESS_IP_CONNECTIONS=%d\n", c.IngressIPConnections))
 	b.WriteString(fmt.Sprintf("PLATFORM_PROFILE=%s\n", c.profileName()))
+	b.WriteString(fmt.Sprintf("BUILDS_ENABLED=%t\nBUILDS_EGRESS_CIDRS=%s\nBUILDS_S3_ENDPOINT=%s\nBUILDS_S3_BUCKET=%s\nBUILDS_REGISTRY_NODE_CIDRS=%s\n", c.BuildsEnabled, c.BuildsEgressCIDRs, c.BuildsS3Endpoint, c.BuildsS3Bucket, c.BuildsRegistryNodeCIDRs))
 	if c.TelemetrySamplingPercentage != "" {
 		b.WriteString(fmt.Sprintf("TELEMETRY_SAMPLING_PERCENTAGE=%s\n", c.TelemetrySamplingPercentage))
 	}
@@ -888,6 +900,7 @@ func (c *Config) ApplyProfile(name string) error {
 // profile default: it requires an explicit INSTALL_KYVERNO=true and a full
 // profile so single-server installs stay light.
 func (c *Config) resolveKyverno() {
+	c.BuildsEnabled = c.Profile != ProfileMinimal && getEnvBool("BUILDS_ENABLED", false)
 	// Browser synthetic checks (#42) follow the same rule: explicit opt-in, full profile only.
 	c.SyntheticsBrowser = FullFeatures(c.Profile) && getEnvBool("SYNTHETICS_BROWSER", false)
 	c.InstallKyverno = FullFeatures(c.Profile) && getEnvBool("INSTALL_KYVERNO", false)

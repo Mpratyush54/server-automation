@@ -59,6 +59,8 @@ func All() []Component {
 		{"argocd", "ArgoCD GitOps", InstallArgoCD},
 		{"monitoring", "Grafana + Prometheus + Loki", InstallMonitoring},
 		{"telemetry", "Full profile telemetry backends and collector", InstallTelemetry},
+		{"registry-gc", "Collect unreferenced registry blobs during a maintenance window", InstallRegistryGC},
+		{"builds", "Source builds and authenticated S3 registry (opt-in)", InstallBuilds},
 		{"synthetics", "Synthetic monitoring namespace, egress policies and API RBAC (full profile)", InstallSynthetics},
 		{"oauth2-proxy", "OAuth2 authentication proxy", InstallOAuthProxy},
 		{"portainer", "Container management UI (subdomain + Platform SSO)", InstallPortainer},
@@ -837,6 +839,7 @@ func UsePlatformImages(api, portal string) { platformImages.api, platformImages.
 // platformEnvValues is the platform-env Secret data for InstallPlatform.
 func platformEnvValues(cfg *config.Config) map[string]string {
 	m := map[string]string{
+		"BUILDS_ENABLED": strconv.FormatBool(BuildsEnabled(cfg)), "BUILDS_REGISTRY": "registry." + cfg.Domain,
 		"NODE_ENV": "production", "PORT": "3000", "JWT_SECRET": cfg.JWTSecret,
 		"SECRETS_ENCRYPTION_KEY": cfg.SecretsEncryptionKey, "PLATFORM_WEBHOOK_SECRET": cfg.WebhookSecret,
 		"POSTGRES_HOST": "postgresql.databases", "POSTGRES_PORT": "5432", "POSTGRES_DB": "platform", "POSTGRES_USER": "postgres",

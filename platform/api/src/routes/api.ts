@@ -32,6 +32,8 @@ import agentCommandRoutes from './agent-commands';
 import notificationRoutes from './notifications';
 import { loadOpenApiJson, OpenApiUnavailableError } from '../lib/openapi-spec';
 import healthRoutes from './health';
+import buildRoutes from './builds';
+import registryTokenRoutes from './registry-token';
 import operationRoutes from './operations';
 import backupRoutes from './backups';
 import telemetryRoutes from './telemetry';
@@ -45,6 +47,7 @@ import statusPageRoutes from './status-pages';
 import heatmapRoutes from './heatmaps';
 
 router.use('/', errorTrackingRoutes);
+router.use('/', registryTokenRoutes); // build registry realm: per-project pull credentials only (#55)
 router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB only; Redis reported, not gating)
 router.use('/', telemetryRoutes); // ingress-nginx external auth for the collector (#49); token-authenticated itself
 router.use('/', privacyRoutes); // PII scrubbing, retention, consent hooks, GDPR delete (#47)
@@ -56,6 +59,7 @@ router.use('/', versionRoutes);
 router.use('/', projectRoutes);
 router.use('/', projectArgoRoutes);
 router.use('/', deploymentRoutes);
+router.use('/', buildRoutes);
 router.use('/', releaseRoutes);
 router.use('/', configRoutes);
 router.use('/', secretRoutes);

@@ -34,7 +34,7 @@ export class Deployment {
   @Column({ type: 'varchar', length: 40, name: 'commit_sha' })
   commitSha: string;
 
-  @Column({ type: 'varchar', length: 200, name: 'image_tag' })
+  @Column({ type: 'text', name: 'image_tag' })
   imageTag: string;
 
   @Column({ type: 'enum', enum: DeploymentStatus })

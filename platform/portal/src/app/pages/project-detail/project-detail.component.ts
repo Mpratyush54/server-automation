@@ -1,3 +1,4 @@
+import { BuildsPanelComponent } from './builds-panel.component';
 import { DatabaseInsightsPanelComponent } from './database-insights-panel.component';
 import { ReleasesPanelComponent } from './releases-panel.component';
 import { AfterViewInit, Component, ElementRef, OnInit, OnDestroy, ViewChild, inject } from '@angular/core';
@@ -33,7 +34,7 @@ const MONITORING_PARAMS = ['view', 'issue', 'check', 'trace', 'logTrace', 'servi
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [DatabaseInsightsPanelComponent, ReleasesPanelComponent, CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent, ArgocdPanelComponent, ProjectOverviewComponent, ProjectSettingsSectionComponent,
+  imports: [BuildsPanelComponent, DatabaseInsightsPanelComponent, ReleasesPanelComponent, CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent, ArgocdPanelComponent, ProjectOverviewComponent, ProjectSettingsSectionComponent,
     ObsProjectComponent, ErrorsComponent, ReplaysComponent, HeatmapsComponent, SyntheticsComponent, StatusPageEditorComponent, ProjectAgentsComponent],
   templateUrl: './project-detail.component.html',
   styleUrls: ['./project-section-shared.css', './project-detail.component.css']

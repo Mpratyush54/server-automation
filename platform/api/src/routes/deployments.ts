@@ -327,13 +327,14 @@ async function controlDeployment(dep: Deployment, operation: 'restart' | 'scale'
   const ds = await getDb();
   const env = await ds.getRepository(Environment).findOne({ where: { id: dep.environmentId, projectId: dep.projectId } });
   if (!env) throw new Error('Deployment environment not found');
-  if (env.name === EnvironmentName.PREVIEW) {
+  if (env.name === EnvironmentName.PREVIEW && !dep.metadata?.sourceBuild) {
     if (operation !== 'terminate') throw new Error('Preview restart and scale are not supported');
     if (!await terminateK8sPreview(dep.branch, dep.projectId, dep.metadata?.previewResourceName as string | undefined, (dep.metadata as any)?.previewNamespace || 'preview')) throw new Error('Preview termination failed');
     return;
   }
   await assertDedicatedNamespace(env);
-  await operateProjectWorkloads(env.namespace, env.namespace, operation, replicas);
+  if (dep.metadata?.sourceBuild) await operateProjectWorkloads(env.namespace, `source-${env.id}`, operation, replicas, true);
+  else await operateProjectWorkloads(env.namespace, env.namespace, operation, replicas);
 }
 
 async function assertDedicatedNamespace(env: Environment): Promise<void> {

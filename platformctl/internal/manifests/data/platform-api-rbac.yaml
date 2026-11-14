@@ -20,7 +20,7 @@ spec:
   - name: platform-api-only
     expression: "request.userInfo.username == 'system:serviceaccount:platform:platform-api'"
   validations:
-  - expression: "namespaceObject != null && has(namespaceObject.metadata.labels) && 'platform.io/project' in namespaceObject.metadata.labels && 'platform.io/env' in namespaceObject.metadata.labels && !(namespaceObject.metadata.name in ['default', 'platform', 'databases', 'preview', 'ingress-nginx', 'argocd', 'cert-manager', 'monitoring', 'oauth2-proxy', 'portainer', 'storage']) && !namespaceObject.metadata.name.startsWith('kube-')"
+  - expression: "namespaceObject != null && has(namespaceObject.metadata.labels) && 'platform.io/project' in namespaceObject.metadata.labels && 'platform.io/env' in namespaceObject.metadata.labels && !(namespaceObject.metadata.name in ['default', 'platform', 'databases', 'preview', 'ingress-nginx', 'argocd', 'cert-manager', 'monitoring', 'oauth2-proxy', 'portainer', 'storage', 'builds', 'registry']) && !namespaceObject.metadata.name.startsWith('kube-')"
     message: "Baseline bindings require a dedicated project namespace"
   - expression: "object.metadata.name == 'platform-namespace-baseline' && object.roleRef.apiGroup == 'rbac.authorization.k8s.io' && object.roleRef.kind == 'ClusterRole' && object.roleRef.name == 'platform-namespace-baseline' && has(object.subjects) && size(object.subjects) == 1 && object.subjects[0].kind == 'ServiceAccount' && object.subjects[0].name == 'platform-api' && object.subjects[0].namespace == 'platform'"
     message: "Only the platform baseline binding may be bootstrapped"
@@ -49,7 +49,7 @@ spec:
   - name: platform-api-only
     expression: "request.userInfo.username == 'system:serviceaccount:platform:platform-api'"
   validations:
-  - expression: "!(object.metadata.name in ['default', 'platform', 'databases', 'preview', 'ingress-nginx', 'argocd', 'cert-manager', 'monitoring', 'oauth2-proxy', 'portainer', 'storage']) && !object.metadata.name.startsWith('kube-')"
+  - expression: "!(object.metadata.name in ['default', 'platform', 'databases', 'preview', 'ingress-nginx', 'argocd', 'cert-manager', 'monitoring', 'oauth2-proxy', 'portainer', 'storage', 'builds', 'registry']) && !object.metadata.name.startsWith('kube-')"
     message: "The platform API may only manage dedicated project namespaces"
   - expression: "has(object.metadata.labels) && 'platform.io/project' in object.metadata.labels && 'platform.io/env' in object.metadata.labels"
     message: "Project namespaces must carry platform.io/project and platform.io/env labels"
@@ -62,6 +62,41 @@ metadata:
   name: platform-project-namespaces
 spec:
   policyName: platform-project-namespaces
+  validationActions: [Deny]
+---
+# Source builds (#55): RBAC cannot restrict the name of a created object, so
+# the baseline "secrets: create" grant is confined here to the single image-pull
+# Secret the API writes in project namespaces (pull-only, per project).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: platform-project-secrets
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+      - {key: platform.io/project, operator: Exists}
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["secrets"]
+  matchConditions:
+  - name: platform-api-only
+    expression: "request.userInfo.username == 'system:serviceaccount:platform:platform-api'"
+  validations:
+  - expression: "object.metadata.name == 'source-registry' && has(object.type) && object.type == 'kubernetes.io/dockerconfigjson'"
+    message: "The platform API may only write the source-registry image-pull Secret in project namespaces"
+  - expression: "has(object.data) && size(object.data) == 1 && '.dockerconfigjson' in object.data"
+    message: "The source-registry Secret may only carry .dockerconfigjson"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: platform-project-secrets
+spec:
+  policyName: platform-project-secrets
   validationActions: [Deny]
 ---
 apiVersion: v1
@@ -260,3 +295,19 @@ rules:
 - apiGroups: ["cert-manager.io"]
   resources: ["certificates"]
   verbs: ["list"]
+
+# Source builds (#55): workload reads and a managed image-pull Secret, scoped
+# by the per-project namespace binding above. No secret list or delete rights.
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["source-registry"]
+  verbs: ["get", "update"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create"]
