@@ -1,4 +1,4 @@
-import { Component, OnDestroy } from '@angular/core';
+import { Component, HostListener, OnDestroy } from '@angular/core';
 import { RouterOutlet, NavigationEnd, Router } from '@angular/router';
 import { SidebarComponent } from './layout/sidebar/sidebar.component';
 import { HeaderComponent } from './layout/header/header.component';
@@ -38,7 +38,7 @@ export class AppComponent implements OnDestroy {
     'services': 'Services',
     'metrics': 'Metrics',
     'alerts': 'Alerts',
-    'alerting': 'Alerting',
+    'alerting': 'Alerts',
     'errors': 'Errors',
     'observability': 'Observability',
     'logs': 'Logs',
@@ -66,6 +66,15 @@ export class AppComponent implements OnDestroy {
     'observability': 'Observability',
     'replays': 'Session replays',
   };
+
+  /** Clicking anywhere in a date/time field opens its picker, not only the small icon. */
+  @HostListener('document:click', ['$event'])
+  openDatePicker(event: MouseEvent) {
+    const el = event.target as HTMLInputElement | null;
+    if (!el || el.tagName !== 'INPUT' || el.disabled || el.readOnly) return;
+    if (!['date', 'time', 'datetime-local', 'month', 'week'].includes(el.type)) return;
+    try { (el as any).showPicker?.(); } catch { /* not allowed in this context; the icon still works */ }
+  }
 
   constructor(router: Router) {
     if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {

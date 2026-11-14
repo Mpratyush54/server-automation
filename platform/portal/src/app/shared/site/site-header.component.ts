@@ -48,7 +48,7 @@ import { ThemeService } from '../../services/theme.service';
     </header>
   `,
   styles: [`
-    .sh { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: rgb(var(--canvas) / 0.86); backdrop-filter: blur(10px); border-bottom: 1px solid rgb(var(--line)); }
+    .sh { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: rgb(var(--canvas)); border-bottom: 1px solid rgb(var(--line)); }
     .sh-inner { max-width: 72rem; margin: 0 auto; height: 3.5rem; display: flex; align-items: center; gap: 1.5rem;
       padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
     .sh-brand { display: inline-flex; align-items: center; gap: 0.55rem; color: rgb(var(--fg)); text-decoration: none; font-weight: 600; letter-spacing: -0.01em; }
