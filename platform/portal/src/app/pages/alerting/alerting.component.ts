@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { DatePipe, DecimalPipe, JsonPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink, UrlTree } from '@angular/router';
@@ -7,6 +7,7 @@ import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { AlertingApiService } from './alerting-api.service';
 import { internalUrlTree } from '../../shared/internal-link';
+import { DialogService } from '../../shared/feedback/feedback.service';
 
 type Tab = 'incidents' | 'monitors' | 'slos' | 'silences' | 'channels' | 'oncall';
 
@@ -74,6 +75,8 @@ export class AlertingComponent implements OnInit {
   newChannel: any = { type: 'slack', name: '', minSeverity: 'info', fields: {} as Record<string, string> };
   newPolicy: any = { name: '', isDefault: true, step0: [] as string[], delay: 15, step1: [] as string[], step1Schedule: '' };
   newSchedule: any = { name: '', userIds: '', rotationHours: 168 };
+
+  private dialog = inject(DialogService);
 
   constructor(private api: ApiService, private alerting: AlertingApiService, private route: ActivatedRoute, private router: Router, private auth: AuthService) {}
 
@@ -187,7 +190,14 @@ export class AlertingComponent implements OnInit {
     try { await firstValueFrom(this.alerting.update(this.projectId, 'monitors', m.id, { enabled: !m.enabled })); await this.reload(); } catch (err) { this.fail(err); }
   }
   async deleteItem(what: 'monitors' | 'slos' | 'channels' | 'policies' | 'schedules', id: string) {
-    if (!confirm('Delete this item?')) return;
+    const label = { monitors: 'monitor', slos: 'SLO', channels: 'notification channel', policies: 'escalation policy', schedules: 'on-call schedule' }[what];
+    const ok = await this.dialog.confirm({
+      title: `Delete this ${label}?`,
+      message: `The ${label} is removed for this project. This cannot be undone.`,
+      confirmLabel: `Delete ${label}`,
+      danger: true,
+    });
+    if (!ok) return;
     try { await firstValueFrom(this.alerting.remove(this.projectId, what, id)); await this.reload(); } catch (err) { this.fail(err); }
   }
 

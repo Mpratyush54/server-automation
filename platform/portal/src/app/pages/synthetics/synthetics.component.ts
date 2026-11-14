@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+import { DialogService } from '../../shared/feedback/feedback.service';
 
 export type CheckType = 'http' | 'multistep' | 'browser' | 'ssl';
 
@@ -111,6 +112,8 @@ export function timelineBars(results: SyntheticResultView[], max = 60): Array<{ 
   styleUrl: './synthetics.component.css',
 })
 export class SyntheticsComponent implements OnInit, OnDestroy {
+  private dialog = inject(DialogService);
+
   private http = inject(HttpClient);
   private route = inject(ActivatedRoute);
   private cdr = inject(ChangeDetectorRef);
@@ -297,7 +300,13 @@ export class SyntheticsComponent implements OnInit, OnDestroy {
   }
 
   async remove(c: SyntheticCheckView) {
-    if (!confirm(`Delete check "${c.name}" and its history?`)) return;
+    const ok = await this.dialog.confirm({
+      title: `Delete check "${c.name}"?`,
+      message: 'The check stops running and its result history is removed. This cannot be undone.',
+      confirmLabel: 'Delete check',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.http.delete(`${this.base()}/checks/${c.id}`));
       if (this.selected?.id === c.id) { this.selected = null; this.results = []; this.bars = []; }

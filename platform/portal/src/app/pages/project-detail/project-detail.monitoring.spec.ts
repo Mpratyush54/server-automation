@@ -13,7 +13,6 @@ describe('Project detail monitoring views', () => {
   let router: Router;
 
   async function render(view: MonitoringView, observability: boolean, query: Record<string, string> = {}) {
-    if (!jasmine.isSpy(window.alert)) spyOn(window, 'alert');
     TestBed.configureTestingModule({
       imports: [ProjectDetailComponent],
       deferBlockBehavior: DeferBlockBehavior.Manual,

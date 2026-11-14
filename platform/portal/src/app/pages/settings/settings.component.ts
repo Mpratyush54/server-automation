@@ -10,6 +10,7 @@ import { StepUpService } from '../../services/step-up.service';
 import { MfaService } from '../../services/mfa.service';
 import { OperationProgressComponent } from '../../shared/operation-progress.component';
 import { GitConnectComponent } from './git-connect.component';
+import { ToastService, DialogService, errorText } from '../../shared/feedback/feedback.service';
 
 @Component({
   selector: 'app-settings',
@@ -180,7 +181,7 @@ import { GitConnectComponent } from './git-connect.component';
         </div>
         <div class="form-group">
           <label for="st-smtp-fromname">From name (optional)</label>
-          <input id="st-smtp-fromname" [(ngModel)]="newSmtp.fromName" placeholder="Platform">
+          <input id="st-smtp-fromname" [(ngModel)]="newSmtp.fromName" placeholder="Cairn">
         </div>
         <label class="st-check"><input type="checkbox" id="smtpDefault" [(ngModel)]="newSmtp.isDefault"> Send platform email from this server by default</label>
         <div class="st-actions">
@@ -429,6 +430,9 @@ export class SettingsComponent implements OnInit {
   mfaPolicyMessage = '';
   savingMfaPolicy = false;
 
+  private toast = inject(ToastService);
+  private dialog = inject(DialogService);
+
   constructor(private api: ApiService, private auth: AuthService) {}
 
   async loadMfaPolicy() {
@@ -533,7 +537,8 @@ export class SettingsComponent implements OnInit {
       await firstValueFrom(this.api.createSmtpConfig(payload));
       this.newSmtp = { name: '', provider: 'custom', host: '', port: 587, secure: false, username: '', password: '', fromEmail: '', fromName: '', isDefault: false };
       await this.loadSmtp();
-    } catch (err: any) { alert('Failed: ' + (err.error?.error || err.message)); }
+      this.toast.ok('Mail server saved');
+    } catch (err: any) { this.toast.error('Mail server was not saved: ' + errorText(err)); }
   }
 
   async testSmtp(s: any) {
@@ -544,7 +549,13 @@ export class SettingsComponent implements OnInit {
   }
 
   async deleteSmtp(id: string) {
-    if (!confirm('Remove SMTP config?')) return;
+    const ok = await this.dialog.confirm({
+      title: 'Remove this mail server?',
+      message: 'Cairn stops sending email through it. Add it again to restore it.',
+      confirmLabel: 'Remove mail server',
+      danger: true,
+    });
+    if (!ok) return;
     await firstValueFrom(this.api.deleteSmtpConfig(id));
     await this.loadSmtp();
   }
@@ -554,7 +565,8 @@ export class SettingsComponent implements OnInit {
       await firstValueFrom(this.api.createStorageProvider(this.newStorage));
       this.newStorage = { name: '', providerType: 'minio', endpointUrl: '', bucketName: '', isDefault: false, credentials: {} };
       await this.loadStorage();
-    } catch (err: any) { alert('Failed: ' + (err.error?.error || err.message)); }
+      this.toast.ok('Storage provider saved');
+    } catch (err: any) { this.toast.error('Storage provider was not saved: ' + errorText(err)); }
   }
 
   async testStorage(s: any) {
@@ -570,7 +582,13 @@ export class SettingsComponent implements OnInit {
   }
 
   async deleteStorage(id: string) {
-    if (!confirm('Remove storage provider?')) return;
+    const ok = await this.dialog.confirm({
+      title: 'Remove this storage provider?',
+      message: 'Cairn stops using it for backups and uploads. Files already stored in it are not deleted.',
+      confirmLabel: 'Remove provider',
+      danger: true,
+    });
+    if (!ok) return;
     await firstValueFrom(this.api.deleteStorageProvider(id));
     await this.loadStorage();
   }
@@ -591,7 +609,7 @@ export class SettingsComponent implements OnInit {
     } catch (err: any) {
       this.saveOk = false;
       this.saveMessage = err.error?.error || err.message || 'Save failed';
-      alert(this.saveMessage);
+      this.toast.error('Settings were not saved: ' + this.saveMessage);
     } finally {
       this.savingIntegrations = false;
     }

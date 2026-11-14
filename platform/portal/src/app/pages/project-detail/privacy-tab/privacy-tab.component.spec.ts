@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
+import { DialogService } from '../../../shared/feedback/feedback.service';
 import { PrivacyTabComponent } from './privacy-tab.component';
 import { ApiService } from '../../../services/api.service';
 
@@ -87,9 +88,9 @@ describe('PrivacyTabComponent', () => {
   it('GDPR delete asks for confirmation first', async () => {
     const f = await render();
     f.componentInstance.gdpr.userId = 'u1';
-    spyOn(window, 'confirm').and.returnValue(false);
+    const confirm = spyOn(TestBed.inject(DialogService), 'confirm').and.resolveTo(false);
     await f.componentInstance.runGdprDelete();
-    expect(window.confirm).toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledWith(jasmine.objectContaining({ danger: true, typeToConfirm: 'u1' }));
     expect(api.gdprDelete).not.toHaveBeenCalled();
   });
 });

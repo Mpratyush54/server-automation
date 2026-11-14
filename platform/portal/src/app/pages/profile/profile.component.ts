@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
@@ -6,6 +6,7 @@ import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { MfaService, MfaStatus, downloadRecoveryCodes } from '../../services/mfa.service';
 import { MfaEnrollmentComponent } from '../../shared/mfa-enrollment.component';
+import { DialogService } from '../../shared/feedback/feedback.service';
 
 @Component({
   selector: 'app-profile',
@@ -172,6 +173,8 @@ export class ProfileComponent implements OnInit {
   error = '';
   success = '';
 
+  private dialog = inject(DialogService);
+
   constructor(private api: ApiService, private auth: AuthService, private mfa: MfaService) {}
 
   get initials(): string {
@@ -210,7 +213,13 @@ export class ProfileComponent implements OnInit {
   }
 
   async disableMfa() {
-    if (!confirm('Turn off two-factor authentication?')) return;
+    const ok = await this.dialog.confirm({
+      title: 'Turn off two-factor authentication?',
+      message: 'Signing in will only need your password. You can turn it on again at any time.',
+      confirmLabel: 'Turn off',
+      danger: true,
+    });
+    if (!ok) return;
     this.mfaBusy = true;
     this.mfaMessage = '';
     try {

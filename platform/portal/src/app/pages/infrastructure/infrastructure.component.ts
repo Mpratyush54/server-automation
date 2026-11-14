@@ -1,8 +1,9 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
+import { ToastService, DialogService, errorText } from '../../shared/feedback/feedback.service';
 
 @Component({
   selector: 'app-infrastructure',
@@ -62,6 +63,9 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
   private pollInterval?: any;
   private metricsInterval?: any;
   private logPollInterval?: any;
+
+  private toast = inject(ToastService);
+  private dialog = inject(DialogService);
 
   constructor(private api: ApiService) {}
 
@@ -183,15 +187,19 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
   }
 
   async restartPod(pod: any) {
-    if (!confirm(`Are you sure you want to terminate and restart pod "${pod.name}" in namespace "${pod.namespace}"?`)) {
-      return;
-    }
+    const ok = await this.dialog.confirm({
+      title: `Restart pod ${pod.name}?`,
+      message: `The pod is deleted in namespace ${pod.namespace} and its controller starts a new one. Requests to it fail until the new pod is ready.`,
+      confirmLabel: 'Restart pod',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.deletePod(pod.namespace, pod.name));
-      alert(`Pod deletion command sent. Pod will be restarted by the deployment controller.`);
+      this.toast.ok('Pod restarted. Its controller is starting a new one.');
       await this.loadPods();
     } catch (err: any) {
-      alert(`Failed to restart pod: ${err.error?.error || err.message}`);
+      this.toast.error('Pod was not restarted: ' + errorText(err));
     }
   }
 

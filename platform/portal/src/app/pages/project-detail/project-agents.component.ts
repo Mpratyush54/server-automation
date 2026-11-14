@@ -7,6 +7,7 @@ import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { StepUpService } from '../../services/step-up.service';
 import { MARKETING_HOSTS, isPublicMarketingHost } from '../../guards/public-domain.guard';
+import { DialogService } from '../../shared/feedback/feedback.service';
 
 export interface AgentTokenView {
   id: string;
@@ -67,6 +68,8 @@ const EXTRA_SCOPES: Array<[string, string]> = [
   styleUrls: ['./project-section-shared.css', './project-agents.component.css'],
 })
 export class ProjectAgentsComponent implements OnChanges {
+  private dialog = inject(DialogService);
+
   @Input() projectId = '';
 
   private api = inject(ApiService);
@@ -205,7 +208,13 @@ export class ProjectAgentsComponent implements OnChanges {
   }
 
   async revoke(t: AgentTokenView): Promise<void> {
-    if (!confirm(`Revoke "${t.name}"? Agents using it stop working right away.`)) return;
+    const ok = await this.dialog.confirm({
+      title: `Revoke the token "${t.name}"?`,
+      message: 'Agents using it stop working right away. This cannot be undone; create a new token to restore access.',
+      confirmLabel: 'Revoke token',
+      danger: true,
+    });
+    if (!ok) return;
     this.revokingId = t.id;
     this.tokensError = '';
     try {

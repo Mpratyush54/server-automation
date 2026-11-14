@@ -1,10 +1,11 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpContext, HttpHeaders } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
 import { SKIP_SESSION_AUTH } from '../../services/auth.interceptor';
+import { ToastService } from '../../shared/feedback/feedback.service';
 
 interface ApiParameter {
   name: string;
@@ -206,6 +207,8 @@ export class PlaygroundComponent implements OnInit {
   responseBody: any = null;
   executing = false;
 
+  private toast = inject(ToastService);
+
   constructor(private http: HttpClient, private auth: AuthService) {}
 
   ngOnInit() {
@@ -248,7 +251,7 @@ export class PlaygroundComponent implements OnInit {
     for (const p of ep.parameters) {
       if (p.type === 'path') {
         if (!p.value) {
-          alert(`Path parameter "${p.name}" is required.`);
+          this.toast.warn(`Enter a value for the path parameter "${p.name}".`);
           this.executing = false;
           return;
         }

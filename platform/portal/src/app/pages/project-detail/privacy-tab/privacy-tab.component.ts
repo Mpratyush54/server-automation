@@ -1,8 +1,9 @@
-import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, Input, OnChanges, SimpleChanges, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../../services/api.service';
+import { DialogService } from '../../../shared/feedback/feedback.service';
 
 interface ScrubRule {
   id: string;
@@ -54,6 +55,8 @@ export class PrivacyTabComponent implements OnChanges {
     ['replayObjects', 'Replay files'],
     ['lokiRequests', 'Log-store delete requests'],
   ];
+
+  private dialog = inject(DialogService);
 
   constructor(private api: ApiService) {}
 
@@ -142,7 +145,15 @@ export class PrivacyTabComponent implements OnChanges {
   }
 
   async runGdprDelete() {
-    if (!confirm('Permanently delete telemetry for this subject? This cannot be undone.')) return;
+    const subject = this.gdpr.userId || this.gdpr.sessionId || this.gdpr.email || '';
+    const ok = await this.dialog.confirm({
+      title: 'Delete all telemetry for this subject?',
+      message: 'Every event, session and replay recorded for this subject in this project is deleted permanently. This cannot be undone.',
+      confirmLabel: 'Delete telemetry',
+      danger: true,
+      typeToConfirm: subject || undefined,
+    });
+    if (!ok) return;
     this.busy = true;
     this.status = '';
     this.error = '';

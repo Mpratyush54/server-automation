@@ -25,6 +25,7 @@ import { HeatmapsComponent } from '../heatmaps/heatmaps.component';
 import { SyntheticsComponent } from '../synthetics/synthetics.component';
 import { StatusPageEditorComponent } from '../status-page/status-page-editor.component';
 import { ProjectAgentsComponent } from './project-agents.component';
+import { ToastService, DialogService, errorText } from '../../shared/feedback/feedback.service';
 
 /** Query params that belong to a monitoring view; cleared when leaving it. */
 const MONITORING_PARAMS = ['view', 'issue', 'check', 'trace', 'logTrace', 'service'] as const;
@@ -123,6 +124,9 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
   private refreshTimer?: any;
 
   private router = inject(Router);
+
+  private toast = inject(ToastService);
+  private dialog = inject(DialogService);
 
   constructor(private route: ActivatedRoute, private api: ApiService, private auth: AuthService) {}
 
@@ -259,21 +263,30 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
     if (!this.project?.id) return;
     try {
       await firstValueFrom(this.api.updateProjectMember(this.project.id, m.id, role));
+      this.toast.ok('Role changed');
       await this.loadMembers();
     } catch (err: any) {
-      alert(err.error?.error || err.message);
+      this.toast.error('Role was not changed: ' + errorText(err));
       await this.loadMembers();
     }
   }
 
   async revokeMember(m: any) {
     if (!this.project?.id) return;
-    if (!confirm(`Revoke project access for ${m.user?.email || m.userId}?`)) return;
+    const who = m.user?.email || m.userId;
+    const ok = await this.dialog.confirm({
+      title: `Remove ${who} from this project?`,
+      message: 'They lose access to this project right away. You can add them again later.',
+      confirmLabel: 'Remove access',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.removeProjectMember(this.project.id, m.id));
+      this.toast.ok(`Access removed for ${who}`);
       await this.loadMembers();
     } catch (err: any) {
-      alert(err.error?.error || err.message);
+      this.toast.error('Access was not removed: ' + errorText(err));
     }
   }
 
@@ -311,9 +324,9 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
         domain: this.project?.domain || '',
       };
       await this.loadGitInfo();
-      alert('Project settings saved.');
+      this.toast.ok('Project settings saved');
     } catch (err: any) {
-      alert('Failed to save settings: ' + (err.error?.error || err.message));
+      this.toast.error('Project settings were not saved: ' + errorText(err));
     } finally {
       this.savingSettings = false;
     }
@@ -474,7 +487,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
 
   async deploy() {
     if (!this.project?.repositoryUrl && !this.projectSettings.repositoryUrl) {
-      alert('Set a Git repository URL on this project first (Configuration, Git and domain), then pull from Git and deploy.');
+      this.toast.warn('Add a Git repository URL under Configuration, Git and domain, then deploy.');
       return;
     }
     if (!this.project.repositoryUrl && this.projectSettings.repositoryUrl) {
@@ -482,7 +495,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
     }
     const selectedEnv = this.project?.environments?.find((e: any) => e.id === this.deployDto.environmentId);
     if (this.role === 'developer' && selectedEnv?.name === 'production') {
-      alert('Developers are not authorized to deploy directly to production.');
+      this.toast.warn('Developers cannot deploy to production. Ask a tech lead or DevOps to deploy it.');
       return;
     }
     this.deployInProgress = true;
@@ -502,7 +515,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
       await this.loadDeployments();
       this.section = 'deployments';
     } catch (err: any) {
-      alert('Deploy failed: ' + (err.error?.error || err.message));
+      this.toast.error('Deployment did not start: ' + errorText(err));
     } finally {
       this.deployInProgress = false;
     }
@@ -513,7 +526,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
       await firstValueFrom(this.api.rollback({ deploymentId: depId }));
       await this.loadDeployments();
     } catch (err: any) {
-      alert('Rollback failed: ' + (err.error?.error || err.message));
+      this.toast.error('Rollback did not start: ' + errorText(err));
     }
   }
 
@@ -521,19 +534,26 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
     try {
       await firstValueFrom(this.api.restartDeployment(depId));
       await this.loadDeployments();
-      alert('Restart initiated');
+      this.toast.ok('Restart started');
     } catch (err: any) {
-      alert('Failed: ' + (err.error?.error || err.message));
+      this.toast.error('Restart did not start: ' + errorText(err));
     }
   }
 
   async deleteFile(fileId: string) {
-    if (!confirm('Delete this file?')) return;
+    const ok = await this.dialog.confirm({
+      title: 'Delete this file?',
+      message: 'The file is removed from storage. This cannot be undone.',
+      confirmLabel: 'Delete file',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.deleteFile(fileId));
+      this.toast.ok('File deleted');
       await this.loadFiles();
     } catch (err: any) {
-      alert('Failed: ' + (err.error?.error || err.message));
+      this.toast.error('File was not deleted: ' + errorText(err));
     }
   }
 
@@ -554,17 +574,25 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
       this.newKeyKind = 'server';
       await this.loadTokens();
     } catch (err: any) {
-      alert('Failed to generate SDK token: ' + (err.error?.error || err.message));
+      this.toast.error('SDK key was not created: ' + errorText(err));
     }
   }
 
   async revokeToken(tokenId: string) {
-    if (!this.project || !confirm('Are you sure you want to revoke this SDK token? The SDK will lose access immediately.')) return;
+    if (!this.project) return;
+    const ok = await this.dialog.confirm({
+      title: 'Revoke this SDK key?',
+      message: 'Apps using it stop sending data right away. This cannot be undone; create a new key to restore access.',
+      confirmLabel: 'Revoke key',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.deleteProjectToken(this.project.id, tokenId));
+      this.toast.ok('SDK key revoked');
       await this.loadTokens();
     } catch (err: any) {
-      alert('Failed to revoke token: ' + (err.error?.error || err.message));
+      this.toast.error('SDK key was not revoked: ' + errorText(err));
     }
   }
 
@@ -668,22 +696,31 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
   }
 
   async restartPod(pod: any) {
-    if (!confirm(`Are you sure you want to terminate and restart pod "${pod.name}" in namespace "${pod.namespace}"?`)) {
-      return;
-    }
+    const ok = await this.dialog.confirm({
+      title: `Restart pod ${pod.name}?`,
+      message: `The pod is deleted in namespace ${pod.namespace} and its controller starts a new one. Requests to it fail until the new pod is ready.`,
+      confirmLabel: 'Restart pod',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.deletePod(pod.namespace, pod.name));
-      alert(`Pod deletion command sent. Pod will be restarted by the deployment controller.`);
+      this.toast.ok('Pod restarted. Its controller is starting a new one.');
       await this.loadK8sPods();
     } catch (err: any) {
-      alert(`Failed to restart pod: ${err.error?.error || err.message}`);
+      this.toast.error('Pod was not restarted: ' + errorText(err));
     }
   }
 
   // Databases Methods
   async provisionDb(environment: string) {
     if (!this.project) return;
-    if (!confirm(`This will create a new isolated PostgreSQL database for "${this.project.name}" in ${environment}. Continue?`)) return;
+    const ok = await this.dialog.confirm({
+      title: `Create a PostgreSQL database for ${environment}?`,
+      message: `Cairn creates a new, isolated database for ${this.project.name} in ${environment} and shows its credentials once.`,
+      confirmLabel: 'Create database',
+    });
+    if (!ok) return;
     this.provisioningDb = true;
     this.provisionedCreds = null;
     try {
@@ -691,7 +728,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
       this.provisionedCreds = res;
       await this.loadDbConnections();
     } catch (err: any) {
-      alert('Database provisioning failed: ' + (err.error?.error || err.message));
+      this.toast.error('Database was not created: ' + errorText(err));
     } finally {
       this.provisioningDb = false;
     }
@@ -712,17 +749,22 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
 
   async triggerBackup() {
     if (!this.project || !this.backupDbName.trim()) {
-      alert('Please enter a database name to backup.');
+      this.toast.warn('Enter the name of the database to back up.');
       return;
     }
-    if (!confirm(`Backup "${this.backupDbName}"? This may take a while depending on database size.`)) return;
+    const ok = await this.dialog.confirm({
+      title: `Back up ${this.backupDbName}?`,
+      message: 'The backup runs in the background and can take a while for large databases. The app keeps running.',
+      confirmLabel: 'Start backup',
+    });
+    if (!ok) return;
     this.backupInProgress = true;
     try {
       await firstValueFrom(this.api.triggerBackup(this.project.id, this.backupDbName));
-      alert('Backup started! Refresh the list in a minute to check status.');
+      this.toast.ok('Backup started. It appears in the list when it finishes.');
       setTimeout(() => this.loadBackups(), 3000);
     } catch (err: any) {
-      alert('Backup failed: ' + (err.error?.error || err.message));
+      this.toast.error('Backup did not start: ' + errorText(err));
     } finally {
       this.backupInProgress = false;
     }
@@ -730,13 +772,19 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
 
   async restoreBackup(backup: any) {
     if (!this.project) return;
-    if (!confirm(`Restore "${backup.dbName}" from backup created at ${new Date(backup.createdAt).toLocaleString()}? This will OVERWRITE the current database contents.`)) return;
+    const ok = await this.dialog.confirm({
+      title: `Restore ${backup.dbName} from this backup?`,
+      message: `The current contents of ${backup.dbName} are replaced with the backup from ${new Date(backup.createdAt).toLocaleString()}. Changes made since then are lost.`,
+      confirmLabel: 'Restore backup',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.restoreBackup(this.project.id, 'db', backup.id));
-      alert('Restore started! Check the backup status in a moment.');
+      this.toast.ok('Restore started');
       setTimeout(() => this.loadBackups(), 3000);
     } catch (err: any) {
-      alert('Restore failed: ' + (err.error?.error || err.message));
+      this.toast.error('Restore did not start: ' + errorText(err));
     }
   }
 
@@ -750,9 +798,9 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
       };
       await firstValueFrom(this.api.createDbConnection(payload));
       await this.loadDbConnections();
-      alert('Database connection configured successfully!');
+      this.toast.ok('Database connection added');
     } catch (err: any) {
-      alert('Failed to configure database: ' + (err.error?.error || err.message));
+      this.toast.error('Database connection was not added: ' + errorText(err));
     }
   }
 
@@ -760,22 +808,29 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
     this.testingDbId = id;
     try {
       const res = await firstValueFrom(this.api.testDbConnection(id));
-      alert(`Connection test passed!\nStatus: ${res.status}\nLatency: ${res.latencyMs}ms`);
+      this.toast.ok(`Connection works: ${res.status}, ${res.latencyMs} ms`);
       await this.loadDbConnections();
     } catch (err: any) {
-      alert('Connection test failed: ' + (err.error?.error || err.message));
+      this.toast.error('Connection test failed: ' + errorText(err));
     } finally {
       this.testingDbId = '';
     }
   }
 
   async deleteDbConnection(id: string) {
-    if (!confirm('Are you sure you want to delete/disconnect this database connection?')) return;
+    const ok = await this.dialog.confirm({
+      title: 'Disconnect this database?',
+      message: 'The saved connection is removed from this project. The database and its data are not deleted.',
+      confirmLabel: 'Disconnect database',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.deleteDbConnection(id));
+      this.toast.ok('Database disconnected');
       await this.loadDbConnections();
     } catch (err: any) {
-      alert('Failed to delete connection: ' + (err.error?.error || err.message));
+      this.toast.error('Database was not disconnected: ' + errorText(err));
     }
   }
 

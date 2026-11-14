@@ -1,10 +1,11 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { HttpClient } from '@angular/common/http';
+import { ToastService, errorText } from '../../shared/feedback/feedback.service';
 
 @Component({
   selector: 'app-clickup',
@@ -25,6 +26,8 @@ export class ClickupComponent implements OnInit {
     task_id: 'CU-842',
     status: 'In Review'
   };
+
+  private toast = inject(ToastService);
 
   constructor(private api: ApiService, private auth: AuthService, private http: HttpClient) {}
 
@@ -79,10 +82,10 @@ export class ClickupComponent implements OnInit {
       };
       
       const res = await firstValueFrom(this.http.post<any>('/api/integrations/clickup/webhook', payload));
-      alert(res.message || 'Webhook processed successfully!');
+      this.toast.ok(res.message || 'Test webhook sent');
       await this.loadLinkedTasks();
     } catch (err: any) {
-      alert('Failed to trigger simulated webhook: ' + (err.error?.error || err.message));
+      this.toast.error('Test webhook was not sent: ' + errorText(err));
     }
   }
 }

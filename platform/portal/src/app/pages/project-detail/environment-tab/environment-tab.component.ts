@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../../services/api.service';
 import { StepUpService } from '../../../services/step-up.service';
+import { ToastService, DialogService, errorText } from '../../../shared/feedback/feedback.service';
 
 /** One merged row from GET /projects/:id/environment (#29). */
 export interface EnvVarRow {
@@ -330,6 +331,9 @@ export function parseDotEnv(text: string): BulkLine[] {
 `],
 })
 export class EnvironmentTabComponent implements OnChanges {
+  private toast = inject(ToastService);
+  private dialog = inject(DialogService);
+
   @Input({ required: true }) projectId!: string;
   @Input() environments: { id: string; name: string }[] = [];
 
@@ -424,7 +428,7 @@ export class EnvironmentTabComponent implements OnChanges {
       );
       row.revealed = res?.value ?? '';
     } catch (err: any) {
-      alert('Failed to reveal: ' + (err?.error?.error || err?.message));
+      this.toast.error(`${row.key} was not revealed: ` + errorText(err));
     }
   }
 
@@ -460,10 +464,11 @@ export class EnvironmentTabComponent implements OnChanges {
       // secret → plain answers 401 step_up_required: confirm with a code and retry once.
       await this.stepUp.run(() => firstValueFrom(this.api.setEnvironmentVar(this.projectId, this.form.key, body)),
         `Store ${this.form.key} as plain text`);
+      this.toast.ok(`${this.form.key} saved`);
       this.closeForm();
       await this.load();
     } catch (err: any) {
-      alert('Failed to save: ' + (err?.error?.error || err?.message));
+      this.toast.error(`${this.form.key} was not saved: ` + errorText(err));
     } finally {
       this.busy = false;
     }
@@ -471,12 +476,19 @@ export class EnvironmentTabComponent implements OnChanges {
 
   async remove(row: EnvVarRow, type: 'plain' | 'secret') {
     const what = row.conflict ? `the ${type} copy of "${row.key}"` : `"${row.key}"`;
-    if (!confirm(`Delete ${what} (${this.envName(row.environmentId)})?`)) return;
+    const ok = await this.dialog.confirm({
+      title: `Delete ${what} from ${this.envName(row.environmentId)}?`,
+      message: 'Apps get the change on their next deploy or restart. This cannot be undone.',
+      confirmLabel: 'Delete variable',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.deleteEnvironmentVar(this.projectId, row.key, type, row.environmentId));
+      this.toast.ok(`${row.key} deleted`);
       await this.load();
     } catch (err: any) {
-      alert('Failed to delete: ' + (err?.error?.error || err?.message));
+      this.toast.error(`${row.key} was not deleted: ` + errorText(err));
     }
   }
 
@@ -525,9 +537,10 @@ export class EnvironmentTabComponent implements OnChanges {
       this.showBulk = false;
       this.bulkText = '';
       this.bulkLines = [];
+      this.toast.ok(`Imported ${lines.length} variable${lines.length === 1 ? '' : 's'}`);
       await this.load();
     } catch (err: any) {
-      alert('Import failed: ' + (err?.error?.error || err?.message));
+      this.toast.error('Import did not finish: ' + errorText(err) + '. Check the list for what was saved.');
       await this.load();
     } finally {
       this.busy = false;
@@ -541,7 +554,7 @@ export class EnvironmentTabComponent implements OnChanges {
       const res: any = await this.stepUp.run(() => firstValueFrom(this.api.exportSecrets(this.projectId, envId)), 'Export secrets');
       this.exportText = res?.secrets ?? '';
     } catch (err: any) {
-      alert('Failed to export: ' + (err?.error?.error || err?.message));
+      this.toast.error('Secrets were not exported: ' + errorText(err));
     }
   }
 
@@ -551,20 +564,26 @@ export class EnvironmentTabComponent implements OnChanges {
       const res: any = await firstValueFrom(this.api.getSecretVersions(this.projectId, row.secretId));
       this.history = { row, currentVersion: res?.currentVersion ?? row.version ?? 1, versions: res?.history || [] };
     } catch (err: any) {
-      alert('Failed to load history: ' + (err?.error?.error || err?.message));
+      this.toast.error('Version history did not load: ' + errorText(err));
     }
   }
 
   async rollback(version: number) {
     const h = this.history;
     if (!h?.row.secretId) return;
-    if (!confirm(`Roll back "${h.row.key}" to version ${version}?`)) return;
+    const ok = await this.dialog.confirm({
+      title: `Roll back ${h.row.key} to version ${version}?`,
+      message: 'The value from that version becomes current as a new version. Apps get it on their next deploy or restart.',
+      confirmLabel: 'Roll back',
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.rollbackSecret(this.projectId, h.row.secretId, version));
       this.history = null;
+      this.toast.ok(`${h.row.key} rolled back to version ${version}`);
       await this.load();
     } catch (err: any) {
-      alert('Rollback failed: ' + (err?.error?.error || err?.message));
+      this.toast.error('Rollback did not finish: ' + errorText(err));
     }
   }
 }

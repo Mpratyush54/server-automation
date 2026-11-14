@@ -1,5 +1,6 @@
 import { inject } from '@angular/core';
-import { Params, RedirectFunction, Router, Routes } from '@angular/router';
+import { ActivatedRouteSnapshot, Params, RedirectFunction, Router, Routes } from '@angular/router';
+import type { NewProjectComponent } from './pages/new-project/new-project.component';
 import { DashboardComponent } from './pages/dashboard/dashboard.component';
 import { ProjectsComponent } from './pages/projects/projects.component';
 import { ProjectDetailComponent } from './pages/project-detail/project-detail.component';
@@ -91,7 +92,9 @@ export const routes: Routes = [
     children: [],
   },
 
-  { path: 'projects', component: ProjectsComponent, canActivate: [authGuard] },
+  // `/projects?new=1` (global search, dashboard) opens the new project wizard.
+  { path: 'projects', component: ProjectsComponent, canActivate: [authGuard, (r: ActivatedRouteSnapshot) => r.queryParamMap.get('new') === '1' ? inject(Router).createUrlTree(['/projects/new']) : true] },
+  { path: 'projects/new', loadComponent: () => import('./pages/new-project/new-project.component').then(m => m.NewProjectComponent), canActivate: [authGuard], canDeactivate: [(c: NewProjectComponent) => c.confirmLeave()] },
   { path: 'projects/:id', component: ProjectDetailComponent, canActivate: [authGuard] },
   // Monitoring is in place on the project page; the old pages redirect to their view.
   { path: 'projects/:id/observability', pathMatch: 'full', redirectTo: toMonitoring((qp) => viewForObsTab(qp['tab'])) }, // #48

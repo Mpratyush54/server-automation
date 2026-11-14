@@ -1,8 +1,9 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
+import { ToastService, errorText } from '../../shared/feedback/feedback.service';
 
 @Component({
   selector: 'app-services',
@@ -14,6 +15,8 @@ import { ApiService } from '../../services/api.service';
 export class ServicesComponent implements OnInit {
   registrations: any[] = [];
   reg = { serviceName: '', projectName: 'development', environmentName: 'development', version: '1.0.0', branch: 'main', dbTypes: '' };
+
+  private toast = inject(ToastService);
 
   constructor(private api: ApiService) {}
 
@@ -31,7 +34,7 @@ export class ServicesComponent implements OnInit {
         dbTypes: this.reg.dbTypes.split(',').map(s => s.trim()).filter(Boolean),
       }));
       this.reg = { serviceName: '', projectName: 'development', environmentName: 'development', version: '1.0.0', branch: 'main', dbTypes: '' };
-      alert('Service registered successfully');
-    } catch (err: any) { alert('Registration failed: ' + (err.error?.error || err.message)); }
+      this.toast.ok('Service registered');
+    } catch (err: any) { this.toast.error('Service was not registered: ' + errorText(err)); }
   }
 }

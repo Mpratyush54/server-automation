@@ -6,6 +6,7 @@ import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { MfaService } from '../../services/mfa.service';
 import { StepUpService } from '../../services/step-up.service';
+import { ToastService, DialogService, errorText } from '../../shared/feedback/feedback.service';
 
 @Component({
   selector: 'app-users',
@@ -37,6 +38,9 @@ export class UsersComponent implements OnInit {
   private mfa = inject(MfaService);
   private stepUp = inject(StepUpService);
 
+  private toast = inject(ToastService);
+  private dialog = inject(DialogService);
+
   constructor(private api: ApiService, private auth: AuthService) {}
 
   roleLabel(role: string): string {
@@ -46,12 +50,19 @@ export class UsersComponent implements OnInit {
   /** Admin reset of a user's MFA (lost device); needs the admin's own recent second factor (#24). */
   async resetMfa(u: any) {
     if (!this.isAdmin) return;
-    if (!confirm(`Remove the authenticator of ${u.email}? They will enrol again at next sign-in if their role requires it.`)) return;
+    const ok = await this.dialog.confirm({
+      title: `Reset two-factor authentication for ${u.email}?`,
+      message: 'Their authenticator is removed. They enrol a new one at next sign-in if their role requires it.',
+      confirmLabel: 'Reset MFA',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await this.stepUp.run(() => firstValueFrom(this.mfa.adminReset(u.id, 'reset from portal')), `Reset MFA for ${u.email}`);
+      this.toast.ok(`Two-factor authentication reset for ${u.email}`);
       await this.loadUsers();
     } catch (err: any) {
-      alert('Failed to reset MFA: ' + (err.error?.error || err.message));
+      this.toast.error('MFA was not reset: ' + errorText(err));
     }
   }
 
@@ -112,7 +123,7 @@ export class UsersComponent implements OnInit {
   async saveUser() {
     if (!this.canManage) return;
     if (!this.isEditMode && (!this.currentUser.password || this.currentUser.password.length < 8)) {
-      alert('Password is required (min 8 characters) so the user can log in.');
+      this.toast.warn('Enter a password of at least 8 characters so the user can sign in.');
       return;
     }
     try {
@@ -133,20 +144,31 @@ export class UsersComponent implements OnInit {
         await firstValueFrom(this.api.createUser(payload));
       }
       this.showModal = false;
+      this.toast.ok(this.isEditMode ? 'User saved' : 'User created');
       await this.loadUsers();
     } catch (err: any) {
-      alert('Failed to save user: ' + (err.error?.error || err.message));
+      this.toast.error('User was not saved: ' + errorText(err));
     }
   }
 
   async deleteUser(id: string) {
     if (!this.canManage) return;
-    if (!confirm('Are you sure you want to delete this user?')) return;
+    const user = this.users.find((x) => x.id === id);
+    const who = user?.email || user?.name || 'this user';
+    const ok = await this.dialog.confirm({
+      title: `Delete ${who}?`,
+      message: 'The account is removed and they can no longer sign in. This cannot be undone.',
+      confirmLabel: 'Delete user',
+      danger: true,
+      typeToConfirm: user?.email || undefined,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.deleteUser(id));
+      this.toast.ok('User deleted');
       await this.loadUsers();
     } catch (err: any) {
-      alert('Failed to delete user: ' + (err.error?.error || err.message));
+      this.toast.error('User was not deleted: ' + errorText(err));
     }
   }
 }

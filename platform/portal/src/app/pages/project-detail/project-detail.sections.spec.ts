@@ -30,7 +30,6 @@ describe('Project detail sections (#185)', () => {
   }
 
   async function render(role: string, setup: (c: ProjectDetailComponent) => void = () => {}) {
-    if (!jasmine.isSpy(window.alert)) spyOn(window, 'alert');
     const fixture = create(role);
     const c = fixture.componentInstance;
     await c.ngOnInit();

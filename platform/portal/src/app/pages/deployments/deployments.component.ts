@@ -1,9 +1,10 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { OperationProgressComponent } from '../../shared/operation-progress.component';
+import { ToastService, errorText } from '../../shared/feedback/feedback.service';
 
 @Component({
   selector: 'app-deployments',
@@ -18,6 +19,8 @@ export class DeploymentsComponent implements OnInit {
   rollbackDto = { projectId: '', deploymentId: '' };
   /** Progress of the last deploy started from this page. */
   lastOperationId: string | null = null;
+
+  private toast = inject(ToastService);
 
   constructor(private api: ApiService) {}
 
@@ -34,20 +37,21 @@ export class DeploymentsComponent implements OnInit {
       this.deployments.unshift(d);
       this.lastOperationId = (d as any)?.operationId || null;
       this.deployDto = { projectId: '', version: '', branch: 'main' };
-    } catch (err: any) { alert('Deploy failed: ' + (err.error?.error || err.message)); }
+      this.toast.ok('Deployment started');
+    } catch (err: any) { this.toast.error('Deployment did not start: ' + errorText(err)); }
   }
 
   async rollback() {
     try {
       await firstValueFrom(this.api.rollback(this.rollbackDto));
-      alert('Rollback initiated');
-    } catch (err: any) { alert('Rollback failed: ' + (err.error?.error || err.message)); }
+      this.toast.ok('Rollback started');
+    } catch (err: any) { this.toast.error('Rollback did not start: ' + errorText(err)); }
   }
 
   async restart(id: string) {
     try {
       await firstValueFrom(this.api.restartDeployment(id));
-      alert('Restart initiated');
+      this.toast.ok('Restart started');
     } catch {}
   }
 }

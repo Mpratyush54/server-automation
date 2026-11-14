@@ -5,6 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { StepUpService } from '../../services/step-up.service';
+import { DialogService } from '../../shared/feedback/feedback.service';
 
 /**
  * One-click Git provider connect (#35): GitHub App via the App Manifest flow, GitLab OAuth
@@ -163,6 +164,8 @@ import { StepUpService } from '../../services/step-up.service';
 `,
 })
 export class GitConnectComponent implements OnInit {
+  private dialog = inject(DialogService);
+
   @Input() isAdmin = false;
 
   private http = inject(HttpClient);
@@ -323,7 +326,14 @@ export class GitConnectComponent implements OnInit {
   }
 
   async disconnect(provider: 'github' | 'gitlab') {
-    if (!confirm(`Remove the stored ${provider === 'github' ? 'GitHub App' : 'GitLab application'} credentials? Login and repository access through it stop working.`)) return;
+    const name = provider === 'github' ? 'GitHub App' : 'GitLab application';
+    const ok = await this.dialog.confirm({
+      title: `Disconnect the ${name}?`,
+      message: `The stored ${name} credentials are removed. Sign-in and repository access through it stop working until you connect it again.`,
+      confirmLabel: 'Disconnect',
+      danger: true,
+    });
+    if (!ok) return;
     this.busy = true;
     try {
       const res: any = await this.stepUp.run(
