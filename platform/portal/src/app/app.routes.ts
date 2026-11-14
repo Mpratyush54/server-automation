@@ -23,6 +23,7 @@ import { AuditLogsComponent } from './pages/audit-logs/audit-logs.component';
 import { PlaygroundComponent } from './pages/playground/playground.component';
 import { SettingsComponent } from './pages/settings/settings.component';
 import { LandingComponent } from './pages/landing/landing.component';
+import { AboutComponent } from './pages/about/about.component';
 import { OauthAuthorizeComponent } from './pages/oauth-authorize/oauth-authorize.component';
 import { IframeViewComponent } from './pages/iframe-view/iframe-view.component';
 import { DocsComponent } from './pages/docs/docs.component';
@@ -43,6 +44,7 @@ export const routes: Routes = [
 
   // Marketing site only (platform.pratyushes.dev)
   { path: 'landing', canActivate: [marketingOnlyGuard, legacyLandingGuard], children: [] },
+  { path: 'about', component: AboutComponent, canActivate: [marketingOnlyGuard], title: 'About Platform' },
   { matcher: docsMatcher, component: DocsComponent, canActivate: [marketingOnlyGuard] },
 
   // App / server hosts only

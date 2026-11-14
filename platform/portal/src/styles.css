@@ -1,168 +1,270 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&family=Kalam:wght@700&family=Patrick+Hand&display=swap');
+/*
+ * Signal design system (#185, #187).
+ *
+ * Graphite surfaces, one warm signal-amber accent, and status colours used
+ * only for status. IBM Plex Sans for interface text; IBM Plex Mono only for
+ * machine data (hosts, IPs, commits, tokens). Light and dark themes: the OS
+ * preference by default, overridden by data-theme="light|dark" on <html>
+ * (ThemeService). Colours are RGB triplets so Tailwind can add alpha
+ * (bg-accent/10); never hard-code a colour in a template.
+ */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  /* Light (default, and when the OS prefers light). */
   :root {
-    /* The portal is dark-only: keep native controls (checkboxes, selects,
-       scrollbars) dark even when the OS prefers a light scheme. */
-    color-scheme: dark;
-    /* Next.js Dark Mode Palette */
-    --bg-canvas: #000000;
-    --bg-surface: #0a0a0a;
-    --bg-elevated: #111111;
-    --border-subtle: #333333;
-    
-    --accent-primary: #ededed;
-    --accent-success: #0070F3;
-    --accent-warning: #F5A623;
-    --accent-danger: #E00000;
-    --accent-grafana: #F5A623;
-    
-    --text-primary: #ededed;
-    --text-secondary: #a1a1aa;
-    --text-muted: #71717a;
-    --text-code: #ededed;
-    
-    /* Aliases used by older page templates (were undefined, so text and
-       borders silently fell back to inherited colours). */
-    --color-text-secondary: var(--text-secondary);
-    --color-text-muted: var(--text-muted);
-    --border-glass: var(--border-subtle);
-    --primary: #a78bfa;
+    color-scheme: light;
+    --canvas: 243 244 246;      /* #F3F4F6 page background */
+    --surface: 255 255 255;     /* panels */
+    --raised: 236 238 241;      /* hover, selected rows, inset wells */
+    --line: 219 222 227;        /* hairlines */
+    --line-strong: 192 197 204; /* control borders */
+    --fg: 25 28 32;             /* #191C20 body text */
+    --fg-2: 78 85 94;           /* secondary text */
+    --fg-3: 112 119 128;        /* muted text, placeholders */
+    --accent: 242 181 58;       /* #F2B53A signal amber (fills) */
+    --accent-ink: 33 24 4;      /* text on the accent */
+    --accent-text: 150 96 0;    /* accent used as text/links on light */
+    --ok: 30 138 90;
+    --warn: 168 111 0;
+    --down: 201 53 59;
+    --info: 46 110 184;
+    --focus: 242 181 58;
+    --shadow: 0 1px 2px rgb(25 28 32 / 0.06), 0 4px 16px rgb(25 28 32 / 0.06);
+  }
 
-    --font-heading: 'Geist', 'Inter', sans-serif;
-    --font-body: 'Geist', 'Inter', sans-serif;
-    --font-code: 'Geist Mono', monospace;
+  /* Dark: OS preference unless the user picked light. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      color-scheme: dark;
+      --canvas: 22 24 27;       /* #16181B graphite */
+      --surface: 29 32 36;      /* #1D2024 */
+      --raised: 37 41 46;       /* #25292E */
+      --line: 47 52 58;         /* #2F343A */
+      --line-strong: 68 75 83;  /* #444B53 */
+      --fg: 232 230 225;        /* #E8E6E1 */
+      --fg-2: 164 169 176;
+      --fg-3: 122 128 136;
+      --accent: 242 181 58;
+      --accent-ink: 33 24 4;
+      --accent-text: 242 181 58;
+      --ok: 63 179 127;         /* #3FB37F */
+      --warn: 224 161 0;        /* #E0A100 */
+      --down: 229 72 77;        /* #E5484D */
+      --info: 104 160 222;
+      --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.25);
+    }
+  }
+
+  /* Explicit dark choice (same values as above). */
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+    --canvas: 22 24 27;
+    --surface: 29 32 36;
+    --raised: 37 41 46;
+    --line: 47 52 58;
+    --line-strong: 68 75 83;
+    --fg: 232 230 225;
+    --fg-2: 164 169 176;
+    --fg-3: 122 128 136;
+    --accent: 242 181 58;
+    --accent-ink: 33 24 4;
+    --accent-text: 242 181 58;
+    --ok: 63 179 127;
+    --warn: 224 161 0;
+    --down: 229 72 77;
+    --info: 104 160 222;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.25);
+  }
+
+  /* Names older templates still use, mapped onto the tokens so inline styles
+     follow the theme until each page is migrated. */
+  :root {
+    --bg-canvas: rgb(var(--canvas));
+    --bg-surface: rgb(var(--surface));
+    --bg-elevated: rgb(var(--raised));
+    --border-subtle: rgb(var(--line));
+    --border-glass: rgb(var(--line));
+    --accent-primary: rgb(var(--fg));
+    --accent-success: rgb(var(--ok));
+    --accent-warning: rgb(var(--warn));
+    --accent-danger: rgb(var(--down));
+    --accent-grafana: rgb(var(--warn));
+    --text-primary: rgb(var(--fg));
+    --text-secondary: rgb(var(--fg-2));
+    --text-muted: rgb(var(--fg-3));
+    --text-code: rgb(var(--fg));
+    --color-text-secondary: rgb(var(--fg-2));
+    --color-text-muted: rgb(var(--fg-3));
+    --primary: rgb(var(--accent-text));
+    --success: rgb(var(--ok));
+    --warning: rgb(var(--warn));
+    --danger: rgb(var(--down));
+    --font-heading: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-code: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
-    @apply bg-black text-[#ededed] font-sans m-0 p-0 min-h-screen antialiased selection:bg-[#0070F3] selection:text-white;
-    background-image: none;
-    background-color: #000000;
+    @apply m-0 min-h-screen bg-canvas text-fg font-sans antialiased;
+    font-size: 14px;
+    line-height: 1.5;
+    font-feature-settings: 'ss02';
   }
 
-  /* Typography */
+  ::selection {
+    background: rgb(var(--accent) / 0.35);
+    color: rgb(var(--fg));
+  }
+
   h1, h2, h3, h4, h5, h6 {
-    @apply font-sans tracking-tight;
+    @apply font-sans text-fg;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
   }
 
-  /* Preflight resets h1 to body size; give bare page headings the same scale
-     as .page-title (colour is inherited so themed pages keep their own). */
-  h1 {
-    @apply text-2xl font-semibold;
+  h1 { @apply text-2xl font-semibold; }
+
+  a { color: rgb(var(--accent-text)); }
+
+  code, kbd, samp, pre { @apply font-mono; font-size: 0.92em; }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
 @layer components {
-  /* Minimalist Vercel Buttons */
+  /* Buttons: neutral by default, amber for the one primary action per view. */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap px-4 h-10 text-sm font-medium rounded-md cursor-pointer transition-colors duration-200 border bg-transparent text-[#ededed] border-[#333] hover:bg-[#111] hover:text-white;
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap px-4 h-9 text-sm font-medium rounded-control cursor-pointer transition-colors duration-150 border bg-surface text-fg border-line-strong no-underline;
   }
-  
-  .btn-primary {
-    @apply bg-[#ededed] text-black border-transparent hover:bg-white hover:text-black;
-  }
-  
-  .btn-danger {
-    @apply text-red-500 border-red-900/50 hover:bg-red-950/30 hover:border-red-900;
-  }
-
-  .btn-sm {
-    @apply h-8 px-3 text-xs;
-  }
-
-  /* Disabled buttons must not look actionable (covers primary/danger too). */
+  .btn:hover { @apply bg-raised; }
+  .btn-primary { @apply bg-accent text-accent-ink border-transparent; }
+  .btn-primary:hover { background: rgb(var(--accent) / 0.88); }
+  .btn-danger { @apply text-down border-down/40 bg-transparent; }
+  .btn-danger:hover { @apply bg-down/10 border-down/60; }
+  .btn-ghost { @apply bg-transparent border-transparent text-fg-2; }
+  .btn-ghost:hover { @apply bg-raised text-fg; }
+  .btn-sm { @apply h-8 px-3 text-xs; }
   .btn:disabled,
   .btn[disabled],
   .btn[aria-disabled='true'] {
     @apply opacity-50 cursor-not-allowed pointer-events-none;
   }
 
-  /* Shared page header used by every page (matches Dashboard/Projects). */
-  .page-header {
-    @apply flex flex-wrap items-end justify-between gap-4 mb-6;
-  }
+  /* Page header shared by every page. */
+  .page-header { @apply flex flex-wrap items-end justify-between gap-4 mb-6; }
+  .page-title { @apply text-2xl font-semibold text-fg m-0; }
+  .page-subtitle { @apply text-sm text-fg-2 mt-1 mb-0; max-width: 72ch; }
 
-  .page-title {
-    @apply text-2xl font-semibold tracking-tight text-white m-0;
-  }
-
-  .page-subtitle {
-    @apply text-sm text-[#a1a1aa] mt-1 mb-0;
-  }
-
-  /* Wide tables scroll inside their card instead of the page. */
-  .table-scroll {
-    @apply w-full overflow-x-auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .table-scroll > table {
-    @apply min-w-full;
-  }
-
-  /* Empty-state row/cell for tables. */
-  .empty-row td,
-  td.empty-cell {
-    @apply text-center text-[#71717a] py-8;
-  }
-
-  .empty-row:hover td {
-    @apply bg-transparent;
-  }
-
-  .empty-state {
-    @apply text-center text-[#a1a1aa] py-10 px-4 text-sm;
-  }
-
-  .empty-state strong {
-    @apply block text-[#ededed] font-medium mb-1;
-  }
-
-  /* Layout Grids */
-  .grid-2 {
-    @apply grid grid-cols-1 md:grid-cols-2 gap-6;
-  }
-
-  .grid-3 {
-    @apply grid grid-cols-1 md:grid-cols-3 gap-6;
-  }
-
-  .form-group {
-    @apply flex flex-col gap-2 mb-4;
-  }
-
-  .form-group label {
-    @apply text-sm font-medium text-[#a1a1aa];
-  }
-
-  .stat {
-    @apply text-3xl font-semibold text-[#ededed] mt-2;
-  }
-
-  /* Next.js Cards */
+  /* Panels (kept as .card for existing templates). */
   .card {
-    @apply bg-[#0a0a0a] border border-[#333] rounded-lg transition-colors duration-300 p-6;
+    @apply bg-surface border border-line rounded-panel p-6;
   }
-  
   .card h2 {
-    @apply text-lg font-semibold text-white mb-4 border-b border-[#333] pb-2;
+    @apply text-base font-semibold text-fg mt-0 mb-4;
+  }
+  .card-flush { @apply p-0 overflow-hidden; }
+  .card-header {
+    @apply flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-line;
+  }
+  .card-header h2, .card-header h3 { @apply m-0 text-base font-semibold; }
+
+  /* Section navigation (project page and similar): a quiet segmented row. */
+  .subnav {
+    @apply flex gap-1 overflow-x-auto border-b border-line mb-6;
+    scrollbar-width: none;
+  }
+  .subnav a, .subnav button {
+    @apply inline-flex items-center gap-2 whitespace-nowrap px-3 h-10 text-sm font-medium text-fg-2 bg-transparent border-0 border-b-2 border-transparent cursor-pointer no-underline;
+    margin-bottom: -1px;
+  }
+  .subnav a:hover, .subnav button:hover { @apply text-fg; }
+  .subnav .active, .subnav [aria-current='page'] {
+    @apply text-fg;
+    border-bottom-color: rgb(var(--accent));
   }
 
-  .card:hover {
-    @apply border-[#444];
+  /* Status: a dot plus a word, coloured only by meaning. */
+  .status {
+    @apply inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap text-fg-2;
   }
+  .status::before {
+    content: '';
+    @apply inline-block w-2 h-2 rounded-full bg-fg-3;
+  }
+  .status-ok { @apply text-ok; }
+  .status-ok::before { @apply bg-ok; }
+  .status-warn { @apply text-warn; }
+  .status-warn::before { @apply bg-warn; }
+  .status-down { @apply text-down; }
+  .status-down::before { @apply bg-down; }
+  .status-info { @apply text-info; }
+  .status-info::before { @apply bg-info; }
 
-  /* Form Elements */
+  /* Badges (existing names), now quiet pills in sentence case. */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border border-line text-fg-2 bg-raised;
+  }
+  .badge-active { @apply text-ok border-ok/30 bg-ok/10; }
+  .badge-pending { @apply text-warn border-warn/30 bg-warn/10; }
+  .badge-failed { @apply text-down border-down/30 bg-down/10; }
+
+  /* Key/value lists (overview facts). */
+  .facts { @apply grid gap-x-6 gap-y-3 m-0; grid-template-columns: max-content 1fr; }
+  .facts dt { @apply text-fg-3 text-sm; }
+  .facts dd { @apply m-0 text-sm text-fg min-w-0; overflow-wrap: anywhere; }
+
+  .mono { @apply font-mono; }
+  .muted { @apply text-fg-3; }
+  .secondary { @apply text-fg-2; }
+
+  /* Wide tables scroll inside their panel instead of the page. */
+  .table-scroll { @apply w-full overflow-x-auto; -webkit-overflow-scrolling: touch; }
+  .table-scroll > table { @apply min-w-full; }
+
+  .empty-row td, td.empty-cell { @apply text-center text-fg-3 py-8; }
+  .empty-row:hover td { @apply bg-transparent; }
+  .empty-state { @apply text-center text-fg-2 py-10 px-4 text-sm; }
+  .empty-state strong { @apply block text-fg font-medium mb-1; }
+
+  .grid-2 { @apply grid grid-cols-1 md:grid-cols-2 gap-6; }
+  .grid-3 { @apply grid grid-cols-1 md:grid-cols-3 gap-6; }
+
+  .form-group { @apply flex flex-col gap-1.5 mb-4; }
+  .form-group label { @apply text-sm font-medium text-fg-2; }
+  .form-hint { @apply text-xs text-fg-3; }
+
+  .stat { @apply text-3xl font-semibold text-fg mt-2; font-variant-numeric: tabular-nums; }
+
+  /* Form controls */
   input, select, textarea {
-    @apply bg-[#111] border border-[#333] rounded-md px-3 py-2 text-sm text-[#ededed] focus:outline-none focus:border-[#666] transition-colors w-full;
+    @apply bg-surface border border-line-strong rounded-control px-3 py-2 text-sm text-fg w-full transition-colors;
   }
-
-  /* Boxes and other non-text inputs keep their intrinsic size; the text-input
-     rule above would otherwise stretch them across the whole row. */
+  input:focus, select:focus, textarea:focus {
+    @apply outline-none;
+    border-color: rgb(var(--accent));
+    box-shadow: 0 0 0 3px rgb(var(--accent) / 0.2);
+  }
   input[type='checkbox'],
   input[type='radio'],
   input[type='range'],
@@ -171,104 +273,45 @@
   input[type='image'],
   input[type='hidden'] {
     @apply w-auto p-0 flex-none;
+    box-shadow: none;
   }
-
   input[type='checkbox'],
   input[type='radio'] {
     @apply h-4 w-4 m-0 align-middle cursor-pointer;
-    accent-color: #0070F3;
+    accent-color: rgb(var(--accent));
   }
-
   input[type='checkbox']:disabled,
-  input[type='radio']:disabled {
-    @apply cursor-not-allowed opacity-50;
-  }
-
-  /* label wrapping a box: keep the box inline next to its text. */
+  input[type='radio']:disabled { @apply cursor-not-allowed opacity-50; }
   label:has(> input[type='checkbox']),
-  label:has(> input[type='radio']) {
-    @apply inline-flex flex-row items-center gap-2 cursor-pointer;
-  }
+  label:has(> input[type='radio']) { @apply inline-flex flex-row items-center gap-2 cursor-pointer; }
+  input::placeholder, textarea::placeholder { @apply text-fg-3 opacity-100; }
 
-  input::placeholder,
-  textarea::placeholder {
-    @apply text-[#71717a] opacity-100;
-  }
-
-  /* Badges */
-  .badge {
-    @apply inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border uppercase tracking-wider font-mono;
-  }
-  .badge-active {
-    @apply bg-blue-500/10 text-blue-400 border-blue-500/20;
-  }
-  .badge-pending {
-    @apply bg-yellow-500/10 text-yellow-400 border-yellow-500/20;
-  }
-  .badge-failed {
-    @apply bg-red-500/10 text-red-400 border-red-500/20;
-  }
-
-  /* Layout Frame */
-  .app-layout {
-    @apply flex min-h-screen bg-black text-[#ededed];
-  }
-
-  /* Below md the sidebar is an off-canvas drawer, so main has no left margin. */
+  /* Layout frame */
+  .app-layout { @apply flex min-h-screen bg-canvas text-fg; }
   .main-content {
-    @apply flex-1 flex flex-col min-w-0 transition-all duration-300 ml-0 md:ml-64 md:border-l md:border-[#333];
+    @apply flex-1 flex flex-col min-w-0 ml-0 md:ml-60;
+    transition: margin-left 150ms ease;
   }
-
-  .main-content.collapsed-nav {
-    @apply md:ml-16;
-  }
-
-  .content {
-    @apply flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto relative min-w-0;
-  }
-
-  .sidebar-backdrop {
-    @apply fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden;
-  }
+  .main-content.collapsed-nav { @apply md:ml-16; }
+  .content { @apply flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto relative min-w-0; }
+  .sidebar-backdrop { @apply fixed inset-0 z-40 md:hidden; background: rgb(0 0 0 / 0.45); }
 
   /* Tables */
-  table {
-    @apply w-full text-left border-collapse text-sm;
-  }
-  
+  table { @apply w-full text-left border-collapse text-sm; }
   th {
-    @apply font-medium text-[#a1a1aa] border-b border-[#333] py-3 px-4;
+    @apply font-medium text-fg-3 border-b border-line py-2.5 px-4 text-xs;
   }
-  
-  td {
-    @apply border-b border-[#222] py-4 px-4 text-[#ededed];
-  }
-
-  tr:hover td {
-    @apply bg-[#111];
-  }
+  td { @apply border-b border-line py-3 px-4 text-fg; font-variant-numeric: tabular-nums; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover td { @apply bg-raised/60; }
 }
 
-/* Background Gradients */
-.glow-conic {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 600px;
-  height: 600px;
-  background: conic-gradient(from 180deg at 50% 50%, #2a8af6 0deg, #a853ba 180deg, #e92a67 360deg);
-  filter: blur(100px);
-  opacity: 0.15;
-  z-index: 0;
-  pointer-events: none;
+/* Brand logo variants: the dark mark on light, the light mark on dark. */
+.brand-logo-dark { display: none; }
+.brand-logo-light { display: block; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .brand-logo-dark { display: block; }
+  :root:not([data-theme='light']) .brand-logo-light { display: none; }
 }
-
-/* Brand logos — prefer dark mark on dark UI; swap under light scheme when both are present */
-.brand-logo-dark { display: block; }
-.brand-logo-light { display: none; }
-
-@media (prefers-color-scheme: light) {
-  .brand-logo-dark { display: none; }
-  .brand-logo-light { display: block; }
-}
+:root[data-theme='dark'] .brand-logo-dark { display: block; }
+:root[data-theme='dark'] .brand-logo-light { display: none; }

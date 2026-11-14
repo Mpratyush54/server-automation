@@ -80,7 +80,7 @@ export class AppComponent implements OnDestroy {
       const parts = router.url.split(/[?#]/)[0].split('/');
       const segment = parts[1] || '';
       this.isLoginPage = segment === 'login' || segment === 'oauth' || segment === 'mfa';
-      this.isLandingPage = segment === '' || segment === 'landing';
+      this.isLandingPage = segment === '' || segment === 'landing' || segment === 'about';
       this.isDocsPage = segment === 'docs';
       this.isPublicStatusPage = segment === 'status';
       this.pageTitle = (segment === 'projects' && parts[3] && this.projectPageTitles[parts[3]])

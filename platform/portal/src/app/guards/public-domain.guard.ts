@@ -1,4 +1,4 @@
-import { inject } from '@angular/core';
+import { inject, isDevMode } from '@angular/core';
 import { Router, CanActivateFn } from '@angular/router';
 
 /**
@@ -15,6 +15,8 @@ export function isPublicMarketingHost(
   marketingHosts: readonly string[] = MARKETING_HOSTS,
 ): boolean {
   const normalized = host.toLowerCase().replace(/\.$/, '');
+  // Local preview of the public site in development builds only.
+  if (isDevMode() && normalized === 'platform.localhost') return true;
   return marketingHosts.includes(normalized);
 }
 
