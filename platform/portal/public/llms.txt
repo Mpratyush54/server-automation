@@ -14,6 +14,7 @@ Source: https://github.com/Mpratyush54/SERVER-automation
 - [Landing](https://platform.pratyushes.dev/landing): product overview
 - [Docs home](https://platform.pratyushes.dev/docs): documentation index ([Markdown](https://platform.pratyushes.dev/docs/index.md))
 - [Installation](https://platform.pratyushes.dev/docs/getting-started/installation): install Platform ([Markdown](https://platform.pratyushes.dev/docs/getting-started/installation.md))
+- [Recover](https://platform.pratyushes.dev/docs/operations/recover): fix a broken install ([Markdown](https://platform.pratyushes.dev/docs/operations/recover.md))
 - [platformctl CLI](https://platform.pratyushes.dev/docs/getting-started/platformctl): CLI reference ([Markdown](https://platform.pratyushes.dev/docs/getting-started/platformctl.md))
 
 ## For AI agents (MCP)

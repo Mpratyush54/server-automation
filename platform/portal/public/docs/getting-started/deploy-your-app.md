@@ -1,141 +1,104 @@
-# Deploy Your App
+# Deploy an app
 
-Platform automates the deployment pipeline from Git push to production — with preview environments for every PR.
+This page helps you deploy your app from Git to one of your project's environments.
 
-## The Pipeline
+Platform does not build your code. It deploys the Kubernetes files in your repository, using an image you have already built, for example with GitHub Actions or GitLab CI. Argo CD keeps the environment in sync with those files.
 
-```mermaid
-graph LR
+## What your repository needs
 
-    classDef action fill:#3a2a1a,stroke:#ffb86c,stroke-width:1.5px,color:#e4e4e7;
-    classDef external fill:#2a1a3a,stroke:#bd93f9,stroke-width:1.5px,color:#e4e4e7;
-    classDef platform fill:#1a2a3a,stroke:#3794ff,stroke-width:1.5px,color:#e4e4e7;
-    classDef code fill:#1a2a1a,stroke:#50fa7b,stroke-width:1.5px,color:#e4e4e7;
+A folder with your Kubernetes files. Platform looks in `k8s` unless you choose another path. At minimum, add a Deployment and a Service that listens on **port 80**. Platform points the environment's address at that Service.
 
-    Git["Git Push"]:::action
-    Webhook["Webhook"]:::external
-    Build["Build"]:::action
-    Deploy["Deploy"]:::platform
-    Health["Health Check"]:::platform
-    Ready["Ready"]:::code
-    Preview["Preview<br/>pr-{n}-{project}.sslip.io"]:::code
-    Staging["Staging / Prod<br/>{env}-{project}.sslip.io"]:::code
-
-    Git --> Webhook
-    Webhook --> Build
-    Build --> Deploy
-    Deploy --> Health
-    Health --> Ready
-    Health --> Preview
-    Health --> Staging
+```text
+your-repo/
+  k8s/
+    kustomization.yaml
+    deployment.yaml
+    service.yaml
 ```
 
-## 1. Push Code
-
-Push to any branch in your Git repository. Platform listens for webhook events.
-
-```bash
-git checkout -b feature/new-api
-git add .
-git commit -m "Add new API endpoint"
-git push origin feature/new-api
+```yaml
+# k8s/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml
 ```
 
-## 2. Webhook Triggers Deployment
-
-The Git webhook (configured in Project Settings) sends a push event to the Platform API:
-
-```
-POST /api/webhooks/github
-Content-Type: application/json
-
-{
-  "ref": "refs/heads/feature/new-api",
-  "repository": { "clone_url": "https://github.com/your-org/my-app.git" },
-  "commits": [{ "id": "abc123", "message": "Add new API endpoint" }]
-}
-```
-
-## 3. Preview Environment
-
-For non-`main` branches, Platform creates a **preview environment**:
-
-- URL: `https://pr-{number}-{project}.sslip.io/`
-- Isolated Kubernetes namespace
-- Auto-cleanup when PR is closed or branch is deleted
-- Accessible via `sslip.io` wildcard DNS — no DNS configuration needed
-
-## 4. Merge to Main
-
-When a PR is merged to `main`:
-
-```mermaid
-graph LR
-    Merge["Merge to main"]
-    WH["Webhook"]
-    Staging["Staging Deployment"]
-    Health["Health Check"]
-    Prod["Promote to Production<br/>(manual or auto)"]
-
-    Merge --> WH
-    WH --> Staging
-    Staging --> Health
-    Health --> Prod
+```yaml
+# k8s/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: shop
+spec:
+  selector:
+    app: shop
+  ports:
+    - port: 80
+      targetPort: 8080
 ```
 
-- **Staging** is deployed automatically on every `main` push
-- **Production** can be manual (via Portal) or automatic (toggle in Environment Settings)
-
-## 5. Monitor in Portal
-
-Open the **Deployments** tab in your project to see:
-
-| Column | Description |
-|---|---|
-| Commit | Git SHA with link to the commit |
-| Branch | Source branch |
-| Environment | dev, staging, production, or pr-{number} |
-| Status | Queued → Building → Deploying → Healthy / Failed |
-| Duration | Total time from build to healthy |
-| Logs | Click to view real-time container logs |
-
-## 6. Access Logs & Metrics
-
-Each deployment has:
-
-- **Logs** — Streamed via Loki, searchable in the Portal
-- **Metrics** — Request rate, error rate, p50/p95/p99 latency, CPU, memory
-- **Secrets** — Environment-specific encrypted configuration (viewable by authorized roles only)
-
-## Preview Cleanup
-
-Preview environments are automatically cleaned up:
-
-| Trigger | Action |
-|---|---|
-| PR closed (merged) | Preview kept for 1 hour, then deleted |
-| PR closed (unmerged) | Preview deleted immediately |
-| Branch deleted | Preview deleted immediately |
-| Age > 7 days | Scheduler marks for deletion |
-
-## Configuration
-
-Configure deployment settings per environment:
-
-```bash
-# Environment variables available during build
-BUILD_CMD=npm run build
-RUN_CMD=npm start
-HEALTH_CHECK_PATH=/health
-HEALTH_CHECK_TIMEOUT=30
-REPLICAS=2
-CONTAINER_PORT=3000
+```yaml
+# k8s/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shop
+  template:
+    metadata:
+      labels:
+        app: shop
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: ghcr.io/acme/shop:1.0.0
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
 ```
 
-Set these in **Project → Environments → {env} → Settings**.
+Leave out `namespace`. Platform puts each environment in its own namespace. Containers must run as a non-root user, as in the example, because project namespaces use the Kubernetes "restricted" security level. See [Namespace isolation](../namespace-isolation.md).
 
-## Next Steps
+A working example lives in the repository at [`examples/sdk-demo/k8s`](https://github.com/Mpratyush54/SERVER-automation/tree/master/examples/sdk-demo/k8s).
 
-- [Configure preview environments](../guides/preview-environments.md)
-- [Set up production deployment](../deployment/bootstrap.md)
-- [Monitor your application](../guides/monitoring.md)
+## Deploy
+
+1. Open your project and go to **Deployments**.
+2. In **Deploy**, choose the **Target environment**, for example `development`.
+3. Choose a **Branch or tag** and a **Commit**. Leave the commit empty to use the newest one.
+4. If your files are not in `k8s`, enter the folder in **Manifests path in repo**.
+5. Select **Pull from Git and deploy**.
+
+The progress shows each step: apply the files, wait until the app is healthy, then finish. A deploy that is not healthy within about three minutes is marked as failed, with the reason.
+
+When it succeeds, open the environment's address from **Environments** on the same page.
+
+## Roll back or redeploy
+
+- **Deployment history** lists every deploy. Select **Rollback** to go back to an earlier one.
+- **Git releases** lists your repository's tags. Select **Deploy this version** to deploy a release.
+
+## Preview a branch
+
+A preview environment gives a branch its own short-lived address, so others can try a change before it is merged. See [Preview environments](../guides/preview-environments.md).
+
+## Details
+
+- **Which commit is used.** An explicit branch or commit wins. Otherwise the project's Git revision setting is used, then the repository's default branch. See [Branches and Argo CD](../gitops-branches.md).
+- **Sync and refresh.** The project's Argo CD panel shows sync and health, and lets you refresh or sync an environment by hand.
+- **Logs and metrics.** Once your app runs, see [Monitoring and alerts](../guides/monitoring.md).
+- **Before going live.** Work through the [Production checklist](../guides/production-checklist.md).

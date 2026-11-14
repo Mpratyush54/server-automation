@@ -1,10 +1,12 @@
 # platformctl CLI
 
-`platformctl` is the host tool that installs and manages Platform on an Ubuntu server. It uses pre-built GHCR images — there is no on-server compile.
+`platformctl` installs and manages Platform on an Ubuntu server. This page lists every command and the main options.
+
+Run it as root or with `sudo`. It uses pre-built images, so nothing is compiled on the server.
 
 ## Install
 
-Copy this on the server (also on the [homepage](/landing)):
+Run this on the server:
 
 ```bash
 curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
@@ -19,7 +21,7 @@ sudo DOMAIN=platform.example.com ADMIN_EMAIL=you@example.com platformctl provisi
 
 `install.sh` puts the `platformctl` binary on `PATH`. Config lives in `/etc/platform/.env` (override with `--config`).
 
-Requirements: Ubuntu 22.04+, sudo, ≥ 8 GB RAM, ≥ 80 GB free on `/var`, ports 80/443 open.
+Requirements: Ubuntu 22.04+, sudo, at least 4 GB RAM and 40 GB free disk (8 GB and 80 GB recommended), ports 80 and 443 open. See [Install](installation.md).
 
 ## Commands
 
@@ -31,7 +33,13 @@ Requirements: Ubuntu 22.04+, sudo, ≥ 8 GB RAM, ≥ 80 GB free on `/var`, ports
 | `platformctl seed` | Seed the admin user from `/etc/platform/.env` |
 | `platformctl update` | Pull newest GHCR images and roll Platform deployments |
 | `platformctl recover` | Backup host files, persist passwords to disk, then restore API/Postgres login after a broken rotate |
-| `platformctl backup` | Copy `/etc/platform/.env` and database secrets to `/var/lib/platform/backups/<timestamp>/` |
+| `platformctl repair` | Fix HTTPS certificates and single sign-on for the bundled tools; safe to run any time |
+| `platformctl upgrade` | Upgrade to a newer release with a backup, health checks and rollback ([Upgrade](../operations/upgrades.md)) |
+| `platformctl backup` | Copy `/etc/platform/.env` and database secrets to `/var/lib/platform/backups/<timestamp>/` (not encrypted) |
+| `platformctl backup init\|list\|schedule\|restore-test` | Encrypted off-site backups ([Backups and restore](../operations/backups.md)); `backup --all` takes one |
+| `platformctl restore` | Restore an encrypted backup; reads the private key from standard input |
+| `platformctl harden` | Apply or re-apply the host security baseline ([Host hardening](../host-hardening.md)) |
+| `platformctl mfa disable --user <email>` | Remove a user's two-factor sign-in when no admin can ([Recover](../operations/recover.md)) |
 | `platformctl join` | Join this node to an HA cluster as a server or agent ([High availability](../operations/ha.md)) |
 | `platformctl token create\|rotate\|install` | Create, rotate and install cluster join tokens (HA) |
 | `platformctl version` | Print CLI version and default image tag |
@@ -96,13 +104,13 @@ Docker is **not** installed on the server; k3s uses its own containerd. For priv
 Set `PLATFORM_PROFILE` (or pass `--profile`) to `minimal`, `standard` (default)
 `full` or `ha`:
 
-- `minimal` ? core only; no monitoring, Portainer or ArgoCD.
-- `standard` ? the existing Grafana/Prometheus/Loki stack, Portainer and ArgoCD.
-- `full` ? standard services plus Alloy, S3-backed Loki, Tempo, Pyroscope and
+- `minimal`: core only; no monitoring, Portainer or ArgoCD.
+- `standard`: the existing Grafana/Prometheus/Loki stack, Portainer and ArgoCD.
+- `full`: standard services plus Alloy, S3-backed Loki, Tempo, Pyroscope and
   blackbox-exporter. See [Full-profile telemetry](../operations/telemetry.md) for
   memory estimates, token/CORS integration and the required legacy Loki migration.
 
-- `ha` ? the full feature set on a multi-node cluster: embedded etcd, ingress HA
+- `ha`: the full feature set on a multi-node cluster: embedded etcd, ingress HA
   (kube-vip VIP or external load balancer) and Longhorn replicated storage as the
   default StorageClass. See [High availability](../operations/ha.md).
 

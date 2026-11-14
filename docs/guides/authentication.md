@@ -1,4 +1,20 @@
-# Authentication & Authorization
+# Security and sign-in
+
+This page helps you control who can sign in to Platform and what each person can do.
+
+## The essentials
+
+- **Everyone signs in with a password.** The first admin account is created during install. Its password is in `/etc/platform/.env` on the server.
+- **Add people** in **Users**. Give each person a role: `admin`, `devops`, `tech_lead`, `developer` or `viewer`. Roles decide what they can change. See [Permissions](../api-reference/configuration/permissions.md).
+- **Turn on two-factor sign-in.** Users add an authenticator app, and you can require it for chosen roles. See [Two-factor sign-in](mfa.md).
+- **Sign in with GitHub or GitLab** as well as a password, once a Git provider is connected. See [Connect GitHub or GitLab](git-providers.md).
+- **Keep secrets in Platform**, not in your repository. See [Secrets](secrets-management.md).
+
+The server itself is protected too: the installer turns on a firewall, SSH safeguards and automatic security updates. See [Host hardening](../host-hardening.md).
+
+## How sign-in works
+
+The rest of this page is the technical detail: session tokens, roles and permissions, and single sign-on to the bundled tools.
 
 ## JWT Token Format
 

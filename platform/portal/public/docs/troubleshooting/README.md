@@ -1,9 +1,12 @@
 # Troubleshooting
 
-Every page here is a real issue that came up during an install. If you hit
-something not covered, open an issue: <https://github.com/Mpratyush54/SERVER-automation/issues>.
+This page helps you find the fix for an error you hit while installing or running Platform.
 
-## Install & Bootstrap
+First run `sudo platformctl status` to see which part is broken. For broken passwords, certificates or sign-in, start with [Recover](../operations/recover.md). Then find your error below. Each page shows the symptom, the cause and the fix.
+
+Not listed? Open an issue: <https://github.com/Mpratyush54/SERVER-automation/issues>.
+
+## Install
 
 - [apt-lock.md](apt-lock.md) — `apt` hangs at "Waiting for cache lock"
 - [dns-ipv6-timeout.md](dns-ipv6-timeout.md) — Helm / docker pull `TLS handshake timeout`
@@ -17,7 +20,7 @@ something not covered, open an issue: <https://github.com/Mpratyush54/SERVER-aut
 - [helm-name-reuse.md](helm-name-reuse.md) — `cannot re-use a name that is still in use`
 - [typescript-build-errors.md](typescript-build-errors.md) — TypeScript build errors during API build
 
-## Ingress, TLS & Auth
+## Ingress, HTTPS and sign-in
 
 - [cert-manager-timeout.md](cert-manager-timeout.md) — Let's Encrypt cert never becomes `Ready=True`
 - [ingress-ownership.md](ingress-ownership.md) — nginx-ingress refuses another ingress for the same host
@@ -27,14 +30,14 @@ something not covered, open an issue: <https://github.com/Mpratyush54/SERVER-aut
 - [argocd-oidc-redirect.md](argocd-oidc-redirect.md) — ArgoCD login → `Invalid redirect URL`
 - [grafana-subpath-redirect.md](grafana-subpath-redirect.md) — Grafana redirect loop at `/grafana`
 
-## Databases & Storage
+## Databases and storage
 
 - [minio-template-error.md](minio-template-error.md) — MinIO Helm `has no value` error
 - [minio-pvc-not-found.md](minio-pvc-not-found.md) — MinIO PVC stuck in `Pending`
 - [mongodb-validation.md](mongodb-validation.md) — Mongoose validation error on API startup
 - [db-wrongpass-after-rotate.md](db-wrongpass-after-rotate.md) — `WRONGPASS` after rotating a DB password
 
-## API & Seed
+## API
 
 - [api-seed-failure.md](api-seed-failure.md) — Bootstrap seed → `Failed to obtain auth token for seeding`
 - [angular-template-at-symbol.md](angular-template-at-symbol.md) — Angular template `@` symbol parse error

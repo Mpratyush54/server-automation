@@ -4,8 +4,8 @@ This file provides a machine-readable index of all documentation pages for LLM c
 
 ## File Index
 
-- `docs/index.md` — Main overview, architecture diagram, quick start, demo accounts
-- `docs/getting-started/installation.md` — Full local development setup
+- `docs/index.md` — What Platform is, how to start, where to find things
+- `docs/getting-started/installation.md` — Install on a server (and local development at the end)
 - `docs/getting-started/project-structure.md` — Monorepo directory map
 - `docs/getting-started/first-project.md` — Create a project, get an SDK token
 - `docs/getting-started/node-sdk-quickstart.md` — Node.js SDK quickstart
@@ -14,6 +14,8 @@ This file provides a machine-readable index of all documentation pages for LLM c
 - `docs/getting-started/python-sdk-quickstart.md` — Python SDK quickstart
 - `docs/getting-started/deploy-your-app.md` — Git push to preview URL pipeline
 - `docs/getting-started/upgrade-guide.md` — caps→platform migration guide
+- `docs/guides/databases.md` — Give an app PostgreSQL, MongoDB or Redis; where credentials live
+- `docs/operations/recover.md` — Fix a broken install: status, recover, repair, mfa disable, restore
 - `docs/guides/authentication.md` — JWT flow, RBAC roles, OIDC/SSO
 - `docs/guides/mfa.md` — TOTP MFA, recovery codes, step-up, mfa.requiredRoles, break-glass
 - `docs/guides/secrets-management.md` — Secrets encryption, versioning, env scoping

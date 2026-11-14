@@ -1,75 +1,44 @@
-# Your First Project
+# Your first project
 
-Get started by creating a project, setting up environments, and triggering your first deployment.
+This page helps you create a project in the portal and get it ready to deploy.
 
-## 1. Log In
+A project is one app. It has its own Git repository, three environments (development, staging and production), its own databases and secrets, and its own monitoring.
 
-Open [http://localhost:4200](http://localhost:4200) and log in with the admin account:
+## Create a project
 
-| Email | Password |
-|---|---|
-| admin@pratyushes.dev | (none required — click Sign In) |
-
-## 2. Create a Project
-
-1. Click **Projects** in the sidebar.
-2. Click **Create Project**.
+1. Sign in to the portal and open **Projects**.
+2. Select **New project**.
 3. Fill in the form:
 
-| Field | Value |
-|---|---|
-| Project Name | `My App` |
-| Git Repository | `https://github.com/your-org/my-app.git` |
+   | Field | Example | What it is |
+   |---|---|---|
+   | Name | `shop` | Lowercase letters, numbers and dashes. Used in addresses and namespaces. |
+   | Stack | Node.js | Node.js, Angular, Python or Static site |
+   | Git repository | `https://github.com/acme/shop` | The repository Platform deploys from. You can add it later. |
+   | Base domain | `example.com` or `203.0.113.7.sslip.io` | Each environment gets an address under this domain. You can add it later. |
 
-4. Click **Create**.
+4. Select **Create project**.
 
-A **SDK Token** is generated automatically for the project. Copy it — you will need it when configuring an SDK.
+Platform creates the project with three environments: **development**, **staging** and **production**. Each one runs in its own Kubernetes namespace and gets its own address. You can see them on the project's **Deployments** page, under **Environments**.
 
-> If you lose the token, go to **Project Settings → SDK Token** to regenerate it.
+## Connect your repository
 
-## 3. Create Environments
+If you did not add a repository in the form, open the project, go to **Configuration**, and set **Repository URL** under **Git and domain**.
 
-1. Open your project from the Projects list.
-2. Go to the **Environments** tab.
-3. Create the following environments:
+For a private repository, connect GitHub or GitLab first, so Platform can read it. See [Connect GitHub or GitLab](../guides/git-providers.md).
 
-| Name | Branch | Auto-Deploy | Preview |
-|---|---|---|---|
-| `dev` | `main` | Yes | No |
-| `staging` | `main` | Yes | No |
-| `production` | `main` | Yes | No |
+## Get an SDK token (optional)
 
-4. Click **Save**.
+You only need this if your app uses a Platform SDK for logs, metrics or databases.
 
-Each environment maps to a deployment target. The API creates a dedicated Kubernetes namespace per environment.
+1. Open the project and go to **Settings**.
+2. Under **Generate SDK token**, enter a name and pick the kind:
+   - **Server** for backend code (Node.js, Python). It can read the project's settings and secrets, so keep it on the server.
+   - **Browser** for frontend code (React, Angular). It can only send logs, metrics and bug reports.
+3. Select **Generate token** and copy it. It is shown only once.
 
-## 4. Trigger a Deployment
+Then follow a quickstart: [Node.js](node-sdk-quickstart.md), [Python](python-sdk-quickstart.md), [React](react-sdk-quickstart.md) or [Angular](angular-sdk-quickstart.md).
 
-1. Go to the **Deployments** tab.
-2. Click **New Deployment**.
-3. Select the `dev` environment.
-4. Enter a Git commit SHA (or leave blank to use the latest).
-5. Click **Deploy**.
+## Next
 
-The deployment pipeline:
-
-```
-Commit → API receives request → builds container → pushes to registry → applies k8s manifest → health check → ready
-```
-
-6. Watch the status update in real time: `Queued → Building → Deploying → Healthy`
-
-## 5. View Your Deployed App
-
-Once the deployment is healthy, the portal shows:
-
-- **URL** — the ingress address for the environment
-- **Logs** — real-time container logs via Loki
-- **Metrics** — CPU, memory, request latency (p50/p95/p99)
-- **Secrets** — environment-specific encrypted configuration
-
-## Next Steps
-
-- [Set up the Node.js SDK](node-sdk-quickstart.md) to instrument your app
-- [Learn about the deployment pipeline](deploy-your-app.md)
-- [Configure preview environments](../guides/preview-environments.md)
+[Deploy your app](deploy-your-app.md).

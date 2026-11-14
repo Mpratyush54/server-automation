@@ -36,6 +36,7 @@
   <url><loc>https://platform.pratyushes.dev/docs/api-reference/sdk-react/useBugReporter</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/api-reference/sdk-react/usePlatform</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/architecture/auth-flow</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/architecture/background-jobs</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/architecture/data-flow</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/architecture/database-schema</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/architecture/k8s-infrastructure</loc></url>
@@ -43,6 +44,7 @@
   <url><loc>https://platform.pratyushes.dev/docs/architecture/overview</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/architecture/sdk-lifecycle</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/architecture/secrets-architecture</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/architecture/telemetry-ingestion</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/changelog</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/contribution-guide</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/deployment/backup-and-restore</loc></url>
@@ -63,17 +65,42 @@
   <url><loc>https://platform.pratyushes.dev/docs/getting-started/react-sdk-quickstart</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/getting-started/sdk-examples</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/getting-started/upgrade-guide</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/gitops-branches</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/guides/authentication</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/guides/databases</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/guides/frontend-rum</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/guides/git-providers</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/guides/heatmaps</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/guides/mfa</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/guides/monitoring</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/guides/observability</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/guides/preview-environments</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/guides/production-checklist</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/guides/secrets-management</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/guides/status-pages</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/guides/testing</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/host-hardening</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/mcp/for-agents</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/mcp/overview</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/mcp/setup</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/mcp/tools</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/namespace-isolation</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/observability-releases</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/observability/error-tracking</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/operations/alerting</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/operations/backups</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/operations/database-monitoring</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/operations/e2e-ci</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/operations/ha</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/operations/image-signing</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/operations/platform-stack</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/operations/recover</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/operations/storage-providers</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/operations/synthetics</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/operations/telemetry-privacy</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/operations/telemetry</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/operations/upgrades</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/README</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/angular-template-at-symbol</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/api-seed-failure</loc></url>
@@ -86,6 +113,7 @@
   <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/dns-ipv6-timeout</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/dockerhub-rate-limit</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/general-dns-resolution</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/github-releases-outage</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/grafana-subpath-redirect</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/helm-name-reuse</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/troubleshooting/image-pull-backoff</loc></url>

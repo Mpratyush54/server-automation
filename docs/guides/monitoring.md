@@ -1,9 +1,37 @@
-# Monitoring & Observability
+# Monitoring and alerts
 
-The Platform observability stack collects metrics, logs, and traces from all services. It uses **Grafana** for visualization, **Loki** for log aggregation, and **Prometheus** for metric collection — deployed via the `kube-prometheus-stack` Helm chart.
+This page helps you see what your apps are doing and get told when something breaks.
 
-For project-scoped metrics, traces, logs and profiles inside the portal, see
-[Observability views](observability.md).
+## Where to look
+
+- **One project:** open the project and go to **Monitoring**. You see logs, request latency by route, CPU and memory, and service heartbeats.
+- **All projects:** open **Observability** in the sidebar for health, traffic, errors and alerts across every project.
+- **Dashboards:** Grafana runs at `https://<your-domain>/grafana/`. Sign in with your Platform account.
+
+Logs and request metrics appear once your app uses a Platform SDK. See the [Node.js quickstart](../getting-started/node-sdk-quickstart.md). Traces and profiles need the `full` install profile.
+
+## Get alerted
+
+1. Open **Alerting** in the portal and pick the project.
+2. Add a **notification channel**: Slack, PagerDuty, Microsoft Teams, Discord, a webhook or email.
+3. Add a **monitor**, for example "memory above 90% of the limit for 5 minutes".
+
+Full guide: [Alerts and on-call](../operations/alerting.md).
+
+## More monitoring
+
+| You want to | Read |
+|---|---|
+| Search traces, logs and metrics in the portal | [Observability views](observability.md) |
+| Group and track application errors | [Error tracking](../observability/error-tracking.md) |
+| Check a URL every minute from outside | [Synthetic checks](../operations/synthetics.md) |
+| Publish a public status page | [Status pages](status-pages.md) |
+| Measure real browser performance | [Frontend monitoring](frontend-rum.md) |
+| Control what data is kept, and for how long | [Privacy and retention](../operations/telemetry-privacy.md) |
+
+## How the monitoring stack works
+
+The rest of this page describes the components behind the views above: **Grafana** for dashboards, **Loki** for logs and **Prometheus** for metrics, installed with the `kube-prometheus-stack` Helm chart.
 
 ---
 

@@ -1,14 +1,26 @@
-# Platform MCP
+# AI agents and MCP
 
-The Platform MCP server is how **humans** and **AI agents** (Cursor, Claude Desktop, Claude Code, and any MCP client) talk to a running Platform cluster.
+This page helps you let an AI assistant, such as Cursor, Claude Desktop or Claude Code, work with your Platform server safely.
 
-It does **not** give the model a raw shell on your server. Every mutating or destructive action goes through:
+Platform includes an MCP server. MCP is the standard way AI tools call outside services. The assistant gets tools to check health, list projects, read logs and pods, and deploy. It never gets a raw shell on your server.
 
-1. An **agent token** (`plat_agent_*`) with explicit scopes
-2. A **command guard** (allowlist + deny list)
-3. A **human JWT** for anything destructive (agents cannot self-approve)
+## Set it up in three steps
 
-Public docs live on the marketing site: [MCP overview](/docs/mcp/overview). The server source is [`platform/mcp-server/`](https://github.com/Mpratyush54/SERVER-automation/tree/master/platform/mcp-server).
+1. **Create an agent token.** Sign in as an admin or DevOps user and create a token (`plat_agent_...`) with only the scopes the assistant needs. It is shown once.
+2. **Add the MCP server to your AI tool**, with your Platform address and the token. See [Set up MCP](setup.md) for Cursor and Claude configuration.
+3. **Ask** the assistant to check health or list your projects.
+
+## What keeps it safe
+
+Every action that changes something goes through three checks:
+
+1. An **agent token** (`plat_agent_*`) with explicit scopes.
+2. A **command guard** that only allows listed commands and blocks dangerous ones.
+3. A **person** for anything destructive. Agents cannot approve their own requests.
+
+Details: [Tools and command policy](tools.md). Rules the assistant itself must follow: [Rules for AI agents](for-agents.md).
+
+The server source is [`platform/mcp-server/`](https://github.com/Mpratyush54/SERVER-automation/tree/master/platform/mcp-server).
 
 ## Who this is for
 

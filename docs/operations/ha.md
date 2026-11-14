@@ -1,8 +1,42 @@
-# High availability (ha profile)
+# High availability
 
-The `ha` install profile (`PLATFORM_PROFILE=ha`) runs the platform on several
-nodes. It installs everything the `full` profile does, plus five HA layers that
-this page covers in order:
+This page helps you run Platform on several servers, so it keeps working when one of them fails.
+
+## The short version
+
+You need at least **three servers** on the same private network.
+
+1. On the first server, list every node and install with the `ha` profile:
+
+   ```bash
+   export PLATFORM_CLUSTER_NODES=10.0.0.11,10.0.0.12,10.0.0.13
+   export INGRESS_HA_MODE=vip INGRESS_VIP=10.0.0.50 API_VIP=10.0.0.60
+   sudo -E platformctl provision --profile ha
+   ```
+
+2. Still on the first server, create a join token and the join settings file:
+
+   ```bash
+   sudo platformctl token create --role server --output /root/server.token \
+     --settings-output /root/join-settings
+   ```
+
+3. Copy both files to each other server, install `platformctl` there, and join:
+
+   ```bash
+   sudo platformctl join --role server --server https://10.0.0.60:6443 \
+     --token-file /root/server.token --join-settings /root/join-settings \
+     --ingress-ha-mode vip --ingress-vip 10.0.0.50 --api-vip 10.0.0.60 \
+     --nodes 10.0.0.11,10.0.0.12,10.0.0.13
+   ```
+
+4. Check the cluster with `sudo platformctl status`.
+
+Every step is explained in [Cluster: k3s HA, join and tokens](#cluster-k3s-ha-join-and-tokens) below.
+
+## What you get
+
+The `ha` profile (`PLATFORM_PROFILE=ha`) installs everything the `full` profile does, plus five layers:
 
 1. **Cluster**: k3s keeps the cluster state in **embedded etcd** replicated
    across the server nodes, so the Kubernetes API keeps working when one server

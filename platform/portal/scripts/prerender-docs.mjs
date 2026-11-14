@@ -39,10 +39,10 @@ export async function prerenderDocs({ docsDir = join(portal, 'public/docs'), out
     // This content is sent to every client. Angular replaces app-root with its
     // interactive view on startup; the document remains readable without JS.
     const content = `<style>
-      .docs-static{max-width:1000px;margin:0 auto;padding:32px 24px;color:#e4e4e7;font:16px/1.7 system-ui;overflow-wrap:anywhere}
-      .docs-static a{color:#60a5fa}.docs-static h1{font-size:2.25rem;line-height:1.2}
-      .docs-static h2{margin-top:2em;font-size:1.5rem}.docs-static h3{font-size:1.2rem}.docs-static pre{overflow:auto;padding:16px;background:#18181b;border-radius:8px}
-      .docs-static table{display:block;overflow:auto;border-collapse:collapse}.docs-static td,.docs-static th{padding:8px;border:1px solid #3f3f46}
+      .docs-static{max-width:72ch;margin:0 auto;padding:32px 16px;color:rgb(var(--fg));font-size:16px;line-height:1.65;overflow-wrap:anywhere}
+      .docs-static a{color:rgb(var(--accent-text))}.docs-static h1{font-size:2rem;line-height:1.2}
+      .docs-static h2{margin-top:2em;font-size:1.375rem}.docs-static h3{font-size:1.125rem}.docs-static pre{overflow:auto;padding:14px 16px;background:rgb(var(--surface));border:1px solid rgb(var(--line));border-radius:10px}
+      .docs-static table{display:block;overflow:auto;border-collapse:collapse}.docs-static td,.docs-static th{padding:8px 12px;border-bottom:1px solid rgb(var(--line))}
       .docs-static img{max-width:100%}
     </style><main class="docs-static"><nav><a href="/">Platform</a> / <a href="/docs">Documentation</a></nav><article>${article}</article></main>`;
     let document = shell.replace(/<title>[^<]*<\/title>/, () => `<title>${escape(title)}</title>`)

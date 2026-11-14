@@ -1,117 +1,58 @@
-# Platform Documentation
+# What Platform is
 
-**Platform** is an open-source, self-hosted internal Platform-as-a-Service that
-provides a unified control plane for deploying, managing, and monitoring your
-applications on Kubernetes (k3s).
+Platform turns one Ubuntu server, or a small cluster, into your own place to deploy and run apps.
 
-## Quick Links
+You install it with one command. You then get a web portal where you create projects, deploy them from Git, add databases, keep secrets, and watch logs, metrics and errors. Everything runs on your own machine.
 
-| Section | Description |
-|---|---|
-| [Getting Started](getting-started/installation.md) | Set up Platform locally or on a server |
-| [platformctl CLI](getting-started/platformctl.md) | Every `platformctl` command (`provision`, `update`, `recover`, …) |
-| [MCP](mcp/overview.md) | Agent tokens, Cursor/Claude setup, tools, and [agent protocol](mcp/for-agents.md) |
-| [API Reference](api-reference/platform-api/auth.md) | Complete API endpoint documentation |
-| [SDK Reference](api-reference/sdk-node/PlatformClient.md) | Node.js, Python, React, Angular SDKs |
-| [Architecture](architecture/overview.md) | System design, data flow, auth flow |
-| [Deployment Guide](deployment/bootstrap.md) | Production deployment on k3s |
-| [Host hardening](host-hardening.md) | SSH safeguards, firewall rollback, security updates, ingress limits and WAF |
-| [Image signing](operations/image-signing.md) | Trivy, cosign, Kyverno admission |
-| [High availability](operations/ha.md) | `ha` profile: multi-node k3s (embedded etcd, `platformctl join`), ingress VIP or external load balancer, Longhorn replicated storage |
-| [Troubleshooting](troubleshooting/dns-ipv6-timeout.md) | Solutions to known issues |
-| [Guides](guides/authentication.md) | Authentication, [MFA](guides/mfa.md), secrets, monitoring, [observability views](guides/observability.md), [status pages](guides/status-pages.md), CI/CD |
-| [Contributing](contribution-guide.md) | How to contribute to Platform |
+## Start here
 
-## What is Platform?
-
-Platform is a self-hosted PaaS control center that brings together:
-
-- **Deployment automation** — Preview environments on every Git push, staging/production on `main`
-- **Secrets management** — AES-256-GCM encrypted secrets with versioning, rollback and audit trails, built into the platform (Secrets page / API)
-- **Database provisioning** — One-click PostgreSQL, MongoDB and Redis instances with automated backups
-- **Observability** — Real-time metrics (p50/p95/p99), Loki log aggregation, Grafana dashboards
-- **Multi-SDK support** — Node.js, Python, React and Angular SDKs with auto-registration, metrics and bug reporting
-- **RBAC & permissions** — Granular role-based access control with custom role definitions
-- **SSO / OIDC** — OAuth2 + OpenID Connect via oauth2-proxy for any service that doesn't ship SSO in its OSS build
-
-## Architecture at a glance
-
-```
-                    ┌─────────────────────┐
-                    │    Browser / SDK    │
-                    └──────────┬──────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │   Nginx Ingress     │
-                    │  (TLS termination)  │
-                    └──────────┬──────────┘
-                               │
-              ┌────────────────┼────────────────┐
-              │                │                │
-     ┌────────▼──────┐  ┌─────▼──────┐  ┌──────▼─────┐
-     │ Platform API  │  │  Portal    │  │  ArgoCD    │
-     │ (Node/TS)     │  │ (Angular)  │  │ (GitOps)   │
-     └────────┬──────┘  └────────────┘  └────────────┘
-              │
-    ┌─────────┼──────────┐
-    │         │          │
-    ▼         ▼          ▼
-┌────────┐ ┌───────┐ ┌───────┐
-│Postgres│ │Mongo  │ │Redis  │      (all in the `databases` namespace)
-└────────┘ └───────┘ └───────┘
-```
-
-## SDK Ecosystem
-
-| SDK | Package | Quickstart | Examples |
-|---|---|---|---|
-| Node.js | `@mpratyush54/sdk-node` | [Quickstart](getting-started/node-sdk-quickstart.md) | [`sdk-node/examples`](../sdk-node/examples) |
-| React   | `@mpratyush54/sdk-react`  | [Quickstart](getting-started/react-sdk-quickstart.md) | [`sdk-react/examples`](../sdk-react/examples) |
-| Angular | `@mpratyush54/sdk-angular`| [Quickstart](getting-started/angular-sdk-quickstart.md) | [`sdk-angular/examples`](../sdk-angular/examples) |
-| Python  | `mpratyush54-sdk`     | [Quickstart](getting-started/python-sdk-quickstart.md) | [`sdk-python/examples`](../sdk-python/examples) |
-
-See also the [SDK examples index](getting-started/sdk-examples.md) and the cluster demo [`examples/sdk-apps`](../examples/sdk-apps).
-
-## Quick Start (local dev)
-
-```bash
-git clone https://github.com/Mpratyush54/SERVER-automation.git
-cd SERVER-automation
-
-# Start Postgres + Mongo + Redis via docker-compose
-docker compose up -d postgres mongodb redis
-
-# Install deps and run both API (:3000) and Portal (:4200)
-npm install
-npm run start
-```
-
-Then sign in at `http://localhost:4200` with **`admin@pratyushes.dev`** and the
-password from `ADMIN_PASSWORD` (docker-compose default: **`Admin@123`**). Demo users
-are auto-seeded on first API startup; if you ever need to re-seed manually:
-
-```bash
-npm --prefix platform/api run seed:db
-```
-
-**Server install** (copy from the [homepage](/landing) or run):
+1. [Install Platform](getting-started/installation.md) on a server.
+2. [Create your first project](getting-started/first-project.md) in the portal.
+3. [Deploy an app](getting-started/deploy-your-app.md) from your Git repository.
 
 ```bash
 curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
 sudo platformctl provision
 ```
 
-Full CLI: [platformctl](getting-started/platformctl.md). Production walkthrough: [Deployment Guide](deployment/bootstrap.md).
+## What you get
 
-## Demo Accounts (local dev)
+- **Deploys from Git.** Pick a branch and commit, and Platform deploys the Kubernetes files in your repository with Argo CD. Branches can get their own preview environment.
+- **Databases.** PostgreSQL, MongoDB and Redis run on the server. Each project gets its own credentials.
+- **Secrets.** Encrypted settings for each environment, with history and rollback.
+- **Monitoring.** Logs, metrics, traces, error tracking, uptime checks and alerts, in the portal.
+- **Sign-in and roles.** Passwords, two-factor sign-in, GitHub or GitLab sign-in, and roles that limit who can do what.
+- **Backups.** Encrypted backups to S3-compatible storage, and a restore you can test.
+- **AI agents.** An MCP server lets tools such as Cursor and Claude work with your server through scoped tokens and guarded commands.
+- **SDKs.** Node.js, Python, React and Angular libraries connect your app to logs, metrics and databases.
 
-| Name | Email | Role |
-|---|---|---|
-| Admin | admin@pratyushes.dev | Admin (full access) |
-| DevOps Boss | devops@pratyushes.dev | DevOps Engineer |
-| Sarah Lead | sarah@pratyushes.dev | Tech Lead |
-| John Dev | john@pratyushes.dev | Developer |
+## How it fits together
 
-## License
+Platform runs on k3s, a small Kubernetes distribution. The installer, `platformctl`, sets up k3s, the databases, Argo CD, the monitoring stack, and the Platform API and portal. Each project environment gets its own Kubernetes namespace.
 
-MIT
+```text
+              Browser / SDK
+                    |
+            Ingress (HTTPS)
+                    |
+   +----------------+----------------+
+   |                |                |
+Platform API     Portal           Argo CD
+   |
+PostgreSQL · MongoDB · Redis · MinIO
+```
+
+For the full picture, see [How Platform works](architecture/overview.md).
+
+## Find your way around
+
+| You want to | Go to |
+|---|---|
+| Install on a server | [Install](getting-started/installation.md) |
+| Ship your app | [Deploy an app](getting-started/deploy-your-app.md) |
+| Add a database | [Databases](guides/databases.md) |
+| Protect your data | [Backups and restore](operations/backups.md) |
+| See what is happening | [Monitoring and alerts](guides/monitoring.md) |
+| Run on several servers | [High availability](operations/ha.md) |
+| Fix a broken install | [Recover](operations/recover.md) and [Troubleshooting](troubleshooting/README.md) |
+| Look up a command | [CLI](getting-started/platformctl.md) |

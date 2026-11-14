@@ -1,10 +1,42 @@
-# Encrypted server backups and disaster recovery
+# Backups and restore
 
-`platformctl backup --all` is opt-in. It uses installed database tools through
-`kubectl exec`, SQLite's online backup API (or k3s embedded-etcd snapshots), `mc`,
-and age encryption compiled into platformctl. No resident backup controller is
-installed. Plain `platformctl backup` retains the older local credential-copy
-behavior for compatibility; those copies are **not encrypted or off-site**.
+This page helps you back up your whole Platform server, encrypted and off-site, and restore it when you need to.
+
+A backup covers the platform settings, PostgreSQL, MongoDB, Redis, MinIO files and the k3s cluster state. It is encrypted on the server with a key only you hold, then sent to S3-compatible storage such as AWS S3, Cloudflare R2 or Backblaze B2.
+
+## Quick start
+
+1. On the server, install the tools the backup uses: `sudo apt-get install -y sqlite3 jq`, plus the MinIO `mc` client.
+2. Create an `mc` alias for your storage bucket, for example `offsite`.
+3. Set up backups, giving the public half of your encryption key:
+
+   ```bash
+   sudo platformctl backup init --target s3://offsite/platform/server-a \
+     --recipient age1YOUR_PUBLIC_RECIPIENT
+   ```
+
+4. Take a backup, list backups, and turn on nightly backups:
+
+   ```bash
+   sudo platformctl backup --all
+   sudo platformctl backup list
+   sudo platformctl backup schedule
+   ```
+
+5. Check that the newest backup can be restored, without touching live data:
+
+   ```bash
+   cat identity.txt | ssh you@server 'sudo -n platformctl backup restore-test'
+   ```
+
+To restore, see [Restore on a fresh VM](#restore-on-a-fresh-vm) below. Keep the private key (`identity.txt`) off the server, for example in a password manager. Without it, backups cannot be decrypted.
+
+> [!WARNING]
+> Plain `platformctl backup`, without `--all`, only copies settings and passwords to a folder on the same server. It is not encrypted and does not survive losing the disk.
+
+## How backups work
+
+`platformctl backup --all` is opt-in. It uses the installed database tools through `kubectl exec`, SQLite's online backup API (or k3s embedded-etcd snapshots), `mc`, and age encryption built into platformctl. No backup service runs in the background.
 
 ## Setup
 
