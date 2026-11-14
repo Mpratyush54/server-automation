@@ -225,3 +225,14 @@ func TestManifestAndRetentionOnStore(t *testing.T) {
 		t.Fatal("unsafe filename accepted")
 	}
 }
+
+// A generated password may start with "-": mongodump/mongorestore then read
+// it as an option when it is a separate argument (found on the #186 e2e run:
+// "expected argument for flag -p, --password").
+func TestMongoPasswordIsAttachedToFlag(t *testing.T) {
+	for name, s := range map[string]string{"capture.sh": captureScript, "restore.sh": restoreScript} {
+		if strings.Contains(s, `--password "`) || !strings.Contains(s, `"--password=$(pw MONGODB_ROOT_PASSWORD)"`) {
+			t.Fatalf("%s must pass the MongoDB password as --password=<value>", name)
+		}
+	}
+}

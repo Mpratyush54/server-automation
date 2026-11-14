@@ -45,7 +45,7 @@ postgres)
 mongo)
   p=$(mongo_pod)
   kubectl -n databases exec "$p" -- bash -ec "$PWHELPER"'
-    mongodump --username root --password "$(pw MONGODB_ROOT_PASSWORD)" --authenticationDatabase admin --archive --gzip' > "$dest/mongo.archive.gz"
+    mongodump --username root "--password=$(pw MONGODB_ROOT_PASSWORD)" --authenticationDatabase admin --archive --gzip' > "$dest/mongo.archive.gz"
   ;;
 redis)
   p=$(redis_master_pod)

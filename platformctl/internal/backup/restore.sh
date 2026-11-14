@@ -70,7 +70,7 @@ mongo)
   trap 'kubectl -n databases exec "$p" -- rm -rf "$remote"' EXIT
   kubectl -n databases cp "$src/mongo.archive.gz" "$p:$remote/mongo.archive.gz"
   kubectl -n databases exec "$p" -- bash -ec "$PWHELPER"'
-    opts=(--username root --password "$(pw MONGODB_ROOT_PASSWORD)" --authenticationDatabase admin --gzip "--archive=$1/mongo.archive.gz")
+    opts=(--username root "--password=$(pw MONGODB_ROOT_PASSWORD)" --authenticationDatabase admin --gzip "--archive=$1/mongo.archive.gz")
     # Data first, users and roles last. Replacing admin.system.users removes
     # the user this session authenticated as: when that happened first, every
     # later command failed ("requires authentication") and left the restore
