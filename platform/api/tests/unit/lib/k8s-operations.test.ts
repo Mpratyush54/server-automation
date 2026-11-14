@@ -37,6 +37,8 @@ it('propagates API failure instead of claiming termination', async () => {
 });
 it('gives identical branches in different projects distinct preview workload names', async () => {
   await deployK8sPreview('alpha.beta', 'feature/test', 'nginx:alpine', 'id-a');
+  expect(mockApi.createNamespacedDeployment.mock.calls[0][0].body.spec.template.spec.containers[0].resources).toEqual({ requests: { cpu: '100m', memory: '128Mi' }, limits: { cpu: '500m', memory: '512Mi' } });
+  expect(mockApi.createNamespacedDeployment.mock.calls[0][0].body.spec.template.spec.containers[0].readinessProbe).toEqual({ tcpSocket: { port: 80 }, periodSeconds: 2, failureThreshold: 30 });
   await deployK8sPreview('alpha-beta', 'feature/test', 'nginx:alpine', 'id-b');
   const names = mockApi.createNamespacedDeployment.mock.calls.map((call: any) => call[0].body.metadata.name);
   expect(names[0]).not.toBe(names[1]);

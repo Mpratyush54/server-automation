@@ -95,6 +95,9 @@ func IngressSecurityValues(c *config.Config) map[string]any {
 			}
 		}
 	}
+	if KEDAEnabled(c) {
+		controller["metrics"] = map[string]any{"enabled": true}
+	}
 	return map[string]any{"controller": controller}
 }
 

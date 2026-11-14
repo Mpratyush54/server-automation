@@ -302,6 +302,7 @@
                 <dt title="The isolated space this environment runs in on the server">Namespace</dt>
                 <dd class="mono">{{ env.namespace }}</dd>
               </dl>
+              <app-autoscaling [projectId]="project.id" [environmentId]="env.id" [preview]="env.name === 'preview'" [canEdit]="role === 'admin' || role === 'devops'" />
             </li>
           }
         </ul>

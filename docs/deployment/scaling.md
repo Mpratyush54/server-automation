@@ -17,7 +17,62 @@ The value is saved in `/etc/platform/.env`, so later runs keep it. Each extra co
 
 ## Run more copies of an app
 
-There is no portal control for this yet. A user with the DevOps role can set the number of copies of an environment's app through the API. See [For developers / API](#for-developers--api). Argo CD is told to leave the new count alone, so it is not reset by the next sync.
+In Deployments, use each environment's Autoscaling row to scale on CPU, memory or request rate. DevOps users can also set replicas manually through the API when autoscaling is disabled. Argo CD leaves the replica count to the selected controller.
+
+## Autoscaling and sleeping previews
+
+In a project's Deployments section, open an environment's Autoscaling row. DevOps users and administrators can enable scaling, choose minimum and maximum replicas, set targets, and Save. Project viewers can inspect replica counts and scaling status. Refresh status to see the latest counts and controller conditions.
+
+CPU and memory targets are percentages of container resource requests. Kubernetes metrics-server must be running (included with k3s). Set requests on every container for the chosen resource. When several metrics are selected, the metric needing the most replicas wins. Leave an optional target blank to omit it. CPU and memory scaling do not install KEDA.
+
+Maximum replicas applies to every Deployment in the environment. Cairn checks namespace ResourceQuota limits, other workloads, and rolling-update surge before applying settings. Preview branches share the project's preview quota; each branch reserves the selected maximum. Lower the maximum or ask an administrator to adjust the quota when Save is rejected. Kubernetes continues to enforce quotas as workloads change. Autoscaling does not add nodes or server capacity.
+
+### Enable request scaling
+
+Request scaling and sleeping previews need the full install profile (or ha, which includes full features), monitoring, and explicit operator opt-in:
+
+```sh
+sudo env INSTALL_KEDA=true platformctl provision --profile full
+```
+
+The installer saves `INSTALL_KEDA` for future runs. It installs pinned KEDA chart 2.18.1 and HTTP add-on chart 0.11.1 in the `keda` namespace only when enabled. Minimal and standard profiles skip them. Each of the six controller, scaler, metrics and interceptor workloads requests 50m CPU and 64 MiB memory, with limits of 500m CPU and 256 MiB memory. The interceptor stays at one replica. Allow at least 384 MiB of additional requested memory and measure actual use before sizing the server.
+
+The installer enables ingress-nginx request metrics and adds a Prometheus PodMonitor. Set a request-rate target in requests per second per replica. Cairn creates a KEDA ScaledObject with a Prometheus trigger and any selected CPU/memory triggers, rather than a second HPA targeting the same Deployment. Request scaling requires a Service selecting each Deployment?s pods and an ingress to that Service. Preview activation uses Cairn?s generated preview Service and ingress. CPU/memory scaling does not need a Service or ingress. Without the KEDA CRDs the API returns 409 with an explanation of the required profile and flag.
+
+### Sleep a preview and wake on request
+
+For a preview environment, enable autoscaling and set minimum replicas to zero. Cairn creates an HTTPScaledObject and an HTTP push trigger in the same ScaledObject. Traffic keeps the preview active; after five idle minutes the workload can scale to zero. CPU, memory, or request-rate activity may keep it running longer.
+
+The preview ingress keeps its hostname and TLS configuration. Its backend points through a same-namespace ExternalName Service to the HTTP interceptor, which queues the first request while KEDA starts a pod. Namespace policy allows the interceptor to reach preview pods. Keep ingress-nginx ExternalName support enabled. Direct calls to the backing Service bypass activation and cannot wake a sleeping preview.
+
+The configured cold-start budget is **60 seconds to reach a ready backend**, then **30 seconds for response headers**. The ingress response timeout is 90 seconds. Image pulls, scheduling, startup and readiness all consume the cold-start budget. Clients with shorter deadlines can time out first. Use small images, cache them on the server, and make the app ready within 60 seconds; keep minimum replicas at one for apps that cannot meet this budget. These are configured limits, not measured startup guarantees. VM load and first-request testing must verify them before production use.
+
+Disabling autoscaling removes Cairn's controllers and restores the preview's original ingress backend. A sleeping preview is first requested to scale to at least one replica; readiness may take time. Existing preview expiry still applies: a preview removed by the preview TTL cannot wake. Deploy again to recreate an expired preview. Saved scaling settings are reapplied when the environment is deployed, including new preview branches.
+
+### API
+
+Use `GET` or `PUT /api/projects/:projectId/environments/:environmentId/autoscaling`. GET returns settings, KEDA capabilities, and per-workload current/ready replica counts and HPA status. PUT uses the same human role and project DevOps access checks as manual scaling, and shares the deployment lock. Example PUT body:
+
+```json
+{
+  "enabled": true,
+  "minReplicas": 1,
+  "maxReplicas": 3,
+  "targetCpuPercent": 70,
+  "targetMemoryPercent": 80,
+  "targetRps": 25
+}
+```
+
+Only previews allow a zero minimum. Disable autoscaling before manually scaling a workload. Argo CD is configured to ignore Deployment replica counts so self-healing does not undo autoscaling. Controller changes may briefly return 409 while the previous controller finishes deleting; retry Save. Cluster failures return 503 and settings are saved only after the apply succeeds. If an apply partially succeeds, retry the same settings to reconcile it.
+
+### Verify on the test VM
+
+Provision the full profile with the flag above, deploy an example app, enable autoscaling, and send enough load to exceed its configured target. Observe current replicas increase from one toward the maximum, then fall after removing load. Check `kubectl -n <environment-namespace> get hpa,scaledobject` and controller conditions if metrics are unavailable.
+
+For a preview, set minimum replicas to zero, stop traffic for at least five minutes, and confirm zero replicas. Request its public HTTPS hostname and confirm that the request completes and a ready pod appears within the cold-start budget. Test enabling, disabling, deployment updates, quota rejection, and a second preview branch. These end-to-end checks require a cluster and are separate from unit tests.
+
+References: [KEDA Prometheus scaler](https://keda.sh/docs/2.18/scalers/prometheus/), [HTTP add-on 0.11.1 schema](https://github.com/kedacore/http-add-on/blob/v0.11.1/config/crd/bases/http.keda.sh_httpscaledobjects.yaml).
 
 ## Add servers
 
@@ -174,7 +229,7 @@ Content-Type: application/json
 { "replicas": 3 }
 ```
 
-- Needs the DevOps role and DevOps access to the project.
+- Needs the DevOps role and DevOps access to the project. Disable environment autoscaling before setting replicas manually.
 - `replicas` is an integer from 0 to 1000.
 - It scales every Deployment in that environment's namespace, adds `/spec/replicas` to the Argo CD application's ignored differences (with `RespectIgnoreDifferences=true`) so the next sync keeps the count, saves the count on the deployment record and writes a `deployment.scaled` audit entry.
 

@@ -141,6 +141,7 @@ func provisionGraph(c *config.Config) []stepDef {
 		{name: "telemetry", deps: []string{"longhorn", "platform", "monitoring", "routing"}, skip: !components.FullTelemetry(c), args: install("telemetry"), fn: components.InstallTelemetry},
 		// Synthetic monitoring (#42): namespace, quotas, egress policies, API RBAC (full profile).
 		{name: "synthetics", deps: []string{"telemetry"}, skip: !components.FullTelemetry(c), args: install("synthetics"), fn: components.InstallSynthetics},
+		{name: "keda", deps: []string{"telemetry"}, skip: !components.KEDAEnabled(c), args: install("keda"), fn: components.InstallKEDA},
 		{name: "longhorn-monitoring", deps: []string{"longhorn", "monitoring", "telemetry"}, skip: !c.IsHA() || !c.InstallMonitoring, args: install("longhorn-monitoring"), fn: components.InstallLonghornMonitoring, warnOnly: true},
 		{name: "postgresql-backup", deps: []string{"postgresql", "minio", "platform", "cert-manager"}, skip: !c.IsHA(), args: install("postgresql-backup"), fn: components.InstallPostgresBackup},
 		{name: "postgresql-monitoring", deps: []string{"postgresql", "monitoring", "telemetry"}, skip: !c.IsHA() || !c.InstallMonitoring, args: install("postgresql-monitoring"), fn: components.InstallPostgresMonitoring, warnOnly: true},

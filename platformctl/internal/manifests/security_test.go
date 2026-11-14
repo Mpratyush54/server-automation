@@ -151,6 +151,7 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 		{`["networking.k8s.io"]`, `["ingresses"]`, "", `["get", "create", "update"]`},
 		{`["rbac.authorization.k8s.io"]`, `["rolebindings"]`, "", `["get", "create", "update"]`},             // #22
 		{`["rbac.authorization.k8s.io"]`, `["clusterroles"]`, `["platform-namespace-baseline"]`, `["bind"]`}, // #22
+		{`["apiextensions.k8s.io"]`, `["customresourcedefinitions"]`, `["scaledobjects.keda.sh","httpscaledobjects.http.keda.sh"]`, `["get"]`},
 	})
 	expect("Role", "platform-api", "platform", []rbacRule{
 		{`[""]`, `["configmaps"]`, `["platform-backup-backup","platform-backup-restore-test"]`, `["get"]`}, // #21
@@ -173,9 +174,15 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 		{`["networking.k8s.io"]`, `["networkpolicies"]`, "", `["get", "list", "create", "update"]`},
 		{`[""]`, `["resourcequotas", "limitranges"]`, "", `["get", "list", "create", "update"]`},
 		{`[""]`, `["pods", "services", "persistentvolumeclaims", "events"]`, "", `["list"]`}, // #31 topology
-		{`["apps"]`, `["deployments", "replicasets"]`, "", `["list"]`},                      // #31 topology
-		{`["networking.k8s.io"]`, `["ingresses"]`, "", `["list"]`},                          // #31 topology
-		{`["cert-manager.io"]`, `["certificates"]`, "", `["list"]`},                         // #31 topology
+		{`["apps"]`, `["deployments", "replicasets"]`, "", `["list"]`},                       // #31 topology
+		{`["networking.k8s.io"]`, `["ingresses"]`, "", `["list"]`},                           // #31 topology
+		{`["cert-manager.io"]`, `["certificates"]`, "", `["list"]`},                          // #31 topology
+		{`["autoscaling"]`, `["horizontalpodautoscalers"]`, "", `["get", "list", "create", "update", "delete"]`},
+		{`["keda.sh"]`, `["scaledobjects"]`, "", `["get", "list", "create", "update", "delete"]`},
+		{`["http.keda.sh"]`, `["httpscaledobjects"]`, "", `["get", "create", "update", "delete"]`},
+		{`[""]`, `["services"]`, "", `["get", "create", "update", "delete"]`},
+		{`["networking.k8s.io"]`, `["ingresses"]`, "", `["update"]`},
+		{`["apps"]`, `["deployments/scale"]`, "", `["patch"]`},
 	})
 	if strings.Contains(manifest, "kind: ClusterRoleBinding\nmetadata:\n  name: platform-namespace-baseline") {
 		t.Fatal("platform-namespace-baseline must only be bound per project namespace")

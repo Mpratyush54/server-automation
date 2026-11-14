@@ -60,6 +60,7 @@ func All() []Component {
 		{"monitoring", "Grafana + Prometheus + Loki", InstallMonitoring},
 		{"telemetry", "Full profile telemetry backends and collector", InstallTelemetry},
 		{"synthetics", "Synthetic monitoring namespace, egress policies and API RBAC (full profile)", InstallSynthetics},
+		{"keda", "Request autoscaling and preview activation (full profile, opt-in)", InstallKEDA},
 		{"oauth2-proxy", "OAuth2 authentication proxy", InstallOAuthProxy},
 		{"portainer", "Container management UI (subdomain + Platform SSO)", InstallPortainer},
 		{"platform", "Platform API + Portal", InstallPlatform},

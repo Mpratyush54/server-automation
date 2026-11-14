@@ -11,6 +11,7 @@ import { reportNamespaceBaseline } from './namespace-backfill';
 import { ensureProjectNamespace } from './namespace-baseline';
 import { defineOperation } from './operations';
 import { loadKubeConfig } from './kube-config';
+import { applyEnvironmentAutoscaling } from './autoscaling-k8s';
 
 export const DEPLOY_OPERATION = 'deployment.deploy';
 
@@ -201,6 +202,7 @@ export const deployOperation = defineOperation<DeployState>({
         const { ds, dep, project, env } = await load(ctx.state.deploymentId);
         // Keep the original three-step operation layout so interrupted pre-upgrade operations can resume.
         if (!ctx.state.preview) await injectRelease(env.namespace, project.id, releaseVersion(dep));
+        if (env.autoscaling?.enabled) await applyEnvironmentAutoscaling(env, env.autoscaling);
         dep.status = DeploymentStatus.DEPLOYED;
         dep.deployedAt = dep.deployedAt || new Date();
         if (env.domain) {

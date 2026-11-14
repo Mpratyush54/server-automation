@@ -78,6 +78,8 @@ type Config struct {
 	// SyntheticsBrowser enables browser synthetic checks (headless Chromium
 	// CronJobs, #42). Only honored on the full profile with SYNTHETICS_BROWSER=true.
 	SyntheticsBrowser bool
+	// InstallKEDA opts into request scaling and preview activation on full/ha.
+	InstallKEDA bool
 
 	// Profile is the install profile (minimal|standard|full) that set the
 	// Install* defaults. See ApplyProfile.
@@ -637,6 +639,7 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("INSTALL_MONITORING=%t\n", c.InstallMonitoring))
 	b.WriteString(fmt.Sprintf("INSTALL_PORTAINER=%t\n", c.InstallPortainer))
 	b.WriteString(fmt.Sprintf("INSTALL_CERTMANAGER=%t\n", c.InstallCertManager))
+	b.WriteString(fmt.Sprintf("INSTALL_KEDA=%t\n", c.InstallKEDA))
 	b.WriteString(fmt.Sprintf("INSTALL_KYVERNO=%t\n", c.InstallKyverno))
 	b.WriteString(fmt.Sprintf("INSTALL_KYVERNO_CVE_POLICY=%t\n", c.InstallKyvernoCVEPolicy))
 	b.WriteString(fmt.Sprintf("KYVERNO_POLICY_MODE=%s\n", c.KyvernoPolicyMode))
@@ -890,6 +893,7 @@ func (c *Config) ApplyProfile(name string) error {
 func (c *Config) resolveKyverno() {
 	// Browser synthetic checks (#42) follow the same rule: explicit opt-in, full profile only.
 	c.SyntheticsBrowser = FullFeatures(c.Profile) && getEnvBool("SYNTHETICS_BROWSER", false)
+	c.InstallKEDA = FullFeatures(c.Profile) && c.InstallMonitoring && getEnvBool("INSTALL_KEDA", false)
 	c.InstallKyverno = FullFeatures(c.Profile) && getEnvBool("INSTALL_KYVERNO", false)
 	c.InstallKyvernoCVEPolicy = getEnvBool("INSTALL_KYVERNO_CVE_POLICY", false)
 	mode := strings.TrimSpace(getEnv("KYVERNO_POLICY_MODE", "Audit"))
