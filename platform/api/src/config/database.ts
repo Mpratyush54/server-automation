@@ -82,7 +82,44 @@ export const AppDataSource = new DataSource({
   migrations: [migrationsGlob()],
   migrationsTableName: MIGRATIONS_TABLE,
   logging: false,
+  // node-postgres pool: TCP keepalive notices dead idle connections, and new
+  // connections give up instead of hanging when the server is unreachable.
+  extra: { keepAlive: true, keepAliveInitialDelayMillis: 10_000, connectionTimeoutMillis: 10_000 },
 });
+
+/** Default for armPostgresSocketTimeouts (PG_SOCKET_TIMEOUT_MS overrides). */
+export const DEFAULT_PG_SOCKET_TIMEOUT_MS = 30_000;
+
+type PgClientLike = { connection?: { stream?: { setTimeout(ms: number): unknown; on(ev: string, fn: () => void): unknown; destroy(err?: Error): unknown; __platformTimeout?: boolean } } };
+type PgPoolLike = { on(ev: 'connect', fn: (c: PgClientLike) => void): unknown; _clients?: PgClientLike[]; __platformTimeout?: boolean };
+
+/**
+ * Destroys a pooled PostgreSQL connection whose socket stays silent for `ms`.
+ *
+ * When the node running the PostgreSQL primary loses power, nothing resets the
+ * API's open connections: a query on one waits for TCP to give up (about 15
+ * minutes), the pool's few connections stay busy, readiness fails and the API
+ * answers 503 although CloudNativePG has already promoted a standby (3-node
+ * power-off test: a surviving replica stayed unready for over 10 minutes).
+ * Destroying the socket fails the query and the pool drops the connection, so
+ * the next one goes to the new primary. PostgreSQL sends nothing while a
+ * statement runs, so `ms` is also the longest silent statement the API can
+ * run; armed only in the API server, never in the migration job.
+ */
+export function armPostgresSocketTimeouts(ds: DataSource, ms = Number(process.env.PG_SOCKET_TIMEOUT_MS) || DEFAULT_PG_SOCKET_TIMEOUT_MS): void {
+  const pool = (ds.driver as unknown as { master?: PgPoolLike }).master;
+  if (!pool || ms <= 0 || pool.__platformTimeout) return;
+  pool.__platformTimeout = true;
+  const arm = (client: PgClientLike) => {
+    const stream = client?.connection?.stream;
+    if (!stream || stream.__platformTimeout) return;
+    stream.__platformTimeout = true;
+    stream.setTimeout(ms);
+    stream.on('timeout', () => stream.destroy(new Error(`PostgreSQL socket silent for ${ms} ms; dropping the connection`)));
+  };
+  for (const c of pool._clients || []) arm(c);
+  pool.on('connect', arm);
+}
 
 let initialized = false;
 

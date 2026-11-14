@@ -6,7 +6,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import { validateSecurityEnv, resolveCorsOrigins } from './config/security-env';
-import { getDb } from './config/database';
+import { armPostgresSocketTimeouts, getDb } from './config/database';
 import { connectMongo } from './config/mongoose';
 import { User } from './entities/User';
 import apiRouter from './routes/api';
@@ -143,6 +143,7 @@ async function bootstrap() {
     // Initialize PostgreSQL
     const ds = await getDb();
     console.log(`[server] PostgreSQL connected to database: ${ds.options.database}`);
+    armPostgresSocketTimeouts(ds);
     // The schema is owned by versioned migrations (node dist/migrate.js, run as
     // a Job before rollout). Never serve against a schema this build does not
     // know: the rollout then fails readiness and the old ReplicaSet keeps serving.
