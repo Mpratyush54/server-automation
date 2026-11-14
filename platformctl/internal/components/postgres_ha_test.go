@@ -317,3 +317,14 @@ func TestTelemetryMinioScriptsRemainByteIdentical(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// Fresh ha install: the ScheduledBackup's immediate run raced the plugin's
+// registration and failed, leaving no base backup. The script must request a
+// backup after a failure and only succeed once one completed.
+func TestPGFirstBackupScript(t *testing.T) {
+	for _, want := range []string{"postgresql=completed", "kind: Backup", "method: plugin", BarmanCloudPluginName, "exit 1"} {
+		if !strings.Contains(pgFirstBackupScript, want) {
+			t.Fatalf("first-backup script lacks %q", want)
+		}
+	}
+}

@@ -446,16 +446,50 @@ func InstallPostgresBackup(cfg *config.Config) error {
 	if err = applyPGCluster(cfg, pgClusterOptions{Backup: b, ServerName: server}); err != nil {
 		return err
 	}
+	// Archiving through the plugin proves the operator has registered it. The
+	// ScheduledBackup's immediate run must not start earlier: on a fresh ha
+	// install it failed with "requested plugin is not available" and left the
+	// cluster without a base backup (no PITR possible).
+	if err = shell.RunBash("timeout 10m kubectl -n databases wait --for=condition=ContinuousArchiving=True clusters.postgresql.cnpg.io/postgresql --timeout=10m"); err != nil {
+		return fmt.Errorf("WAL archiving not ready; check kubectl -n databases describe cluster postgresql for archive errors: %w", err)
+	}
 	m := pgResource("ScheduledBackup", "postgresql-daily")
 	m["spec"] = pgPluginBackupSpec(map[string]any{"schedule": "0 0 3 * * *", "backupOwnerReference": "self", "immediate": true})
 	if err = applyTelemetryJSON(m); err != nil {
 		return err
 	}
-	if err = shell.RunBash("timeout 10m kubectl -n databases wait --for=condition=ContinuousArchiving=True clusters.postgresql.cnpg.io/postgresql --timeout=10m"); err != nil {
-		return fmt.Errorf("WAL archiving not ready; check kubectl -n databases describe cluster postgresql for archive errors: %w", err)
+	if err = shell.RunBash(pgFirstBackupScript); err != nil {
+		return fmt.Errorf("first PostgreSQL base backup: %w", err)
 	}
 	return state.MarkDone("postgresql-backup")
 }
+
+// pgFirstBackupScript waits until a base backup exists in the recovery window.
+// It requests one Backup when none completed (also after a failed attempt),
+// and fails after 15 minutes with the backup's error.
+const pgFirstBackupScript = `set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+completed() { kubectl -n databases get backups.postgresql.cnpg.io -o jsonpath='{range .items[*]}{.spec.cluster.name}={.status.phase}{"\n"}{end}' 2>/dev/null | grep -qx 'postgresql=completed'; }
+requested=""
+for _ in $(seq 1 180); do
+  completed && exit 0
+  phases=$(kubectl -n databases get backups.postgresql.cnpg.io -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' 2>/dev/null || true)
+  if [ -z "$requested" ] && printf '%s\n' "$phases" | grep -qx failed && ! printf '%s\n' "$phases" | grep -qxE 'running|started|pending|'; then
+    name="postgresql-initial-$(date +%s)"
+    kubectl apply -f - >/dev/null <<EOF
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata: {name: $name, namespace: databases}
+spec: {cluster: {name: postgresql}, method: plugin, pluginConfiguration: {name: ` + BarmanCloudPluginName + `}}
+EOF
+    requested="$name"
+  fi
+  sleep 5
+done
+echo "no completed base backup after 15 minutes:" >&2
+kubectl -n databases get backups.postgresql.cnpg.io -o custom-columns=NAME:.metadata.name,PHASE:.status.phase,ERROR:.status.error >&2 || true
+exit 1
+`
 
 // pgPluginBackupSpec completes a Backup/ScheduledBackup spec for the plugin.
 func pgPluginBackupSpec(spec map[string]any) map[string]any {
