@@ -1,276 +1,140 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
-import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
-import { averageDeployTime, projectGrowth } from './dashboard-stats';
+import { AlertingApiService } from '../alerting/alerting-api.service';
+import { averageDeployTime } from './dashboard-stats';
+import {
+  ActivityItem, AppRow, AttentionItem, ChecklistItem,
+  buildActivity, buildApps, buildAttention, buildChecklist, timeAgo,
+} from './dashboard-model';
 
+const CHECKLIST_HIDDEN_KEY = 'platform.dashboard.setupHidden';
+
+/**
+ * Home page. Answers three questions in order: is anything wrong, how are my
+ * apps, and what happened recently. Everything shown comes from the API; a
+ * source that fails or that the user's role cannot read is simply left out.
+ */
 @Component({
   selector: 'app-dashboard',
   standalone: true,
   imports: [CommonModule, RouterModule],
   templateUrl: './dashboard.component.html',
-  styleUrl: './dashboard.component.css'
+  styleUrl: './dashboard.component.css',
 })
 export class DashboardComponent implements OnInit, OnDestroy {
-  stats = { projects: null as number | null, deployments: null as number | null, services: 0, namespaces: 0, podsText: '—', podsProgress: 0 };
+  loaded = false;
+  greeting = 'Welcome';
   platformName = '';
-  projectTrend: number | null = null;
+  platformVersion = '';
+  releasesUrl = '';
+
+  projects: any[] = [];
+  apps: AppRow[] = [];
+  attention: AttentionItem[] = [];
+  activity: ActivityItem[] = [];
+  checklist: ChecklistItem[] = [];
+  checklistHidden = false;
   avgDeployTime = '—';
-  recentDeployments: any[] = [];
-  systemHealth: any[] = [];
-  projectsList: any[] = [];
-  grafanaEmbedUrl!: SafeResourceUrl;
-  grafanaFullUrl = '/grafana/';
-  showIframe = false;
-  iframeLoaded = false;
-  iframeFailed = false;
-  platformVersion: string = '';
-  releasesUrl: string = '';
-  updateAvailable = false;
-  latestRelease: any = null;
 
-  /** Platform SDK telemetry (works without Grafana auth) */
-  telemetryWindow: '1h' | '24h' = '1h';
-  telemetryLoading = true;
-  telemetryError = '';
-  telemetry = {
-    heartbeats: 0,
-    cpuAvg: 0,
-    memoryAvg: 0,
-    projectsWithData: 0,
-    series: [] as { t: number; cpu: number; mem: number }[],
-    sparkPath: '',
-  };
-  private telemetryTimer?: ReturnType<typeof setInterval>;
+  /** Server and backup summary (DevOps and admins only). */
+  canSeePlatform = false;
+  k8sConnected: boolean | null = null;
+  nodes: { name: string; status: string; role?: string }[] = [];
+  backup: { success: boolean; finishedAt: string } | null = null;
+  backupKnown = false;
 
-  constructor(private api: ApiService, private sanitizer: DomSanitizer, private auth: AuthService) {}
+  readonly timeAgo = timeAgo;
+  private timer?: ReturnType<typeof setInterval>;
+
+  constructor(private api: ApiService, private auth: AuthService, private alerting: AlertingApiService) {}
+
+  get readyNodes(): number { return this.nodes.filter((n) => n.status === 'Ready').length; }
+  get checklistDone(): number { return this.checklist.filter((c) => c.done).length; }
+  get showChecklist(): boolean {
+    return !this.checklistHidden && this.checklist.length > 0 && this.checklistDone < this.checklist.length;
+  }
 
   async ngOnInit() {
-    const domain = window.location.hostname || 'localhost';
-    // Same-origin Grafana subpath (HTTPS). Solo panels need a logged-in Grafana session;
-    // we still offer the link, and show SDK metrics as the reliable home telemetry.
-    this.grafanaFullUrl = domain === 'localhost' ? 'http://localhost:3000/grafana/' : '/grafana/';
-    this.grafanaEmbedUrl = this.sanitizer.bypassSecurityTrustResourceUrl(
-      `${this.grafanaFullUrl}d-solo/rYy79FwVz/kubernetes-compute-resources-cluster?orgId=1&panelId=1&theme=dark`,
-    );
+    const user = this.auth.getUser() || {};
+    const first = String(user.name || '').trim().split(/\s+/)[0];
+    const h = new Date().getHours();
+    const part = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+    this.greeting = first ? `${part}, ${first}` : part;
+    this.canSeePlatform = this.auth.isDevOps() || this.auth.isAdmin();
+    try { this.checklistHidden = localStorage.getItem(CHECKLIST_HIDDEN_KEY) === '1'; } catch { /* storage unavailable */ }
 
-    try {
-      const projects = await firstValueFrom(this.api.getProjects()) as any[];
-      this.projectsList = projects;
-      this.stats.projects = projects.length;
-      this.projectTrend = projectGrowth(projects);
-
-      const deployments = projects
-        .flatMap((p: any) => (p.deployments || []).map((d: any) => ({ ...d, projectName: p.name })))
-        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      this.recentDeployments = deployments.slice(0, 10);
-
-      this.stats.deployments = deployments.length;
-      this.avgDeployTime = averageDeployTime(deployments);
-    } catch {
-      this.stats.projects = null;
-      this.stats.deployments = null;
-      this.projectsList = [];
-    }
-
-    const projectNamespaces = new Set<string>();
-    const projectNames = this.projectsList.map(p => p.name.toLowerCase());
-
-    this.projectsList.forEach((p: any) => {
-      if (p.environments) {
-        p.environments.forEach((e: any) => {
-          if (e.namespace) projectNamespaces.add(e.namespace.toLowerCase());
-        });
-      }
-    });
-
-    const hasPreview = this.recentDeployments.some(d => d.environment === 'preview' || d.environmentId === 'preview');
-    if (hasPreview) projectNamespaces.add('preview');
-    this.stats.namespaces = projectNamespaces.size;
-
-    let runningPods = 0;
-    let totalPods = 0;
-    if ((this.auth.isDevOps() || this.auth.isAdmin()) && this.projectsList.length > 0) {
-      try {
-        const podsRes = await firstValueFrom(this.api.getPods());
-        if (!podsRes.k8sConnected) throw new Error('Kubernetes unavailable');
-        const pods = podsRes.pods || [];
-        const filteredPods = pods.filter((pod: any) => {
-          const podNs = pod.namespace.toLowerCase();
-          const podName = pod.name.toLowerCase();
-          if (projectNamespaces.has(podNs)) {
-            if (podNs === 'preview') return projectNames.some(pName => podName.includes(pName));
-            return true;
-          }
-          return projectNames.some(pName => podName.includes(pName) || podNs.includes(pName));
-        });
-        totalPods = filteredPods.length;
-        runningPods = filteredPods.filter((p: any) => p.status === 'Running' || p.status === 'running').length;
-        this.stats.podsText = `${runningPods} / ${totalPods}`;
-        this.stats.podsProgress = totalPods > 0 ? Math.round((runningPods / totalPods) * 100) : 0;
-      } catch {}
-    }
-
-    try {
-      const status = await firstValueFrom(this.api.getBootstrapStatus()) as any;
-      this.platformName = status.platformName || '';
-      this.systemHealth = Object.entries(status.services || {}).map(([name, s]) => ({ name, status: s }));
-      this.stats.services = this.systemHealth.filter(s => s.status === 'running').length;
-    } catch {
-      this.stats.services = 0;
-      this.systemHealth = [];
-    }
-
-    try {
-      const ver = await firstValueFrom(this.api.getPlatformVersion()) as any;
-      this.platformVersion = ver.imageTag || ver.platformVersion || '';
-      this.releasesUrl = ver.releases || '';
-      this.updateAvailable = !!ver.updateAvailable;
-      this.latestRelease = ver.latestRelease || null;
-    } catch {
-      this.platformVersion = '';
-    }
-
-    await this.loadTelemetry();
-    this.telemetryTimer = setInterval(() => this.loadTelemetry(), 15000);
+    await this.load();
+    // Keep the status line current without a full reload.
+    this.timer = setInterval(() => this.load(), 30_000);
   }
 
   ngOnDestroy() {
-    if (this.telemetryTimer) clearInterval(this.telemetryTimer);
+    if (this.timer) clearInterval(this.timer);
   }
 
-  setTelemetryWindow(w: '1h' | '24h') {
-    this.telemetryWindow = w;
-    this.loadTelemetry();
-  }
+  async load() {
+    const settle = <T>(p: Promise<T>) => p.then((v) => v, () => null);
+    const platform = this.canSeePlatform;
+    const [projects, incidents, status, version, nodes, backups, me, users] = await Promise.all([
+      settle(firstValueFrom(this.api.getProjects())),
+      settle(firstValueFrom(this.alerting.allIncidents('open'))),
+      settle(firstValueFrom(this.api.getBootstrapStatus())),
+      settle(firstValueFrom(this.api.getPlatformVersion())),
+      platform ? settle(firstValueFrom(this.api.getNodes())) : Promise.resolve(null),
+      platform ? settle(firstValueFrom(this.api.getBackupStatus())) : Promise.resolve(null),
+      settle(firstValueFrom(this.api.getMe())),
+      this.auth.canManageUsers() ? settle(firstValueFrom(this.api.getUsers())) : Promise.resolve(null),
+    ]) as any[];
 
-  async loadTelemetry() {
-    this.telemetryLoading = true;
-    this.telemetryError = '';
-    try {
-      const projects = this.projectsList.slice(0, 12);
-      if (!projects.length) {
-        this.telemetry = {
-          heartbeats: 0, cpuAvg: 0, memoryAvg: 0, projectsWithData: 0, series: [], sparkPath: '',
-        };
-        this.telemetryLoading = false;
-        return;
-      }
+    this.projects = Array.isArray(projects) ? projects : [];
+    const openIncidents = Array.isArray(incidents) ? incidents : [];
+    this.platformName = status?.platformName || '';
+    this.platformVersion = version?.imageTag || version?.platformVersion || version?.version || '';
+    this.releasesUrl = version?.releases || '';
 
-      const results = await Promise.all(
-        projects.map(async (p: any) => {
-          try {
-            const [raw, agg] = await Promise.all([
-              firstValueFrom(this.api.getMetrics(p.id)),
-              firstValueFrom(this.api.getAggregatedMetrics(p.id)),
-            ]);
-            return { raw: Array.isArray(raw) ? raw : [], agg: agg || {} };
-          } catch {
-            return { raw: [], agg: {} };
-          }
-        }),
-      );
-
-      const cutoff = Date.now() - (this.telemetryWindow === '1h' ? 3600_000 : 86400_000);
-      const points: { t: number; cpu: number; mem: number }[] = [];
-      let hb = 0;
-      let cpuSum = 0;
-      let memSum = 0;
-      let nAgg = 0;
-      let withData = 0;
-
-      for (const r of results) {
-        const recent = r.raw.filter((m: any) => {
-          const t = new Date(m.timestamp || m.createdAt || 0).getTime();
-          return t >= cutoff;
-        });
-        if (recent.length) withData++;
-        hb += recent.length;
-        for (const m of recent) {
-          points.push({
-            t: new Date(m.timestamp || m.createdAt).getTime(),
-            cpu: Number(m.cpuPct || 0),
-            mem: Number(m.memoryMb || 0),
-          });
-        }
-        if (r.agg.cpuAvg || r.agg.memoryAvg) {
-          cpuSum += Number(r.agg.cpuAvg || 0);
-          memSum += Number(r.agg.memoryAvg || 0);
-          nAgg++;
-        }
-      }
-
-      points.sort((a, b) => a.t - b.t);
-      const series = points.slice(-40);
-      this.telemetry = {
-        heartbeats: hb,
-        cpuAvg: nAgg ? cpuSum / nAgg : (series.reduce((s, p) => s + p.cpu, 0) / (series.length || 1)),
-        memoryAvg: nAgg ? memSum / nAgg : (series.reduce((s, p) => s + p.mem, 0) / (series.length || 1)),
-        projectsWithData: withData,
-        series,
-        sparkPath: this.buildSparkPath(series.map((p) => p.cpu)),
-      };
-    } catch (e: any) {
-      this.telemetryError = e.message || 'Failed to load telemetry';
-    } finally {
-      this.telemetryLoading = false;
+    if (nodes && typeof nodes === 'object') {
+      this.k8sConnected = nodes.k8sConnected ?? null;
+      // When the cluster is unreachable the list is not real; don't show it.
+      this.nodes = nodes.k8sConnected ? (nodes.nodes || []) : [];
     }
+    const backupItems = Array.isArray(backups?.items) ? backups.items : null;
+    this.backupKnown = !!backupItems;
+    this.backup = backupItems?.find((b: any) => b.operation === 'backup')?.status ?? null;
+
+    this.apps = buildApps(this.projects);
+    const deployments = this.projects.flatMap((p) => p.deployments || []);
+    this.avgDeployTime = averageDeployTime(deployments);
+    this.activity = buildActivity(this.projects, openIncidents);
+    const update = version?.updateAvailable && version?.latestRelease?.tag
+      ? { tag: version.latestRelease.tag, url: this.releasesUrl || version.latestRelease.url || '' }
+      : null;
+    this.attention = buildAttention({
+      apps: this.apps,
+      incidents: openIncidents,
+      backups: backupItems,
+      k8sConnected: platform ? this.k8sConnected : null,
+      nodes: this.nodes,
+      update: update && update.url ? update : null,
+    });
+    this.checklist = buildChecklist({
+      projects: this.projects,
+      mfaEnabled: typeof me?.mfaEnabled === 'boolean' ? me.mfaEnabled : undefined,
+      userCount: Array.isArray(users) ? users.length : null,
+      backupOk: backupItems ? !!this.backup?.success : null,
+    });
+    this.loaded = true;
   }
 
-  private buildSparkPath(values: number[]): string {
-    if (!values.length) return '';
-    const w = 600;
-    const h = 120;
-    const max = Math.max(...values, 1);
-    return values
-      .map((v, i) => {
-        const x = (i / Math.max(values.length - 1, 1)) * w;
-        const y = h - (v / max) * (h - 8) - 4;
-        return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
-      })
-      .join(' ');
+  hideChecklist() {
+    this.checklistHidden = true;
+    try { localStorage.setItem(CHECKLIST_HIDDEN_KEY, '1'); } catch { /* storage unavailable */ }
   }
 
-  /** Deployment status as a dot and a plain word. */
-  deployTone(status: string): string {
-    const s = String(status || '').toLowerCase();
-    if (['deployed', 'active', 'success'].includes(s)) return 'status-ok';
-    if (['pending', 'building', 'deploying', 'running'].includes(s)) return 'status-warn';
-    if (['failed', 'error'].includes(s)) return 'status-down';
-    return '';
-  }
-
-  deployLabel(status: string): string {
-    const s = String(status || '').toLowerCase();
-    if (['deployed', 'active', 'success'].includes(s)) return 'Live';
-    if (['pending', 'building', 'deploying', 'running'].includes(s)) return 'In progress';
-    if (['failed', 'error'].includes(s)) return 'Failed';
-    return s ? s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ') : 'Unknown';
-  }
-
-  projectTone(p: any): string {
-    const s = String(p?.status || '').toLowerCase();
-    if (['failed', 'error', 'degraded'].includes(s)) return 'status-down';
-    if (['deploying', 'pending', 'syncing'].includes(s)) return 'status-warn';
-    return p?.isActive || s === 'active' ? 'status-ok' : '';
-  }
-
-  projectLabel(p: any): string {
-    const s = String(p?.status || '').toLowerCase();
-    if (['failed', 'error', 'degraded'].includes(s)) return 'Needs attention';
-    if (['deploying', 'pending', 'syncing'].includes(s)) return 'Deploying';
-    return p?.isActive || s === 'active' ? 'Running' : 'Idle';
-  }
-
-  onIframeLoad() {
-    this.iframeLoaded = true;
-  }
-
-  onIframeError() {
-    this.iframeFailed = true;
-    this.showIframe = false;
+  toneClass(t: string): string {
+    return t === 'ok' ? 'status-ok' : t === 'warn' ? 'status-warn' : t === 'down' ? 'status-down' : '';
   }
 }

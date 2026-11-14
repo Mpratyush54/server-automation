@@ -1,160 +1,197 @@
 <div class="page-header">
   <div>
-    <h1 class="page-title">Dashboard</h1>
+    <h1 class="page-title">{{ greeting }}</h1>
     <p class="page-subtitle">
-      Your apps, their latest deployments and how they are running@if (platformName) { on <span class="mono">{{ platformName }}</span>}.
+      How your apps are doing right now@if (platformName) { on <span class="mono">{{ platformName }}</span>}.
     </p>
   </div>
-  @if (platformVersion) {
-    @if (releasesUrl) {
-      <a class="db-version mono" [href]="releasesUrl" target="_blank" rel="noopener">v{{ platformVersion }}</a>
-    } @else {
-      <span class="db-version mono">v{{ platformVersion }}</span>
-    }
-  }
+  <a routerLink="/projects" [queryParams]="{ new: '1' }" class="btn">New project</a>
 </div>
 
-@if (updateAvailable && latestRelease) {
-  <section class="card db-update" aria-label="Platform update">
-    <div>
-      <strong>An update is available</strong>
-      <p class="secondary">You run <span class="mono">v{{ platformVersion }}</span>; the latest is <span class="mono">{{ latestRelease.tag }}</span>.</p>
+<!-- 1. Is anything wrong? -->
+<section class="card db-status" [class.db-status-calm]="loaded && attention.length === 0" aria-live="polite" aria-label="Status">
+  @if (!loaded) {
+    <p class="db-status-line muted">Checking your apps…</p>
+  } @else if (attention.length === 0) {
+    <div class="db-status-line">
+      <span class="db-big-dot db-dot-ok" aria-hidden="true"></span>
+      <div>
+        <strong>Everything is running</strong>
+        <p class="db-status-sub">
+          {{ apps.length }} {{ apps.length === 1 ? 'app' : 'apps' }}
+          @if (nodes.length) { · {{ readyNodes }} of {{ nodes.length }} {{ nodes.length === 1 ? 'server' : 'servers' }} ready }
+          @if (backup?.success) { · last backup {{ timeAgo(backup!.finishedAt) }} }
+        </p>
+      </div>
     </div>
-    @if (releasesUrl) {
-      <a [href]="releasesUrl" target="_blank" rel="noopener" class="btn btn-sm">See what changed</a>
-    }
-  </section>
-}
-
-<section class="card db-stats" aria-label="Summary">
-  <div class="db-stat">
-    <span class="db-stat-label">Projects</span>
-    <span class="db-stat-value">{{ stats.projects ?? '—' }}</span>
-    <span class="db-stat-note">
-      @if (projectTrend) {
-        <span title="Change in the number of projects since seven days ago">{{ projectTrend > 0 ? '+' : '' }}{{ projectTrend }}% projects vs last week</span>
-      } @else {
-        Apps you can see
+  } @else {
+    <div class="db-status-head">
+      <span class="db-big-dot" [class.db-dot-down]="attention[0].tone === 'down'" [class.db-dot-warn]="attention[0].tone === 'warn'" aria-hidden="true"></span>
+      <strong>{{ attention.length }} {{ attention.length === 1 ? 'thing needs' : 'things need' }} attention</strong>
+    </div>
+    <ul class="db-attention">
+      @for (a of attention; track a.text) {
+        <li>
+          <span class="status" [ngClass]="toneClass(a.tone)"><span class="sr-only">{{ a.tone === 'down' ? 'Problem' : 'Notice' }}:</span></span>
+          <span class="db-attention-text">{{ a.text }}</span>
+          @if (a.external) {
+            <a class="db-link" [href]="a.link" target="_blank" rel="noopener">{{ a.action }}</a>
+          } @else {
+            <a class="db-link" [routerLink]="a.link" [queryParams]="a.query">{{ a.action }}</a>
+          }
+        </li>
       }
-    </span>
-  </div>
-  <div class="db-stat">
-    <span class="db-stat-label">Deployments</span>
-    <span class="db-stat-value">{{ stats.deployments ?? '—' }}</span>
-    <span class="db-stat-note" title="Average time from start to finish of completed deployments">{{ avgDeployTime }} avg deploy time</span>
-  </div>
-  <div class="db-stat">
-    <span class="db-stat-label">Pods running</span>
-    <span class="db-stat-value">{{ stats.podsText }}</span>
-    @if (stats.podsText !== '—') {
-      <span class="db-meter" role="img" [attr.aria-label]="stats.podsProgress + '% of pods running'">
-        <span [style.width.%]="stats.podsProgress"></span>
-      </span>
-    } @else {
-      <span class="db-stat-note">Not available right now</span>
-    }
-  </div>
+    </ul>
+  }
 </section>
 
 <div class="db-grid">
+  <!-- 2. How are my apps? -->
   <section class="card card-flush" aria-labelledby="db-apps">
     <div class="card-header">
-      <h2 id="db-apps">Projects</h2>
-      <a routerLink="/projects" class="db-link">All projects</a>
+      <h2 id="db-apps">Apps</h2>
+      @if (apps.length) { <a routerLink="/projects" class="db-link">All projects</a> }
     </div>
-    @if (projectsList.length === 0) {
+    @if (loaded && apps.length === 0) {
       <div class="empty-state">
-        <strong>No projects yet</strong>
-        Create a project to connect a repository and deploy your first app.
-        <div class="db-empty-action"><a routerLink="/projects" class="btn btn-primary btn-sm">New project</a></div>
+        <strong>No apps yet</strong>
+        Create a project, connect its repository and deploy it. It shows here with its status and address.
+        <div class="db-empty-action"><a routerLink="/projects" [queryParams]="{ new: '1' }" class="btn btn-primary btn-sm">New project</a></div>
       </div>
     } @else {
-      <ul class="db-list">
-        @for (p of projectsList.slice(0, 6); track p.id) {
-          <li>
-            <a [routerLink]="['/projects', p.id]" class="db-row">
-              <span class="db-row-main">
-                <span class="db-row-name">{{ p.name }}</span>
-                <span class="db-row-meta">{{ p.stack }} · created {{ p.createdAt | date: 'mediumDate' }}</span>
-              </span>
-              <span class="status" [ngClass]="projectTone(p)">{{ projectLabel(p) }}</span>
-            </a>
+      <ul class="db-apps">
+        @for (a of apps; track a.id) {
+          <li class="db-app">
+            <div class="db-app-main">
+              <div class="db-app-title">
+                <a [routerLink]="['/projects', a.id]" class="db-app-name">{{ a.name }}</a>
+                <span class="status" [ngClass]="toneClass(a.tone)">{{ a.status }}</span>
+              </div>
+              @if (a.url) {
+                <a class="db-app-url mono" [href]="a.url" target="_blank" rel="noopener" [title]="a.url">{{ a.url.replace('https://', '') }}</a>
+              }
+              <p class="db-app-meta">
+                @if (a.lastVersion) {
+                  <span class="mono">{{ a.lastVersion }}</span> deployed {{ timeAgo(a.lastAt) }}@if (a.lastBy) { by {{ a.lastBy }}}
+                } @else {
+                  No deployments yet
+                }
+              </p>
+              @if (a.envs.length) {
+                <ul class="db-envs" aria-label="Environments">
+                  @for (e of a.envs; track e.name) {
+                    <li class="status" [ngClass]="toneClass(e.tone)" [title]="e.name + ': ' + e.label">{{ e.name }}</li>
+                  }
+                </ul>
+              }
+            </div>
+            <div class="db-app-actions">
+              <a class="btn btn-sm" [routerLink]="['/projects', a.id]" [queryParams]="{ tab: 'deployments' }">Deploy</a>
+              <a class="btn btn-sm btn-ghost" [routerLink]="['/projects', a.id]" [queryParams]="{ tab: 'monitoring', view: 'logs' }">Logs</a>
+            </div>
           </li>
         }
       </ul>
     }
   </section>
 
-  <section class="card card-flush" aria-labelledby="db-deploys">
-    <div class="card-header">
-      <h2 id="db-deploys">Recent deployments</h2>
-    </div>
-    @if (recentDeployments.length === 0) {
-      <p class="empty-state">No deployments yet. They show here as soon as a project deploys.</p>
-    } @else {
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr><th>Project</th><th>Version</th><th>Status</th><th class="db-right">When</th></tr>
-          </thead>
-          <tbody>
-            @for (d of recentDeployments; track d.id) {
-              <tr>
-                <td>{{ d.projectName }}</td>
-                <td class="mono">{{ d.version || (d.commitSha || '').slice(0, 7) || '—' }}</td>
-                <td><span class="status" [ngClass]="deployTone(d.status)">{{ deployLabel(d.status) }}</span></td>
-                <td class="db-right muted">{{ d.createdAt | date: 'MMM d, HH:mm' }}</td>
-              </tr>
+  <div class="db-side">
+    @if (loaded && showChecklist) {
+      <section class="card card-flush" aria-labelledby="db-setup">
+        <div class="card-header">
+          <h2 id="db-setup">Get set up</h2>
+          <button type="button" class="btn btn-ghost btn-sm" (click)="hideChecklist()">Hide</button>
+        </div>
+        <div class="db-progress">
+          <span>{{ checklistDone }} of {{ checklist.length }} done</span>
+          <span class="db-meter" role="progressbar" [attr.aria-valuenow]="checklistDone" aria-valuemin="0" [attr.aria-valuemax]="checklist.length">
+            <span [style.width.%]="(checklistDone / checklist.length) * 100"></span>
+          </span>
+        </div>
+        <ul class="db-checklist">
+          @for (c of checklist; track c.id) {
+            <li [class.done]="c.done">
+              <span class="db-check" aria-hidden="true">
+                @if (c.done) { <svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"></path></svg> }
+              </span>
+              <div>
+                @if (c.done) {
+                  <span class="db-check-label">{{ c.label }}</span>
+                } @else {
+                  <a class="db-check-label" [routerLink]="c.link" [queryParams]="c.query">{{ c.label }}</a>
+                  <span class="db-check-hint">{{ c.hint }}</span>
+                }
+                <span class="sr-only">{{ c.done ? '(done)' : '(to do)' }}</span>
+              </div>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    <!-- 3. What happened recently? -->
+    <section class="card card-flush" aria-labelledby="db-activity">
+      <div class="card-header">
+        <h2 id="db-activity">Recent activity</h2>
+        @if (avgDeployTime !== '—') { <span class="muted db-small" title="Average time from start to finish of completed deployments">Deploys take {{ avgDeployTime }}</span> }
+      </div>
+      @if (loaded && activity.length === 0) {
+        <p class="empty-state">Deployments and alerts show here as they happen.</p>
+      } @else {
+        <ol class="db-activity">
+          @for (x of activity; track x.at + x.text) {
+            <li>
+              <span class="db-act-dot" [ngClass]="'db-act-' + x.tone" aria-hidden="true"></span>
+              <a class="db-act-body" [routerLink]="x.link" [queryParams]="x.query">
+                <span class="db-act-text">{{ x.text }}</span>
+                @if (x.detail) { <span class="db-act-detail">{{ x.detail }}</span> }
+              </a>
+              <time class="db-act-time" [attr.datetime]="x.at" [title]="x.at | date: 'medium'">{{ timeAgo(x.at) }}</time>
+            </li>
+          }
+        </ol>
+      }
+    </section>
+
+    @if (canSeePlatform) {
+      <section class="card card-flush" aria-labelledby="db-platform">
+        <div class="card-header">
+          <h2 id="db-platform">Platform</h2>
+          <a routerLink="/infrastructure" class="db-link">Servers</a>
+        </div>
+        <dl class="db-facts">
+          <dt>Servers</dt>
+          <dd>
+            @if (k8sConnected === false) {
+              <span class="status status-down">Cluster unreachable</span>
+            } @else if (nodes.length) {
+              <span class="status" [ngClass]="readyNodes === nodes.length ? 'status-ok' : 'status-down'">{{ readyNodes }} of {{ nodes.length }} ready</span>
+            } @else {
+              <span class="muted">Not available</span>
             }
-          </tbody>
-        </table>
-      </div>
+          </dd>
+          <dt>Backups</dt>
+          <dd>
+            @if (backup) {
+              <span class="status" [ngClass]="backup.success ? 'status-ok' : 'status-down'">{{ backup.success ? 'Last run' : 'Failed' }} {{ timeAgo(backup.finishedAt) }}</span>
+            } @else if (backupKnown) {
+              <span class="muted">No backup has run yet</span>
+            } @else {
+              <span class="muted">Not available</span>
+            }
+          </dd>
+          @if (platformVersion) {
+            <dt>Version</dt>
+            <dd>
+              @if (releasesUrl) {
+                <a class="mono" [href]="releasesUrl" target="_blank" rel="noopener">v{{ platformVersion }}</a>
+              } @else {
+                <span class="mono">v{{ platformVersion }}</span>
+              }
+            </dd>
+          }
+        </dl>
+      </section>
     }
-  </section>
+  </div>
 </div>
-
-<section class="card card-flush" aria-labelledby="db-telemetry">
-  <div class="card-header">
-    <h2 id="db-telemetry">App telemetry</h2>
-    <div class="db-tools">
-      <div class="db-seg" role="group" aria-label="Time window">
-        <button type="button" [class.on]="telemetryWindow === '1h'" [attr.aria-pressed]="telemetryWindow === '1h'" (click)="setTelemetryWindow('1h')">1 hour</button>
-        <button type="button" [class.on]="telemetryWindow === '24h'" [attr.aria-pressed]="telemetryWindow === '24h'" (click)="setTelemetryWindow('24h')">24 hours</button>
-      </div>
-      <a [href]="grafanaFullUrl" target="_blank" rel="noopener" class="db-link">Open Grafana</a>
-    </div>
-  </div>
-
-  <div class="db-tele-nums">
-    <div>
-      <span class="db-stat-label">Heartbeats</span>
-      <span class="db-tele-value">{{ telemetry.heartbeats }}</span>
-      <span class="db-stat-note">{{ telemetry.projectsWithData }} {{ telemetry.projectsWithData === 1 ? 'project' : 'projects' }} reporting</span>
-    </div>
-    <div>
-      <span class="db-stat-label">Average CPU</span>
-      <span class="db-tele-value">@if (telemetry.heartbeats) {{{ telemetry.cpuAvg | number: '1.0-1' }}%} @else {—}</span>
-    </div>
-    <div>
-      <span class="db-stat-label">Average memory</span>
-      <span class="db-tele-value">@if (telemetry.heartbeats) {{{ telemetry.memoryAvg | number: '1.0-0' }} MB} @else {—}</span>
-    </div>
-  </div>
-
-  <div class="db-chart">
-    @if (telemetryLoading && !telemetry.sparkPath) {
-      <p class="muted">Loading telemetry…</p>
-    } @else if (telemetryError) {
-      <p class="db-error">Telemetry could not be loaded: {{ telemetryError }}</p>
-    } @else if (telemetry.heartbeats === 0) {
-      <div class="db-chart-empty">
-        <strong>No app telemetry yet</strong>
-        <p class="secondary">Apps send CPU and memory once they use the Platform SDK. Cluster-wide charts are in Grafana.</p>
-      </div>
-    } @else if (telemetry.sparkPath) {
-      <svg viewBox="0 0 600 120" preserveAspectRatio="none" role="img" aria-label="CPU use over the selected window">
-        <path [attr.d]="telemetry.sparkPath" fill="none" class="db-spark" stroke-width="2" vector-effect="non-scaling-stroke" />
-      </svg>
-    }
-  </div>
-</section>
