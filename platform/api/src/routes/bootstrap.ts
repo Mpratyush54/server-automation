@@ -8,7 +8,6 @@ import { UserRole } from '../entities/User';
 import { expressAuthenticate, expressRequireRole, requireAgentScopeOrRole, logAudit, AuthenticatedRequest } from '../middleware/auth';
 import { triggerPipeline } from '../lib/gitlab';
 import { getK8sNodes, getK8sNamespaces, getK8sPods, getPodLogs, deletePod, checkK8sConnection } from '../lib/k8s';
-import { v4 as uuidv4 } from 'uuid';
 import { withTimeout } from '../lib/with-timeout';
 import { resolveIntegrations } from '../lib/integrations';
 
@@ -128,16 +127,9 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
   });
 });
 
-router.get('/bootstrap/token', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
-  return res.json({ token: uuidv4() });
-});
-
 router.get('/bootstrap/history', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
-  // Mock bootstrap job history logs
-  return res.json([
-    { id: 1, nodeIp: '192.168.1.105', hostname: 'node-worker-1', status: 'success', date: new Date(Date.now() - 3600000) },
-    { id: 2, nodeIp: '192.168.1.106', hostname: 'node-worker-2', status: 'success', date: new Date(Date.now() - 7200000) },
-  ]);
+  // Bootstrap history is not persisted yet.
+  return res.json([]);
 });
 
 router.get('/bootstrap/nodes', expressAuthenticate, requireAgentScopeOrRole(['cluster:read', 'bootstrap:read'], [UserRole.DEVOPS]), async (req: Request, res: Response) => {
@@ -155,15 +147,7 @@ router.get('/bootstrap/namespaces', expressAuthenticate, requireAgentScopeOrRole
 router.get('/bootstrap/pods', expressAuthenticate, requireAgentScopeOrRole(['cluster:read', 'bootstrap:read'], [UserRole.DEVOPS]), async (req: Request, res: Response) => {
   const isConnected = await checkK8sConnection();
   if (!isConnected) {
-    // Return mock pods when disconnected, but indicate status
-    const fallbackPods = [
-      { name: 'platform-backend-67fd89c-4x92m', namespace: 'platform', status: 'Running', restarts: 0, age: '12d', node: 'kvm8-master' },
-      { name: 'platform-portal-9f8e7d-2b4x9', namespace: 'platform', status: 'Running', restarts: 1, age: '12d', node: 'node-worker-1' },
-      { name: 'preview-cu-842-auth-fix-bc68d-lq2p9', namespace: 'preview', status: 'Running', restarts: 0, age: '1d', node: 'node-worker-2' },
-      { name: 'preview-cu-123-upload-fd68e-mq8p1', namespace: 'preview', status: 'Failed', restarts: 5, age: '3h', node: 'node-worker-2' },
-      { name: 'postgres-db-0', namespace: 'databases', status: 'Running', restarts: 0, age: '45d', node: 'node-worker-1' }
-    ];
-    return res.json({ k8sConnected: false, pods: fallbackPods });
+    return res.json({ k8sConnected: false, pods: [] });
   }
 
   try {
@@ -171,7 +155,7 @@ router.get('/bootstrap/pods', expressAuthenticate, requireAgentScopeOrRole(['clu
     const pods = await getK8sPods(ns);
     return res.json({ k8sConnected: true, pods });
   } catch (err: any) {
-    return res.status(400).json({ error: err.message, k8sConnected: false });
+    return res.status(400).json({ error: err.message, k8sConnected: false, pods: [] });
   }
 });
 

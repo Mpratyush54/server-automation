@@ -152,12 +152,6 @@ export class PlaygroundComponent implements OnInit {
           path: '/api/bootstrap/nodes',
           description: 'List the cluster\'s nodes. DevOps, or an agent token with the cluster:read scope.',
           parameters: []
-        },
-        {
-          method: 'GET',
-          path: '/api/bootstrap/token',
-          description: 'Get a join token for adding a new server to the cluster. DevOps only.',
-          parameters: []
         }
       ]
     },

@@ -606,7 +606,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
     try {
       const res = await firstValueFrom(this.api.getPods());
       this.k8sConnected = res.k8sConnected;
-      const allPods = res.pods || [];
+      const allPods = res.k8sConnected ? res.pods || [] : [];
       const projNameLower = this.project.name.toLowerCase();
       this.pods = allPods.filter((pod: any) => 
         pod.name.toLowerCase().includes(projNameLower) || 
