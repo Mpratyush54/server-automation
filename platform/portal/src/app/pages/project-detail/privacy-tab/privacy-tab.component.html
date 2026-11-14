@@ -1,0 +1,251 @@
+<div class="pv">
+  @if (error && !lastPanel) {
+    <p class="pv-error" role="alert">{{ error }}</p>
+  }
+  @if (loading) {
+    <p class="pv-muted">Loading privacy settings…</p>
+  }
+
+  @if (settings) {
+    <!-- PII scrubbing -->
+    <section class="card card-flush" aria-labelledby="pv-scrub-title" data-testid="privacy-scrubbing">
+      <div class="card-header">
+        <div class="pv-head">
+          <h3 id="pv-scrub-title">PII scrubbing</h3>
+          <p class="pv-sub">Personal data is removed from logs, traces and events before it is stored.</p>
+        </div>
+      </div>
+
+      <div class="pv-body">
+        <div class="pv-group">
+          <h4 class="pv-group-title">Built-in rules</h4>
+          <ul class="pv-builtins">
+            @for (r of settings.builtinScrubRules || []; track r.id) {
+              <li>
+                <span class="pv-builtin-name">{{ r.name || r.id }}</span>
+                <span class="pv-builtin-detail">
+                  @if (r.enabled === false) {
+                    <span class="status">Off</span>
+                  } @else {
+                    Replaced with <span class="mono">{{ r.replacement || '[REDACTED]' }}</span>
+                  }
+                </span>
+              </li>
+            } @empty {
+              <li class="pv-muted">No built-in rules reported by the server.</li>
+            }
+          </ul>
+          <label class="pv-check">
+            <input type="checkbox" [(ngModel)]="scrubIps" />
+            <span>
+              Redact IP addresses on the API path
+              <span class="pv-help">Covers IPv4 and IPv6 addresses in data sent to the API.</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="pv-group">
+          <h4 class="pv-group-title">Custom rules</h4>
+          <p class="pv-help">Your own regular expressions. Each match is replaced with the replacement text.</p>
+        </div>
+      </div>
+
+      <div class="table-scroll">
+        <table class="pv-rules">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Pattern</th>
+              <th>Replacement</th>
+              <th class="pv-col-action"><span class="sr-only">Remove</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of rules; track $index) {
+              <tr>
+                <td><input [(ngModel)]="r.id" placeholder="order-id" [attr.aria-label]="'Rule ' + ($index + 1) + ' name'" /></td>
+                <td><input class="mono" [(ngModel)]="r.pattern" placeholder="ORD-[0-9]+" [attr.aria-label]="'Rule ' + ($index + 1) + ' pattern'" /></td>
+                <td><input class="mono" [(ngModel)]="r.replacement" placeholder="[REDACTED]" [attr.aria-label]="'Rule ' + ($index + 1) + ' replacement'" /></td>
+                <td class="pv-col-action">
+                  <button type="button" class="btn btn-ghost btn-sm" (click)="removeRule($index)">Remove</button>
+                </td>
+              </tr>
+            } @empty {
+              <tr class="empty-row"><td colspan="4">No custom rules. The built-in rules still apply.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="pv-body pv-body-tight">
+        <div>
+          <button type="button" class="btn btn-sm" (click)="addRule()">Add rule</button>
+        </div>
+        <p class="form-hint">Names use letters, numbers, dots, dashes or underscores. Rows without a name or pattern are not saved.</p>
+      </div>
+
+      <div class="pv-footer">
+        <ng-container *ngTemplateOutlet="outcome; context: { $implicit: 'scrubbing' }"></ng-container>
+        <button type="button" class="btn btn-sm btn-primary" [disabled]="busy" (click)="lastPanel = 'scrubbing'; saveScrubbing()">Save scrubbing</button>
+      </div>
+    </section>
+
+    <!-- Retention -->
+    <section class="card card-flush" aria-labelledby="pv-ret-title" data-testid="privacy-retention">
+      <div class="card-header">
+        <div class="pv-head">
+          <h3 id="pv-ret-title">Retention</h3>
+          <p class="pv-sub">How long this project keeps each kind of data. Leave a field empty to use the default.</p>
+        </div>
+      </div>
+
+      <div class="table-scroll">
+        <table class="pv-retention">
+          <thead>
+            <tr>
+              <th>Data type</th>
+              <th>Keep for (days)</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (k of retentionKeys; track k) {
+              <tr>
+                <td>
+                  <label class="pv-type" [for]="'pv-ret-' + k">{{ retentionLabels[k].label }}</label>
+                  <span class="pv-help">{{ retentionLabels[k].help }}</span>
+                </td>
+                <td>
+                  <input [id]="'pv-ret-' + k" class="pv-days" type="number" min="1" max="365" [(ngModel)]="retention[k]"
+                    placeholder="Default" [attr.aria-describedby]="'pv-ret-' + k + '-hint'" />
+                  <span class="pv-help" [id]="'pv-ret-' + k + '-hint'">@if (settings?.defaults?.retentionDays?.[k] != null) { Default: {{ settings.defaults.retentionDays[k] }} days } @else { Uses the platform default }</span>
+                </td>
+              </tr>
+            }
+            <tr>
+              <td>
+                <span class="pv-type">Traces</span>
+                <span class="pv-help">Set for the whole platform.</span>
+              </td>
+              <td class="pv-readonly">@if (settings?.retentionDays?.traces != null) { Cluster setting: {{ settings.retentionDays.traces }} days } @else { Cluster setting }</td>
+            </tr>
+            <tr>
+              <td>
+                <span class="pv-type">Profiles</span>
+                <span class="pv-help">Set for the whole platform.</span>
+              </td>
+              <td class="pv-readonly">@if ((settings?.retentionDays?.profiles ?? settings?.retentionDays?.traces) != null) { Cluster setting: {{ settings.retentionDays.profiles ?? settings.retentionDays.traces }} days } @else { Cluster setting }</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pv-footer">
+        <ng-container *ngTemplateOutlet="outcome; context: { $implicit: 'retention' }"></ng-container>
+        <button type="button" class="btn btn-sm btn-primary" [disabled]="busy" (click)="lastPanel = 'retention'; saveRetention()">Save retention</button>
+      </div>
+    </section>
+
+    <!-- Consent defaults -->
+    <section class="card card-flush" aria-labelledby="pv-consent-title" data-testid="privacy-consent">
+      <div class="card-header">
+        <div class="pv-head">
+          <h3 id="pv-consent-title">Consent defaults</h3>
+          <p class="pv-sub">What happens before a visitor has made a choice. A visitor's own choice always wins.</p>
+        </div>
+      </div>
+
+      <div class="pv-body">
+        <label class="pv-switch-row">
+          <span class="pv-switch-text">
+            <span class="pv-switch-label">Record session replays by default</span>
+            <span class="pv-help">Recommended off, so recording starts only after the visitor agrees.</span>
+          </span>
+          <input type="checkbox" role="switch" class="pv-switch" [(ngModel)]="consent.replay" />
+        </label>
+        <label class="pv-switch-row">
+          <span class="pv-switch-text">
+            <span class="pv-switch-label">Allow analytics by default</span>
+            <span class="pv-help">Analytics events are collected unless the visitor opts out.</span>
+          </span>
+          <input type="checkbox" role="switch" class="pv-switch" [(ngModel)]="consent.analytics" />
+        </label>
+      </div>
+
+      <div class="pv-footer">
+        <ng-container *ngTemplateOutlet="outcome; context: { $implicit: 'consent' }"></ng-container>
+        <button type="button" class="btn btn-sm btn-primary" [disabled]="busy" (click)="lastPanel = 'consent'; saveConsentDefaults()">Save consent defaults</button>
+      </div>
+    </section>
+
+    <!-- GDPR delete -->
+    <section class="card card-flush pv-danger" aria-labelledby="pv-gdpr-title" data-testid="privacy-gdpr">
+      <div class="card-header">
+        <div class="pv-head">
+          <h3 id="pv-gdpr-title">Delete a person's data</h3>
+          <p class="pv-sub">Permanently removes what this project stored about one user or one session. This cannot be undone.</p>
+        </div>
+      </div>
+
+      <div class="pv-body">
+        <div class="pv-fields">
+          <div class="form-group">
+            <label for="pv-gdpr-user">User id</label>
+            <input id="pv-gdpr-user" [(ngModel)]="gdpr.userId" placeholder="The id your app sends as user.id" />
+          </div>
+          <div class="form-group">
+            <label for="pv-gdpr-session">Session id</label>
+            <input id="pv-gdpr-session" [(ngModel)]="gdpr.sessionId" placeholder="A browser session id" />
+          </div>
+          <div class="form-group">
+            <label for="pv-gdpr-email">Email (optional)</label>
+            <input id="pv-gdpr-email" [(ngModel)]="gdpr.email" placeholder="person@example.com" />
+            <span class="form-hint">Only a hash is kept, in the audit log, as a record of the request.</span>
+          </div>
+        </div>
+        <p class="pv-help">Enter a user id, a session id, or both.</p>
+
+        <details class="pv-details">
+          <summary>What gets deleted</summary>
+          <ul>
+            <li>Log entries and error events for the user or session (MongoDB).</li>
+            <li>The visitor's consent records.</li>
+            <li>Session replay recordings (object storage, MinIO).</li>
+            <li>Matching log lines in the log store, through Loki delete requests. Loki applies them on its own schedule.</li>
+            <li>An audit entry is always recorded. It keeps the ids and, if given, a hash of the email.</li>
+          </ul>
+        </details>
+
+        @if (gdprResult) {
+          <div class="pv-result" role="status" data-testid="privacy-gdpr-result">
+            <dl class="facts">
+              @for (c of gdprCountLabels; track c[0]) {
+                <dt>{{ c[1] }}</dt>
+                <dd>{{ gdprResult?.deleted?.[c[0]] ?? 0 }}</dd>
+              }
+            </dl>
+            @for (w of gdprResult?.warnings || []; track $index) {
+              <p class="pv-warn">{{ w }}</p>
+            }
+            <details class="pv-details">
+              <summary>Full response</summary>
+              <pre class="result">{{ gdprResult | json }}</pre>
+            </details>
+          </div>
+        }
+      </div>
+
+      <div class="pv-footer">
+        <ng-container *ngTemplateOutlet="outcome; context: { $implicit: 'gdpr' }"></ng-container>
+        <button type="button" class="btn btn-sm btn-danger" [disabled]="busy || (!gdpr.userId && !gdpr.sessionId)" (click)="lastPanel = 'gdpr'; runGdprDelete()">Delete this data</button>
+      </div>
+    </section>
+  }
+
+  <ng-template #outcome let-panel>
+    <span class="pv-outcome">
+      @if (lastPanel === panel) {
+        @if (error) { <span class="pv-error" role="alert">{{ error }}</span> }
+        @else if (status) { <span class="pv-ok" role="status">{{ status }}</span> }
+      }
+    </span>
+  </ng-template>
+</div>

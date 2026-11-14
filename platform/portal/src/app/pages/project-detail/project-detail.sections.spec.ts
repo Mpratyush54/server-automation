@@ -119,11 +119,14 @@ describe('Project detail sections (#185)', () => {
     fixture.destroy();
   });
 
-  it('Monitoring points to the Observability page when telemetry is installed', async () => {
-    const fixture = await render('devops', (c) => { c.section = 'monitoring'; c.observabilityEnabled = true; });
+  it('Monitoring shows a view switcher in place, without the old redirect card or link panel', async () => {
+    const fixture = await render('devops', (c) => { c.section = 'monitoring'; c.observabilityEnabled = true; c.observabilityChecked = true; });
     const el: HTMLElement = fixture.nativeElement;
-    expect(el.querySelector('[data-testid="observability-redirect"]')).toBeTruthy();
-    expect(el.querySelector('#logs')).toBeNull();
+    expect(el.querySelector('[data-testid="observability-redirect"]')).toBeNull();
+    expect(el.textContent).not.toContain('More monitoring');
+    const views = Array.from(el.querySelectorAll('[data-testid="monitoring-views"] button')).map((b) => b.textContent!.trim());
+    expect(views).toEqual(['Overview', 'Errors', 'Logs', 'Traces', 'Users', 'Uptime', 'Resources', 'AI agents']);
+    expect(el.querySelector('[data-testid="monitoring-views"] .active')!.textContent!.trim()).toBe('Overview');
     fixture.destroy();
   });
 });

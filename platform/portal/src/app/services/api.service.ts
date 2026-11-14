@@ -172,6 +172,18 @@ export class ApiService {
     return this.http.post(`${this.base}/projects/${projectId}/privacy/gdpr-delete`, data);
   }
 
+  // AI agents (MCP). Tokens and commands are platform-wide, not per project.
+  getAgentTokens(): Observable<any> { return this.http.get(`${this.base}/agent-tokens`); }
+  createAgentToken(data: { name: string; scopes?: string[]; expiresAt?: string | null }): Observable<any> {
+    return this.http.post(`${this.base}/agent-tokens`, data);
+  }
+  revokeAgentToken(id: string): Observable<any> { return this.http.delete(`${this.base}/agent-tokens/${id}`); }
+  getPendingAgentCommands(): Observable<any> { return this.http.get(`${this.base}/agent/commands/pending`); }
+  approveAgentCommand(id: string): Observable<any> { return this.http.post(`${this.base}/agent/commands/${id}/approve`, {}); }
+  rejectAgentCommand(id: string, reason?: string): Observable<any> {
+    return this.http.post(`${this.base}/agent/commands/${id}/reject`, reason ? { reason } : {});
+  }
+
   // Bug Reporting
   submitBugReport(data: any): Observable<any> { return this.http.post(`${this.base}/sdk/bug-report`, data); }
 

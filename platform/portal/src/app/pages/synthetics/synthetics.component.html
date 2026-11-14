@@ -1,11 +1,21 @@
-<a [routerLink]="['/projects', projectId]" class="sy-back">← Project</a>
-<div class="page-header">
-  <div>
-    <h1 class="page-title">Synthetic monitoring</h1>
-    <p class="page-subtitle">Scheduled checks that call your app from this cluster and alert when it stops answering. Browser checks need the full profile.</p>
+@if (!embedded) {
+  <a [routerLink]="['/projects', projectId]" class="sy-back">← Project</a>
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Synthetic monitoring</h1>
+      <p class="page-subtitle">Scheduled checks that call your app from this cluster and alert when it stops answering. Browser checks need the full profile.</p>
+    </div>
+    <button type="button" class="btn btn-primary" (click)="newCheck()">New check</button>
   </div>
-  <button type="button" class="btn btn-primary" (click)="newCheck()">New check</button>
-</div>
+} @else {
+  <div class="sy-embed-head">
+    <div>
+      <h2>Uptime checks</h2>
+      <p>Scheduled checks that call your app from this cluster and alert when it stops answering. Browser checks need the full profile.</p>
+    </div>
+    <button type="button" class="btn" (click)="newCheck()">New check</button>
+  </div>
+}
 
 @if (error) { <div class="card sy-msg sy-msg-error" role="alert">{{ error }}</div> }
 @if (notice) { <div class="card sy-msg sy-msg-ok" role="status">{{ notice }}</div> }

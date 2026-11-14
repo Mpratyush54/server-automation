@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, Input, OnInit, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
@@ -87,7 +87,10 @@ export class StatusPageEditorComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private cdr = inject(ChangeDetectorRef);
 
-  projectId = '';
+  /** Project id; falls back to the `:id` route param when routed standalone. */
+  @Input() projectId = '';
+  /** Inside the project page's Monitoring section (Uptime view): no page header or back link. */
+  @Input() embedded = false;
   page: StatusPageSettings | null = null;
   checks: SyntheticCheckOption[] = [];
   incidents: StatusIncidentView[] = [];
@@ -117,7 +120,7 @@ export class StatusPageEditorComponent implements OnInit {
   readonly updateStatuses = UPDATE_STATUSES;
 
   async ngOnInit(): Promise<void> {
-    this.projectId = this.route.snapshot.paramMap.get('id') || '';
+    this.projectId = this.projectId || this.route.snapshot.paramMap.get('id') || '';
     await this.reload();
   }
 

@@ -1,8 +1,10 @@
-<a [routerLink]="['/projects', projectId]" class="sp-back">← Project</a>
-<div class="page-header">
+@if (!embedded) {
+  <a [routerLink]="['/projects', projectId]" class="sp-back">← Project</a>
+}
+<div [class.page-header]="!embedded" [class.sp-embed-head]="embedded">
   <div>
-    <h1 class="page-title">Status page</h1>
-    <p class="page-subtitle">
+    @if (embedded) { <h2>Status page</h2> } @else { <h1 class="page-title">Status page</h1> }
+    <p [class.page-subtitle]="!embedded">
       A public page that shows your users whether the app is up, fed by synthetic checks. It shows
       component names, uptime and incidents you write, never URLs, hosts, errors or secrets.
     </p>

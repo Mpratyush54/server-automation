@@ -1,4 +1,5 @@
-import { Routes } from '@angular/router';
+import { inject } from '@angular/core';
+import { Params, RedirectFunction, Router, Routes } from '@angular/router';
 import { DashboardComponent } from './pages/dashboard/dashboard.component';
 import { ProjectsComponent } from './pages/projects/projects.component';
 import { ProjectDetailComponent } from './pages/project-detail/project-detail.component';
@@ -29,15 +30,27 @@ import { IframeViewComponent } from './pages/iframe-view/iframe-view.component';
 import { DocsComponent } from './pages/docs/docs.component';
 import { ProfileComponent } from './pages/profile/profile.component';
 import { MfaEnrollComponent } from './pages/mfa-enroll/mfa-enroll.component';
-import { SyntheticsComponent } from './pages/synthetics/synthetics.component';
-import { StatusPageEditorComponent } from './pages/status-page/status-page-editor.component';
 import { PublicStatusComponent } from './pages/status-page/public-status.component';
-import { HeatmapsComponent } from './pages/heatmaps/heatmaps.component';
+import { MonitoringView, viewForObsTab } from './pages/observability/monitoring-views';
 
 import { authGuard } from './guards/auth.guard';
 import { docsMatcher } from './guards/docs.matcher';
 import { appHostGuard, marketingOnlyGuard } from './guards/public-domain.guard';
 import { homeGuard, legacyLandingGuard } from './guards/home.guard';
+
+/**
+ * Old per-project monitoring pages now live in the project page's Monitoring
+ * section: redirect to `/projects/:id?tab=monitoring&view=…`, keeping other query
+ * params (since, env, trace, issue, check…). An old `?tab=` is consumed: the
+ * project page owns `tab`.
+ */
+export function toMonitoring(view: MonitoringView | ((qp: Params) => MonitoringView)): RedirectFunction {
+  return ({ params, queryParams }) => {
+    const { tab, ...rest } = queryParams;
+    const v = typeof view === 'function' ? view(queryParams) : view;
+    return inject(Router).createUrlTree(['/projects', params['id']], { queryParams: { ...rest, tab: 'monitoring', view: v } });
+  };
+}
 
 export const routes: Routes = [
   { path: '', pathMatch: 'full', component: LandingComponent, canActivate: [homeGuard] },
@@ -80,19 +93,21 @@ export const routes: Routes = [
 
   { path: 'projects', component: ProjectsComponent, canActivate: [authGuard] },
   { path: 'projects/:id', component: ProjectDetailComponent, canActivate: [authGuard] },
-  { path: 'projects/:id/synthetics', component: SyntheticsComponent, canActivate: [authGuard] }, // #42
-  { path: 'projects/:id/observability', loadComponent: () => import('./pages/observability/obs-project.component').then(m => m.ObsProjectComponent), canActivate: [authGuard] }, // #48
+  // Monitoring is in place on the project page; the old pages redirect to their view.
+  { path: 'projects/:id/observability', pathMatch: 'full', redirectTo: toMonitoring((qp) => viewForObsTab(qp['tab'])) }, // #48
+  { path: 'projects/:id/errors', pathMatch: 'full', redirectTo: toMonitoring('errors') }, // #41
+  { path: 'projects/:id/replays', pathMatch: 'full', redirectTo: toMonitoring('users') }, // #40
+  { path: 'projects/:id/heatmaps', pathMatch: 'full', redirectTo: toMonitoring('users') },
+  { path: 'projects/:id/synthetics', pathMatch: 'full', redirectTo: toMonitoring('uptime') }, // #42
+  { path: 'projects/:id/status', pathMatch: 'full', redirectTo: toMonitoring('uptime') }, // #46
+  { path: 'projects/:id/replays/:sessionId', loadComponent: () => import('./pages/replays/replay-player.component').then(m => m.ReplayPlayerComponent), canActivate: [authGuard] }, // #40 player stays a page
+  // Fleet monitoring (sidebar "Monitoring"); the global Errors page folded into it.
   { path: 'observability', loadComponent: () => import('./pages/observability/obs-fleet.component').then(m => m.ObsFleetComponent), canActivate: [authGuard] }, // #48
-  { path: 'projects/:id/replays', loadComponent: () => import('./pages/replays/replays.component').then(m => m.ReplaysComponent), canActivate: [authGuard] }, // #40
-  { path: 'projects/:id/replays/:sessionId', loadComponent: () => import('./pages/replays/replay-player.component').then(m => m.ReplayPlayerComponent), canActivate: [authGuard] }, // #40
-  { path: 'projects/:id/status', component: StatusPageEditorComponent, canActivate: [authGuard] }, // #46
+  { path: 'errors', pathMatch: 'full', redirectTo: '/observability' },
   { path: 'status/:slug', component: PublicStatusComponent }, // #46 public, no auth
-  { path: 'projects/:id/heatmaps', component: HeatmapsComponent, canActivate: [authGuard] }, // heatmaps (Phase 4 B2)
   { path: 'deployments', component: DeploymentsComponent, canActivate: [authGuard] },
   { path: 'services', component: ServicesComponent, canActivate: [authGuard] },
   { path: 'metrics', component: MetricsComponent, canActivate: [authGuard] },
-  { path: 'errors', loadComponent: () => import('./pages/errors/errors.component').then(m => m.ErrorsComponent), canActivate: [authGuard] },
-  { path: 'projects/:id/errors', loadComponent: () => import('./pages/errors/errors.component').then(m => m.ErrorsComponent), canActivate: [authGuard] },
   { path: 'alerts', component: AlertsComponent, canActivate: [authGuard] },
   { path: 'alerting', component: AlertingComponent, canActivate: [authGuard] }, // #43
   { path: 'logs', component: LogsComponent, canActivate: [authGuard] },

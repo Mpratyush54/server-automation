@@ -15,13 +15,25 @@ import { ProjectOverviewComponent } from './project-overview.component';
 import { ProjectSettingsSectionComponent } from './project-settings-section.component';
 import {
   PROJECT_SECTIONS, ProjectSection, StatusView, anchorForTab, currentDeployment, deploymentStatus,
-  projectStatus, sectionForTab, statusClass,
+  monitoringViewForTab, projectStatus, sectionForTab, statusClass,
 } from './project-sections';
+import { ObsProjectComponent } from '../observability/obs-project.component';
+import { MONITORING_VIEWS, MonitoringView, VIEW_OBS_TABS, isMonitoringView } from '../observability/monitoring-views';
+import { ErrorsComponent } from '../errors/errors.component';
+import { ReplaysComponent } from '../replays/replays.component';
+import { HeatmapsComponent } from '../heatmaps/heatmaps.component';
+import { SyntheticsComponent } from '../synthetics/synthetics.component';
+import { StatusPageEditorComponent } from '../status-page/status-page-editor.component';
+import { ProjectAgentsComponent } from './project-agents.component';
+
+/** Query params that belong to a monitoring view; cleared when leaving it. */
+const MONITORING_PARAMS = ['view', 'issue', 'check', 'trace', 'logTrace', 'service'] as const;
 
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [DatabaseInsightsPanelComponent, ReleasesPanelComponent, CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent, ArgocdPanelComponent, ProjectOverviewComponent, ProjectSettingsSectionComponent],
+  imports: [DatabaseInsightsPanelComponent, ReleasesPanelComponent, CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent, ArgocdPanelComponent, ProjectOverviewComponent, ProjectSettingsSectionComponent,
+    ObsProjectComponent, ErrorsComponent, ReplaysComponent, HeatmapsComponent, SyntheticsComponent, StatusPageEditorComponent, ProjectAgentsComponent],
   templateUrl: './project-detail.component.html',
   styleUrls: ['./project-section-shared.css', './project-detail.component.css']
 })
@@ -44,8 +56,16 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
   readonly storageQuotaBytes = 1024 * 1024 * 1024;
   @ViewChild('tabBar') private tabBar?: ElementRef<HTMLElement>;
   private pendingAnchor: string | null = null;
-  /** #48: the Observability page replaces Metrics / API Latency / Logs when telemetry is installed. */
+  /** #48: full telemetry profile installed (traces, Loki logs, infra, profiles, RUM). */
   observabilityEnabled = false;
+  /** The observability status call has answered (avoids flashing the "needs full profile" notice). */
+  observabilityChecked = false;
+  /** Monitoring section view; kept in `?view=` (the page owns `?tab=`). */
+  monitoringView: MonitoringView = 'overview';
+  readonly monitoringViews = MONITORING_VIEWS;
+  readonly viewObsTabs = VIEW_OBS_TABS;
+  /** Error issue to open in the Errors view (from the overview list or `?issue=`). */
+  monitoringIssue = '';
   role = 'devops';
 
   // SDK Tokens
@@ -112,25 +132,61 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
    * the page scrolls to the panel the old tab pointed at.
    */
   private applyTabParam() {
-    const tab = this.route.snapshot?.queryParamMap?.get('tab');
+    const qp = this.route.snapshot?.queryParamMap;
+    const tab = qp?.get('tab');
     if (!tab) return;
     this.section = sectionForTab(tab);
     this.pendingAnchor = anchorForTab(tab);
-    if (tab !== this.section) this.writeTabParam(this.section);
+    const view = qp?.get('view');
+    const legacyView = monitoringViewForTab(tab);
+    if (isMonitoringView(view)) this.monitoringView = view;
+    else if (legacyView && isMonitoringView(legacyView)) this.monitoringView = legacyView;
+    this.monitoringIssue = qp?.get('issue') || '';
+    if (tab !== this.section) this.writeTabParam(this.section, legacyView ? { view: this.monitoringView } : {});
   }
 
-  private writeTabParam(section: ProjectSection) {
-    this.router.navigate([], { relativeTo: this.route, queryParams: { tab: section }, queryParamsHandling: 'merge', replaceUrl: true });
+  private writeTabParam(section: ProjectSection, extra: Record<string, string | null> = {}) {
+    this.router.navigate([], { relativeTo: this.route, queryParams: { tab: section, ...extra }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  /** Switch the Monitoring view; `writeUrl` false when the URL was already written (embedded panel links). */
+  switchMonitoringView(view: MonitoringView, writeUrl = true, extra: Record<string, string> = {}) {
+    this.monitoringIssue = view === 'errors' ? extra['issue'] || '' : '';
+    const changed = view !== this.monitoringView;
+    this.monitoringView = view;
+    if ((changed || Object.keys(extra).length) && writeUrl) {
+      const cleared = Object.fromEntries(MONITORING_PARAMS.map((k) => [k, null]));
+      this.router.navigate([], { relativeTo: this.route, queryParams: { ...cleared, view, ...extra }, queryParamsHandling: 'merge', replaceUrl: true });
+    }
+    void this.loadMonitoringData();
+  }
+
+  /** Overview "Recent errors": open one issue (or the whole list) in the Errors view. */
+  openErrorIssue(id: string | null) {
+    this.switchMonitoringView('errors', true, id ? { issue: id } : {});
+  }
+
+  /** SDK data the current Monitoring view shows (heartbeats always; API latency and logs without full telemetry). */
+  loadMonitoringData(): Promise<unknown> {
+    const v = this.monitoringView;
+    const jobs: Promise<unknown>[] = [];
+    if (v === 'resources') jobs.push(this.loadMetrics());
+    if (v === 'traces' && !this.observabilityEnabled) jobs.push(this.loadApiMetrics());
+    if (v === 'logs' && !this.observabilityEnabled) jobs.push(this.loadLogs());
+    return Promise.all(jobs);
   }
 
   async ngOnInit() {
     this.role = (this.auth.getRole() || 'developer').toLowerCase();
     this.canManageAccess = this.role === 'admin' || this.role === 'devops' || this.auth.canManageUsers?.() === true;
     this.applyTabParam();
-    this.api.getObservabilityStatus?.()?.subscribe({ next: (s: any) => { this.observabilityEnabled = !!s?.enabled; }, error: () => {} });
+    this.api.getObservabilityStatus?.()?.subscribe({
+      next: (s: any) => { this.observabilityEnabled = !!s?.enabled; this.observabilityChecked = true; },
+      error: () => { this.observabilityChecked = true; },
+    });
 
     await this.fetchData();
-    if (this.section === 'monitoring' && !this.observabilityEnabled) await this.loadApiMetrics();
+    if (this.section === 'monitoring') await this.loadMonitoringData();
     if (this.section === 'data') await this.loadBackups();
     this.refreshTimer = setInterval(() => this.pollData(), 5000);
   }
@@ -226,11 +282,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
     if (s === 'overview' || s === 'deployments' || this.hasInFlightDeploy()) {
       await this.loadDeployments();
     }
-    if (s === 'monitoring' && !this.observabilityEnabled) {
-      await this.loadLogs();
-      await this.loadMetrics();
-      await this.loadApiMetrics();
-    }
+    if (s === 'monitoring') await this.loadMonitoringData();
     if (s === 'data') await this.loadBackups();
     if (s === 'deployments') {
       await this.loadK8sPods();
@@ -811,19 +863,20 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
 
   switchSection(section: ProjectSection) {
     const changed = section !== this.section;
+    const leavingMonitoring = changed && this.section === 'monitoring';
     this.section = section;
-    if (changed) this.writeTabParam(section);
+    if (changed) {
+      const extra: Record<string, string | null> = leavingMonitoring ? Object.fromEntries(MONITORING_PARAMS.map((k) => [k, null])) : {};
+      if (section === 'monitoring') extra['view'] = this.monitoringView;
+      this.writeTabParam(section, extra);
+    }
     this.scrollActiveTabIntoView();
     if (section === 'overview' || section === 'deployments') this.loadDeployments();
     if (section === 'deployments') {
       this.loadK8sPods();
       this.loadArgoStatus();
     }
-    if (section === 'monitoring' && !this.observabilityEnabled) {
-      this.loadApiMetrics();
-      this.loadMetrics();
-      this.loadLogs();
-    }
+    if (section === 'monitoring') this.loadMonitoringData();
     if (section === 'data') this.loadBackups();
     if (section === 'settings') this.loadMembers();
   }

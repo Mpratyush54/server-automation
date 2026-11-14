@@ -46,6 +46,19 @@ const LEGACY_ANCHORS: Record<string, string> = {
   privacy: 'privacy',
 };
 
+/** Monitoring view (`?view=`) an old monitoring tab now lives in. */
+const LEGACY_VIEWS: Record<string, string> = {
+  metrics: 'resources',
+  'api-metrics': 'traces',
+  logs: 'logs',
+};
+
+/** Monitoring view for an old `?tab=` value (metrics, api-metrics, logs), or null. */
+export function monitoringViewForTab(tab: string | null | undefined): string | null {
+  const key = String(tab ?? '').trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(LEGACY_VIEWS, key) ? LEGACY_VIEWS[key] : null;
+}
+
 /** Map any `?tab=` value (current section id or a pre-#185 tab name) to a section. Unknown -> overview. */
 export function sectionForTab(tab: string | null | undefined): ProjectSection {
   const key = String(tab ?? '').trim().toLowerCase();

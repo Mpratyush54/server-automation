@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, ElementRef, HostListener, OnInit, ViewChild, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, HostListener, Input, OnInit, ViewChild, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -63,7 +63,10 @@ export class HeatmapsComponent implements OnInit {
   }
   @ViewChild('frame') frameRef?: ElementRef<HTMLIFrameElement>;
 
-  projectId = '';
+  /** Project id; falls back to the `:id` route param when routed standalone. */
+  @Input() projectId = '';
+  /** Inside the project page's Monitoring section: no page header or back link. */
+  @Input() embedded = false;
   pages: HeatmapPage[] = [];
   page = '';
   viewport: Viewport = 'desktop';
@@ -87,9 +90,9 @@ export class HeatmapsComponent implements OnInit {
   private loadSeq = 0;
 
   ngOnInit(): void {
-    this.projectId = this.route.snapshot.paramMap.get('id') || '';
+    this.projectId = this.projectId || this.route.snapshot.paramMap.get('id') || '';
     const q = this.route.snapshot.queryParamMap;
-    if (q.get('page')) this.page = q.get('page')!;
+    if (q?.get('page')) this.page = q.get('page')!;
     void this.loadPages();
   }
 

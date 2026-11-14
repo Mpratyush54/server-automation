@@ -63,4 +63,38 @@ describe('ErrorsComponent', () => {
     expect(el.querySelector('[data-testid="error-detail-no-events"]')?.textContent).toContain('retention policy');
     expect(el.textContent).toContain('1.0.0: 4');
   });
+
+  it('embedded: no page header or project picker, and no project list fetch', async () => {
+    const fixture = setup(null);
+    fixture.componentInstance.projectId = 'p1';
+    fixture.componentInstance.embedded = true;
+    fixture.detectChanges();
+    http.expectNone('/api/projects');
+    http.expectOne((r) => r.url === '/api/projects/p1/errors').flush([]);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('h1')).toBeNull();
+    expect(el.querySelector('[data-testid="errors-project"]')).toBeNull();
+    expect(el.querySelector('[data-testid="errors-empty"]')).toBeTruthy();
+  });
+
+  it('compact: lists open issues only and emits the chosen issue', async () => {
+    const fixture = setup(null);
+    const c = fixture.componentInstance;
+    c.projectId = 'p1'; c.embedded = true; c.compact = true;
+    const chosen: (string | null)[] = [];
+    c.openIssue.subscribe((id) => chosen.push(id));
+    fixture.detectChanges();
+    const req = http.expectOne((r) => r.url === '/api/projects/p1/errors');
+    expect(req.request.params.get('status')).toBe('open');
+    req.flush([{ id: 'e1', title: 'TypeError: boom', status: 'open', count: 3 }]);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="errors-compact"]')).toBeTruthy();
+    expect(el.querySelector('.er-filters')).toBeNull();
+    (el.querySelector('.er-issue') as HTMLButtonElement).click();
+    expect(chosen).toEqual(['e1']);
+  });
 });

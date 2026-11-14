@@ -50,3 +50,11 @@
 @media (max-width: 640px) { .sp-update { grid-template-columns: minmax(0, 1fr); } }
 .sp-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .sp-empty { padding: 16px 20px; text-align: center; }
+
+/* Embedded in the project page's Monitoring section (Uptime view): a section heading, not a page header. */
+.sp-embed-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.sp-embed-head h2 { margin: 0; font-size: 1rem; font-weight: 600; color: rgb(var(--fg)); }
+.sp-embed-head p { margin: 6px 0 0; max-width: 70ch; font-size: 0.875rem; color: rgb(var(--fg-2)); }
+
+/* No trailing gap when stacked inside the project page. */
+:host > :last-child { margin-bottom: 0; }

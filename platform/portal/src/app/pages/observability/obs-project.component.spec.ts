@@ -153,6 +153,52 @@ describe('ObsProjectComponent (#48)', () => {
     expect(c.rangeNote).toBe('Range shortened to 23 h 59 min');
     expect(fixture.nativeElement.textContent).toContain('Range shortened to 23 h 59 min');
   });
+  it('embedded: renders only its sections, no header or tabs, and ignores ?tab=', async () => {
+    const { fixture, c, http } = setup({ tab: 'settings' });
+    c.embedded = true;
+    c.sections = ['apm', 'traces'];
+    await boot(fixture, http, true);
+    (await next(http, `${BASE}/services`)).flush({ services: [] });
+    (await next(http, `${BASE}/service-graph`)).flush({ nodes: [], edges: [] });
+    (await next(http, `${BASE}/endpoints`)).flush({ endpoints: [] });
+    (await next(http, `${BASE}/query/tempo`)).flush({ traces: [] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement;
+    expect(c.tab).toBe('apm');
+    expect(el.querySelector('h1')).toBeNull();
+    expect(el.querySelector('nav.subnav')).toBeNull();
+    expect(el.querySelector('.obs-back')).toBeNull();
+    expect(el.querySelector('app-obs-service-map')).not.toBeNull();
+    expect(el.textContent).toContain('Search traces');
+  });
+
+  it('embedded: a link to another panel writes ?view= (never ?tab=) and emits viewChange', () => {
+    const { c } = setup();
+    c.projectId = PID;
+    c.embedded = true;
+    c.sections = ['logs'];
+    const router = TestBed.inject(Router);
+    const nav = spyOn(router, 'navigate').and.resolveTo(true);
+    const views: string[] = [];
+    c.viewChange.subscribe((v) => views.push(v));
+    c.openTrace('abcdef0123456789abcdef0123456789');
+    expect(nav).toHaveBeenCalledWith([], jasmine.objectContaining({ queryParams: { trace: 'abcdef0123456789abcdef0123456789', view: 'traces' } }));
+    expect(views).toEqual(['traces']);
+  });
+
+  it('embedded without telemetry: one quiet line instead of the banner', async () => {
+    const { fixture, c, http } = setup();
+    c.embedded = true;
+    c.sections = ['infra', 'profiles'];
+    await boot(fixture, http, false);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const note = fixture.nativeElement.querySelector('[data-testid="telemetry-disabled"]');
+    expect(note.tagName).toBe('P');
+    expect(note.textContent).toContain('full install profile');
+    http.expectNone((r) => r.url.startsWith(BASE));
+  });
 });
 
 describe('webVitalQuery (#48)', () => {

@@ -1,4 +1,4 @@
-import { Component, OnInit, Input, Output, EventEmitter, inject } from '@angular/core';
+import { Component, OnInit, Input, Output, EventEmitter, inject, HostListener } from '@angular/core';
 import { RouterModule } from '@angular/router';
 
 import { AuthService } from '../../services/auth.service';
@@ -26,7 +26,6 @@ const ICONS: Record<string, string> = {
   dashboard: 'M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z',
   projects: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z',
   observability: 'M3 3v18h18M7 15l4-4 3 3 5-6',
-  errors: 'M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01',
   alerts: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0',
   infrastructure: 'M2 4h20v6H2zM2 14h20v6H2zM6 7h.01M6 17h.01',
   argocd: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
@@ -52,6 +51,16 @@ export class SidebarComponent implements OnInit {
   /** Drawer open state (mobile only). */
   @Input() isOpen = false;
   @Output() toggleCollapse = new EventEmitter<void>();
+
+  /** Ctrl+B / Cmd+B collapses or expands the sidebar (desktop only). */
+  @HostListener('document:keydown', ['$event'])
+  onShortcut(e: KeyboardEvent) {
+    if (this.isMobile || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'b') return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+    e.preventDefault();
+    this.toggleCollapse.emit();
+  }
   /** Emitted when a nav link is clicked so the shell can close the drawer. */
   @Output() navigate = new EventEmitter<void>();
   isDevOps = false;
@@ -84,8 +93,8 @@ export class SidebarComponent implements OnInit {
         { label: 'Projects', icon: 'projects', route: '/projects' },
       ] },
       { label: 'Monitor', items: [
-        { label: 'Observability', icon: 'observability', route: '/observability' },
-        { label: 'Errors', icon: 'errors', route: '/errors' },
+        // Fleet health; each project's errors, logs, traces and uptime live in its Monitoring section.
+        { label: 'Monitoring', icon: 'observability', route: '/observability' },
         { label: 'Alerts', icon: 'alerts', route: '/alerting' },
       ] },
     ];

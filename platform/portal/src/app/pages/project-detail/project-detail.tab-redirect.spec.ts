@@ -37,8 +37,6 @@ describe('Project detail ?tab= deep links (#29, #185)', () => {
     ['environment', 'configuration'],
     ['gitops', 'deployments'],
     ['environments', 'deployments'],
-    ['logs', 'monitoring'],
-    ['api-metrics', 'monitoring'],
     ['databases', 'data'],
     ['sdk-tokens', 'settings'],
     ['nonsense', 'overview'],
@@ -50,6 +48,18 @@ describe('Project detail ?tab= deep links (#29, #185)', () => {
       c.ngOnDestroy();
       expect(c.section).toBe(section as any);
       expect(router.navigate).toHaveBeenCalledWith([], jasmine.objectContaining({ queryParams: { tab: section }, replaceUrl: true }));
+    });
+  }
+
+  const legacyMonitoring: [string, string][] = [['logs', 'logs'], ['api-metrics', 'traces'], ['metrics', 'resources']];
+  for (const [tab, view] of legacyMonitoring) {
+    it(`?tab=${tab} opens the ${view} monitoring view and rewrites the URL`, async () => {
+      const c = create(tab);
+      await c.ngOnInit();
+      c.ngOnDestroy();
+      expect(c.section).toBe('monitoring');
+      expect(c.monitoringView).toBe(view as any);
+      expect(router.navigate).toHaveBeenCalledWith([], jasmine.objectContaining({ queryParams: { tab: 'monitoring', view }, replaceUrl: true }));
     });
   }
 

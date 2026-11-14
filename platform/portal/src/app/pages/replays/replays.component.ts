@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, Input, OnInit, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -6,13 +6,17 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { browserLabel, formatDuration, listParams, ReplayFilters, ReplaySessionRow } from './replay-utils';
 
-/** Session replay list for a project (#40): filters by page, errors and duration. */
+/**
+ * Session replay list for a project (#40): filters by page, errors and duration.
+ * Embedded in the project page's Monitoring section (Users view) with `embedded`.
+ */
 @Component({
   selector: 'app-replays',
   standalone: true,
   imports: [FormsModule, RouterLink, DatePipe],
   styles: [`
     :host { display: block; }
+    :host > :last-child { margin-bottom: 0; }
     .rp-back { display: inline-block; margin-bottom: 12px; font-size: 0.875rem; color: rgb(var(--fg-2)); text-decoration: none; }
     .rp-back:hover { color: rgb(var(--fg)); text-decoration: underline; }
     .rp-notice {
@@ -43,16 +47,26 @@ import { browserLabel, formatDuration, listParams, ReplayFilters, ReplaySessionR
     .rp-pages { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; color: rgb(var(--fg-2)); }
     .rp-right { text-align: right; }
     .rp-pager { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid rgb(var(--line)); }
+    .rp-embed-head { margin-bottom: 16px; }
+    .rp-embed-head h2 { margin: 0; font-size: 1rem; font-weight: 600; color: rgb(var(--fg)); }
+    .rp-embed-head p { margin: 6px 0 0; font-size: 0.875rem; color: rgb(var(--fg-2)); }
     .rp-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   `],
   template: `
-    <a class="rp-back" [routerLink]="['/projects', projectId]">Back to project</a>
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">Session replays</h1>
-        <p class="page-subtitle">Watch what users did before an error. Inputs are masked, recordings follow the project's replay retention and every view is audited.</p>
+    @if (!embedded) {
+      <a class="rp-back" [routerLink]="['/projects', projectId]">Back to project</a>
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Session replays</h1>
+          <p class="page-subtitle">Watch what users did before an error. Inputs are masked, recordings follow the project's replay retention and every view is audited.</p>
+        </div>
       </div>
-    </div>
+    } @else {
+      <div class="rp-embed-head">
+        <h2>Session replays</h2>
+        <p>Watch what users did before an error. Inputs are masked and every view is audited.</p>
+      </div>
+    }
 
     @if (!enabled && loaded) {
       <div class="rp-notice" data-test="disabled">Recording new sessions is off: session replay needs the full observability profile and replay storage. Existing recordings are still listed.</div>
@@ -123,7 +137,10 @@ export class ReplaysComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private cdr = inject(ChangeDetectorRef);
 
-  projectId = '';
+  /** Project id; falls back to the `:id` route param when routed standalone. */
+  @Input() projectId = '';
+  /** Inside the project page: no page header or back link. */
+  @Input() embedded = false;
   filters: ReplayFilters = { page: '', errors: '', minDurationSec: null, maxDurationSec: null, environment: '' };
   sessions: ReplaySessionRow[] = [];
   enabled = true;
@@ -133,7 +150,7 @@ export class ReplaysComponent implements OnInit {
   offset = 0;
 
   ngOnInit(): void {
-    this.projectId = this.route.snapshot.paramMap.get('id') || '';
+    this.projectId = this.projectId || this.route.snapshot.paramMap.get('id') || '';
     void this.load();
   }
 

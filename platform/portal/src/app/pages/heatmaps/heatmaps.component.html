@@ -1,10 +1,17 @@
-<a [routerLink]="['/projects', projectId]" class="hm-back">Back to project</a>
-<div class="page-header">
-  <div>
-    <h1 class="page-title">Heatmaps</h1>
-    <p class="page-subtitle">Where visitors click and how far they scroll on each page, from anonymous browser SDK data (<code>rum.heatmaps</code>).</p>
+@if (!embedded) {
+  <a [routerLink]="['/projects', projectId]" class="hm-back">Back to project</a>
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Heatmaps</h1>
+      <p class="page-subtitle">Where visitors click and how far they scroll on each page, from anonymous browser SDK data (<code>rum.heatmaps</code>).</p>
+    </div>
   </div>
-</div>
+} @else {
+  <div class="hm-embed-head">
+    <h2>Heatmaps</h2>
+    <p>Where visitors click and how far they scroll on each page, from anonymous browser SDK data (<code>rum.heatmaps</code>).</p>
+  </div>
+}
 
 @if (error) { <div class="hm-banner" role="alert">{{ error }}</div> }
 

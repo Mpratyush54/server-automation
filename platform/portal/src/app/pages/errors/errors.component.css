@@ -65,3 +65,4 @@
   margin: 4px 0;
 }
 .er-event details summary { cursor: pointer; color: rgb(var(--fg-2)); font-size: 0.8125rem; margin-top: 12px; }
+:host > :last-child { margin-bottom: 0; }

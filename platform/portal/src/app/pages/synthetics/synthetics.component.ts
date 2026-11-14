@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, Input, OnDestroy, OnInit, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -115,7 +115,10 @@ export class SyntheticsComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private cdr = inject(ChangeDetectorRef);
 
-  projectId = '';
+  /** Project id; falls back to the `:id` route param when routed standalone. */
+  @Input() projectId = '';
+  /** Inside the project page's Monitoring section (Uptime view): no page header or back link. */
+  @Input() embedded = false;
   checks: SyntheticCheckView[] = [];
   capabilities: any = null;
   templates: any[] = [];
@@ -138,7 +141,7 @@ export class SyntheticsComponent implements OnInit, OnDestroy {
   readonly secretSyntax = '{{secret.NAME}}';
 
   async ngOnInit() {
-    this.projectId = this.route.snapshot.paramMap.get('id') || '';
+    this.projectId = this.projectId || this.route.snapshot.paramMap.get('id') || '';
     await this.load();
     const checkId = this.route.snapshot.queryParamMap?.get('check');
     const pre = checkId ? this.checks.find((c) => c.id === checkId) : null;
@@ -162,9 +165,9 @@ export class SyntheticsComponent implements OnInit, OnDestroy {
         firstValueFrom(this.http.get<any>('/api/synthetics/capabilities')).catch(() => null),
         firstValueFrom(this.http.get<{ templates: any[] }>('/api/synthetics/templates')).catch(() => ({ templates: [] })),
       ]);
-      this.checks = list.checks;
+      this.checks = list?.checks ?? [];
       this.capabilities = caps;
-      this.templates = tpl.templates;
+      this.templates = tpl?.templates ?? [];
     } catch (err: any) {
       this.error = err?.error?.error || 'Failed to load checks';
     }
@@ -175,7 +178,7 @@ export class SyntheticsComponent implements OnInit, OnDestroy {
   async refresh() {
     try {
       const list = await firstValueFrom(this.http.get<{ checks: SyntheticCheckView[] }>(`${this.base()}/checks`));
-      this.checks = list.checks;
+      this.checks = list?.checks ?? [];
       if (this.selected) {
         this.selected = this.checks.find((c) => c.id === this.selected!.id) || null;
         if (this.selected) await this.loadResults();
@@ -195,7 +198,7 @@ export class SyntheticsComponent implements OnInit, OnDestroy {
     if (!this.selected) return;
     try {
       const r = await firstValueFrom(this.http.get<{ results: SyntheticResultView[] }>(`${this.base()}/checks/${this.selected.id}/results`, { params: { limit: 100 } }));
-      this.results = r.results;
+      this.results = r?.results ?? [];
       this.bars = timelineBars(this.results);
     } catch {
       this.results = [];

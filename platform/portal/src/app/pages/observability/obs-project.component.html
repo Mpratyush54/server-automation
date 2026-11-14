@@ -1,35 +1,58 @@
-<a class="obs-back" [routerLink]="['/projects', projectId]">← {{ projectName || 'Project' }}</a>
-<div class="obs-head">
-  <div>
-    <h1 class="page-title">Observability</h1>
-    <p class="page-subtitle">Traffic, errors, latency, traces and logs for this project in one place.</p>
-  </div>
-  <div class="obs-controls">
-    @if (environments.length) {
-      <label class="obs-field">Environment
-        <select class="obs-select" [ngModel]="environment" (ngModelChange)="setState({ env: $event || null })" aria-label="Environment">
-          <option value="">All</option>
-          @for (e of environments; track e) { <option [value]="e">{{ e }}</option> }
+@if (!embedded) {
+  <a class="obs-back" [routerLink]="['/projects', projectId]">← {{ projectName || 'Project' }}</a>
+  <div class="obs-head">
+    <div>
+      <h1 class="page-title">Observability</h1>
+      <p class="page-subtitle">Traffic, errors, latency, traces and logs for this project in one place.</p>
+    </div>
+    <div class="obs-controls">
+      @if (environments.length) {
+        <label class="obs-field">Environment
+          <select class="obs-select" [ngModel]="environment" (ngModelChange)="setState({ env: $event || null })" aria-label="Environment">
+            <option value="">All</option>
+            @for (e of environments; track e) { <option [value]="e">{{ e }}</option> }
+          </select>
+        </label>
+      }
+      <label class="obs-field">Time range
+        <select class="obs-select" [ngModel]="since" (ngModelChange)="setState({ since: $event })" aria-label="Time range">
+          @for (o of sinceOptions; track o.value) { <option [value]="o.value">{{ o.label }}</option> }
         </select>
       </label>
-    }
-    <label class="obs-field">Time range
-      <select class="obs-select" [ngModel]="since" (ngModelChange)="setState({ since: $event })" aria-label="Time range">
-        @for (o of sinceOptions; track o.value) { <option [value]="o.value">{{ o.label }}</option> }
-      </select>
-    </label>
-    <button type="button" class="obs-btn" (click)="loadTab()" [disabled]="loading">Refresh</button>
-    <a class="obs-btn" routerLink="/observability" [queryParams]="{ since }">All projects</a>
+      <button type="button" class="obs-btn" (click)="loadTab()" [disabled]="loading">Refresh</button>
+      <a class="obs-btn" routerLink="/observability" [queryParams]="{ since }">All projects</a>
+    </div>
   </div>
-</div>
 
-<nav class="subnav" aria-label="Observability sections">
-  @for (t of tabs; track t.id) {
-    <button type="button" [class.active]="tab === t.id" (click)="setState({ tab: t.id, trace: null })" [attr.aria-current]="tab === t.id ? 'page' : null">{{ t.label }}</button>
-  }
-</nav>
+  <nav class="subnav" aria-label="Observability sections">
+    @for (t of tabs; track t.id) {
+      <button type="button" [class.active]="tab === t.id" (click)="setState({ tab: t.id, trace: null })" [attr.aria-current]="tab === t.id ? 'page' : null">{{ t.label }}</button>
+    }
+  </nav>
+} @else {
+  <div class="obs-embed-bar">
+    <div class="obs-controls">
+      @if (environments.length) {
+        <label class="obs-field">Environment
+          <select class="obs-select" [ngModel]="environment" (ngModelChange)="setState({ env: $event || null })" aria-label="Environment">
+            <option value="">All</option>
+            @for (e of environments; track e) { <option [value]="e">{{ e }}</option> }
+          </select>
+        </label>
+      }
+      <label class="obs-field">Time range
+        <select class="obs-select" [ngModel]="since" (ngModelChange)="setState({ since: $event })" aria-label="Time range">
+          @for (o of sinceOptions; track o.value) { <option [value]="o.value">{{ o.label }}</option> }
+        </select>
+      </label>
+      <button type="button" class="obs-btn" (click)="loadTab()" [disabled]="loading">Refresh</button>
+    </div>
+  </div>
+}
 
-@if (enabled === false && tab !== 'errors' && tab !== 'synthetics' && tab !== 'sessions') {
+@if (embedded && enabled === false && needsTelemetry()) {
+  <p class="obs-quiet" data-testid="telemetry-disabled">These charts need the full install profile (<span class="obs-code">platformctl provision --profile full</span>) and the platform SDK in your services.</p>
+} @else if (!embedded && enabled === false && tab !== 'errors' && tab !== 'synthetics' && tab !== 'sessions') {
   <div class="obs-banner" data-testid="telemetry-disabled">
     <strong>Telemetry is not enabled on this platform.</strong>
     Traces, logs, metrics and profiles need the full install profile
@@ -41,16 +64,16 @@
 @if (rangeNote) { <div class="obs-banner" role="status">{{ rangeNote }}</div> }
 
 <!-- OVERVIEW -->
-@if (tab === 'overview') {
+@if (shows('overview')) {
   @if (summary) {
     <section class="obs-stats" aria-label="Summary">
       <div class="obs-stat"><span class="label">Health</span><span class="value with-dot"><span [class]="'obs-dot ' + summary.health"></span>{{ healthLabel(summary.health) }}</span></div>
       <div class="obs-stat"><span class="label">Requests</span><span class="value">{{ rate(summary.red?.requestRate) }}</span></div>
       <div class="obs-stat"><span class="label">Error rate</span><span class="value" [class.obs-bad]="(summary.red?.errorRate ?? 0) >= 5">{{ pct(summary.red?.errorRate) }}</span></div>
       <div class="obs-stat"><span class="label">p95 latency</span><span class="value">{{ ms(summary.red?.p95Ms) }}</span></div>
-      <div class="obs-stat"><span class="label">Apdex (T = {{ summary.red?.apdexThresholdMs || 512 }} ms)</span><span class="value">{{ summary.red?.apdex != null ? (summary.red.apdex | number: '1.2-2') : '—' }}</span></div>
-      <div class="obs-stat"><span class="label">Active alerts</span><span class="value" [class.obs-bad]="summary.incidents.critical > 0">{{ summary.incidents.active }}</span></div>
-      <div class="obs-stat"><span class="label">Open errors</span><span class="value">{{ summary.errors.open }}</span></div>
+      <div class="obs-stat"><span class="label">Apdex (T = {{ summary.red?.apdexThresholdMs || 512 }} ms)</span><span class="value">{{ summary.red?.apdex != null ? (summary?.red?.apdex | number: '1.2-2') : '—' }}</span></div>
+      <div class="obs-stat"><span class="label">Active alerts</span><span class="value" [class.obs-bad]="(summary?.incidents?.critical ?? 0) > 0">{{ summary?.incidents?.active }}</span></div>
+      <div class="obs-stat"><span class="label">Open errors</span><span class="value">{{ summary?.errors?.open }}</span></div>
       <div class="obs-stat"><span class="label">Synthetics</span><span class="value small">{{ humanize(summary.synthetics) || '—' }}</span></div>
     </section>
     @if (summary.telemetryError) { <div class="obs-banner error">{{ summary.telemetryError }}</div> }
@@ -74,6 +97,7 @@
       </section>
     </div>
   }
+  @if (!embedded) {
   <section class="obs-card">
     <h3>Related</h3>
     <div class="obs-links">
@@ -84,10 +108,11 @@
       @if (replaysAvailable) { <a class="obs-btn" [routerLink]="['/projects', projectId, 'replays']">Session replays</a> }
     </div>
   </section>
+  }
 }
 
 <!-- APM -->
-@if (tab === 'apm' && enabled) {
+@if (shows('apm') && enabled) {
   <section class="obs-card">
     <h3>Service map</h3>
     <app-obs-service-map [nodes]="graph.nodes" [edges]="graph.edges" (selectService)="selectService($event)" />
@@ -126,7 +151,7 @@
 }
 
 <!-- TRACES -->
-@if (tab === 'traces' && enabled) {
+@if (shows('traces') && enabled) {
   @if (openTraceId) {
     <section class="obs-card">
       <app-obs-trace-view [projectId]="projectId" [traceId]="openTraceId" (closed)="closeTrace()" (logsForTrace)="logsForTrace($event)" />
@@ -173,18 +198,18 @@
 }
 
 <!-- LOGS -->
-@if (tab === 'logs' && enabled) {
+@if (shows('logs') && enabled) {
   <section class="obs-card">
     <app-obs-logs [projectId]="projectId" [since]="since" [environment]="environment" [traceId]="logTraceId" (openTrace)="openTrace($event)" />
   </section>
 }
 
 <!-- ERRORS (#41) -->
-@if (tab === 'errors') {
+@if (shows('errors')) {
   <section class="obs-card">
     <h3>Errors</h3>
     @if (summary) {
-      <p>{{ summary.errors.open }} open issues · {{ summary.errors.regressions }} regressions</p>
+      <p>{{ summary?.errors?.open }} open issues · {{ summary?.errors?.regressions }} regressions</p>
     }
     <p class="obs-muted">Grouped exceptions with symbolicated stack traces, releases and triage.</p>
     <a class="obs-btn primary" [routerLink]="['/projects', projectId, 'errors']">Open error tracking</a>
@@ -192,7 +217,7 @@
 }
 
 <!-- RUM -->
-@if (tab === 'rum' && enabled) {
+@if (shows('rum') && enabled) {
   <section class="obs-card flush">
     <div class="obs-card-head"><h3>Web vitals by page (p75)</h3></div>
     @if (rumLoaded && !rum.length) {
@@ -208,7 +233,7 @@
 }
 
 <!-- SESSIONS (#40) -->
-@if (tab === 'sessions') {
+@if (shows('sessions')) {
   <section class="obs-card">
     <h3>Sessions</h3>
     @if (replaysAvailable) {
@@ -221,7 +246,7 @@
 }
 
 <!-- SYNTHETICS (#42) -->
-@if (tab === 'synthetics') {
+@if (shows('synthetics')) {
   <section class="obs-card">
     <h3>Synthetics</h3>
     @if (summary) { <p>Overall status: <strong>{{ humanize(summary.synthetics) || 'No checks' }}</strong></p> }
@@ -233,7 +258,7 @@
 }
 
 <!-- INFRA -->
-@if (tab === 'infra' && enabled) {
+@if (shows('infra') && enabled) {
   @if (!infra.namespaces.length && !loading) {
     <section class="obs-card"><div class="obs-empty"><strong>No environments deployed</strong>Pod metrics appear once the project has a running environment.</div></section>
   } @else {
@@ -251,7 +276,7 @@
 }
 
 <!-- PROFILES -->
-@if (tab === 'profiles' && enabled) {
+@if (shows('profiles') && enabled) {
   <section class="obs-card">
     <div class="obs-controls obs-profile-controls">
       <label class="obs-field">Service

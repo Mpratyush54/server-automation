@@ -9,7 +9,12 @@ import { DEFAULT_SINCE, FleetRow, fmtMs, fmtPct, fmtRate, healthLabel, humanizeS
 type SortKey = 'health' | 'name' | 'requestRate' | 'errorRate' | 'p95Ms' | 'activeAlerts';
 const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown: 2, healthy: 3 };
 
-/** Fleet overview (#48): every visible project x health, rate, error rate, p95, alerts, SLOs. */
+/**
+ * Monitoring (fleet, #48): every visible project x health, rate, error rate, p95,
+ * alerts, SLOs. Each row opens that project's Monitoring section, which holds its
+ * errors, logs, traces, users, uptime and resources (the old global Errors page
+ * redirects here).
+ */
 @Component({
   selector: 'app-obs-fleet',
   standalone: true,
@@ -19,8 +24,8 @@ const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown
   template: `
     <div class="obs-head">
       <div>
-        <h1 class="page-title">Observability</h1>
-        <p class="page-subtitle">Health, traffic, errors and latency across {{ scope === 'all' ? 'all projects' : 'your projects' }}.</p>
+        <h1 class="page-title">Monitoring</h1>
+        <p class="page-subtitle">Health, traffic, errors and latency across {{ scope === 'all' ? 'all projects' : 'your projects' }}. Open a project to see its errors, logs and traces.</p>
       </div>
       <div class="obs-controls">
         <label class="obs-field">Time range
@@ -70,12 +75,12 @@ const HEALTH_ORDER: Record<string, number> = { critical: 0, degraded: 1, unknown
             @for (r of sorted(); track r.projectId) {
               <tr class="clickable" (click)="open(r)" [attr.data-project]="r.projectId">
                 <td><span class="obs-row tight"><span class="obs-dot" [class]="'obs-dot ' + r.health"></span>{{ label(r.health) }}</span></td>
-                <td><a [routerLink]="['/projects', r.projectId, 'observability']" [queryParams]="{ since }" (click)="$event.stopPropagation()">{{ r.name }}</a></td>
+                <td><a [routerLink]="['/projects', r.projectId]" [queryParams]="monitoringParams('overview')" (click)="$event.stopPropagation()">{{ r.name }}</a></td>
                 <td class="obs-num">{{ rate(r.requestRate) }}</td>
                 <td class="obs-num" [class.obs-bad]="(r.errorRate ?? 0) >= 5" [class.obs-warn]="(r.errorRate ?? 0) >= 1 && (r.errorRate ?? 0) < 5">{{ pct(r.errorRate) }}</td>
                 <td class="obs-num">{{ ms(r.p95Ms) }}</td>
                 <td class="obs-num" [class.obs-bad]="r.criticalAlerts > 0">{{ r.activeAlerts }}</td>
-                <td class="obs-num">{{ r.openErrors }}</td>
+                <td class="obs-num"><a [routerLink]="['/projects', r.projectId]" [queryParams]="monitoringParams('errors')" (click)="$event.stopPropagation()" [attr.aria-label]="r.openErrors + ' open errors in ' + r.name">{{ r.openErrors }}</a></td>
                 <td>{{ humanize(r.synthetics) || '—' }}</td>
                 <td>@if (r.slos.total) { <span [class.obs-bad]="r.slos.breaching > 0">{{ r.slos.total - r.slos.breaching }}/{{ r.slos.total }} met</span> } @else { — }</td>
               </tr>
@@ -161,7 +166,12 @@ export class ObsFleetComponent implements OnInit {
     });
   }
 
+  /** Query params that open a project's Monitoring section on `view`, keeping the time range. */
+  monitoringParams(view: string): Record<string, string> {
+    return { tab: 'monitoring', view, since: this.since };
+  }
+
   open(r: FleetRow) {
-    this.router.navigate(['/projects', r.projectId, 'observability'], { queryParams: { since: this.since } });
+    this.router.navigate(['/projects', r.projectId], { queryParams: this.monitoringParams('overview') });
   }
 }

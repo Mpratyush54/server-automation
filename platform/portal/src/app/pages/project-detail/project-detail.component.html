@@ -551,177 +551,238 @@
   </div>
 }
 
-<!-- MONITORING: metrics, API latency, logs; links to the telemetry pages -->
+<!-- MONITORING: one place for health, errors, logs, traces, users, uptime, resources and AI agents (?view=) -->
 @if (section === 'monitoring') {
-  <div class="stack">
-    @if (observabilityEnabled) {
-      <!-- #48: the Observability page replaces Metrics / API latency / Logs when telemetry is installed. -->
-      <section class="card card-flush" aria-labelledby="obs-title" data-testid="observability-redirect">
-        <div class="card-header"><h2 id="obs-title">Observability</h2></div>
-        <div class="panel-body">
-          <p class="hint">Telemetry is installed on this platform. Metrics, traces, logs and API latency for this project are on the Observability page.</p>
-          <div><a class="btn" [routerLink]="['/projects', project?.id, 'observability']">Open observability</a></div>
-        </div>
-      </section>
-    } @else {
-      <div id="metrics" class="stack">
-        <div class="grid-3">
-          <section class="card">
-            <h2 class="stat-label">CPU average</h2>
-            <div class="stat">{{ aggregatedMetrics.cpuAvg | number:'1.1-1' }}%</div>
-            <p class="hint">Last 100 heartbeats</p>
-          </section>
-          <section class="card">
-            <h2 class="stat-label">Memory average</h2>
-            <div class="stat">{{ aggregatedMetrics.memoryAvg | number:'1.1-1' }} MB</div>
-            <p class="hint">Resident memory</p>
-          </section>
-          <section class="card">
-            <h2 class="stat-label">Error rate (5xx)</h2>
-            <div class="stat" [class.text-down]="aggregatedMetrics.errorRate > 0">{{ aggregatedMetrics.errorRate | number:'1.2-2' }}%</div>
-            <p class="hint">Share of responses with a 5xx status</p>
-          </section>
-        </div>
-        <section class="card card-flush" aria-labelledby="heartbeats-title">
-          <div class="card-header"><h2 id="heartbeats-title">Heartbeats</h2></div>
+  <nav class="mon-views" aria-label="Monitoring views" data-testid="monitoring-views">
+    @for (v of monitoringViews; track v.id) {
+      <button type="button" [class.active]="monitoringView === v.id" [attr.aria-current]="monitoringView === v.id ? 'page' : null"
+        [attr.data-view]="v.id" (click)="switchMonitoringView(v.id)">{{ v.label }}</button>
+    }
+  </nav>
+
+  @if (project?.id) {
+    <div class="stack" data-testid="monitoring-view" [attr.data-view]="monitoringView">
+      @switch (monitoringView) {
+      @case ('overview') {
+        @if (observabilityChecked && !observabilityEnabled) {
+        <p class="mon-notice" data-testid="needs-full-profile">Request, error and latency charts need the full install profile (<span class="mono">platformctl provision --profile full</span>).</p>
+        }
+        @defer (on immediate) {
+          <app-obs-project [projectId]="project.id" [embedded]="true" [sections]="viewObsTabs.overview" (viewChange)="switchMonitoringView($event, false)" />
+        }
+        @defer (on immediate) {
+          <app-errors [projectId]="project.id" [embedded]="true" [compact]="true" (openIssue)="openErrorIssue($event)" />
+        }
+        <p class="mon-foot">Alert rules and SLOs for this project are in <a routerLink="/alerting" [queryParams]="{ projectId: project.id }">Alerts</a>.</p>
+      }
+      @case ('errors') {
+        @defer (on immediate) {
+          <app-errors [projectId]="project.id" [embedded]="true" [issueId]="monitoringIssue" />
+        }
+      }
+      @case ('logs') {
+        @if (observabilityEnabled) {
+          @defer (on immediate) {
+            <app-obs-project [projectId]="project.id" [embedded]="true" [sections]="viewObsTabs.logs" (viewChange)="switchMonitoringView($event, false)" />
+          }
+        } @else {
+          @if (observabilityChecked) {
+        <p class="mon-notice" data-testid="needs-full-profile">Log search with filters, LogQL and live tail need the full install profile (<span class="mono">platformctl provision --profile full</span>).</p>
+          }
+        <section id="logs" class="card card-flush" aria-labelledby="logs-title">
+          <div class="card-header"><h2 id="logs-title">Logs</h2></div>
+          <div class="panel-body">
+            <div class="inline-form">
+              <div class="form-group">
+                <label for="log-level">Level</label>
+                <select id="log-level" [(ngModel)]="searchLogQuery.level" (change)="loadLogs()">
+                  <option value="">All levels</option>
+                  <option value="INFO">Info</option>
+                  <option value="WARN">Warn</option>
+                  <option value="ERROR">Error</option>
+                </select>
+              </div>
+              <div class="form-group grow">
+                <label for="log-search">Search</label>
+                <input id="log-search" [(ngModel)]="searchLogQuery.search" (keyup.enter)="loadLogs()" placeholder="Search logs (press Enter)">
+              </div>
+              <div class="form-group">
+                <button type="button" class="btn" (click)="loadLogs()">Filter</button>
+              </div>
+            </div>
+            <div class="log-stream" role="log" aria-label="Log stream">
+              @for (log of logs; track $index) {
+                <div class="log-line">
+                  <span class="muted">{{ log.timestamp | date:'HH:mm:ss.SSS' }}</span>
+                  <span class="log-level" [class.text-down]="log.level === 'ERROR'" [class.text-warn]="log.level === 'WARN'">{{ log.level }}</span>
+                  <span class="log-msg">{{ log.message }}</span>
+                  @if (log.fields && log.fields.error) {
+                    <span class="text-down">(error: {{ log.fields.error }})</span>
+                  }
+                </div>
+              }
+              @if (logs.length === 0) {
+                <div class="empty-state">No logs match the filter. Start a service with the SDK to send logs.</div>
+              }
+            </div>
+          </div>
+        </section>
+        }
+      }
+      @case ('traces') {
+        @if (observabilityEnabled) {
+          @defer (on immediate) {
+            <app-obs-project [projectId]="project.id" [embedded]="true" [sections]="viewObsTabs.traces" (viewChange)="switchMonitoringView($event, false)" />
+          }
+        } @else {
+          @if (observabilityChecked) {
+        <p class="mon-notice" data-testid="needs-full-profile">Traces, the service map and per-service endpoints need the full install profile (<span class="mono">platformctl provision --profile full</span>).</p>
+          }
+        <section id="api-latency" class="card card-flush" aria-labelledby="api-title">
+          <div class="card-header">
+            <h2 id="api-title">API latency by route</h2>
+            <button type="button" class="btn btn-sm" (click)="loadApiMetrics()">Refresh</button>
+          </div>
+          <div class="panel-body">
+            <p class="hint">Endpoint performance tracked by the Node.js SDK middleware.</p>
+            <dl class="api-summary">
+              <div><dt>Routes tracked</dt><dd class="stat">{{ apiMetrics.length }}</dd></div>
+              <div><dt>Slowest (p95)</dt><dd class="stat">{{ getSlowestEndpoint() }} ms</dd></div>
+              <div><dt>Highest route error rate</dt><dd class="stat">{{ getHighestErrorRate() }}%</dd></div>
+            </dl>
+          </div>
           <div class="table-scroll">
             <table>
               <thead>
-                <tr><th>Time</th><th>CPU</th><th>Memory</th><th>Uptime</th><th>Avg response</th><th>Errors</th></tr>
+                <tr>
+                  <th>Method</th><th>Route</th><th class="num">Requests</th>
+                  <th class="num">Avg</th><th class="num">p50</th><th class="num">p95</th><th class="num">p99</th>
+                  <th class="num">4xx</th><th class="num">5xx</th><th>Last hit</th>
+                </tr>
               </thead>
               <tbody>
-                @for (m of metrics; track $index) {
+                @for (m of apiMetrics; track $index) {
                   <tr>
-                    <td>{{ m.timestamp | date:'mediumTime' }}</td>
-                    <td>{{ m.cpuPct | number:'1.1-1' }}%</td>
-                    <td>{{ m.memoryMb | number:'1.0-0' }} MB</td>
-                    <td>{{ m.uptimeS }}s</td>
-                    <td>{{ m.avgResponseMs }} ms <span class="muted">p95 {{ m.p95ResponseMs }} ms</span></td>
-                    <td>4xx {{ m.errors4xx }} · 5xx {{ m.errors5xx }}</td>
+                    <td><span class="badge mono">{{ m._id?.method }}</span></td>
+                    <td class="mono">{{ m._id?.route }}</td>
+                    <td class="num">{{ m.count | number }}</td>
+                    <td class="num">{{ m.avgDuration | number:'1.0-0' }} ms</td>
+                    <td class="num">{{ (m.p50 || 0) | number:'1.0-0' }} ms</td>
+                    <td class="num" [class.text-warn]="(m.p95 || 0) > 500">{{ (m.p95 || 0) | number:'1.0-0' }} ms</td>
+                    <td class="num" [class.text-down]="(m.p99 || 0) > 1000">{{ (m.p99 || 0) | number:'1.0-0' }} ms</td>
+                    <td class="num" [class.text-warn]="m.errors4xx > 0">{{ m.errors4xx }}</td>
+                    <td class="num" [class.text-down]="m.errors5xx > 0">{{ m.errors5xx }}</td>
+                    <td class="secondary">{{ m.lastSeen | date:'shortTime' }}</td>
                   </tr>
                 }
-                @if (metrics.length === 0) {
-                  <tr class="empty-row"><td colspan="6">No heartbeat data. Start a service with the SDK to stream metrics.</td></tr>
+                @if (apiMetrics.length === 0) {
+                  <tr class="empty-row">
+                    <td colspan="10">
+                      No API latency data yet. In your service, initialise the SDK and add
+                      <code>app.use(platform.expressMiddleware())</code>, then call a few routes.
+                    </td>
+                  </tr>
                 }
               </tbody>
             </table>
           </div>
+          <div class="panel-body">
+            <h3 class="sub-title">Node.js integration</h3>
+            <pre class="code-block">const platform = require('&#64;mpratyush54/sdk-node');
+  await platform.init(&#123;
+    projectName: '{{ project?.name }}',
+    platformUrl: 'http://your-platform-server',
+    environmentName: 'production',
+  &#125;);
+  // Attaches to Express: per-route latency tracking
+  app.use(platform.expressMiddleware());
+  platform.captureConsole(); // forward all console.*</pre>
+          </div>
         </section>
-      </div>
-
-      <section id="api-latency" class="card card-flush" aria-labelledby="api-title">
-        <div class="card-header">
-          <h2 id="api-title">API latency by route</h2>
-          <button type="button" class="btn btn-sm" (click)="loadApiMetrics()">Refresh</button>
-        </div>
-        <div class="panel-body">
-          <p class="hint">Endpoint performance tracked by the Node.js SDK middleware.</p>
-          <dl class="api-summary">
-            <div><dt>Routes tracked</dt><dd class="stat">{{ apiMetrics.length }}</dd></div>
-            <div><dt>Slowest (p95)</dt><dd class="stat">{{ getSlowestEndpoint() }} ms</dd></div>
-            <div><dt>Highest route error rate</dt><dd class="stat">{{ getHighestErrorRate() }}%</dd></div>
-          </dl>
-        </div>
-        <div class="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Method</th><th>Route</th><th class="num">Requests</th>
-                <th class="num">Avg</th><th class="num">p50</th><th class="num">p95</th><th class="num">p99</th>
-                <th class="num">4xx</th><th class="num">5xx</th><th>Last hit</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (m of apiMetrics; track $index) {
-                <tr>
-                  <td><span class="badge mono">{{ m._id?.method }}</span></td>
-                  <td class="mono">{{ m._id?.route }}</td>
-                  <td class="num">{{ m.count | number }}</td>
-                  <td class="num">{{ m.avgDuration | number:'1.0-0' }} ms</td>
-                  <td class="num">{{ (m.p50 || 0) | number:'1.0-0' }} ms</td>
-                  <td class="num" [class.text-warn]="(m.p95 || 0) > 500">{{ (m.p95 || 0) | number:'1.0-0' }} ms</td>
-                  <td class="num" [class.text-down]="(m.p99 || 0) > 1000">{{ (m.p99 || 0) | number:'1.0-0' }} ms</td>
-                  <td class="num" [class.text-warn]="m.errors4xx > 0">{{ m.errors4xx }}</td>
-                  <td class="num" [class.text-down]="m.errors5xx > 0">{{ m.errors5xx }}</td>
-                  <td class="secondary">{{ m.lastSeen | date:'shortTime' }}</td>
-                </tr>
-              }
-              @if (apiMetrics.length === 0) {
-                <tr class="empty-row">
-                  <td colspan="10">
-                    No API latency data yet. In your service, initialise the SDK and add
-                    <code>app.use(platform.expressMiddleware())</code>, then call a few routes.
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        <div class="panel-body">
-          <h3 class="sub-title">Node.js integration</h3>
-          <pre class="code-block">const platform = require('&#64;mpratyush54/sdk-node');
-await platform.init(&#123;
-  projectName: '{{ project?.name }}',
-  platformUrl: 'http://your-platform-server',
-  environmentName: 'production',
-&#125;);
-// Attaches to Express: per-route latency tracking
-app.use(platform.expressMiddleware());
-platform.captureConsole(); // forward all console.*</pre>
-        </div>
-      </section>
-
-      <section id="logs" class="card card-flush" aria-labelledby="logs-title">
-        <div class="card-header"><h2 id="logs-title">Logs</h2></div>
-        <div class="panel-body">
-          <div class="inline-form">
-            <div class="form-group">
-              <label for="log-level">Level</label>
-              <select id="log-level" [(ngModel)]="searchLogQuery.level" (change)="loadLogs()">
-                <option value="">All levels</option>
-                <option value="INFO">Info</option>
-                <option value="WARN">Warn</option>
-                <option value="ERROR">Error</option>
-              </select>
-            </div>
-            <div class="form-group grow">
-              <label for="log-search">Search</label>
-              <input id="log-search" [(ngModel)]="searchLogQuery.search" (keyup.enter)="loadLogs()" placeholder="Search logs (press Enter)">
-            </div>
-            <div class="form-group">
-              <button type="button" class="btn" (click)="loadLogs()">Filter</button>
-            </div>
+        }
+      }
+      @case ('users') {
+        @if (observabilityEnabled) {
+          @defer (on immediate) {
+            <app-obs-project [projectId]="project.id" [embedded]="true" [sections]="viewObsTabs.users" (viewChange)="switchMonitoringView($event, false)" />
+          }
+        } @else if (observabilityChecked) {
+        <p class="mon-notice" data-testid="needs-full-profile">Web vitals need the full install profile (<span class="mono">platformctl provision --profile full</span>).</p>
+        }
+        @defer (on immediate) {
+          <app-replays [projectId]="project.id" [embedded]="true" />
+        }
+        @defer (on immediate) {
+          <app-heatmaps [projectId]="project.id" [embedded]="true" />
+        }
+      }
+      @case ('uptime') {
+        @defer (on immediate) {
+          <app-synthetics [projectId]="project.id" [embedded]="true" />
+        }
+        @defer (on immediate) {
+          <app-status-page-editor [projectId]="project.id" [embedded]="true" />
+        }
+      }
+      @case ('resources') {
+        <div id="metrics" class="stack">
+          <div class="grid-3">
+            <section class="card">
+              <h2 class="stat-label">CPU average</h2>
+              <div class="stat">{{ aggregatedMetrics.cpuAvg | number:'1.1-1' }}%</div>
+              <p class="hint">Last 100 heartbeats</p>
+            </section>
+            <section class="card">
+              <h2 class="stat-label">Memory average</h2>
+              <div class="stat">{{ aggregatedMetrics.memoryAvg | number:'1.1-1' }} MB</div>
+              <p class="hint">Resident memory</p>
+            </section>
+            <section class="card">
+              <h2 class="stat-label">Error rate (5xx)</h2>
+              <div class="stat" [class.text-down]="aggregatedMetrics.errorRate > 0">{{ aggregatedMetrics.errorRate | number:'1.2-2' }}%</div>
+              <p class="hint">Share of responses with a 5xx status</p>
+            </section>
           </div>
-          <div class="log-stream" role="log" aria-label="Log stream">
-            @for (log of logs; track $index) {
-              <div class="log-line">
-                <span class="muted">{{ log.timestamp | date:'HH:mm:ss.SSS' }}</span>
-                <span class="log-level" [class.text-down]="log.level === 'ERROR'" [class.text-warn]="log.level === 'WARN'">{{ log.level }}</span>
-                <span class="log-msg">{{ log.message }}</span>
-                @if (log.fields && log.fields.error) {
-                  <span class="text-down">(error: {{ log.fields.error }})</span>
-                }
-              </div>
-            }
-            @if (logs.length === 0) {
-              <div class="empty-state">No logs match the filter. Start a service with the SDK to send logs.</div>
-            }
-          </div>
+          <section class="card card-flush" aria-labelledby="heartbeats-title">
+            <div class="card-header"><h2 id="heartbeats-title">Heartbeats</h2></div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr><th>Time</th><th>CPU</th><th>Memory</th><th>Uptime</th><th>Avg response</th><th>Errors</th></tr>
+                </thead>
+                <tbody>
+                  @for (m of metrics; track $index) {
+                    <tr>
+                      <td>{{ m.timestamp | date:'mediumTime' }}</td>
+                      <td>{{ m.cpuPct | number:'1.1-1' }}%</td>
+                      <td>{{ m.memoryMb | number:'1.0-0' }} MB</td>
+                      <td>{{ m.uptimeS }}s</td>
+                      <td>{{ m.avgResponseMs }} ms <span class="muted">p95 {{ m.p95ResponseMs }} ms</span></td>
+                      <td>4xx {{ m.errors4xx }} · 5xx {{ m.errors5xx }}</td>
+                    </tr>
+                  }
+                  @if (metrics.length === 0) {
+                    <tr class="empty-row"><td colspan="6">No heartbeat data. Start a service with the SDK to stream metrics.</td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
-      </section>
-    }
-
-    <section class="card card-flush" aria-labelledby="more-monitoring-title">
-      <div class="card-header"><h2 id="more-monitoring-title">More monitoring</h2></div>
-      <nav class="link-list" aria-label="Monitoring pages">
-        <a [routerLink]="['/projects', project?.id, 'observability']">Observability<span class="cell-sub">Traces, metrics and logs</span></a>
-        <a [routerLink]="['/projects', project?.id, 'synthetics']">Synthetics<span class="cell-sub">Uptime and browser checks</span></a>
-        <a [routerLink]="['/projects', project?.id, 'replays']">Session replays<span class="cell-sub">Recorded user sessions</span></a>
-        <a [routerLink]="['/projects', project?.id, 'status']">Status page<span class="cell-sub">Public service status</span></a>
-        <a [routerLink]="['/projects', project?.id, 'heatmaps']">Heatmaps<span class="cell-sub">Anonymous click and scroll aggregates</span></a>
-      </nav>
-    </section>
-  </div>
+        @if (observabilityEnabled) {
+          @defer (on immediate) {
+            <app-obs-project [projectId]="project.id" [embedded]="true" [sections]="viewObsTabs.resources" (viewChange)="switchMonitoringView($event, false)" />
+          }
+        } @else if (observabilityChecked) {
+        <p class="mon-notice" data-testid="needs-full-profile">Pod CPU, memory, restarts and profiles need the full install profile (<span class="mono">platformctl provision --profile full</span>).</p>
+        }
+      }
+      @case ('agents') {
+        <app-project-agents [projectId]="project.id" />
+      }
+      }
+    </div>
+  }
 }
 
 <!-- SETTINGS: access, SDK tokens, privacy, namespace isolation -->

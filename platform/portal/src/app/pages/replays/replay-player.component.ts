@@ -105,7 +105,7 @@ const CONCURRENCY = 4;
     app-replay-player .rpp-label a { margin-left: 6px; }
   `],
   template: `
-    <a class="rpp-back" [routerLink]="['/projects', projectId, 'replays']">Back to sessions</a>
+    <a class="rpp-back" [routerLink]="['/projects', projectId]" [queryParams]="{ tab: 'monitoring', view: 'users' }">Back to sessions</a>
     @if (detail; as d) {
       <div class="page-header">
         <div>
@@ -134,7 +134,7 @@ const CONCURRENCY = 4;
               <button type="button" class="rpp-seek" (click)="seek(m)">{{ offset(m.offsetMs) }}</button>
               <span class="rpp-kind" [class]="'rpp-kind k-' + m.kind">{{ m.kind }}</span>
               <span class="rpp-label">{{ m.label }}
-                @if (m.issueId) { <a [routerLink]="['/projects', projectId, 'errors']" [queryParams]="{ issue: m.issueId }">Issue</a> }
+                @if (m.issueId) { <a [routerLink]="['/projects', projectId]" [queryParams]="{ tab: 'monitoring', view: 'errors', issue: m.issueId }">Issue</a> }
                 @if (m.traceId) { <a [href]="trace(m.traceId)" target="_blank" rel="noopener">Trace</a> }
               </span>
             </div>

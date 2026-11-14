@@ -91,4 +91,9 @@ describe('SidebarComponent', () => {
     ((fixture.nativeElement as HTMLElement).querySelector('aside') as HTMLElement).click();
     expect(spy).not.toHaveBeenCalled();
   });
+  it('Monitor group is just Monitoring (fleet) and Alerts', () => {
+    const groups = TestBed.createComponent(SidebarComponent).componentInstance.buildGroups();
+    const monitor = groups.find((g) => g.label === 'Monitor')!;
+    expect(monitor.items.map((i) => [i.label, i.route])).toEqual([['Monitoring', '/observability'], ['Alerts', '/alerting']]);
+  });
 });

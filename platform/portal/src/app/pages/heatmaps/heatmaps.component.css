@@ -110,3 +110,11 @@
 .hm-reach { border-top: 1px solid rgb(var(--line)); }
 .hm-selector { font-size: 0.8125rem; word-break: break-all; }
 .hm-num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Embedded in the project page's Monitoring section (Users view). */
+.hm-embed-head { margin-bottom: 16px; }
+.hm-embed-head h2 { margin: 0; font-size: 1rem; font-weight: 600; color: rgb(var(--fg)); }
+.hm-embed-head p { margin: 6px 0 0; font-size: 0.875rem; color: rgb(var(--fg-2)); }
+
+/* No trailing gap when stacked inside the project page. */
+:host > :last-child { margin-bottom: 0; }

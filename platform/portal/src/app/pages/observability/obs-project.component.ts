@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, inject } from '@angular/core';
+import { Component, EventEmitter, Input, OnDestroy, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -14,6 +14,7 @@ import { ObsTraceViewComponent } from './obs-trace-view.component';
 import { ObsLogsComponent } from './obs-logs.component';
 import { ObsServiceMapComponent } from './obs-service-map.component';
 import { ObsFlamegraphComponent } from './obs-flamegraph.component';
+import { MonitoringView, viewForObsTab } from './monitoring-views';
 
 /** Web vitals reported by the RUM SDKs (#39) through Faro measurements. */
 export const WEB_VITALS = ['lcp', 'inp', 'cls', 'fcp', 'ttfb'] as const;
@@ -30,6 +31,11 @@ export function webVitalQuery(vital: string, seconds: number): string {
  * (filters / LogQL, live tail, trace links), Errors, RUM, Sessions,
  * Synthetics, Infra, Profiles. Tab, time range, environment and the open
  * trace live in the URL.
+ *
+ * Embedded in the project page's Monitoring section (`embedded`), it renders
+ * only the panels in `sections`, hides its page header and tabs, and never
+ * writes `?tab=` (the project page owns it): moving to another panel writes
+ * `?view=` and emits `viewChange` instead.
  */
 @Component({
   selector: 'app-obs-project',
@@ -55,7 +61,15 @@ export class ObsProjectComponent implements OnInit, OnDestroy {
   readonly bytes = fmtBytes;
   readonly healthLabel = healthLabel;
 
-  projectId = '';
+  /** Project id; falls back to the `:id` route param when routed standalone. */
+  @Input() projectId = '';
+  /** Rendered inside the project page: no page header, back link or tabs. */
+  @Input() embedded = false;
+  /** Panels to render when embedded (e.g. `['apm', 'traces']`). */
+  @Input() sections: ProjectTab[] = [];
+  /** Embedded only: a link inside a panel asked for another monitoring view. */
+  @Output() viewChange = new EventEmitter<MonitoringView>();
+
   projectName = '';
   tab: ProjectTab = 'overview';
   since = DEFAULT_SINCE;
@@ -101,7 +115,7 @@ export class ObsProjectComponent implements OnInit, OnDestroy {
   readonly done = () => { this.loading = false; };
 
   async ngOnInit() {
-    this.projectId = this.route.snapshot?.paramMap?.get('id') || '';
+    this.projectId = this.projectId || this.route.snapshot?.paramMap?.get('id') || '';
     this.replaysAvailable = (this.router.config || []).some((r) => r.path === 'projects/:id/replays' || r.path === 'projects/:id/sessions');
     this.readUrl();
     await this.loadStatic();
@@ -119,8 +133,12 @@ export class ObsProjectComponent implements OnInit, OnDestroy {
 
   private readUrl() {
     const qp = this.route.snapshot?.queryParamMap;
-    const tab = qp?.get('tab');
-    this.tab = isProjectTab(tab) ? tab : 'overview';
+    if (this.embedded) {
+      if (!this.sections.includes(this.tab)) this.tab = this.sections[0] || 'overview';
+    } else {
+      const tab = qp?.get('tab');
+      this.tab = isProjectTab(tab) ? tab : 'overview';
+    }
     const since = qp?.get('since');
     this.since = isSince(since) ? since! : DEFAULT_SINCE;
     this.environment = qp?.get('env') || '';
@@ -131,6 +149,20 @@ export class ObsProjectComponent implements OnInit, OnDestroy {
 
   /** Update URL state (tab, range, environment, open trace...). */
   setState(patch: Record<string, string | null>) {
+    if (this.embedded && 'tab' in patch) {
+      // The project page owns ?tab=; a panel outside this view switches ?view= instead.
+      const tab = patch['tab'];
+      patch = { ...patch };
+      delete patch['tab'];
+      if (isProjectTab(tab) && !this.sections.includes(tab)) {
+        const view = viewForObsTab(tab);
+        patch['view'] = view;
+        this.router.navigate([], { relativeTo: this.route, queryParams: patch, queryParamsHandling: 'merge', replaceUrl: false });
+        this.viewChange.emit(view);
+        return;
+      }
+      if (isProjectTab(tab)) this.tab = tab;
+    }
     for (const [k, v] of Object.entries(patch)) {
       if (k === 'tab' && isProjectTab(v)) this.tab = v;
       if (k === 'since' && v && isSince(v)) this.since = v;
@@ -177,25 +209,44 @@ export class ObsProjectComponent implements OnInit, OnDestroy {
     if (note) this.rangeNote = note;
   }
 
+  /** Panels on screen: the embedded sections, or the current tab. */
+  activeTabs(): ProjectTab[] {
+    return this.embedded && this.sections.length ? this.sections : [this.tab];
+  }
+
+  /** True when the panel for `t` is on screen. */
+  shows(t: ProjectTab): boolean {
+    return this.activeTabs().includes(t);
+  }
+
+  /** Embedded: at least one panel on screen needs the full telemetry profile. */
+  needsTelemetry(): boolean {
+    return this.activeTabs().some((t) => t !== 'errors' && t !== 'synthetics' && t !== 'sessions' && t !== 'overview');
+  }
+
   async loadTab() {
     this.error = '';
     this.rangeNote = '';
     this.loading = true;
     try {
-      switch (this.tab) {
-        case 'overview': await this.loadOverview(); break;
-        case 'errors': case 'synthetics': case 'sessions': await this.loadSummary(); break;
-        case 'apm': if (this.enabled) await this.loadApm(); break;
-        case 'traces': if (this.enabled && !this.openTraceId) await this.searchTraces(); break;
-        case 'infra': if (this.enabled) await this.loadInfra(); break;
-        case 'profiles': if (this.enabled) await this.loadProfiles(); break;
-        case 'rum': if (this.enabled) await this.loadRum(); break;
-        default: break;
-      }
+      for (const t of this.activeTabs()) await this.loadOne(t);
     } catch (e: any) {
       this.error = e?.error?.error || 'Could not load this view.';
     } finally {
       this.loading = false;
+    }
+  }
+
+  private async loadOne(t: ProjectTab) {
+    switch (t) {
+      case 'overview': await this.loadOverview(); break;
+      case 'errors': case 'synthetics': case 'sessions': await this.loadSummary(); break;
+      case 'apm': if (this.enabled) await this.loadApm(); break;
+      case 'traces': if (this.enabled && !this.openTraceId) await this.searchTraces(); break;
+      case 'infra': if (this.enabled) await this.loadInfra(); break;
+      case 'profiles': if (this.enabled) await this.loadProfiles(); break;
+      case 'rum': if (this.enabled) await this.loadRum(); break;
+      default: break;
     }
   }
 

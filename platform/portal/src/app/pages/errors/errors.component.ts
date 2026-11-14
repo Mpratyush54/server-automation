@@ -1,23 +1,41 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
+/**
+ * Error issues (#41). Standalone at `/errors` (project picker) or embedded in the
+ * project page's Monitoring section (`embedded`, fixed `projectId`, no page header).
+ * `compact` lists only the latest open issues, for the monitoring overview.
+ */
 @Component({
   selector: 'app-errors', standalone: true, imports: [CommonModule, FormsModule, RouterModule],
   templateUrl: './errors.component.html',
   styleUrl: './errors.component.css',
 })
 export class ErrorsComponent implements OnInit {
+  /** Project id; falls back to the `:id` route param when routed standalone. */
+  @Input() projectId = '';
+  /** Inside the project page: no page header and no project picker. */
+  @Input() embedded = false;
+  /** Short list of open issues only (monitoring overview). */
+  @Input() compact = false;
+  /** Issue to open on load (otherwise `?issue=`). */
+  @Input() issueId = '';
+  /** Compact only: an issue (or "All errors") was chosen. */
+  @Output() openIssue = new EventEmitter<string | null>();
   project = ''; release = ''; environment = ''; status = ''; offset = 0;
   projects: any[] = []; issues: any[] = []; members: any[] = []; detail: any; assignee = ''; error = ''; busy = false;
   constructor(private http: HttpClient, private route: ActivatedRoute) {}
   async ngOnInit() {
-    this.project = this.route.snapshot.paramMap.get('id') || '';
-    try { this.projects = await firstValueFrom(this.http.get<any[]>('/api/projects')); await this.load();
-      const issue = this.route.snapshot.queryParamMap.get('issue'); if (issue && this.project) await this.open(issue);
+    this.project = this.projectId || this.route.snapshot.paramMap.get('id') || '';
+    if (this.compact) this.status = 'open';
+    try {
+      if (!this.embedded) this.projects = await firstValueFrom(this.http.get<any[]>('/api/projects'));
+      await this.load();
+      const issue = this.compact ? null : this.issueId || this.route.snapshot.queryParamMap?.get('issue'); if (issue && this.project) await this.open(issue);
     } catch { this.error = 'Could not load projects.'; }
   }
   traceUrl(id: string) {

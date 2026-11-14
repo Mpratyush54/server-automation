@@ -494,7 +494,7 @@ export class SettingsComponent implements OnInit {
 
   async loadBackups() {
     try {
-      this.backupStatus = (await firstValueFrom(this.api.getBackupStatus())).items;
+      this.backupStatus = (await firstValueFrom(this.api.getBackupStatus()))?.items ?? [];
       this.backupError = '';
     } catch { this.backupError = 'Backup status unavailable. Check the backup jobs and cluster access.'; }
   }
@@ -520,7 +520,7 @@ export class SettingsComponent implements OnInit {
   }
 
   async loadSmtp() {
-    try { this.smtpConfigs = await firstValueFrom(this.api.getSmtpConfigs()); } catch { this.smtpConfigs = []; }
+    try { this.smtpConfigs = (await firstValueFrom(this.api.getSmtpConfigs())) ?? []; } catch { this.smtpConfigs = []; }
   }
 
   async loadStorage() {

@@ -11,17 +11,43 @@
 }
 .side-collapsed { width: 4rem; }
 
+.side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  height: 3.5rem;
+  padding: 0 0.6rem 0 1rem;
+  border-bottom: 1px solid rgb(var(--line));
+  flex: none;
+}
+.side-collapsed .side-head { justify-content: center; padding: 0; }
 .side-brand {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  height: 3.5rem;
-  padding: 0 1rem;
+  min-width: 0;
   color: rgb(var(--fg));
   text-decoration: none;
-  border-bottom: 1px solid rgb(var(--line));
 }
-.side-collapsed .side-brand { justify-content: center; padding: 0; }
+/* Collapsed: the mark itself expands the sidebar; an arrow appears on hover. */
+.side-expand {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgb(var(--fg));
+  cursor: pointer;
+}
+.side-expand:hover { background: rgb(var(--raised)); }
+.side-expand .side-mark, .side-expand-arrow { grid-area: 1 / 1; transition: opacity 120ms ease; }
+.side-expand-arrow { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+.side-expand:hover .side-mark, .side-expand:focus-visible .side-mark { opacity: 0; }
+.side-expand:hover .side-expand-arrow, .side-expand:focus-visible .side-expand-arrow { opacity: 1; }
 .side-mark { width: 22px; height: 22px; flex: none; }
 .side-mark rect { fill: none; stroke: rgb(var(--fg)); stroke-width: 1.6; }
 .side-mark-led { fill: rgb(var(--accent)); }

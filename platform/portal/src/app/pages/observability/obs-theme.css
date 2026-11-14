@@ -138,3 +138,10 @@
 a { color: rgb(var(--accent-text)); }
 a.obs-btn { color: var(--obs-text); }
 a.obs-btn.primary { color: rgb(var(--accent-ink)); }
+
+/* Embedded in the project page's Monitoring section: controls only, a quiet one-line notice. */
+.obs-embed-bar { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+.obs-quiet { margin: 0 0 16px; font-size: 0.875rem; color: rgb(var(--fg-2)); }
+
+/* No trailing gap when stacked inside the project page. */
+:host > :last-child { margin-bottom: 0; }

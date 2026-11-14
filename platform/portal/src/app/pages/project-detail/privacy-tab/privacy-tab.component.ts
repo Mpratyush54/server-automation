@@ -17,118 +17,8 @@ interface ScrubRule {
   selector: 'app-privacy-tab',
   standalone: true,
   imports: [CommonModule, FormsModule],
-  template: `
-<div class="privacy-tab">
-  @if (error) {
-    <p class="err">{{ error }}</p>
-  }
-  @if (loading) {
-    <p>Loading privacy settings…</p>
-  }
-
-  @if (settings) {
-    <section class="card">
-      <h2>PII scrubbing</h2>
-      <p class="hint">
-        Server-side redaction is authoritative (Alloy + API). Built-in rules cover emails, tokens,
-        card numbers and IPs. Add project-specific regex rules below.
-      </p>
-      <label class="check">
-        <input type="checkbox" [(ngModel)]="scrubIps" /> Redact IP addresses on the API path
-      </label>
-      <h3>Built-in</h3>
-      <ul class="builtins">
-        @for (r of settings.builtinScrubRules || []; track r.id) {
-          <li><code>{{ r.id }}</code> — {{ r.name || r.pattern }}</li>
-        }
-      </ul>
-      <h3>Custom rules</h3>
-      @for (r of rules; track $index) {
-        <div class="rule-row">
-          <input [(ngModel)]="r.id" placeholder="id" />
-          <input [(ngModel)]="r.pattern" placeholder="regex pattern" class="grow" />
-          <input [(ngModel)]="r.replacement" placeholder="replacement" />
-          <button type="button" class="btn btn-sm" (click)="removeRule($index)">Remove</button>
-        </div>
-      }
-      <div class="actions">
-        <button type="button" class="btn btn-sm" (click)="addRule()">Add rule</button>
-        <button type="button" class="btn btn-sm" [disabled]="busy" (click)="saveScrubbing()">Save scrubbing</button>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>Retention (days)</h2>
-      <p class="hint">
-        Leave a field empty to use the default (logs 30d or the cluster value, replays 7d, errors 90d,
-        heatmaps 90d of anonymous aggregates). Traces and profiles use the cluster-wide
-        retention (<code>TELEMETRY_RETENTION_DAYS</code>) and cannot be set per project.
-      </p>
-      <div class="grid">
-        @for (k of retentionKeys; track k) {
-          <label>
-            {{ k }}
-            <input type="number" min="1" max="365" [(ngModel)]="retention[k]"
-              [placeholder]="'default ' + (settings?.defaults?.retentionDays?.[k] ?? '')" />
-          </label>
-        }
-        <label>
-          traces / profiles
-          <input type="text" disabled [value]="(settings?.retentionDays?.traces ?? '') + ' (cluster)'" />
-        </label>
-      </div>
-      <button type="button" class="btn btn-sm" [disabled]="busy" (click)="saveRetention()">Save retention</button>
-    </section>
-
-    <section class="card">
-      <h2>Consent defaults (session replay)</h2>
-      <p class="hint">
-        Used when a visitor has no recorded consent decision. Per-visitor choices recorded through the consent API
-        (<code>/api/sdk/privacy/consent</code>, <code>/api/sdk/privacy/replay-allowed</code>) override these defaults.
-      </p>
-      <label class="check"><input type="checkbox" [(ngModel)]="consent.replay" /> Replay allowed by default (opt-in recommended: off)</label>
-      <label class="check"><input type="checkbox" [(ngModel)]="consent.analytics" /> Analytics allowed by default</label>
-      <button type="button" class="btn btn-sm" [disabled]="busy" (click)="saveConsentDefaults()">Save consent defaults</button>
-    </section>
-
-    <section class="card">
-      <h2>GDPR delete</h2>
-      <p class="hint">Removes the subject from Mongo logs/errors, consent rows, MinIO replay prefixes, and submits Loki delete requests. An audit entry is always recorded.</p>
-      <div class="grid">
-        <label>User id <input [(ngModel)]="gdpr.userId" placeholder="user.id" /></label>
-        <label>Session id <input [(ngModel)]="gdpr.sessionId" placeholder="session id" /></label>
-        <label>Email (hashed in audit) <input [(ngModel)]="gdpr.email" placeholder="optional" /></label>
-      </div>
-      <button type="button" class="btn btn-sm btn-danger" [disabled]="busy || (!gdpr.userId && !gdpr.sessionId)" (click)="runGdprDelete()">Delete subject data</button>
-      @if (gdprResult) {
-        <pre class="result">{{ gdprResult | json }}</pre>
-      }
-    </section>
-  }
-
-  @if (status) {
-    <p class="ok">{{ status }}</p>
-  }
-</div>
-  `,
-  styles: [`
-    .privacy-tab { display: flex; flex-direction: column; gap: 1.5rem; }
-    .card { padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
-    .card h2, .card h3 { margin: 0; }
-    .card h3 { font-size: 0.875rem; font-weight: 600; }
-    .hint { color: rgb(var(--fg-2)); font-size: 0.8125rem; margin: 0; }
-    .check { display: flex; gap: 0.5rem; align-items: center; margin: 0; }
-    .builtins { font-size: 0.8125rem; margin: 0; padding-left: 1.25rem; }
-    .rule-row { display: flex; gap: 0.5rem; margin-bottom: 0.4rem; flex-wrap: wrap; }
-    .rule-row .grow { flex: 1; min-width: 12rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 1rem; }
-    .grid label { display: flex; flex-direction: column; gap: 0.375rem; font-size: 0.8125rem; color: rgb(var(--fg-2)); }
-    .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-    .err { color: rgb(var(--down)); margin: 0; }
-    .ok { color: rgb(var(--ok)); margin: 0; }
-    .result { font-size: 0.8rem; overflow: auto; max-height: 16rem; }
-    .card > .btn { align-self: flex-start; }
-  `],
+  templateUrl: './privacy-tab.component.html',
+  styleUrl: './privacy-tab.component.css',
 })
 export class PrivacyTabComponent implements OnChanges {
   @Input({ required: true }) projectId!: string;
@@ -146,6 +36,24 @@ export class PrivacyTabComponent implements OnChanges {
   consent = { replay: false, analytics: true };
   gdpr = { userId: '', sessionId: '', email: '' };
   gdprResult: any = null;
+  /** Panel whose save button was pressed last, so its footer shows the outcome. */
+  lastPanel: 'scrubbing' | 'retention' | 'consent' | 'gdpr' | '' = '';
+
+  /** Plain labels for the retention table (keys match retentionKeys and the API). */
+  readonly retentionLabels: Record<string, { label: string; help: string }> = {
+    logs: { label: 'Logs', help: 'Log lines from your services.' },
+    replays: { label: 'Session replays', help: 'Recorded browser sessions.' },
+    errors: { label: 'Errors', help: 'Error events and their stack traces.' },
+    heatmaps: { label: 'Heatmaps', help: 'Anonymous click and scroll totals.' },
+  };
+  /** Counts shown after a GDPR delete (keys of the API's `deleted` object). */
+  readonly gdprCountLabels: Array<[string, string]> = [
+    ['logs', 'Log entries'],
+    ['errors', 'Error events'],
+    ['consents', 'Consent records'],
+    ['replayObjects', 'Replay files'],
+    ['lokiRequests', 'Log-store delete requests'],
+  ];
 
   constructor(private api: ApiService) {}
 
