@@ -591,6 +591,13 @@ func InstallPostgresBackup(cfg *config.Config) error {
 	if err = shell.RunBash("timeout 10m kubectl -n databases wait --for=condition=ContinuousArchiving=True clusters.postgresql.cnpg.io/postgresql --timeout=10m"); err != nil {
 		return fmt.Errorf("WAL archiving not ready; check kubectl -n databases describe cluster postgresql for archive errors: %w", err)
 	}
+	// Archiving only proves the primary has the plugin. Backups run on a
+	// standby by default, and on ha the standbys restart with the plugin
+	// sidecar one by one afterwards; a backup sent to one before that failed
+	// with "requested plugin is not available" (#186 ha test).
+	if err = shell.RunBash(pgPluginRolloutScript); err != nil {
+		return fmt.Errorf("PostgreSQL instances did not all restart with the backup plugin: %w", err)
+	}
 	m := pgResource("ScheduledBackup", "postgresql-daily")
 	m["spec"] = pgPluginBackupSpec(map[string]any{"schedule": "0 0 3 * * *", "backupOwnerReference": "self", "immediate": true})
 	if err = applyTelemetryJSON(m); err != nil {
@@ -669,16 +676,26 @@ func pgEnsureRecoveryWindow(server string) error {
 }
 
 // pgFirstBackupScript waits until a base backup exists in the recovery window.
-// It requests one Backup when none completed (also after a failed attempt),
-// and fails after 15 minutes with the backup's error.
+// It requests a Backup when none completed and none is in progress: after a
+// failed attempt, or when there is no Backup at all for a minute. It used to
+// request only once; on the #186 ha test both the scheduled and the retried
+// backup failed while standbys were still restarting with the plugin, and the
+// step waited 15 minutes for nothing. At most three requests; fails after 15
+// minutes.
 const pgFirstBackupScript = `set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 completed() { kubectl -n databases get backups.postgresql.cnpg.io -o jsonpath='{range .items[*]}{.spec.cluster.name}={.status.phase}{"\n"}{end}' 2>/dev/null | grep -qx 'postgresql=completed'; }
-requested=""
+requests=0
+idle=0
 for _ in $(seq 1 180); do
   completed && exit 0
   phases=$(kubectl -n databases get backups.postgresql.cnpg.io -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' 2>/dev/null || true)
-  if [ -z "$requested" ] && printf '%s\n' "$phases" | grep -qx failed && ! printf '%s\n' "$phases" | grep -qxE 'running|started|pending|'; then
+  busy=""
+  if [ -n "$phases" ] && printf '%s\n' "$phases" | grep -qxE 'running|started|pending|'; then busy=1; fi
+  if [ -z "$phases" ]; then idle=$((idle+1)); else idle=0; fi
+  if [ "$requests" -lt 3 ] && [ -z "$busy" ] && { printf '%s\n' "$phases" | grep -qx failed || [ "$idle" -ge 12 ]; }; then
+    idle=0
+    requests=$((requests+1))
     name="postgresql-initial-$(date +%s)"
     kubectl apply -f - >/dev/null <<EOF
 apiVersion: postgresql.cnpg.io/v1
@@ -686,12 +703,31 @@ kind: Backup
 metadata: {name: $name, namespace: databases}
 spec: {cluster: {name: postgresql}, method: plugin, pluginConfiguration: {name: ` + BarmanCloudPluginName + `}}
 EOF
-    requested="$name"
+    echo "requested base backup $name (attempt $requests)"
   fi
   sleep 5
 done
 echo "no completed base backup after 15 minutes:" >&2
 kubectl -n databases get backups.postgresql.cnpg.io -o custom-columns=NAME:.metadata.name,PHASE:.status.phase,ERROR:.status.error >&2 || true
+exit 1
+`
+
+// pgPluginRolloutScript waits until every instance runs the Barman Cloud
+// sidecar and the cluster is healthy with all instances ready.
+const pgPluginRolloutScript = `set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+for _ in $(seq 1 120); do
+  st=$(kubectl -n databases get clusters.postgresql.cnpg.io postgresql -o jsonpath='{.status.phase}/{.status.readyInstances}/{.spec.instances}' 2>/dev/null || true)
+  pods=$(kubectl -n databases get pods -l cnpg.io/cluster=postgresql,cnpg.io/podRole=instance -o jsonpath='{range .items[*]}{.metadata.name}={.spec.containers[*].name} {.spec.initContainers[*].name}{"\n"}{end}' 2>/dev/null || true)
+  want=${st##*/}
+  case "$st" in "Cluster in healthy state/$want/$want")
+    n=$(printf '%s\n' "$pods" | grep -c 'plugin-barman-cloud' || true)
+    total=$(printf '%s\n' "$pods" | grep -c '=' || true)
+    if [ "$total" -ge "$want" ] && [ "$n" -eq "$total" ]; then exit 0; fi ;;
+  esac
+  sleep 5
+done
+echo "PostgreSQL instances not all ready with the backup plugin after 10 minutes: $st" >&2
 exit 1
 `
 

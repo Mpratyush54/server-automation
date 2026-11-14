@@ -366,3 +366,20 @@ func TestPGEnsureRecoveryWindowRequestsBackup(t *testing.T) {
 		t.Fatalf("a recorded window needs no extra backup: err=%v requested=%v", err, requested)
 	}
 }
+
+// #186 ha test: the immediate backup and the one retry went to standbys still
+// without the plugin sidecar and failed, then the first-backup script waited
+// 15 minutes without retrying. Provision now waits for every instance to run
+// the sidecar, and the script retries up to three times.
+func TestPGBackupWaitsForPluginOnEveryInstance(t *testing.T) {
+	for _, want := range []string{"cnpg.io/podRole=instance", "plugin-barman-cloud", ".spec.initContainers[*].name", "Cluster in healthy state"} {
+		if !strings.Contains(pgPluginRolloutScript, want) {
+			t.Fatalf("rollout script lacks %q", want)
+		}
+	}
+	for _, want := range []string{`"$requests" -lt 3`, `"$idle" -ge 12`} {
+		if !strings.Contains(pgFirstBackupScript, want) {
+			t.Fatalf("first-backup script lacks %q", want)
+		}
+	}
+}
