@@ -14,12 +14,14 @@ The portal shows where backups go, when each kind last ran and how far back you 
 
 You need a bucket and an access key that can list, read, write and delete in it. Use a dedicated bucket, or a folder (prefix) inside one that holds nothing else.
 
-**During installation.** `sudo platformctl provision` asks for the bucket. With `--auto`, give it in the environment. The access key and secret only ever come from the environment, never from command-line flags:
+**During installation.** `sudo platformctl provision` asks for the bucket. With `--auto`, give it in the environment. The access key and secret only ever come from the environment, never from the command line: anything typed after `sudo` is saved in the system log and visible to other users while the command runs. Type them into your shell first, then pass them on with `sudo -E`:
 
 ```bash
-sudo env BACKUP_S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com \
+read -rp 'Access key ID: ' BACKUP_S3_ACCESS_KEY
+read -rsp 'Secret access key: ' BACKUP_S3_SECRET_KEY; echo
+export BACKUP_S3_ACCESS_KEY BACKUP_S3_SECRET_KEY
+sudo -E env BACKUP_S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com \
   BACKUP_S3_BUCKET=cairn-backups BACKUP_S3_REGION=auto BACKUP_S3_PREFIX=server-a \
-  BACKUP_S3_ACCESS_KEY=... BACKUP_S3_SECRET_KEY=... \
   DOMAIN=example.com ADMIN_EMAIL=ops@example.com platformctl provision --auto
 ```
 
@@ -98,19 +100,28 @@ sudo platformctl postgres migrate --confirm
 Use this when the old server is gone. You need the backup target settings and keys, the age key file and your domain. Use the same Cairn version as the old server.
 
 1. Find the newest archive ID: `sudo platformctl backup list` on the old server while it still runs, or `mc ls` on the target's `archives/` folder.
-2. On the new Ubuntu server, install `mc` (the archive restore uses it), then install Cairn and restore in one step. The age key goes over SSH, is held in memory and is never written to the server:
+2. On the new Ubuntu server, install `mc` (the archive restore uses it). From your computer, send the target's access key and secret to a file only root can read, so they never appear on a command line:
+
+   ```bash
+   read -rp 'Access key ID: ' KEY_ID; read -rsp 'Secret access key: ' SECRET; echo
+   printf 'BACKUP_S3_ACCESS_KEY=%s\nBACKUP_S3_SECRET_KEY=%s\n' "$KEY_ID" "$SECRET" \
+     | ssh you@new-server 'sudo install -m 600 /dev/stdin /root/backup-target.env'
+   ```
+
+3. Install Cairn and restore in one step. The age key goes over SSH, is held in memory and is never written to the server. The key file from step 2 is deleted as soon as it has been read:
 
    ```bash
    cat identity.txt | ssh you@new-server \
-     'sudo -n env DOMAIN=example.com ADMIN_EMAIL=ops@example.com \
+     'sudo -n bash -c "set -a; . /root/backup-target.env; set +a; rm -f /root/backup-target.env
+        exec env DOMAIN=example.com ADMIN_EMAIL=ops@example.com \
         BACKUP_S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com BACKUP_S3_BUCKET=cairn-backups \
-        BACKUP_S3_REGION=auto BACKUP_S3_PREFIX=server-a BACKUP_S3_ACCESS_KEY=... BACKUP_S3_SECRET_KEY=... \
-        platformctl provision --auto --restore-from external BACKUP_ID'
+        BACKUP_S3_REGION=auto BACKUP_S3_PREFIX=server-a \
+        platformctl provision --auto --restore-from external BACKUP_ID"'
    ```
 
    `external` means the backup target this provision has just set up. The key is checked before the install starts.
 
-3. Bring PostgreSQL forward from the nightly archive to the last saved change. Look up the old server's archive name, then recover from it:
+4. Bring PostgreSQL forward from the nightly archive to the last saved change. Look up the old server's archive name, then recover from it:
 
    ```bash
    sudo platformctl backup target show
@@ -119,7 +130,7 @@ Use this when the old server is gone. You need the backup target settings and ke
 
    `backup target show` lists the archive names under "PostgreSQL archives in the target". The new server's own name is shown in `platformctl status`; pick the other one.
 
-4. Check that an old user can sign in, the projects are listed, a secret value decrypts and an uploaded file opens. Then point DNS at the new server and turn your project workloads back on.
+5. Check that an old user can sign in, the projects are listed, a secret value decrypts and an uploaded file opens. Then point DNS at the new server and turn your project workloads back on.
 
 **Restore an archive onto a server that is already installed:**
 

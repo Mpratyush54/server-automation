@@ -71,14 +71,17 @@ Stop your apps' writes first. All PostgreSQL databases return to that moment; Mo
 
 ## Rebuild from the backup target
 
-If the server is gone, install a new one and restore everything from the off-site backup target in one command. You need the target's settings and keys, the age key file (`identity.txt`) and the archive ID:
+If the server is gone, install a new one and restore everything from the off-site backup target in one command. You need the target's settings and keys, the age key file (`identity.txt`) and the archive ID. First send the target's keys to a file only root can read, so they never appear on a command line:
 
 ```bash
+read -rp 'Access key ID: ' KEY_ID; read -rsp 'Secret access key: ' SECRET; echo
+printf 'BACKUP_S3_ACCESS_KEY=%s\nBACKUP_S3_SECRET_KEY=%s\n' "$KEY_ID" "$SECRET" \
+  | ssh you@new-server 'sudo install -m 600 /dev/stdin /root/backup-target.env'
 cat identity.txt | ssh you@new-server \
-  'sudo -n env DOMAIN=example.com ADMIN_EMAIL=ops@example.com \
+  'sudo -n bash -c "set -a; . /root/backup-target.env; set +a; rm -f /root/backup-target.env
+     exec env DOMAIN=example.com ADMIN_EMAIL=ops@example.com \
      BACKUP_S3_BUCKET=cairn-backups BACKUP_S3_ENDPOINT=... BACKUP_S3_REGION=... BACKUP_S3_PREFIX=server-a \
-     BACKUP_S3_ACCESS_KEY=... BACKUP_S3_SECRET_KEY=... \
-     platformctl provision --auto --restore-from external BACKUP_ID'
+     platformctl provision --auto --restore-from external BACKUP_ID"'
 ```
 
 Then bring PostgreSQL forward to the last saved change with `sudo platformctl restore --pitr latest --source-server <old archive name> --confirm`. The private key stays on your computer and is passed over SSH. Every step, with the checks to do afterwards, is in [Rebuild everything on a new server](backups.md#rebuild-everything-on-a-new-server).
