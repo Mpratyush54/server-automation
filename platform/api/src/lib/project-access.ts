@@ -40,8 +40,13 @@ export async function requireProjectAccess(
   minRole: ProjectAccessRole = ProjectAccessRole.VIEWER,
 ): Promise<{ ok: true; membership: ProjectMember | null } | { ok: false; status: number; error: string }> {
   // Agent tokens with projects:read may view any project; mutating minRoles still require human JWT.
+  // A connected assistant (remote MCP) is further limited to the projects its person can see.
   if (req.agentToken) {
     if (minRole === ProjectAccessRole.VIEWER && agentHasScope(req, 'projects:read')) {
+      const delegated = req.agentToken.delegatedUser;
+      if (delegated && !(await userCanAccessProject(projectId, delegated, ProjectAccessRole.VIEWER))) {
+        return { ok: false, status: 403, error: 'Forbidden: no access to this project' };
+      }
       return { ok: true, membership: null };
     }
     return { ok: false, status: 403, error: 'Forbidden: agent token cannot perform this project action' };
@@ -62,10 +67,15 @@ export async function requireProjectAccess(
 
 export async function listAccessibleProjectIds(
   user: { id: string; role: string } | undefined,
-  agent?: { scopes: string[] } | null,
+  agent?: { scopes: string[]; delegatedUser?: { id: string; role: string } } | null,
 ): Promise<string[] | null> {
   // null = all projects
-  if (agent && (agent.scopes.includes('*') || agent.scopes.includes('projects:read'))) {
+  const agentCanRead = !!agent && (agent.scopes.includes('*') || agent.scopes.includes('projects:read'));
+  if (agent?.delegatedUser) {
+    // Connected assistant: only the projects its person can see, and only with projects:read.
+    if (!agentCanRead) return [];
+    user = agent.delegatedUser;
+  } else if (agentCanRead) {
     return null;
   }
   if (!user) return [];

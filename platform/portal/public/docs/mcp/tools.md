@@ -4,6 +4,8 @@ This page lists every tool the Cairn MCP server gives an AI assistant, and which
 
 Rules the assistant itself must follow: [Rules for AI agents](for-agents.md).
 
+An assistant connected through the connector URL (`https://<your-domain>/mcp`) gets every tool below except `platform_login`, `platform_logout`, the approval tools and `platform_deploy`, which need a person and are only on the local MCP server. It sees only the projects of the person who approved it.
+
 ## Ask the assistant to look around
 
 These tools only read. They are the safest choice and the assistant should prefer them.
@@ -100,7 +102,7 @@ Then the assistant runs the command with `confirm: true`, a `reason` and the `ap
 
 `platform_deploy` starts a deployment. It needs `projectId` and `confirm: true`. Optional: `environmentId`, `environmentName`, `version`, `branch`, `commitSha`, `imageTag`, `gitPath`, `pullFromGit`, `metadata`.
 
-It works only with a person's session (Developer, Tech lead, DevOps or Admin), not with an agent token. See [Deploy from an assistant](setup.md#deploy-from-an-assistant).
+It works only with a person's session (Developer, Tech lead, DevOps or Admin), not with an agent token. It is only offered by the local MCP server. See [Deploy from an assistant](setup.md#deploy-from-an-assistant).
 
 ## Errors
 

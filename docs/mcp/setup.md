@@ -1,24 +1,139 @@
-# Connect Cursor or Claude to Cairn
+# Connect an AI assistant to Cairn
 
-This page helps you create an agent token and connect Cursor, Claude Desktop or Claude Code to your Cairn server. You create the token in the portal: open a project, go to **Monitoring**, then **AI agents**.
+Copy one address, paste it into your assistant, sign in to Cairn and approve. That is all. It works with Claude, ChatGPT, Cursor, VS Code and Claude Code, and you install nothing.
 
 If you are an AI agent, also read [Rules for AI agents](for-agents.md).
 
-## 1. Create an agent token
+## 1. Copy the connector URL
 
-You need the Admin or DevOps role and two-factor sign-in on your account ([Two-factor sign-in](../guides/mfa.md)).
+Your Cairn server's connector URL is your portal address followed by `/mcp`:
 
-1. Open a project and go to **Monitoring**, then **AI agents**.
-2. Under **Agent tokens**, select **Create token**.
-3. Enter a **Name** that says who uses it, for example `laptop-cursor`.
-4. Optional: set **Expires**. Leave it empty for no expiry.
-5. Keep the default **Permissions** unless you want less. **Read session replays** is off by default because recordings hold personal data.
-6. Enter the code from your authenticator app when asked.
-7. Copy the token (`plat_agent_...`). It is shown once. Store it in a password manager or a local file you never commit.
+```
+https://cairn.example.com/mcp
+```
 
-To cut off an assistant later, select **Revoke** next to its token.
+The portal shows it with a **Copy** button: open any project, go to **Monitoring**, then **AI agents**, and look at **Connect an AI assistant**.
 
-## 2. Build the MCP server
+## 2. Paste it into your assistant
+
+**Claude** (claude.ai and Claude Desktop)
+
+1. Open **Customize**, then **Connectors**.
+2. Select **Add**, then **Add custom connector**.
+3. Name it `Cairn`, paste the connector URL and select **Continue**.
+4. Keep the detected sign-in settings and select **Add**. Sign in to Cairn when asked.
+5. In a chat, turn the connector on from the **+** menu, under **Connectors**.
+
+On Team and Enterprise plans an owner adds the connector once in **Organization settings**, **Connectors**. Each person then connects from **Customize**, **Connectors**.
+
+**ChatGPT** (web)
+
+1. Open `chatgpt.com/plugins` and select **Add custom MCP server**.
+2. Name it `Cairn` and paste the connector URL as the **Server URL**.
+3. Choose **OAuth** for authentication, confirm the warning, and sign in to Cairn when asked.
+
+Your workspace settings may need to allow custom MCP servers.
+
+**Cursor**
+
+Add this to `.cursor/mcp.json` in your project, or to `~/.cursor/mcp.json` for every project:
+
+```json
+{
+  "mcpServers": {
+    "cairn": { "url": "https://cairn.example.com/mcp" }
+  }
+}
+```
+
+Cursor asks you to sign in. Approve the connection in the browser.
+
+**VS Code** (GitHub Copilot chat)
+
+Run **MCP: Add Server** from the command palette, choose **HTTP** and paste the connector URL. Or add this to `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "cairn": { "type": "http", "url": "https://cairn.example.com/mcp" }
+  }
+}
+```
+
+Start the server when VS Code offers it, then sign in to Cairn.
+
+**Claude Code**
+
+```bash
+claude mcp add --transport http cairn https://cairn.example.com/mcp
+```
+
+Then type `/mcp` in Claude Code, pick `cairn` and sign in in the browser.
+
+## 3. Sign in and approve
+
+Your browser opens the Cairn sign-in page, then a screen that shows:
+
+- the name the assistant gave itself, and the address you go back to afterwards. Only continue if you started this connection;
+- what the assistant may do. Read-only permissions are ticked. Permissions that change things, such as running commands, are not ticked. Permissions your role does not have are greyed out.
+
+Select **Approve**. If your account uses two-factor sign-in, Cairn asks for a code from your authenticator app the first time you approve an assistant, and again if you give it more permissions.
+
+Ask the assistant: "Check Cairn health and list my projects."
+
+## What the assistant can do
+
+- It acts as you, with only the permissions you ticked, and never more than your role allows. If your role is lowered later, the assistant loses those permissions at once.
+- It sees only the projects you can see.
+- Destructive commands, such as deleting or scaling, wait in **Waiting for approval** on the **AI agents** view until a person approves them.
+- It cannot approve commands, deploy, or change users, tokens or settings.
+
+| Permission | Who can grant it |
+|---|---|
+| See your projects, Read logs | everyone |
+| Read the audit log | Admin, DevOps, Tech lead |
+| See nodes and pods, See install status | Admin, DevOps |
+| Check commands against the policy | Admin, DevOps, Tech lead |
+| Run allowed commands | Admin, DevOps |
+
+## Disconnect an assistant
+
+On the **AI agents** view, under **Connected assistants**, select **Disconnect**. The assistant stops working right away. Admins and DevOps see and can disconnect every assistant on the platform. Everyone else sees their own.
+
+## Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| The assistant says it cannot reach the server | Open `https://<your-domain>/.well-known/oauth-protected-resource` in a browser. It should show JSON. If it shows the portal, upgrade Cairn so the ingress sends `/mcp` to the API. |
+| "Remote MCP is not available" | The server has no public domain configured. Install or upgrade with a domain. |
+| The sign-in window says the request is not valid | Remove the connector and add it again, so the assistant registers afresh. |
+| You are asked for a code on approve | Your account has two-factor sign-in. Enter the code from your authenticator app. |
+| A tool answers `403` | The assistant lacks that permission, or your role does not allow it. Disconnect and connect again to grant more. |
+| A tool answers `401` | The connection was disconnected or expired. Connect again. |
+
+## Use an agent token instead
+
+For scripts and clients that cannot sign in through a browser, send an agent token as a bearer header to the same connector URL.
+
+1. Create a token on the **AI agents** view, under **Agent tokens** (Admin or DevOps, with two-factor sign-in). Copy the `plat_agent_...` value. It is shown once.
+2. Configure the client with the header `Authorization: Bearer plat_agent_...`. For example, in Cursor:
+
+```json
+{
+  "mcpServers": {
+    "cairn": {
+      "url": "https://cairn.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${env:CAIRN_AGENT_TOKEN}" }
+    }
+  }
+}
+```
+
+An agent token is not tied to a person: with **Read every project** it sees every project. Revoke it under **Agent tokens**.
+
+## Run the MCP server locally
+
+You can also run the MCP server on your own computer and let your AI tool start it. It offers two extra tools the remote endpoint does not: `platform_login` for approving commands from the assistant, and `platform_deploy`.
 
 From a copy of the Cairn repository:
 
@@ -28,11 +143,7 @@ npm install
 npm run build
 ```
 
-You need Node.js 18 or later. Your AI tool starts the server itself, so you do not keep it running in a terminal.
-
-## 3. Add it to your AI tool
-
-The **AI agents** view shows a ready-made **Client config**. It looks like this:
+You need Node.js 18 or later. Then add it to your AI tool. The **AI agents** view shows this config with your server address filled in:
 
 ```json
 {
@@ -41,7 +152,7 @@ The **AI agents** view shows a ready-made **Client config**. It looks like this:
       "command": "node",
       "args": ["/absolute/path/to/SERVER-automation/platform/mcp-server/dist/index.js"],
       "env": {
-        "PLATFORM_URL": "https://platform.example.com",
+        "PLATFORM_URL": "https://cairn.example.com",
         "PLATFORM_AGENT_TOKEN": "plat_agent_..."
       }
     }
@@ -51,86 +162,66 @@ The **AI agents** view shows a ready-made **Client config**. It looks like this:
 
 Replace the path in `args` with the real absolute path to `dist/index.js`.
 
-- **Cursor:** put it in `.cursor/mcp.json` in your project, or in Cursor Settings, MCP. Reload MCP or restart Cursor.
-- **Claude Desktop:** put it in `claude_desktop_config.json` (on macOS usually `~/Library/Application Support/Claude/claude_desktop_config.json`). Restart Claude Desktop.
-- **Claude Code:** use the same server entry in your Claude Code MCP configuration.
-
-You should now see tools such as `platform_health`, `platform_whoami` and `platform_run_command`.
-
-## 4. Check it works
-
-Ask the assistant: "Run platform_health, then platform_whoami."
-
-Or test from a terminal. Health does not need a token:
-
-```bash
-cd platform/mcp-server
-PLATFORM_URL=https://platform.example.com npm run smoke
-```
-
-## Settings
-
 | Variable | Meaning |
 |---|---|
-| `PLATFORM_URL` | Your server address, with or without `/api`. Examples: `https://platform.example.com`, `http://203.0.113.10.sslip.io`, `http://localhost:3000`. Default: `http://localhost:3000`. |
+| `PLATFORM_URL` | Your server address, with or without `/api`. Default: `http://localhost:3000`. |
 | `PLATFORM_AGENT_TOKEN` | The `plat_agent_...` token. |
 | `PLATFORM_MCP_TIMEOUT_MS` | Time limit for one API call. Default 15000 (15 s). |
 | `PLATFORM_MCP_LONG_TIMEOUT_MS` | Time limit for running a command or a deploy. Default 90000 (90 s). |
 
-## Use a server that has no domain yet
-
-If the server only has an IP address, use its sslip.io name:
+Test from a terminal (health does not need a token):
 
 ```bash
-PLATFORM_URL=http://203.0.113.10.sslip.io
-# after the server has a certificate:
-PLATFORM_URL=https://203.0.113.10.sslip.io
+cd platform/mcp-server
+PLATFORM_URL=https://cairn.example.com npm run smoke
 ```
 
-If HTTPS fails with a certificate name mismatch, install with a real domain and Let's Encrypt (best), or use `http://` while the server answers on plain HTTP.
-
-## Approve a risky command
-
-Some commands wait for a person: deleting, scaling, applying manifests, Helm upgrades and reading secrets.
+### Approve a risky command
 
 **In the portal (easiest):** open a project, go to **Monitoring**, then **AI agents**. Under **Waiting for approval**, check the command and select **Approve** or **Reject**. Then tell the assistant to run it again with the approval.
 
-**From the AI tool:** call `platform_login` with your email and password, then `platform_list_pending_commands` and `platform_approve_command`. This only works for accounts without two-factor sign-in, because `platform_login` cannot enter a code. Never put your password in the config file.
+**From the local server:** call `platform_login` with your email and password, then `platform_list_pending_commands` and `platform_approve_command`. This only works for accounts without two-factor sign-in, because `platform_login` cannot enter a code. Never put your password in the config file.
 
-An agent token cannot list, approve or reject requests. An approval lasts one hour and works only for the token that asked.
+An agent token or a connected assistant cannot list, approve or reject requests. An approval lasts one hour and works only for the token or assistant that asked.
 
-## Deploy from an assistant
+### Deploy from an assistant
 
-`platform_deploy` needs a person's session, not an agent token. The API refuses agent tokens for deploys. To deploy from an assistant, run the MCP server without `PLATFORM_AGENT_TOKEN` and call `platform_login` first, with an account that has the Developer, Tech lead, DevOps or Admin role and no two-factor sign-in. Otherwise deploy from the portal.
-
-## Troubleshooting
-
-| Symptom | Check |
-|---|---|
-| No Cairn tools in Cursor | The path to `dist/index.js` is absolute, `npm run build` succeeded, MCP was reloaded. |
-| `401` on every tool | `PLATFORM_AGENT_TOKEN` is set, the token is not revoked or expired. |
-| Connection refused or timeout | `PLATFORM_URL` is reachable: `curl -sS "$PLATFORM_URL/api/health"`. |
-| Certificate errors with an IP address | The certificate does not cover that name. Use the domain, or plain HTTP. |
-| `403` on a tool | The token lacks that permission, or the action needs a person (deploy, approvals). |
-| Command `denied` | The command is not on the allowlist, or it chains commands. See [Tools and command policy](tools.md). |
-| `step_up_required` when creating a token | Your session needs a fresh two-factor code. Enter it when the portal asks, or set up two-factor first. |
+`platform_deploy` needs a person's session, so it is only on the local server. Run it without `PLATFORM_AGENT_TOKEN` and call `platform_login` first, with an account that has the Developer, Tech lead, DevOps or Admin role and no two-factor sign-in. Otherwise deploy from the portal.
 
 ## How it works
 
-- The MCP server sends the agent token as `Authorization: Bearer plat_agent_...` on every call.
-- When both an agent token and a `platform_login` session exist, normal calls use the agent token. Only the approval tools (`platform_list_pending_commands`, `platform_approve_command`, `platform_reject_command`) use the person's session.
-- `platform_login` keeps the session in the MCP server's memory only. It never returns it to the assistant. `platform_logout` clears it.
-- Creating a token needs a second factor verified within the last 15 minutes (`MFA_STEP_UP_MAX_AGE_SEC`, default 900 seconds). Agent tokens cannot create tokens.
-- If you send no permissions when creating a token through the API, it gets the default set: `commands:validate`, `commands:execute`, `projects:read`, `logs:read`, `cluster:read`, `audit:read`, `bootstrap:read`. `replays:read` is never in the default set. Every replay an agent reads is written to the audit log with the token's id.
-- This repository also ships a Cursor skill, [`.cursor/skills/platform-mcp/SKILL.md`](https://github.com/Mpratyush54/SERVER-automation/blob/master/.cursor/skills/platform-mcp/SKILL.md), so agents working in the codebase follow the same rules.
-- An example config is in [`platform/mcp-server/mcp.example.json`](https://github.com/Mpratyush54/SERVER-automation/blob/master/platform/mcp-server/mcp.example.json).
+- The connector URL is a remote MCP endpoint served by the Cairn API (Streamable HTTP). Sign-in follows the MCP authorization standard: OAuth 2.1 with PKCE, automatic client registration, and tokens that only work for this endpoint.
+- Access tokens last one hour (`MCP_ACCESS_TOKEN_TTL_SEC`). The assistant renews them with a refresh token that can be used once; an unused connection expires after 30 days (`MCP_REFRESH_TOKEN_TTL_SEC`). Cairn stores only hashes of these tokens.
+- Assistants that register but are never approved are removed after an hour. Registration is rate limited, and each address can hold only a few unapproved registrations at a time.
+- Every connection, approval, disconnect and tool call is written to the audit log.
+- The server's public address comes from its configured domain (`DOMAIN`, or `MCP_PUBLIC_URL` to override). Without one, the remote endpoint stays off.
+- Tool results pass through a redaction step that removes tokens, passwords and other secrets before the assistant sees them.
 
 ## For developers / API
 
-Create a token without the portal. The login session must carry a fresh second factor, so sign in with your password, then complete the code step:
+| Method | Path | Who can call it |
+|---|---|---|
+| POST | `/mcp` | connected assistant (OAuth access token) or agent token |
+| GET | `/.well-known/oauth-protected-resource/mcp` | anyone |
+| GET | `/.well-known/oauth-authorization-server` | anyone |
+| POST | `/api/oauth/register` | anyone (rate limited) |
+| POST | `/api/oauth/token`, `/api/oauth/revoke` | registered assistant |
+| GET | `/api/mcp/connections` | person: own connections; Admin, DevOps: all |
+| DELETE | `/api/mcp/connections/:id` | person: own; Admin, DevOps: any |
+| GET | `/api/health`, `/api/openapi.json` | anyone |
+| GET | `/api/agent-tokens/me` | agent token or person |
+| GET | `/api/agent-tokens` | person: Admin, DevOps |
+| POST | `/api/agent-tokens` | person: Admin, DevOps, with a recent second factor |
+| GET, PATCH, DELETE | `/api/agent-tokens/:id` | person: Admin, DevOps |
+| POST | `/api/agent/commands/validate` | agent token or assistant with `commands:validate`, or person: Admin, DevOps, Tech lead |
+| POST | `/api/agent/commands/execute` | agent token or assistant with `commands:execute`, or person: Admin, DevOps |
+| GET | `/api/agent/commands/pending` | person only: Admin, DevOps, Tech lead |
+| POST | `/api/agent/commands/:id/approve`, `/reject` | person only: Admin, DevOps |
+
+Create an agent token without the portal. The login session must carry a fresh second factor:
 
 ```bash
-PLATFORM_URL=https://platform.example.com
+PLATFORM_URL=https://cairn.example.com
 
 CHALLENGE=$(curl -sS -X POST "$PLATFORM_URL/api/auth/login" \
   -H 'Content-Type: application/json' \
@@ -146,20 +237,4 @@ curl -sS -X POST "$PLATFORM_URL/api/agent-tokens" \
   -d '{"name":"laptop-cursor"}'
 ```
 
-The `201` response contains `token` once. Optional body fields: `scopes` (array) and `expiresAt` (date). Check a token with `GET /api/agent-tokens/me`.
-
-| Method | Path | Who can call it |
-|---|---|---|
-| GET | `/api/health` | anyone |
-| GET | `/api/openapi.json` | anyone |
-| GET | `/api/agent-tokens/me` | agent token or person |
-| GET | `/api/agent-tokens` | person: Admin, DevOps |
-| POST | `/api/agent-tokens` | person: Admin, DevOps, with a recent second factor |
-| GET | `/api/agent-tokens/:id` | person: Admin, DevOps |
-| PATCH | `/api/agent-tokens/:id` | person: Admin, DevOps (`name`, `scopes`, `isActive`, `expiresAt`) |
-| DELETE | `/api/agent-tokens/:id` | person: Admin, DevOps (revokes) |
-| POST | `/api/agent/commands/validate` | agent token with `commands:validate`, or person: Admin, DevOps, Tech lead |
-| POST | `/api/agent/commands/execute` | agent token with `commands:execute`, or person: Admin, DevOps |
-| GET | `/api/agent/commands/pending` | person only: Admin, DevOps, Tech lead |
-| POST | `/api/agent/commands/:id/approve` | person only: Admin, DevOps |
-| POST | `/api/agent/commands/:id/reject` | person only: Admin, DevOps |
+The `201` response contains `token` once. Optional body fields: `scopes` (array) and `expiresAt` (date). If you send no scopes, the token gets `commands:validate`, `commands:execute`, `projects:read`, `logs:read`, `cluster:read`, `audit:read`, `bootstrap:read`. `replays:read` is never in the default set.

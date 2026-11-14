@@ -1,12 +1,123 @@
 <div class="stack">
-  <!-- Connect -->
+  <!-- Connect an AI assistant (remote MCP, #193) -->
+  <section class="card card-flush" aria-labelledby="pa-assistant-title" data-testid="agents-assistant">
+    <div class="card-header">
+      <div class="pa-head">
+        <h2 id="pa-assistant-title">Connect an AI assistant</h2>
+        <p class="pa-sub">Paste this address into Claude, ChatGPT, Cursor, VS Code or Claude Code, sign in to Cairn and approve. Nothing to install.</p>
+      </div>
+      <a class="btn btn-sm" [href]="docsUrl" target="_blank" rel="noopener" data-testid="agents-docs-link">Setup guide</a>
+    </div>
+    <div class="pa-body">
+      <div class="pa-connector">
+        <label class="pa-label" for="pa-connector-url">Connector URL</label>
+        <div class="pa-inline">
+          <input id="pa-connector-url" class="mono pa-connector-input" type="text" readonly [value]="connectorUrl" data-testid="agents-connector-url">
+          <button type="button" class="btn btn-sm btn-primary" (click)="copyText(connectorUrl, 'Connector URL')" data-testid="agents-copy-connector">Copy</button>
+        </div>
+      </div>
+      @if (!remoteConfigured) {
+        <p class="notice notice-warn" role="status" data-testid="agents-remote-off">
+          This server has no public address configured, so assistants cannot connect yet. Ask an administrator to set the platform domain.
+        </p>
+      }
+
+      <div class="pa-tabs" role="tablist" aria-label="Assistant" (keydown)="onAssistantKey($event)" data-testid="agents-assistant-tabs">
+        @for (a of assistants; track a.id) {
+          <button type="button" role="tab" class="pa-tab" [id]="'pa-tab-' + a.id"
+            [attr.aria-selected]="activeAssistant === a.id" [attr.aria-controls]="'pa-panel-' + a.id"
+            [attr.tabindex]="activeAssistant === a.id ? 0 : -1" [class.pa-tab-active]="activeAssistant === a.id"
+            (click)="selectAssistant(a.id)" [attr.data-testid]="'agents-tab-' + a.id">{{ a.label }}</button>
+        }
+      </div>
+      <div class="pa-tabpanel" role="tabpanel" [id]="'pa-panel-' + assistantGuide.id" [attr.aria-labelledby]="'pa-tab-' + assistantGuide.id" data-testid="agents-assistant-panel">
+        <ol class="pa-steps">
+          @for (step of assistantGuide.steps; track $index) { <li>{{ step }}</li> }
+        </ol>
+        @if (assistantGuide.snippet) {
+          <div class="pa-snippet">
+            <div class="pa-snippet-head">
+              <span class="pa-label">{{ assistantGuide.id === 'claude-code' ? 'Command' : 'Config' }}</span>
+              <button type="button" class="btn btn-sm" (click)="copyText(assistantSnippet(assistantGuide), assistantGuide.id === 'claude-code' ? 'Command' : 'Config')" data-testid="agents-copy-snippet">Copy</button>
+            </div>
+            <pre class="pa-code mono" data-testid="agents-assistant-snippet">{{ assistantSnippet(assistantGuide) }}</pre>
+          </div>
+        }
+      </div>
+      <p class="form-hint">
+        The assistant acts as you, with only the permissions you tick and never more than your role allows. Destructive commands still wait for a person to approve them below.
+      </p>
+    </div>
+  </section>
+
+  <!-- Connected assistants -->
+  <section class="card card-flush" aria-labelledby="pa-connections-title" data-testid="agents-connections">
+    <div class="card-header">
+      <div class="pa-head">
+        <h2 id="pa-connections-title">Connected assistants</h2>
+        <p class="pa-sub">{{ canManage ? 'Every assistant connected to this platform.' : 'Assistants you connected.' }} Disconnect one to cut it off at once.</p>
+      </div>
+      <button type="button" class="btn btn-sm btn-ghost" [disabled]="connectionsLoading" (click)="loadConnections()">Refresh</button>
+    </div>
+    @if (connectionsLoading && !connections.length) {
+      <div class="pa-body"><p class="secondary">Loading…</p></div>
+    } @else {
+      @if (connectionsError) { <div class="pa-body"><p class="error" role="alert">{{ connectionsError }}</p></div> }
+      @if (!connections.length && !connectionsError) {
+        <div class="empty-state" data-testid="agents-connections-empty">
+          <strong>No assistants connected</strong>
+          Paste the connector URL above into your assistant to connect one.
+        </div>
+      } @else if (connections.length) {
+        <div class="table-scroll">
+          <table data-testid="agents-connections-table">
+            <thead>
+              <tr>
+                <th>Assistant</th>
+                <th>Permissions</th>
+                <th>Approved by</th>
+                <th>Last used</th>
+                <th class="text-right"><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (c of connections; track c.id) {
+                <tr>
+                  <td>
+                    {{ c.name }}
+                    @if (c.redirectHosts?.length) { <span class="cell-sub mono">{{ c.redirectHosts![0] }}</span> }
+                  </td>
+                  <td>
+                    <span class="pa-scope-list">
+                      @for (s of c.scopes; track s) { <span class="badge mono">{{ s }}</span> }
+                    </span>
+                  </td>
+                  <td>
+                    @if (c.mine) { You } @else { {{ c.approvedBy?.name || 'Unknown' }} }
+                    @if (c.createdAt) { <span class="cell-sub">{{ c.createdAt | date:'mediumDate' }}</span> }
+                  </td>
+                  <td class="pa-nowrap">{{ c.lastUsedAt ? (c.lastUsedAt | date:'medium') : 'Never' }}</td>
+                  <td class="text-right">
+                    <button type="button" class="btn btn-sm btn-danger" [disabled]="disconnectingId === c.id" (click)="disconnect(c)" [attr.data-testid]="'agents-disconnect-' + c.id">
+                      {{ disconnectingId === c.id ? 'Disconnecting…' : 'Disconnect' }}
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    }
+  </section>
+
+  <!-- Local MCP server (agent token) -->
   <section class="card card-flush" aria-labelledby="pa-connect-title" data-testid="agents-connect">
     <div class="card-header">
       <div class="pa-head">
-        <h2 id="pa-connect-title">Connect an agent</h2>
-        <p class="pa-sub">Point an MCP client such as Cursor or Claude at this platform.</p>
+        <h2 id="pa-connect-title">Use an agent token instead</h2>
+        <p class="pa-sub">For scripts and clients that cannot sign in: send an agent token as <span class="mono">Authorization: Bearer plat_agent_…</span> to the connector URL, or run the local MCP server.</p>
       </div>
-      <a class="btn btn-sm" [href]="docsUrl" target="_blank" rel="noopener" data-testid="agents-docs-link">MCP setup guide</a>
     </div>
     <div class="pa-body">
       <dl class="facts">
@@ -15,13 +126,13 @@
           <span class="mono" data-testid="agents-api-url">{{ apiBaseUrl }}</span>
           <button type="button" class="btn btn-ghost btn-sm" (click)="copy(apiBaseUrl, 'url')">{{ copied === 'url' ? 'Copied' : 'Copy' }}</button>
         </dd>
-        <dt>MCP server</dt>
-        <dd><span class="mono">platform/mcp-server</span> in the Platform repository. Build it once with <span class="mono">npm run build</span> (Node 18 or later).</dd>
+        <dt>Local MCP server</dt>
+        <dd><span class="mono">platform/mcp-server</span> in the Cairn repository. Build it once with <span class="mono">npm run build</span> (Node 18 or later).</dd>
       </dl>
 
       <div class="pa-snippet">
         <div class="pa-snippet-head">
-          <span class="pa-label">Client config</span>
+          <span class="pa-label">Local client config</span>
           <button type="button" class="btn btn-sm" (click)="copy(mcpConfig, 'config')" data-testid="agents-copy-config">
             {{ copied === 'config' ? 'Copied' : 'Copy config' }}
           </button>
@@ -211,7 +322,10 @@
                   </td>
                   <td><span class="status status-down">{{ a.riskLevel || 'destructive' }}</span></td>
                   <td>
-                    @if (a.requestedByAgentTokenId) {
+                    @if (a.requestedByMcpGrantId) {
+                      {{ connectionName(a.requestedByMcpGrantId) || a.metadata?.assistantName || 'Connected assistant' }}
+                      @if (a.metadata?.actingFor?.name) { <span class="cell-sub" data-testid="agents-acting-for">for {{ a.metadata?.actingFor?.name }}</span> }
+                    } @else if (a.requestedByAgentTokenId) {
                       {{ tokenName(a.requestedByAgentTokenId) || 'Agent token' }}
                     } @else {
                       A person

@@ -1,6 +1,6 @@
 # Rules for AI agents
 
-This page is the protocol an AI agent must follow when it uses the Cairn MCP tools. People should start with [Let an AI assistant work with your server](overview.md) and [Connect Cursor or Claude](setup.md). Cursor loads the same rules from [`.cursor/skills/platform-mcp/SKILL.md`](https://github.com/Mpratyush54/SERVER-automation/blob/master/.cursor/skills/platform-mcp/SKILL.md).
+This page is the protocol an AI agent must follow when it uses the Cairn MCP tools. People should start with [Let an AI assistant work with your server](overview.md) and [Connect an AI assistant](setup.md). Cursor loads the same rules from [`.cursor/skills/platform-mcp/SKILL.md`](https://github.com/Mpratyush54/SERVER-automation/blob/master/.cursor/skills/platform-mcp/SKILL.md).
 
 Treat every rule here as a hard limit, not a suggestion.
 

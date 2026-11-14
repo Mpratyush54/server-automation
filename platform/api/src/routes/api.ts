@@ -29,6 +29,7 @@ import dbProvisionRoutes from './db-provision';
 import versionRoutes from './version';
 import agentTokenRoutes from './agent-tokens';
 import agentCommandRoutes from './agent-commands';
+import mcpConnectionRoutes from './mcp-connections';
 import notificationRoutes from './notifications';
 import { loadOpenApiJson, OpenApiUnavailableError } from '../lib/openapi-spec';
 import healthRoutes from './health';
@@ -77,6 +78,7 @@ router.use('/', dbProvisionRoutes);
 router.use('/', databaseInsightsRoutes);
 router.use('/', agentTokenRoutes);
 router.use('/', agentCommandRoutes);
+router.use('/', mcpConnectionRoutes); // connected AI assistants (remote MCP grants, #193)
 router.use('/', notificationRoutes);
 router.use('/', operationRoutes);
 router.use('/', backupRoutes);

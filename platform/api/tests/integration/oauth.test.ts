@@ -122,7 +122,10 @@ describe('OAuth2 / OIDC SSO Integration Tests', () => {
       expect(res.body.id_token_signing_alg_values_supported).toContain('RS256');
       expect(res.body.response_types_supported).toEqual(['code']);
       expect(res.body.code_challenge_methods_supported).toEqual(['S256']);
-      expect(res.body.token_endpoint_auth_methods_supported).toEqual(['client_secret_basic', 'client_secret_post']);
+      // Static clients authenticate with a secret; remote MCP clients (#193) are public (PKCE).
+      expect(res.body.token_endpoint_auth_methods_supported).toEqual(['none', 'client_secret_basic', 'client_secret_post']);
+      expect(res.body.registration_endpoint).toBe('https://platform.example.test/api/oauth/register');
+      expect(res.body.grant_types_supported).toEqual(['authorization_code', 'refresh_token']);
     });
   });
 

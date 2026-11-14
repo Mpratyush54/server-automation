@@ -5,10 +5,15 @@ import { ProjectAgentsComponent } from './project-agents.component';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { StepUpService } from '../../services/step-up.service';
+import { DialogService, ToastService } from '../../shared/feedback/feedback.service';
 
 const TOKEN = {
   id: 't1', name: 'laptop-cursor', tokenPrefix: 'plat_agent_ab12', scopes: ['projects:read', 'logs:read'],
   lastUsedAt: '2026-11-10T10:00:00.000Z', expiresAt: null, revokedAt: null, isActive: true, createdAt: '2026-11-01T10:00:00.000Z',
+};
+const CONNECTION = {
+  id: 'g1', clientId: 'mcp_0123', name: 'Claude', redirectHosts: ['https://claude.ai'], scopes: ['projects:read', 'logs:read'],
+  approvedBy: { id: 'u1', name: 'Asha', email: 'asha@example.test' }, mine: true, createdAt: '2026-11-14T10:00:00.000Z', lastUsedAt: null,
 };
 const APPROVAL = {
   id: 'a1', command: 'kubectl delete pod web-1 -n demo', riskLevel: 'destructive', status: 'pending',
@@ -19,6 +24,8 @@ describe('ProjectAgentsComponent', () => {
   let api: jasmine.SpyObj<ApiService>;
   let auth: jasmine.SpyObj<AuthService>;
   let stepUp: jasmine.SpyObj<StepUpService>;
+  let dialog: jasmine.SpyObj<DialogService>;
+  let toast: jasmine.SpyObj<ToastService>;
 
   function setRole(manage: boolean, viewPending = manage) {
     auth.canManageUsers.and.returnValue(manage);
@@ -40,7 +47,13 @@ describe('ProjectAgentsComponent', () => {
     api = jasmine.createSpyObj('ApiService', [
       'getAgentTokens', 'createAgentToken', 'revokeAgentToken',
       'getPendingAgentCommands', 'approveAgentCommand', 'rejectAgentCommand',
+      'getMcpConnections', 'disconnectMcpConnection',
     ]);
+    dialog = jasmine.createSpyObj('DialogService', ['confirm']);
+    dialog.confirm.and.returnValue(Promise.resolve(true));
+    toast = jasmine.createSpyObj('ToastService', ['ok', 'warn', 'error', 'info']);
+    api.getMcpConnections.and.returnValue(of({ connectorUrl: 'https://cairn.example.test/mcp', configured: true, connections: [CONNECTION] }));
+    api.disconnectMcpConnection.and.returnValue(of({ ok: true }));
     auth = jasmine.createSpyObj('AuthService', ['canManageUsers', 'isTechLeadOrDevOps']);
     stepUp = jasmine.createSpyObj('StepUpService', ['run']);
     stepUp.run.and.callFake((action: () => Promise<any>) => action());
@@ -57,6 +70,8 @@ describe('ProjectAgentsComponent', () => {
         { provide: ApiService, useValue: api },
         { provide: AuthService, useValue: auth },
         { provide: StepUpService, useValue: stepUp },
+        { provide: DialogService, useValue: dialog },
+        { provide: ToastService, useValue: toast },
       ],
     }).compileComponents();
   });
@@ -125,12 +140,129 @@ describe('ProjectAgentsComponent', () => {
     expect(q(f, '[data-testid="agents-approve"]')).toBeNull();
   });
 
-  it('developers call no agent endpoints', async () => {
+  it('developers call no token or approval endpoints, but see their connected assistants', async () => {
     setRole(false, false);
     const f = await render();
     expect(api.getAgentTokens).not.toHaveBeenCalled();
     expect(api.getPendingAgentCommands).not.toHaveBeenCalled();
+    expect(api.getMcpConnections).toHaveBeenCalled();
     expect(q(f, '[data-testid="agents-pending-no-access"]')).not.toBeNull();
+    expect(q(f, '[data-testid="agents-connections-table"]')?.textContent).toContain('Claude');
+  });
+
+  describe('Connect an AI assistant', () => {
+    it('shows the connector URL from the current origin first and copies it', async () => {
+      const clip = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+      const f = await render();
+      const sections = Array.from(f.nativeElement.querySelectorAll('section')) as HTMLElement[];
+      expect(sections[0].getAttribute('data-testid')).toBe('agents-assistant');
+      const input = q(f, '[data-testid="agents-connector-url"]') as HTMLInputElement;
+      expect(input.value).toBe(`${window.location.origin}/mcp`);
+      (q(f, '[data-testid="agents-copy-connector"]') as HTMLButtonElement).click();
+      await f.whenStable();
+      expect(clip).toHaveBeenCalledWith(`${window.location.origin}/mcp`);
+      expect(toast.ok).toHaveBeenCalledWith('Connector URL copied');
+    });
+
+    it('has a tab per assistant, with the Claude Code command filled in', async () => {
+      const f = await render();
+      for (const id of ['claude', 'chatgpt', 'cursor', 'vscode', 'claude-code']) {
+        expect(q(f, `[data-testid="agents-tab-${id}"]`)).not.toBeNull();
+      }
+      expect(q(f, '[data-testid="agents-tab-claude"]')?.getAttribute('aria-selected')).toBe('true');
+      expect(q(f, '[data-testid="agents-assistant-panel"]')?.textContent).toContain('Add custom connector');
+
+      (q(f, '[data-testid="agents-tab-claude-code"]') as HTMLButtonElement).click();
+      f.detectChanges();
+      expect(q(f, '[data-testid="agents-assistant-snippet"]')?.textContent)
+        .toContain(`claude mcp add --transport http cairn ${window.location.origin}/mcp`);
+
+      (q(f, '[data-testid="agents-tab-vscode"]') as HTMLButtonElement).click();
+      f.detectChanges();
+      const vscode = JSON.parse(q(f, '[data-testid="agents-assistant-snippet"]')!.textContent!);
+      expect(vscode.servers.cairn).toEqual({ type: 'http', url: `${window.location.origin}/mcp` });
+
+      (q(f, '[data-testid="agents-tab-cursor"]') as HTMLButtonElement).click();
+      f.detectChanges();
+      expect(JSON.parse(q(f, '[data-testid="agents-assistant-snippet"]')!.textContent!).mcpServers.cairn.url).toBe(`${window.location.origin}/mcp`);
+    });
+
+    it('moves between tabs with the arrow keys', async () => {
+      const f = await render();
+      const cmp = f.componentInstance;
+      const tabs = q(f, '[data-testid="agents-assistant-tabs"]')!;
+      tabs.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+      expect(cmp.activeAssistant).toBe('chatgpt');
+      tabs.dispatchEvent(new KeyboardEvent('keydown', { key: 'End' }));
+      expect(cmp.activeAssistant).toBe('claude-code');
+      tabs.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+      expect(cmp.activeAssistant).toBe('claude');
+    });
+
+    it('warns when the server has no public address', async () => {
+      api.getMcpConnections.and.returnValue(of({ connectorUrl: null, configured: false, connections: [] }));
+      const f = await render();
+      expect(q(f, '[data-testid="agents-remote-off"]')).not.toBeNull();
+      expect(q(f, '[data-testid="agents-connections-empty"]')).not.toBeNull();
+    });
+  });
+
+  describe('Connected assistants', () => {
+    it('lists name, scopes, approver and last use', async () => {
+      const f = await render();
+      const table = q(f, '[data-testid="agents-connections-table"]')!;
+      expect(table.textContent).toContain('Claude');
+      expect(table.textContent).toContain('logs:read');
+      expect(table.textContent).toContain('You');
+      expect(table.textContent).toContain('Never');
+    });
+
+    it('disconnects after a danger confirmation', async () => {
+      const f = await render();
+      (q(f, '[data-testid="agents-disconnect-g1"]') as HTMLButtonElement).click();
+      await f.whenStable();
+      f.detectChanges();
+      expect(dialog.confirm).toHaveBeenCalledWith(jasmine.objectContaining({ danger: true, confirmLabel: 'Disconnect' }));
+      expect(api.disconnectMcpConnection).toHaveBeenCalledWith('g1');
+      expect(toast.ok).toHaveBeenCalledWith('Claude disconnected');
+      expect(q(f, '[data-testid="agents-connections-empty"]')).not.toBeNull();
+    });
+
+    it('does nothing when the confirmation is cancelled', async () => {
+      dialog.confirm.and.returnValue(Promise.resolve(false));
+      const f = await render();
+      (q(f, '[data-testid="agents-disconnect-g1"]') as HTMLButtonElement).click();
+      await f.whenStable();
+      expect(api.disconnectMcpConnection).not.toHaveBeenCalled();
+    });
+
+    it('shows a toast and keeps the row when disconnect fails', async () => {
+      api.disconnectMcpConnection.and.returnValue(throwError(() => ({ error: { error: 'Connection not found' } })));
+      const f = await render();
+      (q(f, '[data-testid="agents-disconnect-g1"]') as HTMLButtonElement).click();
+      await f.whenStable();
+      f.detectChanges();
+      expect(toast.error).toHaveBeenCalledWith('Connection not found');
+      expect(q(f, '[data-testid="agents-connections-table"]')).not.toBeNull();
+    });
+
+    it('names the connected assistant on approvals it requested', async () => {
+      api.getPendingAgentCommands.and.returnValue(of([{ ...APPROVAL, requestedByAgentTokenId: null, requestedByMcpGrantId: 'g1' }]));
+      const f = await render();
+      expect(q(f, '[data-testid="agents-pending-table"]')?.textContent).toContain('Claude');
+    });
+
+    it('shows which person the assistant acts for on its approvals', async () => {
+      api.getMcpConnections.and.returnValue(of({ configured: true, connections: [] }));
+      api.getPendingAgentCommands.and.returnValue(of([{
+        ...APPROVAL, requestedByAgentTokenId: null, requestedByMcpGrantId: 'g9',
+        metadata: { assistantName: 'ChatGPT', actingFor: { id: 'u2', name: 'Ravi' } },
+      }]));
+      const f = await render();
+      const table = q(f, '[data-testid="agents-pending-table"]')!;
+      expect(table.textContent).toContain('ChatGPT');
+      expect(q(f, '[data-testid="agents-acting-for"]')?.textContent).toContain('for Ravi');
+    });
   });
 
   it('creates a token and shows the plaintext once', async () => {

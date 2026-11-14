@@ -23,9 +23,12 @@ import express from 'express';
 process.env.JWT_SECRET = 'server-test-jwt-secret-0123456789abcdef';
 process.env.CORS_ORIGINS = 'https://portal.example.com';
 process.env.AUTH_RATE_LIMIT_MAX = '3';
+process.env.MCP_TOKEN_RATE_LIMIT_MAX = '4';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { buildApp, jsonBodyParser, requestLogger, redactUrlForLog } = require('../../src/server');
+const { buildApp, jsonBodyParser, requestLogger, redactUrlForLog, isMcpPublicTokenRequest } = require('../../src/server');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { stripInternalMcpHeader, MCP_INTERNAL_HEADER } = require('../../src/lib/mcp-internal');
 
 describe('buildApp security middleware', () => {
   let app: express.Express;
@@ -61,6 +64,49 @@ describe('buildApp security middleware', () => {
       last = r.status;
     }
     expect(last).toBe(429);
+  });
+
+  it('gives public MCP token requests their own limiter per client_id + address (not the credential limiter)', async () => {
+    const mcpA = 'mcp_' + 'a'.repeat(32);
+    const mcpB = 'mcp_' + 'b'.repeat(32);
+    const statuses: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const r = await request(app).post('/api/oauth/token').type('form').send({ grant_type: 'refresh_token', client_id: mcpA, refresh_token: 'x' });
+      statuses.push(r.status);
+    }
+    // AUTH_RATE_LIMIT_MAX=3 does not apply; MCP_TOKEN_RATE_LIMIT_MAX=4 does.
+    expect(statuses.slice(0, 4)).not.toContain(429);
+    expect(statuses[4]).toBe(429);
+    const other = await request(app).post('/api/oauth/token').type('form').send({ grant_type: 'refresh_token', client_id: mcpB, refresh_token: 'x' });
+    expect(other.status).not.toBe(429);
+  });
+
+  it('keeps static OIDC clients on the credential limiter', async () => {
+    let last = 0;
+    for (let i = 0; i < 5; i++) {
+      const r = await request(app).post('/api/oauth/token').type('form')
+        .set('Authorization', `Basic ${Buffer.from('grafana:wrong').toString('base64')}`)
+        .send({ grant_type: 'authorization_code', code: 'x' });
+      last = r.status;
+    }
+    expect(last).toBe(429);
+  });
+
+  it('classifies MCP token requests like the token endpoint does', () => {
+    const id = 'mcp_' + 'c'.repeat(32);
+    expect(isMcpPublicTokenRequest({ body: { client_id: id }, headers: {} })).toBe(true);
+    expect(isMcpPublicTokenRequest({ body: { client_id: id, client_secret: 's' }, headers: {} })).toBe(false);
+    expect(isMcpPublicTokenRequest({ body: { client_id: id }, headers: { authorization: 'Basic x' } })).toBe(false);
+    expect(isMcpPublicTokenRequest({ body: { client_id: 'grafana' }, headers: {} })).toBe(false);
+  });
+
+  it('strips the internal MCP header from public requests', () => {
+    const req: any = { headers: { [MCP_INTERNAL_HEADER]: 'anything', other: '1' } };
+    const next = jest.fn();
+    stripInternalMcpHeader(req, {}, next);
+    expect(req.headers[MCP_INTERNAL_HEADER]).toBeUndefined();
+    expect(req.headers.other).toBe('1');
+    expect(next).toHaveBeenCalled();
   });
 
   it('captures the raw JSON body on req.rawBody (byte-exact, for webhook HMACs)', async () => {

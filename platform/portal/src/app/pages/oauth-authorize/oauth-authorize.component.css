@@ -50,3 +50,23 @@
 }
 @keyframes oa-spin { to { transform: rotate(360deg); } }
 @media (max-width: 480px) { .oa-card { padding: 20px; } }
+
+/* AI assistant consent (#193): permission checkboxes. */
+.oa-scopes {
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.oa-scopes legend { margin: 0 0 8px; padding: 0; font-size: 0.8125rem; font-weight: 600; color: rgb(var(--fg)); }
+.oa-scope { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.oa-scope input { margin-top: 3px; flex: none; }
+.oa-scope-off { cursor: not-allowed; }
+.oa-scope-off .oa-scope-label { color: rgb(var(--fg-3)); }
+.oa-scope-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.oa-scope-label { font-size: 0.875rem; color: rgb(var(--fg)); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.oa-scope-desc { font-size: 0.8125rem; color: rgb(var(--fg-3)); line-height: 1.4; }
+.oa-badge-write { color: rgb(var(--warn)); border-color: rgb(var(--warn) / 0.4); background: rgb(var(--warn) / 0.08); }
+.oa-card .oa-error + .oa-actions { margin-top: 0; }

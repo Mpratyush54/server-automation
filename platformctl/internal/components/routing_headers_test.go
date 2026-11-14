@@ -66,3 +66,42 @@ func TestRoutingKeepsFrameProtectionOutsideGrafanaEmbed(t *testing.T) {
 		t.Fatal("unrendered placeholders left in the routing script")
 	}
 }
+
+// Remote MCP (#193): https://DOMAIN/mcp and the OAuth discovery documents under
+// /.well-known/oauth-* must reach the API, not the portal, with longer timeouts
+// for tool calls, and without touching response headers.
+func TestRoutingSendsMcpAndOAuthDiscoveryToAPI(t *testing.T) {
+	script := serviceRoutingScript("example.test")
+
+	doc := ingressDoc(script, "platform-mcp")
+	if doc == "" {
+		t.Fatal("platform-mcp Ingress missing")
+	}
+	for _, path := range []string{"/mcp", "/.well-known/oauth-protected-resource", "/.well-known/oauth-authorization-server"} {
+		block := "- path: " + path + "\n        pathType: Prefix\n        backend:\n          service:\n            name: platform-api\n            port:\n              number: 3000"
+		if !strings.Contains(doc, block) {
+			t.Fatalf("platform-mcp must route %s to platform-api:3000:\n%s", path, doc)
+		}
+	}
+	for _, want := range []string{
+		"host: example.test", "secretName: platform-tls",
+		`nginx.ingress.kubernetes.io/proxy-read-timeout: "120"`,
+		`nginx.ingress.kubernetes.io/proxy-buffering: "off"`,
+	} {
+		if !strings.Contains(doc, want) {
+			t.Fatalf("platform-mcp Ingress missing %q:\n%s", want, doc)
+		}
+	}
+	if strings.Contains(doc, "proxy_hide_header") || strings.Contains(doc, "configuration-snippet") {
+		t.Fatal("platform-mcp must not rewrite response headers (WWW-Authenticate must reach clients)")
+	}
+	// Only the API's own discovery paths: ACME HTTP-01 challenges stay with cert-manager.
+	if strings.Contains(doc, "path: /.well-known\n") || strings.Contains(doc, "acme-challenge") {
+		t.Fatal("platform-mcp must not claim all of /.well-known")
+	}
+	// The portal still serves everything else on the main host.
+	main := ingressDoc(script, "platform")
+	if !strings.Contains(main, "path: /\n") || strings.Contains(main, "path: /mcp") {
+		t.Fatal("main Ingress must keep / for the portal and leave /mcp to platform-mcp")
+	}
+}

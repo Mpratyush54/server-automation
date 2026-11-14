@@ -113,3 +113,49 @@ test('requests time out instead of hanging forever', async () => {
     server.close();
   }
 });
+
+test('remote mode (shared with the API /mcp endpoint) omits human-only tools', async () => {
+  const { registerTools: shared } = await import('../dist/shared/registry.js');
+  const client = new PlatformClient({ baseUrl: 'http://127.0.0.1:1' });
+  const local = registerTools(client).map((t) => t.name);
+  const remote = shared(client, { mode: 'remote' }).map((t) => t.name);
+  for (const name of ['platform_login', 'platform_approve_command', 'platform_deploy']) {
+    assert.ok(local.includes(name), `${name} missing locally`);
+    assert.ok(!remote.includes(name), `${name} must not be offered remotely`);
+  }
+  for (const name of ['platform_whoami', 'platform_list_projects', 'platform_run_command']) {
+    assert.ok(remote.includes(name), `${name} missing remotely`);
+  }
+});
+
+test('remote MCP access and refresh tokens are redacted', () => {
+  const text = JSON.stringify(redactSecrets({ note: 'cairn_at_abcDEF123-_x and cairn_rt_zzz999' }));
+  assert.ok(!text.includes('cairn_at_abc') && !text.includes('cairn_rt_zzz'));
+});
+
+test('path-building tools refuse dot segments and invalid Kubernetes names before any request', async () => {
+  const seen = [];
+  const { server, baseUrl } = await startServer((req, res) => {
+    seen.push(req.url);
+    res.setHeader('Content-Type', 'application/json');
+    res.end('{}');
+  });
+  try {
+    const client = new PlatformClient({ baseUrl, agentToken: 'plat_agent_testtoken' });
+    for (const call of [
+      () => client.getProject('..'),
+      () => client.getProject('.'),
+      () => client.getPodLogs('..', 'web'),
+      () => client.getPodLogs('demo', '../../secrets'),
+      () => client.getPodLogs('UPPER', 'web'),
+      () => client.listPods('a/b'),
+    ]) {
+      await assert.rejects(call(), (err) => err instanceof PlatformApiError && err.status === 400);
+    }
+    assert.deepEqual(seen, []);
+    await client.getPodLogs('kube-system', 'coredns-5d78c9869d-abcde');
+    assert.equal(seen.at(-1), '/api/bootstrap/pods/kube-system/coredns-5d78c9869d-abcde/logs');
+  } finally {
+    server.close();
+  }
+});

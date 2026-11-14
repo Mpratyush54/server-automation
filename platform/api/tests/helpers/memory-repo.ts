@@ -1,6 +1,6 @@
 /**
  * Minimal in-memory stand-in for a TypeORM repository (findOne/find/count/save/create/update/
- * delete) with support for the IsNull() and LessThan() find operators used by lib/mfa.ts.
+ * delete) with support for the IsNull(), LessThan() and In() find operators.
  */
 import { randomUUID } from 'crypto';
 
@@ -12,6 +12,7 @@ function matches(row: any, where: Record<string, any> | undefined): boolean {
       const op = cond as any;
       if (op.type === 'isNull') return v === null || v === undefined;
       if (op.type === 'lessThan') return v !== null && v !== undefined && v < op.value;
+      if (op.type === 'in') return Array.isArray(op.value) && op.value.includes(v);
       throw new Error(`memory-repo: unsupported operator ${op.type}`);
     }
     if (cond === undefined) throw new Error(`memory-repo: undefined condition for ${k}`);

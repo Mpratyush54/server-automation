@@ -3,3 +3,5 @@ dist/
 *.log
 .env
 .env.*
+# Generated from platform/api/src/mcp/registry.ts by scripts/sync-shared.mjs
+src/shared/

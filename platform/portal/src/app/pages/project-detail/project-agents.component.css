@@ -61,3 +61,33 @@
 .pa-nowrap { white-space: nowrap; }
 .pa-command { font-size: 0.8125rem; overflow-wrap: anywhere; }
 .pa-row-actions { justify-content: flex-end; flex-wrap: nowrap; }
+
+/* Connect an AI assistant (#193). */
+.pa-connector { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pa-connector-input {
+  flex: 1 1 18rem;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 0.875rem;
+  color: rgb(var(--fg));
+  background: rgb(var(--raised));
+  border: 1px solid rgb(var(--line));
+  border-radius: 6px;
+}
+.pa-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid rgb(var(--line)); }
+.pa-tab {
+  padding: 8px 12px;
+  margin-bottom: -1px;
+  font: inherit;
+  font-size: 0.875rem;
+  color: rgb(var(--fg-2));
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+.pa-tab:hover { color: rgb(var(--fg)); }
+.pa-tab:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: -2px; }
+.pa-tab-active { color: rgb(var(--fg)); border-bottom-color: rgb(var(--accent)); font-weight: 500; }
+.pa-tabpanel { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pa-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 0.875rem; color: rgb(var(--fg)); }

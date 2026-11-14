@@ -7,7 +7,7 @@ import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { StepUpService } from '../../services/step-up.service';
 import { MARKETING_HOSTS, isPublicMarketingHost } from '../../guards/public-domain.guard';
-import { DialogService } from '../../shared/feedback/feedback.service';
+import { DialogService, ToastService } from '../../shared/feedback/feedback.service';
 
 export interface AgentTokenView {
   id: string;
@@ -29,10 +29,88 @@ export interface AgentCommandApproval {
   reason?: string | null;
   matchedPolicy?: string | null;
   requestedByAgentTokenId?: string | null;
+  requestedByMcpGrantId?: string | null;
   requestedByUserId?: string | null;
+  /** For requests from a connected assistant: its name and the person it acts for. */
+  metadata?: { assistantName?: string; actingFor?: { id: string; name: string; email?: string } } | null;
   approvalExpiresAt?: string | null;
   createdAt?: string;
 }
+
+/** A connected AI assistant (remote MCP grant) from GET /api/mcp/connections. */
+export interface McpConnectionView {
+  id: string;
+  clientId: string;
+  name: string;
+  redirectHosts?: string[];
+  scopes: string[];
+  effectiveScopes?: string[];
+  approvedBy?: { id: string; name: string; email: string } | null;
+  mine?: boolean;
+  createdAt?: string;
+  lastUsedAt?: string | null;
+}
+
+export type AssistantId = 'claude' | 'chatgpt' | 'cursor' | 'vscode' | 'claude-code';
+
+export interface AssistantGuide {
+  id: AssistantId;
+  label: string;
+  /** Short steps; the connector URL is shown above them. */
+  steps: string[];
+  /** Optional snippet with the connector URL filled in. */
+  snippet?: (url: string) => string;
+}
+
+/** Per-assistant steps, checked against each vendor's documentation (2026-11). */
+export const ASSISTANT_GUIDES: AssistantGuide[] = [
+  {
+    id: 'claude',
+    label: 'Claude',
+    steps: [
+      'In Claude, open Customize, then Connectors.',
+      'Select Add, then Add custom connector. Name it Cairn and paste the connector URL.',
+      'Keep the detected sign-in settings, select Add, then sign in to Cairn and approve.',
+      'In a chat, turn the connector on from the + menu, under Connectors.',
+    ],
+  },
+  {
+    id: 'chatgpt',
+    label: 'ChatGPT',
+    steps: [
+      'In ChatGPT on the web, open chatgpt.com/plugins and select Add custom MCP server.',
+      'Name it Cairn and paste the connector URL as the Server URL.',
+      'Choose OAuth for authentication, confirm, and sign in to Cairn when asked.',
+    ],
+  },
+  {
+    id: 'cursor',
+    label: 'Cursor',
+    steps: [
+      'Add this to .cursor/mcp.json in your project, or to ~/.cursor/mcp.json for every project.',
+      'Cursor asks you to sign in. Approve the connection in the browser.',
+    ],
+    snippet: (url) => JSON.stringify({ mcpServers: { cairn: { url } } }, null, 2),
+  },
+  {
+    id: 'vscode',
+    label: 'VS Code',
+    steps: [
+      'Run MCP: Add Server from the command palette, choose HTTP and paste the connector URL. Or add this to .vscode/mcp.json.',
+      'Start the server when VS Code offers it, then sign in to Cairn and approve.',
+    ],
+    snippet: (url) => JSON.stringify({ servers: { cairn: { type: 'http', url } } }, null, 2),
+  },
+  {
+    id: 'claude-code',
+    label: 'Claude Code',
+    steps: [
+      'Run this in a terminal.',
+      'In Claude Code, type /mcp, pick cairn and sign in to Cairn in the browser.',
+    ],
+    snippet: (url) => `claude mcp add --transport http cairn ${url}`,
+  },
+];
 
 interface ScopeOption {
   id: string;
@@ -56,8 +134,9 @@ const EXTRA_SCOPES: Array<[string, string]> = [
 ];
 
 /**
- * Project "AI agents" view: how to connect an MCP client, the platform's agent tokens and the
- * commands waiting for a human decision. Agent tokens and agent commands are platform-wide in the
+ * Project "AI agents" view: the connector URL to paste into an AI assistant (remote MCP, #193),
+ * the assistants people connected, the platform's agent tokens and the commands waiting for a
+ * human decision. Agent tokens and agent commands are platform-wide in the
  * API (no project id), and the UI says so instead of pretending to filter by project.
  */
 @Component({
@@ -69,6 +148,7 @@ const EXTRA_SCOPES: Array<[string, string]> = [
 })
 export class ProjectAgentsComponent implements OnChanges {
   private dialog = inject(DialogService);
+  private toast = inject(ToastService);
 
   @Input() projectId = '';
 
@@ -82,6 +162,17 @@ export class ProjectAgentsComponent implements OnChanges {
   readonly canViewPending = this.auth.isTechLeadOrDevOps();
 
   readonly apiBaseUrl = `${window.location.origin}/api`;
+  /** Address to paste into an AI assistant (remote MCP endpoint of this install). */
+  readonly connectorUrl = `${window.location.origin}/mcp`;
+  readonly assistants = ASSISTANT_GUIDES;
+  activeAssistant: AssistantId = 'claude';
+
+  connections: McpConnectionView[] = [];
+  connectionsLoading = false;
+  connectionsError = '';
+  /** False when the API reports no public address (remote MCP is switched off). */
+  remoteConfigured = true;
+  disconnectingId = '';
   readonly docsUrl = isPublicMarketingHost()
     ? '/docs/mcp/setup'
     : `https://${MARKETING_HOSTS[0]}/docs/mcp/setup`;
@@ -115,6 +206,7 @@ export class ProjectAgentsComponent implements OnChanges {
   }
 
   load(): void {
+    void this.loadConnections();
     if (this.canManage) void this.loadTokens();
     if (this.canViewPending) void this.loadPending();
   }
@@ -130,6 +222,84 @@ export class ProjectAgentsComponent implements OnChanges {
         },
       },
     }, null, 2);
+  }
+
+  get assistantGuide(): AssistantGuide {
+    return this.assistants.find((a) => a.id === this.activeAssistant) || this.assistants[0];
+  }
+
+  assistantSnippet(guide: AssistantGuide): string {
+    return guide.snippet ? guide.snippet(this.connectorUrl) : '';
+  }
+
+  selectAssistant(id: AssistantId): void {
+    this.activeAssistant = id;
+  }
+
+  /** Arrow keys move between assistant tabs (WAI-ARIA tabs pattern). */
+  onAssistantKey(event: KeyboardEvent): void {
+    const i = this.assistants.findIndex((a) => a.id === this.activeAssistant);
+    let next = i;
+    if (event.key === 'ArrowRight') next = (i + 1) % this.assistants.length;
+    else if (event.key === 'ArrowLeft') next = (i - 1 + this.assistants.length) % this.assistants.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = this.assistants.length - 1;
+    else return;
+    event.preventDefault();
+    this.activeAssistant = this.assistants[next].id;
+    const list = event.currentTarget as HTMLElement | null;
+    setTimeout(() => list?.querySelector<HTMLElement>(`#pa-tab-${this.activeAssistant}`)?.focus());
+  }
+
+  async copyText(text: string, what: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+      this.toast.ok(`${what} copied`);
+    } catch {
+      this.toast.warn('Could not copy. Select the text and copy it yourself.');
+    }
+  }
+
+  async loadConnections(): Promise<void> {
+    this.connectionsLoading = true;
+    this.connectionsError = '';
+    try {
+      const res: any = await firstValueFrom(this.api.getMcpConnections());
+      this.connections = Array.isArray(res?.connections) ? res.connections : [];
+      this.remoteConfigured = res?.configured !== false;
+    } catch (e: any) {
+      this.connectionsError = this.message(e, 'Could not load connected assistants. Reload the page to try again.');
+    } finally {
+      this.connectionsLoading = false;
+    }
+  }
+
+  async disconnect(c: McpConnectionView): Promise<void> {
+    const ok = await this.dialog.confirm({
+      title: `Disconnect ${c.name}?`,
+      message: c.mine === false && c.approvedBy
+        ? `It stops working right away for ${c.approvedBy.name}. They can connect it again later.`
+        : 'It stops working right away. You can connect it again later from the assistant.',
+      confirmLabel: 'Disconnect',
+      danger: true,
+    });
+    if (!ok) return;
+    this.disconnectingId = c.id;
+    try {
+      await firstValueFrom(this.api.disconnectMcpConnection(c.id));
+      this.connections = this.connections.filter((x) => x.id !== c.id);
+      this.toast.ok(`${c.name} disconnected`);
+    } catch (e: any) {
+      this.toast.error(this.message(e, 'Could not disconnect the assistant. Try again.'));
+    } finally {
+      this.disconnectingId = '';
+    }
+  }
+
+  /** Assistant name for an approval requested by a connected assistant. */
+  connectionName(id?: string | null): string {
+    if (!id) return '';
+    return this.connections.find((c) => c.id === id)?.name || '';
   }
 
   tokenState(t: AgentTokenView): 'active' | 'revoked' | 'expired' {

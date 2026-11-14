@@ -183,6 +183,9 @@ export class ApiService {
   rejectAgentCommand(id: string, reason?: string): Observable<any> {
     return this.http.post(`${this.base}/agent/commands/${id}/reject`, reason ? { reason } : {});
   }
+  // Connected AI assistants (remote MCP, #193): own connections; admins and devops see all.
+  getMcpConnections(): Observable<any> { return this.http.get(`${this.base}/mcp/connections`); }
+  disconnectMcpConnection(id: string): Observable<any> { return this.http.delete(`${this.base}/mcp/connections/${id}`); }
 
   // Bug Reporting
   submitBugReport(data: any): Observable<any> { return this.http.post(`${this.base}/sdk/bug-report`, data); }

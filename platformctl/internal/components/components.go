@@ -1359,6 +1359,54 @@ spec:
               number: 80
 EOF
 
+# Remote MCP endpoint for AI assistants and its OAuth discovery documents are
+# served by the API at the site root (https://__DOMAIN__/mcp). Tool calls such as
+# guarded commands can run for up to a minute, so this path gets longer proxy
+# timeouts and no response buffering; nothing else changes.
+kubectl apply -n platform -f - <<'EOF'
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: platform-mcp
+  namespace: platform
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - __DOMAIN__
+    secretName: platform-tls
+  rules:
+  - host: __DOMAIN__
+    http:
+      paths:
+      - path: /mcp
+        pathType: Prefix
+        backend:
+          service:
+            name: platform-api
+            port:
+              number: 3000
+      - path: /.well-known/oauth-protected-resource
+        pathType: Prefix
+        backend:
+          service:
+            name: platform-api
+            port:
+              number: 3000
+      - path: /.well-known/oauth-authorization-server
+        pathType: Prefix
+        backend:
+          service:
+            name: platform-api
+            port:
+              number: 3000
+EOF
+
 # Argo CD is full-page at /argocd/. 3.x keeps <base href="/"> even with --basehref;
 # fix assets via sub_filter so the UI loads under the subpath.
 kubectl apply -n platform -f - <<'EOF'

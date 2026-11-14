@@ -42,6 +42,9 @@ import { TelemetryPrivacySettings } from '../entities/TelemetryPrivacySettings';
 import { TelemetryConsent } from '../entities/TelemetryConsent';
 import { StatusPage } from '../entities/StatusPage';
 import { StatusIncident } from '../entities/StatusIncident';
+import { OAuthClient } from '../entities/OAuthClient';
+import { McpGrant } from '../entities/McpGrant';
+import { McpToken } from '../entities/McpToken';
 
 export const MIGRATIONS_TABLE = 'migrations';
 
@@ -71,6 +74,8 @@ export const AppDataSource = new DataSource({
     SyntheticCheck, SyntheticResult,
     // Public status pages (#46): published page + incident timeline.
     StatusPage, StatusIncident,
+    // Remote MCP (#193): dynamically registered assistants, their grants and tokens.
+    OAuthClient, McpGrant, McpToken,
     // Alerting and on-call (#43).
     ...ALERTING_ENTITIES],
   // Schema changes ship as reviewed, versioned migrations (src/migrations),
