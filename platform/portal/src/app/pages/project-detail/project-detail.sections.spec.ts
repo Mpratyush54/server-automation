@@ -124,7 +124,7 @@ describe('Project detail sections (#185)', () => {
     expect(el.querySelector('[data-testid="observability-redirect"]')).toBeNull();
     expect(el.textContent).not.toContain('More monitoring');
     const views = Array.from(el.querySelectorAll('[data-testid="monitoring-views"] button')).map((b) => b.textContent!.trim());
-    expect(views).toEqual(['Overview', 'Errors', 'Logs', 'Traces', 'Users', 'Uptime', 'Resources', 'AI agents']);
+    expect(views).toEqual(['Overview', 'Errors', 'Logs', 'Traces', 'Users', 'Uptime', 'Resources', 'Usage', 'AI agents']);
     expect(el.querySelector('[data-testid="monitoring-views"] .active')!.textContent!.trim()).toBe('Overview');
     fixture.destroy();
   });

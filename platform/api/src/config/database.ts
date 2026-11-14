@@ -42,6 +42,9 @@ import { TelemetryPrivacySettings } from '../entities/TelemetryPrivacySettings';
 import { TelemetryConsent } from '../entities/TelemetryConsent';
 import { StatusPage } from '../entities/StatusPage';
 import { StatusIncident } from '../entities/StatusIncident';
+import { UsageDailyRollup } from '../entities/UsageDailyRollup';
+import { UsageQuota } from '../entities/UsageQuota';
+import { UsageSettings } from '../entities/UsageSettings';
 
 export const MIGRATIONS_TABLE = 'migrations';
 
@@ -71,6 +74,8 @@ export const AppDataSource = new DataSource({
     SyntheticCheck, SyntheticResult,
     // Public status pages (#46): published page + incident timeline.
     StatusPage, StatusIncident,
+    // Usage metering (#57): daily rollups, quotas, unit prices.
+    UsageDailyRollup, UsageQuota, UsageSettings,
     // Alerting and on-call (#43).
     ...ALERTING_ENTITIES],
   // Schema changes ship as reviewed, versioned migrations (src/migrations),

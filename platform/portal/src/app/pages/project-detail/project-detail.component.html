@@ -794,6 +794,9 @@
         <p class="mon-notice" data-testid="needs-full-profile">Pod CPU, memory, restarts and profiles need the full install profile (<span class="mono">platformctl provision --profile full</span>).</p>
         }
       }
+      @case ('usage') {
+        <app-project-usage [projectId]="project.id" />
+      }
       @case ('agents') {
         <app-project-agents [projectId]="project.id" />
       }

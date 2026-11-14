@@ -17,6 +17,7 @@ import { ORIGINS_SYNC_JOB, syncTelemetryOrigins } from './telemetry-origins';
 import { startErrorRetention } from './error-retention';
 import { startLokiRetentionReconcile } from './loki-retention';
 import { startHeatmapRetention } from './heatmap-jobs';
+import { startUsageCollector } from './usage-collector';
 
 /**
  * Background work inventory (every timer/loop in platform/api/src):
@@ -39,6 +40,7 @@ import { startHeatmapRetention } from './heatmap-jobs';
  * | error-retention | leader loop              | hourly: error_events past the project's errors retention (#47) |
  * | loki-retention-reconcile | leader loop (full profile) | 10 min: per-project logs retention -> Loki runtime overrides (#47) |
  * | heatmaps-retention | leader loop             | hourly (heatmaps)            |
+ * | usage-collector | leader loop              | 6 h: Prometheus daily rollups + quota alerts (#57) |
  *
  * Any leader-loop job can instead run as a Kubernetes CronJob
  * (`node dist/jobs/<name>.js`) by listing it in JOBS_EXTERNAL.
@@ -98,6 +100,7 @@ export function startBackgroundWork(): void {
     run: async () => ((await syncTelemetryOrigins()) === 'disabled' ? 'skipped' : undefined),
   });
   startHeatmapRetention(); // heatmaps: prune aggregates past #47 `heatmaps` retention
+  startUsageCollector(); // usage metering (#57): daily PromQL rollups + quota alerts
 
   leadership.start();
   installReleaseOnShutdown();
