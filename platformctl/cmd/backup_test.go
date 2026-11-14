@@ -58,3 +58,22 @@ func TestRestoreConfigNeedsTargetOnFreshVM(t *testing.T) {
 		t.Fatal(c, e)
 	}
 }
+
+func TestProvisionRestoreHintOnFreshServer(t *testing.T) {
+	oldPath, oldFrom, oldID := backupConfigPath, provisionRestoreFrom, provisionRestoreID
+	defer func() { backupConfigPath, provisionRestoreFrom, provisionRestoreID = oldPath, oldFrom, oldID }()
+	backupConfigPath = t.TempDir() + "/missing.json"
+	provisionRestoreFrom, provisionRestoreID = "s3://r2/bucket/prefix", ""
+	err := provisionCmd.RunE(provisionCmd, nil)
+	if err == nil {
+		t.Fatal("missing backup ID accepted")
+	}
+	for _, hint := range []string{"on a configured server", "on a fresh server", "ls <backup-directory>/", "mc ls <alias>/<bucket>/<prefix>/", "backup.json"} {
+		if !strings.Contains(err.Error(), hint) {
+			t.Errorf("restore hint %q missing %q", err, hint)
+		}
+	}
+	if strings.Contains(err.Error(), "backup list --target") {
+		t.Fatal("restore hint still suggests a command requiring an existing config")
+	}
+}

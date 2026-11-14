@@ -34,4 +34,4 @@ $env:PLATFORM_SDK_TOKEN='sdk_live_...'
 
 ## Publishing
 
-CI publishes SDKs from [`.github/workflows/publish-packages.yml`](../../.github/workflows/publish-packages.yml) using npm Trusted Publishers + PyPI OIDC. See [SDK publishing](../deployment/sdk-publishing.md) if present in your docs tree.
+CI publishes SDKs using npm Trusted Publishers + PyPI OIDC. See the [SDK publishing workflow](https://github.com/Mpratyush54/server-automation/blob/master/.github/workflows/publish-packages.yml) for the publishing configuration.

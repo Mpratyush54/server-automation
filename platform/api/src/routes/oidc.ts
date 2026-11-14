@@ -722,7 +722,7 @@ router.post('/oauth/token', express.urlencoded({ extended: false }), async (req:
         name: user.name,
         email: user.email,
         email_verified: true,
-        groups: [user.role],
+        groups: [user.role.toLowerCase().replace(/ /g, '_')],
         roles: [user.role],
       },
       key.privateKey,
@@ -780,7 +780,7 @@ router.get('/oauth/userinfo', async (req: Request, res: Response) => {
       name: user.name,
       email: user.email,
       email_verified: true,
-      groups: [user.role],
+      groups: [user.role.toLowerCase().replace(/ /g, '_')],
       roles: [user.role],
     });
   } catch (err: any) {

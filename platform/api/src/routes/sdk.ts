@@ -756,7 +756,7 @@ router.get('/sdk/api-metrics', expressAuthenticate, async (req: Request, res: Re
 
     const agg = await ApiMetricModel.aggregate([
       { $match: match },
-      { $sort: { timestamp: -1 } },
+      { $sort: { durationMs: 1 } },
       { $group: {
         _id: { route: '$route', method: '$method' },
         count: { $sum: 1 },

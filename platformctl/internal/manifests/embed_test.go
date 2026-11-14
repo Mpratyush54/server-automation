@@ -90,3 +90,14 @@ func TestManifestContentIsYAML(t *testing.T) {
 		t.Error("manifest does not look like YAML (no colon)")
 	}
 }
+
+func TestGrafanaRoleMappingMatchesOIDCGroups(t *testing.T) {
+	data, err := Read("grafana-values.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "role_attribute_path: \"contains(groups[*], 'admin') && 'Admin' || contains(groups[*], 'devops') && 'Admin' || contains(groups[*], 'tech_lead') && 'Editor' || 'Viewer'\""
+	if !strings.Contains(string(data), want) {
+		t.Fatal("Grafana must map canonical OIDC groups to Admin, Editor, or Viewer")
+	}
+}
