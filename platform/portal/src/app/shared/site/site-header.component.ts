@@ -23,7 +23,6 @@ import { ThemeService } from '../../services/theme.service';
           <a routerLink="/" fragment="product" [class.on]="current === 'home'">Product</a>
           <a routerLink="/docs">Docs</a>
           <a routerLink="/about" [class.on]="current === 'about'">About</a>
-          <a href="https://github.com/Mpratyush54/server-automation" target="_blank" rel="noopener">GitHub</a>
         </nav>
         <div class="sh-actions">
           <button type="button" class="sh-theme" (click)="theme.cycle()" [attr.aria-label]="'Theme: ' + theme.choice()" [attr.title]="'Theme: ' + theme.choice()">
@@ -44,7 +43,6 @@ import { ThemeService } from '../../services/theme.service';
           <a routerLink="/" fragment="product">Product</a>
           <a routerLink="/docs">Docs</a>
           <a routerLink="/about">About</a>
-          <a href="https://github.com/Mpratyush54/server-automation" target="_blank" rel="noopener">GitHub</a>
         </nav>
       }
     </header>

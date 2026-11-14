@@ -90,9 +90,9 @@
     <section class="lp-row" aria-labelledby="f-deploy">
       <div class="lp-frame">
         <header class="lp-row-head">
-          <h2 id="f-deploy" class="lp-h2"><span>Deploy from Git.</span> <span class="lp-quiet">Every push, tracked.</span></h2>
+          <h2 id="f-deploy" class="lp-h2"><span>Push code, it goes live.</span> <span class="lp-quiet">Every change tracked.</span></h2>
           <div class="lp-row-copy">
-            <p>Connect GitHub or GitLab. Argo CD keeps each environment in sync with its branch, and every deployment, its commit and its health show on the project page.</p>
+            <p>Connect your repository and pick a branch for each environment. Every push is deployed and kept in sync, and each deployment, its commit and its health show on the project page.</p>
             <a routerLink="/docs/getting-started/deploy-your-app">Deploy your first app</a>
           </div>
         </header>
@@ -240,7 +240,7 @@ PostgreSQL recovered. Rows written after 17:09:27 are gone.</code></pre>
       <h2 id="rail-title" class="lp-h2"><span>From one server to many.</span> <span class="lp-quiet">In five steps.</span></h2>
       <ol class="lp-rail">
         <li><b>Install on an Ubuntu server</b><span>One command sets up Kubernetes and the services you pick.</span><code>sudo platformctl provision</code></li>
-        <li><b>Connect your Git repository</b><span>Link GitHub or GitLab and choose a branch per environment.</span></li>
+        <li><b>Connect your repository</b><span>Choose a branch for each environment.</span></li>
         <li><b>Deploy and watch it run</b><span>Pushes deploy through Argo CD; logs, metrics and errors appear on the project.</span></li>
         <li><b>Add servers for high availability</b><span>Join two more servers with a one-time token.</span><code>sudo platformctl --auto join --role server ...</code></li>
         <li><b>Recover from anything</b><span>Restore a database to a point in time, or rebuild a lost server from backups.</span><code>sudo platformctl restore --pitr &lt;time&gt; --confirm</code></li>

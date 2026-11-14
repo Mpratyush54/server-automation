@@ -1,118 +1,119 @@
-<!-- Projects Sub-header -->
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--border-subtle); padding-bottom:12px;">
-  <div style="display:flex; align-items:center; gap:8px;">
-    <h2 style="font-size:1.15rem; font-weight:700; margin:0;">All Projects</h2>
-    <span style="background:var(--bg-elevated); color:var(--text-secondary); font-size:0.7rem; font-family:var(--font-code); padding:2px 6px; border-radius:4px;">
-      {{ projects.length }} TOTAL
-    </span>
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Projects</h1>
+    <p class="page-subtitle">Each project is one app: its repository, environments, databases and settings.</p>
   </div>
-  <button class="btn btn-primary btn-sm" (click)="showCreate = !showCreate">
-    {{ showCreate ? '✕ Close Form' : '+ New Project' }}
-  </button>
+  @if (!showCreate) {
+    <button type="button" class="btn btn-primary" (click)="showCreate = true">New project</button>
+  }
 </div>
 
-<!-- Sliding inline Card: Create Project -->
 @if (showCreate) {
-  <div class="card" style="margin-bottom:24px; border-color:var(--accent-primary); background:rgba(20,23,31,0.95);">
-    <h2 style="font-size:0.95rem; margin-top:0; border-bottom:1px solid var(--border-subtle); padding-bottom:8px;">
-      ⚙️ Create New Service/Project
-    </h2>
-    <div class="grid-3" style="margin-top:16px;">
+  <section class="card pj-create" aria-labelledby="pj-create-title">
+    <div class="pj-create-head">
+      <h2 id="pj-create-title">New project</h2>
+      <button type="button" class="btn btn-ghost btn-sm" (click)="showCreate = false">Cancel</button>
+    </div>
+    <div class="pj-create-grid">
       <div class="form-group">
-        <label>Project Name</label>
-        <input [(ngModel)]="newProject.name" placeholder="my-awesome-service">
+        <label for="pj-name">Name</label>
+        <input id="pj-name" [(ngModel)]="newProject.name" placeholder="shop" autocomplete="off">
+        <span class="form-hint">Lowercase letters, numbers and dashes. Used in URLs and namespaces.</span>
       </div>
       <div class="form-group">
-        <label>Target Stack</label>
-        <select [(ngModel)]="newProject.stack">
-          <option value="nodejs">Node.js / Express</option>
-          <option value="angular">Angular SPA</option>
-          <option value="python">Python API</option>
-          <option value="static">Static Webpage</option>
+        <label for="pj-stack">Stack</label>
+        <select id="pj-stack" [(ngModel)]="newProject.stack">
+          <option value="nodejs">Node.js</option>
+          <option value="angular">Angular</option>
+          <option value="python">Python</option>
+          <option value="static">Static site</option>
         </select>
       </div>
       <div class="form-group">
-        <label>Repository Git URL</label>
-        <input [(ngModel)]="newProject.repositoryUrl" placeholder="https://github.com/org/repo.git">
+        <label for="pj-repo">Git repository</label>
+        <input id="pj-repo" [(ngModel)]="newProject.repositoryUrl" placeholder="https://github.com/acme/shop" autocomplete="off">
+        <span class="form-hint">GitHub or GitLab. You can connect it later.</span>
+      </div>
+      <div class="form-group">
+        <label for="pj-domain">Base domain</label>
+        <input id="pj-domain" [(ngModel)]="newProject.domain" placeholder="example.com or 203.0.113.7.sslip.io" autocomplete="off">
+        <span class="form-hint">Environments get hosts like <span class="mono">shop-staging.example.com</span>. Leave empty to set it later.</span>
       </div>
     </div>
-    <div class="form-group" style="margin-top:12px;">
-      <label>Custom Domain (base)</label>
-      <input [(ngModel)]="newProject.domain" placeholder="example.com or <server-ip>.sslip.io" style="width:100%;">
-      <div style="font-size:0.75rem;color:var(--text-secondary);margin-top:6px;">
-        Environments get hosts like <code>my-app-development.your-domain</code>. Leave blank to use placeholders.
-      </div>
-    </div>
-    <div style="display:flex; gap:8px; margin-top:12px;">
-      <button class="btn btn-success btn-sm" (click)="create()" [disabled]="!newProject.name">
-        Create Project
-      </button>
-      <button class="btn btn-sm" (click)="showCreate=false">
-        Cancel
+    <div class="pj-create-actions">
+      <button type="button" class="btn btn-primary" (click)="create()" [disabled]="!newProject.name || creating">
+        {{ creating ? 'Creating…' : 'Create project' }}
       </button>
     </div>
+  </section>
+}
+
+@if (projects.length > 3) {
+  <div class="pj-tools">
+    <label class="pj-filter">
+      <span class="sr-only">Filter projects</span>
+      <input type="search" [(ngModel)]="filter" placeholder="Filter by name, domain or repository">
+    </label>
+    <span class="muted">{{ visible.length }} of {{ projects.length }}</span>
   </div>
 }
 
-<!-- Main Projects List Table -->
-<div class="card" style="padding:0; overflow:hidden;">
-  <div style="overflow-x:auto;">
-    <table style="margin:0;">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Stack</th>
-          <th>Domain</th>
-          <th>Repo</th>
-          <th>Environments</th>
-          <th>Deployments</th>
-          <th>Created Date</th>
-          <th style="text-align:right;">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (p of projects; track p) {
-          <tr>
-            <td style="font-family:var(--font-heading); font-weight:700;">
-              <a [routerLink]="['/projects', p.id]" style="color:#fff; text-decoration:none; display:flex; align-items:center; gap:8px;">
-                <span>📦</span> {{ p.name }}
-              </a>
-            </td>
-            <td>
-              <span class="badge badge-active" style="font-size:0.65rem;">
-                {{ p.stack }}
-              </span>
-            </td>
-            <td style="font-family:var(--font-code); font-size:0.75rem; color:var(--text-secondary);">
-              {{ p.domain || '—' }}
-            </td>
-            <td style="font-family:var(--font-code); font-size:0.7rem; color:var(--text-secondary); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" [title]="p.repositoryUrl">
-              {{ p.repositoryUrl || '—' }}
-            </td>
-            <td style="font-family:var(--font-code); color:var(--text-secondary);">
-              {{ p.environments?.length || 0 }} envs
-            </td>
-            <td style="font-family:var(--font-code); color:var(--text-secondary);">
-              {{ p.deployments?.length || 0 }} deploys
-            </td>
-            <td style="color:var(--text-secondary); font-size:0.75rem;">
-              {{ p.createdAt | date:'mediumDate' }}
-            </td>
-            <td style="text-align:right;">
-              <button class="btn btn-danger btn-sm" (click)="delete(p.id)" style="font-size:0.7rem; padding:2px 6px;">
-                Delete
+<section class="card card-flush" aria-label="Project list">
+  @if (!loaded) {
+    <p class="empty-state">Loading projects…</p>
+  } @else if (projects.length === 0) {
+    <div class="empty-state">
+      <strong>No projects yet</strong>
+      Create a project to connect a repository, get databases and deploy your first environment.
+      <div class="pj-empty-action"><button type="button" class="btn btn-primary" (click)="showCreate = true">New project</button></div>
+    </div>
+  } @else if (visible.length === 0) {
+    <p class="empty-state">No project matches “{{ filter }}”.</p>
+  } @else {
+    <ul class="pj-list">
+      @for (p of visible; track p.id) {
+        <li class="pj-row">
+          <div class="pj-main">
+            <a class="pj-name" [routerLink]="['/projects', p.id]">{{ p.name }}</a>
+            <div class="pj-meta">
+              @if (p.repositoryUrl) {
+                <span>{{ provider(p.repositoryUrl) }}</span>
+                <span class="mono pj-repo" [title]="p.repositoryUrl">{{ repoName(p.repositoryUrl) }}</span>
+              } @else {
+                <span>No repository connected</span>
+              }
+              <span>{{ stacks[p.stack] || p.stack }}</span>
+            </div>
+          </div>
+          <div class="pj-envs" aria-label="Environments">
+            @for (e of p.environments || []; track e.id || e.name) {
+              <span class="pj-env">{{ e.name }}</span>
+            } @empty {
+              <span class="muted">No environments</span>
+            }
+          </div>
+          <div class="pj-side">
+            <span class="status" [ngClass]="statusOf(p).tone">{{ statusOf(p).label }}</span>
+            <span class="muted pj-when">{{ (p.updatedAt || p.createdAt) | date: 'mediumDate' }}</span>
+            <div class="pj-menu" (click)="$event.stopPropagation()">
+              <button type="button" class="btn btn-ghost btn-sm pj-menu-btn" (click)="toggleMenu(p.id, $event)"
+                [attr.aria-expanded]="menuFor === p.id" [attr.aria-label]="'More actions for ' + p.name">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg>
               </button>
-            </td>
-          </tr>
-        }
-        @if (projects.length === 0) {
-          <tr>
-            <td colspan="8" style="color:var(--text-secondary); text-align:center; padding:32px;">
-              No projects found. Click "+ New Project" to get started.
-            </td>
-          </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-</div>
+              @if (menuFor === p.id) {
+                <div class="pj-menu-pop" role="menu">
+                  <a role="menuitem" [routerLink]="['/projects', p.id]">Open</a>
+                  @if (p.domain) {
+                    <a role="menuitem" [href]="'https://' + p.domain" target="_blank" rel="noopener">Open app</a>
+                  }
+                  <a role="menuitem" [routerLink]="['/projects', p.id]" [queryParams]="{ tab: 'settings' }">Settings</a>
+                  <button type="button" role="menuitem" class="pj-danger" (click)="delete(p.id)">Delete project</button>
+                </div>
+              }
+            </div>
+          </div>
+        </li>
+      }
+    </ul>
+  }
+</section>
