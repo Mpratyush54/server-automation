@@ -115,7 +115,8 @@ function rank(t: Tone): number { return t === 'down' ? 0 : t === 'warn' ? 1 : t 
 export interface AttentionInput {
   apps: AppRow[];
   incidents: any[];
-  backups: { operation: string; status: { success: boolean; finishedAt: string } | null }[] | null;
+  /** GET /settings/backups items; the backup item carries localOnly (#186). */
+  backups: { operation: string; status: { success: boolean; finishedAt: string } | null; localOnly?: boolean }[] | null;
   k8sConnected: boolean | null;
   nodes: { name: string; status: string }[];
   update: { tag: string; url: string } | null;
@@ -145,9 +146,13 @@ export function buildAttention(i: AttentionInput): AttentionItem[] {
     const critical = open.filter((x) => x.severity === 'critical').length;
     out.push({ tone: critical ? 'down' : 'warn', text: `${open.length} open alerts${critical ? `, ${critical} critical` : ''}.`, action: 'View alerts', link: '/alerting' });
   }
-  const backup = i.backups?.find((b) => b.operation === 'backup')?.status;
+  const backupItem = i.backups?.find((b) => b.operation === 'backup');
+  const backup = backupItem?.status;
   if (backup && !backup.success) {
     out.push({ tone: 'down', text: 'The last backup failed.', action: 'See backups', link: '/settings' });
+  }
+  if (backupItem?.localOnly) {
+    out.push({ tone: 'warn', text: 'Backups are stored only on this server.', action: 'Set up off-site backups', link: '/docs/operations/backups' });
   }
   for (const a of i.apps.filter((a) => a.tone === 'warn')) {
     out.push({ tone: 'warn', text: `${a.name} is deploying.`, action: 'Follow it', link: `/projects/${a.id}`, query: { tab: 'deployments' } });

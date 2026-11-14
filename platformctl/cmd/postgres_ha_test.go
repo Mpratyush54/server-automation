@@ -81,11 +81,16 @@ func TestPITRFlagsDoNotReadAgeIdentity(t *testing.T) {
 				want            string
 			}{
 				{config.ProfileHA, "2026-11-01T00:00:00Z", false, "--confirm"},
-				{config.ProfileFull, "2026-11-01T00:00:00Z", true, "ha profile"},
+				// PITR works on every profile running CloudNativePG (#186); a
+				// single-node install still on the Bitnami release is refused.
+				{"bitnami", "2026-11-01T00:00:00Z", true, "Bitnami release"},
 				{config.ProfileHA, "bad timestamp", true, "RFC3339"},
 				{config.ProfileHA, "9999-11-01T00:00:00Z", true, "past"},
 			} {
 				cfg = &config.Config{Profile: tc.profile}
+				if tc.profile == "bitnami" {
+					cfg = &config.Config{Profile: config.ProfileFull, PostgresEngine: config.PostgresEngineBitnami}
+				}
 				restorePITR, restoreConfirm, restoreID = tc.target, tc.confirm, "ignored-for-pitr"
 				if err := cmd.RunE(cmd, nil); err == nil || !strings.Contains(err.Error(), tc.want) {
 					t.Fatalf("%+v: %v", tc, err)

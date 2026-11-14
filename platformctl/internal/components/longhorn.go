@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/apt"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/backup"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
@@ -71,7 +72,7 @@ func renderLonghornValues(cfg *config.Config, replicas int) (string, error) {
 	if replicas < 1 || replicas > 3 {
 		return "", fmt.Errorf("Longhorn replicas must be 1..3")
 	}
-	target, secret := cfg.LonghornBackupTarget, cfg.LonghornBackupSecret
+	target, secret := longhornBackupStore(cfg)
 	if secret != "" && (len(secret) > 253 || !longhornSecretRE.MatchString(secret)) {
 		return "", fmt.Errorf("LONGHORN_BACKUP_SECRET must be a DNS-1123 name")
 	}
@@ -297,8 +298,55 @@ func InstallLonghorn(cfg *config.Config) error {
 	if len(defaults) != 1 || defaults[0] != LonghornStorageClass {
 		return fmt.Errorf("expected only longhorn as default StorageClass, got %v", defaults)
 	}
+	if err := applyLonghornBackups(cfg); err != nil {
+		return err
+	}
 	color.Green("  ✓ Longhorn installed as default StorageClass (%d replicas); %s for MinIO drives (%d replica(s))", replicas, LonghornMinioStorageClass, minioReplicas)
 	return state.MarkDone("longhorn")
+}
+
+// longhornBackupStore is the backup target URL and credential Secret:
+// LONGHORN_BACKUP_TARGET when set, otherwise the external backup target (#186).
+func longhornBackupStore(cfg *config.Config) (target, secret string) {
+	if cfg.LonghornBackupTarget != "" || cfg.LonghornBackupSecret != "" {
+		return cfg.LonghornBackupTarget, cfg.LonghornBackupSecret
+	}
+	if cfg.IsHA() && cfg.BackupExternal() {
+		return BackupTargetFromConfig(cfg).LonghornBackupTarget(), backup.LonghornTargetSecret
+	}
+	return "", ""
+}
+
+// LonghornBackupJobName is the daily volume backup of every volume in the
+// default group (volumes without their own recurring jobs).
+const LonghornBackupJobName = "platform-backup-daily"
+
+// longhornBackupResources points the default BackupTarget at the store (the
+// chart's defaultBackupStore only applies on first install) and adds the daily
+// backup RecurringJob. Neither carries credentials.
+func longhornBackupResources(target, secret string) []map[string]any {
+	return []map[string]any{
+		{"apiVersion": "longhorn.io/v1beta2", "kind": "BackupTarget",
+			"metadata": map[string]any{"name": "default", "namespace": LonghornNamespace},
+			"spec":     map[string]any{"backupTargetURL": target, "credentialSecret": secret, "pollInterval": "300s"}},
+		{"apiVersion": "longhorn.io/v1beta2", "kind": "RecurringJob",
+			"metadata": map[string]any{"name": LonghornBackupJobName, "namespace": LonghornNamespace},
+			"spec":     map[string]any{"cron": "30 1 * * *", "task": "backup", "groups": []string{"default"}, "retain": 7, "concurrency": 2}},
+	}
+}
+
+// applyLonghornBackups is replaceable in tests.
+var applyLonghornBackups = func(cfg *config.Config) error {
+	target, secret := longhornBackupStore(cfg)
+	if target == "" {
+		return nil
+	}
+	for _, m := range longhornBackupResources(target, secret) {
+		if err := kubeApplyJSON(m); err != nil {
+			return fmt.Errorf("configure Longhorn backups: %w", err)
+		}
+	}
+	return nil
 }
 
 // InstallLonghornMonitoring applies the Longhorn ServiceMonitor and volume

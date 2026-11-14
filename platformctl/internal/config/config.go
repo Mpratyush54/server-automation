@@ -74,6 +74,11 @@ type Config struct {
 	PostgresBackupEndpoint    string
 	PostgresBackupSecret      string
 	PostgresBackupRetention   string
+	// PostgresEngine is cnpg or bitnami (POSTGRES_ENGINE; "" = decide from
+	// the install state, see components.PostgresUsesCNPG).
+	PostgresEngine string
+	// Backup is the external backup target (#186).
+	Backup BackupSettings
 
 	// SyntheticsBrowser enables browser synthetic checks (headless Chromium
 	// CronJobs, #42). Only honored on the full profile with SYNTHETICS_BROWSER=true.
@@ -214,6 +219,7 @@ func Load() *Config {
 	c.PostgresBackupRetention = getEnv("POSTGRES_BACKUP_RETENTION", "14d")
 	c.LonghornBackupTarget = strings.TrimSpace(os.Getenv("LONGHORN_BACKUP_TARGET"))
 	c.LonghornBackupSecret = strings.TrimSpace(os.Getenv("LONGHORN_BACKUP_SECRET"))
+	c.loadBackup()
 	return c
 }
 
@@ -648,6 +654,11 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("LONGHORN_REPLICAS=%d\n", c.LonghornReplicas))
 	b.WriteString(fmt.Sprintf("LONGHORN_BACKUP_TARGET=%s\n", c.LonghornBackupTarget))
 	b.WriteString(fmt.Sprintf("LONGHORN_BACKUP_SECRET=%s\n", c.LonghornBackupSecret))
+	backupEnv, err := c.backupEnv()
+	if err != nil {
+		return err
+	}
+	b.WriteString(backupEnv)
 	// Ingress HA settings only belong on ha-profile installs; keep non-ha .env
 	// files byte-stable so profile switches do not leak VIP configuration.
 	if c.IsHA() {

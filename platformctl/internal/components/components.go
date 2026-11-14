@@ -50,9 +50,9 @@ func All() []Component {
 		{"longhorn-monitoring", "Longhorn ServiceMonitor and volume alerts (ha profile + monitoring)", InstallLonghornMonitoring},
 		{"ingress-nginx", "Kubernetes Ingress Controller", InstallIngressNginx},
 		{"cert-manager", "Let's Encrypt certificate management", InstallCertManager},
-		{"postgresql", "PostgreSQL database (CloudNativePG cluster on the ha profile)", InstallPostgreSQL},
-		{"postgresql-backup", "PostgreSQL WAL archiving and daily base backups to S3/MinIO (ha profile)", InstallPostgresBackup},
-		{"postgresql-monitoring", "PostgreSQL PodMonitor and HA alerts (ha profile + monitoring)", InstallPostgresMonitoring},
+		{"postgresql", "PostgreSQL database (CloudNativePG cluster; Bitnami release on installs not yet migrated)", InstallPostgreSQL},
+		{"postgresql-backup", "PostgreSQL WAL archiving and daily base backups to the backup target (CloudNativePG)", InstallPostgresBackup},
+		{"postgresql-monitoring", "PostgreSQL PodMonitor and alerts (CloudNativePG + monitoring)", InstallPostgresMonitoring},
 		{"mongodb", "MongoDB database", InstallMongoDB},
 		{"redis", "Redis cache", InstallRedis},
 		{"minio", "S3-compatible object storage", InstallMinIO},
@@ -179,8 +179,10 @@ func InstallCertManager(cfg *config.Config) error {
 }
 
 func InstallPostgreSQL(cfg *config.Config) error {
-	if cfg.IsHA() {
-		return InstallPostgresHA(cfg)
+	if PostgresUsesCNPG(cfg) {
+		// Every fresh install (all profiles) runs CloudNativePG, so WAL
+		// archiving and point-in-time recovery work everywhere (#186).
+		return installPostgresCNPG(cfg)
 	}
 	return postgresqlRelease(cfg).reconcile("--wait", "--timeout", "10m")
 }

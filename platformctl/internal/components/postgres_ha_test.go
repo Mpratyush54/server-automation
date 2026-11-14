@@ -22,10 +22,10 @@ func TestRenderPostgresCluster(t *testing.T) {
 		{name: "defaults"}, {name: "custom storage", sc: "fast-ssd"}, {name: "bundled backup", backup: true}, {name: "external backup", backup: true, retention: "4w"}, {name: "recovery", backup: true, recovery: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := &config.Config{PostgresHAStorageClass: tc.sc, PostgresBackupRetention: tc.retention, PostgresPassword: "must-not-appear"}
+			cfg := &config.Config{Profile: config.ProfileHA, PostgresHAStorageClass: tc.sc, PostgresBackupRetention: tc.retention, PostgresPassword: "must-not-appear"}
 			opts := pgClusterOptions{ServerName: "postgresql-pitr-123"}
 			if tc.backup {
-				opts.Backup = &pgBackup{"s3://backups/prefix/", "https://s3.example.com", "external-s3"}
+				opts.Backup = &pgBackup{"s3://backups/prefix/", "https://s3.example.com", "external-s3", ""}
 				if tc.name == "bundled backup" {
 					opts.Backup, _ = pgBackupTarget(cfg)
 				}
@@ -99,7 +99,7 @@ func TestRenderPostgresCluster(t *testing.T) {
 			}
 		})
 	}
-	m, err := renderPostgresCluster(&config.Config{}, pgClusterOptions{Backup: &pgBackup{"s3://backups/", "", "s3"}})
+	m, err := renderPostgresCluster(&config.Config{}, pgClusterOptions{Backup: &pgBackup{"s3://backups/", "", "s3", ""}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestRenderPostgresCluster(t *testing.T) {
 	if params["serverName"] != "postgresql" {
 		t.Fatal(params)
 	}
-	conf := pgObjectStoreResource(&config.Config{}, &pgBackup{"s3://backups/", "", "s3"})["spec"].(map[string]any)["configuration"].(map[string]any)
+	conf := pgObjectStoreResource(&config.Config{}, &pgBackup{"s3://backups/", "", "s3", ""})["spec"].(map[string]any)["configuration"].(map[string]any)
 	if _, ok := conf["endpointURL"]; ok {
 		t.Fatal(conf)
 	}

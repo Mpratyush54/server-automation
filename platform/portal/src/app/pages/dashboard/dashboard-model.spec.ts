@@ -49,6 +49,15 @@ describe('dashboard model', () => {
     expect(items.map((i) => i.text)).toEqual(['Server node-2 is not ready.', 'The last backup failed.']);
   });
 
+  it('warns when backups are stored only on this server and links to the docs', () => {
+    const items = buildAttention({ apps: [], incidents: [], k8sConnected: true, nodes: [], update: null,
+      backups: [{ operation: 'backup', status: { success: true, finishedAt: at(60) }, localOnly: true }, { operation: 'restore-test', status: null }] });
+    expect(items).toEqual([{ tone: 'warn', text: 'Backups are stored only on this server.', action: 'Set up off-site backups', link: '/docs/operations/backups' }]);
+    const offsite = buildAttention({ apps: [], incidents: [], k8sConnected: true, nodes: [], update: null,
+      backups: [{ operation: 'backup', status: { success: true, finishedAt: at(60) }, localOnly: false }] });
+    expect(offsite).toEqual([]);
+  });
+
   it('builds a newest-first activity feed with plain sentences', () => {
     const feed = buildActivity([project({ deployments: [
       { status: 'deployed', environmentId: 'e1', createdAt: at(30), version: 'v1', deployedBy: 'ben@example.com', commitMessage: 'Fix tax' },

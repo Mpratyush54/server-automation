@@ -153,7 +153,7 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 		{`["rbac.authorization.k8s.io"]`, `["clusterroles"]`, `["platform-namespace-baseline"]`, `["bind"]`}, // #22
 	})
 	expect("Role", "platform-api", "platform", []rbacRule{
-		{`[""]`, `["configmaps"]`, `["platform-backup-backup","platform-backup-restore-test"]`, `["get"]`}, // #21
+		{`[""]`, `["configmaps"]`, `["platform-backup-backup","platform-backup-restore-test","platform-backup-target"]`, `["get"]`}, // #21, #186
 		{`[""]`, `["secrets"]`, `["platform-env","platform-rotate-pending"]`, `["get", "update"]`},
 		{`[""]`, `["secrets"]`, `["platform-credentials","platform-oidc-signing-key"]`, `["get", "update"]`}, // #20
 		{`[""]`, `["secrets"]`, `["platform-rotate-pending"]`, `["delete"]`},
@@ -164,6 +164,8 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 	})
 	expect("Role", "platform-api", "databases", []rbacRule{
 		{`[""]`, `["secrets"]`, `["postgresql","redis"]`, `["get", "update"]`},
+		{`["postgresql.cnpg.io"]`, `["clusters"]`, `["postgresql"]`, `["get"]`},             // #186 backup status
+		{`["barmancloud.cnpg.io"]`, `["objectstores"]`, `["postgresql-backup"]`, `["get"]`}, // #186 recovery window
 	})
 	expect("Role", "platform-api", "argocd", []rbacRule{
 		{`[""]`, `["secrets"]`, `["argocd-secret","argocd-initial-admin-secret"]`, `["get", "update"]`},
@@ -173,9 +175,9 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 		{`["networking.k8s.io"]`, `["networkpolicies"]`, "", `["get", "list", "create", "update"]`},
 		{`[""]`, `["resourcequotas", "limitranges"]`, "", `["get", "list", "create", "update"]`},
 		{`[""]`, `["pods", "services", "persistentvolumeclaims", "events"]`, "", `["list"]`}, // #31 topology
-		{`["apps"]`, `["deployments", "replicasets"]`, "", `["list"]`},                      // #31 topology
-		{`["networking.k8s.io"]`, `["ingresses"]`, "", `["list"]`},                          // #31 topology
-		{`["cert-manager.io"]`, `["certificates"]`, "", `["list"]`},                         // #31 topology
+		{`["apps"]`, `["deployments", "replicasets"]`, "", `["list"]`},                       // #31 topology
+		{`["networking.k8s.io"]`, `["ingresses"]`, "", `["list"]`},                           // #31 topology
+		{`["cert-manager.io"]`, `["certificates"]`, "", `["list"]`},                          // #31 topology
 	})
 	if strings.Contains(manifest, "kind: ClusterRoleBinding\nmetadata:\n  name: platform-namespace-baseline") {
 		t.Fatal("platform-namespace-baseline must only be bound per project namespace")

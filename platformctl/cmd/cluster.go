@@ -11,6 +11,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/backup"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/harden"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ingressha"
@@ -150,8 +151,18 @@ func clusterServerOptions(c *config.Config) k3s.ServerOptions {
 			Cron: cl.EtcdSnapshotCron, Retention: cl.EtcdSnapshotRetention,
 			S3Endpoint: cl.EtcdS3Endpoint, S3Bucket: cl.EtcdS3Bucket, S3Region: cl.EtcdS3Region,
 			S3Folder: cl.EtcdS3Folder, S3AccessKey: cl.EtcdS3AccessKey, S3SecretKey: cl.EtcdS3SecretKey,
+			S3ConfigSecret: etcdS3ConfigSecret(c),
 		},
 	}
+}
+
+// etcdS3ConfigSecret sends etcd snapshots to the external backup target
+// (#186) unless ETCD_S3_* settings are given explicitly.
+func etcdS3ConfigSecret(c *config.Config) string {
+	if c.BackupExternal() && c.Cluster.EtcdS3Endpoint == "" {
+		return backup.EtcdTargetSecret
+	}
+	return ""
 }
 
 // clusterPeers parses PLATFORM_CLUSTER_NODES for the firewall. Only the ha

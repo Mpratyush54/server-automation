@@ -51,3 +51,35 @@ spec:
             severity: critical
           annotations:
             summary: Platform backup CronJob failed before status publication
+        - alert: PlatformBackupLocalOnly
+          expr: platform_backup_target_external == 0
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: Backups are stored only on this server
+            description: If the server or its disk is lost, the backups are lost too. Add an off-site target with `sudo platformctl backup target set` (docs/operations/backups.md).
+    - name: platform.postgres-archive
+      rules:
+        - alert: PlatformPostgresWALArchivingFailing
+          expr: cnpg_pg_stat_archiver_last_failed_time{namespace="databases"} > cnpg_pg_stat_archiver_last_archived_time{namespace="databases"}
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: PostgreSQL cannot archive WAL to the backup target
+            description: Point-in-time recovery stops at the last archived WAL. Check `kubectl -n databases describe cluster postgresql` and `sudo platformctl backup target test`.
+        - alert: PlatformPostgresWALArchiveStale
+          expr: cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="databases"} > 7200
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: No PostgreSQL WAL archived in two hours
+        - alert: PlatformPostgresBaseBackupStale
+          expr: time() - max(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="databases"} or cnpg_collector_last_available_backup_timestamp{namespace="databases"}) > 129600
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: No PostgreSQL base backup in 36 hours

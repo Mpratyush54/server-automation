@@ -1,12 +1,50 @@
 # Back up and restore your server
 
-Make encrypted, off-site backups of your whole Cairn server and restore them onto a new server. You run backups with `platformctl` on the server. The result of the latest backup and restore test shows at the top of **Settings** in the portal, under **Disaster recovery backups** (DevOps role).
+Keep a copy of everything outside your Cairn server, so you can get your data back after a mistake, or rebuild everything on a new server if the old one is lost. Cairn sends backups to one S3-compatible bucket that you choose: AWS S3, Cloudflare R2, Backblaze B2 or a MinIO on another machine.
 
-A backup covers the platform settings and passwords, PostgreSQL, MongoDB, Redis, uploaded files and the cluster state. It is encrypted on the server with a key that only you hold, then sent to S3-compatible storage such as AWS S3, Cloudflare R2 or Backblaze B2.
+What goes there:
 
-## Set up backups
+- the PostgreSQL change log (WAL) and daily database snapshots, so you can restore the database to any moment, for example just before a bad migration;
+- encrypted nightly archives of the settings and passwords, PostgreSQL, MongoDB, Redis, uploaded files and the cluster state;
+- on the `ha` profile, etcd snapshots and Longhorn volume backups.
 
-You need: a bucket at an S3-compatible provider, and a computer other than the server to keep the private key on.
+The portal shows where backups go, when each kind last ran and how far back you can restore, at the top of **Settings** under **Disaster recovery backups** (DevOps role).
+
+## Choose where backups go
+
+You need a bucket and an access key that can list, read, write and delete in it. Use a dedicated bucket, or a folder (prefix) inside one that holds nothing else.
+
+**During installation.** `sudo platformctl provision` asks for the bucket. With `--auto`, give it in the environment. The access key and secret only ever come from the environment, never from command-line flags:
+
+```bash
+sudo env BACKUP_S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com \
+  BACKUP_S3_BUCKET=cairn-backups BACKUP_S3_REGION=auto BACKUP_S3_PREFIX=server-a \
+  BACKUP_S3_ACCESS_KEY=... BACKUP_S3_SECRET_KEY=... \
+  DOMAIN=example.com ADMIN_EMAIL=ops@example.com platformctl provision --auto
+```
+
+Leave out `BACKUP_S3_ENDPOINT` for AWS S3 and set `BACKUP_S3_REGION` to the bucket's region. Backblaze B2 needs its S3 endpoint, for example `https://s3.us-west-004.backblazeb2.com`. The flags `--backup-endpoint`, `--backup-bucket`, `--backup-region` and `--backup-prefix` work too.
+
+Before anything is installed, Cairn writes a small test file to the bucket, reads it back and deletes it. If that fails, provisioning stops and says why, for example a wrong key, a missing bucket or a wrong region.
+
+**Later, or to change it:**
+
+```bash
+sudo platformctl backup target set --endpoint https://<account-id>.r2.cloudflarestorage.com \
+  --bucket cairn-backups --region auto --prefix server-a
+sudo platformctl backup target show
+sudo platformctl backup target test
+```
+
+`set` asks for the access key and secret without showing them. It also reads `BACKUP_S3_ACCESS_KEY` and `BACKUP_S3_SECRET_KEY`, or two lines on standard input with `--credentials-stdin`. It runs the same test, then moves the database change log, the archives and, on `ha`, Longhorn and etcd to the new bucket, and takes a fresh database snapshot.
+
+### Keep backups only on this server
+
+If you really want no off-site copy, say so: pass `--local-backups` to `provision`, or answer no to the question. Backups then go to the bundled storage and a folder on the same server. `platformctl status`, the portal and an alert keep saying **Backups are stored only on this server** until you run `platformctl backup target set`.
+
+## Turn on encrypted nightly archives
+
+The database change log and snapshots start by themselves. The nightly archive of everything else needs a key pair, so that only you can decrypt it.
 
 1. On your own computer, create a key pair with [age](https://age-encryption.org) (a small file-encryption tool):
 
@@ -14,66 +52,92 @@ You need: a bucket at an S3-compatible provider, and a computer other than the s
    age-keygen -o identity.txt
    ```
 
-   It prints the public half, which starts with `age1`. Keep `identity.txt` off the server, for example in a password manager. Without it, nobody can decrypt the backups.
+   It prints the public half, which starts with `age1`. Keep `identity.txt` off the server, for example in a password manager. Without it, nobody can decrypt the archives.
 
-2. On the server, install the tools the backup uses: `sudo apt-get install -y sqlite3 jq`, plus `mc`, the command-line client for S3-compatible storage.
-3. As root, add an `mc` alias (a saved name for your bucket's address and keys), for example `offsite`:
-
-   ```bash
-   sudo mc alias set offsite https://<account-id>.r2.cloudflarestorage.com <access-key> <secret-key>
-   ```
-
-4. Save the backup settings, giving only the public half of your key:
+2. On the server, install the tools the archive uses: `sudo apt-get install -y sqlite3 jq`, plus `mc`, the command-line client for S3-compatible storage.
+3. Save the settings with only the public half of the key, take an archive and turn on the nightly run:
 
    ```bash
-   sudo platformctl backup init --target s3://offsite/platform/server-a \
-     --recipient age1YOUR_PUBLIC_KEY
-   ```
-
-5. Take a backup, list backups and turn on nightly backups:
-
-   ```bash
+   sudo platformctl backup init --recipient age1YOUR_PUBLIC_KEY
    sudo platformctl backup --all
-   sudo platformctl backup list
    sudo platformctl backup schedule
    ```
 
-6. From your computer, check that the newest backup can be restored. This does not touch live data:
+   The archives go to the backup target. Passing `--backup-recipient age1...` to `provision` does this step for you.
+
+4. From your computer, check that the newest archive can be restored. This does not touch live data:
 
    ```bash
    cat identity.txt | ssh you@server 'sudo -n platformctl backup restore-test'
    ```
 
-Nightly backups run at 02:15 UTC. By default Cairn keeps the newest backup of each of the last 7 days, 4 weeks and 12 months.
+Nightly archives run at 02:15 UTC. By default Cairn keeps the newest archive of each of the last 7 days, 4 weeks and 12 months.
 
 > [!WARNING]
 > Plain `platformctl backup`, without `--all`, only copies settings and passwords to a folder on the same server. It is not encrypted and does not survive losing the disk.
 
-## Restore on a fresh server
+## Restore the database to a moment in time
 
-Use the same Cairn version and domain as the old server. On the new Ubuntu server, add the same `mc` alias as before. Keep the private key on your computer and send it over SSH: it is read from standard input, held in memory and never written to the server.
-
-**Install and restore in one step:**
+To undo a mistake, for example a bad migration at 10:05, restore PostgreSQL to just before it:
 
 ```bash
-cat identity.txt | ssh you@new-server \
-  'sudo -n env DOMAIN=example.com ADMIN_EMAIL=ops@example.com platformctl provision --auto \
-     --restore-from s3://offsite/platform/server-a BACKUP_ID'
+sudo platformctl restore --pitr 2026-11-12T10:00:00Z --confirm
 ```
 
-`BACKUP_ID` is the folder name under the target. Get it from `platformctl backup list` on the old server, or with `sudo mc ls offsite/platform/server-a/` on the new one. The key is checked before the install starts.
+This works on every profile. It stops the API, puts all PostgreSQL databases back to that moment and starts the API again. Stop your apps' writes first. MongoDB, Redis and files are not changed. The time must be inside the window shown in **Settings** or `platformctl status`. It does not use the age key.
 
-**Restore onto a server that is already installed:**
+Servers installed before this release run PostgreSQL without a change log. Move them once, with a few minutes of downtime:
 
 ```bash
-cat identity.txt | ssh you@new-server \
-  'sudo -n platformctl restore --target s3://offsite/platform/server-a --from BACKUP_ID --confirm'
+sudo platformctl postgres migrate --dry-run
+sudo platformctl postgres migrate --confirm
 ```
 
-Before you restore, stop your project workloads that write to the platform databases. Afterwards, check that an old user can sign in, the projects are listed, a secret value decrypts, and an uploaded file opens. Then turn GitOps auto-sync and your project workloads back on.
+## Rebuild everything on a new server
+
+Use this when the old server is gone. You need the backup target settings and keys, the age key file and your domain. Use the same Cairn version as the old server.
+
+1. Find the newest archive ID: `sudo platformctl backup list` on the old server while it still runs, or `mc ls` on the target's `archives/` folder.
+2. On the new Ubuntu server, install `mc` (the archive restore uses it), then install Cairn and restore in one step. The age key goes over SSH, is held in memory and is never written to the server:
+
+   ```bash
+   cat identity.txt | ssh you@new-server \
+     'sudo -n env DOMAIN=example.com ADMIN_EMAIL=ops@example.com \
+        BACKUP_S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com BACKUP_S3_BUCKET=cairn-backups \
+        BACKUP_S3_REGION=auto BACKUP_S3_PREFIX=server-a BACKUP_S3_ACCESS_KEY=... BACKUP_S3_SECRET_KEY=... \
+        platformctl provision --auto --restore-from external BACKUP_ID'
+   ```
+
+   `external` means the backup target this provision has just set up. The key is checked before the install starts.
+
+3. Bring PostgreSQL forward from the nightly archive to the last saved change. Look up the old server's archive name, then recover from it:
+
+   ```bash
+   sudo platformctl backup target show
+   sudo platformctl restore --pitr latest --source-server postgresql-20261101t1200 --confirm
+   ```
+
+   `backup target show` lists the archive names under "PostgreSQL archives in the target". The new server's own name is shown in `platformctl status`; pick the other one.
+
+4. Check that an old user can sign in, the projects are listed, a secret value decrypts and an uploaded file opens. Then point DNS at the new server and turn your project workloads back on.
+
+**Restore an archive onto a server that is already installed:**
+
+```bash
+cat identity.txt | ssh you@server \
+  'sudo -n platformctl restore --target external --from BACKUP_ID --confirm'
+```
 
 > [!CAUTION]
 > Restore replaces data and cannot be undone halfway. If it fails after a database step, run `sudo platformctl recover`, then retry the restore.
+
+## Practise a restore
+
+Run this drill on a test server every few months, so a real restore is routine. It never touches the production server.
+
+1. **Point in time.** On a test server with its own backup prefix: create a project, note the time, delete the project, then run `sudo platformctl restore --pitr <noted time> --confirm`. The project is back.
+2. **Full rebuild.** Create a fresh VM and follow [Rebuild everything on a new server](#rebuild-everything-on-a-new-server) with the production target settings and the newest archive, but a test domain and `--source-server` set to the production archive name. Sign in and check projects, secrets and files.
+3. Write down how long each step took, then delete the test VM. A restore only reads from the target; it does not change the production backups.
 
 ## Back up one project database
 
@@ -88,21 +152,53 @@ The backup goes to the default storage provider. See [File storage providers](st
 
 ## Check that backups keep working
 
-- **Settings** in the portal shows the latest backup and the latest restore test: passed or failed, when, size and duration.
-- Admin and DevOps users get a portal notification for every failed backup and every restore-test result.
-- If monitoring is installed, `platformctl backup schedule` also adds alerts. They fire when a backup fails, when there has been no successful backup for 26 hours, when the status is missing, when a restore test fails or is older than 8 days, and when a backup job fails.
-
-## Recover to a point in time (high availability only)
-
-On the `ha` profile, PostgreSQL can be restored to an exact moment, for example just before a bad migration:
-
-```bash
-sudo platformctl restore --pitr 2026-11-12T10:00:00Z --confirm
-```
-
-This does not use the age key. See [High availability](ha.md) for the details.
+- **Settings** in the portal shows where backups go, whether the database change log is being saved and when it last was, the last database snapshot, the window you can restore to, the last full archive and the latest restore test.
+- The dashboard lists **Backups are stored only on this server** under things that need attention when there is no off-site target.
+- `sudo platformctl status` shows the same, and a warning while backups stay on the server.
+- Admin and DevOps users get a portal notification for every failed archive and every restore-test result.
+- If monitoring is installed, alerts fire when saving the database change log fails or stalls, when the last database snapshot is older than 36 hours, when there has been no successful archive for 26 hours, when backups stay on the server, and when a restore test fails or is older than 8 days.
 
 ## How it works
+
+### The backup target
+
+The target is one S3-compatible bucket and an optional prefix. Each kind of backup has its own folder under the prefix:
+
+| Folder | What | Written by |
+|---|---|---|
+| `postgres/<server name>/` | PostgreSQL WAL and base backups | CloudNativePG Barman Cloud plugin (ObjectStore `databases/postgresql-backup`) |
+| `archives/<backup id>/` | Encrypted nightly archives | `platformctl backup --all` (through `mc`) |
+| `etcd/` | etcd snapshots (`ha`) | k3s |
+| `longhorn/` | Longhorn volume backups (`ha`) | Longhorn, daily RecurringJob `platform-backup-daily` |
+
+Only the endpoint, bucket, region, prefix and the choice itself (`BACKUP_MODE=external` or `local`) are saved in `/etc/platform/.env`. The access key and secret are stored only in Kubernetes Secrets: `platform/platform-backup-target` holds everything, and copies in the format each user expects are in `databases/platform-backup-s3`, `kube-system/platform-etcd-s3` and `longhorn-system/platform-longhorn-backup` (the last two on `ha`). They are passed to `kubectl` on standard input, never on a command line, and are not printed. `mc` gets them through an `MC_HOST_platformtarget` variable that only its own process sees. Because the master Secret is in the `platform` namespace, the encrypted archive contains it, so a rebuilt server can restore it.
+
+Provisioning holds the credentials in memory from the question (or the environment) until the cluster exists, writes the Secrets, and does not pass them to the step processes. On a re-run without credentials, the stored Secrets are kept. `platformctl backup target test` repeats the write, read and delete test with the stored credentials.
+
+k3s reads its target from the Secret through `etcd-s3-config-secret` in `/etc/rancher/k3s/config.yaml`, so no key is written there. On a cluster installed before this release, `backup target set` adds `/etc/rancher/k3s/config.yaml.d/60-platform-etcd-s3.yaml`; restart k3s on each server, one at a time, to start uploading. Explicit `ETCD_S3_*` and `LONGHORN_BACKUP_*` settings and `POSTGRES_BACKUP_DESTINATION` still win over the target.
+
+With local-only backups, PostgreSQL archives to the bundled MinIO (`s3://postgres-backups/`) and archives go to `file:///var/lib/platform/encrypted-backups`. The choice is published in the ConfigMap `platform/platform-backup-target` and as the metric `platform_backup_target_external` (0 or 1).
+
+### Point-in-time recovery
+
+PostgreSQL runs as a CloudNativePG cluster on every profile: one instance on `minimal`, `standard` and `full`, three on `ha`. The platform keeps connecting to `postgresql.databases:5432`, a Service that always points at the primary. WAL is archived at least every 5 minutes while the database is written to, and a base backup runs daily at 03:00 UTC. `restore --pitr` replays them into a new cluster, which then archives under a new server name (`postgresql-pitr-<seconds>`), so the old archive is never overwritten.
+
+Each new cluster gets a unique server name (`postgresql-<date>t<time>`), so a rebuilt server can archive into the same bucket while the old server's archive stays readable. `--pitr latest` replays all archived WAL; `--source-server` reads another server's archive. The recovery window is the ObjectStore's first recoverability point up to the last archived WAL.
+
+### Moving PostgreSQL to CloudNativePG
+
+`platformctl postgres migrate` moves a server that still runs the Bitnami PostgreSQL release. Each finished step is saved, so after a failure the same command continues where it stopped:
+
+1. an encrypted archive (when `backup init` was run) and a host copy of credentials;
+2. the API is stopped, project database users are blocked from logging in and their sessions are ended;
+3. all roles and databases are dumped to `/var/lib/platform/migrations/postgres-cnpg/` (root only);
+4. the Bitnami release is removed; its volume `data-postgresql-0` is kept, with its PersistentVolume set to `Retain`;
+5. the CloudNativePG cluster starts with the password the platform already uses;
+6. the dump is restored and the project users can log in again;
+7. databases, table counts and platform users are compared with the dump;
+8. `POSTGRES_ENGINE=cnpg` is saved, WAL archiving starts and the first base backup runs; then the API starts.
+
+`--dry-run` prints the plan and checks the current databases. `--rollback --confirm` reinstalls the Bitnami release on the kept volume, with the data as of the start of the migration, and removes the new cluster. Delete the kept volume and the dump folder once you are satisfied.
 
 ### What a full backup does
 
@@ -112,12 +208,12 @@ Every backup or restore checks for the tools it needs before touching anything a
 
 ### Settings
 
-- `backup init` writes `/etc/platform/backup.json` (mode 0600). It holds only the target and the public key. It refuses to overwrite an existing file.
+- `backup init` writes `/etc/platform/backup.json` (mode 0600). It holds only the target and the public key. It refuses to overwrite an existing file. The target defaults to `external`, which means the backup target, or to a local folder when backups are local-only.
 - If you omit `--recipient`, `backup init` generates a key and prints the private half **once** without saving it. Do this in a private terminal without session logging and move the key off the server at once.
 - Retention flags on `backup init`: `--keep-daily` (default 7, at least 1), `--keep-weekly` (4) and `--keep-monthly` (12).
 - `--components` lists what to protect. The default is `config,postgres,mongo,redis,minio,k3s`; `config` and `postgres` are required. Remove components your install does not have, for example `--components config,postgres,k3s`. A selected component that is missing makes the backup fail; nothing is silently skipped.
-- `--target` overrides the saved target for one `backup`, `list` or `restore`. `file:///var/lib/platform/encrypted-backups` works for local staging, with a warning that local storage cannot survive disk loss.
-- An `s3://` target names an `mc` alias, not a hostname. Use a dedicated bucket or prefix and allow list, get, put and delete there. B2 must use its S3-compatible endpoint. Never put credentials in the target URL. Make sure the alias really points off-site: the bundled MinIO is on the same server even when reached over S3.
+- `--target` overrides the saved target for one `backup`, `list` or `restore`: `external`, `file:///var/lib/platform/encrypted-backups` (local staging, with a warning that it cannot survive disk loss) or `s3://<mc alias>/bucket/prefix`.
+- An `s3://` target names an `mc` alias you added yourself, not a hostname. Never put credentials in the target URL. Make sure the alias really points off-site: the bundled MinIO is on the same server even when reached over S3.
 - The bundled MinIO is the default **source** of files. platformctl builds a temporary `mc` alias from the `minio` Secret and its cluster IP, held only in the process environment. To use another source, add `"minioAlias": "<root mc alias>"` to `backup.json`. Never point it at the backup destination.
 
 ### Nightly job
@@ -180,10 +276,10 @@ The weekly GitHub workflow `backup-restore-drill.yml` runs this test over SSH. S
 Every backup and restore test reports its result three ways:
 
 - **Prometheus metrics** `platform_backup_success`, `platform_backup_last_success_timestamp_seconds`, `platform_backup_size_bytes`, `platform_backup_duration_seconds` and `platform_backup_completed_timestamp_seconds`, labelled `operation="backup|restore-test"`. They are written to `/var/lib/platform/metrics/*.prom` on the host and collected by node-exporter's textfile collector. On servers installed before this existed, run `sudo platformctl repair` to enable the collector.
-- **ConfigMaps** `platform/platform-backup-backup` and `platform/platform-backup-restore-test` with the latest result, last success, size and duration. The portal's **Settings** reads these. No keys, URLs or dump details are exposed.
+- **ConfigMaps** `platform/platform-backup-backup` and `platform/platform-backup-restore-test` with the latest result, last success, size and duration, and `platform/platform-backup-target` with where backups go. The portal's **Settings** reads these, plus the CloudNativePG Cluster and ObjectStore status and `pg_stat_archiver` for the change log and recovery window. No keys or dump details are exposed.
 - **Portal notifications** to admin and DevOps users, written through the running API's database connection.
 
-The alert rules are `PlatformBackupStatusMissing`, `PlatformBackupFailed`, `PlatformBackupStale` (26 hours), `PlatformRestoreTestFailed`, `PlatformRestoreTestStale` (8 days) and `PlatformBackupCronJobFailed` (failed `platform-backup-*` Jobs, which catches crashes before a status is written). Installs without monitoring rely on portal notifications. If writing the status fails, that is logged and the backup itself still counts.
+The alert rules are `PlatformBackupStatusMissing`, `PlatformBackupFailed`, `PlatformBackupStale` (26 hours), `PlatformRestoreTestFailed`, `PlatformRestoreTestStale` (8 days), `PlatformBackupCronJobFailed` (failed `platform-backup-*` Jobs, which catches crashes before a status is written), `PlatformBackupLocalOnly` (backups stay on the server for an hour), `PlatformPostgresWALArchivingFailing`, `PlatformPostgresWALArchiveStale` (no WAL archived for 2 hours) and `PlatformPostgresBaseBackupStale` (36 hours). They are applied by `backup schedule` and by the `postgresql-backup` step. Installs without monitoring rely on portal notifications. If writing the status fails, that is logged and the backup itself still counts.
 
 ### Project database backups
 
@@ -195,7 +291,8 @@ The **Database backups** panel runs `pg_dump` of the named database, uploads it 
 - Kubernetes namespaces and Secrets outside the listed namespaces are not included.
 - Restore uses the same release's database schema. Run the migration job only when you upgrade after a successful restore.
 - `platformctl upgrade` takes a full encrypted backup before it changes anything when `/etc/platform/backup.json` exists. Without it, upgrade takes only a local database and credentials copy and warns that this does not protect against disk loss.
-- Outside the `ha` profile, backups are logical dumps at one point in time; there is no continuous recovery.
+- Point-in-time recovery covers PostgreSQL only. MongoDB, Redis and files come back as of the last nightly archive.
+- `mc` is not installed by Cairn; install it before turning on archives.
 - A full nightly test that installs one server, destroys it and restores onto a second has not been wired up yet. Fresh-server restores with live S3, Redis volumes, MongoDB and k3s are covered by unit tests only.
 
 ## For developers / API
@@ -204,7 +301,7 @@ Operator sign-in (DevOps role) is required.
 
 | Request | Returns |
 |---|---|
-| `GET /api/settings/backups` | Latest backup and restore-test status as JSON |
+| `GET /api/settings/backups` | Latest backup and restore-test status (`items`), where backups go (`storage`: mode, `localOnly`, target endpoint host, bucket, prefix and region, never keys), PostgreSQL recovery (`postgres`: archiving state, last archived WAL, last base backup, recovery window) and `lastFullBackupAt` |
 | `GET /api/settings/backups/metrics` | The same data in Prometheus text format |
 | `POST /api/projects/<projectId>/databases/backup` with `{ "dbName": "...", "environment": "production" }` | Starts a project database backup |
 | `GET /api/projects/<projectId>/databases/backups` | The project's last 50 database backups (viewer access) |

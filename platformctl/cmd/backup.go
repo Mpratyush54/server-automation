@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"filippo.io/age"
@@ -21,7 +22,7 @@ import (
 var backupAll bool
 var backupConfigPath, backupTarget, restoreID, restoreComponent string
 var restoreConfirm bool
-var restorePITR string
+var restorePITR, restoreSourceServer string
 
 func backupSettings() (backup.Config, error) {
 	c, e := backup.ReadConfig(backupConfigPath)
@@ -31,13 +32,17 @@ func backupSettings() (backup.Config, error) {
 	if backupTarget != "" {
 		c.Target = backupTarget
 	}
+	if c.Target, e = resolveArchiveTarget(c.Target); e != nil {
+		return c, e
+	}
 	return c, c.Validate()
 }
 func warnLocal(c backup.Config) {
 	t, _ := backup.ParseTarget(c.Target)
 	if !t.Remote {
 		fmt.Fprintln(os.Stderr, "WARNING: local backups do not protect against server or disk loss; use an off-site S3/R2/B2 target.")
-	} else {
+	} else if !strings.HasPrefix(c.Target, "s3://"+backup.MCAlias+"/") {
+		// The off-site backup target (#186) needs no reminder.
 		fmt.Fprintln(os.Stderr, "Ensure the configured S3 alias is off-site; bundled MinIO does not protect against node loss.")
 	}
 }
@@ -119,8 +124,11 @@ func wrapProvisionRestore() {
 		if !cfg.NonInteractive {
 			return fmt.Errorf("--restore-from requires --auto: stdin carries the age identity, not interactive answers")
 		}
-		if _, e := backup.ParseTarget(provisionRestoreFrom); e != nil {
-			return e
+		// "external" is the off-site target configured by this provision.
+		if provisionRestoreFrom != backup.ExternalTargetKeyword {
+			if _, e := backup.ParseTarget(provisionRestoreFrom); e != nil {
+				return e
+			}
 		}
 		identity, e := readIdentity(cmd.InOrStdin())
 		if e != nil {
@@ -133,7 +141,7 @@ func wrapProvisionRestore() {
 		color.Cyan("\n  ■ Restoring backup %s from %s", id, provisionRestoreFrom)
 		return runRestore(provisionRestoreFrom, id, "", identity)
 	}
-	provisionCmd.Flags().StringVar(&provisionRestoreFrom, "restore-from", "", "after provisioning, restore a backup from this target (file:///... or s3://mc-alias/bucket/prefix); age identity on stdin, requires --auto")
+	provisionCmd.Flags().StringVar(&provisionRestoreFrom, "restore-from", "", "after provisioning, restore a backup from this target (external = the off-site target set up by this provision, file:///... or s3://mc-alias/bucket/prefix); age identity on stdin, requires --auto")
 	provisionCmd.Flags().StringVar(&provisionRestoreID, "restore-id", "", "backup ID to restore with --restore-from (or pass it as the positional argument)")
 }
 
@@ -142,7 +150,7 @@ func init() {
 	backupCmd.Short = "Back up credentials locally, or all configured components encrypted with --all"
 	backupCmd.Args = cobra.NoArgs
 	backupCmd.PersistentFlags().StringVar(&backupConfigPath, "backup-config", "/etc/platform/backup.json", "backup configuration (contains only the public age recipient)")
-	backupCmd.PersistentFlags().StringVar(&backupTarget, "target", "", "override configured file:// or s3://mc-alias/bucket/prefix target")
+	backupCmd.PersistentFlags().StringVar(&backupTarget, "target", "", "override the configured target: external (the off-site target), file:///path or s3://mc-alias/bucket/prefix")
 	backupCmd.Flags().BoolVar(&backupAll, "all", false, "create encrypted component backup and enforce retention")
 	backupCmd.AddCommand(&cobra.Command{Use: "list", Short: "List complete backups on the target", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		c, e := backupSettings()
@@ -175,11 +183,17 @@ func init() {
 		if e := backup.ValidateRecipient(recipient); e != nil {
 			return e
 		}
-		c := backup.Config{Target: backupTarget, Recipient: recipient, Retention: keep, Components: componentNames}
+		target := backupTarget
+		if target == "" {
+			target = defaultArchiveTarget(cfg)
+		}
+		c := backup.Config{Target: target, Recipient: recipient, Retention: keep, Components: componentNames}
 		if e := c.Validate(); e != nil {
 			return e
 		}
-		warnLocal(c)
+		if c.Target != backup.ExternalTargetKeyword {
+			warnLocal(c)
+		}
 		b, e := json.MarshalIndent(c, "", "  ")
 		if e != nil {
 			return e
@@ -223,23 +237,7 @@ func init() {
 		if _, e = os.Stat("/usr/local/bin/platformctl"); e != nil {
 			return fmt.Errorf("the CronJob runs /usr/local/bin/platformctl on the host: install the binary there first")
 		}
-		if e = backup.CheckTools(captureTools(c)); e != nil {
-			return e
-		}
-		if _, e = shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, backup.ScheduleYAML); e != nil {
-			return e
-		}
-		color.Green("  ✓ CronJob platform-backup-nightly installed (02:15 UTC)")
-		// Alert rules only where the monitoring stack (and its CRDs) exist.
-		if shell.RunSilent("kubectl", "get", "crd", "prometheusrules.monitoring.coreos.com") == nil {
-			if _, e = shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, backup.AlertsYAML); e != nil {
-				return fmt.Errorf("apply backup alert rules: %w", e)
-			}
-			color.Green("  ✓ PrometheusRule monitoring/platform-backups installed")
-		} else {
-			color.Yellow("  · monitoring not installed: backup failures are reported via portal notifications only")
-		}
-		return nil
+		return installSchedule(c)
 	}}
 	backupCmd.AddCommand(schedule)
 	restore := &cobra.Command{Use: "restore", Short: "Restore into a provisioned server; reads the age identity from stdin", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
@@ -247,19 +245,19 @@ func init() {
 			return fmt.Errorf("restore replaces data: stop project workloads, then pass --confirm")
 		}
 		if restorePITR != "" {
-			if !cfg.IsHA() {
-				return fmt.Errorf("--pitr requires the ha profile")
-			}
-			target, err := time.Parse(time.RFC3339, restorePITR)
+			opts, err := pitrOptions(restorePITR, restoreSourceServer)
 			if err != nil {
-				return fmt.Errorf("--pitr must be RFC3339: %w", err)
+				return err
 			}
 			unlock, err := state.AcquireLock("restore-pitr")
 			if err != nil {
 				return err
 			}
 			defer unlock()
-			return components.RestorePostgresPITR(cfg, target)
+			return components.RestorePostgresPITRWith(cfg, opts)
+		}
+		if restoreSourceServer != "" {
+			return fmt.Errorf("--source-server is only used with --pitr")
 		}
 		if restoreID == "" {
 			return fmt.Errorf("--from backup ID is required")
@@ -271,7 +269,8 @@ func init() {
 		defer clear(identity)
 		return runRestore(backupTarget, restoreID, restoreComponent, identity)
 	}}
-	restore.Flags().StringVar(&restorePITR, "pitr", "", "HA PostgreSQL recovery target (RFC3339); does not read an age identity")
+	restore.Flags().StringVar(&restorePITR, "pitr", "", "PostgreSQL recovery point: an RFC3339 time, or latest (all archived WAL); every profile on CloudNativePG; does not read an age identity")
+	restore.Flags().StringVar(&restoreSourceServer, "source-server", "", "with --pitr: recover from another server's archive in the backup target (for a rebuilt server; names: platformctl backup target show)")
 	restore.Flags().StringVar(&backupConfigPath, "backup-config", "/etc/platform/backup.json", "backup config")
 	restore.Flags().StringVar(&backupTarget, "target", "", "target override")
 	restore.Flags().StringVar(&restoreID, "from", "", "backup ID")
@@ -354,6 +353,9 @@ func restoreConfig(target string) (backup.Config, error) {
 	if target != "" {
 		c.Target = target
 	}
+	if c.Target, e = resolveArchiveTarget(c.Target); e != nil {
+		return c, e
+	}
 	if _, e = backup.ParseTarget(c.Target); e != nil {
 		return c, e
 	}
@@ -384,4 +386,44 @@ func runRestore(target, id, component string, identity []byte) error {
 	}
 	color.Green("  ✓ Restored backup %s", id)
 	return nil
+}
+
+// installSchedule installs the nightly CronJob and, where monitoring exists,
+// the backup alert rules.
+func installSchedule(c backup.Config) error {
+	if _, e := os.Stat("/usr/local/bin/platformctl"); e != nil {
+		return fmt.Errorf("the CronJob runs /usr/local/bin/platformctl on the host: install the binary there first")
+	}
+	if e := backup.CheckTools(captureTools(c)); e != nil {
+		return e
+	}
+	if _, e := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, backup.ScheduleYAML); e != nil {
+		return e
+	}
+	color.Green("  ✓ CronJob platform-backup-nightly installed (02:15 UTC)")
+	// Alert rules only where the monitoring stack (and its CRDs) exist.
+	if shell.RunSilent("kubectl", "get", "crd", "prometheusrules.monitoring.coreos.com") == nil {
+		if _, e := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, backup.AlertsYAML); e != nil {
+			return fmt.Errorf("apply backup alert rules: %w", e)
+		}
+		color.Green("  ✓ PrometheusRule monitoring/platform-backups installed")
+	} else {
+		color.Yellow("  · monitoring not installed: backup failures are reported via portal notifications only")
+	}
+	return nil
+}
+
+// pitrOptions parses --pitr (RFC3339 or "latest") and --source-server.
+func pitrOptions(raw, source string) (components.PITROptions, error) {
+	o := components.PITROptions{SourceServer: strings.TrimSpace(source)}
+	if strings.EqualFold(strings.TrimSpace(raw), "latest") {
+		o.Latest = true
+		return o, nil
+	}
+	t, err := time.Parse(time.RFC3339, strings.TrimSpace(raw))
+	if err != nil {
+		return o, fmt.Errorf("--pitr must be an RFC3339 time (for example 2026-11-12T10:00:00Z) or latest: %w", err)
+	}
+	o.Target = t
+	return o, nil
 }
