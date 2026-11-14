@@ -1,0 +1,8 @@
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.cfg-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 24px; padding: 20px 0; }
+.cfg-row + .cfg-row { border-top: 1px solid rgb(var(--line)); }
+.cfg-label label { display: block; font-weight: 500; color: rgb(var(--fg)); }
+.cfg-label p { margin: 4px 0 0; font-size: 0.8125rem; color: rgb(var(--fg-3)); }
+.cfg-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cfg-field input[type=number] { width: 100%; }
+@media (max-width: 720px) { .cfg-row { grid-template-columns: 1fr; gap: 10px; } }

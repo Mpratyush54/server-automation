@@ -20,7 +20,7 @@ spec:
   - name: platform-api-only
     expression: "request.userInfo.username == 'system:serviceaccount:platform:platform-api'"
   validations:
-  - expression: "namespaceObject != null && has(namespaceObject.metadata.labels) && 'platform.io/project' in namespaceObject.metadata.labels && 'platform.io/env' in namespaceObject.metadata.labels && !(namespaceObject.metadata.name in ['default', 'platform', 'databases', 'preview', 'ingress-nginx', 'argocd', 'cert-manager', 'monitoring', 'oauth2-proxy', 'portainer', 'storage']) && !namespaceObject.metadata.name.startsWith('kube-')"
+  - expression: "namespaceObject != null && has(namespaceObject.metadata.labels) && 'platform.io/project' in namespaceObject.metadata.labels && 'platform.io/env' in namespaceObject.metadata.labels && !(namespaceObject.metadata.name in ['default', 'platform', 'databases', 'preview', 'ingress-nginx', 'argocd', 'cert-manager', 'monitoring', 'oauth2-proxy', 'portainer', 'storage', 'keda']) && !namespaceObject.metadata.name.startsWith('kube-')"
     message: "Baseline bindings require a dedicated project namespace"
   - expression: "object.metadata.name == 'platform-namespace-baseline' && object.roleRef.apiGroup == 'rbac.authorization.k8s.io' && object.roleRef.kind == 'ClusterRole' && object.roleRef.name == 'platform-namespace-baseline' && has(object.subjects) && size(object.subjects) == 1 && object.subjects[0].kind == 'ServiceAccount' && object.subjects[0].name == 'platform-api' && object.subjects[0].namespace == 'platform'"
     message: "Only the platform baseline binding may be bootstrapped"
@@ -49,7 +49,7 @@ spec:
   - name: platform-api-only
     expression: "request.userInfo.username == 'system:serviceaccount:platform:platform-api'"
   validations:
-  - expression: "!(object.metadata.name in ['default', 'platform', 'databases', 'preview', 'ingress-nginx', 'argocd', 'cert-manager', 'monitoring', 'oauth2-proxy', 'portainer', 'storage']) && !object.metadata.name.startsWith('kube-')"
+  - expression: "!(object.metadata.name in ['default', 'platform', 'databases', 'preview', 'ingress-nginx', 'argocd', 'cert-manager', 'monitoring', 'oauth2-proxy', 'portainer', 'storage', 'keda']) && !object.metadata.name.startsWith('kube-')"
     message: "The platform API may only manage dedicated project namespaces"
   - expression: "has(object.metadata.labels) && 'platform.io/project' in object.metadata.labels && 'platform.io/env' in object.metadata.labels"
     message: "Project namespaces must carry platform.io/project and platform.io/env labels"
@@ -107,6 +107,10 @@ rules:
   resources: ["clusterroles"]
   resourceNames: ["platform-namespace-baseline"]
   verbs: ["bind"]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  resourceNames: ["scaledobjects.keda.sh", "httpscaledobjects.http.keda.sh"]
+  verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -260,3 +264,22 @@ rules:
 - apiGroups: ["cert-manager.io"]
   resources: ["certificates"]
   verbs: ["list"]
+
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "create", "update", "delete"]
+- apiGroups: ["keda.sh"]
+  resources: ["scaledobjects"]
+  verbs: ["get", "list", "create", "update", "delete"]
+- apiGroups: ["http.keda.sh"]
+  resources: ["httpscaledobjects"]
+  verbs: ["get", "create", "update", "delete"]
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "create", "update", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["update"]
+- apiGroups: ["apps"]
+  resources: ["deployments/scale"]
+  verbs: ["patch"]

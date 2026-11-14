@@ -327,6 +327,7 @@ async function controlDeployment(dep: Deployment, operation: 'restart' | 'scale'
   const ds = await getDb();
   const env = await ds.getRepository(Environment).findOne({ where: { id: dep.environmentId, projectId: dep.projectId } });
   if (!env) throw new Error('Deployment environment not found');
+    if (operation === 'scale' && env.autoscaling?.enabled) throw new Error('Disable autoscaling before changing replicas manually');
   if (env.name === EnvironmentName.PREVIEW) {
     if (operation !== 'terminate') throw new Error('Preview restart and scale are not supported');
     if (!await terminateK8sPreview(dep.branch, dep.projectId, dep.metadata?.previewResourceName as string | undefined, (dep.metadata as any)?.previewNamespace || 'preview')) throw new Error('Preview termination failed');

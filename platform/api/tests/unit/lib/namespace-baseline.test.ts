@@ -190,12 +190,19 @@ it('grants exactly the verbs the baseline uses, namespaced only, with no broad R
     { apiGroups: ['apps'], resources: ['deployments', 'replicasets'], verbs: ['list'] },
     { apiGroups: ['networking.k8s.io'], resources: ['ingresses'], verbs: ['list'] },
     { apiGroups: ['cert-manager.io'], resources: ['certificates'], verbs: ['list'] },
+    { apiGroups: ['autoscaling'], resources: ['horizontalpodautoscalers'], verbs: ['get', 'list', 'create', 'update', 'delete'] },
+    { apiGroups: ['keda.sh'], resources: ['scaledobjects'], verbs: ['get', 'list', 'create', 'update', 'delete'] },
+    { apiGroups: ['http.keda.sh'], resources: ['httpscaledobjects'], verbs: ['get', 'create', 'update', 'delete'] },
+    { apiGroups: [''], resources: ['services'], verbs: ['get', 'create', 'update', 'delete'] },
+    { apiGroups: ['networking.k8s.io'], resources: ['ingresses'], verbs: ['update'] },
+    { apiGroups: ['apps'], resources: ['deployments/scale'], verbs: ['patch'] },
   ]);
   expect(baseline.rules.flatMap((r: any) => r.resources)).not.toContain('secrets');
   const api = docs.find(d => d.kind === 'ClusterRole' && d.metadata.name === 'platform-api');
   const rule = (resource: string) => api.rules.find((r: any) => r.resources.includes(resource));
   expect(rule('namespaces').verbs).toEqual(['get', 'list', 'create', 'update']);
   expect(rule('rolebindings').verbs).toEqual(['get', 'create', 'update']);
+  expect(rule('customresourcedefinitions')).toEqual({ apiGroups: ['apiextensions.k8s.io'], resources: ['customresourcedefinitions'], resourceNames: ['scaledobjects.keda.sh', 'httpscaledobjects.http.keda.sh'], verbs: ['get'] });
   expect(rule('clusterroles')).toEqual({ apiGroups: ['rbac.authorization.k8s.io'], resources: ['clusterroles'], resourceNames: ['platform-namespace-baseline'], verbs: ['bind'] });
   const all = docs.filter(d => d && /Role$/.test(d.kind)).flatMap(d => d.rules);
   const verbs = all.flatMap((r: any) => r.verbs);
@@ -221,6 +228,15 @@ it('keeps ingress-nginx reachable both ways and DNS/databases/platform egress na
   expect(policy('allow-platform').spec.egress[0]).toEqual({ to: [{ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'platform' } }, podSelector: { matchLabels: { app: 'platform-api' } } }], ports: [{ protocol: 'TCP', port: 3000 }] });
   // No allow rule selects other project namespaces.
   expect(JSON.stringify(manifests().policies)).not.toContain('platform.io/project');
+});
+
+it('allows only the HTTP interceptor into preview pods and reserves the KEDA namespace', () => {
+  const preview = namespaceBaselineManifests('project-a', { ...env, name: 'preview' });
+  expect(preview.policies.find(p => p.metadata.name === 'allow-preview-activator')?.spec).toEqual({
+    podSelector: {}, policyTypes: ['Ingress'], ingress: [{ from: [{ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'keda' } }, podSelector: { matchLabels: { 'app.kubernetes.io/component': 'interceptor' } } }] }],
+  });
+  expect(manifests().policies.some(p => p.metadata.name === 'allow-preview-activator')).toBe(false);
+  expect(() => namespaceBaselineManifests('project-a', { ...env, namespace: 'keda' })).toThrow(/Dedicated/);
 });
 it('retries baseline writes while a new RoleBinding propagates, but not other failures', async () => {
   const c = clients();

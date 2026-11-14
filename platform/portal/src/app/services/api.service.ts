@@ -28,6 +28,12 @@ export class ApiService {
   }
 
   // Deployments
+  getEnvironmentAutoscaling(projectId: string, environmentId: string): Observable<any> {
+    return this.http.get(`${this.base}/projects/${projectId}/environments/${environmentId}/autoscaling`);
+  }
+  putEnvironmentAutoscaling(projectId: string, environmentId: string, settings: any): Observable<any> {
+    return this.http.put(`${this.base}/projects/${projectId}/environments/${environmentId}/autoscaling`, settings);
+  }
   deploy(data: any): Observable<any> { return this.http.post(`${this.base}/deploy`, data); }
   rollback(data: any): Observable<any> { return this.http.post(`${this.base}/rollback`, { reason: 'Manual rollback from deployment view', ...data }, { headers: { 'Idempotency-Key': crypto.randomUUID() } }); }
   restartDeployment(id: string): Observable<any> { return this.http.post(`${this.base}/deployments/${id}/restart`, {}); }

@@ -190,6 +190,8 @@ export async function deployK8sPreview(
               name: 'web',
               image,
               env: releaseEnv(release),
+              resources: { requests: { cpu: '100m', memory: '128Mi' }, limits: { cpu: '500m', memory: '512Mi' } },
+              readinessProbe: { tcpSocket: { port: 80 }, periodSeconds: 2, failureThreshold: 30 },
               securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } },
               ports: [{ containerPort: 80 }],
             }],

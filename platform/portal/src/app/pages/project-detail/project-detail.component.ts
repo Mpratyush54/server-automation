@@ -5,6 +5,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AutoscalingComponent } from './autoscaling.component';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { ArgocdPanelComponent } from './argocd-panel.component';
@@ -33,7 +34,7 @@ const MONITORING_PARAMS = ['view', 'issue', 'check', 'trace', 'logTrace', 'servi
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [DatabaseInsightsPanelComponent, ReleasesPanelComponent, CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent, ArgocdPanelComponent, ProjectOverviewComponent, ProjectSettingsSectionComponent,
+  imports: [AutoscalingComponent, DatabaseInsightsPanelComponent, ReleasesPanelComponent, CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent, ArgocdPanelComponent, ProjectOverviewComponent, ProjectSettingsSectionComponent,
     ObsProjectComponent, ErrorsComponent, ReplaysComponent, HeatmapsComponent, SyntheticsComponent, StatusPageEditorComponent, ProjectAgentsComponent],
   templateUrl: './project-detail.component.html',
   styleUrls: ['./project-section-shared.css', './project-detail.component.css']
