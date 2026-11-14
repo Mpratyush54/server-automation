@@ -1,7 +1,7 @@
 # platform.pratyushes.dev — marketing + docs only
 User-agent: *
 Allow: /
-Allow: /landing
+Allow: /about
 Allow: /docs
 Allow: /docs/
 Allow: /llms.txt

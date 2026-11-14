@@ -42,7 +42,7 @@ const mdFiles = walk(docsRoot).map((f) =>
 
 const urls = [
   { loc: `${base}/`, priority: '1.0', changefreq: 'weekly' },
-  { loc: `${base}/landing`, priority: '1.0', changefreq: 'weekly' },
+  { loc: `${base}/about`, priority: '0.8', changefreq: 'monthly' },
   { loc: `${base}/docs`, priority: '0.9', changefreq: 'weekly' },
   { loc: `${base}/llms.txt`, priority: '0.8', changefreq: 'weekly' },
   { loc: `${base}/llms-full.txt`, priority: '0.7', changefreq: 'weekly' },
@@ -97,7 +97,7 @@ fs.writeFileSync(path.join(publicDir, 'sitemap.xml'), xml);
 const robots = `# platform.pratyushes.dev — marketing + docs only
 User-agent: *
 Allow: /
-Allow: /landing
+Allow: /about
 Allow: /docs
 Allow: /docs/
 Allow: /llms.txt

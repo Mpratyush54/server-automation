@@ -1,131 +1,99 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+// Prerenders the public landing page (/) and About page (/about) from their
+// Angular components, so crawlers, link previews and visitors without
+// JavaScript get the real content. Angular replaces it when it boots.
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { applyHead, origin } from './prerender-head.mjs';
+import { assertNoAngularSyntax, loadTypeScriptModule, renderComponent } from './prerender-template.mjs';
 
-const portal = fileURLToPath(new URL("../", import.meta.url));
+const portal = fileURLToPath(new URL('../', import.meta.url));
+const pages = join(portal, 'src/app/pages');
 
-export async function prerenderLanding({
-  outputDir = join(portal, "dist/portal/browser"),
-} = {}) {
-  const directory = join(portal, "src/app/pages/landing");
-  const mediaSource = await readFile(
-    join(directory, "landing-media.ts"),
-    "utf8",
-  );
-  const media = JSON.parse(mediaSource.match(/=\s*({[\s\S]*})\s+as const;/)[1]);
-  const initial = {
-    storyStep: 0,
-    storyPaused: false,
-    storyVisible: true,
-    landscapeStarted: false,
-    portraitStarted: false,
-    videoError: "",
-  };
-  const value = (expression) => {
-    const expressionValue = expression.trim();
-    if (expressionValue.startsWith("media.")) {
-      const result = media[expressionValue.slice(6)];
-      if (!result) throw new Error(`Unknown media binding: ${expressionValue}`);
-      return result;
-    }
-    if (Object.hasOwn(initial, expressionValue))
-      return initial[expressionValue];
-    if (expressionValue === "!videoError") return true;
-    if (expressionValue === "storyPaused || !storyVisible") return false;
-    const comparison = expressionValue.match(
-      /^storyStep\s*(===|!==)\s*([0-5])$/,
-    );
-    if (comparison)
-      return comparison[1] === "==="
-        ? Number(comparison[2]) === 0
-        : Number(comparison[2]) !== 0;
-    throw new Error(`Unhandled initial landing binding: ${expressionValue}`);
-  };
-  // Use the actual component markup and CSS, so the initial HTML and the
-  // interactive page have one source. Fail if a future binding needs handling.
-  const template = (
-    await readFile(join(directory, "landing.component.html"), "utf8")
-  )
-    .replace(/\s+routerLink="([^"]*)"/g, ' href="$1"')
-    .replace(/\s+#\w+(?:="[^"]*")?/g, "")
-    .replace(/\s+\([^)]+\)="[^"]*"/g, "")
-    .replace(/\s+\[([^\]]+)\]="([^"]*)"/g, (_, binding, expression) => {
-      const result = value(expression);
-      if (binding.startsWith("class."))
-        return result
-          ? (() => {
-              throw new Error(
-                "Initial class bindings must be represented in the static class attribute",
-              );
-            })()
-          : "";
-      if (binding === "hidden") return result ? " hidden" : "";
-      // Keep native controls as the no-JavaScript fallback. Angular replaces
-      // them with the cover button until playback starts.
-      if (binding === "controls") return "";
-      const attribute = binding.startsWith("attr.")
-        ? binding.slice(5)
-        : binding;
-      return ` ${attribute}="${String(result).replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"`;
-    })
-    .replace(/\{\{\s*videoError\s*\}\}/g, "")
-    .replace(
-      /\{\{\s*installCopied\s*\?\s*['"]Copied['"]\s*:\s*['"]Copy commands['"]\s*\}\}/,
-      "Copy commands",
-    );
-  if (/\{\{|\*ng|\s\[[^\]]+\]=/.test(template))
-    throw new Error("Unhandled Angular binding in landing prerender");
-  const css = (
-    await readFile(join(directory, "landing.component.css"), "utf8")
-  ).replaceAll(":host", ".landing-shell");
-  const shell = await readFile(join(outputDir, "index.html"), "utf8");
-  if (!shell.includes("<app-root></app-root>"))
-    throw new Error("Build the portal before prerendering the landing page");
-  const structuredData = {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "WebSite",
-        "@id": "https://platform.pratyushes.dev/#website",
-        name: "Cairn",
-        url: "https://platform.pratyushes.dev/",
-        description: "Run your apps on your own servers, and keep them running when one fails.",
-      },
-      {
-        "@type": "SoftwareApplication",
-        "@id": "https://platform.pratyushes.dev/#software",
-        name: "Cairn",
-        url: "https://platform.pratyushes.dev/",
-        applicationCategory: "DeveloperApplication",
-        operatingSystem: "Linux (Ubuntu)",
-        description:
-          "Self-hosted PaaS for GitOps deployments, databases, encrypted secrets, observability, and scoped MCP access.",
-        downloadUrl:
-          "https://github.com/Mpratyush54/server-automation/releases",
-        sameAs: "https://github.com/Mpratyush54/server-automation",
-      },
-    ],
-  };
-  const document = shell
-    .replace(
-      "<app-root></app-root>",
-      () =>
-        `<app-root><style id="landing-initial-styles">${css}</style><noscript><style>.cinema-cover { display: none !important; }</style></noscript>${template}</app-root>`,
-    )
-    .replace(
-      "</head>",
-      () =>
-        `<script type="application/ld+json">${JSON.stringify(structuredData)}</script></head>`,
-    );
-  await writeFile(join(outputDir, "index.html"), document);
-  console.log(
-    "Generated the landing page from its Angular template: readable HTML, canonical metadata, and product structured data.",
-  );
-  return document;
+/** The state the static landing HTML shows: the story at its first step, playing, nothing copied, no video started. */
+export const LANDING_INITIAL_STATE = {
+  step: 0,
+  paused: false,
+  visible: true,
+  installCopied: false,
+  landscapeStarted: false,
+  portraitStarted: false,
+  videoError: '',
+};
+
+const PAGES = {
+  landing: {
+    path: '/',
+    module: 'landing/landing.component.ts',
+    component: 'LandingComponent',
+    state: LANDING_INITIAL_STATE,
+    title: 'Cairn — run your apps on your own servers',
+    description: 'Cairn installs Git deployments, databases, backups, monitoring and alerts on Ubuntu servers you control. Start on one server, add more for high availability.',
+    // Without JavaScript the cover button cannot start playback; show the native controls instead.
+    extraHead: '<noscript><style>.lp-play { display: none !important; }</style></noscript>',
+    jsonLd: [{
+      '@context': 'https://schema.org',
+      '@graph': [
+        {
+          '@type': 'WebSite',
+          '@id': `${origin}/#website`,
+          name: 'Cairn',
+          url: `${origin}/`,
+          description: 'Run your apps on your own servers, and keep them running when one fails.',
+        },
+        {
+          '@type': 'SoftwareApplication',
+          '@id': `${origin}/#software`,
+          name: 'Cairn',
+          url: `${origin}/`,
+          applicationCategory: 'DeveloperApplication',
+          operatingSystem: 'Linux (Ubuntu)',
+          description: 'Self-hosted platform for Git deployments, databases, backups, monitoring and alerts on your own servers, with high availability across several servers.',
+          downloadUrl: 'https://github.com/Mpratyush54/server-automation/releases',
+          sameAs: 'https://github.com/Mpratyush54/server-automation',
+          offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+        },
+      ],
+    }],
+  },
+  about: {
+    path: '/about',
+    module: 'about/about.component.ts',
+    component: 'AboutComponent',
+    state: {},
+    title: 'About Cairn',
+    description: 'Why Cairn exists, what it holds itself to and how it is built: a self-hosted platform for teams that run their own servers.',
+    extraHead: '',
+    jsonLd: [],
+  },
+};
+
+/** Render one public page into a full HTML document based on the built shell. */
+export function renderPublicPage(name, shell) {
+  const page = PAGES[name];
+  const cls = loadTypeScriptModule(join(pages, page.module))[page.component];
+  if (!cls) throw new Error(`${page.module} does not export ${page.component}`);
+  const { html, css } = renderComponent(cls, { state: page.state });
+  assertNoAngularSyntax(html, page.path);
+  const head = applyHead(shell, { title: page.title, description: page.description, path: page.path, jsonLd: page.jsonLd });
+  return head.replace('<app-root></app-root>', () =>
+    `<app-root><style id="prerender-styles">${css}</style>${page.extraHead}${html}</app-root>`);
 }
 
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-)
-  await prerenderLanding();
+export async function prerenderPublicPages({ outputDir = join(portal, 'dist/portal/browser') } = {}) {
+  const shell = await readFile(join(outputDir, 'index.html'), 'utf8');
+  if (!shell.includes('<app-root></app-root>')) throw new Error('Build the portal before prerendering the public pages');
+  const home = renderPublicPage('landing', shell);
+  const about = renderPublicPage('about', shell);
+  // nginx serves /about from /prerender/about/index.html, like docs pages.
+  const aboutFile = join(outputDir, 'prerender', 'about', 'index.html');
+  await mkdir(dirname(aboutFile), { recursive: true });
+  await writeFile(aboutFile, about);
+  await writeFile(join(outputDir, 'index.html'), home);
+  return { home, about };
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await prerenderPublicPages();
+  console.log('Prerendered / and /about from their Angular components with per-page metadata.');
+}
