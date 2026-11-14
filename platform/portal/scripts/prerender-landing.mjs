@@ -87,14 +87,14 @@ export async function prerenderLanding({
       {
         "@type": "WebSite",
         "@id": "https://platform.pratyushes.dev/#website",
-        name: "Platform",
+        name: "Cairn",
         url: "https://platform.pratyushes.dev/",
-        description: "A self-hosted developer platform for Kubernetes.",
+        description: "Run your apps on your own servers, and keep them running when one fails.",
       },
       {
         "@type": "SoftwareApplication",
         "@id": "https://platform.pratyushes.dev/#software",
-        name: "Platform",
+        name: "Cairn",
         url: "https://platform.pratyushes.dev/",
         applicationCategory: "DeveloperApplication",
         operatingSystem: "Linux (Ubuntu)",

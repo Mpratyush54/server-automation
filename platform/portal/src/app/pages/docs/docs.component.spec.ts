@@ -38,7 +38,7 @@ describe('DocsComponent', () => {
     params.next(convertToParamMap({ section: 'api-reference/configuration', page: 'environment-variables' }));
     await fixture.whenStable();
     expect(get).toHaveBeenCalledWith('/docs/api-reference/configuration/environment-variables.md', { responseType: 'text' });
-    expect(document.title).toBe('Environment Variables Reference | Platform Docs');
+    expect(document.title).toBe('Environment Variables Reference | Cairn Docs');
     expect(document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href)
       .toBe('https://platform.pratyushes.dev/docs/api-reference/configuration/environment-variables');
   });
@@ -61,7 +61,7 @@ describe('DocsComponent', () => {
     expect(component.docSections.map((g) => g.label)).toEqual(['Get started', 'Guides', 'Operations', 'Reference', 'More']);
     const labels = (id: string) => component.docSections.find((g) => g.id === id)!.pages.map((p) => p.label);
     expect(labels('get-started')).toEqual(['What Platform is', 'Install', 'Your first project', 'Deploy an app']);
-    expect(labels('guides')).toEqual(['Databases', 'Backups and restore', 'Monitoring and alerts', 'High availability', 'Security and sign-in', 'AI agents and MCP']);
+    expect(labels('guides')).toEqual(['Databases', 'Backups and restore', 'Monitoring and alerts', 'Run on several servers', 'Security and sign-in', 'AI agents and MCP']);
     expect(labels('operations')).toEqual(['Upgrade', 'Recover', 'Troubleshooting']);
     expect(labels('reference')).toEqual(['CLI', 'API', 'Settings', 'SDKs']);
     expect(component.docUrl(component.flatPages[0])).toBe('/docs');

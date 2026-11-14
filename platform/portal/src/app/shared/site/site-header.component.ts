@@ -10,14 +10,14 @@ import { ThemeService } from '../../services/theme.service';
   template: `
     <header class="sh">
       <div class="sh-inner">
-        <a routerLink="/" class="sh-brand" aria-label="Platform home">
+        <a routerLink="/" class="sh-brand" aria-label="Cairn home">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <rect x="3" y="4" width="18" height="4.5" rx="1.2"></rect>
             <rect x="3" y="10" width="18" height="4.5" rx="1.2"></rect>
             <rect x="3" y="16" width="18" height="4.5" rx="1.2"></rect>
             <circle cx="6.5" cy="12.25" r="1.1"></circle>
           </svg>
-          <span>Platform</span>
+          <span>Cairn</span>
         </a>
         <nav class="sh-nav" aria-label="Site">
           <a routerLink="/" fragment="product" [class.on]="current === 'home'">Product</a>

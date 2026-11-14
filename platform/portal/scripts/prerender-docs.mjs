@@ -32,7 +32,7 @@ export async function prerenderDocs({ docsDir = join(portal, 'public/docs'), out
     if (sitemapOnly) continue;
     const markdown = await readFile(join(docsDir, file), 'utf8');
     const heading = markdown.match(/^#\s+(.+)$/m)?.[1].replace(/[*`]/g, '').trim() || 'Documentation';
-    const title = `${heading} | Platform Docs`;
+    const title = `${heading} | Cairn Docs`;
     const description = `Read ${heading} in the Platform documentation. Guides and reference for the self-hosted Platform control plane.`;
     // Same sanitizer as the SPA: this HTML is served before Angular boots.
     const article = sanitizeDocsHtml(prepareDocsHtml(await marked.parse(markdown), `/docs/${file}`, origin), window);

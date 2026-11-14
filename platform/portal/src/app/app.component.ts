@@ -3,13 +3,14 @@ import { RouterOutlet, NavigationEnd, Router } from '@angular/router';
 import { SidebarComponent } from './layout/sidebar/sidebar.component';
 import { HeaderComponent } from './layout/header/header.component';
 import { StepUpModalComponent } from './shared/step-up-modal.component';
+import { FeedbackHostComponent } from './shared/feedback/feedback-host.component';
 
 import { filter } from 'rxjs';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, SidebarComponent, HeaderComponent, StepUpModalComponent],
+  imports: [RouterOutlet, SidebarComponent, HeaderComponent, StepUpModalComponent, FeedbackHostComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css'
 })
@@ -93,7 +94,7 @@ export class AppComponent implements OnDestroy {
       this.isDocsPage = segment === 'docs';
       this.isPublicStatusPage = segment === 'status';
       this.pageTitle = (segment === 'projects' && parts[3] && this.projectPageTitles[parts[3]])
-        || this.titles[segment] || 'Platform';
+        || this.titles[segment] || 'Cairn';
     });
   }
 

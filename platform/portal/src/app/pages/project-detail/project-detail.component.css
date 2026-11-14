@@ -94,3 +94,29 @@
 .pod-logs { margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 0.8125rem; line-height: 1.5; color: rgb(var(--fg)); }
 .tailing { position: absolute; right: 1.25rem; bottom: 0.75rem; background: rgb(var(--surface)); border: 1px solid rgb(var(--line)); border-radius: 4px; padding: 0.125rem 0.5rem; }
 .modal-footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 0.75rem 1.25rem; border-top: 1px solid rgb(var(--line)); }
+
+/* Configuration: label + explanation on the left, field on the right. */
+.cfg-body { padding: 0; }
+.cfg-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: 24px;
+  padding: 20px;
+}
+.cfg-row + .cfg-row { border-top: 1px solid rgb(var(--line)); }
+.cfg-label label { display: block; font-size: 0.9375rem; font-weight: 500; color: rgb(var(--fg)); }
+.cfg-label p { margin: 4px 0 0; font-size: 0.8125rem; color: rgb(var(--fg-3)); }
+.cfg-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cfg-hosts { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.8125rem; }
+.cfg-hosts li { display: flex; gap: 10px; }
+.cfg-hosts .muted { min-width: 88px; }
+.cfg-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 12px 20px;
+  border-top: 1px solid rgb(var(--line));
+  background: rgb(var(--raised) / 0.35);
+}
+@media (max-width: 720px) { .cfg-row { grid-template-columns: 1fr; gap: 10px; } }

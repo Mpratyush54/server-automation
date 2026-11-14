@@ -123,7 +123,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.schemeQuery?.removeEventListener?.('change', this.onSchemeChange);
     if (this.agentCopyTimer) clearTimeout(this.agentCopyTimer);
     this.updateMetadata(
-      'Platform — Self-hosted Developer Platform for Kubernetes',
+      'Cairn — run your apps on your own servers',
       'Turn your Ubuntu server into a self-hosted developer platform. Deploy with GitOps, connect databases, manage secrets, and inspect logs with scoped MCP tools.',
       'https://platform.pratyushes.dev/'
     );
@@ -336,7 +336,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
           try {
             this.rawMarkdown = text;
             const heading = text.match(/^#\s+(.+)$/m)?.[1].replace(/[*`]/g, '').trim() || 'Documentation';
-            const title = `${heading} | Platform Docs`;
+            const title = `${heading} | Cairn Docs`;
             const description = `Read ${heading} in the Platform documentation. Guides and reference for the self-hosted Platform control plane.`;
             const canonical = 'https://platform.pratyushes.dev' + (path === '/docs/index.md' ? '/docs' : path.replace(/\.md$/, ''));
             this.updateMetadata(title, description, canonical);

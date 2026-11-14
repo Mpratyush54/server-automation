@@ -319,35 +319,55 @@
       <app-environment-tab [projectId]="project.id" [environments]="project.environments || []"></app-environment-tab>
     }
     <section id="project-settings" class="card card-flush" aria-labelledby="git-settings-title">
-      <div class="card-header"><h2 id="git-settings-title">Git and domain</h2></div>
-      <div class="panel-body">
-        <p class="hint">
-          Argo CD pulls manifests from this repository. The SDK <code>repositoryUrl</code> must match this origin exactly.
-          Set a custom domain so environments get routable hosts. Namespaces are server-assigned.
-        </p>
-        <div class="grid-2">
-          <div class="form-group">
-            <label for="settings-repo">Repository URL</label>
-            <input id="settings-repo" [(ngModel)]="projectSettings.repositoryUrl" placeholder="https://github.com/org/repo.git">
+      <div class="card-header">
+        <h2 id="git-settings-title">Repository and address</h2>
+      </div>
+      <div class="panel-body cfg-body">
+        <div class="cfg-row">
+          <div class="cfg-label">
+            <label for="settings-repo">Repository</label>
+            <p>Where your code lives. Deployments come from here.</p>
           </div>
-          <div class="form-group">
-            <label for="settings-domain">Custom domain (base)</label>
-            <input id="settings-domain" [(ngModel)]="projectSettings.domain" placeholder="example.com or <server-ip>.sslip.io">
-          </div>
-          <div class="form-group">
-            <label for="settings-revision">Git revision override (next deployment)</label>
-            <input id="settings-revision" [(ngModel)]="projectSettings.gitRevision" [placeholder]="project?.defaultBranch || 'Automatic default branch'">
-            <span class="form-hint">Leave empty to use the repository default branch: {{ project?.defaultBranch || 'HEAD (resolved on deploy)' }}.</span>
+          <div class="cfg-field">
+            <input id="settings-repo" [(ngModel)]="projectSettings.repositoryUrl" placeholder="https://github.com/acme/shop" autocomplete="off">
+            <span class="form-hint">GitHub or GitLab. If you use the SDK, its <span class="mono">repositoryUrl</span> must be this same address.</span>
           </div>
         </div>
-        <div class="actions">
-          <button type="button" class="btn" (click)="saveProjectSettings()" [disabled]="savingSettings || role === 'developer'">
-            {{ savingSettings ? 'Saving…' : 'Save settings' }}
-          </button>
-          @if (project?.domain) {
-            <span class="hint">Live base: <span class="mono">{{ project.domain }}</span></span>
-          }
+        <div class="cfg-row">
+          <div class="cfg-label">
+            <label for="settings-domain">Domain</label>
+            <p>Each environment gets an address under it.</p>
+          </div>
+          <div class="cfg-field">
+            <input id="settings-domain" [(ngModel)]="projectSettings.domain" placeholder="example.com" autocomplete="off">
+            <span class="form-hint">No domain yet? Use <span class="mono">&lt;server-ip&gt;.sslip.io</span>, which works without DNS.</span>
+            @if ((project?.environments || []).length && project?.domain) {
+              <ul class="cfg-hosts" aria-label="Environment addresses">
+                @for (e of project.environments; track e.id || e.name) {
+                  @if (e.domain) {
+                    <li><span class="muted">{{ e.name }}</span> <span class="mono">{{ e.domain }}</span></li>
+                  }
+                }
+              </ul>
+            }
+          </div>
         </div>
+        <div class="cfg-row">
+          <div class="cfg-label">
+            <label for="settings-revision">Deploy from</label>
+            <p>Branch, tag or commit for the next deployment.</p>
+          </div>
+          <div class="cfg-field">
+            <input id="settings-revision" [(ngModel)]="projectSettings.gitRevision" [placeholder]="project?.defaultBranch || 'main'" autocomplete="off">
+            <span class="form-hint">Leave empty to use the default branch{{ project?.defaultBranch ? ' (' + project.defaultBranch + ')' : '' }}.</span>
+          </div>
+        </div>
+      </div>
+      <div class="cfg-footer">
+        @if (role === 'developer') { <span class="muted">Only owners and DevOps can change these.</span> }
+        <button type="button" class="btn btn-primary" (click)="saveProjectSettings()" [disabled]="savingSettings || role === 'developer'">
+          {{ savingSettings ? 'Saving…' : 'Save changes' }}
+        </button>
       </div>
     </section>
   </div>

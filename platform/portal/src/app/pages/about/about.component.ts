@@ -15,7 +15,7 @@ import { SiteFooterComponent } from '../../shared/site/site-footer.component';
         <div class="ab-frame">
           <h1 class="ab-display"><span>A platform for teams</span> <span class="ab-quiet">that run their own servers.</span></h1>
           <p class="ab-lede">
-            Platform turns one or more Ubuntu servers into a place where your team deploys apps, gets databases,
+            Cairn turns one or more Ubuntu servers into a place where your team deploys apps, gets databases,
             keeps backups and watches everything run, without stitching a dozen tools together by hand and without
             handing your data to a hosting company.
           </p>
@@ -27,7 +27,7 @@ import { SiteFooterComponent } from '../../shared/site/site-footer.component';
           <h2>Why it exists</h2>
           <div class="ab-prose">
             <p>Hosted platforms make deploying easy, but you rent their servers, your data lives with them and the bill grows with every app. Running your own servers keeps control and cost in your hands, but turns every team into an operations team: Kubernetes, ingress, certificates, databases, backups, logs, metrics and alerts each need setting up, connecting and keeping alive.</p>
-            <p>Platform does that work once, the same way every time. You bring the servers; it installs and connects proven open-source tools, and gives developers one place to deploy and operators one place to see what is happening.</p>
+            <p>Cairn does that work once, the same way every time. You bring the servers; it installs and connects proven open-source tools, and gives developers one place to deploy and operators one place to see what is happening.</p>
           </div>
         </div>
       </section>
@@ -50,7 +50,7 @@ import { SiteFooterComponent } from '../../shared/site/site-footer.component';
           <h2>How it is built</h2>
           <dl class="ab-parts">
             <dt>platformctl</dt><dd>A Go command-line tool that provisions servers, joins them into a cluster, upgrades, backs up and restores.</dd>
-            <dt>Platform API</dt><dd>A Node.js service that manages projects, deployments, databases, users, alerts and the SDK endpoints.</dd>
+            <dt>Cairn API</dt><dd>A Node.js service that manages projects, deployments, databases, users, alerts and the SDK endpoints.</dd>
             <dt>Portal</dt><dd>The web dashboard for developers and operators, built with Angular.</dd>
             <dt>SDKs</dt><dd>Libraries for Node.js, React, Angular and Python that deliver database credentials, logs, metrics, errors and browser telemetry.</dd>
             <dt>MCP server</dt><dd>Lets AI coding assistants read status and request changes with scoped tokens and human approval.</dd>
@@ -62,7 +62,7 @@ import { SiteFooterComponent } from '../../shared/site/site-footer.component';
         <div class="ab-frame ab-two">
           <h2>Get involved</h2>
           <div class="ab-prose">
-            <p>Platform is developed in the open. The roadmap, releases and discussions live on GitHub; bug reports and ideas are welcome there.</p>
+            <p>Cairn is developed in the open. The roadmap, releases and discussions live on GitHub; bug reports and ideas are welcome there.</p>
             <div class="ab-links">
               <a class="btn btn-primary" href="https://github.com/Mpratyush54/server-automation" target="_blank" rel="noopener">View on GitHub</a>
               <a class="btn" routerLink="/docs/contribution-guide">Contribution guide</a>

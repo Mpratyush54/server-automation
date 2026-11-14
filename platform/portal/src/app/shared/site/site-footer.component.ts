@@ -10,7 +10,7 @@ import { RouterModule } from '@angular/router';
     <footer class="sf">
       <div class="sf-inner">
         <div class="sf-brand">
-          <strong>Platform</strong>
+          <strong>Cairn</strong>
           <p>Self-hosted deployment, databases, backups and monitoring for your own servers. Source code on GitHub.</p>
         </div>
         <nav class="sf-cols" aria-label="Footer">

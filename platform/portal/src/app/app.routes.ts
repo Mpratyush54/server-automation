@@ -57,7 +57,7 @@ export const routes: Routes = [
 
   // Marketing site only (platform.pratyushes.dev)
   { path: 'landing', canActivate: [marketingOnlyGuard, legacyLandingGuard], children: [] },
-  { path: 'about', component: AboutComponent, canActivate: [marketingOnlyGuard], title: 'About Platform' },
+  { path: 'about', component: AboutComponent, canActivate: [marketingOnlyGuard], title: 'About Cairn' },
   { matcher: docsMatcher, component: DocsComponent, canActivate: [docsGuard] },
 
   // App / server hosts only
