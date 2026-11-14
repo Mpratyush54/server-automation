@@ -158,8 +158,7 @@ func PrintHADatastoreStatus(w io.Writer) {
 	var mongoLine, redisLine, minioLine string
 	var warnings []string
 
-	if out, err := shell.Output("kubectl", "-n", "databases", "exec", "mongodb-0", "-c", "mongodb", "--",
-		"mongosh", "--quiet", "--eval", "JSON.stringify(db.hello())"); err != nil {
+	if out, err := execFirstMember("mongodb", MongoReplicaCount, "mongodb", "mongosh", "--quiet", "--eval", "JSON.stringify(db.hello())"); err != nil {
 		warnings = append(warnings, color.YellowString("⚠ MongoDB replica set status unavailable: %v", err))
 	} else if primary, hosts, setName, err := parseMongoHello(out); err != nil {
 		warnings = append(warnings, color.YellowString("⚠ MongoDB replica set status unavailable: %v", err))
@@ -171,8 +170,7 @@ func PrintHADatastoreStatus(w io.Writer) {
 	}
 
 	sentinelEval := `pw() { local v="${!1:-}" f="${1}_FILE"; if [ -z "$v" ] && [ -n "${!f:-}" ]; then v=$(cat "${!f}"); fi; printf "%s" "$v"; }; export REDISCLI_AUTH="$(pw REDIS_PASSWORD)"; redis-cli -p 26379 SENTINEL get-master-addr-by-name mymaster`
-	if out, err := shell.Output("kubectl", "-n", "databases", "exec", "redis-node-0", "-c", "sentinel", "--",
-		"bash", "-ec", sentinelEval); err != nil {
+	if out, err := execFirstMember("redis-node", RedisNodeCount, "sentinel", "bash", "-ec", sentinelEval); err != nil {
 		warnings = append(warnings, color.YellowString("⚠ Redis Sentinel status unavailable: %v", err))
 	} else if master, err := parseSentinelMaster(out); err != nil {
 		warnings = append(warnings, color.YellowString("⚠ Redis Sentinel status unavailable: %v", err))
@@ -188,4 +186,21 @@ func PrintHADatastoreStatus(w io.Writer) {
 	}
 
 	writeHADatastoreStatus(w, mongoLine, redisLine, minioLine, warnings...)
+}
+
+// execFirstMember runs a command in the first member (<prefix>-0..n-1) that
+// answers. Status used to ask member 0 only and reported the replica set or
+// Sentinel as unavailable whenever that one pod was down (3-node test).
+// Overridable in tests.
+var execFirstMember = func(prefix string, n int, container string, cmd ...string) (string, error) {
+	var lastErr error
+	for i := 0; i < n; i++ {
+		args := append([]string{"-n", "databases", "exec", fmt.Sprintf("%s-%d", prefix, i), "-c", container, "--request-timeout=10s", "--"}, cmd...)
+		out, err := shell.Output("kubectl", args...)
+		if err == nil {
+			return out, nil
+		}
+		lastErr = err
+	}
+	return "", lastErr
 }
