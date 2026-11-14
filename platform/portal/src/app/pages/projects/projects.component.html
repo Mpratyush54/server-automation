@@ -3,117 +3,175 @@
     <h1 class="page-title">Projects</h1>
     <p class="page-subtitle">Each project is one app: its repository, environments, databases and settings.</p>
   </div>
-  @if (!showCreate) {
-    <button type="button" class="btn btn-primary" (click)="showCreate = true">New project</button>
+  @if (rows.length) {
+    <a routerLink="/projects/new" class="btn btn-primary" data-testid="pj-new">New project</a>
   }
 </div>
 
-@if (showCreate) {
-  <section class="card pj-create" aria-labelledby="pj-create-title">
-    <div class="pj-create-head">
-      <h2 id="pj-create-title">New project</h2>
-      <button type="button" class="btn btn-ghost btn-sm" (click)="showCreate = false">Cancel</button>
-    </div>
-    <div class="pj-create-grid">
-      <div class="form-group">
-        <label for="pj-name">Name</label>
-        <input id="pj-name" [(ngModel)]="newProject.name" placeholder="shop" autocomplete="off">
-        <span class="form-hint">Lowercase letters, numbers and dashes. Used in URLs and namespaces.</span>
-      </div>
-      <div class="form-group">
-        <label for="pj-stack">Stack</label>
-        <select id="pj-stack" [(ngModel)]="newProject.stack">
-          <option value="nodejs">Node.js</option>
-          <option value="angular">Angular</option>
-          <option value="python">Python</option>
-          <option value="static">Static site</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label for="pj-repo">Git repository</label>
-        <input id="pj-repo" [(ngModel)]="newProject.repositoryUrl" placeholder="https://github.com/acme/shop" autocomplete="off">
-        <span class="form-hint">GitHub or GitLab. You can connect it later.</span>
-      </div>
-      <div class="form-group">
-        <label for="pj-domain">Base domain</label>
-        <input id="pj-domain" [(ngModel)]="newProject.domain" placeholder="example.com or 203.0.113.7.sslip.io" autocomplete="off">
-        <span class="form-hint">Environments get hosts like <span class="mono">shop-staging.example.com</span>. Leave empty to set it later.</span>
-      </div>
-    </div>
-    <div class="pj-create-actions">
-      <button type="button" class="btn btn-primary" (click)="create()" [disabled]="!newProject.name || creating">
-        {{ creating ? 'Creating…' : 'Create project' }}
-      </button>
-    </div>
-  </section>
-}
-
-@if (projects.length > 3) {
-  <div class="pj-tools">
-    <label class="pj-filter">
-      <span class="sr-only">Filter projects</span>
-      <input type="search" [(ngModel)]="filter" placeholder="Filter by name, domain or repository">
-    </label>
-    <span class="muted">{{ visible.length }} of {{ projects.length }}</span>
+@if (loadError) {
+  <div class="card pj-error" role="alert">
+    <p>{{ loadError }}</p>
+    <button type="button" class="btn btn-sm" (click)="load()">Try again</button>
   </div>
 }
 
-<section class="card card-flush" aria-label="Project list">
-  @if (!loaded) {
-    <p class="empty-state">Loading projects…</p>
-  } @else if (projects.length === 0) {
-    <div class="empty-state">
-      <strong>No projects yet</strong>
-      Create a project to connect a repository, get databases and deploy your first environment.
-      <div class="pj-empty-action"><button type="button" class="btn btn-primary" (click)="showCreate = true">New project</button></div>
+@if (!loaded) {
+  <section class="card card-flush" aria-label="Project list"><p class="empty-state">Loading projects…</p></section>
+} @else if (rows.length === 0 && !loadError) {
+  <!-- New install -->
+  <section class="card pj-welcome" aria-labelledby="pj-welcome-title">
+    <h2 id="pj-welcome-title">Create your first project</h2>
+    <p class="pj-welcome-lead">A project is one app. Cairn walks you through the setup and creates everything in one go.</p>
+    <ol class="pj-welcome-steps">
+      <li><strong>Connect the code</strong><span>Link a GitHub or GitLab repository and the branch to deploy.</span></li>
+      <li><strong>Get three environments</strong><span>Development, staging and production, each with its own address.</span></li>
+      <li><strong>Add data and settings</strong><span>PostgreSQL databases, variables, secrets and who can work on it.</span></li>
+    </ol>
+    <a routerLink="/projects/new" class="btn btn-primary" data-testid="pj-empty-new">New project</a>
+  </section>
+} @else if (rows.length) {
+  <div class="pj-toolbar">
+    <label class="pj-search">
+      <span class="sr-only">Search projects</span>
+      <input type="search" [(ngModel)]="query" (ngModelChange)="refresh()" placeholder="Search by name, address, repository or stack" data-testid="pj-search">
+    </label>
+    <div class="pj-filters" role="group" aria-label="Filter by status">
+      @for (f of filters; track f.id) {
+        <button type="button" class="pj-chip" [class.pj-chip-on]="statusFilter === f.id" [attr.aria-pressed]="statusFilter === f.id"
+          (click)="setFilter(f.id)" [attr.data-testid]="'pj-filter-' + f.id">
+          {{ f.label }} <span class="pj-count">{{ counts[f.id] }}</span>
+        </button>
+      }
     </div>
-  } @else if (visible.length === 0) {
-    <p class="empty-state">No project matches “{{ filter }}”.</p>
+    <div class="pj-toolbar-end">
+      <label class="pj-sort">
+        <span class="sr-only">Sort by</span>
+        <select [(ngModel)]="sort" (ngModelChange)="refresh()" data-testid="pj-sort">
+          <option value="recent">Recently deployed</option>
+          <option value="name">Name</option>
+          <option value="status">Status</option>
+        </select>
+      </label>
+      <div class="pj-views" role="group" aria-label="Layout">
+        <button type="button" [class.pj-view-on]="view === 'list'" [attr.aria-pressed]="view === 'list'" (click)="setView('list')" aria-label="List" title="List" data-testid="pj-view-list">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h12"></path></svg>
+        </button>
+        <button type="button" [class.pj-view-on]="view === 'grid'" [attr.aria-pressed]="view === 'grid'" (click)="setView('grid')" aria-label="Grid" title="Grid" data-testid="pj-view-grid">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1"></rect><rect x="9" y="2" width="5" height="5" rx="1"></rect><rect x="2" y="9" width="5" height="5" rx="1"></rect><rect x="9" y="9" width="5" height="5" rx="1"></rect></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  @if (visible.length === 0) {
+    <section class="card card-flush" aria-label="Project list">
+      <div class="empty-state">
+        <strong>No project matches</strong>
+        @if (query) { Nothing matches “{{ query }}” } @else { No project is in this state right now. }
+        <div class="pj-empty-action"><button type="button" class="btn btn-sm" (click)="clearFilters()">Show all projects</button></div>
+      </div>
+    </section>
+  } @else if (view === 'list') {
+    <section class="card card-flush pj-list-card" aria-label="Project list">
+      <ul class="pj-list" data-testid="pj-list">
+        @for (r of visible; track r.id) {
+          <li class="pj-row" data-testid="pj-row">
+            <div class="pj-main">
+              <div class="pj-title">
+                <a class="pj-name" [routerLink]="['/projects', r.id]">{{ r.name }}</a>
+                <span class="status" [ngClass]="toneClass(r.tone)">{{ r.status }}</span>
+              </div>
+              @if (r.description) { <p class="pj-desc">{{ r.description }}</p> }
+              <p class="pj-meta">
+                @if (r.stack) { <span>{{ r.stack }}</span> }
+                @if (r.repo) {
+                  <span class="pj-repo" [title]="r.repoUrl">{{ r.provider }} <span class="mono">{{ r.repo }}</span></span>
+                } @else {
+                  <span>No repository</span>
+                }
+              </p>
+            </div>
+            <div class="pj-live">
+              @if (r.url) {
+                <a class="pj-url mono" [href]="r.url" target="_blank" rel="noopener" [title]="r.url">{{ host(r.url) }}</a>
+              } @else { <span class="muted">No address yet</span> }
+              <p class="pj-meta">
+                @if (r.lastVersion) {
+                  <span><span class="mono">{{ r.lastVersion }}</span> {{ timeAgo(r.lastAt) }}@if (r.lastBy) { by {{ r.lastBy }}}</span>
+                } @else { <span>No deployments yet</span> }
+              </p>
+            </div>
+            <ul class="pj-envs" aria-label="Environments">
+              @for (e of r.envs; track e.name) {
+                <li class="status" [ngClass]="toneClass(e.tone)" [title]="e.name + ': ' + e.label">{{ e.name }}<span class="sr-only">: {{ e.label }}</span></li>
+              } @empty { <li class="muted">No environments</li> }
+            </ul>
+            <div class="pj-actions">
+              <a class="btn btn-sm" [routerLink]="['/projects', r.id]" [queryParams]="{ tab: 'deployments' }">Deploy</a>
+              <a class="btn btn-sm btn-ghost pj-logs" [routerLink]="['/projects', r.id]" [queryParams]="{ tab: 'monitoring', view: 'logs' }">Logs</a>
+              <ng-container *ngTemplateOutlet="menu; context: { $implicit: r }"></ng-container>
+            </div>
+          </li>
+        }
+      </ul>
+    </section>
   } @else {
-    <ul class="pj-list">
-      @for (p of visible; track p.id) {
-        <li class="pj-row">
-          <div class="pj-main">
-            <a class="pj-name" [routerLink]="['/projects', p.id]">{{ p.name }}</a>
-            <div class="pj-meta">
-              @if (p.repositoryUrl) {
-                <span>{{ provider(p.repositoryUrl) }}</span>
-                <span class="mono pj-repo" [title]="p.repositoryUrl">{{ repoName(p.repositoryUrl) }}</span>
-              } @else {
-                <span>No repository connected</span>
-              }
-              <span>{{ stacks[p.stack] || p.stack }}</span>
+    <ul class="pj-grid" aria-label="Project list" data-testid="pj-grid">
+      @for (r of visible; track r.id) {
+        <li class="card card-flush pj-card" data-testid="pj-row">
+          <div class="pj-card-body">
+            <div class="pj-title">
+              <a class="pj-name" [routerLink]="['/projects', r.id]">{{ r.name }}</a>
+              <span class="status" [ngClass]="toneClass(r.tone)">{{ r.status }}</span>
             </div>
+            @if (r.url) {
+              <a class="pj-url mono" [href]="r.url" target="_blank" rel="noopener" [title]="r.url">{{ host(r.url) }}</a>
+            } @else { <span class="pj-meta">No address yet</span> }
+            <p class="pj-meta">
+              @if (r.lastVersion) {
+                <span><span class="mono">{{ r.lastVersion }}</span> {{ timeAgo(r.lastAt) }}@if (r.lastBy) { by {{ r.lastBy }}}</span>
+              } @else { <span>No deployments yet</span> }
+            </p>
+            <ul class="pj-envs" aria-label="Environments">
+              @for (e of r.envs; track e.name) {
+                <li class="status" [ngClass]="toneClass(e.tone)" [title]="e.name + ': ' + e.label">{{ e.name }}<span class="sr-only">: {{ e.label }}</span></li>
+              } @empty { <li class="muted">No environments</li> }
+            </ul>
+            <p class="pj-meta">
+              @if (r.stack) { <span>{{ r.stack }}</span> }
+              @if (r.repo) { <span class="pj-repo" [title]="r.repoUrl">{{ r.provider }} <span class="mono">{{ r.repo }}</span></span> }
+              @else { <span>No repository</span> }
+            </p>
           </div>
-          <div class="pj-envs" aria-label="Environments">
-            @for (e of p.environments || []; track e.id || e.name) {
-              <span class="pj-env">{{ e.name }}</span>
-            } @empty {
-              <span class="muted">No environments</span>
-            }
-          </div>
-          <div class="pj-side">
-            <span class="status" [ngClass]="statusOf(p).tone">{{ statusOf(p).label }}</span>
-            <span class="muted pj-when">{{ (p.updatedAt || p.createdAt) | date: 'mediumDate' }}</span>
-            <div class="pj-menu" (click)="$event.stopPropagation()">
-              <button type="button" class="btn btn-ghost btn-sm pj-menu-btn" (click)="toggleMenu(p.id, $event)"
-                [attr.aria-expanded]="menuFor === p.id" [attr.aria-label]="'More actions for ' + p.name">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg>
-              </button>
-              @if (menuFor === p.id) {
-                <div class="pj-menu-pop" role="menu">
-                  <a role="menuitem" [routerLink]="['/projects', p.id]">Open</a>
-                  @if (p.domain) {
-                    <a role="menuitem" [href]="'https://' + p.domain" target="_blank" rel="noopener">Open app</a>
-                  }
-                  <a role="menuitem" [routerLink]="['/projects', p.id]" [queryParams]="{ tab: 'settings' }">Settings</a>
-                  <button type="button" role="menuitem" class="pj-danger" (click)="delete(p.id)">Delete project</button>
-                </div>
-              }
-            </div>
+          <div class="pj-card-foot">
+            <a class="btn btn-sm" [routerLink]="['/projects', r.id]" [queryParams]="{ tab: 'deployments' }">Deploy</a>
+            <a class="btn btn-sm btn-ghost" [routerLink]="['/projects', r.id]" [queryParams]="{ tab: 'monitoring', view: 'logs' }">Logs</a>
+            <ng-container *ngTemplateOutlet="menu; context: { $implicit: r }"></ng-container>
           </div>
         </li>
       }
     </ul>
   }
-</section>
+  <p class="pj-foot muted" aria-live="polite">Showing {{ visible.length }} of {{ rows.length }} {{ rows.length === 1 ? 'project' : 'projects' }}</p>
+}
+
+<ng-template #menu let-r>
+  <div class="pj-menu" (click)="$event.stopPropagation()">
+    <button type="button" class="btn btn-ghost btn-sm pj-menu-btn" (click)="toggleMenu(r.id, $event)" aria-haspopup="menu"
+      [attr.aria-expanded]="menuFor === r.id" [attr.aria-label]="'Actions for ' + r.name" data-testid="pj-menu-btn">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg>
+    </button>
+    @if (menuFor === r.id) {
+      <div class="pj-menu-pop" role="menu" [attr.aria-label]="'Actions for ' + r.name" (keydown)="menuKey($event)">
+        <a role="menuitem" tabindex="-1" [routerLink]="['/projects', r.id]">Open</a>
+        <a role="menuitem" tabindex="-1" [routerLink]="['/projects', r.id]" [queryParams]="{ tab: 'deployments' }">Deploy</a>
+        <a role="menuitem" tabindex="-1" [routerLink]="['/projects', r.id]" [queryParams]="{ tab: 'monitoring', view: 'logs' }">Logs</a>
+        @if (r.url) {
+          <a role="menuitem" tabindex="-1" [href]="r.url" target="_blank" rel="noopener">Open app</a>
+        }
+        <a role="menuitem" tabindex="-1" [routerLink]="['/projects', r.id]" [queryParams]="{ tab: 'settings' }">Settings</a>
+        <button type="button" role="menuitem" tabindex="-1" class="pj-danger" (click)="delete(r)" data-testid="pj-delete">Delete project</button>
+      </div>
+    }
+  </div>
+</ng-template>

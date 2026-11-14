@@ -70,42 +70,6 @@ export function parseDotEnv(text: string): BulkLine[] {
   imports: [CommonModule, FormsModule],
   template: `
 <div class="env-tab">
-  <div class="card env-toolbar">
-    <div class="env-toolbar-row">
-      <div class="form-group env-field">
-        <label for="envScope">Environment</label>
-        <select id="envScope" [(ngModel)]="selectedEnv" (ngModelChange)="load()">
-          <option value="__all">All scopes</option>
-          <option value="global">Global only</option>
-          @for (env of environments; track env.id) {
-            <option [value]="env.id">{{ env.name | uppercase }} (incl. global)</option>
-          }
-        </select>
-      </div>
-      <div class="form-group env-field env-grow">
-        <label for="envSearch">Search</label>
-        <input id="envSearch" [(ngModel)]="search" placeholder="Filter by key…" autocomplete="off">
-      </div>
-      <div class="env-actions">
-        @if (canWriteAny) {
-          <button class="btn btn-sm" (click)="openForm()">Add variable</button>
-          <button class="btn btn-sm" (click)="openBulk()">Paste .env</button>
-        }
-        @if (caps.canExport && selectedEnvId) {
-          <button class="btn btn-sm" (click)="exportSecrets()">Export secrets</button>
-        }
-      </div>
-    </div>
-    @if (conflicts > 0) {
-      <p class="env-warn" role="alert">
-        {{ conflicts / 2 }} key(s) are stored as both plain and secret in the same scope. Resolve each conflict by keeping one.
-      </p>
-    }
-    @if (!caps.canReadValues) {
-      <p class="env-muted">You can see keys and types only.</p>
-    }
-  </div>
-
   @if (showForm) {
     <div class="card env-form" aria-label="Add or edit variable">
       <h2>{{ editing ? 'Edit' : 'Add' }} variable</h2>
@@ -118,11 +82,11 @@ export function parseDotEnv(text: string): BulkLine[] {
           }
         </div>
         <div class="form-group">
-          <label for="envFormScope">Scope</label>
+          <label for="envFormScope">Environment</label>
           <select id="envFormScope" [(ngModel)]="form.environmentId" [disabled]="!!editing">
-            <option value="">Global (all environments)</option>
+            <option value="">Shared (all environments)</option>
             @for (env of environments; track env.id) {
-              <option [value]="env.id">{{ env.name | uppercase }}</option>
+              <option [value]="env.id">{{ env.name }}</option>
             }
           </select>
         </div>
@@ -134,7 +98,7 @@ export function parseDotEnv(text: string): BulkLine[] {
       </div>
       <label class="env-toggle">
         <input type="checkbox" [(ngModel)]="form.secret" [disabled]="!caps.canWriteSecret || !caps.canWritePlain">
-        <span>Encrypt as secret</span>
+        <span>Secret (stored encrypted, hidden in the portal)</span>
       </label>
       @if (editing && editing.type === 'plain' && form.secret) {
         <p class="env-muted">The plain value will be moved into the encrypted store and removed from config storage.</p>
@@ -153,11 +117,11 @@ export function parseDotEnv(text: string): BulkLine[] {
     <div class="card env-form" aria-label="Bulk paste">
       <h2>Paste .env</h2>
       <div class="form-group">
-        <label for="bulkScope">Scope</label>
+        <label for="bulkScope">Environment</label>
         <select id="bulkScope" [(ngModel)]="bulkEnvId">
-          <option value="">Global (all environments)</option>
+          <option value="">Shared (all environments)</option>
           @for (env of environments; track env.id) {
-            <option [value]="env.id">{{ env.name | uppercase }}</option>
+            <option [value]="env.id">{{ env.name }}</option>
           }
         </select>
       </div>
@@ -200,13 +164,42 @@ export function parseDotEnv(text: string): BulkLine[] {
     </div>
   }
 
-  <div class="card">
-    <h2>Variables</h2>
-    @if (error) { <p class="env-error">{{ error }}</p> }
+  <section class="card card-flush env-panel" aria-labelledby="env-title">
+    <div class="card-header">
+      <h2 id="env-title">Variables and secrets</h2>
+      <div class="env-actions">
+        @if (caps.canExport && selectedEnvId) {
+          <button type="button" class="btn btn-sm btn-ghost" (click)="exportSecrets()">Export secrets</button>
+        }
+        @if (canWriteAny) {
+          <button type="button" class="btn btn-sm" (click)="openBulk()">Paste .env</button>
+          <button type="button" class="btn btn-sm" (click)="openForm()">Add variable</button>
+        }
+      </div>
+    </div>
+    <div class="env-bar">
+      <div class="env-seg" role="group" aria-label="Environment">
+        <button type="button" [class.on]="selectedEnv === '__all'" [attr.aria-pressed]="selectedEnv === '__all'" (click)="selectedEnv = '__all'; load()">All</button>
+        <button type="button" [class.on]="selectedEnv === 'global'" [attr.aria-pressed]="selectedEnv === 'global'" (click)="selectedEnv = 'global'; load()" title="Variables shared by every environment">Shared</button>
+        @for (env of environments; track env.id) {
+          <button type="button" [class.on]="selectedEnv === env.id" [attr.aria-pressed]="selectedEnv === env.id" (click)="selectedEnv = env.id; load()" [title]="env.name + ' (includes shared)'">{{ env.name }}</button>
+        }
+      </div>
+      <input type="search" class="env-search" [(ngModel)]="search" placeholder="Search keys" aria-label="Search keys" autocomplete="off">
+    </div>
+    @if (conflicts > 0) {
+      <p class="env-note env-warn" role="alert">
+        {{ conflicts / 2 }} {{ conflicts / 2 === 1 ? 'key is' : 'keys are' }} stored both as plain and as secret in the same place. Keep one of each pair.
+      </p>
+    }
+    @if (!caps.canReadValues) {
+      <p class="env-note env-muted">You can see keys and types only.</p>
+    }
+    @if (error) { <p class="env-note env-error">{{ error }}</p> }
     <div class="env-scroll">
       <table class="env-table">
         <thead>
-          <tr><th>Key</th><th>Type</th><th>Scope</th><th>Value</th><th>Last changed</th><th>Actions</th></tr>
+          <tr><th>Key</th><th>Type</th><th>Environment</th><th>Value</th><th>Changed</th><th><span class="sr-only">Actions</span></th></tr>
         </thead>
         <tbody>
           @for (row of filtered(); track rowId(row)) {
@@ -216,7 +209,7 @@ export function parseDotEnv(text: string): BulkLine[] {
                 @if (row.conflict) { <span class="badge badge-failed" title="Stored as both plain and secret">conflict</span> }
               </td>
               <td>
-                <span class="badge" [class.env-badge-secret]="row.type === 'secret'" [class.badge-active]="row.type === 'plain'">{{ row.type }}</span>
+                <span class="badge" [class.env-badge-secret]="row.type === 'secret'">{{ row.type === 'secret' ? 'Secret' : 'Plain' }}</span>
                 @if (row.legacyMasked) { <span class="badge badge-pending" title="Legacy masked config value stored in plaintext">legacy</span> }
               </td>
               <td><span class="env-muted">{{ envName(row.environmentId) }}</span></td>
@@ -267,12 +260,19 @@ export function parseDotEnv(text: string): BulkLine[] {
             </tr>
           }
           @if (!loading && filtered().length === 0) {
-            <tr><td colspan="6" class="env-empty">No variables{{ search ? ' match "' + search + '"' : '' }}</td></tr>
+            <tr><td colspan="6" class="env-empty">
+              @if (search) {
+                No variables match "{{ search }}".
+              } @else {
+                <strong>No variables yet</strong>
+                <span>Add the settings your app reads when it runs, such as <span class="env-mono">API_URL</span>. Mark passwords and keys as secret; they are stored encrypted.</span>
+              }
+            </td></tr>
           }
         </tbody>
       </table>
     </div>
-  </div>
+  </section>
 
   @if (history) {
     <div class="env-drawer-backdrop" (click)="history = null"></div>
@@ -302,6 +302,21 @@ export function parseDotEnv(text: string): BulkLine[] {
 </div>
 `,
   styles: [`
+    .env-panel .env-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .env-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 20px; border-bottom: 1px solid rgb(var(--line)); }
+    .env-seg { display: inline-flex; flex-wrap: wrap; border: 1px solid rgb(var(--line)); border-radius: 6px; overflow: hidden; }
+    .env-seg button { padding: 5px 12px; border: 0; background: transparent; color: rgb(var(--fg-2)); font: inherit; font-size: 0.8125rem; cursor: pointer; }
+    .env-seg button + button { border-left: 1px solid rgb(var(--line)); }
+    .env-seg button:hover { color: rgb(var(--fg)); }
+    .env-seg button.on { background: rgb(var(--raised)); color: rgb(var(--fg)); }
+    .env-seg button:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: -2px; }
+    .env-search { width: 220px; margin-left: auto; height: 32px; }
+    .env-note { margin: 0; padding: 10px 20px; font-size: 0.8125rem; border-bottom: 1px solid rgb(var(--line)); }
+    .env-empty strong { display: block; color: rgb(var(--fg)); font-weight: 500; margin-bottom: 4px; }
+    .env-empty span { color: rgb(var(--fg-2)); }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+    @media (max-width: 640px) { .env-search { width: 100%; margin-left: 0; } }
+
 .env-tab { display: flex; flex-direction: column; gap: 20px; }
 .env-toolbar-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
 .env-field { margin-bottom: 0; min-width: 200px; }

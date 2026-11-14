@@ -62,3 +62,9 @@ describe('project sections (#185)', () => {
     expect(currentDeployment(deps, 'e3')).toBeNull();
   });
 });
+
+describe('releases links from alerts', () => {
+  it('opens Deployments at the releases panel', () => {
+    expect(sectionForTab('releases')).toBe('deployments');
+  });
+});

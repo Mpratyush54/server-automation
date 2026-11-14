@@ -18,6 +18,7 @@ export const PROJECT_SECTIONS: { id: ProjectSection; label: string }[] = [
 const LEGACY_TABS: Record<string, ProjectSection> = {
   deployments: 'deployments',
   gitops: 'deployments',
+  releases: 'deployments',
   environments: 'deployments',
   environment: 'configuration',
   config: 'configuration',
@@ -35,6 +36,7 @@ const LEGACY_TABS: Record<string, ProjectSection> = {
 /** Panel inside a section that an old tab pointed at, so bookmarks land on it. */
 const LEGACY_ANCHORS: Record<string, string> = {
   gitops: 'gitops',
+  releases: 'releases',
   environments: 'environments',
   metrics: 'metrics',
   'api-metrics': 'api-latency',

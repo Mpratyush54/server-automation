@@ -261,7 +261,7 @@
       </section>
     }
 
-    @if (project) { <app-releases-panel [projectId]="project.id" /> }
+    @if (project) { <div id="releases"><app-releases-panel [projectId]="project.id" /></div> }
 
     <div id="gitops" class="stack">
       <app-argocd-panel [project]="project" [status]="argoStatus" (reload)="loadArgoStatus()" />
