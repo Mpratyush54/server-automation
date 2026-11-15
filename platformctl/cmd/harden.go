@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/harden"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ingressha"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
@@ -228,10 +229,11 @@ func localHardeningHealth() bool {
 	if role := joinedRole(); role != "" {
 		return joinedNodeHealth(role)
 	}
-	for _, port := range []string{"22", "80", "443", "6443"} {
-		c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", port), 3*time.Second)
+	ingress := ingressProbeHost(cfg)
+	for _, p := range []struct{ host, port string }{{"127.0.0.1", "22"}, {ingress, "80"}, {ingress, "443"}, {"127.0.0.1", "6443"}} {
+		c, err := net.DialTimeout("tcp", net.JoinHostPort(p.host, p.port), 3*time.Second)
 		if err != nil {
-			fmt.Printf("Firewall confirmation: local port %s unavailable\n", port)
+			fmt.Printf("Firewall confirmation: %s port %s unavailable\n", p.host, p.port)
 			return false
 		}
 		_ = c.Close()
@@ -242,12 +244,28 @@ func localHardeningHealth() bool {
 	}
 	// Local readiness checks the platform API through real ingress routing.
 	// -k permits the documented internal CA/fake-certificate bootstrap path;
-	// --resolve keeps the connection on loopback, independent of public DNS.
+	// --resolve pins the connection to the ingress address, independent of
+	// public DNS.
 	if cfg.Domain == "" {
 		return false
 	}
-	_, err = shell.Output("curl", "--noproxy", "*", "-kfsS", "--max-time", "10", "--resolve", cfg.Domain+":443:127.0.0.1", "https://"+cfg.Domain+"/api/health/ready")
+	_, err = shell.Output("curl", "--noproxy", "*", "-kfsS", "--max-time", "10", "--resolve", cfg.Domain+":443:"+ingress, "https://"+cfg.Domain+"/api/health/ready")
 	return err == nil
+}
+
+// ingressProbeHost is the address on which this server reaches ingress-nginx.
+// Normally that is loopback: k3s ServiceLB binds 80/443 on every node. In
+// ingress HA vip mode (#54) ServiceLB is disabled and the controller answers
+// only on INGRESS_VIP (held by kube-vip, and routed by kube-proxy from every
+// node), so a loopback probe always failed and provision rolled back the
+// firewall on every vip-mode install.
+func ingressProbeHost(c *config.Config) string {
+	if c != nil && c.IsHA() && strings.ToLower(strings.TrimSpace(c.IngressHAMode)) == config.IngressHAModeVIP {
+		if vip, err := netip.ParseAddr(strings.TrimSpace(c.IngressVIP)); err == nil && vip.Is4() {
+			return vip.String()
+		}
+	}
+	return "127.0.0.1"
 }
 
 // hardeningPorts are the local ports that must answer before a joined node
