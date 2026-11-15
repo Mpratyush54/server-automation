@@ -68,6 +68,7 @@
   <url><loc>https://platform.pratyushes.dev/docs/getting-started/upgrade-guide</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/gitops-branches</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/guides/authentication</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/guides/builds</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/guides/databases</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/guides/frontend-rum</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/guides/git-providers</loc></url>
@@ -96,6 +97,7 @@
   <url><loc>https://platform.pratyushes.dev/docs/operations/ha</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/operations/image-signing</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/operations/platform-stack</loc></url>
+  <url><loc>https://platform.pratyushes.dev/docs/operations/postgres-replication</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/operations/recover</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/operations/storage-providers</loc></url>
   <url><loc>https://platform.pratyushes.dev/docs/operations/synthetics</loc></url>

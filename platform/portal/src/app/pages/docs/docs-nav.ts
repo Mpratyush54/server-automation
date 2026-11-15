@@ -83,7 +83,10 @@ export const DOC_GROUPS: DocGroup[] = [
         ],
       }),
       p('Run on several servers', 'operations/ha', {
-        children: [p('Scaling', 'deployment/scaling')],
+        children: [
+          p('Database replication: sync or async', 'operations/postgres-replication'),
+          p('Scaling', 'deployment/scaling'),
+        ],
       }),
       p('Security and sign-in', 'guides/authentication', {
         children: [

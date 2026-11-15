@@ -35,6 +35,7 @@ This file provides a machine-readable index of all documentation pages for LLM c
 - `docs/operations/storage-providers.md` — Store files in S3, R2 or another bucket: Settings > Storage
 - `docs/operations/backups.md` — Back up and restore your server: platformctl backup, schedule, restore, restore tests
 - `docs/operations/ha.md` — Run Cairn on several servers: ha profile, join, failover, datastores
+- `docs/operations/postgres-replication.md` — Synchronous or asynchronous database replication on three servers: what each risks, which to choose, how to switch
 - `docs/host-hardening.md` — Secure the server: firewall, SSH, ingress defaults, optional WAF
 - `docs/namespace-isolation.md` — How projects are kept apart: namespaces, network policies, quotas
 - `docs/operations/image-signing.md` — Check that Cairn images are genuine: scanning, signing, admission

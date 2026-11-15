@@ -58,7 +58,7 @@ test('demo passes the configured VM URL and domain to SDK registration', () => {
 });
 
 test('changed documentation is identical in both doc trees', () => {
-  for (const file of ['getting-started/node-sdk-quickstart.md', 'mcp/setup.md']) {
+  for (const file of ['getting-started/node-sdk-quickstart.md', 'mcp/setup.md', 'operations/postgres-replication.md', 'operations/ha.md', 'getting-started/installation.md', 'getting-started/platformctl.md', 'llms.txt']) {
     assert.equal(readFileSync(`docs/${file}`, 'utf8'), readFileSync(`platform/portal/public/docs/${file}`, 'utf8'));
   }
 });
