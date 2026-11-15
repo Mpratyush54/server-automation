@@ -46,7 +46,8 @@ async function startServer() {
   });
 
   app.post('/api/log-test', (req, res) => {
-    const { level, message } = req.body;
+    // Express 5 leaves req.body undefined when the request has no JSON body.
+    const { level, message } = req.body ?? {};
     if (level === 'error') {
       platform.logger.error(`Test error log: ${message}`, { errorType: 'DemoTestError', stackHash: 'demohash123' });
     } else {
