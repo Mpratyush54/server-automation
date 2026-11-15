@@ -97,9 +97,11 @@ jobs:
 
       - name: Keep the Lighthouse reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lighthouse-reports
           path: platform/portal/.lighthouseci/
+          # .lighthouseci is a dot-directory; upload-artifact >= v4.4 skips hidden paths by default.
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 14
