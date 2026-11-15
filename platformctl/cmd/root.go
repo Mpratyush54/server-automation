@@ -71,13 +71,17 @@ var statusCmd = &cobra.Command{
 				components.PrintHADatastoreStatus(os.Stdout)
 			}
 		}
-		if cfg.IsHA() {
+		if components.PostgresUsesCNPG(cfg) {
 			components.PrintPostgresHAStatus(os.Stdout)
+		} else {
+			color.Yellow("  PostgreSQL: Bitnami release (no point-in-time recovery); move it to CloudNativePG: sudo platformctl postgres migrate --confirm")
 		}
 		if joinedRole() == "server" {
 			// Joined servers run k3s only; the platform is checked on the first server.
 			return nil
 		}
+		// Persistent while backups stay on the server (#186).
+		components.PrintBackupTargetStatus(os.Stdout, cfg)
 		if meta, err := state.LockInfo(); err == nil && meta != "" {
 			color.Yellow("  · provision lock present (%s) — status does not wait on it", meta)
 		}

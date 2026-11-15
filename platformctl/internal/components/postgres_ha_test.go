@@ -22,10 +22,10 @@ func TestRenderPostgresCluster(t *testing.T) {
 		{name: "defaults"}, {name: "custom storage", sc: "fast-ssd"}, {name: "bundled backup", backup: true}, {name: "external backup", backup: true, retention: "4w"}, {name: "recovery", backup: true, recovery: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := &config.Config{PostgresHAStorageClass: tc.sc, PostgresBackupRetention: tc.retention, PostgresPassword: "must-not-appear"}
+			cfg := &config.Config{Profile: config.ProfileHA, PostgresHAStorageClass: tc.sc, PostgresBackupRetention: tc.retention, PostgresPassword: "must-not-appear"}
 			opts := pgClusterOptions{ServerName: "postgresql-pitr-123"}
 			if tc.backup {
-				opts.Backup = &pgBackup{"s3://backups/prefix/", "https://s3.example.com", "external-s3"}
+				opts.Backup = &pgBackup{"s3://backups/prefix/", "https://s3.example.com", "external-s3", ""}
 				if tc.name == "bundled backup" {
 					opts.Backup, _ = pgBackupTarget(cfg)
 				}
@@ -99,7 +99,7 @@ func TestRenderPostgresCluster(t *testing.T) {
 			}
 		})
 	}
-	m, err := renderPostgresCluster(&config.Config{}, pgClusterOptions{Backup: &pgBackup{"s3://backups/", "", "s3"}})
+	m, err := renderPostgresCluster(&config.Config{}, pgClusterOptions{Backup: &pgBackup{"s3://backups/", "", "s3", ""}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestRenderPostgresCluster(t *testing.T) {
 	if params["serverName"] != "postgresql" {
 		t.Fatal(params)
 	}
-	conf := pgObjectStoreResource(&config.Config{}, &pgBackup{"s3://backups/", "", "s3"})["spec"].(map[string]any)["configuration"].(map[string]any)
+	conf := pgObjectStoreResource(&config.Config{}, &pgBackup{"s3://backups/", "", "s3", ""})["spec"].(map[string]any)["configuration"].(map[string]any)
 	if _, ok := conf["endpointURL"]; ok {
 		t.Fatal(conf)
 	}
@@ -336,5 +336,50 @@ func TestPGPITRWritesCommitBeforeSwitch(t *testing.T) {
 	commit, sw := strings.Index(s, `sql "SELECT txid_current()"`), strings.Index(s, `sql "SELECT pg_switch_wal()"`)
 	if commit < 0 || sw < 0 || commit > sw {
 		t.Fatal("PITR must commit a transaction before switching WAL")
+	}
+}
+
+// The Barman Cloud plugin can skip recording the recovery window after a
+// base backup (status update conflict, #186 migration test); another base
+// backup is requested until the window shows up, at most twice.
+func TestPGEnsureRecoveryWindowRequestsBackup(t *testing.T) {
+	oldReady, oldReq, oldWait, oldPoll := pgWindowReady, pgRequestBackup, pgWindowWait, pgWindowPoll
+	t.Cleanup(func() { pgWindowReady, pgRequestBackup, pgWindowWait, pgWindowPoll = oldReady, oldReq, oldWait, oldPoll })
+	pgWindowWait, pgWindowPoll = time.Millisecond, time.Millisecond
+	var requested []string
+	pgRequestBackup = func(name string) error { requested = append(requested, name); return nil }
+
+	pgWindowReady = func(server string) bool { return server == "s1" && len(requested) == 1 }
+	if err := pgEnsureRecoveryWindow("s1"); err != nil || len(requested) != 1 {
+		t.Fatalf("err=%v requested=%v", err, requested)
+	}
+
+	requested = nil
+	pgWindowReady = func(string) bool { return false }
+	if err := pgEnsureRecoveryWindow("s1"); err == nil || len(requested) != 2 || !strings.Contains(err.Error(), "--pitr latest") {
+		t.Fatalf("err=%v requested=%v", err, requested)
+	}
+
+	requested = nil
+	pgWindowReady = func(string) bool { return true }
+	if err := pgEnsureRecoveryWindow("s1"); err != nil || len(requested) != 0 {
+		t.Fatalf("a recorded window needs no extra backup: err=%v requested=%v", err, requested)
+	}
+}
+
+// #186 ha test: the immediate backup and the one retry went to standbys still
+// without the plugin sidecar and failed, then the first-backup script waited
+// 15 minutes without retrying. Provision now waits for every instance to run
+// the sidecar, and the script retries up to three times.
+func TestPGBackupWaitsForPluginOnEveryInstance(t *testing.T) {
+	for _, want := range []string{"cnpg.io/podRole=instance", "plugin-barman-cloud", ".spec.initContainers[*].name", "Cluster in healthy state"} {
+		if !strings.Contains(pgPluginRolloutScript, want) {
+			t.Fatalf("rollout script lacks %q", want)
+		}
+	}
+	for _, want := range []string{`"$requests" -lt 3`, `"$idle" -ge 12`} {
+		if !strings.Contains(pgFirstBackupScript, want) {
+			t.Fatalf("first-backup script lacks %q", want)
+		}
 	}
 }

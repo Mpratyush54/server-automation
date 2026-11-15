@@ -52,7 +52,7 @@ func CheckTools(tools []string) error {
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("missing required tools on PATH: %s (see docs/operations/backups.md#setup)", strings.Join(missing, ", "))
+		return fmt.Errorf("missing required tools on PATH: %s (see docs/operations/backups.md#turn-on-encrypted-nightly-archives)", strings.Join(missing, ", "))
 	}
 	return nil
 }

@@ -22,7 +22,8 @@ func helmCalls(calls []toolCall) int {
 // reached existing installs.
 func TestDatabaseReleasesReconcileWhenValuesChange(t *testing.T) {
 	calls := fakeTools(t)
-	cfg := &config.Config{PostgresPassword: "p", MongoPassword: "m", RedisPassword: "r"}
+	// The Bitnami release: installs not yet migrated to CloudNativePG (#186).
+	cfg := &config.Config{PostgresEngine: config.PostgresEngineBitnami, PostgresPassword: "p", MongoPassword: "m", RedisPassword: "r"}
 	if err := InstallPostgreSQL(cfg); err != nil {
 		t.Fatal(err)
 	}

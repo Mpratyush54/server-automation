@@ -143,8 +143,11 @@ func provisionGraph(c *config.Config) []stepDef {
 		{name: "synthetics", deps: []string{"telemetry"}, skip: !components.FullTelemetry(c), args: install("synthetics"), fn: components.InstallSynthetics},
 		{name: "keda", deps: []string{"telemetry"}, skip: !components.KEDAEnabled(c), args: install("keda"), fn: components.InstallKEDA},
 		{name: "longhorn-monitoring", deps: []string{"longhorn", "monitoring", "telemetry"}, skip: !c.IsHA() || !c.InstallMonitoring, args: install("longhorn-monitoring"), fn: components.InstallLonghornMonitoring, warnOnly: true},
-		{name: "postgresql-backup", deps: []string{"postgresql", "minio", "platform", "cert-manager"}, skip: !c.IsHA(), args: install("postgresql-backup"), fn: components.InstallPostgresBackup},
-		{name: "postgresql-monitoring", deps: []string{"postgresql", "monitoring", "telemetry"}, skip: !c.IsHA() || !c.InstallMonitoring, args: install("postgresql-monitoring"), fn: components.InstallPostgresMonitoring, warnOnly: true},
+		// WAL archiving and base backups to the backup target on every profile
+		// that runs CloudNativePG (#186); installs still on the Bitnami release
+		// skip it until `platformctl postgres migrate`.
+		{name: "postgresql-backup", deps: []string{"postgresql", "minio", "platform", "cert-manager"}, skip: !components.PostgresUsesCNPG(c), args: install("postgresql-backup"), fn: components.InstallPostgresBackup},
+		{name: "postgresql-monitoring", deps: []string{"postgresql", "monitoring", "telemetry"}, skip: !components.PostgresUsesCNPG(c) || !c.InstallMonitoring, args: install("postgresql-monitoring"), fn: components.InstallPostgresMonitoring, warnOnly: true},
 		{name: "seed", deps: []string{"platform"}, args: []string{"seed"}, fn: components.SeedAdmin, warnOnly: true},
 		// MinIO IAM needs the platform API (its OpenID issuer), so the API's scoped
 		// storage user is created after "platform"; the API restarts with it.
@@ -191,6 +194,11 @@ func runProvision() error {
 	if err := checkHAProvision(cfg); err != nil {
 		return err
 	}
+	// The backup target is checked before anything is installed (#186).
+	if err := resolveBackupTarget(cfg); err != nil {
+		return err
+	}
+	cfg.PostgresEngine = components.ResolvePostgresEngine(cfg)
 
 	cfg.GenerateSecrets()
 	if cfg.PasswordGenerated {
@@ -319,6 +327,11 @@ func runProvision() error {
 	if err := hostStep("namespaces", components.Namespace); err != nil {
 		return err
 	}
+	// Target credentials (held in memory since the prompt) go to Kubernetes
+	// Secrets before any step that archives to the target starts.
+	if err := hostStep("backup-target", func() error { return components.EnsureBackupTarget(cfg) }); err != nil {
+		return err
+	}
 	if err := <-prereqsDone; err != nil {
 		return fail("prereqs", err)
 	}
@@ -355,6 +368,7 @@ func runProvision() error {
 	}
 	printTimings(started)
 	components.ProvisionComplete(cfg)
+	finishBackupSetup(os.Stdout, cfg)
 	printJoinHint(os.Stdout, cfg)
 	return nil
 }
@@ -541,6 +555,10 @@ func runChild(ctx context.Context, exe string, s stepDef) error {
 
 const envFilePath = "/etc/platform/.env"
 
+// childSecretEnv are credentials the parent stores in Kubernetes Secrets;
+// child steps read the Secrets and never inherit them.
+var childSecretEnv = map[string]bool{"BACKUP_S3_ACCESS_KEY": true, "BACKUP_S3_SECRET_KEY": true}
+
 // childEnviron drops variables that the saved .env defines. config.Load never
 // overrides an existing env var with the file's value, so an inherited stale
 // value (e.g. a DOMAIN changed at the interactive prompt, or a secret generated
@@ -549,7 +567,7 @@ func childEnviron(environ []string, fileKeys map[string]bool) []string {
 	out := make([]string, 0, len(environ))
 	for _, kv := range environ {
 		k, _, _ := strings.Cut(kv, "=")
-		if fileKeys[k] || k == childEnv {
+		if fileKeys[k] || k == childEnv || childSecretEnv[k] {
 			continue
 		}
 		out = append(out, kv)

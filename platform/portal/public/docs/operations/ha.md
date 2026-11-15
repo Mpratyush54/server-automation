@@ -112,7 +112,7 @@ A load balancer that rewrites connections hides the visitor's address. All reque
 ## Back up a cluster
 
 - `sudo platformctl backup --all` works as on one server and also saves the cluster state. See [Backups](backups.md).
-- The platform database is backed up continuously. By default the copies stay inside the cluster, which does not protect you if you lose the whole cluster. [Send them off-site](#continuous-wal-and-daily-backups).
+- The platform database, etcd snapshots and Longhorn volumes are backed up to the off-site backup target you chose during provisioning. See [Choose where backups go](backups.md#choose-where-backups-go).
 - You can restore the platform database to any moment since the oldest kept backup:
 
   ```bash
@@ -529,7 +529,7 @@ Migrate with a backup and restore:
 
 ### PostgreSQL HA (CloudNativePG)
 
-The `ha` profile installs the CloudNativePG (CNPG) operator (chart 0.29.1, operator 1.30.1) in `cnpg-system` and a `postgresql` Cluster in `databases`, using PostgreSQL 18.6 (the CNPG `system` image, which includes pgaudit). Other profiles keep the Bitnami PostgreSQL release. An existing Bitnami release, StatefulSet or Helm-managed `postgresql` Service blocks the HA install without changing its data; see [Migrating from a single-node install](#migrating-from-a-single-node-install).
+The `ha` profile installs the CloudNativePG (CNPG) operator (chart 0.29.1, operator 1.30.1) in `cnpg-system` and a `postgresql` Cluster in `databases`, using PostgreSQL 18.6 (the CNPG `system` image, which includes pgaudit). Fresh single-node installs run the same operator with one instance. An existing Bitnami release, StatefulSet or Helm-managed `postgresql` Service blocks the install without changing its data; see [Migrating from a single-node install](#migrating-from-a-single-node-install).
 
 **Topology.** Three instances run on separate nodes (required pod anti-affinity). One quorum synchronous standby acknowledges writes: no acknowledged write is lost while a synchronous standby is available. `dataDurability: preferred` lets the primary keep accepting writes when no standby is available (initial provisioning on one node, or two database nodes lost); such writes lack the synchronous guarantee. On the first server only the primary needs to become Ready; the standbys stay Pending until nodes join. CNPG manages PodDisruptionBudgets for voluntary disruptions.
 
@@ -553,9 +553,9 @@ kubectl -n databases describe cluster postgresql
 
 WAL archiving and base backups run through the CloudNativePG Barman Cloud plugin (`barman-cloud.cloudnative-pg.io`, v0.15.1). The plugin runs in `cnpg-system` as one replica that moves off a failed node after 30 s, and injects a sidecar into each PostgreSQL pod that ships WAL to the object store, so archiving and failover do not depend on the plugin pod. Its link to the operator uses cert-manager certificates. The destination lives in the `ObjectStore` resource `databases/postgresql-backup`.
 
-The `postgresql-backup` step runs after PostgreSQL, MinIO, cert-manager and the platform API. By default it creates `s3://postgres-backups/` in the bundled MinIO with a scoped `postgres-backup` user and a bucket-only policy; the `postgresql-backup-s3` Secret in `databases` holds `ACCESS_KEY_ID` and a random `ACCESS_SECRET_KEY`, preserved on reruns. The bundled MinIO is not off-site.
+The `postgresql-backup` step runs after PostgreSQL, MinIO, cert-manager and the platform API. By default it archives to `<prefix>/postgres/` in the [backup target](backups.md#the-backup-target), with credentials from the `databases/platform-backup-s3` Secret. Only with local-only backups does it create `s3://postgres-backups/` in the bundled MinIO, with a scoped `postgres-backup` user and a bucket-only policy (Secret `postgresql-backup-s3`); the bundled MinIO is not off-site.
 
-For an external S3-compatible store, create a Secret (credentials already in your shell environment):
+To archive somewhere other than the backup target, create a Secret (credentials already in your shell environment):
 
 ```bash
 kubectl create namespace databases --dry-run=client -o yaml | kubectl apply -f -
@@ -603,34 +603,14 @@ Also test powering off the primary's node, with etcd quorum and two database nod
 
 #### Migrating from a single-node install
 
-There is no automatic in-place conversion, and switching `ha` back to a single-node profile is not supported. Keep tested external backups and plan downtime. On the first server:
+Move a Bitnami PostgreSQL release to CloudNativePG with one command, on the first server, during a short downtime window:
 
-1. Stop project database writers, record the API replica count and scale it to zero: `kubectl -n platform scale deploy/platform-api --replicas=0`. Wait for the API pods to stop. Record every non-template database.
-2. From the Bitnami primary (`postgresql-0`, container `postgresql`), export `pg_dumpall -U postgres --globals-only` and a separate `pg_dump -U postgres -Fc -d <database>` for every database, including `platform`. Check exit codes and test the dumps.
+```bash
+sudo platformctl postgres migrate --dry-run
+sudo platformctl postgres migrate --confirm
+```
 
-   ```bash
-   umask 077
-   kubectl -n databases exec postgresql-0 -c postgresql -- bash -ec \
-     'export PGPASSWORD="${POSTGRES_PASSWORD:-$(cat "${POSTGRES_PASSWORD_FILE:-/opt/bitnami/postgresql/secrets/postgres-password}")}"; pg_dumpall -U postgres --globals-only' > globals.sql
-   # Repeat for each database, using a distinct local dump filename.
-   kubectl -n databases exec postgresql-0 -c postgresql -- bash -ec \
-     'export PGPASSWORD="${POSTGRES_PASSWORD:-$(cat "${POSTGRES_PASSWORD_FILE:-/opt/bitnami/postgresql/secrets/postgres-password}")}"; pg_dump -U postgres -Fc -d platform' > platform.dump
-   ```
-
-3. Keep the `postgresql` Secret and PVC: `kubectl -n databases annotate secret postgresql helm.sh/resource-policy=keep --overwrite`. Check the PVC's PV reclaim policy (take a volume backup too). Then `helm uninstall postgresql -n databases`, and confirm the old StatefulSet and Helm-owned Service are gone. Keep the old PVC until the migration is verified.
-4. Add `username: postgres` and `password` (equal to `postgres-password`) to the Secret without printing the password:
-
-   ```bash
-   kubectl -n databases get secret postgresql -o json | \
-     jq '{data:{username:("postgres"|@base64),password:.data["postgres-password"]}}' | \
-     kubectl -n databases patch secret postgresql --type merge --patch-file=/dev/stdin
-   ```
-
-5. Run `sudo -E platformctl provision --profile ha`. Provision starts the API against a new, empty `platform` database. Scale the API back to zero when provision finishes and keep project writers stopped.
-6. On the CNPG primary (selector above, container `postgres`), restore the globals with `psql -U postgres -v ON_ERROR_STOP=1`, leaving out the existing `postgres` role's CREATE/ALTER lines and handling the existing `platform` owner role. Restore each dump with `pg_restore -U postgres -d template1 --clean --if-exists --create --exit-on-error`, streamed through `kubectl exec -i`. Keep the preserved Secret's password.
-7. Restore the API replica count, resume project workloads, and check login, database owners and extensions, project reads and writes, three ready instances, WAL archiving and a fresh base backup.
-
-Alternatively, use CNPG `bootstrap.initdb.import` in monolith mode during a downtime window. This needs a separately named source service, source credentials and a reviewed manifest; the installer does not automate it.
+It takes a backup, stops the API and project database logins, dumps every database, keeps the old volume for rollback, restores into the new cluster, verifies the result and turns on WAL archiving. A failed run continues from the last finished step when you run it again; `--rollback --confirm` returns to the Bitnami release. The steps are listed in [Moving PostgreSQL to CloudNativePG](backups.md#moving-postgresql-to-cloudnativepg). On a server whose `.env` already says `PLATFORM_PROFILE=ha`, the new cluster has three instances. Switching `ha` back to a single-node profile is not supported.
 
 ### Upgrades
 
@@ -651,7 +631,7 @@ Every server takes etcd snapshots on a schedule:
 | `ETCD_S3_REGION` / `ETCD_S3_FOLDER` | | Optional region and folder |
 | `ETCD_S3_ACCESS_KEY` / `ETCD_S3_SECRET_KEY` | | Credentials |
 
-Set them before `provision` and `join --role server`. The S3 credentials are stored in `/etc/rancher/k3s/config.yaml` (mode 0600). Use an off-site bucket: the bundled MinIO runs inside the cluster it would have to restore. List snapshots with `k3s etcd-snapshot ls`. Restore with the k3s procedure (`k3s server --cluster-reset --cluster-reset-restore-path=<snapshot>` on one server, then rejoin the others). `platformctl backup --all` also puts an etcd snapshot in its encrypted archive.
+Without these settings, snapshots go to `<prefix>/etcd/` in the [backup target](backups.md#the-backup-target): `config.yaml` names the Secret `kube-system/platform-etcd-s3` (`etcd-s3-config-secret`) and holds no key. Set them before `provision` and `join --role server`. Explicit S3 credentials are stored in `/etc/rancher/k3s/config.yaml` (mode 0600). Use an off-site bucket: the bundled MinIO runs inside the cluster it would have to restore. List snapshots with `k3s etcd-snapshot ls`. Restore with the k3s procedure (`k3s server --cluster-reset --cluster-reset-restore-path=<snapshot>` on one server, then rejoin the others). `platformctl backup --all` also puts an etcd snapshot in its encrypted archive.
 
 ### Longhorn backups to S3
 
@@ -672,7 +652,7 @@ LONGHORN_BACKUP_TARGET=s3://platform-backups@us-east-1/longhorn/
 LONGHORN_BACKUP_SECRET=longhorn-backup
 ```
 
-Only the target and Secret name are saved in `.env`. An empty target means no backup target. Setting a target does not schedule backups: configure and test recurring Longhorn backups separately. The in-cluster MinIO is not an off-site target.
+Only the target and Secret name are saved in `.env`. Without them, Longhorn uses `<prefix>/longhorn/` in the [backup target](backups.md#the-backup-target) with the Secret `longhorn-system/platform-longhorn-backup`. Whenever a target is set, the RecurringJob `platform-backup-daily` backs up every volume in the `default` group at 01:30 UTC and keeps 7. The in-cluster MinIO is not an off-site target.
 
 ### Checking the setup
 

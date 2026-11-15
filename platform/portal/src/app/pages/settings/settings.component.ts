@@ -415,6 +415,63 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
     @if (backupError) {
       <p class="st-body st-msg st-err">{{ backupError }}</p>
     }
+    @if (backupOverview?.storage?.localOnly) {
+      <p class="st-body st-msg st-warn-text" role="alert">
+        Backups are stored only on this server. If the server or its disk is lost, the backups are lost too.
+        <a href="/docs/operations/backups">Set up off-site backups</a>
+      </p>
+    }
+    @if (backupOverview) {
+      <ul class="st-backups" aria-label="Where backups are stored">
+        <li>
+          <span class="st-backups-label">Stored in</span>
+          @if (backupOverview.storage?.target; as target) {
+            <span class="status status-ok">Off-site</span>
+            <span class="secondary">{{ target.endpointHost }}/{{ target.bucket }}{{ target.prefix ? '/' + target.prefix : '' }}</span>
+          } @else {
+            <span class="status status-warn">This server only</span>
+          }
+        </li>
+        @if (backupOverview.postgres?.engine === 'cnpg') {
+          <li>
+            <span class="st-backups-label">Database change log</span>
+            <span class="status" [ngClass]="backupOverview.postgres.archiving === 'ok' ? 'status-ok' : backupOverview.postgres.archiving === 'failing' ? 'status-down' : 'status-warn'">{{ archiveWord(backupOverview.postgres.archiving) }}</span>
+            @if (backupOverview.postgres.lastArchivedWalAt) {
+              <span class="secondary">last saved {{ backupOverview.postgres.lastArchivedWalAt | date:'medium' }}</span>
+            }
+          </li>
+          <li>
+            <span class="st-backups-label">Last database snapshot</span>
+            @if (backupOverview.postgres.lastBaseBackupAt) {
+              <span class="secondary">{{ backupOverview.postgres.lastBaseBackupAt | date:'medium' }}</span>
+            } @else {
+              <span class="muted">None yet</span>
+            }
+          </li>
+          <li>
+            <span class="st-backups-label">Restore to any moment</span>
+            @if (backupOverview.postgres.recoveryWindow?.from) {
+              <span class="secondary">from {{ backupOverview.postgres.recoveryWindow.from | date:'medium' }} to {{ backupOverview.postgres.recoveryWindow.to | date:'medium' }}</span>
+            } @else {
+              <span class="muted">Available after the first database snapshot</span>
+            }
+          </li>
+        } @else if (backupOverview.postgres?.engine === 'bitnami') {
+          <li>
+            <span class="st-backups-label">Restore to any moment</span>
+            <span class="muted">Not available yet. On the server run <code>sudo platformctl postgres migrate --confirm</code></span>
+          </li>
+        }
+        <li>
+          <span class="st-backups-label">Last full backup</span>
+          @if (backupOverview.lastFullBackupAt) {
+            <span class="secondary">{{ backupOverview.lastFullBackupAt | date:'medium' }}</span>
+          } @else {
+            <span class="muted">None yet</span>
+          }
+        </li>
+      </ul>
+    }
     @if (backupStatus.length) {
       <ul class="st-backups">
         @for (item of backupStatus; track item.operation) {
@@ -497,6 +554,8 @@ export class SettingsComponent implements OnInit {
   /** Email tab: show the add-mail-server form. */
   showSmtpForm = false;
   backupStatus: any[] = [];
+  /** Where backups go and the PostgreSQL recovery window (#186). */
+  backupOverview: any = null;
   backupError = '';
   smtpConfigs: any[] = [];
   storageProviders: any[] = [];
@@ -620,9 +679,15 @@ export class SettingsComponent implements OnInit {
 
   async loadBackups() {
     try {
-      this.backupStatus = (await firstValueFrom(this.api.getBackupStatus()))?.items ?? [];
+      const res = await firstValueFrom(this.api.getBackupStatus());
+      this.backupStatus = res?.items ?? [];
+      this.backupOverview = res?.storage ? res : null;
       this.backupError = '';
     } catch { this.backupError = 'Backup status unavailable. Check the backup jobs and cluster access.'; }
+  }
+
+  archiveWord(state: string): string {
+    return state === 'ok' ? 'Working' : state === 'failing' ? 'Failing' : state === 'not-configured' ? 'Not set up' : 'Unknown';
   }
 
   async loadIntegrations() {

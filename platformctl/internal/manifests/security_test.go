@@ -154,7 +154,7 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 		{`["apiextensions.k8s.io"]`, `["customresourcedefinitions"]`, `["scaledobjects.keda.sh","httpscaledobjects.http.keda.sh"]`, `["get"]`},
 	})
 	expect("Role", "platform-api", "platform", []rbacRule{
-		{`[""]`, `["configmaps"]`, `["platform-backup-backup","platform-backup-restore-test"]`, `["get"]`}, // #21
+		{`[""]`, `["configmaps"]`, `["platform-backup-backup","platform-backup-restore-test","platform-backup-target"]`, `["get"]`}, // #21, #186
 		{`[""]`, `["secrets"]`, `["platform-env","platform-rotate-pending"]`, `["get", "update"]`},
 		{`[""]`, `["secrets"]`, `["platform-credentials","platform-oidc-signing-key"]`, `["get", "update"]`}, // #20
 		{`[""]`, `["secrets"]`, `["platform-rotate-pending"]`, `["delete"]`},
@@ -165,6 +165,8 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 	})
 	expect("Role", "platform-api", "databases", []rbacRule{
 		{`[""]`, `["secrets"]`, `["postgresql","redis"]`, `["get", "update"]`},
+		{`["postgresql.cnpg.io"]`, `["clusters"]`, `["postgresql"]`, `["get"]`},             // #186 backup status
+		{`["barmancloud.cnpg.io"]`, `["objectstores"]`, `["postgresql-backup"]`, `["get"]`}, // #186 recovery window
 	})
 	expect("Role", "platform-api", "argocd", []rbacRule{
 		{`[""]`, `["secrets"]`, `["argocd-secret","argocd-initial-admin-secret"]`, `["get", "update"]`},

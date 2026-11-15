@@ -26,8 +26,11 @@ func (c Config) Validate() error {
 	if c.MinioAlias != "" && !safeName.MatchString(c.MinioAlias) {
 		return fmt.Errorf("invalid MinIO alias")
 	}
-	if _, e := ParseTarget(c.Target); e != nil {
-		return e
+	// "external" resolves to the external backup target at run time (#186).
+	if c.Target != ExternalTargetKeyword {
+		if _, e := ParseTarget(c.Target); e != nil {
+			return e
+		}
 	}
 	if _, e := Prune(nil, c.Retention); e != nil {
 		return e

@@ -47,6 +47,10 @@ type EtcdSnapshots struct {
 	Cron                                                               string
 	Retention                                                          int
 	S3Endpoint, S3Bucket, S3Region, S3Folder, S3AccessKey, S3SecretKey string
+	// S3ConfigSecret names a kube-system Secret holding the etcd-s3-* keys
+	// (the external backup target, #186). Used only when no explicit S3
+	// endpoint is set, so the credentials never enter config.yaml.
+	S3ConfigSecret string
 }
 
 func (e EtcdSnapshots) S3Enabled() bool { return e.S3Endpoint != "" && e.S3Bucket != "" }
@@ -156,6 +160,9 @@ func RenderServerConfig(o ServerOptions) string {
 		field("etcd-s3-folder", e.S3Folder)
 		field("etcd-s3-access-key", e.S3AccessKey)
 		field("etcd-s3-secret-key", e.S3SecretKey)
+	} else if e.S3ConfigSecret != "" {
+		b.WriteString("etcd-s3: true\n")
+		field("etcd-s3-config-secret", e.S3ConfigSecret)
 	}
 	return b.String()
 }

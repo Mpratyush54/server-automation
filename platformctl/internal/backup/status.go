@@ -118,3 +118,33 @@ func PublishStatus(kind, id string, start time.Time, m Manifest, result error) e
 	}
 	return metricsErr
 }
+
+// WriteTargetMetric records whether backups leave the server
+// (platform_backup_target_external 1) or stay on it (0); the
+// PlatformBackupLocalOnly alert fires on 0.
+func WriteTargetMetric(dir string, external bool) error {
+	if e := os.MkdirAll(dir, 0755); e != nil {
+		return e
+	}
+	v := 0
+	if external {
+		v = 1
+	}
+	tmp, e := os.CreateTemp(dir, ".platform_backup_target_*.tmp")
+	if e != nil {
+		return e
+	}
+	defer os.Remove(tmp.Name())
+	if _, e = fmt.Fprintf(tmp, "# HELP platform_backup_target_external 1 when backups are stored outside this server.\n# TYPE platform_backup_target_external gauge\nplatform_backup_target_external %d\n", v); e != nil {
+		tmp.Close()
+		return e
+	}
+	if e = tmp.Chmod(0644); e != nil {
+		tmp.Close()
+		return e
+	}
+	if e = tmp.Close(); e != nil {
+		return e
+	}
+	return os.Rename(tmp.Name(), filepath.Join(dir, "platform_backup_target.prom"))
+}

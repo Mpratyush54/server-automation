@@ -15,8 +15,19 @@ import (
 // containing unrelated data. mc reads credentials from its existing config.
 type Store struct{ Target Target }
 
+// mcEnv holds MC_HOST_<alias> for the external target. It is added only to
+// mc's own environment, never to files, arguments or other child processes.
+var mcEnv []string
+
+// UseExternalTarget makes the external target reachable as the mc alias
+// MCAlias for this process's mc calls.
+func UseExternalTarget(t S3Target) { mcEnv = []string{t.MCEnv()} }
+
 func runMC(args ...string) ([]byte, error) {
 	c := exec.Command("mc", args...)
+	if len(mcEnv) > 0 {
+		c.Env = append(os.Environ(), mcEnv...)
+	}
 	var errout strings.Builder
 	c.Stderr = &errout
 	b, e := c.Output()
