@@ -40,6 +40,11 @@ const restartNamedDeployment = jest.fn().mockResolvedValue(undefined);
 const upsertSecretData = jest.fn().mockResolvedValue(undefined);
 const deleteSecret = jest.fn().mockResolvedValue(undefined);
 const readSecretData = jest.fn().mockResolvedValue({});
+const rotateSentinelPassword = jest.fn().mockResolvedValue(undefined);
+
+jest.mock('../../../src/lib/redis-password-rotate', () => ({
+  rotateSentinelPassword: (...args: any[]) => rotateSentinelPassword(...args),
+}));
 
 jest.mock('../../../src/lib/k8s', () => ({
   patchSecretData: (...args: any[]) => patchSecretData(...args),
@@ -87,13 +92,16 @@ import os from 'os';
 import path from 'path';
 
 describe('secret-rotate', () => {
-  let rotatePlatformSecrets: (opts: { actorUserId?: string }) => Promise<{ results: any[]; values: Record<string, string> }>;
+  let rotatePlatformSecrets: (opts: { actorUserId?: string }) => Promise<{ results: any[]; values: Record<string, string>; status: string }>;
 
   beforeAll(async () => {
     ({ rotatePlatformSecrets } = await import('../../../src/lib/secret-rotate'));
   });
   beforeEach(() => {
-    patchSecretData.mockClear();
+    patchSecretData.mockReset().mockResolvedValue(undefined);
+    readSecretData.mockReset().mockResolvedValue({});
+    rotateSentinelPassword.mockReset().mockResolvedValue(undefined);
+    delete process.env.REDIS_SENTINEL_HOSTS;
     restartNamedDeployment.mockClear();
     upsertSecretData.mockReset().mockResolvedValue(undefined);
     deleteSecret.mockClear();
@@ -109,6 +117,82 @@ describe('secret-rotate', () => {
     process.env.PLATFORM_ENV_FILE = path.join(tmp, '.env');
     process.env.PLATFORM_CRED_DIR = path.join(tmp, 'credentials');
     fs.writeFileSync(process.env.PLATFORM_ENV_FILE, 'POSTGRES_PASSWORD=old-pg\n');
+  });
+
+  afterEach(() => { delete process.env.REDIS_SENTINEL_HOSTS; });
+
+  it('rotates HA from the portal and publishes credentials only after all members succeed', async () => {
+    process.env.REDIS_SENTINEL_HOSTS = 'redis-node-0.redis-headless:26379';
+    rotateSentinelPassword.mockImplementationOnce(async () => {
+      expect(patchSecretData.mock.calls.some(([ns, name]) => ns === 'databases' && name === 'redis')).toBe(false);
+      expect(fs.existsSync(path.join(process.env.PLATFORM_CRED_DIR!, 'redis'))).toBe(false);
+    });
+    const result = await rotatePlatformSecrets({ actorUserId: 'admin-1' });
+    expect(rotateSentinelPassword).toHaveBeenCalledWith('old-redis', result.values.REDIS_PASSWORD);
+    expect(patchSecretData).toHaveBeenCalledWith('databases', 'redis', { 'redis-password': result.values.REDIS_PASSWORD });
+  });
+
+  it('keeps pending HA credentials on failure and reuses them on a new portal request', async () => {
+    process.env.REDIS_SENTINEL_HOSTS = 'redis-node-0.redis-headless:26379';
+    rotateSentinelPassword.mockRejectedValueOnce(new Error('Redis Sentinel rotation incomplete'));
+    const result = await rotatePlatformSecrets({ actorUserId: 'admin-1' });
+    expect(result.status).toBe('failed');
+    expect(deleteSecret).not.toHaveBeenCalled();
+    expect(patchSecretData).not.toHaveBeenCalledWith('databases', 'redis', expect.anything());
+    const next = rotateSentinelPassword.mock.calls[0][1];
+    readSecretData.mockResolvedValue({ REDIS_PASSWORD_OLD: 'old-redis', REDIS_PASSWORD_NEW: next });
+    process.env.REDIS_PASSWORD = next;
+    const retried = await rotatePlatformSecrets({ actorUserId: 'admin-1' });
+    expect(rotateSentinelPassword).toHaveBeenLastCalledWith('old-redis', next);
+    expect(retried.values.REDIS_PASSWORD).toBe(next);
+  });
+
+  it('retains pending HA credentials when the Redis Secret cannot be updated', async () => {
+    process.env.REDIS_SENTINEL_HOSTS = 'redis-node-0.redis-headless:26379';
+    patchSecretData.mockRejectedValueOnce(new Error('forbidden'));
+    const result = await rotatePlatformSecrets({ actorUserId: 'admin-1' });
+    expect(result.status).toBe('failed');
+    expect(deleteSecret).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(process.env.PLATFORM_CRED_DIR!, 'redis'))).toBe(false);
+  });
+
+  it('requires the HA pending pair to be durable before touching members', async () => {
+    process.env.REDIS_SENTINEL_HOSTS = 'redis-node-0.redis-headless:26379';
+    upsertSecretData.mockRejectedValueOnce(new Error('forbidden'));
+    const result = await rotatePlatformSecrets({ actorUserId: 'admin-1' });
+    expect(result.status).toBe('failed');
+    expect(rotateSentinelPassword).not.toHaveBeenCalled();
+  });
+
+  it('refuses to overwrite unreadable pending credentials and releases the lock', async () => {
+    process.env.REDIS_SENTINEL_HOSTS = 'redis-node-0.redis-headless:26379';
+    readSecretData.mockRejectedValueOnce(Object.assign(new Error('forbidden'), { code: 403 }));
+    await expect(rotatePlatformSecrets({ actorUserId: 'admin-1' })).rejects.toThrow('Cannot read pending');
+    expect(upsertSecretData).not.toHaveBeenCalled();
+    expect((await rotatePlatformSecrets({ actorUserId: 'admin-1' })).status).toBe('succeeded');
+  });
+
+  it('starts a fresh HA rotation when there is no pending Secret', async () => {
+    process.env.REDIS_SENTINEL_HOSTS = 'redis-node-0.redis-headless:26379';
+    readSecretData.mockRejectedValueOnce(Object.assign(new Error('not found'), { code: 404 }));
+    expect((await rotatePlatformSecrets({ actorUserId: 'admin-1' })).status).toBe('succeeded');
+  });
+
+  it('retains pending HA credentials when the platform credentials cannot be persisted', async () => {
+    process.env.REDIS_SENTINEL_HOSTS = 'redis-node-0.redis-headless:26379';
+    const hostEnv = await import('../../../src/lib/host-env');
+    const persist = hostEnv.persistPlatformEnv;
+    const spy = jest.spyOn(hostEnv, 'persistPlatformEnv').mockImplementation(async (values) => {
+      if (Object.keys(values).length === 1 && values.REDIS_PASSWORD) return { ok: false, detail: 'forbidden' };
+      return persist(values);
+    });
+    try {
+      const result = await rotatePlatformSecrets({ actorUserId: 'admin-1' });
+      expect(result.status).toBe('failed');
+      expect(deleteSecret).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('updates admin hashes before ALTER USER, then patches postgres/redis secrets and restarts only the API', async () => {
@@ -349,6 +433,14 @@ describe('secret-rotate', () => {
       expect(restartNamedDeployment).toHaveBeenCalledWith('platform', 'platform-api');
       expect(reconnectPostgres).toHaveBeenCalledWith(NEW_PG);
       expect(op.state).toEqual({});
+    });
+
+    it('resumes HA rotation on every member even when the master already accepts the new password', async () => {
+      process.env.REDIS_SENTINEL_HOSTS = 'redis-node-0.redis-headless:26379';
+      const { id, ops } = await crashedRotation('redis-password');
+      await ops.runOperation(id);
+      expect(rotateSentinelPassword).toHaveBeenCalledWith('old-redis', NEW_REDIS);
+      expect((await ops.getOperation(id))!.status).toBe('succeeded');
     });
 
     it('does not restart the API again when it died during the restart step', async () => {
