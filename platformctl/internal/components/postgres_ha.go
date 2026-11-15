@@ -186,12 +186,19 @@ func renderPostgresCluster(cfg *config.Config, opts pgClusterOptions) (map[strin
 		// promotion by three minutes (measured on the 3-node test).
 		"smartShutdownTimeout": 15,
 		"instances":            instances, "imageName": versions.CNPGPostgresImage, "primaryUpdateStrategy": "unsupervised", "primaryUpdateMethod": "switchover", "enablePDB": true, "enableSuperuserAccess": true, "superuserSecret": map[string]string{"name": "postgresql"},
-		"postgresql": map[string]any{"synchronous": map[string]any{"method": "any", "number": 1, "dataDurability": "preferred"}, "shared_preload_libraries": []string{"pgaudit", "pg_stat_statements"}, "parameters": map[string]string{"pg_stat_statements.max": "10000", "pg_stat_statements.track": "top", "max_connections": "200", "shared_buffers": "256MB", "archive_timeout": "5min"}},
+		"postgresql": map[string]any{"synchronous": pgSyncSpec(), "shared_preload_libraries": []string{"pgaudit", "pg_stat_statements"}, "parameters": map[string]string{"pg_stat_statements.max": "10000", "pg_stat_statements.track": "top", "max_connections": "200", "shared_buffers": "256MB", "archive_timeout": "5min"}},
 		"bootstrap":  map[string]any{"initdb": map[string]string{"database": "platform", "owner": "platform"}},
 		"storage":    map[string]string{"size": "10Gi", "storageClass": sc},
 		"affinity":   map[string]any{"enablePodAntiAffinity": true, "podAntiAffinityType": "required", "topologyKey": "kubernetes.io/hostname"},
 		"resources":  map[string]any{"requests": map[string]string{"cpu": "100m", "memory": "512Mi"}, "limits": map[string]string{"cpu": "2", "memory": "1Gi"}},
 		"monitoring": map[string]any{"customQueriesConfigMap": []any{map[string]string{"name": "postgresql-monitoring", "key": "queries"}}},
+	}
+	if err := cfg.ValidatePostgresReplication(); err != nil {
+		return nil, err
+	}
+	if config.NormalizePostgresReplication(cfg.PostgresReplication) == config.PostgresReplicationAsync {
+		// Asynchronous replication: commits do not wait for a standby.
+		delete(spec["postgresql"].(map[string]any), "synchronous")
 	}
 	if instances == 1 {
 		// Single-node profiles (#183): one instance, no synchronous standby,
@@ -228,6 +235,15 @@ func renderPostgresCluster(cfg *config.Config, opts pgClusterOptions) (map[strin
 	m["metadata"].(map[string]any)["annotations"] = map[string]string{pgServerNameAnnotation: opts.ServerName}
 	m["spec"] = spec
 	return m, nil
+}
+
+// pgSyncSpec is spec.postgresql.synchronous for POSTGRES_REPLICATION=sync:
+// each commit waits for one standby (any of the two). dataDurability
+// "preferred" lets the primary keep accepting writes when no standby is
+// healthy instead of stopping, so losing two of three servers degrades to
+// asynchronous rather than blocking every write.
+func pgSyncSpec() map[string]any {
+	return map[string]any{"method": "any", "number": 1, "dataDurability": "preferred"}
 }
 
 // cnpgValues are the operator chart values. Single-node profiles run one
@@ -759,8 +775,15 @@ type pgClusterState struct {
 		Annotations map[string]string
 	}
 	Spec struct {
-		Instances int
-		Plugins   []struct {
+		Instances  int
+		PostgreSQL struct {
+			Synchronous *struct {
+				Method         string
+				Number         int
+				DataDurability string
+			}
+		}
+		Plugins []struct {
 			Name          string
 			IsWALArchiver bool
 			Parameters    map[string]string
@@ -800,6 +823,31 @@ type pgObjectStoreState struct {
 			FirstRecoverabilityPoint, LastSuccessfulBackupTime string
 		}
 	}
+}
+
+// replicationMode is the live POSTGRES_REPLICATION equivalent of the
+// Cluster spec: sync, async, or "" for a single instance.
+func (c pgClusterState) replicationMode() string {
+	if c.Spec.Instances <= 1 {
+		return ""
+	}
+	if s := c.Spec.PostgreSQL.Synchronous; s != nil && s.Number > 0 {
+		return config.PostgresReplicationSync
+	}
+	return config.PostgresReplicationAsync
+}
+
+func (c pgClusterState) replicationSummary() string { return pgReplicationSummary(c.replicationMode()) }
+
+// pgReplicationSummary describes a replication mode in one line.
+func pgReplicationSummary(mode string) string {
+	switch mode {
+	case config.PostgresReplicationSync:
+		return "sync (each write waits for a standby; no confirmed write lost when a server fails)"
+	case config.PostgresReplicationAsync:
+		return "async (fastest failover; the last seconds of writes can be lost when a server fails)"
+	}
+	return "single instance (no standbys)"
 }
 
 // pluginServerName returns the archive serverName when the Cluster archives
@@ -843,6 +891,7 @@ func writePostgresHAStatus(w io.Writer, clusterJSON []byte, storeJSON ...[]byte)
 	}
 	fmt.Fprintf(w, "PostgreSQL (CloudNativePG): %s, %d/%d ready, primary %s\n", c.Status.Phase, c.Status.ReadyInstances, c.Spec.Instances, c.Status.CurrentPrimary)
 	fmt.Fprintln(w, "  read-write: postgresql.databases:5432 (alias of postgresql-rw), read-only: postgresql-ro.databases:5432")
+	fmt.Fprintln(w, "  Replication:", c.replicationSummary())
 	archive := "not configured"
 	_, plugin := c.pluginServerName()
 	if c.Spec.Backup.BarmanObjectStore != nil || plugin {

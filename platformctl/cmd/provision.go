@@ -195,6 +195,9 @@ func runProvision() error {
 	if err := checkHAProvision(cfg); err != nil {
 		return err
 	}
+	if err := resolvePostgresReplication(cfg, os.Stdin, os.Stdout); err != nil {
+		return err
+	}
 	// The backup target is checked before anything is installed (#186).
 	if err := resolveBackupTarget(cfg); err != nil {
 		return err
