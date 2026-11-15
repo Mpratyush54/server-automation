@@ -104,9 +104,9 @@ export function renderBuildJob(build: Pick<Build, 'id' | 'projectId' | 'commitSh
         ],
         initContainers: [
           { name: 'clone', image: BUILD_IMAGES.git,
-            command: ['/bin/sh', '-ec', `export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader
+            command: ['/bin/sh', '-ec', `export GIT_CONFIG_COUNT=3 GIT_CONFIG_KEY_0=http.extraHeader GIT_CONFIG_KEY_1=safe.directory GIT_CONFIG_VALUE_1=/workspace GIT_CONFIG_KEY_2=init.defaultBranch GIT_CONFIG_VALUE_2=build
 export GIT_CONFIG_VALUE_0="$(cat /git-auth/header)"
-git init /workspace
+git init -q /workspace
 git -C /workspace remote add origin "$REPOSITORY"
 git -C /workspace -c http.followRedirects=false fetch --depth=1 origin "$COMMIT"
 git -C /workspace checkout --detach FETCH_HEAD

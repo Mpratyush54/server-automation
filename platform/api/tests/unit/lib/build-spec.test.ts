@@ -68,6 +68,8 @@ describe('source build Job', () => {
 
   it('chooses the builder from a marker written by the trusted clone step', () => {
     expect(byName('clone').command[2]).toContain('echo dockerfile > /meta/kind');
+    // The workspace emptyDir is owned by root (fsGroup), not the clone user; Git refuses it unless marked safe.
+    expect(byName('clone').command[2]).toContain('GIT_CONFIG_KEY_1=safe.directory GIT_CONFIG_VALUE_1=/workspace');
     expect(byName('clone').volumeMounts.find((v: any) => v.name === 'meta').readOnly).toBe(false);
     expect(byName('buildkit').command[2]).toContain('= dockerfile ] || exit 0');
     expect(byName('publish').command[2]).toContain('= dockerfile ] || exit 0');
