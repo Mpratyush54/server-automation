@@ -15,6 +15,7 @@ import { setRegistrySignerForTests } from '../../../src/lib/registry-token';
 
 const { privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1', privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
 const digest = `sha256:${'d'.repeat(64)}`;
+const source = { repositoryUrl: 'https://github.com/acme/app.git', repositoryApprovedAt: new Date(), repositoryApprovedKey: 'github.com/acme/app' };
 const internal = 'registry.registry.svc.cluster.local:5000/p-p1/e-e1';
 let build: any;
 const running = { metadata: { uid: 'uid', creationTimestamp: new Date().toISOString() }, status: { active: 1 } };
@@ -50,7 +51,7 @@ it('waits for global and per-project admission, then submits once with separate 
     .mockResolvedValueOnce({ items: [{ metadata: { labels: { 'cairn.dev/project': 'p1' } } }] }) // this project's cap
     .mockResolvedValueOnce({ items: [{ metadata: { labels: { 'cairn.dev/project': 'other' } } }] });
   const h = hooks();
-  expect(await runBuildJob(build, 'https://github.com/acme/app.git', h)).toBe(digest);
+  expect(await runBuildJob(build, source, h)).toBe(digest);
   expect(mockBatch.listNamespacedJob).toHaveBeenCalledTimes(3);
   expect(mockBatch.createNamespacedJob).toHaveBeenCalledTimes(1);
   expect(h.markSubmitted).toHaveBeenCalledTimes(1);
@@ -68,7 +69,7 @@ it('waits for global and per-project admission, then submits once with separate 
 
 it('revokes the Git credential as soon as the clone step has finished', async () => {
   mockBatch.readNamespacedJob.mockRejectedValueOnce({ code: 404 }).mockResolvedValueOnce(running).mockResolvedValue(success);
-  await runBuildJob(build, 'https://github.com/acme/app.git', hooks());
+  await runBuildJob(build, source, hooks());
   expect(mockRevoke).toHaveBeenCalledWith({ provider: 'github', token: 'ghs_clone_secret' });
   expect(mockCore.deleteNamespacedSecret).toHaveBeenCalledWith({ namespace: 'builds', name: 'build-b-git' });
   expect(mockCore.deleteNamespacedSecret).not.toHaveBeenCalledWith({ namespace: 'builds', name: 'build-b-push' });
@@ -76,7 +77,7 @@ it('revokes the Git credential as soon as the clone step has finished', async ()
 
 it('reattaches to an existing Job without minting credentials or creating a second Job', async () => {
   mockBatch.readNamespacedJob.mockResolvedValue(success);
-  expect(await runBuildJob(build, 'https://github.com/acme/app.git', hooks())).toBe(digest);
+  expect(await runBuildJob(build, source, hooks())).toBe(digest);
   expect(mockBatch.createNamespacedJob).not.toHaveBeenCalled();
   expect(mockMint).not.toHaveBeenCalled();
 });
@@ -84,7 +85,7 @@ it('reattaches to an existing Job without minting credentials or creating a seco
 it('never re-runs a build whose Job was already submitted (timed out or expired)', async () => {
   build.jobSubmittedAt = new Date();
   mockBatch.readNamespacedJob.mockRejectedValue({ code: 404 });
-  await expect(runBuildJob(build, 'https://github.com/acme/app.git', hooks())).rejects.toBeInstanceOf(BuildStopped);
+  await expect(runBuildJob(build, source, hooks())).rejects.toBeInstanceOf(BuildStopped);
   expect(mockBatch.createNamespacedJob).not.toHaveBeenCalled();
   expect(mockMint).not.toHaveBeenCalled();
 });
@@ -92,14 +93,14 @@ it('never re-runs a build whose Job was already submitted (timed out or expired)
 it('stops a superseded build before it is admitted', async () => {
   mockBatch.readNamespacedJob.mockRejectedValue({ code: 404 });
   const h = hooks(); h.stillQueued.mockResolvedValue(false);
-  await expect(runBuildJob(build, 'https://github.com/acme/app.git', h)).rejects.toThrow('superseded');
+  await expect(runBuildJob(build, source, h)).rejects.toThrow('superseded');
   expect(mockMint).not.toHaveBeenCalled();
 });
 
 it('revokes a minted clone credential when the Job cannot be created', async () => {
   mockBatch.readNamespacedJob.mockRejectedValue({ code: 404 });
   mockBatch.createNamespacedJob.mockRejectedValueOnce(new Error('quota exceeded'));
-  await expect(runBuildJob(build, 'https://github.com/acme/app.git', hooks())).rejects.toThrow('quota');
+  await expect(runBuildJob(build, source, hooks())).rejects.toThrow('quota');
   expect(mockRevoke).toHaveBeenCalled();
   expect(mockCore.deleteNamespacedSecret).toHaveBeenCalledWith({ namespace: 'builds', name: 'build-b-push' });
 });
@@ -107,7 +108,7 @@ it('revokes a minted clone credential when the Job cannot be created', async () 
 it('reports Job failure after saving the final logs', async () => {
   mockBatch.readNamespacedJob.mockResolvedValue({ status: { failed: 1 } });
   const h = hooks();
-  await expect(runBuildJob(build, 'https://github.com/acme/app.git', h)).rejects.toThrow('Build Job failed');
+  await expect(runBuildJob(build, source, h)).rejects.toThrow('Build Job failed');
   expect(h.saveLogs).toHaveBeenCalled();
 });
 
@@ -115,12 +116,12 @@ it('uses only the digest reported by a trusted step, never a tag lookup', async 
   mockBatch.readNamespacedJob.mockResolvedValue(success);
   // An untrusted step's termination message is ignored even if it names a valid digest.
   mockCore.listNamespacedPod.mockResolvedValue({ items: [pod(`${internal}@${digest}`, 'buildkit')] });
-  await expect(runBuildJob(build, 'https://github.com/acme/app.git', hooks())).rejects.toThrow('no image digest');
+  await expect(runBuildJob(build, source, hooks())).rejects.toThrow('no image digest');
   mockCore.listNamespacedPod.mockResolvedValue({ items: [pod(`registry.registry.svc.cluster.local:5000/p-other/e-e1@${digest}`)] });
-  await expect(runBuildJob(build, 'https://github.com/acme/app.git', hooks())).rejects.toThrow('no image digest');
+  await expect(runBuildJob(build, source, hooks())).rejects.toThrow('no image digest');
   expect(mockAxios).not.toHaveBeenCalled();
   mockCore.listNamespacedPod.mockResolvedValue({ items: [pod(`${internal}@${digest}`, 'export')] });
-  expect(await runBuildJob(build, 'https://github.com/acme/app.git', hooks())).toBe(digest);
+  expect(await runBuildJob(build, source, hooks())).toBe(digest);
 });
 
 it('redacts credentials, registry tokens and bounds stored logs', () => {

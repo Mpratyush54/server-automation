@@ -6,6 +6,7 @@ jest.mock('../../../src/lib/gitlab-app', () => ({ gitlabApiToken: () => mockGitl
 import { mintCloneCredential, revokeCloneCredential, verifyCommitOnBranch } from '../../../src/lib/build-source';
 
 const sha = 'a'.repeat(40);
+const approved = (repositoryUrl: string) => ({ repositoryUrl, repositoryApprovedAt: new Date(), repositoryApprovedKey: repositoryUrl.replace(/^https:\/\//, '').replace(/\.git$/, '').toLowerCase() });
 const head = 'b'.repeat(40);
 const json = (status: number, body: unknown) => ({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
 const originalFetch = global.fetch;
@@ -16,7 +17,7 @@ afterAll(() => { global.fetch = originalFetch; });
 describe('clone credentials', () => {
   it('uses a dedicated repository-scoped GitHub App token and nothing broader', async () => {
     process.env.GITHUB_TOKEN = 'legacy-pat';
-    const cred = await mintCloneCredential('https://github.com/acme/app.git', 'b1');
+    const cred = await mintCloneCredential(approved('https://github.com/acme/app.git'), 'b1');
     expect(mockMint).toHaveBeenCalledWith('acme', 'app');
     expect(cred.url).toBe('https://github.com/acme/app.git');
     expect(cred.header).toBe(`Authorization: Basic ${Buffer.from('x-access-token:ghs_scoped_token').toString('base64')}`);
@@ -27,12 +28,12 @@ describe('clone credentials', () => {
 
   it('refuses GitHub builds when the App is not installed instead of falling back', async () => {
     mockMint.mockRejectedValueOnce(new Error('Install the GitHub App on this repository to build from source'));
-    await expect(mintCloneCredential('https://github.com/acme/app.git', 'b1')).rejects.toThrow('Install the GitHub App');
+    await expect(mintCloneCredential(approved('https://github.com/acme/app.git'), 'b1')).rejects.toThrow('Install the GitHub App');
   });
 
   it('creates a read_repository deploy token per GitLab build and revokes it by id', async () => {
     fetchMock.mockResolvedValueOnce(json(201, { id: 42, username: 'gitlab+deploy-token-42', token: 'gldt-secret' }));
-    const cred = await mintCloneCredential('https://gitlab.com/group/app.git', 'b1');
+    const cred = await mintCloneCredential(approved('https://gitlab.com/group/app.git'), 'b1');
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('https://gitlab.com/api/v4/projects/group%2Fapp/deploy_tokens');
     expect(JSON.parse(init.body).scopes).toEqual(['read_repository']);
@@ -46,13 +47,19 @@ describe('clone credentials', () => {
 
   it('refuses GitLab builds with a clear message when no deploy token can be issued', async () => {
     fetchMock.mockResolvedValueOnce(json(403, { message: 'forbidden' }));
-    await expect(mintCloneCredential('https://gitlab.com/group/app.git', 'b1')).rejects.toThrow(/deploy token/);
+    await expect(mintCloneCredential(approved('https://gitlab.com/group/app.git'), 'b1')).rejects.toThrow(/deploy token/);
     mockGitlabToken.mockResolvedValueOnce('');
-    await expect(mintCloneCredential('https://gitlab.com/group/app.git', 'b1')).rejects.toThrow(/GitLab token/);
+    await expect(mintCloneCredential(approved('https://gitlab.com/group/app.git'), 'b1')).rejects.toThrow(/GitLab token/);
+  });
+
+  it('refuses a repository that no administrator approved, or whose approval was for another repository', async () => {
+    await expect(mintCloneCredential({ repositoryUrl: 'https://github.com/acme/app.git' }, 'b1')).rejects.toThrow('administrator must approve');
+    await expect(mintCloneCredential({ ...approved('https://github.com/acme/app.git'), repositoryUrl: 'https://github.com/acme/other.git' }, 'b1')).rejects.toThrow('administrator must approve');
+    expect(mockMint).not.toHaveBeenCalled(); expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('refuses unsupported origins', async () => {
-    await expect(mintCloneCredential('https://evil.invalid/acme/app.git', 'b1')).rejects.toThrow('linked');
+    await expect(mintCloneCredential(approved('https://evil.invalid/acme/app.git'), 'b1')).rejects.toThrow('linked');
   });
 });
 

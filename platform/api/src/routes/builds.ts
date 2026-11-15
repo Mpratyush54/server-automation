@@ -4,12 +4,29 @@ import { Build } from '../entities/Build';
 import { Environment } from '../entities/Environment';
 import { Project } from '../entities/Project';
 import { ProjectAccessRole } from '../entities/ProjectMember';
-import { AuthenticatedRequest, expressAuthenticate } from '../middleware/auth';
+import { AuthenticatedRequest, expressAuthenticate, logAudit } from '../middleware/auth';
+import { UserRole } from '../entities/User';
 import { idempotency } from '../middleware/idempotency';
 import { requireProjectAccess } from '../lib/project-access';
 import { BuildLimitError, assertManualBuildAllowed, buildsEnabled, enqueueBuild } from '../lib/build-op';
 import { fetchBranchCommits } from '../lib/git-remote';
 import { validateBuildRef } from '../lib/build-spec';
+import { parseGitRemote } from '../lib/git-remote';
+import { RepositoryNotApprovedError, repositoryApproved, repositoryKey } from '../lib/repository-binding';
+
+/** Repository approvals are a platform-administrator decision, made by a person (not an agent token). */
+function isPlatformAdmin(req: AuthenticatedRequest): boolean {
+  return req.user?.role === UserRole.ADMIN && !req.agentToken;
+}
+
+function repositoryState(project: Project | null, req: AuthenticatedRequest) {
+  return {
+    url: project?.repositoryUrl || null,
+    approved: repositoryApproved(project),
+    approvedAt: repositoryApproved(project) ? project!.repositoryApprovedAt : null,
+    canApprove: isPlatformAdmin(req),
+  };
+}
 
 const router = Router();
 router.use('/projects/:projectId/builds', expressAuthenticate);
@@ -23,7 +40,8 @@ router.get('/projects/:projectId/builds', async (req, res) => {
       select: ['id', 'environmentId', 'commitSha', 'branch', 'status', 'startedAt', 'finishedAt', 'triggeredBy', 'imageDigest', 'error', 'deploymentId', 'createdAt'] });
     const environments = await ds.getRepository(Environment).find({ where: { projectId: req.params.projectId, isActive: true },
       select: ['id', 'name', 'buildOnPush', 'buildBranch'] });
-    return res.json({ enabled: buildsEnabled(), builds, environments });
+    const project = await ds.getRepository(Project).findOneBy({ id: req.params.projectId, isActive: true });
+    return res.json({ enabled: buildsEnabled(), builds, environments, repository: repositoryState(project, req as AuthenticatedRequest) });
   } catch { return res.status(500).json({ error: 'Could not load builds' }); }
 });
 
@@ -47,9 +65,13 @@ router.patch('/projects/:projectId/builds/settings', async (req, res) => {
     if (typeof buildOnPush !== 'boolean') return res.status(400).json({ error: 'buildOnPush must be a boolean' });
     if (typeof environmentId !== 'string') return res.status(400).json({ error: 'environmentId is required' });
     validateBuildRef(branch, 'a'.repeat(40));
-    const repo = (await getDb()).getRepository(Environment);
+    const ds = await getDb();
+    const repo = ds.getRepository(Environment);
     const env = await repo.findOneBy({ id: environmentId, projectId: req.params.projectId, isActive: true });
     if (!env) return res.status(404).json({ error: 'Environment not found' });
+    if (buildOnPush && !repositoryApproved(await ds.getRepository(Project).findOneBy({ id: req.params.projectId, isActive: true }))) {
+      return res.status(409).json({ error: new RepositoryNotApprovedError().message });
+    }
     env.buildOnPush = buildOnPush; env.buildBranch = branch;
     await repo.save(env);
     return res.json({ id: env.id, buildOnPush, branch });
@@ -74,8 +96,46 @@ router.post('/projects/:projectId/builds', idempotency('POST /projects/:projectI
     return res.status(202).json({ id: build.id, operationId: build.id, status: build.status });
   } catch (error) {
     if (error instanceof BuildLimitError) return res.status(429).json({ error: error.message });
+    if (error instanceof RepositoryNotApprovedError) return res.status(409).json({ error: error.message });
     return res.status(400).json({ error: 'Could not queue source build' });
   }
+});
+
+/** A platform administrator approves the project's current repository for source builds. */
+router.post('/projects/:projectId/builds/repository-approval', async (req, res) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    if (!isPlatformAdmin(authReq)) return res.status(403).json({ error: 'Only a platform administrator can approve a repository for builds' });
+    const ds = await getDb();
+    const repo = ds.getRepository(Project);
+    const project = await repo.findOneBy({ id: req.params.projectId, isActive: true });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    const key = repositoryKey(project.repositoryUrl);
+    const remote = parseGitRemote(project.repositoryUrl);
+    if (!key || !remote || remote.provider === 'unknown') return res.status(400).json({ error: 'Link a GitHub or GitLab repository before approving it' });
+    if (project.repositoryKey !== key) return res.status(409).json({ error: 'Save the project repository again before approving it' });
+    // Approve only the repository the administrator was shown, when the client says which one.
+    if (typeof req.body?.repositoryUrl === 'string' && repositoryKey(req.body.repositoryUrl) !== key) {
+      return res.status(409).json({ error: 'The project repository changed; review it and approve again' });
+    }
+    const approvedAt = new Date();
+    await repo.update({ id: project.id, repositoryKey: key }, { repositoryApprovedBy: authReq.user!.id, repositoryApprovedAt: approvedAt, repositoryApprovedKey: key });
+    await logAudit({ userId: authReq.user!.id, action: 'build.repository_approved', targetType: 'Project', targetId: project.id, metadata: { repository: key }, ip: req.ip });
+    return res.json({ url: project.repositoryUrl, approved: true, approvedAt, canApprove: true });
+  } catch { return res.status(400).json({ error: 'Could not approve the repository' }); }
+});
+
+router.delete('/projects/:projectId/builds/repository-approval', async (req, res) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    if (!isPlatformAdmin(authReq)) return res.status(403).json({ error: 'Only a platform administrator can withdraw a repository approval' });
+    const repo = (await getDb()).getRepository(Project);
+    const project = await repo.findOneBy({ id: req.params.projectId, isActive: true });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    await repo.update({ id: project.id }, { repositoryApprovedBy: null, repositoryApprovedAt: null, repositoryApprovedKey: null });
+    await logAudit({ userId: authReq.user!.id, action: 'build.repository_approval_withdrawn', targetType: 'Project', targetId: project.id, ip: req.ip });
+    return res.json({ url: project.repositoryUrl, approved: false, approvedAt: null, canApprove: true });
+  } catch { return res.status(400).json({ error: 'Could not withdraw the repository approval' }); }
 });
 
 export default router;

@@ -21,9 +21,11 @@ Builds run only on nodes that carry the `cairn.dev/build-runtime=v1` label. The 
 1. Link a GitHub or GitLab repository to the project.
    - **GitHub:** install the connected GitHub App on the repository. Each clone uses its own App token, limited to that repository with read-only contents access and revoked when the clone finishes. Builds do not fall back to a personal access token; without the App installation they are refused.
    - **GitLab:** connect GitLab with a token that can create project deploy tokens (Maintainer access and the `api` scope). Each clone uses a new deploy token with only `read_repository`, revoked when the clone finishes. If GitLab does not issue one, the build is refused with that reason; it never falls back to a broader token.
-2. Open **Deployments → Builds**. Select an environment and enter a branch for **Build now**.
-3. To build future pushes automatically, enter the environment's linked branch, enable **Build from source on push**, and save. This setting requires project DevOps access.
-4. Select **View logs** to follow the build. History and logs refresh every five seconds. Logs require project developer access; build history requires viewer access.
+   A repository can be linked to only one active project. Cairn compares repository addresses without regard to case, a trailing `.git` or a trailing slash.
+2. Ask a platform administrator to open **Deployments → Builds** and select **Approve repository**. Builds, including **Build now** and build-on-push, run only for a repository an administrator approved. Changing the project's repository clears the approval, and while build-on-push is enabled only a platform administrator can change the repository.
+3. Open **Deployments → Builds**. Select an environment and enter a branch for **Build now**.
+4. To build future pushes automatically, enter the environment's linked branch, enable **Build from source on push**, and save. This setting requires project DevOps access.
+5. Select **View logs** to follow the build. History and logs refresh every five seconds. Logs require project developer access; build history requires viewer access.
 
 Build success means the image has been pushed. Check deployment history for rollout readiness. Cairn checks that the new pod is available before marking the deployment deployed. It does not treat a failed build as a successful deployment.
 

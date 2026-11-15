@@ -13,6 +13,17 @@ import { ToastService, errorText } from '../../shared/feedback/feedback.service'
       <p>Turn a branch into an app. Cairn uses your Dockerfile, or detects the language with Buildpacks. Apps must listen on port 8080 and run as a non-root user.</p>
       @if (error) { <p role="alert">{{ error }}</p> }
       @if (!enabled && loaded) { <p>Source builds are disabled. Ask your administrator to enable them on the server.</p> }
+      @if (enabled && repository) {
+        <div class="build-repository">
+          <span>Repository</span> <code>{{ repository.url || 'Not linked' }}</code>
+          @if (repository.approved) { <span class="status status-ok">Approved for builds</span> }
+          @else { <span class="status status-warn">Waiting for approval</span> }
+          @if (!repository.approved && repository.canApprove && repository.url) {
+            <button type="button" class="btn" [disabled]="busy" (click)="approveRepository()">Approve repository</button>
+          }
+        </div>
+        @if (!repository.approved) { <p>A platform administrator must approve this repository before it can be built. Changing the repository clears the approval.</p> }
+      }
       @if (enabled && canManage) {
         <div class="build-controls">
           <label>Environment <select [(ngModel)]="environmentId" aria-label="Build environment">
@@ -51,6 +62,7 @@ import { ToastService, errorText } from '../../shared/feedback/feedback.service'
   styles: [`
     .builds-panel { border: 1px solid rgb(var(--line)); border-radius: 8px; padding: 20px; color: rgb(var(--fg)); }
     p { color: rgb(var(--fg-2)); }
+    .build-repository { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-block: 16px; }
     .build-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-block: 16px; }
     label { display: flex; align-items: center; gap: 8px; }
     input, select { background: rgb(var(--surface)); color: rgb(var(--fg)); border: 1px solid rgb(var(--line)); border-radius: 4px; padding: 6px; }
@@ -72,6 +84,7 @@ export class BuildsPanelComponent implements OnChanges, OnDestroy {
   builds: any[] = [];
   environments: any[] = [];
   enabled = false;
+  repository: { url: string | null; approved: boolean; canApprove: boolean } | null = null;
   loaded = false;
   busy = false;
   error = '';
@@ -84,7 +97,7 @@ export class BuildsPanelComponent implements OnChanges, OnDestroy {
   ngOnChanges() {
     this.generation++; clearInterval(this.timer);
     this.builds = []; this.environments = []; this.selectedBuildId = ''; this.logs = '';
-    this.environmentId = ''; this.branch = ''; this.loaded = false; this.refreshing = false; this.busy = false;
+    this.environmentId = ''; this.branch = ''; this.loaded = false; this.repository = null; this.refreshing = false; this.busy = false;
     if (!this.projectId) return;
     void this.refresh();
     this.timer = setInterval(() => void this.refresh(), 5000);
@@ -98,7 +111,7 @@ export class BuildsPanelComponent implements OnChanges, OnDestroy {
     try {
       const result: any = await firstValueFrom(this.http.get(this.url));
       if (generation !== this.generation) return;
-      this.builds = result.builds; this.enabled = result.enabled; this.error = '';
+      this.builds = result.builds; this.enabled = result.enabled; this.repository = result.repository || null; this.error = '';
       if (!this.loaded) {
         this.environments = result.environments;
         this.environmentId = this.environments[0]?.id || '';
@@ -124,6 +137,14 @@ export class BuildsPanelComponent implements OnChanges, OnDestroy {
       await firstValueFrom(this.http.post(this.url, { environmentId: this.environmentId, branch: this.branch }));
       if (generation === this.generation) { this.toast.ok('Build queued'); await this.refresh(); }
     } catch (error) { this.toast.error(errorText(error, 'Could not queue build')); }
+    finally { if (generation === this.generation) this.busy = false; }
+  }
+  async approveRepository() {
+    const generation = this.generation; this.busy = true;
+    try {
+      await firstValueFrom(this.http.post(`${this.url}/repository-approval`, { repositoryUrl: this.repository?.url }));
+      if (generation === this.generation) { this.toast.ok('Repository approved for builds'); await this.refresh(); }
+    } catch (error) { this.toast.error(errorText(error, 'Could not approve the repository')); }
     finally { if (generation === this.generation) this.busy = false; }
   }
   async saveSettings(env: any) {

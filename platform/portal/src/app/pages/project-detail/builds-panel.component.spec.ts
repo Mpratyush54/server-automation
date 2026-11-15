@@ -50,6 +50,30 @@ describe('BuildsPanelComponent', () => {
     old.flush(result); await Promise.resolve(); await Promise.resolve();
     expect(c.builds).toEqual([]); fixture.destroy();
   });
+  it('shows the repository approval state and lets an administrator approve it', async () => {
+    const fixture = TestBed.createComponent(BuildsPanelComponent); const c = fixture.componentInstance; c.projectId = 'p';
+    const http = TestBed.inject(HttpTestingController);
+    const refresh = c.refresh();
+    http.expectOne('/api/projects/p/builds').flush({ ...result, repository: { url: 'https://github.com/acme/app', approved: false, canApprove: true } });
+    await refresh; fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.build-repository .status.status-warn').textContent).toBe('Waiting for approval');
+    const approve = c.approveRepository();
+    const post = http.expectOne('/api/projects/p/builds/repository-approval');
+    expect(post.request.method).toBe('POST'); expect(post.request.body).toEqual({ repositoryUrl: 'https://github.com/acme/app' }); post.flush({ approved: true });
+    await Promise.resolve(); await Promise.resolve();
+    http.expectOne('/api/projects/p/builds').flush({ ...result, repository: { url: 'https://github.com/acme/app', approved: true, canApprove: true } });
+    await approve; fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.build-repository .status.status-ok').textContent).toBe('Approved for builds');
+    expect(fixture.nativeElement.textContent).not.toContain('Approve repository'); fixture.destroy();
+  });
+  it('hides the approve action from users who are not platform administrators', async () => {
+    const fixture = TestBed.createComponent(BuildsPanelComponent); const c = fixture.componentInstance; c.projectId = 'p';
+    const refresh = c.refresh();
+    TestBed.inject(HttpTestingController).expectOne('/api/projects/p/builds').flush({ ...result, repository: { url: 'https://github.com/acme/app', approved: false, canApprove: false } });
+    await refresh; fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('Approve repository');
+    expect(fixture.nativeElement.textContent).toContain('A platform administrator must approve this repository'); fixture.destroy();
+  });
   it('shows installer-disabled copy and hides mutation controls for viewers', () => {
     const fixture = TestBed.createComponent(BuildsPanelComponent); const c = fixture.componentInstance;
     c.loaded = true; c.enabled = false; fixture.detectChanges();

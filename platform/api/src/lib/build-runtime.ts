@@ -6,6 +6,7 @@ import {
   BUILD_NAMESPACE, DIGEST_CONTAINERS, buildJobName, cloneSecretName, digestFromTerminationMessage, positiveBuildInt, pushSecretName, renderBuildJob,
 } from './build-spec';
 import { CloneRevocation, mintCloneCredential, revokeCloneCredential } from './build-source';
+import { RepositorySource } from './repository-binding';
 import { REGISTRY_INTERNAL_HOST, buildPushToken, pushCnbAuth, pushDockerConfig, retentionToken } from './registry-token';
 import { acquireLock } from './locks';
 
@@ -136,7 +137,7 @@ export function buildLimits() {
  * Deterministic Job names let the operation worker reattach after API restarts. A build whose
  * Job was already submitted is never submitted again (timeouts and expiry are final).
  */
-export async function runBuildJob(build: Build, repositoryUrl: string, hooks: BuildJobHooks): Promise<string> {
+export async function runBuildJob(build: Build, source: RepositorySource, hooks: BuildJobHooks): Promise<string> {
   const { core, batch } = buildClients();
   const name = buildJobName(build.id);
   const limits = buildLimits();
@@ -157,7 +158,7 @@ export async function runBuildJob(build: Build, repositoryUrl: string, hooks: Bu
       const active = jobs.filter((j: any) => !j.status?.succeeded && !j.status?.failed);
       if (active.length >= limits.global) continue;
       if (active.filter((j: any) => j.metadata?.labels?.['cairn.dev/project'] === build.projectId).length >= limits.perProject) continue;
-      const clone = await mintCloneCredential(repositoryUrl, build.id);
+      const clone = await mintCloneCredential(source, build.id);
       revoke = clone.revoke;
       const pushToken = await buildPushToken(build.projectId, build.environmentId, build.id, limits.timeout + 600);
       secrets = { header: clone.header, values: [clone.secret, pushToken] };

@@ -16,7 +16,7 @@ import { runOperation, setOperationStore } from '../../../src/lib/operations';
 import { resetMemoryLocksForTests } from '../../../src/lib/locks';
 
 const digest = `sha256:${'d'.repeat(64)}`;
-const project: any = { id: 'p', isActive: true, repositoryUrl: 'https://github.com/acme/app.git' };
+const project: any = { id: 'p', isActive: true, repositoryUrl: 'https://github.com/acme/app.git', repositoryApprovedAt: new Date(), repositoryApprovedKey: 'github.com/acme/app' };
 const env: any = { id: 'e', projectId: 'p', isActive: true, buildOnPush: true, buildBranch: 'main' };
 let store: MemoryOperationStore;
 beforeEach(async () => {
@@ -81,6 +81,24 @@ describe('push builds', () => {
     expect(rows[older.id].status).toBe('cancelled');
     expect(rows[older.id].error).toContain('Superseded');
     expect(rows[admitted.id].status).toBe('queued');
+  });
+});
+
+describe('repository approval', () => {
+  const unapproved = { ...project, repositoryApprovedAt: null, repositoryApprovedKey: null };
+
+  it('is required to queue manual and push builds', async () => {
+    await expect(enqueueBuild(unapproved, env, 'main', 'a'.repeat(40), 'user')).rejects.toThrow('administrator must approve');
+    expect(await queuePushBuilds(unapproved, 'main', 'a'.repeat(40))).toBe('unapproved');
+    expect(mockVerify).not.toHaveBeenCalled(); expect(mockRepos.Build.rows).toHaveLength(0);
+  });
+
+  it('is checked again before the build runs', async () => {
+    const build = await enqueueBuild(project, env, 'main', 'a'.repeat(40), 'push');
+    await mockRepos.Project.update('p', { repositoryUrl: 'https://github.com/acme/other.git' });
+    await runOperation(build.id);
+    expect(runBuildJob).not.toHaveBeenCalled();
+    expect(mockRepos.Build.rows[0]).toMatchObject({ status: 'failed', error: expect.stringContaining('administrator must approve') });
   });
 });
 

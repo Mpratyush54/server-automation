@@ -1,6 +1,7 @@
 import { parseGitRemote } from './git-remote';
 import { mintScopedInstallationToken, revokeInstallationToken } from './github-app';
 import { gitlabApiToken } from './gitlab-app';
+import { RepositorySource, repositoryApproved } from './repository-binding';
 
 /**
  * Source access for builds. Every clone gets its own narrowly scoped, short-lived credential:
@@ -22,8 +23,10 @@ function basicHeader(user: string, secret: string): string {
   return `Authorization: Basic ${Buffer.from(`${user}:${secret}`).toString('base64')}`;
 }
 
-export async function mintCloneCredential(repositoryUrl: string, buildId: string): Promise<CloneCredential> {
-  const parsed = parseGitRemote(repositoryUrl);
+/** Mints a clone credential only for the project's current, administrator-approved repository. */
+export async function mintCloneCredential(source: RepositorySource, buildId: string): Promise<CloneCredential> {
+  if (!repositoryApproved(source)) throw new BuildSourceError('A platform administrator must approve this repository before it can be built');
+  const parsed = parseGitRemote(source.repositoryUrl);
   if (!parsed || parsed.provider === 'unknown') throw new BuildSourceError('Builds require a linked GitHub or GitLab repository');
   if (parsed.provider === 'github') {
     const { token } = await mintScopedInstallationToken(parsed.owner, parsed.repo);

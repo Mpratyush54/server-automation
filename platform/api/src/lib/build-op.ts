@@ -11,6 +11,7 @@ import { positiveBuildInt, retentionCandidates, validateBuildRef } from './build
 import { BuildStopped, cancelBuildJob, cleanupBuildSecret, registryManifest, runBuildJob, signBuiltImage } from './build-runtime';
 import { BuildSourceError, verifyCommitOnBranch } from './build-source';
 import { AuditLog } from '../entities/AuditLog';
+import { RepositoryNotApprovedError, repositoryApproved } from './repository-binding';
 
 export const BUILD_OPERATION = 'source.build';
 type BuildState = { buildId: string; deploymentId: string; preview?: boolean; appName?: string; destNs?: string; host?: string; source?: boolean };
@@ -83,7 +84,9 @@ export const buildOperation = defineOperation<BuildState>({
       build.logLocation = `/api/projects/${build.projectId}/builds/${build.id}/logs`;
       let digest: string;
       try {
-        digest = await runBuildJob(build, project.repositoryUrl || '', {
+        // The approval is checked against the project as it is now, not as it was when queued.
+        if (!repositoryApproved(project)) throw new BuildSourceError(new RepositoryNotApprovedError().message);
+        digest = await runBuildJob(build, project, {
           saveLogs: async logs => { await repo.update(build.id, { logs }); },
           stillQueued: async () => (await repo.findOneBy({ id: build.id }))?.status === 'queued',
           markSubmitted: async () => {
@@ -156,6 +159,7 @@ export async function enqueueBuild(project: Project, env: Environment, branch: s
   if (!buildsEnabled()) throw new Error('Source builds are disabled');
   validateBuildRef(branch, commitSha);
   if (env.projectId !== project.id || !env.isActive || !project.repositoryUrl) throw new Error('Active linked environment required');
+  if (!repositoryApproved(project)) throw new RepositoryNotApprovedError();
   const registry = process.env.BUILDS_REGISTRY || '';
   if (!/^[a-z0-9.-]+(?::[0-9]+)?$/.test(registry)) throw new Error('Build registry is not configured');
   const ds = await getDb();
@@ -191,7 +195,7 @@ export async function recoverBuildQueue(): Promise<void> {
   for (const build of await ds.getRepository(Build).find({ where: { status: 'queued' } })) await ensureBuildOperation(build);
 }
 
-export type PushBuildResult = 'none' | 'queued' | 'rejected' | 'limited';
+export type PushBuildResult = 'none' | 'queued' | 'rejected' | 'limited' | 'unapproved';
 
 /**
  * Queue builds for opted-in environments whose linked branch matches the push. The pushed SHA
@@ -204,6 +208,7 @@ export async function queuePushBuilds(project: Project, branch: string, commit: 
   const ds = await getDb();
   const envs = await ds.getRepository(Environment).find({ where: { projectId: project.id, isActive: true, buildOnPush: true, buildBranch: branch } });
   if (!envs.length) return 'none';
+  if (!repositoryApproved(project)) return 'unapproved';
   let verified = false;
   try { verified = /^[a-f0-9]{40}$/.test(commit) && !!project.repositoryUrl && await verifyCommitOnBranch(project.repositoryUrl, branch, commit); }
   catch { verified = false; }

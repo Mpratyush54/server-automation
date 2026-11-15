@@ -10,6 +10,14 @@ import { deployK8sPreview, terminateK8sPreview, previewResourceName } from '../l
 import { githubWebhookSecrets, handleInstallationWebhook, verifyHubSignature } from '../lib/github-app';
 import { gitlabWebhookSecrets, verifyGitlabTokenAgainst } from '../lib/gitlab-app';
 import { claimWebhookDelivery, releaseWebhookDelivery, webhookDeliveryId, WebhookProvider } from '../lib/webhook-dedupe';
+import { repositoryKey } from '../lib/repository-binding';
+
+/** The active project linked to a repository; the key is unique across active projects. */
+async function projectForRepository(url: unknown): Promise<Project | null> {
+  const key = repositoryKey(typeof url === 'string' ? url : null);
+  if (!key) return null;
+  return (await getDb()).getRepository(Project).findOne({ where: { repositoryKey: key, isActive: true } });
+}
 
 /**
  * Skip provider retries of a delivery that was already processed (issue #23).
@@ -43,6 +51,7 @@ async function verifyGitLabToken(token: string | undefined): Promise<boolean> {
 function pushBuildResponse(result: PushBuildResult) {
   if (result === 'queued') return { success: true, message: 'Source build queued' };
   if (result === 'limited') return { success: false, message: 'Source build not queued: project build queue is full' };
+  if (result === 'unapproved') return { success: false, message: 'Source build not queued: a platform administrator has not approved this repository' };
   return { success: false, message: 'Source build rejected: commit is not on the linked branch' };
 }
 
@@ -72,7 +81,7 @@ router.post('/webhooks/github', async (req: Request, res: Response) => {
       const branch = (payload.ref || '').replace('refs/heads/', '');
       const repoUrl = payload.repository?.clone_url || '';
       const ds = await getDb();
-      const project = await ds.getRepository(Project).findOne({ where: { repositoryUrl: repoUrl } });
+      const project = await projectForRepository(repoUrl);
 
       if (!project) return res.json({ success: false, message: 'No matching project' });
 
@@ -140,7 +149,7 @@ router.post('/webhooks/github', async (req: Request, res: Response) => {
       const branch = pr.head?.ref || '';
       const repoUrl = pr.base?.repo?.clone_url || '';
       const ds = await getDb();
-      const project = await ds.getRepository(Project).findOne({ where: { repositoryUrl: repoUrl } });
+      const project = await projectForRepository(repoUrl);
 
       if (!project) return res.json({ success: false, message: 'No matching project' });
 
@@ -214,7 +223,7 @@ router.post('/webhooks/gitlab', async (req: Request, res: Response) => {
       const branch = (payload.ref || '').replace('refs/heads/', '');
       const repoUrl = payload.project?.http_url || payload.project?.clone_url || '';
       const ds = await getDb();
-      const project = await ds.getRepository(Project).findOne({ where: { repositoryUrl: repoUrl } });
+      const project = await projectForRepository(repoUrl);
 
       if (!project) return res.json({ success: false, message: 'No matching project' });
 
@@ -281,7 +290,7 @@ router.post('/webhooks/gitlab', async (req: Request, res: Response) => {
       const branch = mr.source_branch || '';
       const repoUrl = payload.project?.http_url || payload.project?.clone_url || '';
       const ds = await getDb();
-      const project = await ds.getRepository(Project).findOne({ where: { repositoryUrl: repoUrl } });
+      const project = await projectForRepository(repoUrl);
 
       if (!project) return res.json({ success: false, message: 'No matching project' });
 
