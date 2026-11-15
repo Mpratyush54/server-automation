@@ -184,6 +184,46 @@ func TestRegistryTokenSigner(t *testing.T) {
 	}
 }
 
+func TestRegistrySignerIsKeptOrMovedNotRotated(t *testing.T) {
+	key, cert, _ := GenerateRegistryTokenSigner()
+	other, _, _ := GenerateRegistryTokenSigner()
+	if got, ok := chooseRegistrySigner(key, "", cert); !ok || got != key {
+		t.Fatal("current signer not kept")
+	}
+	if got, ok := chooseRegistrySigner("", key, cert); !ok || got != key {
+		t.Fatal("signer from the builds namespace not carried over")
+	}
+	if got, ok := chooseRegistrySigner(other, key, cert); !ok || got != key {
+		t.Fatal("matching signer not preferred")
+	}
+	if _, ok := chooseRegistrySigner(other, "", cert); ok {
+		t.Fatal("mismatched signer kept")
+	}
+	if _, ok := chooseRegistrySigner(key, key, ""); ok {
+		t.Fatal("signer kept without a registry certificate")
+	}
+	if RegistrySignerNamespace != "platform" {
+		t.Fatal("registry signer must live in the platform namespace")
+	}
+}
+
+func TestBuildSecretsAreLimitedToPerBuildNames(t *testing.T) {
+	c := &config.Config{Profile: config.ProfileFull, BuildsEnabled: true, BuildsEgressCIDRs: "192.0.2.0/24"}
+	manifest, err := BuildNamespaceManifest(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"kind: ValidatingAdmissionPolicy", "name: platform-build-secrets", "failurePolicy: Fail", "operations: [CREATE, UPDATE, DELETE]",
+		"matchLabels: {kubernetes.io/metadata.name: builds}", `^build-[0-9a-f-]{36}-(git|push)$`, "validationActions: [Deny]", "resourceNames: [build-ca]"} {
+		if !strings.Contains(manifest, want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+	if strings.Contains(manifest, "registry-token-signer") {
+		t.Fatal("the signing key must not be managed in the builds namespace")
+	}
+}
+
 func TestBuildkitRuntimeProfilesAreNarrow(t *testing.T) {
 	var profile struct {
 		DefaultAction string `json:"defaultAction"`

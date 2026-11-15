@@ -38,8 +38,9 @@ export async function sourcePullSecret(namespace: string, projectId: string) {
     data: { '.dockerconfigjson': Buffer.from(JSON.stringify(config)).toString('base64') } };
 }
 
-export async function applySourceWorkload(namespace: string, name: string, image: string, projectId: string, environmentName: string): Promise<void> {
-  const { apps, core } = clients();
+/** Create or replace the namespace's pull Secret with the credential for the current signing key. */
+export async function applySourcePullSecret(namespace: string, projectId: string): Promise<void> {
+  const { core } = clients();
   const pullSecret = await sourcePullSecret(namespace, projectId);
   try { await core.createNamespacedSecret({ namespace, body: pullSecret }); }
   catch (e: any) {
@@ -47,6 +48,11 @@ export async function applySourceWorkload(namespace: string, name: string, image
     const current = body(await core.readNamespacedSecret({ namespace, name: 'source-registry' }));
     await core.replaceNamespacedSecret({ namespace, name: 'source-registry', body: { ...pullSecret, metadata: { ...pullSecret.metadata, resourceVersion: current.metadata.resourceVersion } } });
   }
+}
+
+export async function applySourceWorkload(namespace: string, name: string, image: string, projectId: string, environmentName: string): Promise<void> {
+  const { apps, core } = clients();
+  await applySourcePullSecret(namespace, projectId);
   const desired: any = sourceWorkload(namespace, name, image, projectId, environmentName);
   try {
     const current = body(await apps.readNamespacedDeployment({ namespace, name }));

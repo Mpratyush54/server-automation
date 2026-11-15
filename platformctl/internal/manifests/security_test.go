@@ -160,6 +160,7 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 		{`[""]`, `["secrets"]`, `["platform-env","platform-rotate-pending"]`, `["get", "update"]`},
 		{`[""]`, `["secrets"]`, `["platform-credentials","platform-oidc-signing-key"]`, `["get", "update"]`}, // #20
 		{`[""]`, `["secrets"]`, `["platform-rotate-pending"]`, `["delete"]`},
+		{`[""]`, `["secrets"]`, `["registry-token-signer"]`, `["get"]`}, // #55
 		{`["apps"]`, `["deployments"]`, `["platform-api"]`, `["patch"]`},
 		{`[""]`, `["secrets"]`, "", `["create"]`},
 		{`["coordination.k8s.io"]`, `["leases"]`, "", `["create"]`},                               // #19

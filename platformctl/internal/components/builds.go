@@ -311,13 +311,45 @@ rules:
   verbs: [get, list, create, delete]
 - apiGroups: ['']
   resources: [configmaps]
+  resourceNames: [build-ca]
   verbs: [get]
 - apiGroups: ['']
   resources: [pods, pods/log]
   verbs: [get, list]
+# Per-build credential Secrets have generated names, so RBAC cannot list them;
+# the admission policy below limits writes and deletes to those names. No
+# other Secret is kept in this namespace (the registry signing key lives in
+# the platform namespace).
 - apiGroups: ['']
   resources: [secrets]
   verbs: [get, create, update, patch, delete]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata: {name: platform-build-secrets}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: builds}
+    resourceRules:
+    - apiGroups: ['']
+      apiVersions: [v1]
+      operations: [CREATE, UPDATE, DELETE]
+      resources: [secrets]
+  matchConditions:
+  - name: platform-api-only
+    expression: "request.userInfo.username == 'system:serviceaccount:platform:platform-api'"
+  validations:
+  - expression: "(request.operation == 'DELETE' ? oldObject : object).metadata.name.matches('^build-[0-9a-f-]{36}-(git|push)$')"
+    message: "The platform API may only manage per-build credential Secrets in the builds namespace"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata: {name: platform-build-secrets}
+spec:
+  policyName: platform-build-secrets
+  validationActions: [Deny]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -475,21 +507,45 @@ kubectl -n %s get svc %s -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true`, n
 	return strings.TrimSpace(out)
 }
 
+// RegistrySignerNamespace holds the API's registry signing key. It is kept out
+// of the builds namespace, where repository code runs; the API reads it through
+// a resourceNames-scoped rule (platform-api-rbac.yaml).
+const RegistrySignerNamespace = "platform"
+
+// chooseRegistrySigner returns the signing key to keep: the current one, or
+// the one an earlier version stored in the builds namespace, if it still
+// matches the registry's certificate. ok=false means a new pair is needed.
+func chooseRegistrySigner(current, legacy, cert string) (key string, ok bool) {
+	for _, k := range []string{current, legacy} {
+		if k != "" && cert != "" && RegistryTokenSignerMatches(k, cert) {
+			return k, true
+		}
+	}
+	return "", false
+}
+
 func ensureRegistryTokenSigner() error {
-	key := kubeSecretValue("builds", "registry-token-signer", "key.pem")
+	current := kubeSecretValue(RegistrySignerNamespace, "registry-token-signer", "key.pem")
+	legacy := kubeSecretValue("builds", "registry-token-signer", "key.pem")
 	cert := kubeSecretValue("registry", "registry-token-cert", "cert.pem")
-	if key != "" && cert != "" && RegistryTokenSignerMatches(key, cert) {
-		return nil
+	key, ok := chooseRegistrySigner(current, legacy, cert)
+	if !ok {
+		var err error
+		if key, cert, err = GenerateRegistryTokenSigner(); err != nil {
+			return err
+		}
+		// Certificate first: during rotation the registry must never trust a key the API no longer has.
+		if err := applySecret("registry", "registry-token-cert", map[string]string{"cert.pem": cert}); err != nil {
+			return err
+		}
 	}
-	key, cert, err := GenerateRegistryTokenSigner()
-	if err != nil {
-		return err
+	if key != current {
+		// The API rewrites project pull Secrets when it sees the new key (source-pull-sync.ts).
+		if err := applySecret(RegistrySignerNamespace, "registry-token-signer", map[string]string{"key.pem": key}); err != nil {
+			return err
+		}
 	}
-	// Certificate first: during rotation the registry must never trust a key the API no longer has.
-	if err := applySecret("registry", "registry-token-cert", map[string]string{"cert.pem": cert}); err != nil {
-		return err
-	}
-	return applySecret("builds", "registry-token-signer", map[string]string{"key.pem": key})
+	return shell.RunBash("kubectl -n builds delete secret registry-token-signer --ignore-not-found >/dev/null")
 }
 
 func InstallBuilds(c *config.Config) error {

@@ -8,6 +8,8 @@ const dispatchOutbox = jest.fn().mockResolvedValue(0);
 const acquireLock = jest.fn();
 const recoverBuildQueue = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../../src/lib/build-op', () => ({ recoverBuildQueue: () => recoverBuildQueue() }));
+const syncSourcePullSecrets = jest.fn().mockResolvedValue({ written: 0, failed: 0 });
+jest.mock('../../../src/lib/source-pull-sync', () => ({ syncSourcePullSecrets: () => syncSourcePullSecrets() }));
 
 jest.mock('../../../src/lib/operations', () => ({
   resumeOperations: (...a: unknown[]) => resumeOperations(...a),
@@ -100,8 +102,17 @@ it('repairs the build queue before resuming operations only when source builds a
   process.env.BUILDS_ENABLED = 'true';
   await runOperationResume();
   expect(recoverBuildQueue).toHaveBeenCalled();
-  recoverBuildQueue.mockClear();
+  expect(syncSourcePullSecrets).toHaveBeenCalled();
+  recoverBuildQueue.mockClear(); syncSourcePullSecrets.mockClear();
   process.env.BUILDS_ENABLED = 'false';
   await runOperationResume();
-  expect(recoverBuildQueue).not.toHaveBeenCalled();
+  expect(recoverBuildQueue).not.toHaveBeenCalled(); expect(syncSourcePullSecrets).not.toHaveBeenCalled();
+});
+
+it('keeps resuming operations when pull Secrets cannot be refreshed', async () => {
+  process.env.BUILDS_ENABLED = 'true';
+  syncSourcePullSecrets.mockRejectedValueOnce(new Error('signer unavailable'));
+  jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  await expect(runOperationResume()).resolves.toBeUndefined();
+  process.env.BUILDS_ENABLED = 'false';
 });

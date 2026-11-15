@@ -16,6 +16,8 @@ export const REGISTRY_ISSUER = 'cairn-api';
 /** Builds and the API reach the registry in-cluster; nothing is published through ingress. */
 export const REGISTRY_INTERNAL_HOST = 'registry.registry.svc.cluster.local:5000';
 export const REGISTRY_SIGNER_SECRET = 'registry-token-signer';
+/** The signing key lives with the API, not in the namespace where builds run. */
+export const REGISTRY_SIGNER_NAMESPACE = 'platform';
 export const PULL_TOKEN_TTL_SECONDS = 300;
 
 export type RegistryAction = 'pull' | 'push' | 'delete';
@@ -71,12 +73,17 @@ async function signer(): Promise<Signer> {
   const { loadKubeConfig } = await import('./kube-config');
   const kc = new k8s.KubeConfig();
   loadKubeConfig(kc);
-  const res: any = await kc.makeApiClient(k8s.CoreV1Api).readNamespacedSecret({ namespace: 'builds', name: REGISTRY_SIGNER_SECRET });
+  const res: any = await kc.makeApiClient(k8s.CoreV1Api).readNamespacedSecret({ namespace: REGISTRY_SIGNER_NAMESPACE, name: REGISTRY_SIGNER_SECRET });
   const data = (res.body || res).data || {};
   if (!data['key.pem']) throw new Error('Registry token signer is not configured');
   const value = toSigner(Buffer.from(data['key.pem'], 'base64').toString());
   cached = { signer: value, until: Date.now() + 5 * 60 * 1000 };
   return value;
+}
+
+/** Identifies the current signing key; per-project pull credentials change when it does. */
+export async function registrySignerKid(): Promise<string> {
+  return (await signer()).kid;
 }
 
 export async function mintRegistryToken(subject: string, access: RegistryAccess[], ttlSeconds: number): Promise<string> {

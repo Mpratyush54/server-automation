@@ -182,6 +182,11 @@ rules:
   resources: ["secrets"]
   resourceNames: ["platform-rotate-pending"]
   verbs: ["delete"]
+# Source builds (#55): the registry token signing key, read-only.
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["registry-token-signer"]
+  verbs: ["get"]
 - apiGroups: ["apps"]
   resources: ["deployments"]
   resourceNames: ["platform-api"]
