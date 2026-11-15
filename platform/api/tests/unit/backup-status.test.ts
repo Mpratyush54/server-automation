@@ -22,8 +22,18 @@ describe('backup storage and recovery window (#186)', () => {
 
   it('reports the off-site target without credentials or unknown fields', () => {
     const s = parseBackupStorage({ mode: 'external', endpointHost: 'acct.r2.cloudflarestorage.com', bucket: 'cairn-bk', prefix: 'srv-a', region: 'auto', updatedAt: '2026-11-15T00:00:00Z', 'secret-key': 'leak' } as any);
-    expect(s).toEqual({ mode: 'external', localOnly: false, target: { endpointHost: 'acct.r2.cloudflarestorage.com', bucket: 'cairn-bk', prefix: 'srv-a', region: 'auto' } });
+    expect(s).toEqual({ mode: 'external', localOnly: false, target: { endpoint: 'acct.r2.cloudflarestorage.com', endpointHost: 'acct.r2.cloudflarestorage.com', bucket: 'cairn-bk', prefix: 'srv-a', region: 'auto' } });
     expect(JSON.stringify(s)).not.toContain('leak');
+  });
+
+  it('shows the endpoint as configured, scheme included', () => {
+    const s = parseBackupStorage({ mode: 'external', endpoint: 'http://10.0.0.5:9000', endpointHost: '10.0.0.5:9000', bucket: 'cairn-bk' });
+    expect(s.target?.endpoint).toBe('http://10.0.0.5:9000');
+    // Anything but scheme://host[:port] falls back to the host.
+    const bad = parseBackupStorage({ mode: 'external', endpoint: 'javascript:alert(1)', endpointHost: 'h.example', bucket: 'cairn-bk' });
+    expect(bad.target?.endpoint).toBe('h.example');
+    const creds = parseBackupStorage({ mode: 'external', endpoint: 'https://u:p@h.example', endpointHost: 'h.example', bucket: 'cairn-bk' });
+    expect(creds.target?.endpoint).toBe('h.example');
   });
 
   it('treats local, missing and malformed summaries as local-only', () => {
