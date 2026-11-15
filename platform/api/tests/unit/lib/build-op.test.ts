@@ -162,6 +162,16 @@ describe('per-project limits', () => {
     await expect(enqueueBuild({ ...project, id: 'p2' }, { id: 'e2', projectId: 'p2', isActive: true } as any, 'main', 'c'.repeat(40), 'user')).resolves.toBeDefined();
   });
 
+  it('lets a newer push replace queued builds even when they fill the project queue', async () => {
+    process.env.BUILDS_MAX_QUEUED_PER_PROJECT = '1';
+    const old = await enqueueBuild(project, env, 'main', 'a'.repeat(40), 'push', { headCheckedAt: new Date(Date.now() - 1000) });
+    const newer = await enqueueBuild(project, env, 'main', 'b'.repeat(40), 'push', { headCheckedAt: new Date() });
+    expect((await mockRepos.Build.findOneBy({ id: old.id })).status).toBe('cancelled');
+    expect(newer.status).toBe('queued');
+    // A manual build does not replace anything, so the cap still applies to it.
+    await expect(enqueueBuild(project, env, 'main', 'c'.repeat(40), 'user')).rejects.toBeInstanceOf(BuildLimitError);
+  });
+
   it('reports a full queue for pushes without falling back to another flow', async () => {
     process.env.BUILDS_MAX_QUEUED_PER_PROJECT = '1';
     const other = { id: 'e-other', projectId: 'p', isActive: true, buildOnPush: false, buildBranch: 'main' };

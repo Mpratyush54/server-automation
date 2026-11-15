@@ -206,15 +206,16 @@ export async function enqueueBuild(project: Project, env: Environment, branch: s
     // its image instead of being rebuilt.
     const reusable = push ? existing.filter(b => b.commitSha === commitSha && b.status === 'succeeded' && b.imageDigest && !b.prunedAt)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] : undefined;
+    // A newer push replaces queued (not yet admitted) builds of commits observed before it, so
+    // those do not count against the queue limit: the newest commit is never refused because of
+    // the builds it replaces.
+    const replaced = push ? existing.filter(b => b.status === 'queued' && !b.jobSubmittedAt && observedAt(b) < checkedAt.getTime()) : [];
     if (!reusable) {
       const queued = await repo.count({ where: { projectId: project.id, status: 'queued' } });
-      if (queued >= buildQueueLimits().queuedPerProject) throw new BuildLimitError('This project already has the maximum number of queued builds');
+      if (queued - replaced.length >= buildQueueLimits().queuedPerProject) throw new BuildLimitError('This project already has the maximum number of queued builds');
     }
-    if (push) {
-      // A newer push replaces queued (not yet admitted) builds of commits observed before it.
-      for (const old of existing.filter(b => b.status === 'queued' && !b.jobSubmittedAt && observedAt(b) < checkedAt.getTime())) {
-        await repo.update(old.id, { status: 'cancelled', finishedAt: new Date(), error: `Superseded by a newer push (${commitSha.slice(0, 12)})` });
-      }
+    for (const old of replaced) {
+      await repo.update(old.id, { status: 'cancelled', finishedAt: new Date(), error: `Superseded by a newer push (${commitSha.slice(0, 12)})` });
     }
     const now = new Date();
     build = repo.create({ id: crypto.randomUUID(), projectId: project.id, environmentId: env.id, branch, commitSha, triggeredBy, headCheckedAt: checkedAt,
