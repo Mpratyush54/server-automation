@@ -4,32 +4,37 @@ This page helps you create a project in the portal and get it ready to deploy.
 
 A project is one app. It has its own Git repository, three environments (development, staging and production), its own databases and secrets, and its own monitoring.
 
+## Before you start
+
+If your code is in a **private** repository, connect GitHub or GitLab first, so Cairn can read it: open **Settings**, **Git linking** and follow [Connect GitHub or GitLab](../guides/git-providers.md). A public repository works without this. You can also leave the repository out for now and add it later.
+
 ## Create a project
 
-1. Sign in to the portal and open **Projects**.
-2. Select **New project**.
-3. Fill in the form:
+1. Sign in to the portal, open **Projects** and select **New project**.
+2. Work through the steps. Only the name is required; select **Skip** on any step marked *Optional*.
 
-   | Field | Example | What it is |
-   |---|---|---|
-   | Name | `shop` | Lowercase letters, numbers and dashes. Used in addresses and namespaces. |
-   | Stack | Node.js | Node.js, Angular, Python or Static site |
-   | Git repository | `https://github.com/acme/shop` | The repository Platform deploys from. You can add it later. |
-   | Base domain | `example.com` or `203.0.113.7.sslip.io` | Each environment gets an address under this domain. You can add it later. |
+   | Step | What to enter |
+   |---|---|
+   | **App** | A **Name**, for example `shop`: lowercase letters, numbers and dashes. It becomes part of each environment's address. Pick the **Stack** (Node.js, Angular, Python or Static site). |
+   | **Code** (optional) | The **Repository address**, for example `https://github.com/acme/shop`, and the **Branch to deploy**. Leave the branch empty to use the repository's default branch. |
+   | **Environments** | A **Base domain**, for example `example.com`, with a wildcard DNS record `*.example.com` pointing at your server. No domain? Use `<server-ip>.sslip.io`. Leave it empty to use the server's own domain. |
+   | **Data** (optional) | Tick **PostgreSQL** for each environment that needs a database. |
+   | **Settings** (optional) | Environment variables and secrets your app reads, and privacy defaults for browser monitoring. |
+   | **Team** (optional) | People who should work on the app, and their role. You are added as the owner. |
 
-4. Select **Create project**.
+3. On **Review**, select **Create project**.
 
-Platform creates the project with three environments: **development**, **staging** and **production**. Each one runs in its own Kubernetes namespace and gets its own address. You can see them on the project's **Deployments** page, under **Environments**.
+Cairn creates the project with its three environments. Each one runs in its own isolated space on the server and gets its own address, such as `shop-development-<code>.example.com`, where `<code>` is a short code that keeps addresses unique. You can see the addresses on the project's **Deployments** page, under **Environments**.
 
-## Connect your repository
+If you ticked a database, its password is shown once, right after the project is created. Copy it then.
 
-If you did not add a repository in the form, open the project, go to **Configuration**, and set **Repository URL** under **Git and domain**.
+## Add or change the repository later
 
-For a private repository, connect GitHub or GitLab first, so Platform can read it. See [Connect GitHub or GitLab](../guides/git-providers.md).
+Open the project, go to **Configuration** and fill in **Repository** under **Repository and address**. Select **Save changes**.
 
 ## Get an SDK token (optional)
 
-You only need this if your app uses a Platform SDK for logs, metrics or databases.
+You only need this if your app uses a Cairn SDK for logs, metrics or databases.
 
 1. Open the project and go to **Settings**.
 2. Under **Generate SDK token**, enter a name and pick the kind:

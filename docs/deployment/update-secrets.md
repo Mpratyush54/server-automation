@@ -31,7 +31,9 @@ sudo platformctl update
 
 MongoDB, file storage and Portainer are left alone so the API never restarts with a password those services would reject.
 
-On the high-availability install (Redis with Sentinel), the portal skips Redis. Rotate it with `platformctl recover` or `platformctl provision` so every node changes together.
+On the high-availability install (Redis with Sentinel), the portal rotates every data node and Sentinel live, without restarting Redis. API and project ACL users keep working, including Sentinel discovery credentials already issued to SDK clients. The Redis Secret and platform credentials are updated after all members have changed; the chart reads the Secret again on restart. Runtime configuration is persisted where writable.
+
+If an HA Redis rotation is interrupted, retry **Rotate all secrets**. Cairn retains the pending password pair and checks each member with both passwords before continuing. Keep the pending credentials until rotation succeeds; a reachable master alone does not mean every member has rotated.
 
 ## If something goes wrong
 

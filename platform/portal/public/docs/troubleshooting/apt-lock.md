@@ -45,7 +45,7 @@ sudo ./platform-bootstrap/bootstrap.sh
 
 ### Option 3 — disable it permanently on this server
 
-For a dedicated Platform host you usually don't want `unattended-upgrades`
+For a dedicated Cairn host you usually don't want `unattended-upgrades`
 racing with the bootstrap on every reboot:
 
 ```bash

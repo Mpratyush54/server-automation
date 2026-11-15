@@ -1,6 +1,6 @@
 # usePlatform
 
-React hook that returns the Platform context value. Must be used inside a `<PlatformProvider>`.
+React hook that returns the Cairn context value. Must be used inside a `<PlatformProvider>`.
 
 ---
 

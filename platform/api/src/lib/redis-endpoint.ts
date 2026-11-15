@@ -32,10 +32,11 @@ export function deriveSentinelPassword(adminPassword: string): string {
 
 /**
  * ACL SETUSER args for plat-sentinel: topology discovery only (no SET/FAILOVER/RESET, no data).
+ * Add passwords without resetting them so SDKs issued before rotation keep discovering.
  */
 export function buildSentinelAclSetUserArgs(password: string): string[] {
   return [
-    'SETUSER', SENTINEL_ACL_USER, 'reset', 'on', `>${password}`,
+    'SETUSER', SENTINEL_ACL_USER, 'on', `>${password}`,
     '-@all',
     '+ping', '+auth', '+hello',
     '+client|setname', '+client|getname',

@@ -198,6 +198,9 @@ func runProvision() error {
 	if err := checkHAProvision(cfg); err != nil {
 		return err
 	}
+	if err := resolvePostgresReplication(cfg, os.Stdin, os.Stdout); err != nil {
+		return err
+	}
 	if err := resolveObjectStorage(cfg, os.Stdin); err != nil {
 		return err
 	}

@@ -75,9 +75,6 @@ func TestTargetValidationAndDerivedSettings(t *testing.T) {
 	if SummaryData(ModeLocal, nil, time.Unix(0, 0))["mode"] != ModeLocal {
 		t.Fatal("local mode")
 	}
-	if got := ok.MCEnv(); got != "MC_HOST_platformtarget=https://AK:SK@acct.r2.cloudflarestorage.com" {
-		t.Fatal(got)
-	}
 	if TargetFromSecretData(ok.SecretData()) != ok {
 		t.Fatal("secret round trip")
 	}

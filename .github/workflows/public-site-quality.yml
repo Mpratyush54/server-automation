@@ -1,0 +1,105 @@
+name: Public site quality
+
+# Lighthouse CI on the prerendered public pages (#189): the landing page,
+# About and one docs page, served by nginx with the production config.
+# SEO, accessibility and best practices must score at least 0.9; the
+# performance budget only warns. Also checks the build output (unique titles,
+# descriptions and canonical URLs) and every documentation link.
+
+on:
+  pull_request:
+    paths:
+      - "platform/portal/**"
+      - "docs/**"
+      - ".github/workflows/public-site-quality.yml"
+  push:
+    branches: [ "master" ]
+    paths:
+      - "platform/portal/**"
+      - "docs/**"
+      - ".github/workflows/public-site-quality.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: public-site-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: platform/portal
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Install portal dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build the public site
+        # Same steps as Dockerfile.public: docs/ is the source of truth.
+        run: |
+          rm -rf public/docs
+          cp -r ../../docs public/docs
+          npm run build:public
+
+      - name: Check documentation links and the prerendered output
+        run: node --test scripts/docs-links.test.mjs scripts/prerender-output.test.mjs
+
+      - name: Serve the build with the production nginx config
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nginx
+          root="$PWD/dist/portal/browser"
+          run="$RUNNER_TEMP/nginx"
+          mkdir -p "$run/logs" "$run/temp"
+          server=$(sed -e 's/listen 80;/listen 127.0.0.1:8080;/' \
+            -e "s|root /usr/share/nginx/html;|root \"$root\";|" nginx.public.conf)
+          grep -q 'listen 127.0.0.1:8080;' <<<"$server"
+          cat > "$run/nginx.conf" <<EOF
+          pid logs/nginx.pid;
+          error_log logs/error.log;
+          events {}
+          http {
+            include /etc/nginx/mime.types;
+            access_log off;
+            client_body_temp_path temp/client_body;
+            proxy_temp_path temp/proxy;
+            fastcgi_temp_path temp/fastcgi;
+            uwsgi_temp_path temp/uwsgi;
+            scgi_temp_path temp/scgi;
+          $server
+          }
+          EOF
+          nginx -p "$run/" -e "$run/logs/error.log" -c nginx.conf
+          for path in / /about /docs/getting-started/installation; do
+            curl -fsS -o /dev/null "http://127.0.0.1:8080$path"
+          done
+
+      - name: Run Lighthouse CI
+        # Pinned CLI version, fetched only in CI.
+        run: npx --yes @lhci/cli@0.14.0 autorun --config=./lighthouserc.json
+
+      - name: Keep the Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-reports
+          path: platform/portal/.lighthouseci/
+          if-no-files-found: ignore
+          retention-days: 14

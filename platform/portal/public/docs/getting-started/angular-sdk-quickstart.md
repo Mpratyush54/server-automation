@@ -2,7 +2,7 @@
 
 Instrument an Angular app with HTTP metrics, a global error handler, and a bug-reporter component.
 
-Package: [`@mpratyush54/sdk-angular`](https://www.npmjs.com/package/@mpratyush54/sdk-angular) · Examples: [`sdk-angular/examples`](../../sdk-angular/examples)
+Package: [`@mpratyush54/sdk-angular`](https://www.npmjs.com/package/@mpratyush54/sdk-angular) · Examples: [`sdk-angular/examples`](https://github.com/Mpratyush54/server-automation/tree/master/sdk-angular/examples)
 
 ## Installation
 
@@ -66,7 +66,7 @@ bootstrapApplication(AppComponent, {
 });
 ```
 
-See [`sdk-angular/examples/app.config.ts`](../../sdk-angular/examples/app.config.ts).
+See [`sdk-angular/examples/app.config.ts`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-angular/examples/app.config.ts).
 
 ## What is registered
 
@@ -80,10 +80,10 @@ See [`sdk-angular/examples/app.config.ts`](../../sdk-angular/examples/app.config
 
 | Path | Topic |
 |------|--------|
-| [`app.module.ts`](../../sdk-angular/examples/app.module.ts) | NgModule |
-| [`app.config.ts`](../../sdk-angular/examples/app.config.ts) | Standalone |
-| [`usage.component.ts`](../../sdk-angular/examples/usage.component.ts) | HttpClient + reporter |
-| [`examples/sdk-apps/angular-web`](../../examples/sdk-apps/angular-web) | Deployed demo |
+| [`app.module.ts`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-angular/examples/app.module.ts) | NgModule |
+| [`app.config.ts`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-angular/examples/app.config.ts) | Standalone |
+| [`usage.component.ts`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-angular/examples/usage.component.ts) | HttpClient + reporter |
+| [`examples/sdk-apps/angular-web`](https://github.com/Mpratyush54/server-automation/tree/master/examples/sdk-apps/angular-web) | Deployed demo |
 
 ## API reference
 

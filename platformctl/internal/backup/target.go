@@ -42,7 +42,7 @@ const (
 	PostgresTargetSecret  = "platform-backup-s3"     // namespace databases: Barman Cloud ObjectStore
 	EtcdTargetSecret      = "platform-etcd-s3"       // namespace kube-system: k3s etcd-s3-config-secret
 	LonghornTargetSecret  = "platform-longhorn-backup"
-	MCAlias               = "platformtarget" // mc alias materialised from MC_HOST_platformtarget
+	MCAlias               = "platformtarget" // placeholder host in s3:// URLs for the configured target
 	ExternalTargetKeyword = "external"       // backup.json "target" value that resolves to the target
 )
 
@@ -180,8 +180,9 @@ func (t S3Target) PostgresDestination() string {
 	return "s3://" + t.Bucket + "/" + t.Key(PrefixPostgres) + "/"
 }
 
-// ArchiveTarget is the backup.Store target for encrypted archives (an mc alias
-// materialised in the process environment by MCEnv).
+// ArchiveTarget is the backup.Store URL for encrypted archives. The host
+// "platformtarget" is a stable placeholder; credentials come from
+// UseExternalTarget, not from an mc alias.
 func (t S3Target) ArchiveTarget() string {
 	return "s3://" + MCAlias + "/" + t.Bucket + "/" + t.Key(PrefixArchives)
 }
@@ -189,14 +190,6 @@ func (t S3Target) ArchiveTarget() string {
 // LonghornBackupTarget is the Longhorn backup target URL.
 func (t S3Target) LonghornBackupTarget() string {
 	return "s3://" + t.Bucket + "@" + t.SigningRegion() + "/" + t.Key(PrefixLonghorn)
-}
-
-// MCEnv returns the MC_HOST_<alias> variable for mc. It belongs only in the
-// environment of the mc child process, never in a file or argument.
-func (t S3Target) MCEnv() string {
-	u, _ := url.Parse(t.EndpointURL())
-	u.User = url.UserPassword(t.AccessKey, t.SecretKey)
-	return "MC_HOST_" + MCAlias + "=" + u.String()
 }
 
 // SecretData returns the master Secret's data.
@@ -255,11 +248,15 @@ func SecretManifest(namespace, name string, data map[string]string) map[string]a
 }
 
 // ---------------------------------------------------------------------------
-// Minimal S3 client (AWS Signature Version 4, path-style requests). It only
-// probes the target and lists archive folders; bulk transfers use mc and the
-// CloudNativePG/Longhorn/k3s clients.
+// S3 client (AWS Signature Version 4, path-style requests unless
+// VirtualHostedStyle is set). Used for backup
+// target probe/list and for archive put/get/delete (including multipart).
+
+const unsignedPayload = "UNSIGNED-PAYLOAD"
 
 // S3Client talks to the target. HTTP and Now are replaceable in tests.
+// Small requests (probe, list, delete) use HTTP's overall Timeout; object
+// transfers use the same Transport without one (see transferHTTP).
 type S3Client struct {
 	Target             S3Target
 	VirtualHostedStyle bool
@@ -268,7 +265,62 @@ type S3Client struct {
 }
 
 func NewS3Client(t S3Target) *S3Client {
-	return &S3Client{Target: t, HTTP: &http.Client{Timeout: 30 * time.Second}, Now: time.Now}
+	return &S3Client{Target: t, HTTP: &http.Client{Timeout: 30 * time.Second, Transport: s3Transport}, Now: time.Now}
+}
+
+// Transfer timeouts: connecting, the TLS handshake and waiting for response
+// headers are bounded, and a connection that moves no bytes for s3IdleTimeout
+// is closed. There is deliberately no limit on the total transfer time.
+const (
+	s3DialTimeout   = 30 * time.Second
+	s3IdleTimeout   = 2 * time.Minute
+	s3HeaderTimeout = 5 * time.Minute // CompleteMultipartUpload can take a while
+)
+
+var s3Transport = &http.Transport{
+	Proxy: http.ProxyFromEnvironment,
+	DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := (&net.Dialer{Timeout: s3DialTimeout, KeepAlive: 30 * time.Second}).DialContext(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return &idleConn{Conn: conn}, nil
+	},
+	ForceAttemptHTTP2:     true,
+	MaxIdleConns:          10,
+	IdleConnTimeout:       90 * time.Second,
+	TLSHandshakeTimeout:   15 * time.Second,
+	ResponseHeaderTimeout: s3HeaderTimeout,
+	ExpectContinueTimeout: time.Second,
+}
+
+// idleConn pushes the read/write deadline forward on every successful I/O, so
+// only a stalled connection times out, never a long but progressing transfer.
+type idleConn struct{ net.Conn }
+
+func (c *idleConn) Read(b []byte) (int, error) {
+	_ = c.Conn.SetReadDeadline(time.Now().Add(s3IdleTimeout))
+	return c.Conn.Read(b)
+}
+
+func (c *idleConn) Write(b []byte) (int, error) {
+	_ = c.Conn.SetWriteDeadline(time.Now().Add(s3IdleTimeout))
+	return c.Conn.Write(b)
+}
+
+func (c *S3Client) httpClient() *http.Client {
+	if c.HTTP != nil {
+		return c.HTTP
+	}
+	return &http.Client{Timeout: 30 * time.Second, Transport: s3Transport}
+}
+
+// transferHTTP is used for object put/get: no overall timeout so large
+// objects can stream; dial, TLS, header and idle timeouts come from the
+// Transport.
+func (c *S3Client) transferHTTP() *http.Client {
+	base := c.httpClient()
+	return &http.Client{Transport: base.Transport, CheckRedirect: base.CheckRedirect, Jar: base.Jar}
 }
 
 func sha256Hex(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
@@ -308,13 +360,19 @@ func canonicalQuery(q url.Values) string {
 	return strings.Join(parts, "&")
 }
 
-// Sign adds SigV4 headers. Every header already on the request is signed.
+// Sign adds SigV4 headers for a known body (hashed). Every header already on
+// the request is signed.
 func Sign(req *http.Request, body []byte, accessKey, secretKey, region string, now time.Time) {
+	SignWithHash(req, sha256Hex(body), accessKey, secretKey, region, now)
+}
+
+// SignWithHash adds SigV4 headers using an explicit payload hash, for example
+// UNSIGNED-PAYLOAD when streaming a body that is not buffered.
+func SignWithHash(req *http.Request, payloadHash, accessKey, secretKey, region string, now time.Time) {
 	amzDate := now.UTC().Format("20060102T150405Z")
 	day := amzDate[:8]
-	payload := sha256Hex(body)
 	req.Header.Set("x-amz-date", amzDate)
-	req.Header.Set("x-amz-content-sha256", payload)
+	req.Header.Set("x-amz-content-sha256", payloadHash)
 	headers := map[string]string{"host": req.URL.Host}
 	for k, v := range req.Header {
 		lk := strings.ToLower(k)
@@ -340,7 +398,7 @@ func Sign(req *http.Request, body []byte, accessKey, secretKey, region string, n
 	if path == "" {
 		path = "/"
 	}
-	canonical := strings.Join([]string{req.Method, path, canonicalQuery(req.URL.Query()), canonHeaders.String(), signed, payload}, "\n")
+	canonical := strings.Join([]string{req.Method, path, canonicalQuery(req.URL.Query()), canonHeaders.String(), signed, payloadHash}, "\n")
 	scope := day + "/" + region + "/s3/aws4_request"
 	toSign := "AWS4-HMAC-SHA256\n" + amzDate + "\n" + scope + "\n" + sha256Hex([]byte(canonical))
 	k := hmacSHA256([]byte("AWS4"+secretKey), day)
@@ -351,36 +409,65 @@ func Sign(req *http.Request, body []byte, accessKey, secretKey, region string, n
 	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+accessKey+"/"+scope+", SignedHeaders="+signed+", Signature="+sig)
 }
 
-func (c *S3Client) do(ctx context.Context, method, key string, query url.Values, body []byte) (int, []byte, error) {
+// objectURL builds the URL for bucket[/key]: path-style by default,
+// <bucket>.<host>/<key> when VirtualHostedStyle is set (external object
+// storage, #176). Requests without a bucket (ListBuckets) use the bare host.
+func (c *S3Client) objectURL(bucket, key string, query url.Values) (*url.URL, error) {
 	u, err := url.Parse(c.Target.EndpointURL())
 	if err != nil {
-		return 0, nil, err
+		return nil, err
 	}
-	u.Path = "/" + c.Target.Bucket
-	if key != "" {
-		u.Path += "/" + key
-	}
-	if c.VirtualHostedStyle {
-		u.Host = c.Target.Bucket + "." + u.Host
-		u.Path = "/" + key
+	u.Path = "/"
+	switch {
+	case bucket != "" && c.VirtualHostedStyle:
+		u.Host = bucket + "." + u.Host
+		u.Path += key
+	case bucket != "":
+		u.Path += bucket
+		if key != "" {
+			u.Path += "/" + key
+		}
 	}
 	u.RawPath = s3Escape(u.Path)
 	if query != nil {
 		u.RawQuery = canonicalQuery(query)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, u.String(), bytes.NewReader(body))
-	if err != nil {
-		return 0, nil, err
-	}
-	req.ContentLength = int64(len(body))
-	Sign(req, body, c.Target.AccessKey, c.Target.SecretKey, c.Target.SigningRegion(), c.Now())
-	resp, err := c.HTTP.Do(req)
+	return u, nil
+}
+
+func (c *S3Client) do(ctx context.Context, method, key string, query url.Values, body []byte) (int, []byte, error) {
+	return c.doBucket(ctx, method, c.Target.Bucket, key, query, body)
+}
+
+func (c *S3Client) doBucket(ctx context.Context, method, bucket, key string, query url.Values, body []byte) (int, []byte, error) {
+	resp, err := c.doRequest(ctx, c.httpClient(), method, bucket, key, query, bytes.NewReader(body), int64(len(body)), sha256Hex(body))
 	if err != nil {
 		return 0, nil, err
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	return resp.StatusCode, b, nil
+}
+
+func (c *S3Client) doRequest(ctx context.Context, client *http.Client, method, bucket, key string, query url.Values, body io.Reader, contentLength int64, payloadHash string) (*http.Response, error) {
+	u, err := c.objectURL(bucket, key, query)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
+	if err != nil {
+		return nil, err
+	}
+	if contentLength == 0 {
+		// A non-nil body with ContentLength 0 would be sent chunked, which S3
+		// rejects; an empty body must be http.NoBody.
+		req.Body, req.GetBody = http.NoBody, func() (io.ReadCloser, error) { return http.NoBody, nil }
+	}
+	if contentLength >= 0 {
+		req.ContentLength = contentLength
+	}
+	SignWithHash(req, payloadHash, c.Target.AccessKey, c.Target.SecretKey, c.Target.SigningRegion(), c.Now())
+	return client.Do(req)
 }
 
 // s3Error turns a failed response into a plain message without credentials.
@@ -396,7 +483,9 @@ func (c *S3Client) s3Error(step string, status int, body []byte, err error) erro
 	var e struct{ Code, Message string }
 	_ = xml.Unmarshal(body, &e)
 	switch {
-	case e.Code == "NoSuchBucket" || (status == 404 && step != "read back"):
+	case e.Code == "NoSuchKey" || (status == 404 && e.Code == "" && strings.HasPrefix(step, "read back")):
+		return fmt.Errorf("cannot %s the backup target %s: the object does not exist", step, where)
+	case e.Code == "NoSuchBucket" || status == 404:
 		return fmt.Errorf("cannot %s the backup target: bucket %q does not exist at %s", step, c.Target.Bucket, c.Target.EndpointHost())
 	case e.Code == "InvalidAccessKeyId" || e.Code == "SignatureDoesNotMatch":
 		return fmt.Errorf("cannot %s the backup target %s: the access key or secret key is wrong", step, where)
@@ -408,6 +497,9 @@ func (c *S3Client) s3Error(step string, status int, body []byte, err error) erro
 	code := e.Code
 	if code == "" {
 		code = http.StatusText(status)
+	}
+	if msg := strings.TrimSpace(e.Message); msg != "" && len(msg) <= 200 {
+		code += " (" + msg + ")"
 	}
 	return fmt.Errorf("cannot %s the backup target %s: the store answered %d %s", step, where, status, code)
 }
@@ -440,10 +532,12 @@ func (c *S3Client) Probe(ctx context.Context) error {
 // ListFolders lists the immediate sub-folders of a prefix (ListObjectsV2 with
 // delimiter "/"), e.g. the PostgreSQL archive server names.
 func (c *S3Client) ListFolders(ctx context.Context, prefix string) ([]string, error) {
-	prefix = strings.Trim(prefix, "/") + "/"
+	if prefix = strings.Trim(prefix, "/"); prefix != "" {
+		prefix += "/"
+	}
 	var out []string
 	token := ""
-	for page := 0; page < 100; page++ {
+	for {
 		q := url.Values{"list-type": {"2"}, "delimiter": {"/"}, "prefix": {prefix}}
 		if token != "" {
 			q.Set("continuation-token", token)
@@ -465,8 +559,11 @@ func (c *S3Client) ListFolders(ctx context.Context, prefix string) ([]string, er
 				out = append(out, name)
 			}
 		}
-		if !r.IsTruncated || r.NextToken == "" {
+		if !r.IsTruncated {
 			break
+		}
+		if r.NextToken == "" || r.NextToken == token {
+			return nil, fmt.Errorf("the backup target returned a truncated listing without a new continuation token")
 		}
 		token = r.NextToken
 	}

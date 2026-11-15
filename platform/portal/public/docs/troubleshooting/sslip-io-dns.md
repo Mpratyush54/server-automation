@@ -21,7 +21,7 @@ network namespace and is unreachable from inside the CoreDNS pod. sslip.io only
 resolves through a real upstream (Google DNS, Cloudflare) — so from the pod's
 point of view every sslip.io lookup fails.
 
-Compounding this, when Platform runs on a bare IP + sslip.io, we want internal
+Compounding this, when Cairn runs on a bare IP + sslip.io, we want internal
 services (ArgoCD, Grafana, Portainer …) to hit the *ingress controller* by name,
 not go out to the internet and come back.
 

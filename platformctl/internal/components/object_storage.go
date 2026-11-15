@@ -41,7 +41,7 @@ func PrepareObjectStorage(c *config.Config, credentials map[string]string) error
 		client := backup.NewS3Client(t)
 		client.VirtualHostedStyle = !c.ObjectStorage.ForcePathStyle
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		err := client.EnsureBucket(ctx)
+		err := client.EnsureBucket(ctx, t.Bucket)
 		if err == nil {
 			err = client.Probe(ctx)
 		}

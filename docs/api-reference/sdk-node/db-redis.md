@@ -38,7 +38,7 @@ const redis = new RedisManager(config?: RedisConfig);
 ### Sentinel (ha profile)
 
 When `sentinels` is set (an array of `{ host, port }` or a `host:port,...` string), the manager
-asks Sentinel for the current master instead of using `host`/`port`. On the Platform's `ha`
+asks Sentinel for the current master instead of using `host`/`port`. On Cairn's `ha`
 profile `/api/sdk/db-credentials` returns these fields, so `PlatformClient.init()` uses Sentinel
 automatically. After a failover ioredis reconnects to the new master by itself, and a command
 rejected by a demoted master (`READONLY`) is retried on the new one; no restart is needed.
@@ -102,7 +102,7 @@ Closes the Redis connection via `client.quit()`.
 
 ## Auto-connect via `PlatformClient`
 
-When `databases: ['redis']` is passed to `init()`, credentials are fetched automatically from the Platform API (`GET /api/sdk/db-credentials`), and the manager is available at `client.db.redis` immediately after `init()` resolves.
+When `databases: ['redis']` is passed to `init()`, credentials are fetched automatically from the Cairn API (`GET /api/sdk/db-credentials`), and the manager is available at `client.db.redis` immediately after `init()` resolves.
 
 ---
 

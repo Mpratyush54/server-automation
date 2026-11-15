@@ -66,17 +66,9 @@ redis)
   ' > "$dest/dump.rdb"
   ;;
 minio)
-  # The SOURCE alias is distinct from the backup target.
-  minio_source
-  mkdir "$dest/objects"
-  mc ls --json "$MINIO_SRC/" | jq -r 'select(.type == "folder") | .key' > "$dest/buckets"
-  while IFS= read -r bucket; do
-    bucket=${bucket%/}
-    [ "$bucket" != platform-backups ] || continue
-    case "$bucket" in ''|*[!a-z0-9.-]*|.|..) echo 'Invalid source bucket' >&2;exit 1;; esac
-    mkdir "$dest/objects/$bucket"
-    mc mirror "$MINIO_SRC/$bucket/" "$dest/objects/$bucket/"
-  done < "$dest/buckets"
+  # MinIO file capture runs in platformctl (built-in S3 client), not this script.
+  echo 'minio capture is handled by platformctl' >&2
+  exit 1
   ;;
 k3s)
   cp /var/lib/rancher/k3s/server/token "$dest/server-token"

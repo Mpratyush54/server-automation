@@ -56,7 +56,7 @@ The database change log and snapshots start by themselves. The nightly archive o
 
    It prints the public half, which starts with `age1`. Keep `identity.txt` off the server, for example in a password manager. Without it, nobody can decrypt the archives.
 
-2. On the server, install the tools the archive uses: `sudo apt-get install -y sqlite3 jq`, plus `mc`. platformctl copies archives with `mc`, the MinIO command-line client. MinIO no longer publishes ready-made `mc` downloads (`dl.min.io` answers `410 Gone`), so build it from the source at [github.com/minio/mc](https://github.com/minio/mc) as its README describes and put the program at `/usr/local/bin/mc`.
+2. On the server, install the tools the archive uses: `sudo apt-get install -y sqlite3 jq`. platformctl talks to S3-compatible targets with its built-in client (no MinIO `mc` on the host).
 3. Save the settings with only the public half of the key, take an archive and turn on the nightly run:
 
    ```bash
@@ -100,7 +100,7 @@ sudo platformctl postgres migrate --confirm
 Use this when the old server is gone. You need the backup target settings and keys, the age key file and your domain. Use the same Cairn version as the old server.
 
 1. Find the newest archive ID: `sudo platformctl backup list` on the old server while it still runs, or [list the target's `archives/` folder](#look-inside-the-backup-target) from any computer.
-2. On the new Ubuntu server, install `mc` (the archive restore uses it; see [step 2 of the archive setup](#turn-on-encrypted-nightly-archives)). From your computer, send the target's access key and secret to a file only root can read, so they never appear on a command line:
+2. On the new Ubuntu server, from your computer, send the target's access key and secret to a file only root can read, so they never appear on a command line:
 
    ```bash
    read -rp 'Access key ID: ' KEY_ID; read -rsp 'Secret access key: ' SECRET; echo
@@ -185,11 +185,11 @@ The target is one S3-compatible bucket and an optional prefix. Each kind of back
 | Folder | What | Written by |
 |---|---|---|
 | `postgres/<server name>/` | PostgreSQL WAL and base backups | CloudNativePG Barman Cloud plugin (ObjectStore `databases/postgresql-backup`) |
-| `archives/<backup id>/` | Encrypted nightly archives | `platformctl backup --all` (through `mc`) |
+| `archives/<backup id>/` | Encrypted nightly archives | `platformctl backup --all` (built-in S3 client) |
 | `etcd/` | etcd snapshots (`ha`) | k3s |
 | `longhorn/` | Longhorn volume backups (`ha`) | Longhorn, daily RecurringJob `platform-backup-daily` |
 
-Only the endpoint, bucket, region, prefix and the choice itself (`BACKUP_MODE=external` or `local`) are saved in `/etc/platform/.env`. The access key and secret are stored only in Kubernetes Secrets: `platform/platform-backup-target` holds everything, and copies in the format each user expects are in `databases/platform-backup-s3`, `kube-system/platform-etcd-s3` and `longhorn-system/platform-longhorn-backup` (the last two on `ha`). They are passed to `kubectl` on standard input, never on a command line, and are not printed. `mc` gets them through an `MC_HOST_platformtarget` variable that only its own process sees. Because the master Secret is in the `platform` namespace, the encrypted archive contains it, so a rebuilt server can restore it.
+Only the endpoint, bucket, region, prefix and the choice itself (`BACKUP_MODE=external` or `local`) are saved in `/etc/platform/.env`. The access key and secret are stored only in Kubernetes Secrets: `platform/platform-backup-target` holds everything, and copies in the format each user expects are in `databases/platform-backup-s3`, `kube-system/platform-etcd-s3` and `longhorn-system/platform-longhorn-backup` (the last two on `ha`). They are passed to `kubectl` on standard input, never on a command line, and are not printed. platformctl loads them into memory for archive put/get/list/delete and does not write them to disk. Because the master Secret is in the `platform` namespace, the encrypted archive contains it, so a rebuilt server can restore it.
 
 ### Look inside the backup target
 
@@ -232,7 +232,7 @@ Each new cluster gets a unique server name (`postgresql-<date>t<time>`), so a re
 
 ### What a full backup does
 
-`platformctl backup --all` is opt-in. It runs the database tools that are already inside the database containers through `kubectl exec`, uses SQLite's online backup (or k3s embedded-etcd snapshots) for the cluster, `mc` for files, and age encryption built into platformctl. No backup service runs in the background.
+`platformctl backup --all` is opt-in. It runs the database tools that are already inside the database containers through `kubectl exec`, uses SQLite's online backup (or k3s embedded-etcd snapshots) for the cluster, the built-in S3 client for files and archive uploads, and age encryption built into platformctl. No backup service runs in the background.
 
 Every backup or restore checks for the tools it needs before touching anything and names any that are missing. platformctl and `kubectl` must be on root's `PATH`. The scheduled job runs `/usr/local/bin/platformctl`.
 
@@ -242,9 +242,9 @@ Every backup or restore checks for the tools it needs before touching anything a
 - If you omit `--recipient`, `backup init` generates a key and prints the private half **once** without saving it. Do this in a private terminal without session logging and move the key off the server at once.
 - Retention flags on `backup init`: `--keep-daily` (default 7, at least 1), `--keep-weekly` (4) and `--keep-monthly` (12).
 - `--components` lists what to protect. The default is `config,postgres,mongo,redis,minio,k3s`; `config` and `postgres` are required. Remove components your install does not have, for example `--components config,postgres,k3s`. A selected component that is missing makes the backup fail; nothing is silently skipped.
-- `--target` overrides the saved target for one `backup`, `list` or `restore`: `external`, `file:///var/lib/platform/encrypted-backups` (local staging, with a warning that it cannot survive disk loss) or `s3://<mc alias>/bucket/prefix`.
-- An `s3://` target names an `mc` alias you added yourself, not a hostname. Never put credentials in the target URL. Make sure the alias really points off-site: the bundled MinIO is on the same server even when reached over S3.
-- The bundled MinIO is the default **source** of files. platformctl builds a temporary `mc` alias from the `minio` Secret and its cluster IP, held only in the process environment. To use another source, add `"minioAlias": "<root mc alias>"` to `backup.json`. Never point it at the backup destination.
+- `--target` overrides the saved target for one `backup`, `list` or `restore`: `external` (the configured off-site target) or `file:///var/lib/platform/encrypted-backups` (local staging, with a warning that it cannot survive disk loss). Never put credentials in a target URL.
+- The bundled MinIO is the default **source** of files. platformctl talks to it over the cluster Service with root credentials from the `minio` Secret, held only in memory.
+- Settings from releases before the built-in S3 client still work: a `backup.json` with `"target": "s3://<mc alias>/bucket/prefix"` or `"minioAlias"` is read through the alias in root's `~/.mc/config.json` (or an `MC_HOST_<alias>` variable), without the `mc` program. Move to the off-site target when you can; see [upgrades](upgrades.md#backup-settings-that-name-an-mc-alias).
 
 ### Nightly job
 
@@ -264,7 +264,7 @@ Database passwords are read inside the database containers, from the environment
 - **PostgreSQL:** `pg_dumpall --globals-only` (roles, with their passwords) plus one `pg_dump -Fc` per database.
 - **MongoDB:** `mongodump --archive --gzip`, including users.
 - **Redis:** `BGSAVE`, wait for it to finish, then copy `/data/dump.rdb`.
-- **Files:** `mc mirror` of every source bucket except `platform-backups`, so backups do not contain older backups. Bucket policies, lifecycle rules, object versions, IAM and outside providers are not captured; reapply them separately.
+- **Files:** every source bucket except `platform-backups` is copied with the built-in S3 client, so backups do not contain older backups. Bucket policies, lifecycle rules, object versions, IAM and outside providers are not captured; reapply them separately.
 - **Config:** the installer's `.env` and credential files; Secrets from the `platform`, `databases`, `storage`, `argocd` and `cert-manager` namespaces; Argo CD Applications; cert-manager Issuers and ClusterIssuers; the public `backup.json`. Service-account tokens and Helm release records are left out on restore. The original secrets encryption key and JWT key are in `.env` and `platform-env`, so encrypted project secrets stay readable.
 - **k3s:** single-server SQLite uses `sqlite3 .backup`, which includes committed transactions without stopping k3s. Embedded etcd uses `k3s etcd-snapshot save`. The server token is encrypted alongside, because it is needed to decrypt k3s bootstrap data. External SQL datastores are not supported.
 
@@ -322,7 +322,6 @@ The **Database backups** panel runs `pg_dump` of the named database, uploads it 
 - Restore uses the same release's database schema. Run the migration job only when you upgrade after a successful restore.
 - `platformctl upgrade` takes a full encrypted backup before it changes anything when `/etc/platform/backup.json` exists. Without it, upgrade takes only a local database and credentials copy and warns that this does not protect against disk loss.
 - Point-in-time recovery covers PostgreSQL only. MongoDB, Redis and files come back as of the last nightly archive.
-- `mc` is not installed by Cairn, and MinIO no longer offers it as a download; build it before turning on archives (see [above](#turn-on-encrypted-nightly-archives)).
 - A full nightly test that installs one server, destroys it and restores onto a second has not been wired up yet. Fresh-server restores with live S3, Redis volumes, MongoDB and k3s are covered by unit tests only.
 
 ## For developers / API

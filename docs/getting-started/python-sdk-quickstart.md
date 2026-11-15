@@ -2,7 +2,7 @@
 
 Instrument a Python service with registration, heartbeats, structured logs, config, and optional databases.
 
-Package: [`mpratyush54-sdk`](https://pypi.org/project/mpratyush54-sdk/) · Examples: [`sdk-python/examples`](../../sdk-python/examples)
+Package: [`mpratyush54-sdk`](https://pypi.org/project/mpratyush54-sdk/) · Examples: [`sdk-python/examples`](https://github.com/Mpratyush54/server-automation/tree/master/sdk-python/examples)
 
 ## Installation
 
@@ -65,8 +65,8 @@ client.storage_upload("/tmp/report.bin", "uploads")
 
 The SDK does **not** ship framework middleware yet. Time requests yourself and call `client.log(...)` — see:
 
-- [`sdk-python/examples/03_flask_manual_metrics.py`](../../sdk-python/examples/03_flask_manual_metrics.py)
-- [`sdk-python/examples/04_fastapi_manual_metrics.py`](../../sdk-python/examples/04_fastapi_manual_metrics.py)
+- [`sdk-python/examples/03_flask_manual_metrics.py`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-python/examples/03_flask_manual_metrics.py)
+- [`sdk-python/examples/04_fastapi_manual_metrics.py`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-python/examples/04_fastapi_manual_metrics.py)
 
 ## Parameters
 
@@ -82,10 +82,10 @@ The SDK does **not** ship framework middleware yet. Time requests yourself and c
 
 | Path | Topic |
 |------|--------|
-| [`01_basic.py`](../../sdk-python/examples/01_basic.py) | Init + log + config |
-| [`02_with_databases.py`](../../sdk-python/examples/02_with_databases.py) | DB managers |
-| [`03_flask_manual_metrics.py`](../../sdk-python/examples/03_flask_manual_metrics.py) | Flask timing |
-| [`04_fastapi_manual_metrics.py`](../../sdk-python/examples/04_fastapi_manual_metrics.py) | FastAPI timing |
+| [`01_basic.py`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-python/examples/01_basic.py) | Init + log + config |
+| [`02_with_databases.py`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-python/examples/02_with_databases.py) | DB managers |
+| [`03_flask_manual_metrics.py`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-python/examples/03_flask_manual_metrics.py) | Flask timing |
+| [`04_fastapi_manual_metrics.py`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-python/examples/04_fastapi_manual_metrics.py) | FastAPI timing |
 
 ## API reference
 

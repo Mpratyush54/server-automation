@@ -32,7 +32,7 @@ func TestEnsureBucket(t *testing.T) {
 				}
 				return &http.Response{StatusCode: st, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{}}, nil
 			})}
-			err := c.EnsureBucket(context.Background())
+			err := c.EnsureBucket(context.Background(), "cairn-uploads")
 			if (err != nil) != (status == 403 || status == 301) {
 				t.Fatal(err)
 			}
@@ -56,7 +56,22 @@ func TestBucketVirtualHostedStyle(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(""))}, nil
 	})}
-	if err := c.EnsureBucket(context.Background()); err != nil {
+	if err := c.EnsureBucket(context.Background(), "cairn-uploads"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestVirtualHostedObjectURLs(t *testing.T) {
+	c := NewS3Client(S3Target{Endpoint: "https://s3.example.com", Bucket: "target-bucket"})
+	c.VirtualHostedStyle = true
+	for _, tc := range []struct{ bucket, key, host, path string }{
+		{"cairn-logs", "a/b.txt", "cairn-logs.s3.example.com", "/a/b.txt"},
+		{"cairn-logs", "", "cairn-logs.s3.example.com", "/"},
+		{"", "", "s3.example.com", "/"}, // ListBuckets
+	} {
+		u, err := c.objectURL(tc.bucket, tc.key, nil)
+		if err != nil || u.Host != tc.host || u.Path != tc.path {
+			t.Fatalf("%+v: got %v %v", tc, u, err)
+		}
 	}
 }

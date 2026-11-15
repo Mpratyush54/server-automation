@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -32,7 +34,88 @@ var pgMigrateOps = func() components.PGMigrateOps {
 	})
 }
 
+// postgresReplicationFlag is `provision --postgres-replication`.
+var postgresReplicationFlag string
+
+// pgReplicationOps is replaceable in tests.
+var pgReplicationOps = func() components.PGReplicationOps {
+	return components.LivePGReplicationOps(func(mode string) error {
+		return config.UpsertEnvKey(envFilePath, "POSTGRES_REPLICATION", mode)
+	})
+}
+
+// resolvePostgresReplication settles POSTGRES_REPLICATION before provision
+// changes anything: the flag wins, then the environment or saved .env; an
+// interactive ha install with neither asks. Single-server profiles ignore it.
+func resolvePostgresReplication(c *config.Config, in io.Reader, out io.Writer) error {
+	if strings.TrimSpace(postgresReplicationFlag) != "" {
+		if err := config.ValidatePostgresReplicationMode(postgresReplicationFlag); err != nil {
+			return fmt.Errorf("--postgres-replication: %w", err)
+		}
+		c.PostgresReplication = config.NormalizePostgresReplication(postgresReplicationFlag)
+	} else if c.IsHA() && !c.NonInteractive && !c.PostgresReplicationChosen() {
+		c.PromptPostgresReplication(in, out)
+	}
+	if err := c.ValidatePostgresReplication(); err != nil {
+		return err
+	}
+	c.PostgresReplication = config.NormalizePostgresReplication(c.PostgresReplication)
+	if c.IsHA() {
+		fmt.Fprintf(out, "  · PostgreSQL replication: %s (change later: sudo platformctl postgres replication set sync|async)\n", c.PostgresReplication)
+	}
+	return nil
+}
+
 func init() {
+	replication := &cobra.Command{
+		Use:   "replication",
+		Short: "Show or change synchronous/asynchronous PostgreSQL replication (ha profile)",
+		Long: `Shows how PostgreSQL copies writes to the standbys on the ha profile.
+
+  sync   every write waits for a second server: no confirmed write is lost when
+         a server dies, but writes pause during failover (about 2 minutes on
+         a server power-off).
+  async  writes are confirmed right away: failover takes about 70 seconds, but
+         the last few seconds of writes can be lost when a server dies.
+
+Explainer: ` + config.PostgresReplicationDocsURL,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			hostKubeconfig()
+			return components.PostgresReplicationStatus(cfg, pgReplicationOps(), cmd.OutOrStdout())
+		},
+	}
+	replication.AddCommand(&cobra.Command{
+		Use:       "set sync|async",
+		Short:     "Switch PostgreSQL replication live (no restart) and save the choice",
+		Args:      cobra.ExactArgs(1),
+		ValidArgs: []string{config.PostgresReplicationSync, config.PostgresReplicationAsync},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := config.ValidatePostgresReplicationMode(args[0]); err != nil {
+				return err
+			}
+			hostKubeconfig()
+			unlock, err := state.AcquireLock("postgres-replication")
+			if err != nil {
+				return err
+			}
+			defer unlock()
+			return components.SetPostgresReplication(cfg, args[0], pgReplicationOps(), cmd.OutOrStdout())
+		},
+	})
+	replication.AddCommand(&cobra.Command{
+		Use:   "show",
+		Short: "Show the saved and the running replication mode",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			hostKubeconfig()
+			return components.PostgresReplicationStatus(cfg, pgReplicationOps(), cmd.OutOrStdout())
+		},
+	})
+	postgresCmd.AddCommand(replication)
+	provisionCmd.Flags().StringVar(&postgresReplicationFlag, "postgres-replication", "",
+		"ha profile: sync (default; no data loss, writes pause during failover) or async (faster failover, may lose the last seconds); env POSTGRES_REPLICATION")
+
 	migrate := &cobra.Command{
 		Use:   "migrate",
 		Short: "Move the Bitnami PostgreSQL release to CloudNativePG (point-in-time recovery); resumable",

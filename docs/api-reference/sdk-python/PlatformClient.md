@@ -58,8 +58,8 @@ client.init(
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `project_name` | `str` | — | **Required.** Your Platform project name |
-| `platform_url` | `str` | — | **Required.** Platform API base URL (e.g. `https://platform.example.com`) |
+| `project_name` | `str` | — | **Required.** Your Cairn project name |
+| `platform_url` | `str` | — | **Required.** Cairn API base URL (e.g. `https://platform.example.com`) |
 | `environment_name` | `str` | `'development'` | Deployment environment label |
 | `version` | `str` | `'1.0.0'` | Application version |
 | `branch` | `str` | `'main'` | Git branch name |
@@ -67,11 +67,11 @@ client.init(
 | `namespace` | `str \| None` | — | Kubernetes namespace or equivalent |
 | `hostname` | `str \| None` | `socket.gethostname()` | Machine hostname |
 | `databases` | `list[str] \| None` | `[]` | Database types to auto-connect: `'postgres'`, `'mongo'`, `'redis'` |
-| `sdk_token` | `str \| None` | `$PLATFORM_SDK_TOKEN` | SDK credential (`sdk_live_...` / `sdk_test_...`). Sent as `Authorization: Bearer <token>` on every Platform API call |
+| `sdk_token` | `str \| None` | `$PLATFORM_SDK_TOKEN` | SDK credential (`sdk_live_...` / `sdk_test_...`). Sent as `Authorization: Bearer <token>` on every Cairn API call |
 
 ### What `init()` does
 
-1. Registers the service with the Platform API (`POST /api/sdk/register`). If registration fails (e.g. missing/invalid token) an error is logged.
+1. Registers the service with the Cairn API (`POST /api/sdk/register`). If registration fails (e.g. missing/invalid token) an error is logged.
 2. Starts a background **heartbeat** thread (every 15 s) sending `POST /api/sdk/heartbeat`.
 3. Connects to each database type listed in `databases` (non-blocking — failures are logged as warnings).
 
