@@ -113,7 +113,7 @@ func InstallWith(domain, githubToken string, o ServerOptions) error {
 
 	if !IsInstalled() {
 		// Traefik is disabled and DNS configured via config.yaml (see WriteServerConfig).
-		if err := installK3s(""); err != nil {
+		if err := installServerK3s(o.Offline); err != nil {
 			return err
 		}
 	} else {
@@ -146,6 +146,16 @@ var installFromStack = func(exec string) error {
 	}
 	return shell.RunBash(installExec(exec) + fmt.Sprintf("INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION=%s sh %s",
 		shellQuote(versions.K3sVersion), shellQuote(stackPaths.K3sScript())))
+}
+
+// installServerK3s installs k3s on the first server. `provision --bundle`
+// (offline) uses only the bundle's staged binary and installer; otherwise the
+// staged platform stack is preferred, with the download as fallback.
+func installServerK3s(offline bool) error {
+	if offline {
+		return installStagedOnly("", "provision")
+	}
+	return installK3s("")
 }
 
 // installUpstream and installFromMirror are swapped in tests.

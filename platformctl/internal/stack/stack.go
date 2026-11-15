@@ -60,6 +60,9 @@ func (p Paths) ImagesDir() string { return filepath.Join(p.Staging, "images") }
 func (p Paths) K3sBinary() string { return filepath.Join(p.Staging, "k3s") }
 func (p Paths) K3sScript() string { return filepath.Join(p.Staging, "k3s-install.sh") }
 
+// HelmBinary is where the offline bundle (not the stack) stages Helm.
+func (p Paths) HelmBinary() string { return filepath.Join(p.Staging, "helm") }
+
 // Tag returns the tag for a PLATFORM_STACK choice: "" or a channel name
 // ("stable", "edge") → "<channel>-<arch>"; a version ("2026.11.08-3") →
 // "<version>-<arch>". It returns "" for "off".

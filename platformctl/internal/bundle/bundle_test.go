@@ -335,6 +335,7 @@ func TestOfflineJoinBundle(t *testing.T) {
 	files := map[string]string{
 		"k3s/k3s":            "binary",
 		"k3s/k3s-install.sh": "#!/bin/sh\n",
+		"helm/helm":          "helm-binary",
 		"packages/ubuntu-22.04/amd64/open-iscsi_1_amd64.deb": "jammy-package",
 		"packages/ubuntu-24.04/arm64/nfs-common_1_arm64.deb": "noble-package",
 		"packages/ubuntu-24.04/arm64/Packages":               "Package: nfs-common\n",
@@ -348,7 +349,7 @@ func TestOfflineJoinBundle(t *testing.T) {
 	}
 	for name, body := range files {
 		dest := filepath.Join(opts.StagingDir, filepath.FromSlash(name))
-		if strings.HasPrefix(name, "k3s/") {
+		if strings.HasPrefix(name, "k3s/") || name == "helm/helm" {
 			dest = filepath.Join(opts.StagingDir, filepath.Base(name))
 		}
 		assertFile(t, dest, body)
@@ -375,14 +376,17 @@ func TestOfflineJoinBundleRequiresChecksums(t *testing.T) {
 	opts := testOpts(t)
 	entries := []entry{
 		{name: "k3s/k3s", body: "binary"},
+		{name: "helm/helm", body: "helm-binary"},
 		{name: "packages/ubuntu-24.04/amd64/open-iscsi_1_amd64.deb", body: "package"},
 	}
 	err := InstallWithOptions(buildBundle(t, t.TempDir(), entries), opts)
 	if err == nil || !strings.Contains(err.Error(), "needs SHA256SUMS") {
 		t.Fatalf("got %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(opts.StagingDir, "k3s")); !os.IsNotExist(err) {
-		t.Fatal("unverified bundle left a staged binary")
+	for _, f := range []string{"k3s", "helm"} {
+		if _, err := os.Stat(filepath.Join(opts.StagingDir, f)); !os.IsNotExist(err) {
+			t.Fatalf("unverified bundle left a staged %s binary", f)
+		}
 	}
 }
 

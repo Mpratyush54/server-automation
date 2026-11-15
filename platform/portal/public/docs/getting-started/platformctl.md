@@ -166,19 +166,41 @@ process environment variables take precedence. See [Host hardening](../guides/ho
 
 ## Offline bundle
 
-Releases include `platform-bundle-<version>-<arch>.tar.zst` and a `.sha256` file:
-k3s airgap images, all pinned Helm charts (`platformctl charts --json`) and the platform
-container images. The bundle is larger than GitHub's 2 GiB per-asset limit, so a release
-carries it as `.tar.zst.part00`, `.part01`, …; `--bundle auto` downloads and reassembles the
-parts and checks the result against the `.sha256`. To fetch it manually, download every part
-and the `.sha256`, then `cat platform-bundle-<version>-<arch>.tar.zst.part* >
-platform-bundle-<version>-<arch>.tar.zst` and `sha256sum -c` before `--bundle <path>`. `--bundle <path|auto>` verifies the checksum and extracts it before k3s is
-installed — images into `/var/lib/rancher/k3s/agent/images/`, charts into
-`/var/lib/platform/charts/` — so provisioning needs little or no network for images and charts.
+Releases include `platform-bundle-<version>-<arch>.tar.zst` and a `.sha256` file. The
+bundle holds the pinned k3s binary, its installer and airgap images, the Helm binary, all
+pinned Helm charts (`platformctl charts --json`), the third-party container images, and the
+Ubuntu 22.04 and 24.04 packages provision and join install (prerequisites, Longhorn
+prerequisites and host hardening packages, with their dependencies). The bundle is larger
+than GitHub's 2 GiB per-asset limit, so a release carries it as `.tar.zst.part00`,
+`.part01`, …; `--bundle auto` downloads and reassembles the parts and checks the result
+against the `.sha256`. To fetch it manually, download every part and the `.sha256`, then
+`cat platform-bundle-<version>-<arch>.tar.zst.part* > platform-bundle-<version>-<arch>.tar.zst`
+and `sha256sum -c` before `--bundle <path>`.
 
 ```bash
-sudo platformctl provision --bundle auto
+sudo platformctl provision --bundle /root/platform-bundle-<version>-amd64.tar.zst
 ```
+
+With `--bundle <path>`, provision downloads none of the components the bundle carries:
+
+- it checks the bundle against its `.sha256` file and every file against the bundle's
+  `SHA256SUMS`, and stops on a mismatch
+- it places the images in `/var/lib/rancher/k3s/agent/images/` and the charts in
+  `/var/lib/platform/charts/` before k3s starts; k3s imports the images at startup
+- it installs the prerequisites from the bundle with apt, using only the bundle as a package
+  source, as [join](../operations/ha.md#join-without-internet-access) does; it stops when the
+  OS is not Ubuntu 22.04 or 24.04 or when a dependency is not in the bundle
+- it installs Helm and k3s from the bundle, with no download fallback for k3s
+- after k3s starts, it adds the digest names of images that charts pin by digest (the
+  ingress-nginx controller and its admission webhook job), so they start without a registry
+
+The Cairn API and portal images are not in the bundle: the server needs to reach their
+registry (`PLATFORM_IMAGE_REGISTRY`), or have them imported into containerd first. Your applications'
+images also need a registry the server can reach. A bundle from an older release that lacks
+Helm, k3s or the packages still works; provision downloads the missing parts and prints a
+warning. `--bundle auto` downloads the bundle itself, so it needs internet access. Without
+`--bundle`, provision works as before: packages from the apt mirrors, Helm from
+`get.helm.sh`, and the [platform stack](../operations/platform-stack.md).
 
 To build a bundle locally (needs curl, jq, helm 3, docker, zstd):
 

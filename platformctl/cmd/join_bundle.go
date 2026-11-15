@@ -20,6 +20,8 @@ var (
 	joinOfflinePackages = func() error { return apt.InstallOfflinePackages(joinPackageRoot(stack.DefaultPaths)) }
 	joinStackPaths      = stack.DefaultPaths
 	joinInstallBundle   = installBundle
+	// After k3sJoin: gives the digest-pinned images k3s imported their digest names.
+	joinNameBundleImages = nameBundleImages
 )
 
 // joinPackageRoot holds the bundle's packages/ubuntu-<release>/<arch>/*.deb.

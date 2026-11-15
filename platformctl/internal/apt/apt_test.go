@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 )
 
 // offlineStubs replaces apt-get and dpkg with shell functions. INSTALLED
@@ -119,13 +121,63 @@ func TestOfflinePackagesScript(t *testing.T) {
 }
 
 // The bundle must carry the dependency closure of exactly the packages an
-// offline join installs.
+// offline provision installs (a superset of what an offline join installs).
 func TestBundleScriptPackageList(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "scripts", "build-bundle.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `OFFLINE_PACKAGES="`+OfflinePackages+`"`) {
-		t.Fatalf("scripts/build-bundle.sh must set OFFLINE_PACKAGES=%q", OfflinePackages)
+	if !strings.Contains(string(data), `OFFLINE_PACKAGES="`+BundlePackages+`"`) {
+		t.Fatalf("scripts/build-bundle.sh must set OFFLINE_PACKAGES=%q", BundlePackages)
+	}
+}
+
+// Every package the online prerequisites step installs is in the bundle, so
+// an offline provision has the same tools.
+func TestBundlePackagesCoverPrereqs(t *testing.T) {
+	bundled := map[string]bool{}
+	for _, p := range strings.Fields(BundlePackages) {
+		if bundled[p] {
+			t.Errorf("%s listed twice in BundlePackages", p)
+		}
+		bundled[p] = true
+	}
+	for _, p := range strings.Fields(OfflinePackages) {
+		if !bundled[p] {
+			t.Errorf("offline join package %s missing from BundlePackages", p)
+		}
+	}
+	first := strings.SplitN(prereqsScript, "||", 2)[0]
+	_, list, _ := strings.Cut(first, "apt-get install -y -qq")
+	for _, p := range strings.Fields(strings.ReplaceAll(list, "\\", " ")) {
+		if !bundled[p] {
+			t.Errorf("prerequisite %s missing from BundlePackages", p)
+		}
+	}
+}
+
+// Offline provision installs the bundle's packages through the same script as
+// an offline join and never runs the online prerequisites (apt-get update
+// against the system mirrors).
+func TestInstallPrereqsFromBundle(t *testing.T) {
+	state.SetPath(filepath.Join(t.TempDir(), "state"))
+	t.Cleanup(func() { state.SetPath(state.DefaultPath) })
+	oldBash, oldBundle := runBash, installFromBundle
+	t.Cleanup(func() { runBash, installFromBundle = oldBash, oldBundle })
+	runBash = func(string) error { t.Fatal("online apt must not run for a bundle provision"); return nil }
+	var gotRoot, gotPackages string
+	installFromBundle = func(root, packages string) error { gotRoot, gotPackages = root, packages; return nil }
+	if err := InstallPrereqsFromBundle("/var/lib/platform/stack/packages"); err != nil {
+		t.Fatal(err)
+	}
+	if gotRoot != "/var/lib/platform/stack/packages" || gotPackages != BundlePackages {
+		t.Fatalf("installed %q from %q", gotPackages, gotRoot)
+	}
+	if !state.IsDone("prereqs") {
+		t.Fatal("prereqs not marked done")
+	}
+	// Join keeps its own, smaller list.
+	if err := InstallOfflinePackages("/root"); err != nil || gotPackages != OfflinePackages {
+		t.Fatalf("join packages = %q, %v", gotPackages, err)
 	}
 }

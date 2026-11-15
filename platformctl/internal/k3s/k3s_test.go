@@ -129,3 +129,34 @@ func TestInstallK3sPrefersTheStagedStack(t *testing.T) {
 		t.Fatalf("staged failure must fall back: calls=%v err=%v", calls, err)
 	}
 }
+
+// `provision --bundle` installs the bundle's staged k3s and never downloads,
+// not even when the staged install fails; without a bundle nothing changes.
+func TestInstallServerK3sOffline(t *testing.T) {
+	origUp, origMirror, origStack, origPaths := installUpstream, installFromMirror, installFromStack, stackPaths
+	t.Cleanup(func() {
+		installUpstream, installFromMirror, installFromStack, stackPaths = origUp, origMirror, origStack, origPaths
+	})
+	dir := t.TempDir()
+	stackPaths.Staging = dir
+	calls := []string{}
+	installUpstream = func(string) error { calls = append(calls, "upstream"); return nil }
+	installFromMirror = func(string) error { calls = append(calls, "mirror"); return nil }
+	installFromStack = func(string) error { calls = append(calls, "stack"); return errors.New("bad binary") }
+
+	if err := installServerK3s(true); err == nil || !strings.Contains(err.Error(), "offline provision requires the staged k3s") || len(calls) != 0 {
+		t.Fatalf("nothing staged: calls=%v err=%v", calls, err)
+	}
+	for _, f := range []string{"k3s", "k3s-install.sh"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := installServerK3s(true); err == nil || strings.Join(calls, ",") != "stack" {
+		t.Fatalf("staged failure must not download: calls=%v err=%v", calls, err)
+	}
+	calls = nil
+	if err := installServerK3s(false); err != nil || strings.Join(calls, ",") != "stack,upstream" {
+		t.Fatalf("online: calls=%v err=%v", calls, err)
+	}
+}

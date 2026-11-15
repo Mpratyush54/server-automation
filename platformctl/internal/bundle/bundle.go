@@ -4,6 +4,7 @@
 // Bundle layout:
 //
 //	k3s/k3s, k3s/k3s-install.sh                  pinned binary and installer
+//	helm/helm                                    pinned Helm binary (offline provision)
 //	packages/ubuntu-<release>/<arch>/*.deb,Packages  node packages + dependencies (flat apt repository)
 //	manifest.json                                versions + file list (informational)
 //	SHA256SUMS                                   sha256sum output for every other file
@@ -45,7 +46,7 @@ type Options struct {
 	ImagesDir string
 	// ChartsDir receives charts/*.tgz (default versions.ChartCacheDir).
 	ChartsDir string
-	// StagingDir receives k3s/k3s, k3s/k3s-install.sh and packages/ubuntu-<release>/<arch>/{*.deb,Packages}.
+	// StagingDir receives k3s/k3s, k3s/k3s-install.sh, helm/helm and packages/ubuntu-<release>/<arch>/{*.deb,Packages}.
 	StagingDir string
 }
 
@@ -160,7 +161,7 @@ func InstallWithOptions(bundlePath string, opts Options) error {
 			}
 		}
 	} else {
-		// The k3s binary, its installer and .deb packages run as root: never
+		// The k3s and Helm binaries, the installer and .deb packages run as root: never
 		// install them unverified.
 		for name := range extracted {
 			if opts.StagingDir != "" && strings.HasPrefix(destination(name, opts), filepath.Clean(opts.StagingDir)+string(filepath.Separator)) {
@@ -199,7 +200,7 @@ func cleanEntryName(raw string) (string, error) {
 func destination(name string, opts Options) string {
 	if opts.StagingDir != "" {
 		switch name {
-		case "k3s/k3s", "k3s/k3s-install.sh":
+		case "k3s/k3s", "k3s/k3s-install.sh", "helm/helm":
 			return filepath.Join(opts.StagingDir, path.Base(name))
 		}
 		parts := strings.Split(name, "/")

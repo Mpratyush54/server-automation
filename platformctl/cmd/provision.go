@@ -15,7 +15,6 @@ import (
 
 	"github.com/fatih/color"
 
-	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/apt"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/bundle"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
@@ -259,13 +258,25 @@ func runProvision() error {
 	// artifact) downloads while the prerequisites install. It must land
 	// before k3s starts, which imports the image tarballs at start-up.
 	stackDone := startStackDownload()
+	// Offline bundle must land before k3s starts: k3s imports airgap image
+	// tarballs from its images dir at start-up, and cached charts make the
+	// prefetch below a no-op. It also carries the node packages, Helm and
+	// k3s, so an offline provision downloads nothing (hostSources).
+	var sources hostSources
+	if bundleFlag != "" {
+		if err := hostStep("bundle", func() error { return installBundle(bundleFlag) }); err != nil {
+			return err
+		}
+		sources = bundleSources(provisionStackPaths, runtime.GOARCH)
+		sources.warnMissing()
+	}
 	// Prerequisites (apt) are only needed by the cluster steps, not by helm or
 	// k3s: install them in the background too, and wait before the cluster steps.
 	prereqsDone := make(chan error, 1)
 	go func() {
 		_ = state.MarkInProgress("prereqs")
 		track := state.Track("prereqs (background)")
-		err := apt.InstallPrereqs()
+		err := installPrereqs(sources)
 		if err != nil {
 			track("failed")
 		} else {
@@ -273,15 +284,7 @@ func runProvision() error {
 		}
 		prereqsDone <- err
 	}()
-	// Offline bundle must land before k3s starts: k3s imports airgap image
-	// tarballs from its images dir at start-up, and cached charts make the
-	// prefetch below a no-op.
-	if bundleFlag != "" {
-		if err := hostStep("bundle", func() error { return installBundle(bundleFlag) }); err != nil {
-			return err
-		}
-	}
-	if err := hostStep("helm", helm.Install); err != nil {
+	if err := hostStep("helm", func() error { return installHelm(sources) }); err != nil {
 		return err
 	}
 
@@ -325,8 +328,16 @@ func runProvision() error {
 				return err
 			}
 		}
-		if err := hostStep("k3s", func() error { return k3s.InstallWith(cfg.Domain, cfg.GitHubToken, k3sServerOptions(cfg)) }); err != nil {
+		k3sOpts := k3sServerOptions(cfg)
+		k3sOpts.Offline = sources.k3s
+		if err := hostStep("k3s", func() error { return k3s.InstallWith(cfg.Domain, cfg.GitHubToken, k3sOpts) }); err != nil {
 			return err
+		}
+		// k3s imported the bundle's archives before it started the kubelet.
+		if bundleFlag != "" {
+			if err := hostStep("bundle-images", provisionNameImages); err != nil {
+				return err
+			}
 		}
 	}
 	// Load the stack's images into containerd in parallel before any workload

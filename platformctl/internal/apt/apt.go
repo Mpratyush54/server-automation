@@ -9,13 +9,8 @@ import (
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 )
 
-func InstallPrereqs() error {
-	if state.IsDone("prereqs") {
-		color.Green("  ✓ Prerequisites already installed")
-		return nil
-	}
-	color.Cyan("\n  ■ Installing system prerequisites...")
-	if err := shell.RunBash(`
+// prereqsScript installs the prerequisites from the system's apt mirrors.
+const prereqsScript = `
 		export DEBIAN_FRONTEND=noninteractive
 		apt-get update -qq
 		apt-get install -y -qq \
@@ -24,12 +19,40 @@ func InstallPrereqs() error {
 		  netcat-openbsd || apt-get install -y -qq \
 		  curl wget jq unzip gnupg ca-certificates \
 		  apt-transport-https openssl python3 apache2-utils
-	`); err != nil {
+	`
+
+func InstallPrereqs() error {
+	if state.IsDone("prereqs") {
+		color.Green("  ✓ Prerequisites already installed")
+		return nil
+	}
+	color.Cyan("\n  ■ Installing system prerequisites...")
+	if err := runBash(prereqsScript); err != nil {
 		return fmt.Errorf("apt prerequisites failed: %w", err)
 	}
 	color.Green("  ✓ Prerequisites installed")
 	return state.MarkDone("prereqs")
 }
+
+// InstallPrereqsFromBundle is InstallPrereqs for `provision --bundle`: it
+// installs BundlePackages (the prerequisites plus everything an offline join
+// installs: Longhorn prerequisites, host hardening packages) from the bundle's
+// package repositories under root, with no mirror and no download fallback.
+func InstallPrereqsFromBundle(root string) error {
+	if state.IsDone("prereqs") {
+		color.Green("  ✓ Prerequisites already installed")
+		return nil
+	}
+	color.Cyan("\n  ■ Installing system prerequisites from the offline bundle...")
+	if err := installFromBundle(root, BundlePackages); err != nil {
+		return fmt.Errorf("offline prerequisites: %w", err)
+	}
+	color.Green("  ✓ Prerequisites installed from the offline bundle")
+	return state.MarkDone("prereqs")
+}
+
+// runBash is swapped in tests.
+var runBash = shell.RunBash
 
 // LonghornPrereqsScript prepares this node for Longhorn's iSCSI volumes.
 const LonghornPrereqsScript = `
@@ -77,6 +100,16 @@ func InstallLonghornPrereqs() error {
 // preflight requires. scripts/build-bundle.sh downloads their dependency
 // closure (TestBundleScriptPackageList keeps both lists equal).
 const OfflinePackages = "open-iscsi nfs-common util-linux dmsetup unattended-upgrades fail2ban chrony nftables curl openssl"
+
+// PrereqPackages are the prerequisites provision installs (see prereqsScript)
+// that OfflinePackages lacks.
+const PrereqPackages = "wget jq unzip gnupg ca-certificates apt-transport-https python3 apache2-utils netcat-openbsd"
+
+// BundlePackages are the packages scripts/build-bundle.sh puts in the release
+// bundle (TestBundleScriptPackageList keeps both lists equal) and what an
+// offline provision installs. They ship only in the release bundle, never in
+// the platform stack.
+const BundlePackages = OfflinePackages + " " + PrereqPackages
 
 // OfflinePackagesScript installs OfflinePackages from the offline bundle
 // without contacting any mirror. Each PACKAGE_ROOT/ubuntu-<release>/<arch>
@@ -139,9 +172,13 @@ echo "  offline packages: installing ${wanted[*]}"
 // fallback.
 func InstallOfflinePackages(root string) error {
 	color.Cyan("  Installing node packages from the offline bundle...")
-	env := map[string]string{"PACKAGE_ROOT": root, "OFFLINE_PACKAGES": OfflinePackages}
-	if err := shell.RunBashEnv(OfflinePackagesScript, env); err != nil {
+	if err := installFromBundle(root, OfflinePackages); err != nil {
 		return fmt.Errorf("offline packages: %w", err)
 	}
 	return nil
+}
+
+// installFromBundle runs OfflinePackagesScript for packages; swapped in tests.
+var installFromBundle = func(root, packages string) error {
+	return shell.RunBashEnv(OfflinePackagesScript, map[string]string{"PACKAGE_ROOT": root, "OFFLINE_PACKAGES": packages})
 }

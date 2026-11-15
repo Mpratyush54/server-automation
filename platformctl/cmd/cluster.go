@@ -366,6 +366,17 @@ func runJoin(stdin io.Reader) error {
 	}
 	color.Green("  ✓ Joined the cluster as %s", role)
 
+	if joinBundle != "" {
+		// k3s imports the bundle's archives before it starts the kubelet; then
+		// the digest-pinned images (ingress-nginx) get their digest names.
+		if err := joinWaitKubelet(); err != nil {
+			return fmt.Errorf("bundle images: %w (k3s joined; re-run the join command once the node is Ready)", err)
+		}
+		if err := joinNameBundleImages(); err != nil {
+			return fmt.Errorf("bundle images: %w (k3s joined; re-run the join command)", err)
+		}
+	}
+
 	if !cfg.SkipHardening {
 		if err := joinWaitKubelet(); err != nil {
 			return fmt.Errorf("host hardening: %w (k3s joined; run `sudo platformctl harden --auto` once the node is Ready)", err)

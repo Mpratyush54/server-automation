@@ -60,6 +60,30 @@ func Install() error {
 	return state.MarkDone("helm")
 }
 
+// Swapped in tests.
+var (
+	pinnedHelmPresent = func() bool { return IsInstalled() && installedMajorOK() }
+	installRunBash    = shell.RunBash
+)
+
+// InstallFrom puts the Helm binary of an offline bundle on PATH instead of
+// downloading the release (`provision --bundle`). The bundle carries the
+// pinned release, checksum-verified when the bundle was built and checked
+// against the bundle's SHA256SUMS when it was installed.
+func InstallFrom(binary string) error {
+	color.Cyan("\n  ■ Installing Helm %s from the offline bundle...", versions.HelmVersion)
+	if pinnedHelmPresent() {
+		color.Green("  ✓ Helm already installed")
+		return state.MarkDone("helm")
+	}
+	quoted := "'" + strings.ReplaceAll(binary, "'", `'\''`) + "'"
+	if err := installRunBash("set -euo pipefail\ninstall -m 0755 " + quoted + " /usr/local/bin/helm\nhelm version --short\n"); err != nil {
+		return fmt.Errorf("helm install from the bundle failed: %w", err)
+	}
+	color.Green("  ✓ Helm installed from the offline bundle")
+	return state.MarkDone("helm")
+}
+
 // pullFn is swapped in tests.
 var pullFn = pullChart
 
