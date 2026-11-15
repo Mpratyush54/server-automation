@@ -38,6 +38,18 @@ func backupSettings() (backup.Config, error) {
 	return c, c.Validate()
 }
 
+// readResolvedBackupConfig reads backup.json and resolves the "external"
+// target to the off-site target's archive URL, loading its credentials into
+// memory for the built-in S3 client.
+func readResolvedBackupConfig(file string) (backup.Config, error) {
+	c, e := backup.ReadConfig(file)
+	if e != nil {
+		return c, e
+	}
+	c.Target, e = resolveArchiveTarget(c.Target)
+	return c, e
+}
+
 func warnLocal(c backup.Config) {
 	t, _ := backup.ParseTarget(c.Target)
 	if !t.Remote {
