@@ -1008,7 +1008,11 @@ metadata:
   name: barman-cloud
   namespace: cnpg-system
 spec:
-  replicas: 1
+  # Platform change: two replicas (a leader and a hot standby, --leader-elect)
+  # spread over the nodes. The CNPG operator does not reconcile, or fail over,
+  # a Cluster whose plugin it cannot reach: with one replica on a powered-off
+  # node, Postgres failover waited for the pod to be replaced (about 50 s more).
+  replicas: 2
   selector:
     matchLabels:
       app: barman-cloud
@@ -1019,6 +1023,13 @@ spec:
       labels:
         app: barman-cloud
     spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: barman-cloud
       tolerations:
       - key: node.kubernetes.io/not-ready
         operator: Exists
@@ -1048,9 +1059,11 @@ spec:
         ports:
         - containerPort: 9090
           protocol: TCP
+        # Only the leader serves gRPC: probe often so a newly elected leader
+        # receives traffic within seconds (platform change, upstream: 10 s).
         readinessProbe:
-          initialDelaySeconds: 10
-          periodSeconds: 10
+          initialDelaySeconds: 2
+          periodSeconds: 2
           tcpSocket:
             port: 9090
         resources: {}

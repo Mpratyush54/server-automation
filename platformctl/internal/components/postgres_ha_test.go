@@ -80,8 +80,13 @@ func TestRenderPostgresCluster(t *testing.T) {
 				if _, ok := conf["serverName"]; ok {
 					t.Fatal("serverName belongs to the Cluster's plugin parameters")
 				}
-				if !reflect.DeepEqual(conf["wal"], map[string]any{"compression": "gzip", "maxParallel": 2}) {
+				if !reflect.DeepEqual(conf["wal"], map[string]any{"compression": "gzip", "maxParallel": 2, "restoreAdditionalCommandArgs": []string{"--read-timeout", "5"}}) {
 					t.Fatal(conf)
+				}
+				// A WAL fetch from a hanging object store must not hold up promotion for minutes.
+				sidecar := store["spec"].(map[string]any)["instanceSidecarConfiguration"].(map[string]any)
+				if !reflect.DeepEqual(sidecar["env"], []any{map[string]any{"name": "AWS_RETRY_MODE", "value": "standard"}}) {
+					t.Fatal(sidecar)
 				}
 			}
 			if tc.recovery {

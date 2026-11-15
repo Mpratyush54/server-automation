@@ -103,7 +103,7 @@ func TestPostgresReplicationChoicesHonestFigures(t *testing.T) {
 	var b bytes.Buffer
 	PostgresReplicationChoices(&b)
 	out := b.String()
-	for _, want := range []string{"1 to 2 minutes", "can be lost", PostgresReplicationDocsURL} {
+	for _, want := range []string{"about 1 minute when a server is lost", "can be lost", PostgresReplicationDocsURL} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}

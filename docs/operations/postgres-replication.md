@@ -19,7 +19,7 @@ The question is only about timing. When your app saves something, when does the 
 
 These numbers come from tests on three cloud servers, where we stopped the database or powered off one server while an app kept writing.
 
-**In both modes, losing a server interrupts writes for about 1 to 2 minutes.** Kubernetes first has to notice that the server is gone, and only then is a standby promoted. Anything that saves data during that time waits or fails and has to be retried. Async does not make this failover faster.
+**In both modes, losing a server interrupts writes for about 1 minute.** Kubernetes first has to notice that the server is gone (about 40 seconds), and only then is a standby promoted. Anything that saves data during that time waits or fails and has to be retried. Async does not make this failover faster.
 
 **With sync**, no confirmed write is lost. The standby that is promoted already has every write the old primary confirmed.
 
@@ -30,11 +30,11 @@ When only the database process crashes or restarts, and the server stays up, fai
 | | Sync (default) | Async |
 |---|---|---|
 | A confirmed write is lost when a server dies | Never | The last writes before the failure can be |
-| Writes pause after a server is lost | About 1 to 2 minutes | About 1 to 2 minutes |
+| Writes pause after a server is lost | About 1 minute | About 1 minute |
 | Writes pause after a database crash (server stays up) | About 30 seconds | About 30 seconds |
 | Speed of each write in normal operation | A little slower: waits for the network round trip to another server | Fastest |
 
-Measured on the test cluster: with sync, killing the primary database process led to a new primary after 26.5 seconds and writes resumed after 35.8 seconds; powering off the primary's server led to a new primary after 62.9 seconds and writes resumed after 71.3 seconds. With async, powering off the primary's server took about 127 seconds, in a test where the database operator was running on the server that was powered off. Your times depend on your servers and network.
+Measured on the test cluster: with sync, killing the primary database process led to a new primary after 26.5 seconds and writes resumed after 35.8 seconds; powering off the primary's server led to a new primary after 62.9 seconds and writes resumed after 71.3 seconds. With async, powering off the server that ran the primary, the active backup plugin, a database operator and half of the bundled object storage led to a new primary after 57.5 seconds, and writes resumed after 61 seconds. Your times depend on your servers and network.
 
 ## Which one to choose
 
@@ -56,9 +56,9 @@ On the first server, `platformctl provision --profile ha` asks:
     The database keeps a copy on each of the three servers. Choose how writes are copied:
     sync  (default) Every write is copied to a second server before it is confirmed.
                     No confirmed write is lost if a server dies. Writes pause during failover:
-                    about 1 to 2 minutes when a server is lost.
+                    about 1 minute when a server is lost.
     async           Writes are confirmed right away and copied a moment later.
-                    Failover also takes about 1 to 2 minutes when a server is lost, and the
+                    Failover also takes about 1 minute when a server is lost, and the
                     last writes confirmed before the failure can be lost.
   ? Replication mode (sync/async) [sync]:
 ```

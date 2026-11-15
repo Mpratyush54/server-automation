@@ -121,7 +121,7 @@ const (
 func pgObjectStoreResource(cfg *config.Config, b *pgBackup) map[string]any {
 	conf := pgObjectStore(b, "")
 	delete(conf, "serverName")
-	conf["wal"] = map[string]any{"compression": "gzip", "maxParallel": 2}
+	conf["wal"] = map[string]any{"compression": "gzip", "maxParallel": 2, "restoreAdditionalCommandArgs": pgWALRestoreArgs}
 	conf["data"] = map[string]any{"compression": "gzip", "jobs": 2}
 	retention := cfg.PostgresBackupRetention
 	if retention == "" {
@@ -129,15 +129,47 @@ func pgObjectStoreResource(cfg *config.Config, b *pgBackup) map[string]any {
 	}
 	return map[string]any{"apiVersion": "barmancloud.cnpg.io/v1", "kind": "ObjectStore",
 		"metadata": map[string]any{"name": PGObjectStoreName, "namespace": "databases"},
-		"spec":     map[string]any{"configuration": conf, "retentionPolicy": retention}}
+		"spec": map[string]any{"configuration": conf, "retentionPolicy": retention,
+			"instanceSidecarConfiguration": map[string]any{"env": pgSidecarEnv}}}
 }
+
+// A standby that loses its primary fetches the next WAL file from the backup
+// object store, and PostgreSQL acts on a promote request only between two
+// such fetches (and fetches timeline history files before it finishes). On
+// the 3-server power-off test the bundled MinIO had lost quorum with the
+// node: each fetch waited for its 60 s read timeout, five times (botocore's
+// legacy retries), and the new primary was promoted 3m38s after the operator
+// asked, 5m16s after the power-off. The fetch now gives up after 5 s without
+// an answer, and the sidecar uses botocore's standard retry mode (3 attempts
+// instead of 5): a fetch from an object store that hangs ends after about 19 s
+// instead of 5 minutes, and PostgreSQL retries it anyway. Archiving and base
+// backups keep the default read timeout.
+var (
+	pgWALRestoreArgs = []string{"--read-timeout", "5"}
+	pgSidecarEnv     = []any{map[string]any{"name": "AWS_RETRY_MODE", "value": "standard"}}
+)
 
 const barmanPluginReadyScript = `set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 timeout 5m kubectl wait --for=condition=Established crd/objectstores.barmancloud.cnpg.io --timeout=5m
 timeout 5m kubectl -n cnpg-system wait --for=condition=Ready certificate/barman-cloud-server certificate/barman-cloud-client --timeout=5m
-timeout 5m kubectl -n cnpg-system rollout status deploy/barman-cloud --timeout=5m
+` + barmanPluginRolloutScript
+
+// barmanPluginRolloutScript waits until the plugin Deployment runs its current
+// template with a Ready leader. `kubectl rollout status` would wait forever:
+// the standby replica only serves (and turns Ready) once it leads.
+const barmanPluginRolloutScript = `export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+for _ in $(seq 1 150); do
+  read -r gen obs want upd ready _ <<<"$(kubectl -n cnpg-system get deploy barman-cloud -o jsonpath='{.metadata.generation} {.status.observedGeneration} {.spec.replicas} {.status.updatedReplicas} {.status.readyReplicas}' 2>/dev/null) x x x x x"
+  if [[ "$gen" == "$obs" && "$upd" == "$want" && "$ready" =~ ^[0-9]+$ ]] && (( ready >= 1 )); then exit 0; fi
+  sleep 2
+done
+echo "Barman Cloud plugin has no Ready leader after 5 minutes" >&2
+exit 1
 `
+
+// waitBarmanPlugin runs barmanPluginRolloutScript. Overridable in tests.
+var waitBarmanPlugin = func() error { return shell.RunBash(barmanPluginRolloutScript) }
 
 // ensureBarmanPlugin installs the Barman Cloud plugin (needs cert-manager)
 // and waits until CNPG can call it. Overridable in tests.

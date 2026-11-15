@@ -61,9 +61,9 @@ func (c *Config) loadPostgresReplication() {
 func PostgresReplicationChoices(w io.Writer) {
 	fmt.Fprintln(w, "    sync  (default) Every write is copied to a second server before it is confirmed.")
 	fmt.Fprintln(w, "                    No confirmed write is lost if a server dies. Writes pause during failover:")
-	fmt.Fprintln(w, "                    about 1 to 2 minutes when a server is lost.")
+	fmt.Fprintln(w, "                    about 1 minute when a server is lost.")
 	fmt.Fprintln(w, "    async           Writes are confirmed right away and copied a moment later.")
-	fmt.Fprintln(w, "                    Failover also takes about 1 to 2 minutes when a server is lost, and the")
+	fmt.Fprintln(w, "                    Failover also takes about 1 minute when a server is lost, and the")
 	fmt.Fprintln(w, "                    last writes confirmed before the failure can be lost.")
 	fmt.Fprintf(w, "    Which one to pick: %s\n", PostgresReplicationDocsURL)
 }

@@ -19,6 +19,15 @@ import (
 // off that node had no operator until Kubernetes replaced it, and Postgres
 // failover took about 127 s. Restarting the Deployment once more than one node
 // is Ready lets the topology spread constraint place the replicas apart.
+//
+// The Barman Cloud plugin needs the same treatment: the operator does not
+// reconcile a Cluster that uses a plugin it cannot reach, failover included.
+// With the plugin's single replica on the powered-off node (the failover test
+// of 2026-11-15), the operator logged "Error loading plugins, retrying" and
+// started the failover only when Kubernetes had replaced the plugin pod, 97 s
+// after the power-off instead of about 45 s. The plugin now runs two replicas
+// (a leader and a hot standby, barman-cloud-plugin.yaml) that are spread the
+// same way.
 
 const (
 	cnpgOperatorNamespace  = "cnpg-system"
@@ -26,7 +35,23 @@ const (
 	cnpgOperatorSelector   = "app.kubernetes.io/name=cloudnative-pg"
 	// cnpgOperatorHAReplicas is replicaCount in cnpg-values.yaml on ha.
 	cnpgOperatorHAReplicas = 2
+
+	barmanPluginDeployment = "barman-cloud"
+	barmanPluginSelector   = "app=barman-cloud"
 )
+
+// failoverController is a Deployment that Postgres failover depends on.
+// leaderOnly marks one whose standby replicas never turn Ready.
+type failoverController struct {
+	title, deployment, selector string
+	leaderOnly                  bool
+}
+
+// failoverControllers are spread over the nodes on ha (SpreadCNPGOperator).
+var failoverControllers = []failoverController{
+	{"CloudNativePG operator", cnpgOperatorDeployment, cnpgOperatorSelector, false},
+	{"Barman Cloud plugin", barmanPluginDeployment, barmanPluginSelector, true},
+}
 
 // cnpgKubectl runs kubectl. Overridable in tests.
 var cnpgKubectl = func(args ...string) (string, error) { return shell.Output("kubectl", args...) }
@@ -114,14 +139,19 @@ func cnpgOperatorStatusLine(s cnpgOperatorState, ha bool, readyNodes int) (line 
 }
 
 func readCNPGOperator() (cnpgOperatorState, bool, error) {
-	d, err := cnpgKubectl("-n", cnpgOperatorNamespace, "get", "deployment", cnpgOperatorDeployment, "--ignore-not-found", "-o", "json")
+	return readCNPGDeployment(cnpgOperatorDeployment, cnpgOperatorSelector)
+}
+
+// readCNPGDeployment reads a Deployment in cnpg-system and where its pods run.
+func readCNPGDeployment(deployment, selector string) (cnpgOperatorState, bool, error) {
+	d, err := cnpgKubectl("-n", cnpgOperatorNamespace, "get", "deployment", deployment, "--ignore-not-found", "-o", "json")
 	if err != nil {
 		return cnpgOperatorState{}, false, fmt.Errorf("%w: %s", err, strings.TrimSpace(d))
 	}
 	if strings.TrimSpace(d) == "" {
 		return cnpgOperatorState{}, false, nil
 	}
-	p, err := cnpgKubectl("-n", cnpgOperatorNamespace, "get", "pods", "-l", cnpgOperatorSelector, "-o", "json")
+	p, err := cnpgKubectl("-n", cnpgOperatorNamespace, "get", "pods", "-l", selector, "-o", "json")
 	if err != nil {
 		return cnpgOperatorState{}, true, fmt.Errorf("%w: %s", err, strings.TrimSpace(p))
 	}
@@ -137,32 +167,46 @@ func readyNodeCount() (int, error) {
 	return countReadyNodes(out), nil
 }
 
-// SpreadCNPGOperator restarts the operator Deployment on ha when all its
-// replicas run on one node and another node is Ready, so they land on
-// different nodes. It does nothing on other profiles, when the operator is not
-// installed yet, or when the replicas are already apart. Only the operator
-// restarts; PostgreSQL itself is not touched.
+// SpreadCNPGOperator restarts the CloudNativePG operator and the Barman Cloud
+// plugin Deployments on ha when all replicas of one of them run on one node
+// and another node is Ready, so they land on different nodes. It does nothing
+// on other profiles, for a Deployment that is not installed yet, or when the
+// replicas are already apart. Only these controllers restart; PostgreSQL
+// itself is not touched.
 func SpreadCNPGOperator(cfg *config.Config) error {
 	if !cfg.IsHA() {
 		return nil
 	}
-	s, found, err := readCNPGOperator()
-	if err != nil || !found {
-		return err
-	}
-	nodes, err := readyNodeCount()
-	if err != nil {
-		return err
-	}
-	if !cnpgOperatorNeedsSpread(s, nodes) {
-		return nil
-	}
-	color.Cyan("  · CloudNativePG operator replicas all run on %s; restarting them so they spread over the nodes", s.distinctNodes()[0])
-	if out, err := cnpgKubectl("-n", cnpgOperatorNamespace, "rollout", "restart", "deployment/"+cnpgOperatorDeployment); err != nil {
-		return fmt.Errorf("restart CloudNativePG operator: %w: %s", err, strings.TrimSpace(out))
-	}
-	if out, err := cnpgKubectl("-n", cnpgOperatorNamespace, "rollout", "status", "deployment/"+cnpgOperatorDeployment, "--timeout=5m"); err != nil {
-		return fmt.Errorf("CloudNativePG operator rollout: %w: %s", err, strings.TrimSpace(out))
+	nodes := -1
+	for _, c := range failoverControllers {
+		s, found, err := readCNPGDeployment(c.deployment, c.selector)
+		if err != nil {
+			return err
+		}
+		if !found {
+			continue
+		}
+		if nodes < 0 {
+			if nodes, err = readyNodeCount(); err != nil {
+				return err
+			}
+		}
+		if !cnpgOperatorNeedsSpread(s, nodes) {
+			continue
+		}
+		color.Cyan("  · %s replicas all run on %s; restarting them so they spread over the nodes", c.title, s.distinctNodes()[0])
+		if out, err := cnpgKubectl("-n", cnpgOperatorNamespace, "rollout", "restart", "deployment/"+c.deployment); err != nil {
+			return fmt.Errorf("restart %s: %w: %s", c.title, err, strings.TrimSpace(out))
+		}
+		if c.leaderOnly {
+			if err := waitBarmanPlugin(); err != nil {
+				return fmt.Errorf("%s rollout: %w", c.title, err)
+			}
+			continue
+		}
+		if out, err := cnpgKubectl("-n", cnpgOperatorNamespace, "rollout", "status", "deployment/"+c.deployment, "--timeout=5m"); err != nil {
+			return fmt.Errorf("%s rollout: %w: %s", c.title, err, strings.TrimSpace(out))
+		}
 	}
 	return nil
 }

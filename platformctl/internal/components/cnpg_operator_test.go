@@ -1,6 +1,10 @@
 package components
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -91,9 +95,10 @@ func TestCNPGOperatorStatusLine(t *testing.T) {
 // other kubectl calls.
 func fakeCNPGKubectl(t *testing.T, deploy, pods, nodes string) *[]string {
 	t.Helper()
-	old := cnpgKubectl
-	t.Cleanup(func() { cnpgKubectl = old })
+	old, oldWait := cnpgKubectl, waitBarmanPlugin
+	t.Cleanup(func() { cnpgKubectl, waitBarmanPlugin = old, oldWait })
 	var calls []string
+	waitBarmanPlugin = func() error { calls = append(calls, "wait barman-cloud leader"); return nil }
 	cnpgKubectl = func(args ...string) (string, error) {
 		joined := strings.Join(args, " ")
 		switch {
@@ -139,6 +144,106 @@ func TestSpreadCNPGOperatorLeavesOtherCasesAlone(t *testing.T) {
 		}
 		if len(*calls) != 0 {
 			t.Fatalf("%s: unexpected kubectl calls %v", name, *calls)
+		}
+	}
+}
+
+// The operator skips every Cluster whose plugin it cannot reach, failover
+// included, so a Barman Cloud plugin stuck on one node is spread too.
+func TestSpreadCNPGOperatorSpreadsBarmanPlugin(t *testing.T) {
+	old := cnpgKubectl
+	t.Cleanup(func() { cnpgKubectl = old })
+	var calls []string
+	cnpgKubectl = func(args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		switch {
+		case strings.Contains(joined, "get deployment cnpg-cloudnative-pg"):
+			return cnpgDeploy2, nil
+		case strings.Contains(joined, "get pods -l "+cnpgOperatorSelector):
+			return cnpgPods("a", "b"), nil
+		case strings.Contains(joined, "get deployment barman-cloud"):
+			// Leader plus hot standby: the standby never turns Ready.
+			return `{"spec":{"replicas":2},"status":{"readyReplicas":1}}`, nil
+		case strings.Contains(joined, "get pods -l app=barman-cloud"):
+			return cnpgPods("a", "a"), nil
+		case strings.HasPrefix(joined, "get nodes"):
+			return threeReadyNodes, nil
+		}
+		calls = append(calls, joined)
+		return "", nil
+	}
+	oldWait := waitBarmanPlugin
+	t.Cleanup(func() { waitBarmanPlugin = oldWait })
+	waited := 0
+	waitBarmanPlugin = func() error { waited++; return nil }
+	if err := SpreadCNPGOperator(&config.Config{Profile: config.ProfileHA}); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(calls, "\n")
+	if !strings.Contains(got, "rollout restart deployment/barman-cloud") || strings.Contains(got, "restart deployment/cnpg-cloudnative-pg") {
+		t.Fatalf("calls: %s", got)
+	}
+	// rollout status would never finish: the standby replica is never Ready.
+	if waited != 1 || strings.Contains(got, "rollout status deployment/barman-cloud") {
+		t.Fatalf("waited=%d calls: %s", waited, got)
+	}
+}
+
+func TestBarmanPluginRolloutScriptNeedsOnlyALeader(t *testing.T) {
+	for _, want := range []string{"{.status.readyReplicas}", "ready >= 1", `"$upd" == "$want"`, `"$gen" == "$obs"`} {
+		if !strings.Contains(barmanPluginRolloutScript, want) {
+			t.Errorf("rollout script lacks %q", want)
+		}
+	}
+	if strings.Contains(barmanPluginReadyScript, "rollout status deploy/barman-cloud") {
+		t.Fatal("rollout status waits for the standby replica too, which never turns Ready")
+	}
+}
+
+func TestBarmanPluginRunsTwoSpreadReplicas(t *testing.T) {
+	m := readManifest("barman-cloud-plugin.yaml")
+	i := strings.Index(m, "kind: Deployment")
+	if i < 0 {
+		t.Fatal("no Deployment in barman-cloud-plugin.yaml")
+	}
+	d := m[i:]
+	if j := strings.Index(d, "\n---"); j > 0 {
+		d = d[:j]
+	}
+	for _, want := range []string{"replicas: 2", "topologyKey: kubernetes.io/hostname", "whenUnsatisfiable: DoNotSchedule", "periodSeconds: 2"} {
+		if !strings.Contains(d, want) {
+			t.Errorf("plugin Deployment lacks %q", want)
+		}
+	}
+}
+
+func TestBarmanPluginRolloutScriptRuns(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil || runtime.GOOS == "windows" {
+		t.Skip("needs bash")
+	}
+	for name, tc := range map[string]struct {
+		status string
+		ok     bool
+	}{
+		"leader ready, standby not":  {"3 3 2 2 1", true},
+		"old template still rolling": {"3 3 2 1 1", false},
+		"not observed yet":           {"4 3 2 2 1", false},
+		"no ready pod":               {"3 3 2 2 ", false},
+	} {
+		dir := t.TempDir()
+		fake := "#!/bin/sh\necho '" + tc.status + "'\n"
+		if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte(fake), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "sleep"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(bash, "-c", barmanPluginRolloutScript)
+		cmd.Env = append(os.Environ(), "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+		err := cmd.Run()
+		if (err == nil) != tc.ok {
+			t.Errorf("%s: err=%v, want ok=%v", name, err, tc.ok)
 		}
 	}
 }

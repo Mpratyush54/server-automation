@@ -113,7 +113,7 @@ func TestPostgresReplicationHelpFigures(t *testing.T) {
 		if strings.Contains(text, "70 seconds") || strings.Contains(text, "faster failover") {
 			t.Errorf("stale failover claim: %q", text)
 		}
-		if !strings.Contains(text, "1-2 minutes") && !strings.Contains(text, "1 to 2 minutes") {
+		if !strings.Contains(text, "about 1 minute") {
 			t.Errorf("no failover figure: %q", text)
 		}
 	}
