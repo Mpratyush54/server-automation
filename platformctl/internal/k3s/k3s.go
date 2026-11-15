@@ -210,15 +210,28 @@ func installK3sFromMirror(exec string) error {
 
 func WaitReady() error {
 	color.Cyan("  ■ Waiting for K3s to be ready...")
-	return shell.RunBash(`
-		for i in $(seq 1 60); do
-		  k3s kubectl get node >/dev/null 2>&1 && exit 0
-		  sleep 2
-		done
-		echo "k3s did not become ready in time" >&2
-		exit 1
-	`)
+	return shell.RunBash(waitReadyScript)
 }
+
+// waitReadyScript waits for the API (2 minutes), then for a Ready node. k3s
+// imports every staged image tarball (platform stack or offline bundle,
+// several GiB) before it starts the kubelet, so on a first server the node
+// list stays empty, or shows the node NotReady, for minutes while `kubectl get
+// node` already succeeds; later steps then timed out on unschedulable pods.
+const waitReadyScript = `
+		for i in $(seq 1 60); do
+		  k3s kubectl get node >/dev/null 2>&1 && break
+		  if [ "$i" -eq 60 ]; then echo "k3s did not become ready in time" >&2; exit 1; fi
+		  sleep "${K3S_WAIT_INTERVAL:-2}"
+		done
+		for i in $(seq 1 900); do
+		  k3s kubectl get node --no-headers 2>/dev/null | awk '$2 ~ /^Ready/ {ok=1} END {exit !ok}' && exit 0
+		  [ "$i" -eq 15 ] && echo "  · no node is Ready yet: k3s imports the staged images before it starts the kubelet"
+		  sleep "${K3S_WAIT_INTERVAL:-2}"
+		done
+		echo "no node became Ready within 30 minutes (check: journalctl -u k3s)" >&2
+		exit 1
+	`
 
 func setupKubeconfig() error {
 	color.Cyan("  ■ Setting up kubeconfig...")
