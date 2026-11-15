@@ -246,6 +246,13 @@ var (
 	joinHarden         = func() error { return runHardening() }
 	upsertEnvKey       = config.UpsertEnvKey
 	provisionedFn      = func() bool { return state.IsDone("platform") }
+	joinScaleCoreDNS   = func() error {
+		host, err := os.Hostname() // k3s names the node after the host
+		if err != nil {
+			return err
+		}
+		return k3s.EnsureCoreDNSReplicas(strings.ToLower(host))
+	}
 )
 
 func runJoin(stdin io.Reader) error {
@@ -392,6 +399,12 @@ func runJoin(stdin io.Reader) error {
 			}
 		} else {
 			fmt.Println("  Builds: re-run sudo platformctl install builds on a server to refresh blocked node addresses; add this agent's public IPv4 to BUILDS_EXTRA_BLOCKED_CIDRS if needed.")
+		}
+	}
+	if role == k3s.RoleServer {
+		// Best effort: DNS keeps working with one replica until a server fails.
+		if err := joinScaleCoreDNS(); err != nil {
+			color.Yellow("  ⚠ Could not spread CoreDNS over the servers (%v); run: sudo k3s kubectl -n kube-system scale deploy coredns --replicas=3", err)
 		}
 	}
 	printLonghornJoinHint(os.Stdout)

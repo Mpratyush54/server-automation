@@ -30,6 +30,9 @@ func clusterTest(t *testing.T) {
 	joinOfflinePackages = func() error { return nil }
 	joinNameBundleImages = func() error { return nil }
 	joinBundle = ""
+	oldScaleDNS := joinScaleCoreDNS
+	t.Cleanup(func() { joinScaleCoreDNS = oldScaleDNS })
+	joinScaleCoreDNS = func() error { return nil }
 	oldCfg := *cfg
 	oldBuildIsolation := joinBuildIsolation
 	t.Cleanup(func() { joinBuildIsolation = oldBuildIsolation })
@@ -164,6 +167,7 @@ func TestRunJoinAgent(t *testing.T) {
 	}
 	hardened := false
 	joinHarden = func() error { hardened = true; return nil }
+	joinScaleCoreDNS = func() error { t.Fatal("agents must not scale CoreDNS"); return nil }
 
 	if err := runJoin(strings.NewReader(testToken + "\n")); err != nil {
 		t.Fatal(err)
@@ -194,11 +198,17 @@ func TestRunJoinServerCarriesClusterSettings(t *testing.T) {
 	cfg.Cluster.EtcdS3Endpoint, cfg.Cluster.EtcdS3Bucket = "s3.example.com", "snaps"
 	var gotOpts k3s.ServerOptions
 	k3sJoin = func(role k3s.Role, url, token, gh string, o k3s.ServerOptions) error { gotOpts = o; return nil }
+	scaled := 0
+	joinScaleCoreDNS = func() error { scaled++; return nil }
 	if err := runJoin(strings.NewReader(testToken)); err != nil {
 		t.Fatal(err)
 	}
 	if !gotOpts.HA || gotOpts.TLSSANs[0] != "k8s.example.com" || !gotOpts.Snapshots.S3Enabled() {
 		t.Fatalf("server join options: %+v", gotOpts)
+	}
+	// A joined server spreads CoreDNS (#54); agents have no admin kubeconfig.
+	if scaled != 1 {
+		t.Fatalf("CoreDNS scaled %d times, want 1", scaled)
 	}
 }
 
