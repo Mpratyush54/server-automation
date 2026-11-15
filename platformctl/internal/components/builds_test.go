@@ -2,6 +2,7 @@ package components
 
 import (
 	"encoding/json"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,7 @@ func TestBuildsProfileGate(t *testing.T) {
 	for _, profile := range config.Profiles {
 		for _, enabled := range []bool{false, true} {
 			c := &config.Config{Profile: profile, BuildsEnabled: enabled, Domain: "example.com", BuildsEgressCIDRs: "192.0.2.0/24"}
-			registry, err := BuildRegistryManifest(c, testRealm)
+			registry, err := BuildRegistryManifest(c, testRealm, DefaultBuildNetworks())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -30,7 +31,7 @@ func TestBuildsProfileGate(t *testing.T) {
 
 func TestRegistryUsesScopedTokenAuthAndIsNotPublic(t *testing.T) {
 	c := &config.Config{Profile: config.ProfileStandard, BuildsEnabled: true, Domain: "example.com", MinioSecretKey: "must-not-render", BuildsS3Bucket: "platform-registry"}
-	manifest, err := BuildRegistryManifest(c, testRealm)
+	manifest, err := BuildRegistryManifest(c, testRealm, DefaultBuildNetworks())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,33 +48,33 @@ func TestRegistryUsesScopedTokenAuthAndIsNotPublic(t *testing.T) {
 		}
 	}
 	c.BuildsRegistryNodeCIDRs = "203.0.113.10/32,203.0.113.11/32"
-	manifest, _ = BuildRegistryManifest(c, testRealm)
+	manifest, _ = BuildRegistryManifest(c, testRealm, DefaultBuildNetworks())
 	if !strings.Contains(manifest, "ipBlock: {cidr: 203.0.113.10/32}") || !strings.Contains(manifest, "ipBlock: {cidr: 203.0.113.11/32}") {
 		t.Fatal("node pull addresses not rendered")
 	}
 	c.BuildsRegistryNodeCIDRs = "not-a-cidr"
-	if _, err := BuildRegistryManifest(c, testRealm); err == nil {
+	if _, err := BuildRegistryManifest(c, testRealm, DefaultBuildNetworks()); err == nil {
 		t.Fatal("invalid node CIDR accepted")
 	}
 	c.BuildsRegistryNodeCIDRs = ""
 	for _, realm := range []string{"", "https://10.43.0.20:3000/api/registry/token", "http://api.example.com:3000/api/registry/token", "http://10.43.0.20:3000/other"} {
-		if _, err := BuildRegistryManifest(c, realm); err == nil {
+		if _, err := BuildRegistryManifest(c, realm, DefaultBuildNetworks()); err == nil {
 			t.Errorf("accepted realm %q", realm)
 		}
 	}
 	c.BuildsS3Endpoint = "https://s3.example.com"
 	c.BuildsS3Bucket = "images"
-	manifest, err = BuildRegistryManifest(c, testRealm)
+	manifest, err = BuildRegistryManifest(c, testRealm, DefaultBuildNetworks())
 	if err != nil || !strings.Contains(manifest, c.BuildsS3Endpoint) || strings.Contains(manifest, "platform-registry") || !strings.Contains(manifest, `bucket: "images"`) {
 		t.Fatal("external S3 not rendered")
 	}
 	c.BuildsS3Bucket = "Bad_Bucket"
-	if _, err := BuildRegistryManifest(c, testRealm); err == nil {
+	if _, err := BuildRegistryManifest(c, testRealm, DefaultBuildNetworks()); err == nil {
 		t.Fatal("invalid bucket accepted")
 	}
 	c.BuildsS3Bucket = "images"
 	c.Domain = "example.com\ninvalid"
-	if _, err := BuildRegistryManifest(c, testRealm); err == nil {
+	if _, err := BuildRegistryManifest(c, testRealm, DefaultBuildNetworks()); err == nil {
 		t.Fatal("invalid domain accepted")
 	}
 }
@@ -103,7 +104,7 @@ func TestRegistryTokenRealmUsesAPIClusterIP(t *testing.T) {
 
 func TestBuildNamespaceIsolation(t *testing.T) {
 	c := &config.Config{Profile: config.ProfileFull, BuildsEnabled: true, BuildsEgressCIDRs: "192.0.2.0/24,198.51.100.2/32"}
-	manifest, err := BuildNamespaceManifest(c)
+	manifest, err := BuildNamespaceManifest(c, DefaultBuildNetworks())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,14 +120,14 @@ func TestBuildNamespaceIsolation(t *testing.T) {
 	}
 	for _, invalid := range []string{"", "0.0.0.0/0", "::/0", "2001:db8::/32", "github.com", "10.0.0.0/8", "10.42.1.0/24", "169.254.169.254/32", "172.16.5.0/24", "192.0.2.1/24"} {
 		c.BuildsEgressCIDRs = invalid
-		if _, err := BuildNamespaceManifest(c); err == nil {
+		if _, err := BuildNamespaceManifest(c, DefaultBuildNetworks()); err == nil {
 			t.Errorf("accepted %q", invalid)
 		}
 	}
 }
 
 func TestBuildEgressAlwaysExcludesPrivateAndClusterRanges(t *testing.T) {
-	peers, err := BuildEgressPeers("8.0.0.0/5,128.0.0.0/1")
+	peers, err := BuildEgressPeers("8.0.0.0/5,128.0.0.0/1", DefaultBuildNetworks())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +157,11 @@ func TestBuildBlockedNetworksCoverNamespaceBaseline(t *testing.T) {
 	if line == "" {
 		t.Fatal("privateNetworks not found in namespace-baseline.ts")
 	}
-	blocked := strings.Join(buildBlockedNetworks, " ")
+	var all []string
+	for _, b := range DefaultBuildNetworks().blocked() {
+		all = append(all, b.String())
+	}
+	blocked := strings.Join(all, " ")
 	for _, part := range strings.Split(line[strings.Index(line, "[")+1:strings.Index(line, "]")], ",") {
 		cidr := strings.Trim(strings.TrimSpace(part), "'")
 		if !strings.Contains(" "+blocked+" ", " "+cidr+" ") {
@@ -166,6 +171,66 @@ func TestBuildBlockedNetworksCoverNamespaceBaseline(t *testing.T) {
 	for _, cluster := range []string{"10.42.0.0/16", "10.43.0.0/16", "169.254.0.0/16"} {
 		if !strings.Contains(blocked, cluster) {
 			t.Errorf("build egress does not exclude %s", cluster)
+		}
+	}
+}
+
+func TestBuildEgressUsesConfiguredClusterAndNodeNetworks(t *testing.T) {
+	n := BuildNetworks{
+		Cluster: []netip.Prefix{netip.MustParsePrefix("10.52.0.0/16"), netip.MustParsePrefix("10.53.0.0/16"), netip.MustParsePrefix("fd00:42::/56")},
+		Nodes:   []netip.Prefix{netip.MustParsePrefix("203.0.113.7/32")},
+	}
+	peers, err := BuildEgressPeers("8.0.0.0/5,203.0.113.0/24", n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(peers, "cidr: 8.0.0.0/5, except: [10.0.0.0/8, 10.52.0.0/16, 10.53.0.0/16]") || strings.Contains(peers, "10.42.0.0/16") {
+		t.Fatalf("configured cluster CIDRs not used:\n%s", peers)
+	}
+	if !strings.Contains(peers, "cidr: 203.0.113.0/24, except: [203.0.113.7/32]") {
+		t.Fatalf("node address not excluded:\n%s", peers)
+	}
+	if _, err := BuildEgressPeers("203.0.113.7/32", n); err == nil {
+		t.Fatal("egress to a node address accepted")
+	}
+	// Operator-listed node addresses are excluded too.
+	c := &config.Config{Profile: config.ProfileFull, BuildsEnabled: true, BuildsEgressCIDRs: "198.51.100.0/24", BuildsRegistryNodeCIDRs: "198.51.100.9/32"}
+	manifest, err := BuildNamespaceManifest(c, DefaultBuildNetworks())
+	if err != nil || !strings.Contains(manifest, "cidr: 198.51.100.0/24, except: [198.51.100.9/32]") {
+		t.Fatalf("operator node address not excluded (%v):\n%s", err, manifest)
+	}
+}
+
+func TestRegistryNodeCIDRsAreNodeSized(t *testing.T) {
+	c := &config.Config{Profile: config.ProfileStandard, BuildsEnabled: true, Domain: "example.com"}
+	for _, bad := range []string{"0.0.0.0/0", "10.0.0.0/8", "203.0.0.0/15", "10.42.0.0/24", "10.0.0.0/12", "::/0", "fd00::/48"} {
+		c.BuildsRegistryNodeCIDRs = bad
+		if _, err := BuildRegistryManifest(c, testRealm, DefaultBuildNetworks()); err == nil {
+			t.Errorf("accepted node CIDR %q", bad)
+		}
+	}
+	for _, good := range []string{"192.168.0.0/16", "203.0.113.10/32", "10.0.1.0/24"} {
+		c.BuildsRegistryNodeCIDRs = good
+		if _, err := BuildRegistryManifest(c, testRealm, DefaultBuildNetworks()); err != nil {
+			t.Errorf("rejected node CIDR %q: %v", good, err)
+		}
+	}
+	c.BuildsRegistryNodeCIDRs = "10.42.0.0/24"
+	custom := BuildNetworks{Cluster: []netip.Prefix{netip.MustParsePrefix("10.60.0.0/16")}}
+	if _, err := BuildRegistryManifest(c, testRealm, custom); err != nil {
+		t.Errorf("node CIDR outside the configured cluster network rejected: %v", err)
+	}
+}
+
+func TestNodeAddressPrefixes(t *testing.T) {
+	got := nodeAddressPrefixes("InternalIP 10.0.0.5\nExternalIP 203.0.113.7\nHostname node-a\nInternalIP 10.0.0.5\nExternalIP fd00::7\nInternalIP bad\n")
+	want := []string{"10.0.0.5/32", "203.0.113.7/32", "fd00::7/128"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v", got)
+	}
+	for i := range want {
+		if got[i].String() != want[i] {
+			t.Fatalf("got %v", got)
 		}
 	}
 }
@@ -209,7 +274,7 @@ func TestRegistrySignerIsKeptOrMovedNotRotated(t *testing.T) {
 
 func TestBuildSecretsAreLimitedToPerBuildNames(t *testing.T) {
 	c := &config.Config{Profile: config.ProfileFull, BuildsEnabled: true, BuildsEgressCIDRs: "192.0.2.0/24"}
-	manifest, err := BuildNamespaceManifest(c)
+	manifest, err := BuildNamespaceManifest(c, DefaultBuildNetworks())
 	if err != nil {
 		t.Fatal(err)
 	}

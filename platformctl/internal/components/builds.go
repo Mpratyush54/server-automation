@@ -18,10 +18,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/harden"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/k3s"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
@@ -48,10 +50,73 @@ const (
 )
 
 // buildBlockedNetworks are always excluded from build egress, whatever the
-// operator allows: private, loopback, link-local (cloud metadata), CGNAT,
-// multicast/reserved, and the cluster pod and service CIDRs. Mirrors
-// privateNetworks in platform/api/src/lib/namespace-baseline.ts.
-var buildBlockedNetworks = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "169.254.0.0/16", "100.64.0.0/10", "0.0.0.0/8", "224.0.0.0/4", "240.0.0.0/4", "10.42.0.0/16", "10.43.0.0/16"}
+// operator allows: private, loopback, link-local (cloud metadata), CGNAT and
+// multicast/reserved. Mirrors privateNetworks in
+// platform/api/src/lib/namespace-baseline.ts. The cluster's own ranges are
+// added from BuildNetworks.
+var buildBlockedNetworks = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "169.254.0.0/16", "100.64.0.0/10", "0.0.0.0/8", "224.0.0.0/4", "240.0.0.0/4"}
+
+// BuildNetworks are cluster ranges that builds may never reach, whatever the
+// egress allowlist says.
+type BuildNetworks struct {
+	// Cluster holds the pod and service CIDRs (k3s cluster-cidr and service-cidr).
+	Cluster []netip.Prefix
+	// Nodes holds node addresses known at install time.
+	Nodes []netip.Prefix
+}
+
+// DefaultBuildNetworks uses the k3s default pod and service CIDRs.
+func DefaultBuildNetworks() BuildNetworks {
+	cluster, _ := harden.CIDRs(nil)
+	return BuildNetworks{Cluster: cluster}
+}
+
+// installedBuildNetworks reads the pod and service CIDRs from the k3s config
+// (failing closed on a config it cannot parse) and the nodes' addresses.
+func installedBuildNetworks() (BuildNetworks, error) {
+	data, err := os.ReadFile(k3s.ServerConfigPath)
+	if err != nil && !os.IsNotExist(err) {
+		return BuildNetworks{}, err
+	}
+	cluster, err := harden.CIDRs(data)
+	if err != nil {
+		return BuildNetworks{}, err
+	}
+	out, _ := shell.OutputBash(`export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+kubectl get nodes -o jsonpath='{range .items[*].status.addresses[*]}{.type} {.address}{"\n"}{end}' 2>/dev/null || true`)
+	return BuildNetworks{Cluster: cluster, Nodes: nodeAddressPrefixes(out)}, nil
+}
+
+// nodeAddressPrefixes parses "<type> <address>" lines (InternalIP/ExternalIP).
+func nodeAddressPrefixes(out string) []netip.Prefix {
+	var nodes []netip.Prefix
+	seen := map[netip.Prefix]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		kind, value, ok := strings.Cut(strings.TrimSpace(line), " ")
+		if !ok || (kind != "InternalIP" && kind != "ExternalIP") {
+			continue
+		}
+		addr, err := netip.ParseAddr(strings.TrimSpace(value))
+		if err != nil {
+			continue
+		}
+		p := netip.PrefixFrom(addr, addr.BitLen())
+		if !seen[p] {
+			seen[p] = true
+			nodes = append(nodes, p)
+		}
+	}
+	return nodes
+}
+
+func (n BuildNetworks) blocked() []netip.Prefix {
+	var out []netip.Prefix
+	for _, b := range buildBlockedNetworks {
+		out = append(out, netip.MustParsePrefix(b))
+	}
+	out = append(out, n.Cluster...)
+	return append(out, n.Nodes...)
+}
 
 var bucketName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
 
@@ -105,7 +170,7 @@ func cidrList(value, name string) ([]netip.Prefix, error) {
 // external S3. The registry is reachable only in-cluster: builds push to it, the
 // API manages retention, and node containerd pulls through the Service
 // ClusterIP. There is no Ingress.
-func BuildRegistryManifest(c *config.Config, realm string) (string, error) {
+func BuildRegistryManifest(c *config.Config, realm string, n BuildNetworks) (string, error) {
 	if !BuildsEnabled(c) {
 		return "", nil
 	}
@@ -132,7 +197,7 @@ func BuildRegistryManifest(c *config.Config, realm string) (string, error) {
 	if strings.ContainsAny(endpoint, "\n\r\"\\") {
 		return "", fmt.Errorf("invalid registry storage setting")
 	}
-	nodes, err := cidrList(c.BuildsRegistryNodeCIDRs, "BUILDS_REGISTRY_NODE_CIDRS")
+	nodes, err := registryNodeCIDRs(c.BuildsRegistryNodeCIDRs, n)
 	if err != nil {
 		return "", err
 	}
@@ -227,13 +292,31 @@ spec:
 		sha256.Sum256([]byte(endpoint+"\x00"+bucket+"\x00"+realm)), BuildRegistryImage, nodePeers.String()), nil
 }
 
+// registryNodeCIDRs validates the node addresses allowed to pull from the
+// registry: node-sized ranges only (at most a /16, or /64 for IPv6), never the
+// pod or service network.
+func registryNodeCIDRs(value string, n BuildNetworks) ([]netip.Prefix, error) {
+	nodes, err := cidrList(value, "BUILDS_REGISTRY_NODE_CIDRS")
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range nodes {
+		if p.Bits() == 0 || (p.Addr().Is4() && p.Bits() < 16) || (p.Addr().Is6() && p.Bits() < 64) {
+			return nil, fmt.Errorf("BUILDS_REGISTRY_NODE_CIDRS must list node addresses or subnets no broader than /16, not %s", p)
+		}
+		for _, cluster := range n.Cluster {
+			if p.Overlaps(cluster) {
+				return nil, fmt.Errorf("BUILDS_REGISTRY_NODE_CIDRS may not overlap the cluster network %s", cluster)
+			}
+		}
+	}
+	return nodes, nil
+}
+
 // BuildEgressPeers renders the operator's allowlist with every blocked network
 // it contains listed under except. A CIDR inside a blocked network is refused.
-func BuildEgressPeers(cidrs string) (string, error) {
-	var blocked []netip.Prefix
-	for _, b := range buildBlockedNetworks {
-		blocked = append(blocked, netip.MustParsePrefix(b))
-	}
+func BuildEgressPeers(cidrs string, n BuildNetworks) (string, error) {
+	blocked := n.blocked()
 	var peers strings.Builder
 	for _, raw := range strings.Split(cidrs, ",") {
 		prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
@@ -242,10 +325,13 @@ func BuildEgressPeers(cidrs string) (string, error) {
 		}
 		var except []string
 		for _, b := range blocked {
-			if b.Bits() <= prefix.Bits() && b.Contains(prefix.Addr()) {
-				return "", fmt.Errorf("BUILDS_EGRESS_CIDRS may not include private or cluster network %s", prefix)
+			if !b.Addr().Is4() {
+				continue
 			}
-			if b.Bits() > prefix.Bits() && prefix.Contains(b.Addr()) {
+			if b.Bits() <= prefix.Bits() && b.Contains(prefix.Addr()) {
+				return "", fmt.Errorf("BUILDS_EGRESS_CIDRS may not include private, cluster or node network %s", prefix)
+			}
+			if b.Bits() > prefix.Bits() && prefix.Contains(b.Addr()) && !slices.Contains(except, b.String()) {
 				except = append(except, b.String())
 			}
 		}
@@ -260,11 +346,15 @@ func BuildEgressPeers(cidrs string) (string, error) {
 
 // Egress is an explicit allowlist (HTTPS only) plus DNS and the in-cluster
 // registry. Private and cluster ranges are always excluded.
-func BuildNamespaceManifest(c *config.Config) (string, error) {
+func BuildNamespaceManifest(c *config.Config, n BuildNetworks) (string, error) {
 	if !BuildsEnabled(c) {
 		return "", nil
 	}
-	peers, err := BuildEgressPeers(c.BuildsEgressCIDRs)
+	// Operator-listed node addresses are excluded from egress as well.
+	if nodes, err := cidrList(c.BuildsRegistryNodeCIDRs, "BUILDS_REGISTRY_NODE_CIDRS"); err == nil {
+		n.Nodes = append(append([]netip.Prefix{}, n.Nodes...), nodes...)
+	}
+	peers, err := BuildEgressPeers(c.BuildsEgressCIDRs, n)
 	if err != nil {
 		return "", err
 	}
@@ -566,7 +656,11 @@ func InstallBuilds(c *config.Config) error {
 	if !BuildsEnabled(c) {
 		return nil
 	}
-	builds, err := BuildNamespaceManifest(c)
+	networks, err := installedBuildNetworks()
+	if err != nil {
+		return fmt.Errorf("read cluster networks: %w", err)
+	}
+	builds, err := BuildNamespaceManifest(c, networks)
 	if err != nil {
 		return err
 	}
@@ -609,7 +703,7 @@ func InstallBuilds(c *config.Config) error {
 	if err != nil {
 		return err
 	}
-	registry, err := BuildRegistryManifest(c, realm)
+	registry, err := BuildRegistryManifest(c, realm, networks)
 	if err != nil {
 		return err
 	}
