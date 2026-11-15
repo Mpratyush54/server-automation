@@ -170,8 +170,23 @@ spec:
               cpu: 200m
               memory: 128Mi
           env:
+            # Talk to this server's own API server, not the kubernetes
+            # Service: after a server dies its endpoint stays behind the
+            # ClusterIP for a while, and a candidate whose lease calls land
+            # there takes the VIP seconds late (#54). The DaemonSet runs only
+            # on servers (hostNetwork), and k3s serves 127.0.0.1 in its
+            # certificate.
+            - name: KUBERNETES_SERVICE_HOST
+              value: "127.0.0.1"
+            - name: KUBERNETES_SERVICE_PORT
+              value: "6443"
             - name: vip_arp
               value: "true"
+            # Gratuitous ARP every 500 ms instead of 3 s: after a failover
+            # clients kept sending to the dead node's MAC until the next
+            # announcement (up to 3 s of the 10 s budget).
+            - name: vip_arpRate
+              value: "500"
 {{- if .Iface }}
             - name: vip_interface
               value: {{ q .Iface }}

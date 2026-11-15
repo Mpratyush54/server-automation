@@ -76,6 +76,15 @@ func TestKubeVIPManifest(t *testing.T) {
 					t.Fatal("missing env", env)
 				}
 			}
+			// Lease calls go to the local API server, not the kubernetes
+			// Service that may still route to a dead server.
+			if !strings.Contains(out, "- name: KUBERNETES_SERVICE_HOST\n              value: \"127.0.0.1\"\n") ||
+				!strings.Contains(out, "- name: KUBERNETES_SERVICE_PORT\n              value: \"6443\"\n") {
+				t.Fatal("kube-vip must use the local API server")
+			}
+			if !strings.Contains(out, "- name: vip_arpRate\n              value: \"500\"\n") {
+				t.Fatal("kube-vip must announce the VIP every 500 ms")
+			}
 			if !strings.Contains(out, "NET_ADMIN") || !strings.Contains(out, "NET_RAW") || !strings.Contains(out, `drop: ["ALL"]`) {
 				t.Fatal("capabilities")
 			}
