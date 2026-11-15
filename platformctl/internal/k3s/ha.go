@@ -165,7 +165,7 @@ type AgentOptions struct{ ServerURL, TokenFile, NodeIP string }
 
 // RenderAgentConfig renders an agent config without server-only keys.
 func RenderAgentConfig(o AgentOptions) string {
-	s := "# Managed by platformctl\nserver: " + yamlQuote(o.ServerURL) + "\ntoken-file: " + yamlQuote(o.TokenFile) + "\nresolv-conf: " + ResolvConfPath + "\n"
+	s := "# Managed by platformctl\nserver: " + yamlQuote(o.ServerURL) + "\ntoken-file: " + yamlQuote(o.TokenFile) + "\nresolv-conf: " + ResolvConfPath + "\n" + KubeletArgsYAML
 	if o.NodeIP != "" {
 		s += "node-ip: " + yamlQuote(o.NodeIP) + "\n"
 	}

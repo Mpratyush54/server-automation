@@ -22,7 +22,7 @@ func TestRegistriesYAML(t *testing.T) {
 
 func TestServerConfigAndResolvConf(t *testing.T) {
 	y := ServerConfigYAML()
-	for _, want := range []string{"- traefik", "resolv-conf: " + ResolvConfPath, "secrets-encryption: true"} {
+	for _, want := range []string{"- traefik", "resolv-conf: " + ResolvConfPath, "secrets-encryption: true", "kubelet-arg:\n  - \"pod-max-pids=4096\"\n"} {
 		if !strings.Contains(y, want) {
 			t.Errorf("config.yaml missing %q:\n%s", want, y)
 		}
@@ -30,6 +30,21 @@ func TestServerConfigAndResolvConf(t *testing.T) {
 	r := ResolvConf([]string{"1.1.1.1", "8.8.8.8"})
 	if !strings.Contains(r, "nameserver 1.1.1.1\nnameserver 8.8.8.8\n") {
 		t.Errorf("bad resolv.conf:\n%s", r)
+	}
+}
+
+// Every node, server or agent, limits the processes of each pod.
+func TestEveryNodeLimitsPodPIDs(t *testing.T) {
+	want := "kubelet-arg:\n  - \"pod-max-pids=4096\"\n"
+	for name, cfg := range map[string]string{
+		"single server":  ServerConfigYAML(),
+		"ha server":      RenderServerConfig(ServerOptions{HA: true, ClusterInit: true, TokenFile: "/t"}),
+		"joining server": RenderServerConfig(ServerOptions{HA: true, ServerURL: "https://node:6443", TokenFile: "/t"}),
+		"agent":          RenderAgentConfig(AgentOptions{ServerURL: "https://node:6443", TokenFile: "/t"}),
+	} {
+		if strings.Count(cfg, "kubelet-arg:") != 1 || !strings.Contains(cfg, want) {
+			t.Errorf("%s config does not set pod-max-pids:\n%s", name, cfg)
+		}
 	}
 }
 
