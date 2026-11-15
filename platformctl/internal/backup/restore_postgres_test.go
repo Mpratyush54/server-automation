@@ -90,7 +90,7 @@ func TestRestorePostgresBranchRuns(t *testing.T) {
 	_ = f.Close()
 	t.Setenv("POSTGRES_PASSWORD", "current")
 
-	if err := runScript(restoreScript, "postgres", src, ""); err != nil {
+	if err := runScript(restoreScript, "postgres", src); err != nil {
 		t.Fatalf("postgres restore branch failed: %v", err)
 	}
 	log := readLog(t, logf)
@@ -126,7 +126,7 @@ func TestRestoreMongoRestoresUsersLast(t *testing.T) {
 	}
 	t.Setenv("MONGODB_ROOT_PASSWORD", "current")
 
-	if err := runScript(restoreScript, "mongo", src, ""); err != nil {
+	if err := runScript(restoreScript, "mongo", src); err != nil {
 		t.Fatalf("mongo restore branch failed: %v", err)
 	}
 	calls := strings.Split(strings.TrimSpace(readLog(t, logf)), "\n")

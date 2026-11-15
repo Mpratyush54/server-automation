@@ -4,7 +4,8 @@
 # (decrypts the newest backup and restores Postgres into a disposable database).
 # The age identity exists only in this shell's memory.
 #
-# MinIO is left out: it needs the `mc` client, which a fresh server lacks.
+# MinIO files are included when the bundled MinIO is installed (platformctl
+# copies them with its built-in S3 client; no `mc` on the host).
 set -euo pipefail
 umask 077
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
@@ -19,10 +20,12 @@ fi
 target=${E2E_BACKUP_TARGET:-file:///var/lib/platform/e2e-backups}
 cfg=${E2E_BACKUP_CONFIG:-/root/e2e-backup.json}
 rm -f "$cfg"
+components=config,postgres,mongo,redis,k3s
+if kubectl -n storage get svc minio >/dev/null 2>&1; then components+=,minio; fi
 identity=$(platformctl backup init --backup-config "$cfg" --target "$target" \
-  --components config,postgres,mongo,redis,k3s 2>/dev/null | grep -m1 '^AGE-SECRET-KEY-' || true)
+  --components "$components" 2>/dev/null | grep -m1 '^AGE-SECRET-KEY-' || true)
 [[ -n "$identity" ]] || { echo "backup init did not produce an identity" >&2; exit 1; }
-echo "  backup configured (file target, components config,postgres,mongo,redis,k3s)"
+echo "  backup configured (file target, components $components)"
 
 out=$(platformctl backup --all --backup-config "$cfg")
 id=$(printf '%s\n' "$out" | grep -E '^[0-9A-Za-z._-]+$' | tail -n 1 || true)

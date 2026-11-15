@@ -82,8 +82,10 @@ func ReadManifest(file string) (Manifest, error) {
 	return m, m.Validate()
 }
 
-// Target uses an existing mc alias: s3://alias/bucket/prefix. Credentials never
-// appear in a target URL. file:///absolute/path is explicitly local-only.
+// Target is either a remote S3 prefix (s3://platformtarget/bucket/prefix, with
+// credentials from UseExternalTarget, or s3://<mc alias>/... from an older
+// configuration, see mc_compat.go) or a local directory (file:///absolute/path).
+// Credentials never appear in a target URL.
 type Target struct {
 	Remote bool
 	Path   string
@@ -119,7 +121,7 @@ func ParseTarget(raw string) (Target, error) {
 			return Target{false, filepath.FromSlash(p)}, nil
 		}
 	}
-	return Target{}, fmt.Errorf("target must be s3://mc-alias/bucket/prefix or file:///absolute/path")
+	return Target{}, fmt.Errorf("target must be s3://platformtarget/bucket/prefix (use --target external) or file:///absolute/path")
 }
 
 type Retention struct {

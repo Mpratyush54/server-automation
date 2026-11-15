@@ -92,7 +92,7 @@ low-disk and unreachable-backup refusals. See [upgrade operations](upgrades.md).
    | `sso-grafana`, `sso-argocd`, `sso-portainer` (full) | a complete SSO login as the admin: redirect with the right client and redirect URI, consent, code redeemed by the tool, tool session |
    | `argocd-sync` (full) | an Argo CD Application for `examples/sdk-demo/k8s` at the tested commit becomes Synced and Healthy |
    | `tenant-isolation` | `platform/api/scripts/test-namespace-isolation.mjs`: default-deny isolation matrix, Pod Security, quotas |
-   | `backup-restore` | `platformctl backup init` (file target), `backup --all`, `backup list`, `backup restore-test`. MinIO is excluded because a fresh server has no `mc` client |
+   | `backup-restore` | `platformctl backup init` (file target), `backup --all`, `backup list`, `backup restore-test`; files in the bundled MinIO are included when it is installed |
 
    Probe details live in the test code (`scripts/e2e/checks/`); the job log
    only shows pass/fail.

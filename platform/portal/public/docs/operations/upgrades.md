@@ -88,6 +88,20 @@ Replace `<target>` with a published release tag that has the `upgrade` command. 
 
 On these older installs, also run `sudo platformctl update` once first, so images are pinned to exact versions and a rollback can restore them. Development builds (version `dev` or empty) must be replaced with a release binary.
 
+## Backup settings that name an mc alias
+
+Older releases copied encrypted archives with the MinIO `mc` program, and `/etc/platform/backup.json` could name an `mc` alias: `"target": "s3://<alias>/<bucket>/<prefix>"`, or `"minioAlias": "<alias>"` for a MinIO that Cairn did not install. platformctl no longer needs `mc`. It reads the alias's address and keys from root's `~/.mc/config.json` (or `$MC_CONFIG_DIR/config.json`, or an `MC_HOST_<alias>` variable), so these settings keep working after the upgrade, and archives made by older releases restore as before.
+
+If the alias is gone (for example, `mc` was removed together with its settings), `backup`, `backup list` and `restore` stop with an error that names the alias. Switch to the off-site backup target instead:
+
+```sh
+sudo platformctl backup target set --endpoint https://<s3 endpoint> --bucket <bucket> --region <region> --prefix <prefix>
+```
+
+Then set `"target": "external"` in `/etc/platform/backup.json`. The off-site target keeps archives under `<prefix>/archives/`, so archives already stored at the old alias path are not listed there. To restore one of them, recreate the alias in `~/.mc/config.json` and pass `--target s3://<alias>/<bucket>/<prefix>` to `restore`, or copy the archive folders into `<prefix>/archives/` with any S3 tool.
+
+Remove `minioAlias` from `backup.json` when the files are in the bundled MinIO; it is only for a MinIO outside the cluster.
+
 ## Uploaded files on v1.2.0 and earlier
 
 Up to v1.2.0, files uploaded through the API were stored inside the API container, with no volume. Every API restart loses them, including `platformctl update` and the upgrade's own rollout. Files already lost cannot be recovered.

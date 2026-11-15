@@ -133,8 +133,8 @@ func defaultArchiveTarget(c *config.Config) string {
 	return defaultLocalArchiveTarget
 }
 
-// resolveArchiveTarget turns "external" into the target's mc URL and makes
-// the alias available to this process's mc calls.
+// resolveArchiveTarget turns "external" into the target's archive URL and
+// loads credentials for the built-in S3 client.
 func resolveArchiveTarget(raw string) (string, error) {
 	if raw != backup.ExternalTargetKeyword {
 		return raw, nil
