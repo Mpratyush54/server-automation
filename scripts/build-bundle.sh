@@ -7,11 +7,14 @@
 #
 # Contents (installed by platformctl/internal/bundle):
 #   k3s/k3s, k3s/k3s-install.sh               pinned binary and installer
-#   packages/ubuntu-<release>/<arch>/         flat apt repository (*.deb + Packages) for offline join
+#   helm/helm                                pinned Helm binary (checksum-verified) for offline provision
+#   packages/ubuntu-<release>/<arch>/         flat apt repository (*.deb + Packages) for offline provision and join
 #   SHA256SUMS                               checksums of every file below
 #   manifest.json                            versions + file list
 #   k3s/k3s-airgap-images-<arch>.tar.zst     k3s airgap images for versions.K3sVersion
 #   images/platform-images-<arch>.tar.zst    docker save | zstd of internal/images/images.txt
+#                                            (digest-pinned images are saved under their tag;
+#                                            platformctl names them by digest after import)
 #   charts/<name>-<version>.tgz              helm pull of every chart in `platformctl charts --json`
 #
 # Output: $OUT_DIR (default ./dist) gets the bundle and <bundle>.sha256.
@@ -26,7 +29,8 @@
 #   IMAGE_GROUPS  split the images into N tarballs (default 1), so they can be
 #                 downloaded and imported in parallel (scripts/build-stack.sh)
 #   STAGE_ONLY    copy the staged files to this directory instead of packaging
-#   SKIP_PACKAGES set to 1 to leave out the Ubuntu node packages (stack builds)
+#   SKIP_PACKAGES set to 1 to leave out the Ubuntu node packages and the Helm
+#                 binary (stack builds: they ship only in the release bundle)
 set -euo pipefail
 
 die() { echo "build-bundle: error: $*" >&2; exit 1; }
@@ -55,7 +59,7 @@ done
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 STAGE="$WORK/bundle"
-mkdir -p "$STAGE/k3s" "$STAGE/images" "$STAGE/charts" "$STAGE/packages" "$OUT_DIR"
+mkdir -p "$STAGE/k3s" "$STAGE/images" "$STAGE/charts" "$STAGE/packages" "$STAGE/helm" "$OUT_DIR"
 
 # --- pinned versions -------------------------------------------------------
 if [[ -n "${CHARTS_JSON:-}" ]]; then
@@ -98,11 +102,28 @@ want="$(awk -v f="$K3S_BIN" '$2 == f {print $1}' "$WORK/k3s.sums")"
 fetch "https://raw.githubusercontent.com/k3s-io/k3s/$K3S_TAG_ENC/install.sh" "$STAGE/k3s/k3s-install.sh"
 head -1 "$STAGE/k3s/k3s-install.sh" | grep -q '^#!/bin/sh' || die "invalid k3s installer"
 
+# --- Helm ------------------------------------------------------------------
+# Offline `platformctl provision --bundle` installs this binary instead of
+# downloading Helm from get.helm.sh. Release bundle only (not the stack).
+if [[ "${SKIP_PACKAGES:-}" != 1 ]]; then
+  [[ "$HELM_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid helm version '$HELM_VERSION'"
+  HELM_TGZ="helm-${HELM_VERSION}-linux-${ARCH}.tar.gz"
+  fetch "https://get.helm.sh/$HELM_TGZ" "$WORK/$HELM_TGZ"
+  fetch "https://get.helm.sh/$HELM_TGZ.sha256sum" "$WORK/helm.sha256sum"
+  want="$(awk -v f="$HELM_TGZ" '$2 == f || $2 == "*" f {print $1}' "$WORK/helm.sha256sum")"
+  [[ -n "$want" && "$(sha256sum "$WORK/$HELM_TGZ" | cut -d' ' -f1)" == "$want" ]] || die "helm archive checksum mismatch"
+  mkdir -p "$WORK/helm-x"
+  tar -xzf "$WORK/$HELM_TGZ" -C "$WORK/helm-x" "linux-$ARCH/helm"
+  cp "$WORK/helm-x/linux-$ARCH/helm" "$STAGE/helm/helm"
+  chmod 0755 "$STAGE/helm/helm"
+fi
+
 # --- Ubuntu node packages --------------------------------------------------
-# Offline `platformctl join` installs these from the bundle (must equal
-# apt.OfflinePackages in platformctl/internal/apt/apt.go): Longhorn
-# prerequisites, host hardening packages and the commands preflight needs.
-OFFLINE_PACKAGES="open-iscsi nfs-common util-linux dmsetup unattended-upgrades fail2ban chrony nftables curl openssl"
+# Offline `platformctl provision --bundle` and `join --bundle` install these
+# from the bundle (must equal apt.BundlePackages in
+# platformctl/internal/apt/apt.go): Longhorn prerequisites, host hardening
+# packages, the commands preflight needs and provision's prerequisites.
+OFFLINE_PACKAGES="open-iscsi nfs-common util-linux dmsetup unattended-upgrades fail2ban chrony nftables curl openssl wget jq unzip gnupg ca-certificates apt-transport-https python3 apache2-utils netcat-openbsd"
 # One flat apt repository per supported Ubuntu release, built in a container
 # of that release and architecture (arm64 runs under QEMU in CI). The
 # dependency closure is resolved against an empty dpkg status, so it includes
@@ -187,7 +208,16 @@ if docker info --format '{{range .DriverStatus}}{{index . 0}}={{index . 1}};{{en
 fi
 docker_inspect_arch() { docker image inspect --format '{{.Architecture}}' "$1" 2>/dev/null || true; }
 docker_save() { docker save "$@"; }
+# Digest-pinned images (repo:tag@sha256:..., e.g. ingress-nginx): `docker save`
+# keeps tags but not registry digests, and saves a digest reference with no
+# name at all, so after import containerd could not resolve it and an offline
+# node failed with ImagePullBackOff. Docker pulled and verified the image by
+# its digest; it is tagged repo:tag and saved under that name, and platformctl
+# adds the repo@sha256 name after k3s imports the archive
+# (images.AliasDigestRefs), so the pinned reference resolves without a
+# registry. The archive's integrity is covered by SHA256SUMS and the .sha256.
 available=()
+save_refs=()
 for img in "${IMAGES[@]}"; do
   log "docker pull --platform linux/$ARCH $img"
   got_arch=""
@@ -196,6 +226,14 @@ for img in "${IMAGES[@]}"; do
   fi
   if [[ "$got_arch" == "$ARCH" ]]; then
     available+=("$img")
+    if [[ "$img" == *@* ]]; then
+      name="${img%@*}"
+      [[ "${name##*/}" == *:* ]] || die "$img is pinned by digest without a tag; the bundle cannot name it"
+      docker tag "$img" "$name"
+      save_refs+=("$name")
+    else
+      save_refs+=("$img")
+    fi
   elif [[ "${ALLOW_MISSING_ARCH:-}" == 1 ]]; then
     # Stack builds: such an image is pulled at install time instead.
     log "WARN: $img has no linux/$ARCH image; leaving it out"
@@ -208,13 +246,13 @@ IMAGE_GROUPS="${IMAGE_GROUPS:-1}"
 [[ "$IMAGE_GROUPS" =~ ^[1-9][0-9]?$ ]] || die "IMAGE_GROUPS must be 1-99"
 if [[ "$IMAGE_GROUPS" == 1 ]]; then
   IMG_FILE="platform-images-${ARCH}.tar.zst"
-  log "docker save ${#IMAGES[@]} images -> $IMG_FILE"
-  docker_save "${IMAGES[@]}" | zstd -q -f -T0 "-$ZSTD_LEVEL" -o "$STAGE/images/$IMG_FILE"
+  log "docker save ${#save_refs[@]} images -> $IMG_FILE"
+  docker_save "${save_refs[@]}" | zstd -q -f -T0 "-$ZSTD_LEVEL" -o "$STAGE/images/$IMG_FILE"
 else
   # Round-robin over the sorted list keeps the groups similar in size.
   for ((g = 0; g < IMAGE_GROUPS; g++)); do
     group=()
-    for ((i = g; i < ${#IMAGES[@]}; i += IMAGE_GROUPS)); do group+=("${IMAGES[$i]}"); done
+    for ((i = g; i < ${#save_refs[@]}; i += IMAGE_GROUPS)); do group+=("${save_refs[$i]}"); done
     [[ ${#group[@]} -gt 0 ]] || continue
     IMG_FILE="platform-images-${ARCH}-$((g + 1)).tar.zst"
     log "docker save ${#group[@]} images -> $IMG_FILE"
@@ -223,7 +261,7 @@ else
 fi
 
 # --- manifest + checksums --------------------------------------------------
-(cd "$STAGE" && find k3s images charts packages -type f | LC_ALL=C sort) >"$WORK/files.txt"
+(cd "$STAGE" && find k3s images charts packages helm -type f | LC_ALL=C sort) >"$WORK/files.txt"
 printf '%s\n' "${IMAGES[@]}" >"$WORK/images.txt"
 jq -n \
   --arg version "$VERSION" --arg arch "$ARCH" \
@@ -248,7 +286,7 @@ fi
 # --- package ---------------------------------------------------------------
 # Contents are already compressed; a low level keeps packaging fast.
 log "packaging $OUT_DIR/$BUNDLE"
-tar -C "$STAGE" -cf - SHA256SUMS manifest.json k3s images charts packages | zstd -q -T0 -3 -o "$OUT_DIR/$BUNDLE" -f
+tar -C "$STAGE" -cf - SHA256SUMS manifest.json k3s images charts packages helm | zstd -q -T0 -3 -o "$OUT_DIR/$BUNDLE" -f
 (cd "$OUT_DIR" && sha256sum "$BUNDLE" >"$BUNDLE.sha256")
 # GitHub release assets must be smaller than 2 GiB; the bundle is larger.
 # Releases publish .part00, .part01, ... (the .sha256 covers the whole

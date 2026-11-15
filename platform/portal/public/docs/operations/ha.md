@@ -111,12 +111,15 @@ With `--bundle`, join:
 - places every image in `/var/lib/rancher/k3s/agent/images` before k3s starts, so k3s imports them into containerd at startup
 - installs missing packages from the bundle with apt, using only the bundle as a package source; it stops when the OS is not Ubuntu 22.04 or 24.04, when a dependency is not in the bundle, or when the install would remove a package (chrony replacing systemd-timesyncd is the exception)
 - installs k3s from the bundle, with no download fallback
+- once the kubelet runs, adds the digest names of images that charts pin by digest (the ingress-nginx controller and its admission webhook job), so their pods start on this node without a registry
 
 The join checks still need the cluster: its API, etcd (servers) and kubelet ports, the token's CA and the clock. The node needs time synchronisation it can reach, such as an NTP server on the private network. Images that are not in the bundle, such as your applications, need a registry the node can reach.
 
 `--bundle auto` downloads the release's bundle, so it needs internet access. Without `--bundle`, join downloads the platform stack chosen by `PLATFORM_STACK` (default `stable`) before k3s starts; `PLATFORM_STACK=off` skips it.
 
-Release CI builds the bundles with `scripts/build-bundle.sh <version> <amd64|arm64>`, which downloads the packages inside Ubuntu containers of each release and architecture.
+The first server can be provisioned from the same bundle without internet access too: see [Offline bundle](../getting-started/platformctl.md#offline-bundle). The packages and the Helm binary ship only in the release bundle, not in the platform stack.
+
+Release CI builds the bundles with `scripts/build-bundle.sh <version> <amd64|arm64>`, which downloads the packages inside Ubuntu containers of each release and architecture, and the Helm release from `get.helm.sh`, checked against its published SHA-256.
 
 After the join, run `sudo platformctl install longhorn` on the first server, as above.
 

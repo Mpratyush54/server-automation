@@ -199,10 +199,14 @@ func TestJoinStagesBundleBeforePreparation(t *testing.T) {
 				calls = append(calls, "k3s")
 				return nil
 			}
+			joinWaitKubelet = func() error { calls = append(calls, "kubelet"); return nil }
+			joinNameBundleImages = func() error { calls = append(calls, "image-names"); return nil }
+			cfg.SkipHardening = true
 			if _, err := captureStdout(t, func() error { return runJoin(strings.NewReader(testToken)) }); err != nil {
 				t.Fatal(err)
 			}
-			if !slices.Equal(calls, []string{"bundle", "packages", "prereqs", "k3s"}) {
+			// Digest names after k3s imported the archives (kubelet up).
+			if !slices.Equal(calls, []string{"bundle", "packages", "prereqs", "k3s", "kubelet", "image-names"}) {
 				t.Fatal(calls)
 			}
 		})
@@ -213,6 +217,7 @@ func TestOnlineJoinSkipsOfflinePackages(t *testing.T) {
 	clusterTest(t)
 	joinRole, joinServer, joinTokenFile, joinNodes = "agent", "https://10.0.0.11:6443", "-", "10.0.0.0/24"
 	joinOfflinePackages = func() error { t.Fatal("offline packages without --bundle"); return nil }
+	joinNameBundleImages = func() error { t.Fatal("bundle image names without --bundle"); return nil }
 	k3sJoin = func(_ k3s.Role, _, _, _ string, o k3s.ServerOptions) error {
 		if o.Offline {
 			t.Fatal("online join must keep the download fallback")

@@ -138,8 +138,14 @@ func installJoinK3s(exec string, offline bool) error {
 	if !offline {
 		return joinInstall(exec)
 	}
+	return installStagedOnly(exec, "join")
+}
+
+// installStagedOnly installs the k3s binary and installer staged by an offline
+// bundle, with no download fallback (op names the command in the error).
+func installStagedOnly(exec, op string) error {
 	if !stackPaths.Staged() {
-		return fmt.Errorf("offline join requires the staged k3s binary and installer")
+		return fmt.Errorf("offline %s requires the staged k3s binary and installer", op)
 	}
 	return installFromStack(exec)
 }

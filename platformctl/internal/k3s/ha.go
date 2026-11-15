@@ -58,7 +58,8 @@ func (e EtcdSnapshots) S3Enabled() bool { return e.S3Endpoint != "" && e.S3Bucke
 // ServerOptions selects the k3s server configuration: the zero value is the
 // single-node config; HA adds embedded etcd (first server or joiner).
 type ServerOptions struct {
-	// Offline requires the staged installer for a fresh join; no download fallback.
+	// Offline requires the staged installer for a fresh install (provision or
+	// join with --bundle); no download fallback.
 	Offline                   bool
 	HA                        bool
 	ClusterInit               bool
