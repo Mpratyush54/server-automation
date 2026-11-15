@@ -474,7 +474,7 @@ Redis does not replicate ACL users, so the API creates every per-project Redis u
 
 `plat-sentinel` is a shared, discovery-only Sentinel user: it can ask where the master and replicas are, but cannot reconfigure Sentinel, trigger a failover or read data. Apps never receive the platform Redis password. The SDK helpers (sdk-node and sdk-python `RedisManager`) use Sentinel automatically when the Sentinel fields are present. Clients that ignore them use `host` (the compatibility service), which can lag behind a failover. Project namespaces' network policy allows TCP 6379 and 26379 to the Redis pods. Each node runs the Redis exporter sidecar.
 
-Rotating the platform Redis password from the portal is skipped on `ha`, because it has to change on every node and sentinel together. Use `sudo platformctl recover`, which updates the `redis` Secret and restarts the nodes one at a time.
+The portal rotates the platform Redis password live on every data node and Sentinel on `ha`. It updates replication authentication before node passwords, then Sentinel monitoring and peer authentication, and finally the Redis Secret and platform credentials. Existing API, project and SDK discovery ACL credentials remain usable. Writable runtime configuration is persisted; the chart regenerates configuration from the Secret on restart. If interrupted, retry **Rotate all secrets** to continue with the saved password pair, checking each member individually. See [Rotate Cairn's own passwords](../deployment/update-secrets.md). `sudo platformctl recover` remains the break-glass recovery path and restarts Redis nodes.
 
 #### Object storage
 
