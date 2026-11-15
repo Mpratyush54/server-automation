@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ingressha"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/k3s"
 )
 
@@ -127,20 +128,75 @@ func TestRunJoinAgentIgnoresIngressSettings(t *testing.T) {
 func TestCheckJoinIngressSettingsInputs(t *testing.T) {
 	c := &config.Config{Profile: config.ProfileHA, IngressHAMode: config.IngressHAModeExternal}
 	var warn bytes.Buffer
-	if err := checkJoinIngressSettings(c, "", &warn); err != nil || !strings.Contains(warn.String(), "no --join-settings") {
+	if _, err := checkJoinIngressSettings(c, "", &warn); err != nil || !strings.Contains(warn.String(), "no --join-settings") {
 		t.Fatalf("no file: err=%v warn=%q", err, warn.String())
 	}
-	if err := checkJoinIngressSettings(c, "-", &warn); err == nil {
+	if _, err := checkJoinIngressSettings(c, "-", &warn); err == nil {
 		t.Fatal("stdin accepted for settings (reserved for the token)")
 	}
 	tokenFile := filepath.Join(t.TempDir(), "server.token")
 	_ = os.WriteFile(tokenFile, []byte(testToken+"\n"), 0o600)
-	err := checkJoinIngressSettings(c, tokenFile, &warn)
+	_, err := checkJoinIngressSettings(c, tokenFile, &warn)
 	if err == nil || strings.Contains(err.Error(), "not-a-real-secret") {
 		t.Fatalf("token file passed as settings: %v", err)
 	}
 	bad := &config.Config{Profile: config.ProfileHA, IngressHAMode: "loadbalancer"}
-	if err := checkJoinIngressSettings(bad, "", &warn); err == nil {
+	if _, err := checkJoinIngressSettings(bad, "", &warn); err == nil {
 		t.Fatal("invalid mode accepted")
+	}
+}
+
+// A joining server takes the cluster's off-site etcd snapshot target from the
+// join settings (only the Secret name, never the keys) into its k3s config.
+func TestRunJoinServerAdoptsClusterEtcdS3Target(t *testing.T) {
+	clusterTest(t)
+	first := &config.Config{
+		Profile: config.ProfileHA, IngressHAMode: config.IngressHAModeExternal,
+		Backup: config.BackupSettings{
+			Mode: config.BackupModeExternal, Endpoint: "http://10.0.0.5:9000", Bucket: "offsite",
+			AccessKey: "AKIA" + "notarealkey", SecretKey: "s3cret-" + "notarealkey",
+		},
+	}
+	path := filepath.Join(t.TempDir(), "join-settings")
+	var stderr bytes.Buffer
+	if err := writeJoinSettings(&stderr, first, path); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := os.ReadFile(path)
+	if !strings.Contains(string(body), "ETCD_S3_CONFIG_SECRET=platform-etcd-s3\n") || strings.Contains(string(body), "notarealkey") || strings.Contains(string(body), "10.0.0.5") {
+		t.Fatalf("settings body:\n%s", body)
+	}
+
+	joinRole, joinServer, joinTokenFile, joinNodes = "server", "https://10.0.0.60:6443", "-", "10.0.0.0/24"
+	joinSettingsFile = path
+	cfg.IngressHAMode = config.IngressHAModeExternal
+	cfg.Backup = config.BackupSettings{} // the joiner's .env knows nothing of the target
+	cfg.Cluster.EtcdS3Endpoint = ""
+	var got k3s.ServerOptions
+	k3sJoin = func(_ k3s.Role, _, _, _ string, o k3s.ServerOptions) error { got = o; return nil }
+	upsertEnvKey = func(string, string, string) error { return nil }
+	if _, err := captureStdout(t, func() error { return runJoin(strings.NewReader(testToken)) }); err != nil {
+		t.Fatal(err)
+	}
+	if got.Snapshots.S3ConfigSecret != "platform-etcd-s3" {
+		t.Fatalf("joiner snapshots: %+v", got.Snapshots)
+	}
+	conf := k3s.RenderServerConfig(k3s.ServerOptions{HA: true, ServerURL: "https://10.0.0.60:6443", TokenFile: "/t", Snapshots: got.Snapshots})
+	if !strings.Contains(conf, "etcd-s3: true\n") || !strings.Contains(conf, `etcd-s3-config-secret: "platform-etcd-s3"`) || strings.Contains(conf, "access-key") {
+		t.Fatalf("joiner k3s config:\n%s", conf)
+	}
+}
+
+func TestAdoptClusterEtcdS3KeepsExplicitSettings(t *testing.T) {
+	cluster := ingressha.JoinSettings{Mode: "external", EtcdS3ConfigSecret: "platform-etcd-s3"}
+	explicit := k3s.ServerOptions{Snapshots: k3s.EtcdSnapshots{S3Endpoint: "s3.example.com", S3Bucket: "b"}}
+	adoptClusterEtcdS3(&explicit, cluster)
+	if explicit.Snapshots.S3ConfigSecret != "" {
+		t.Fatal("explicit ETCD_S3_* settings overridden")
+	}
+	var none k3s.ServerOptions
+	adoptClusterEtcdS3(&none, ingressha.JoinSettings{Mode: "external"})
+	if none.Snapshots.S3ConfigSecret != "" {
+		t.Fatal("secret set without one in the join settings")
 	}
 }

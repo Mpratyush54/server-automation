@@ -154,3 +154,18 @@ func TestExternalArchiveTargetKeyword(t *testing.T) {
 		t.Fatal(got, err)
 	}
 }
+
+func TestPrintTargetSettingsKeepsEndpointScheme(t *testing.T) {
+	var b strings.Builder
+	tg := backup.S3Target{Endpoint: "http://10.0.0.5:9000", Bucket: "offsite", AccessKey: "AK" + "notreal", SecretKey: "SK" + "notreal"}.Normalize()
+	printTargetSettings(&b, tg, true)
+	out := b.String()
+	if !strings.Contains(out, "Endpoint: http://10.0.0.5:9000\n") || strings.Contains(out, "notreal") || !strings.Contains(out, "etcd snapshots:") {
+		t.Fatalf("show output:\n%s", out)
+	}
+	b.Reset()
+	printTargetSettings(&b, backup.S3Target{Bucket: "offsite", Region: "eu-west-1"}, false)
+	if !strings.Contains(b.String(), "Endpoint: https://s3.eu-west-1.amazonaws.com\n") || strings.Contains(b.String(), "etcd") {
+		t.Fatalf("AWS default:\n%s", b.String())
+	}
+}

@@ -311,17 +311,7 @@ func init() {
 				fmt.Fprintf(w, "Mode: local only\nWARNING: %s\n", components.LocalOnlyWarning)
 				return nil
 			}
-			t := components.BackupTargetFromConfig(cfg)
-			fmt.Fprintf(w, "Mode: off-site\nEndpoint: %s\nBucket: %s\nRegion: %s\nPrefix: %s\n", t.EndpointHost(), t.Bucket, t.SigningRegion(), t.Prefix)
-			fmt.Fprintf(w, "PostgreSQL archive: %s\nEncrypted archives: s3://%s/%s\n", t.PostgresDestination(), t.Bucket, t.Key(backup.PrefixArchives))
-			if cfg.IsHA() {
-				fmt.Fprintf(w, "etcd snapshots: s3://%s/%s\nLonghorn backups: %s\n", t.Bucket, t.Key(backup.PrefixEtcd), t.LonghornBackupTarget())
-			}
-			fmt.Fprintf(w, "Credentials: Kubernetes Secret platform/%s (copies in databases/%s", backup.TargetSecret, backup.PostgresTargetSecret)
-			if cfg.IsHA() {
-				fmt.Fprintf(w, ", kube-system/%s, longhorn-system/%s", backup.EtcdTargetSecret, backup.LonghornTargetSecret)
-			}
-			fmt.Fprintln(w, ")")
+			printTargetSettings(w, components.BackupTargetFromConfig(cfg), cfg.IsHA())
 			stored, err := components.ReadBackupTarget()
 			if err != nil {
 				color.New(color.FgRed).Fprintf(w, "WARNING: %v\n", err)
@@ -351,4 +341,20 @@ func init() {
 		}}
 	targetCmd.AddCommand(set, show, test)
 	backupCmd.AddCommand(targetCmd)
+}
+
+// printTargetSettings prints the target's non-secret settings for `backup
+// target show`. The endpoint is shown as configured, scheme included, so a
+// plain-http endpoint is visible as such.
+func printTargetSettings(w io.Writer, t backup.S3Target, ha bool) {
+	fmt.Fprintf(w, "Mode: off-site\nEndpoint: %s\nBucket: %s\nRegion: %s\nPrefix: %s\n", t.EndpointURL(), t.Bucket, t.SigningRegion(), t.Prefix)
+	fmt.Fprintf(w, "PostgreSQL archive: %s\nEncrypted archives: s3://%s/%s\n", t.PostgresDestination(), t.Bucket, t.Key(backup.PrefixArchives))
+	if ha {
+		fmt.Fprintf(w, "etcd snapshots: s3://%s/%s\nLonghorn backups: %s\n", t.Bucket, t.Key(backup.PrefixEtcd), t.LonghornBackupTarget())
+	}
+	fmt.Fprintf(w, "Credentials: Kubernetes Secret platform/%s (copies in databases/%s", backup.TargetSecret, backup.PostgresTargetSecret)
+	if ha {
+		fmt.Fprintf(w, ", kube-system/%s, longhorn-system/%s", backup.EtcdTargetSecret, backup.LonghornTargetSecret)
+	}
+	fmt.Fprintln(w, ")")
 }

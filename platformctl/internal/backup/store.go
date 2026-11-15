@@ -84,12 +84,63 @@ func (s Store) Get(id, file, dst string) error {
 	}
 	return copyFile(p, dst)
 }
+// CleanupLog receives best-effort cleanup failures; a variable for tests.
+var CleanupLog io.Writer = os.Stderr
+
+// remove deletes one object of a backup.
+func (s Store) remove(id, file string) error {
+	p, e := s.object(id, file)
+	if e != nil {
+		return e
+	}
+	if s.Target.Remote {
+		_, e = runMC("rm", p)
+	} else {
+		e = os.Remove(p)
+	}
+	if e != nil && !os.IsNotExist(e) {
+		return e
+	}
+	return nil
+}
+
+// discard removes the objects of a backup that failed before backup.json was
+// published (best effort). uploaded were stored; attempted (may be "") is
+// the object whose upload failed and may or may not exist, so an error
+// removing it is not reported.
+func (s Store) discard(id string, uploaded []string, attempted string) {
+	failed := 0
+	for _, f := range uploaded {
+		if e := s.remove(id, f); e != nil {
+			failed++
+		}
+	}
+	if attempted != "" {
+		_ = s.remove(id, attempted)
+	}
+	if !s.Target.Remote {
+		_ = os.Remove(filepath.Join(s.Target.Path, id))
+	}
+	if failed > 0 {
+		fmt.Fprintf(CleanupLog, "backup %s failed and %d of its uploaded files could not be removed from the target; the incomplete folder %s/ is not restorable and can be deleted\n", id, failed, id)
+	}
+}
+
+// List returns the complete backups (those with backup.json).
 func (s Store) List() ([]Manifest, error) {
+	items, _, e := s.ListWithIncomplete()
+	return items, e
+}
+
+// ListWithIncomplete also returns the IDs of folders without a readable
+// backup.json: a backup that failed or was interrupted, or one still being
+// uploaded. They are never restorable or eligible for retention.
+func (s Store) ListWithIncomplete() ([]Manifest, []string, error) {
 	var ids []string
 	if s.Target.Remote {
 		b, e := runMC("ls", "--json", s.Target.Path+"/")
 		if e != nil {
-			return nil, e
+			return nil, nil, e
 		}
 		dec := json.NewDecoder(strings.NewReader(string(b)))
 		for dec.More() {
@@ -99,10 +150,10 @@ func (s Store) List() ([]Manifest, error) {
 				Status string `json:"status"`
 			}
 			if e = dec.Decode(&v); e != nil {
-				return nil, e
+				return nil, nil, e
 			}
 			if v.Status == "error" {
-				return nil, fmt.Errorf("list target failed")
+				return nil, nil, fmt.Errorf("list target failed")
 			}
 			if v.Type == "folder" {
 				ids = append(ids, strings.TrimSuffix(v.Key, "/"))
@@ -111,10 +162,10 @@ func (s Store) List() ([]Manifest, error) {
 	} else {
 		entries, e := os.ReadDir(s.Target.Path)
 		if os.IsNotExist(e) {
-			return nil, nil
+			return nil, nil, nil
 		}
 		if e != nil {
-			return nil, e
+			return nil, nil, e
 		}
 		for _, v := range entries {
 			if v.IsDir() {
@@ -124,28 +175,30 @@ func (s Store) List() ([]Manifest, error) {
 	}
 	tmp, e := os.MkdirTemp("", "platform-backup-list-")
 	if e != nil {
-		return nil, e
+		return nil, nil, e
 	}
 	defer os.RemoveAll(tmp)
 	var result []Manifest
+	var incomplete []string
 	for _, id := range ids {
 		if !safeName.MatchString(id) {
 			continue
 		}
 		f := filepath.Join(tmp, "backup.json")
 		if e = s.Get(id, "backup.json", f); e != nil {
+			incomplete = append(incomplete, id)
 			continue
-		} // incomplete upload
+		}
 		m, e := ReadManifest(f)
 		if e != nil {
-			return nil, fmt.Errorf("backup %s: %w", id, e)
+			return nil, nil, fmt.Errorf("backup %s: %w", id, e)
 		}
 		if m.ID != id {
-			return nil, fmt.Errorf("manifest ID mismatch")
+			return nil, nil, fmt.Errorf("manifest ID mismatch")
 		}
 		result = append(result, m)
 	}
-	return result, nil
+	return result, incomplete, nil
 }
 func (s Store) Retain(r Retention) error {
 	items, e := s.List()
@@ -168,16 +221,7 @@ func (s Store) Retain(r Retention) error {
 			}
 			files = append(files, "backup.json")
 			for _, f := range files {
-				p, e := s.object(id, f)
-				if e != nil {
-					return e
-				}
-				if s.Target.Remote {
-					_, e = runMC("rm", p)
-				} else {
-					e = os.Remove(p)
-				}
-				if e != nil && !os.IsNotExist(e) {
+				if e := s.remove(id, f); e != nil {
 					return e
 				}
 			}

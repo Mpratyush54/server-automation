@@ -175,3 +175,25 @@ func TestPrepareJoinServerExternalLeavesClusterAlone(t *testing.T) {
 		t.Fatalf("joining server ran cluster commands: %v", *calls)
 	}
 }
+
+func TestJoinSettingsEtcdS3ConfigSecret(t *testing.T) {
+	want := JoinSettingsFromConfig(vipConfig())
+	want.EtcdS3ConfigSecret = "platform-etcd-s3"
+	got, err := ParseJoinSettings([]byte(want.Render()))
+	if err != nil || got != want {
+		t.Fatalf("round trip: %+v, %v", got, err)
+	}
+	// Never compared: a joiner adopts it rather than having to match.
+	local := want
+	local.EtcdS3ConfigSecret = ""
+	if d := Mismatches(want, local); len(d) != 0 {
+		t.Fatalf("etcd secret compared: %v", d)
+	}
+	// Files from before the key existed still parse.
+	if s, err := ParseJoinSettings([]byte(JoinSettingsHeader + "\nINGRESS_HA_MODE=external\n")); err != nil || s.EtcdS3ConfigSecret != "" {
+		t.Fatalf("old file: %+v %v", s, err)
+	}
+	if _, err := ParseJoinSettings([]byte(JoinSettingsHeader + "\nINGRESS_HA_MODE=external\nETCD_S3_CONFIG_SECRET=Bad Name\"\n")); err == nil {
+		t.Fatal("invalid Secret name accepted")
+	}
+}

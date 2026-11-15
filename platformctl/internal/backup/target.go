@@ -241,6 +241,8 @@ func SummaryData(mode string, t *S3Target, now time.Time) map[string]string {
 	d := map[string]string{"mode": mode, "updatedAt": now.UTC().Format(time.RFC3339)}
 	if mode == ModeExternal && t != nil {
 		d["endpointHost"], d["bucket"], d["region"], d["prefix"] = t.EndpointHost(), t.Bucket, t.SigningRegion(), t.Prefix
+		// The endpoint as configured, scheme included (http:// stays visible).
+		d["endpoint"] = t.EndpointURL()
 	}
 	return d
 }

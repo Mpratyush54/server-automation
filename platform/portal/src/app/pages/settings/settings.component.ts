@@ -427,7 +427,7 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
           <span class="st-backups-label">Stored in</span>
           @if (backupOverview.storage?.target; as target) {
             <span class="status status-ok">Off-site</span>
-            <span class="secondary">{{ target.endpointHost }}/{{ target.bucket }}{{ target.prefix ? '/' + target.prefix : '' }}</span>
+            <span class="secondary">{{ target.endpoint || target.endpointHost }}/{{ target.bucket }}{{ target.prefix ? '/' + target.prefix : '' }}</span>
           } @else {
             <span class="status status-warn">This server only</span>
           }

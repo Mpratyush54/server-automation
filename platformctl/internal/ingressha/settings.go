@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
@@ -27,10 +28,26 @@ type JoinSettings struct {
 	IngressVIP string // INGRESS_VIP
 	Interface  string // INGRESS_VIP_INTERFACE ("" = kube-vip autodetect)
 	APIVIP     string // API_VIP
+	// EtcdS3ConfigSecret (ETCD_S3_CONFIG_SECRET) names the kube-system Secret
+	// that holds the off-site etcd snapshot target (#186). Only the name
+	// travels; the keys stay in the cluster. A joining server writes
+	// `etcd-s3-config-secret` into its k3s config before k3s first starts,
+	// so every server uploads snapshots. Empty: no off-site etcd snapshots
+	// (the line is then left out of the file).
+	EtcdS3ConfigSecret string
 }
 
+// ingressKeys are the settings every server must share.
+var ingressKeys = []string{"INGRESS_HA_MODE", "INGRESS_VIP", "INGRESS_VIP_INTERFACE", "API_VIP"}
+
+// keyEtcdS3ConfigSecret is optional and never compared: the joiner adopts it.
+const keyEtcdS3ConfigSecret = "ETCD_S3_CONFIG_SECRET"
+
 // joinSettingsKeys is the complete, ordered set of keys a settings file holds.
-var joinSettingsKeys = []string{"INGRESS_HA_MODE", "INGRESS_VIP", "INGRESS_VIP_INTERFACE", "API_VIP"}
+var joinSettingsKeys = append(append([]string{}, ingressKeys...), keyEtcdS3ConfigSecret)
+
+// secretName is a Kubernetes object name (DNS-1123 subdomain).
+var secretName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$`)
 
 // JoinSettingsFromConfig extracts the shared settings from a config.
 func JoinSettingsFromConfig(c *config.Config) JoinSettings {
@@ -50,6 +67,8 @@ func (s JoinSettings) get(key string) string {
 		return s.IngressVIP
 	case "INGRESS_VIP_INTERFACE":
 		return s.Interface
+	case keyEtcdS3ConfigSecret:
+		return s.EtcdS3ConfigSecret
 	default:
 		return s.APIVIP
 	}
@@ -63,6 +82,8 @@ func (s *JoinSettings) set(key, v string) {
 		s.IngressVIP = v
 	case "INGRESS_VIP_INTERFACE":
 		s.Interface = v
+	case keyEtcdS3ConfigSecret:
+		s.EtcdS3ConfigSecret = v
 	default:
 		s.APIVIP = v
 	}
@@ -72,8 +93,11 @@ func (s *JoinSettings) set(key, v string) {
 func (s JoinSettings) Render() string {
 	var b strings.Builder
 	b.WriteString(JoinSettingsHeader + "\n")
-	b.WriteString("# Cluster ingress HA settings for `platformctl join --role server --join-settings <file>`. No secrets.\n")
+	b.WriteString("# Cluster ingress HA and etcd snapshot settings for `platformctl join --role server --join-settings <file>`. No secrets.\n")
 	for _, k := range joinSettingsKeys {
+		if k == keyEtcdS3ConfigSecret && s.EtcdS3ConfigSecret == "" {
+			continue
+		}
 		fmt.Fprintf(&b, "%s=%s\n", k, strings.NewReplacer("\r", "", "\n", "").Replace(s.get(k)))
 	}
 	return b.String()
@@ -124,6 +148,9 @@ func ParseJoinSettings(data []byte) (JoinSettings, error) {
 	if !seen["INGRESS_HA_MODE"] {
 		return JoinSettings{}, fmt.Errorf("join settings: INGRESS_HA_MODE missing")
 	}
+	if s.EtcdS3ConfigSecret != "" && !secretName.MatchString(s.EtcdS3ConfigSecret) {
+		return JoinSettings{}, fmt.Errorf("join settings: %s is not a Kubernetes Secret name", keyEtcdS3ConfigSecret)
+	}
 	return s, nil
 }
 
@@ -138,7 +165,7 @@ func Mismatches(cluster, local JoinSettings) []string {
 	if cluster.Mode != config.IngressHAModeVIP {
 		return nil
 	}
-	for _, k := range joinSettingsKeys[1:] {
+	for _, k := range ingressKeys[1:] {
 		if cv, lv := cluster.get(k), local.get(k); cv != lv {
 			out = append(out, fmt.Sprintf("%s: cluster %q, this node %q", k, cv, lv))
 		}

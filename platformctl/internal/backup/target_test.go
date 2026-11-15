@@ -171,3 +171,11 @@ func TestProbeWritesReadsAndDeletes(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSummaryDataKeepsEndpointScheme(t *testing.T) {
+	tg := S3Target{Endpoint: "http://10.0.0.5:9000/", Bucket: "offsite"}.Normalize()
+	sum := SummaryData(ModeExternal, &tg, time.Unix(0, 0))
+	if sum["endpoint"] != "http://10.0.0.5:9000" || sum["endpointHost"] != "10.0.0.5:9000" {
+		t.Fatal(sum)
+	}
+}

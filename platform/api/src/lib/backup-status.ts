@@ -36,7 +36,14 @@ export function backupMetrics(operation: string, s: BackupStatus): string {
 
 export type BackupMode = 'external' | 'local' | 'unset';
 
-export interface BackupTarget { endpointHost: string; bucket: string; prefix: string; region: string }
+export interface BackupTarget {
+  /** The endpoint as configured, scheme included (`http://` stays visible). */
+  endpoint: string;
+  endpointHost: string;
+  bucket: string;
+  prefix: string;
+  region: string;
+}
 
 export interface BackupStorage {
   mode: BackupMode;
@@ -60,6 +67,7 @@ export interface PostgresRecovery {
 export interface ArchiverRow { last_archived_time?: unknown; last_failed_time?: unknown }
 
 const HOST_RE = /^[A-Za-z0-9.-]{1,253}(:\d{1,5})?$/;
+const ENDPOINT_RE = /^https?:\/\/[A-Za-z0-9.-]{1,253}(:\d{1,5})?$/;
 const BUCKET_RE = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/;
 const PREFIX_RE = /^[A-Za-z0-9][A-Za-z0-9_./-]{0,255}$/;
 const REGION_RE = /^[a-z0-9][a-z0-9-]{0,40}$/;
@@ -88,7 +96,9 @@ export function parseBackupStorage(data: Record<string, string> | null | undefin
     const prefix = data?.prefix || '';
     const region = data?.region || '';
     if (HOST_RE.test(endpointHost) && BUCKET_RE.test(bucket) && (prefix === '' || (PREFIX_RE.test(prefix) && !prefix.includes('..'))) && (region === '' || REGION_RE.test(region))) {
-      return { mode: 'external', localOnly: false, target: { endpointHost, bucket, prefix, region } };
+      // Summaries written before `endpoint` existed only have the host.
+      const endpoint = ENDPOINT_RE.test(data?.endpoint || '') ? data!.endpoint : endpointHost;
+      return { mode: 'external', localOnly: false, target: { endpoint, endpointHost, bucket, prefix, region } };
     }
     return { mode: 'unset', localOnly: true, target: null };
   }
