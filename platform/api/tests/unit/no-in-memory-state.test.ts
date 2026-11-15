@@ -57,6 +57,7 @@ const ALLOWED: Record<string, string> = {
   'lib/usage-collector.ts': 'function-local maps for one collection run',
   'lib/usage-metrics.ts': 'function-local aggregation of one Prometheus response',
   'routes/usage.ts': 'request-scoped grouping for one response',
+  'lib/redis-password-rotate.ts': 'function-local set of HA members for one rotation run',
 };
 
 function walk(dir: string): string[] {
