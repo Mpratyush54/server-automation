@@ -1,3 +1,4 @@
+import { objectStorageConfig } from './object-storage-config';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as stream from 'stream';
@@ -210,7 +211,7 @@ export const DEFAULT_BACKUP_BUCKET = 'platform-backups';
 export function defaultBackupProviderType(env: NodeJS.ProcessEnv = process.env): 'minio' | 's3' | 'local' {
   const forced = (env.BACKUP_STORAGE || '').toLowerCase();
   if (forced === 'local' || forced === 'minio' || forced === 's3') return forced;
-  if (env.BACKUP_S3_ENDPOINT) return 's3';
+  if (env.BACKUP_S3_ENDPOINT || objectStorageConfig(env)) return 's3';
   if (env.MINIO_ENDPOINT) return 'minio';
   return 'local';
 }
@@ -218,16 +219,18 @@ export function defaultBackupProviderType(env: NodeJS.ProcessEnv = process.env):
 export function createDefaultBackupAdapter(env: NodeJS.ProcessEnv = process.env): StorageAdapter {
   const type = defaultBackupProviderType(env);
   if (type === 'local') return new LocalAdapter();
+  const object = !env.BACKUP_S3_ENDPOINT ? objectStorageConfig(env) : null;
   const s3 = type === 's3';
-  const endpoint = s3 ? env.BACKUP_S3_ENDPOINT || '' : env.MINIO_ENDPOINT || 'http://minio.storage:9000';
+  const endpoint = s3 ? env.BACKUP_S3_ENDPOINT || object?.endpoint || '' : env.MINIO_ENDPOINT || 'http://minio.storage:9000';
   return new S3Adapter(
     {
       endpoint,
-      region: (s3 ? env.BACKUP_S3_REGION : '') || 'us-east-1',
-      accessKeyId: (s3 ? env.BACKUP_S3_ACCESS_KEY : (env.MINIO_API_ACCESS_KEY || env.MINIO_ACCESS_KEY)) || '',
-      secretAccessKey: (s3 ? env.BACKUP_S3_SECRET_KEY : (env.MINIO_API_SECRET_KEY || env.MINIO_SECRET_KEY)) || '',
+      ...(object ? { forcePathStyle: String(object.forcePathStyle) } : {}),
+      region: (s3 ? env.BACKUP_S3_REGION || object?.region : '') || 'us-east-1',
+      accessKeyId: (s3 ? env.BACKUP_S3_ACCESS_KEY || object?.accessKeyId : (env.MINIO_API_ACCESS_KEY || env.MINIO_ACCESS_KEY)) || '',
+      secretAccessKey: (s3 ? env.BACKUP_S3_SECRET_KEY || object?.secretAccessKey : (env.MINIO_API_SECRET_KEY || env.MINIO_SECRET_KEY)) || '',
     },
-    env.BACKUP_BUCKET || DEFAULT_BACKUP_BUCKET,
+    env.BACKUP_BUCKET || object?.bucket('backups') || DEFAULT_BACKUP_BUCKET,
   );
 }
 

@@ -168,3 +168,20 @@ You need Node.js 18 or later, npm 9 or later, and Docker 24 or later.
 The API runs on port 3000. On first start it creates its tables and demo users. If sign-in says the user was not found, run `npm --prefix platform/api run seed:db`. It is safe to run more than once.
 
 All database ports are bound to `127.0.0.1` only. To try the monitoring stack locally, also run `docker compose up -d minio loki prometheus grafana`.
+
+## Use existing S3 object storage
+
+Fresh installs on any profile can use AWS S3, R2, GCS interoperability storage or
+another S3-compatible endpoint instead of bundled MinIO. Set
+`OBJECT_STORAGE_MODE=external`, `OBJECT_STORAGE_ENDPOINT`,
+`OBJECT_STORAGE_REGION`, `OBJECT_STORAGE_BUCKET_PREFIX` and
+`OBJECT_STORAGE_FORCE_PATH_STYLE` (default `true`). Pass credentials only with
+`--object-storage-credentials-stdin` (two lines: access key ID, secret access key)
+or an existing `platform/platform-object-storage` Kubernetes Secret. Interactive
+`ha` installs ask about object storage and can prompt for credentials.
+
+The installer creates/checks purpose buckets and probes write/read/delete access
+before installing k3s. The API, app default storage, telemetry and registry all
+use those buckets. Existing installations cannot migrate through this setting.
+See [external object storage](../operations/ha.md#external-object-storage-fresh-installs-only)
+for a complete command, permissions, lifecycle prerequisites and backup behavior.

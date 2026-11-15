@@ -205,6 +205,9 @@ func InstallRedis(cfg *config.Config) error {
 }
 
 func InstallMinIO(cfg *config.Config) error {
+	if cfg.ObjectStorageExternal() {
+		return nil
+	}
 	if err := checkHAMigration(cfg, "minio"); err != nil {
 		return err
 	}
@@ -850,13 +853,20 @@ func platformEnvValues(cfg *config.Config) map[string]string {
 		"PLATFORM_OBSERVABILITY": observabilityFlag(cfg),
 		// Global Loki/Tempo/Pyroscope retention: the API reports it as the logs/traces/profiles default.
 		"TELEMETRY_RETENTION_DAYS": cfg.TelemetryRetentionDays,
-		"MINIO_ENDPOINT":           "http://minio.storage:9000",
-		"MINIO_API_ACCESS_KEY":     kubeSecretValue("platform", "platform-storage", "MINIO_API_ACCESS_KEY"),
-		"MINIO_API_SECRET_KEY":     kubeSecretValue("platform", "platform-storage", "MINIO_API_SECRET_KEY"),
 		"UPLOADS_BUCKET":           "platform-uploads", "BACKUP_BUCKET": "platform-backups",
 		"PLATFORM_NAME": cfg.PlatformName, "DOMAIN": cfg.Domain, "ADMIN_EMAIL": cfg.AdminEmail,
 		"OIDC_ISSUER": cfg.OIDCIssuer(), "OIDC_CLIENTS": cfg.OIDCClientsJSON(),
 		"CORS_ORIGINS": "https://" + cfg.Domain,
+	}
+	if cfg.ObjectStorageExternal() {
+		for k, v := range objectStorageEnvValues(cfg) {
+			m[k] = v
+		}
+	}
+	if !cfg.ObjectStorageExternal() {
+		m["MINIO_ENDPOINT"] = "http://minio.storage:9000"
+		m["MINIO_API_ACCESS_KEY"] = kubeSecretValue("platform", "platform-storage", "MINIO_API_ACCESS_KEY")
+		m["MINIO_API_SECRET_KEY"] = kubeSecretValue("platform", "platform-storage", "MINIO_API_SECRET_KEY")
 	}
 	for k, v := range buildsEnvValues(cfg) {
 		m[k] = v
@@ -957,6 +967,9 @@ spec:
             name: platform-env
         - secretRef:
             name: platform-credentials
+        - secretRef:
+            name: platform-object-storage
+            optional: true
         lifecycle:
           preStop:
             # Keep serving while the endpoint is removed from Services/ingress;
@@ -1160,7 +1173,11 @@ func ApplyServiceRouting(cfg *config.Config) error {
 	if cfg.Domain == "" {
 		return fmt.Errorf("DOMAIN is empty — set DOMAIN or ensure /etc/platform/.env exists")
 	}
-	return shell.RunBash(serviceRoutingScript(cfg.Domain))
+	script := serviceRoutingScript(cfg.Domain)
+	if cfg.ObjectStorageExternal() {
+		script = externalStorageRoutingScript(script)
+	}
+	return shell.RunBash(script)
 }
 
 // serviceRoutingScript renders the routing script (Services + Ingresses).

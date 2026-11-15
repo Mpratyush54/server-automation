@@ -261,9 +261,10 @@ func SecretManifest(namespace, name string, data map[string]string) map[string]a
 
 // S3Client talks to the target. HTTP and Now are replaceable in tests.
 type S3Client struct {
-	Target S3Target
-	HTTP   *http.Client
-	Now    func() time.Time
+	Target             S3Target
+	VirtualHostedStyle bool
+	HTTP               *http.Client
+	Now                func() time.Time
 }
 
 func NewS3Client(t S3Target) *S3Client {
@@ -358,6 +359,10 @@ func (c *S3Client) do(ctx context.Context, method, key string, query url.Values,
 	u.Path = "/" + c.Target.Bucket
 	if key != "" {
 		u.Path += "/" + key
+	}
+	if c.VirtualHostedStyle {
+		u.Host = c.Target.Bucket + "." + u.Host
+		u.Path = "/" + key
 	}
 	u.RawPath = s3Escape(u.Path)
 	if query != nil {

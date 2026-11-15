@@ -202,6 +202,9 @@ func BuildsEnabled(c *config.Config) bool {
 }
 
 func registryBucket(c *config.Config) string {
+	if c.ObjectStorageExternal() {
+		return c.ObjectBucket("registry")
+	}
 	if c.BuildsS3Bucket == "" {
 		return "platform-registry"
 	}
@@ -254,12 +257,17 @@ func BuildRegistryManifest(c *config.Config, realm string, n BuildNetworks) (str
 		return "", fmt.Errorf("invalid registry token realm")
 	}
 	endpoint := c.BuildsS3Endpoint
+	region, pathStyle := "us-east-1", true
+	if c.ObjectStorageExternal() {
+		endpoint = c.ObjectStorage.Endpoint
+		region, pathStyle = c.ObjectStorage.Region, c.ObjectStorage.ForcePathStyle
+	}
 	if endpoint == "" {
 		endpoint = "http://minio.storage.svc:9000"
 	}
-	if c.BuildsS3Endpoint != "" {
+	if c.BuildsS3Endpoint != "" || c.ObjectStorageExternal() {
 		parsed, err := url.Parse(endpoint)
-		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		if err != nil || (parsed.Scheme != "https" && !(c.ObjectStorageExternal() && parsed.Scheme == "http")) || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 			return "", fmt.Errorf("external build storage requires an HTTPS endpoint without credentials")
 		}
 	}
@@ -294,11 +302,11 @@ data:
     log: {level: warn}
     storage:
       s3:
-        region: us-east-1
+        region: %q
         regionendpoint: %q
         bucket: %q
         secure: %t
-        forcepathstyle: true
+        forcepathstyle: %t
         v4auth: true
       delete: {enabled: true}
       redirect: {disable: true}
@@ -361,7 +369,7 @@ spec:
     - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: platform}}
       podSelector: {matchLabels: {app: platform-api}}
 %s    ports: [{port: 5000, protocol: TCP}]
-`, endpoint, bucket, strings.HasPrefix(endpoint, "https:"), realm, RegistryTokenService, RegistryTokenIssuer,
+`, region, endpoint, bucket, strings.HasPrefix(endpoint, "https:"), pathStyle, realm, RegistryTokenService, RegistryTokenIssuer,
 		sha256.Sum256([]byte(endpoint+"\x00"+bucket+"\x00"+realm)), BuildRegistryImage, nodePeers.String()), nil
 }
 
@@ -778,7 +786,15 @@ func InstallBuilds(c *config.Config) error {
 	if err := shell.RunBash("kubectl -n builds delete secret build-registry-auth --ignore-not-found && kubectl -n registry delete ingress registry --ignore-not-found"); err != nil {
 		return err
 	}
-	if c.BuildsS3Endpoint == "" {
+	if c.ObjectStorageExternal() {
+		d, err := objectStorageCredentials()
+		if err != nil {
+			return err
+		}
+		if err := applySecret("registry", "registry-storage", map[string]string{"REGISTRY_STORAGE_S3_ACCESSKEY": d["OBJECT_STORAGE_ACCESS_KEY"], "REGISTRY_STORAGE_S3_SECRETKEY": d["OBJECT_STORAGE_SECRET_KEY"]}); err != nil {
+			return err
+		}
+	} else if c.BuildsS3Endpoint == "" {
 		// Reuse the bundled MinIO's existing mc binary. The registry gets a bucket-scoped user.
 		if err := shell.RunBashEnv(registryStorageScript, map[string]string{"ROOT_ACCESS": c.MinioAccessKey, "ROOT_SECRET": c.MinioSecretKey, "BUCKET": registryBucket(c)}); err != nil {
 			return err

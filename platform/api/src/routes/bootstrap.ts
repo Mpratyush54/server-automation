@@ -87,13 +87,15 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
   const gitlabOk = Boolean(cfg?.gitlabToken ?? process.env.GITLAB_TOKEN) || cfg?.gitlabSource === 'app';
   const clickupOk = Boolean(cfg?.clickupToken ?? process.env.CLICKUP_API_TOKEN);
 
+  // External object storage (#176): there are no bundled MinIO pods to report.
+  const externalObjectStorage = process.env.OBJECT_STORAGE_MODE === 'external';
   const integrations = {
     github:    githubOk,
     gitlab:    gitlabOk,
     clickup:   clickupOk,
     smtp:      !!(process.env.SMTP_PROVIDER || process.env.SMTP_HOST || process.env.SENDGRID_API_KEY),
     argocd:    !!(process.env.ARGOCD_URL || process.env.ARGOCD_TOKEN || k8sOk),
-    minio:     !!(process.env.MINIO_ENDPOINT || process.env.MINIO_ACCESS_KEY),
+    minio:     externalObjectStorage || !!(process.env.MINIO_ENDPOINT || process.env.MINIO_ACCESS_KEY),
     grafana:   !!(process.env.GRAFANA_URL || podStatus('monitoring') === 'running'),
   };
 
@@ -104,7 +106,7 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
     'postgresql':     pgStatus,
     'mongodb':        mongoStatus,
     'redis':          k8sOk ? podStatus('databases') : 'unknown',
-    'minio':          podStatus('storage'),
+    ...(externalObjectStorage ? {} : { 'minio': podStatus('storage') }),
     'argocd':         podStatus('argocd'),
     'grafana':        podStatus('monitoring'),
     'prometheus':     podStatus('monitoring'),
@@ -121,6 +123,7 @@ router.get('/bootstrap/status', expressAuthenticate, async (req: Request, res: R
     postgres: pgStatus,
     mongodb: mongoStatus,
     k8s: k8sOk ? 'connected' : 'disconnected',
+    objectStorage: externalObjectStorage ? 'external' : 'bundled',
     podCounts,
     services,
     integrations,

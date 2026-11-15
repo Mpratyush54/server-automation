@@ -1,3 +1,4 @@
+import { objectStorageConfig } from './object-storage-config';
 import { DataSource, EntityManager } from 'typeorm';
 import { getDb } from '../config/database';
 import { StorageProvider, StorageProviderType } from '../entities/StorageProvider';
@@ -12,15 +13,19 @@ export async function withStorageLock<T>(ds: DataSource, fn: (em: EntityManager)
   });
 }
 export async function ensureBundledStorage(ds: DataSource, env = process.env): Promise<void> {
-  if (!env.MINIO_ENDPOINT || !env.MINIO_API_ACCESS_KEY || !env.MINIO_API_SECRET_KEY) return;
+  const object = objectStorageConfig(env);
+  const endpoint = object?.endpoint || env.MINIO_ENDPOINT;
+  const accessKeyId = object?.accessKeyId || env.MINIO_API_ACCESS_KEY;
+  const secretAccessKey = object?.secretAccessKey || env.MINIO_API_SECRET_KEY;
+  if (!endpoint || !accessKeyId || !secretAccessKey) return;
   await withStorageLock(ds, async em => {
     const repo = em.getRepository(StorageProvider);
     const existing = await repo.findOneBy({ id: BUNDLED_STORAGE_ID });
     const currentDefault = await repo.findOneBy({ isDefault: true });
     const provider = repo.create({
-      ...(existing || {}), id: BUNDLED_STORAGE_ID, name: 'Bundled MinIO', providerType: StorageProviderType.MINIO,
-      bucketName: env.UPLOADS_BUCKET || 'platform-uploads', endpointUrl: env.MINIO_ENDPOINT,
-      credentials: { accessKeyId: env.MINIO_API_ACCESS_KEY!, secretAccessKey: env.MINIO_API_SECRET_KEY!, region: 'us-east-1', forcePathStyle: 'true' },
+      ...(existing || {}), id: BUNDLED_STORAGE_ID, name: object ? 'Platform object storage' : 'Bundled MinIO', providerType: object ? StorageProviderType.S3 : StorageProviderType.MINIO,
+      bucketName: env.UPLOADS_BUCKET || object?.bucket('uploads') || 'platform-uploads', endpointUrl: endpoint,
+      credentials: { accessKeyId, secretAccessKey, region: object?.region || 'us-east-1', forcePathStyle: String(object?.forcePathStyle ?? true) },
       isDefault: !currentDefault || currentDefault.id === BUNDLED_STORAGE_ID,
     });
     await repo.save(provider);

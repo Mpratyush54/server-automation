@@ -78,7 +78,8 @@ type Config struct {
 	// the install state, see components.PostgresUsesCNPG).
 	PostgresEngine string
 	// Backup is the external backup target (#186).
-	Backup BackupSettings
+	Backup        BackupSettings
+	ObjectStorage ObjectStorageSettings
 
 	// SyntheticsBrowser enables browser synthetic checks (headless Chromium
 	// CronJobs, #42). Only honored on the full profile with SYNTHETICS_BROWSER=true.
@@ -236,6 +237,7 @@ func Load() *Config {
 	c.LonghornBackupTarget = strings.TrimSpace(os.Getenv("LONGHORN_BACKUP_TARGET"))
 	c.LonghornBackupSecret = strings.TrimSpace(os.Getenv("LONGHORN_BACKUP_SECRET"))
 	c.loadBackup()
+	c.loadObjectStorage()
 	return c
 }
 
@@ -686,6 +688,11 @@ func (c *Config) SaveEnvFile(path string) error {
 		return err
 	}
 	b.WriteString(backupEnv)
+	objectEnv, err := c.objectStorageEnv()
+	if err != nil {
+		return err
+	}
+	b.WriteString(objectEnv)
 	// Ingress HA settings only belong on ha-profile installs; keep non-ha .env
 	// files byte-stable so profile switches do not leak VIP configuration.
 	if c.IsHA() {

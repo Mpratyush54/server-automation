@@ -1,3 +1,4 @@
+import { objectStorageConfig } from './object-storage-config';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Readable } from 'stream';
@@ -192,6 +193,7 @@ export class S3UploadStore implements UploadStore {
       accessKeyId: this.cfg.accessKeyId,
       secretAccessKey: this.cfg.secretAccessKey,
       region: this.cfg.region,
+      pathStyle: this.cfg.forcePathStyle,
       expiresSeconds,
     });
   }
@@ -205,7 +207,8 @@ export class S3UploadStore implements UploadStore {
  */
 export function uploadStoreFromEnv(env: NodeJS.ProcessEnv = process.env): UploadStore {
   const backend = (env.STORAGE_UPLOADS_BACKEND || '').toLowerCase();
-  const endpoint = env.UPLOADS_S3_ENDPOINT || env.MINIO_ENDPOINT || '';
+  const object = objectStorageConfig(env);
+  const endpoint = env.UPLOADS_S3_ENDPOINT || object?.endpoint || env.MINIO_ENDPOINT || '';
   if (backend === 'local' || (!backend && !endpoint)) {
     if (env.NODE_ENV === 'production') {
       console.warn('[storage] using the local uploads directory — files live on one pod; configure MinIO/S3');
@@ -213,14 +216,15 @@ export function uploadStoreFromEnv(env: NodeJS.ProcessEnv = process.env): Upload
     return new LocalUploadStore();
   }
   if (!endpoint) throw new Error('STORAGE_UPLOADS_BACKEND=s3 requires UPLOADS_S3_ENDPOINT or MINIO_ENDPOINT');
-  const bundled = !env.UPLOADS_S3_ENDPOINT;
+  const bundled = !env.UPLOADS_S3_ENDPOINT && !object;
   return new S3UploadStore({
     endpoint,
-    accessKeyId: env.UPLOADS_S3_ACCESS_KEY || env.MINIO_API_ACCESS_KEY || env.MINIO_ACCESS_KEY || '',
-    secretAccessKey: env.UPLOADS_S3_SECRET_KEY || env.MINIO_API_SECRET_KEY || env.MINIO_SECRET_KEY || '',
-    bucket: env.UPLOADS_BUCKET || DEFAULT_UPLOADS_BUCKET,
-    region: env.UPLOADS_S3_REGION || 'us-east-1',
-    publicEndpoint: env.UPLOADS_S3_PUBLIC_ENDPOINT || undefined,
+    accessKeyId: env.UPLOADS_S3_ACCESS_KEY || object?.accessKeyId || env.MINIO_API_ACCESS_KEY || env.MINIO_ACCESS_KEY || '',
+    secretAccessKey: env.UPLOADS_S3_SECRET_KEY || object?.secretAccessKey || env.MINIO_API_SECRET_KEY || env.MINIO_SECRET_KEY || '',
+    bucket: env.UPLOADS_BUCKET || object?.bucket('uploads') || DEFAULT_UPLOADS_BUCKET,
+    region: env.UPLOADS_S3_REGION || object?.region || 'us-east-1',
+    forcePathStyle: env.UPLOADS_S3_FORCE_PATH_STYLE ? env.UPLOADS_S3_FORCE_PATH_STYLE !== 'false' : object?.forcePathStyle,
+    publicEndpoint: env.UPLOADS_S3_PUBLIC_ENDPOINT || object?.endpoint || undefined,
     ensureBucket: (bundled && !env.MINIO_API_ACCESS_KEY) || env.UPLOADS_S3_CREATE_BUCKET === 'true',
   });
 }

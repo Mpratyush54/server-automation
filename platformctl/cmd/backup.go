@@ -188,7 +188,7 @@ func init() {
 		if target == "" {
 			target = defaultArchiveTarget(cfg)
 		}
-		c := backup.Config{Target: target, Recipient: recipient, Retention: keep, Components: componentNames}
+		c := backup.Config{Target: target, Recipient: recipient, Retention: keep, Components: objectBackupComponents(cfg, componentNames)}
 		if e := c.Validate(); e != nil {
 			return e
 		}
