@@ -23,7 +23,7 @@ async function fetchCreds(out) {
   const token = await login();
   const auth = { authorization: `Bearer ${token}` };
   const name = `e2e-db-${Date.now().toString(36)}`;
-  const p = await request(`${apiUrl()}/api/projects`, { method: 'POST', headers: auth, body: { name, stack: 'nodejs', domain: domain(), description: 'e2e database credentials', repositoryUrl: 'https://github.com/Mpratyush54/server-automation' } });
+  const p = await request(`${apiUrl()}/api/projects`, { method: 'POST', headers: auth, body: { name, stack: 'nodejs', domain: domain(), description: 'e2e database credentials' } });
   if (!expect(p.status === 201 && p.json?.id, 'create project', `HTTP ${p.status}`)) return;
   const t = await request(`${apiUrl()}/api/projects/${p.json.id}/tokens`, { method: 'POST', headers: auth, body: { name: 'e2e-db' } });
   const sdkToken = t.json?.token;
