@@ -86,17 +86,17 @@ Restoring a snapshot by hand needs Redis stopped and its append-only file rebuil
 
 ## Uploaded files
 
-Files live in the bundled file storage, in the `platform-uploads` bucket. Copy them with `mc`, the command-line client for S3-compatible storage:
+Files live in the bundled file storage, in the `platform-uploads` bucket. Copy them with the AWS command-line tool, which works with any S3-compatible storage. Install it with `sudo snap install aws-cli --classic`, then, as root on the server:
 
 ```bash
 IP=$(kubectl -n storage get svc minio -o jsonpath='{.spec.clusterIP}')
-USER=$(kubectl -n storage get secret minio -o jsonpath='{.data.root-user}' | base64 -d)
-PASS=$(kubectl -n storage get secret minio -o jsonpath='{.data.root-password}' | base64 -d)
-mc alias set platformsrc "http://$IP:9000" "$USER" "$PASS"
-mc mirror platformsrc/platform-uploads ./files/platform-uploads
+export AWS_ACCESS_KEY_ID=$(kubectl -n storage get secret minio -o jsonpath='{.data.root-user}' | base64 -d)
+export AWS_SECRET_ACCESS_KEY=$(kubectl -n storage get secret minio -o jsonpath='{.data.root-password}' | base64 -d)
+export AWS_DEFAULT_REGION=us-east-1
+aws s3 sync s3://platform-uploads ./files/platform-uploads --endpoint-url "http://$IP:9000"
 ```
 
-To restore, mirror the other way: `mc mirror ./files/platform-uploads platformsrc/platform-uploads`. `mc alias set` saves the keys in `/root/.mc/config.json`; remove the alias with `mc alias rm platformsrc` when you are done.
+To restore, sync the other way: `aws s3 sync ./files/platform-uploads s3://platform-uploads --endpoint-url "http://$IP:9000"`. The keys stay in the shell's environment only; run `unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY` when you are done.
 
 ## Troubleshooting
 
