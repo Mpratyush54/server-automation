@@ -129,11 +129,14 @@ chart_args() {
 #  - every `image: <ref>` scalar (quoted or not, optionally a list item)
 #  - prometheus-operator's --prometheus-config-reloader=<ref> argument
 #  - quoted Longhorn image arguments and driver-deployer environment values
+# Longhorn refs drop the docker.io/ registry the chart prefixes (same image), so
+# its image: lines and quoted arguments list each image once.
 extract_images() {
   tr -d '\r' | sed -n \
-    -e 's/^[[:space:]-]*\(value:[[:space:]]*\)\{0,1\}"\(longhornio\/[^"[:space:]]\{1,\}\)"[[:space:]]*$/\2/p' \
+    -e 's/^[[:space:]-]*\(value:[[:space:]]*\)\{0,1\}"\(docker\.io\/\)\{0,1\}\(longhornio\/[^"[:space:]]\{1,\}\)"[[:space:]]*$/\3/p' \
     -e 's/^[[:space:]-]*image:[[:space:]]*["'\'']\{0,1\}\([^"'\''[:space:]#]\{1,\}\)["'\'']\{0,1\}[[:space:]]*\(#.*\)\{0,1\}$/\1/p' \
     -e 's/.*--prometheus-config-reloader=["'\'']\{0,1\}\([^"'\''[:space:]]\{1,\}\).*/\1/p' |
+    sed -e 's/^docker\.io\/longhornio\//longhornio\//' |
     grep -v -e '^{' -e '^\$' -e '^null$' || true
 }
 
