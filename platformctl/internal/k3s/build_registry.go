@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -38,6 +39,45 @@ func ValidBuildRegistryEndpoint(endpoint string) bool {
 	}
 	_, err = netip.ParseAddr(u.Hostname())
 	return err == nil
+}
+
+// hostsPath is the node's hosts file (a variable for tests).
+var hostsPath = "/etc/hosts"
+
+// HostsWithEntry returns hosts file content in which host maps only to ip:
+// other lines naming host are removed and one "<ip> <host>" line is appended.
+func HostsWithEntry(content, host string, ip netip.Addr) string {
+	var out []string
+	for _, line := range strings.Split(strings.TrimRight(content, "\n"), "\n") {
+		fields := strings.Fields(strings.SplitN(line, "#", 2)[0])
+		if len(fields) > 1 && slices.Contains(fields[1:], host) {
+			continue
+		}
+		out = append(out, line)
+	}
+	out = append(out, ip.String()+" "+host)
+	return strings.TrimLeft(strings.Join(out, "\n"), "\n") + "\n"
+}
+
+// WriteHostsEntry maps host to ip in the node's hosts file, keeping every other
+// entry. It reports whether the file changed.
+func WriteHostsEntry(host string, ip netip.Addr) (bool, error) {
+	if host == "" || strings.ContainsAny(host, " \t\n\r#") || !ip.IsValid() {
+		return false, fmt.Errorf("invalid hosts entry")
+	}
+	current, err := os.ReadFile(hostsPath)
+	if err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	next := HostsWithEntry(string(current), host, ip)
+	if next == string(current) {
+		return false, nil
+	}
+	mode := os.FileMode(0644)
+	if info, err := os.Stat(hostsPath); err == nil {
+		mode = info.Mode().Perm()
+	}
+	return true, os.WriteFile(hostsPath, []byte(next), mode)
 }
 
 // WriteBuildRegistry records the mirror and rewrites registries.yaml. Settings

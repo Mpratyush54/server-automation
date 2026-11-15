@@ -132,23 +132,19 @@ func registryBucket(c *config.Config) string {
 	return c.BuildsS3Bucket
 }
 
-// RegistryTokenRealm is the token endpoint containerd calls from the node: the
-// API Service ClusterIP (node DNS cannot resolve cluster names).
-func RegistryTokenRealm(apiClusterIP string) (string, error) {
-	addr, err := netip.ParseAddr(strings.TrimSpace(apiClusterIP))
-	if err != nil {
-		return "", fmt.Errorf("platform API ClusterIP unavailable")
-	}
-	return "http://" + net.JoinHostPort(addr.String(), "3000") + "/api/registry/token", nil
-}
+// RegistryTokenHost names the API's registry token endpoint in the registry's
+// realm. Registry clients built on go-containerregistry (crane, the Buildpacks
+// lifecycle) refuse realms on private IP addresses, and node container runtimes
+// cannot resolve cluster DNS names, so the installer maps this reserved name to
+// the API Service ClusterIP in the node's /etc/hosts. Only containerd on the
+// nodes fetches tokens from the realm; build steps send pre-minted tokens.
+const RegistryTokenHost = "registry-token.cairn.internal"
+
+// RegistryTokenRealm is the token endpoint containerd calls from the node.
+const RegistryTokenRealm = "http://" + RegistryTokenHost + ":3000/api/registry/token"
 
 func validRealm(realm string) bool {
-	u, err := url.Parse(realm)
-	if err != nil || u.Scheme != "http" || u.Port() != "3000" || u.Path != "/api/registry/token" || u.User != nil || u.RawQuery != "" {
-		return false
-	}
-	_, err = netip.ParseAddr(u.Hostname())
-	return err == nil
+	return realm == RegistryTokenRealm
 }
 
 func cidrList(value, name string) ([]netip.Prefix, error) {
@@ -703,11 +699,14 @@ func InstallBuilds(c *config.Config) error {
 	} else if kubeSecretValue("registry", "registry-storage", "REGISTRY_STORAGE_S3_ACCESSKEY") == "" {
 		return fmt.Errorf("external S3 requires Secret registry/registry-storage")
 	}
-	realm, err := RegistryTokenRealm(clusterIP("platform", "platform-api"))
+	apiIP, err := netip.ParseAddr(clusterIP("platform", "platform-api"))
 	if err != nil {
-		return err
+		return fmt.Errorf("platform API ClusterIP unavailable")
 	}
-	registry, err := BuildRegistryManifest(c, realm, networks)
+	if _, err := k3s.WriteHostsEntry(RegistryTokenHost, apiIP); err != nil {
+		return fmt.Errorf("map %s on this node: %w", RegistryTokenHost, err)
+	}
+	registry, err := BuildRegistryManifest(c, RegistryTokenRealm, networks)
 	if err != nil {
 		return err
 	}

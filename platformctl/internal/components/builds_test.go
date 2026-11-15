@@ -3,6 +3,7 @@ package components
 import (
 	"encoding/json"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +12,7 @@ import (
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 )
 
-const testRealm = "http://10.43.0.20:3000/api/registry/token"
+const testRealm = RegistryTokenRealm
 
 func TestBuildsProfileGate(t *testing.T) {
 	for _, profile := range config.Profiles {
@@ -57,7 +58,7 @@ func TestRegistryUsesScopedTokenAuthAndIsNotPublic(t *testing.T) {
 		t.Fatal("invalid node CIDR accepted")
 	}
 	c.BuildsRegistryNodeCIDRs = ""
-	for _, realm := range []string{"", "https://10.43.0.20:3000/api/registry/token", "http://api.example.com:3000/api/registry/token", "http://10.43.0.20:3000/other"} {
+	for _, realm := range []string{"", "http://10.43.0.20:3000/api/registry/token", "https://10.43.0.20:3000/api/registry/token", "http://api.example.com:3000/api/registry/token", "http://10.43.0.20:3000/other"} {
 		if _, err := BuildRegistryManifest(c, realm, DefaultBuildNetworks()); err == nil {
 			t.Errorf("accepted realm %q", realm)
 		}
@@ -90,15 +91,14 @@ func TestBundledMinIOUsesConfiguredBucket(t *testing.T) {
 	}
 }
 
-func TestRegistryTokenRealmUsesAPIClusterIP(t *testing.T) {
-	if realm, err := RegistryTokenRealm("10.43.0.20"); err != nil || realm != testRealm {
-		t.Fatalf("realm %q %v", realm, err)
+func TestRegistryTokenRealmIsAHostName(t *testing.T) {
+	// Registry clients (crane, the Buildpacks lifecycle) refuse realms on private IP literals.
+	u, err := url.Parse(RegistryTokenRealm)
+	if err != nil || u.Scheme != "http" || u.Port() != "3000" || u.Path != "/api/registry/token" || u.Hostname() != RegistryTokenHost {
+		t.Fatalf("realm %q", RegistryTokenRealm)
 	}
-	if realm, _ := RegistryTokenRealm("fd00::20"); realm != "http://[fd00::20]:3000/api/registry/token" {
-		t.Fatalf("ipv6 realm %q", realm)
-	}
-	if _, err := RegistryTokenRealm(""); err == nil {
-		t.Fatal("empty ClusterIP accepted")
+	if _, err := netip.ParseAddr(u.Hostname()); err == nil || !strings.HasSuffix(RegistryTokenHost, ".internal") {
+		t.Fatalf("realm host must be a reserved name, not an address: %q", RegistryTokenHost)
 	}
 }
 
