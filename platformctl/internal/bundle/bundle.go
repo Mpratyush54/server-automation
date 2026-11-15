@@ -1,8 +1,10 @@
 // Package bundle installs the optional offline bundle produced by
 // scripts/build-bundle.sh (release asset platform-bundle-<ver>-<arch>.tar.zst).
 //
-// Bundle layout (all paths are flat, one directory level):
+// Bundle layout:
 //
+//	k3s/k3s, k3s/k3s-install.sh                  pinned binary and installer
+//	packages/ubuntu-<release>/<arch>/*.deb,Packages  node packages + dependencies (flat apt repository)
 //	manifest.json                                versions + file list (informational)
 //	SHA256SUMS                                   sha256sum output for every other file
 //	k3s/k3s-airgap-images-<arch>.tar.zst         k3s airgap images
@@ -30,6 +32,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/stack"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
 )
 
@@ -42,11 +45,13 @@ type Options struct {
 	ImagesDir string
 	// ChartsDir receives charts/*.tgz (default versions.ChartCacheDir).
 	ChartsDir string
+	// StagingDir receives k3s/k3s, k3s/k3s-install.sh and packages/ubuntu-<release>/<arch>/{*.deb,Packages}.
+	StagingDir string
 }
 
 // DefaultOptions returns the production destination roots.
 func DefaultOptions() Options {
-	return Options{ImagesDir: K3sImagesDir, ChartsDir: versions.ChartCacheDir}
+	return Options{ImagesDir: K3sImagesDir, ChartsDir: versions.ChartCacheDir, StagingDir: stack.DefaultPaths.Staging}
 }
 
 // Install verifies and extracts the bundle at path into the default roots.
@@ -148,6 +153,20 @@ func InstallWithOptions(bundlePath string, opts Options) error {
 				return fail(fmt.Errorf("bundle: checksum mismatch for %s", name))
 			}
 		}
+		// A truncated or repacked bundle must not pass with files missing.
+		for name := range sums {
+			if _, ok := extracted[name]; !ok && destination(name, opts) != "" {
+				return fail(fmt.Errorf("bundle: %s is listed in SHA256SUMS but missing from the archive", name))
+			}
+		}
+	} else {
+		// The k3s binary, its installer and .deb packages run as root: never
+		// install them unverified.
+		for name := range extracted {
+			if opts.StagingDir != "" && strings.HasPrefix(destination(name, opts), filepath.Clean(opts.StagingDir)+string(filepath.Separator)) {
+				return fail(fmt.Errorf("bundle: %s needs SHA256SUMS, which the bundle lacks", name))
+			}
+		}
 	}
 	if len(extracted) == 0 {
 		return errors.New("bundle: archive contained no images or charts")
@@ -176,8 +195,20 @@ func cleanEntryName(raw string) (string, error) {
 }
 
 // destination maps a cleaned bundle entry to its absolute install path, or ""
-// when the entry is not installed. Only flat <dir>/<file> entries qualify.
+// when the entry is not installed. Only known layouts qualify.
 func destination(name string, opts Options) string {
+	if opts.StagingDir != "" {
+		switch name {
+		case "k3s/k3s", "k3s/k3s-install.sh":
+			return filepath.Join(opts.StagingDir, path.Base(name))
+		}
+		parts := strings.Split(name, "/")
+		if len(parts) == 4 && parts[0] == "packages" &&
+			(parts[1] == "ubuntu-22.04" || parts[1] == "ubuntu-24.04") &&
+			(parts[2] == "amd64" || parts[2] == "arm64") && (strings.HasSuffix(parts[3], ".deb") || parts[3] == "Packages") {
+			return filepath.Join(opts.StagingDir, filepath.FromSlash(name))
+		}
+	}
 	dir, file := path.Split(name)
 	dir = strings.TrimSuffix(dir, "/")
 	if file == "" || strings.Contains(dir, "/") {

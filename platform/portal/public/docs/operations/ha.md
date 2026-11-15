@@ -90,6 +90,36 @@ sudo platformctl join --role agent --server https://10.0.0.60:6443 \
 
 When you add a machine that was not in `PLATFORM_CLUSTER_NODES`, add its IP on every existing server and run `sudo platformctl harden --auto` there first, or the firewall blocks it. Then run `sudo platformctl install longhorn` on the first server again.
 
+## Join without internet access
+
+A node that can reach only the cluster network can join from the offline bundle of the same platformctl release, for its architecture: `platform-bundle-<version>-<amd64|arm64>.tar.zst`. The release publishes it in parts; join them with `cat platform-bundle-<version>-amd64.tar.zst.part* > platform-bundle-<version>-amd64.tar.zst` and keep the `.sha256` file next to it. The bundle holds the pinned k3s binary and installer, the k3s and platform images (kube-vip included), and the Ubuntu 22.04 and 24.04 packages the node needs (Longhorn prerequisites and host hardening packages, with their dependencies). Bundles from releases without offline join support lack k3s and the packages; join refuses them.
+
+Copy the bundle, its `.sha256` file, the token file (mode `0600`) and, for servers, the join settings file to the new node. On a server:
+
+```bash
+sudo platformctl join --role server --server https://10.0.0.60:6443 \
+  --token-file /root/server.token --join-settings /root/join-settings \
+  --ingress-ha-mode vip --ingress-vip 10.0.0.50 --api-vip 10.0.0.60 \
+  --nodes 10.0.0.0/24 --bundle /root/platform-bundle-<version>-amd64.tar.zst
+```
+
+On an agent, use `--role agent` with the agent token and leave out the join settings and ingress flags.
+
+With `--bundle`, join:
+
+- checks the bundle against its `.sha256` file and every file against the bundle's `SHA256SUMS` (required for k3s and the packages), and stops on a mismatch
+- places every image in `/var/lib/rancher/k3s/agent/images` before k3s starts, so k3s imports them into containerd at startup
+- installs missing packages from the bundle with apt, using only the bundle as a package source; it stops when the OS is not Ubuntu 22.04 or 24.04, when a dependency is not in the bundle, or when the install would remove a package (chrony replacing systemd-timesyncd is the exception)
+- installs k3s from the bundle, with no download fallback
+
+The join checks still need the cluster: its API, etcd (servers) and kubelet ports, the token's CA and the clock. The node needs time synchronisation it can reach, such as an NTP server on the private network. Images that are not in the bundle, such as your applications, need a registry the node can reach.
+
+`--bundle auto` downloads the release's bundle, so it needs internet access. Without `--bundle`, join downloads the platform stack chosen by `PLATFORM_STACK` (default `stable`) before k3s starts; `PLATFORM_STACK=off` skips it.
+
+Release CI builds the bundles with `scripts/build-bundle.sh <version> <amd64|arm64>`, which downloads the packages inside Ubuntu containers of each release and architecture.
+
+After the join, run `sudo platformctl install longhorn` on the first server, as above.
+
 ## Use an external load balancer
 
 With `INGRESS_HA_MODE=external`, every server answers on ports 80 and 443. Put one of these in front:

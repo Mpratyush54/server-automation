@@ -109,8 +109,8 @@ jobs:
   # Offline bundle (issue #12): k3s airgap images + chart tarballs + platform
   # images. Independent of goreleaser; waits for the release GoReleaser creates
   # and attaches platform-bundle-<tag>-<arch>.tar.zst (+ .sha256).
-  # arm64 runs on the amd64 runner: `docker pull --platform linux/arm64` only
-  # fetches layers, so no QEMU is needed.
+  # arm64 package downloads execute Ubuntu containers on the amd64 runner,
+  # so the bundle job enables QEMU for that architecture.
   bundle:
     runs-on: ubuntu-latest
     strategy:
@@ -154,6 +154,12 @@ jobs:
           curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" | tar -xz -C /tmp
           sudo install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
           helm version
+
+      - name: Set up QEMU for ARM64 package downloads
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
 
       - name: Build bundle
         env:

@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/k3s"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/stack"
 )
 
 func planNames(steps []joinStep) []string {
@@ -169,5 +172,165 @@ func TestJoinRefreshesBuildIsolation(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestJoinStagesBundleBeforePreparation(t *testing.T) {
+	for _, role := range []string{"server", "agent"} {
+		t.Run(role, func(t *testing.T) {
+			clusterTest(t)
+			joinRole, joinServer, joinTokenFile, joinNodes = role, "https://10.0.0.11:6443", "-", "10.0.0.0/24"
+			joinBundle = "local.tar.zst"
+			var calls []string
+			joinStageBundle = func(path string) error {
+				if path != joinBundle {
+					t.Fatalf("bundle = %q", path)
+				}
+				calls = append(calls, "bundle")
+				return nil
+			}
+			joinOfflinePackages = func() error { calls = append(calls, "packages"); return nil }
+			joinPrepareLonghorn = func() error { calls = append(calls, "prereqs"); return nil }
+			k3sJoin = func(_ k3s.Role, _, _, _ string, o k3s.ServerOptions) error {
+				if !o.Offline {
+					t.Fatal("bundle join must disable installer downloads")
+				}
+				calls = append(calls, "k3s")
+				return nil
+			}
+			if _, err := captureStdout(t, func() error { return runJoin(strings.NewReader(testToken)) }); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(calls, []string{"bundle", "packages", "prereqs", "k3s"}) {
+				t.Fatal(calls)
+			}
+		})
+	}
+}
+
+func TestOnlineJoinSkipsOfflinePackages(t *testing.T) {
+	clusterTest(t)
+	joinRole, joinServer, joinTokenFile, joinNodes = "agent", "https://10.0.0.11:6443", "-", "10.0.0.0/24"
+	joinOfflinePackages = func() error { t.Fatal("offline packages without --bundle"); return nil }
+	k3sJoin = func(_ k3s.Role, _, _, _ string, o k3s.ServerOptions) error {
+		if o.Offline {
+			t.Fatal("online join must keep the download fallback")
+		}
+		return nil
+	}
+	if _, err := captureStdout(t, func() error { return runJoin(strings.NewReader(testToken)) }); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJoinOfflinePackageFailureStopsBeforeK3s(t *testing.T) {
+	clusterTest(t)
+	joinRole, joinServer, joinTokenFile, joinNodes = "server", "https://10.0.0.11:6443", "-", "10.0.0.0/24"
+	joinBundle = "local.tar.zst"
+	joinOfflinePackages = func() error { return errors.New("bundle has no packages for ubuntu 26.04") }
+	k3sJoin = func(k3s.Role, string, string, string, k3s.ServerOptions) error {
+		t.Fatal("k3s after failed packages")
+		return nil
+	}
+	if _, err := captureStdout(t, func() error { return runJoin(strings.NewReader(testToken)) }); err == nil || !strings.Contains(err.Error(), "offline-packages") {
+		t.Fatal(err)
+	}
+}
+
+// fakeJoinBundle swaps the bundle installer for one that stages files under
+// a temporary stack directory.
+func fakeJoinBundle(t *testing.T, files ...string) stack.Paths {
+	t.Helper()
+	root := t.TempDir()
+	paths := stack.Paths{Staging: filepath.Join(root, "stack"), K3sImages: filepath.Join(root, "images")}
+	oldPaths, oldInstall := joinStackPaths, joinInstallBundle
+	t.Cleanup(func() { joinStackPaths, joinInstallBundle = oldPaths, oldInstall })
+	joinStackPaths = paths
+	joinInstallBundle = func(string) error {
+		for _, f := range files {
+			p := filepath.Join(paths.Staging, filepath.FromSlash(f))
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(p, []byte(f), 0o644); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return paths
+}
+
+func TestPrepareJoinBundle(t *testing.T) {
+	arch := runtime.GOARCH
+	other := "arm64"
+	if arch == "arm64" {
+		other = "amd64"
+	}
+	for _, tc := range []struct {
+		name    string
+		files   []string
+		wantErr string
+	}{
+		{"complete", []string{"k3s", "k3s-install.sh", "packages/ubuntu-22.04/" + arch + "/Packages"}, ""},
+		{"no k3s", []string{"packages/ubuntu-22.04/" + arch + "/Packages"}, "lacks the k3s binary"},
+		{"no packages", []string{"k3s", "k3s-install.sh"}, "no node packages for " + arch},
+		{"other architecture", []string{"k3s", "k3s-install.sh", "packages/ubuntu-24.04/" + other + "/Packages"}, "no node packages for " + arch},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeJoinBundle(t, tc.files...)
+			t.Setenv("PLATFORM_STACK", "")
+			err := prepareJoinBundle("bundle.tar.zst")
+			if tc.wantErr == "" && err != nil || tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+				t.Fatalf("err = %v, want %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestPrepareJoinBundleInstallFailure(t *testing.T) {
+	fakeJoinBundle(t)
+	joinInstallBundle = func(string) error { return errors.New("bundle: checksum mismatch for k3s/k3s") }
+	if err := prepareJoinBundle("bundle.tar.zst"); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatal(err)
+	}
+}
+
+func TestJoinBundleFailureStopsPreparation(t *testing.T) {
+	clusterTest(t)
+	joinRole, joinServer, joinTokenFile, joinNodes = "agent", "https://10.0.0.11:6443", "-", "10.0.0.0/24"
+	joinStageBundle = func(string) error { return errors.New("invalid bundle") }
+	joinPrepareLonghorn = func() error { t.Fatal("prereqs after failed bundle"); return nil }
+	if _, err := captureStdout(t, func() error { return runJoin(strings.NewReader(testToken)) }); err == nil || !strings.Contains(err.Error(), "invalid bundle") {
+		t.Fatal(err)
+	}
+}
+
+func TestJoinStagesStackImagesBeforeStartup(t *testing.T) {
+	root := t.TempDir()
+	paths := stack.Paths{Staging: filepath.Join(root, "stack"), K3sImages: filepath.Join(root, "agent", "images")}
+	if err := os.MkdirAll(paths.ImagesDir(), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"platform.tar.zst", "kube-vip.tar"} {
+		if err := os.WriteFile(filepath.Join(paths.ImagesDir(), name), []byte(name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := stageJoinImages(paths); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"platform.tar.zst", "kube-vip.tar"} {
+		data, err := os.ReadFile(filepath.Join(paths.K3sImages, name))
+		if err != nil || string(data) != name {
+			t.Fatalf("image %s: %s %v", name, data, err)
+		}
+	}
+}
+
+func TestJoinStackOffDoesNotDownload(t *testing.T) {
+	t.Setenv("PLATFORM_STACK", "off")
+	if err := prepareJoinBundle(""); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -38,6 +38,7 @@ var (
 	// Ingress HA settings of a joining server ("" = keep the environment's).
 	joinIngressHAMode, joinIngressVIP, joinIngressVIPIface, joinAPIVIP string
 	joinSettingsFile                                                   string
+	joinBundle                                                         string
 )
 
 var joinCmd = &cobra.Command{
@@ -91,6 +92,7 @@ var tokenInstallCmd = &cobra.Command{
 }
 
 func init() {
+	joinCmd.Flags().StringVar(&joinBundle, "bundle", "", "offline bundle of this release: a local path for a join without internet access, or auto to download it (replaces the PLATFORM_STACK download)")
 	joinCmd.Flags().StringVar(&joinRole, "role", "agent", "server (etcd member) or agent (workloads only)")
 	joinCmd.Flags().StringVar(&joinServer, "server", "", "existing server or API VIP: https://<host>:6443")
 	joinCmd.Flags().StringVar(&joinTokenFile, "token-file", "", "file holding the join token (mode 0600), or - for standard input")
@@ -307,6 +309,8 @@ func runJoin(stdin io.Reader) error {
 		opts = k3s.ServerOptions{NodeIP: cfg.Cluster.NodeIP}
 	}
 
+	opts.Offline = joinBundle != ""
+
 	unlock, err := state.AcquireLock("join")
 	if err != nil {
 		return err
@@ -322,6 +326,10 @@ func runJoin(stdin io.Reader) error {
 		}
 	}
 
+	if err := joinStageBundle(joinBundle); err != nil {
+		return fmt.Errorf("join bundle: %w", err)
+	}
+
 	// Persist what later `harden`/`status` runs on this node need. Not the
 	// token: it lives in /etc/platform/k3s (0600), referenced by k3s' config.
 	for k, v := range joinEnv(cfg) {
@@ -335,7 +343,13 @@ func runJoin(stdin io.Reader) error {
 	wasInstalled := joinK3sInstalled()
 	fragmentChanged := false
 	color.Cyan("\n  ■ Preparing this node (%s)...", role)
-	if err := runJoinPlan(joinPlan(role, cfg, &fragmentChanged)); err != nil {
+	steps := joinPlan(role, cfg, &fragmentChanged)
+	if joinBundle != "" {
+		// Offline: the bundle's packages first, so the Longhorn prerequisites
+		// (and host hardening after the join) find theirs installed.
+		steps = append([]joinStep{{"offline-packages", joinOfflinePackages}}, steps...)
+	}
+	if err := runJoinPlan(steps); err != nil {
 		return err
 	}
 

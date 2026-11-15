@@ -285,7 +285,11 @@ func TestJoinServerWritesAgentTokenBeforeStart(t *testing.T) {
 	joinWriteToken = func(p, tok string) error { order = append(order, p+"="+tok); return nil }
 	joinWriteRegistries = func(string) (bool, error) { return false, nil }
 	var cfgText string
-	joinWriteConfig = func(content string, _ []string) (bool, error) { cfgText = content; order = append(order, "config"); return true, nil }
+	joinWriteConfig = func(content string, _ []string) (bool, error) {
+		cfgText = content
+		order = append(order, "config")
+		return true, nil
+	}
 	joinIsInstalled = func() bool { return false }
 	joinInstall = func(string) error { order = append(order, "install"); return nil }
 	joinRestart = func(string) error { return nil }
@@ -301,5 +305,33 @@ func TestJoinServerWritesAgentTokenBeforeStart(t *testing.T) {
 	}
 	if !strings.Contains(cfgText, "agent-token-file") || strings.Contains(cfgText, "agent-token-1") {
 		t.Fatalf("config must reference the agent token file, never the token:\n%s", cfgText)
+	}
+}
+
+func TestOfflineJoinNeverFallsBackToDownload(t *testing.T) {
+	oldPaths, oldStack, oldInstall := stackPaths, installFromStack, joinInstall
+	t.Cleanup(func() { stackPaths, installFromStack, joinInstall = oldPaths, oldStack, oldInstall })
+	stackPaths.Staging = t.TempDir()
+	joinInstall = func(string) error { t.Fatal("offline join attempted an online install"); return nil }
+	if err := installJoinK3s("agent", true); err == nil {
+		t.Fatal("missing staged installer accepted")
+	}
+	for _, path := range []string{stackPaths.K3sBinary(), stackPaths.K3sScript()} {
+		if err := os.WriteFile(path, []byte("staged"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	installFromStack = func(exec string) error {
+		if exec != "agent" {
+			t.Fatal(exec)
+		}
+		return errors.New("local install failed")
+	}
+	if err := installJoinK3s("agent", true); err == nil || err.Error() != "local install failed" {
+		t.Fatal(err)
+	}
+	installFromStack = func(string) error { return nil }
+	if err := installJoinK3s("", true); err != nil {
+		t.Fatal(err)
 	}
 }

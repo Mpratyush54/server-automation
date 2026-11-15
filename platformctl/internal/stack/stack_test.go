@@ -75,10 +75,10 @@ func TestInstallPlacesEveryFileAndRecordsTheDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		filepath.Join(p.K3sImages, "k3s-airgap-images-amd64.tar.zst"): "airgap",
+		filepath.Join(p.K3sImages, "k3s-airgap-images-amd64.tar.zst"):   "airgap",
 		filepath.Join(p.ImagesDir(), "platform-images-amd64-1.tar.zst"): "images-1",
 		filepath.Join(p.ImagesDir(), "platform-images-amd64-2.tar.zst"): "images-2",
-		filepath.Join(p.Charts, "redis-28.3.12.tgz"):                  "redis-chart",
+		filepath.Join(p.Charts, "redis-28.3.12.tgz"):                    "redis-chart",
 		p.K3sBinary(): "k3s-binary",
 		p.K3sScript(): "#!/bin/sh\n",
 	}
