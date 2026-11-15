@@ -375,6 +375,8 @@ HA servers also set:
 
 - `kube-controller-manager-arg: node-monitor-grace-period=20s` (Kubernetes default 40 s). A node that stops renewing its lease is marked NotReady after 20 s, so Service endpoints and the PostgreSQL failover react sooner. The cost: a node whose kubelet misses two lease renewals is briefly marked NotReady.
 - `kube-apiserver-arg: default-not-ready-toleration-seconds=60` and `default-unreachable-toleration-seconds=60` (default 300). Pods on a node that stays down are evicted after about 80 s in total. Pods that declare their own tolerations keep them.
+- `etcd-arg: heartbeat-interval=200` and `election-timeout=2000` (k3s default 500 ms and 5 s). When the server that leads etcd fails, the others elect a new leader in about 3 s instead of 5 to 6 s, and the Kubernetes API answers again sooner. Keep the servers on a low-latency network (round trips well under 100 ms).
+- One CoreDNS replica per server, up to 3. Each `join --role server` raises the count once the new server is Ready; k3s alone runs one, and in-cluster name lookups failed until it was rescheduled, 5 minutes after its server lost power on the failover test.
 
 | `join` flag | Meaning |
 |---|---|

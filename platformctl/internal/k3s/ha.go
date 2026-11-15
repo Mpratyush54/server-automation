@@ -109,6 +109,17 @@ func yamlQuote(s string) string { return strconv.Quote(s) }
 // NodeMonitorGracePeriod is the HA controller-manager node grace period.
 const NodeMonitorGracePeriod = "20s"
 
+// Embedded etcd timing on HA servers (#54). k3s defaults to a 500 ms
+// heartbeat and a 5 s election timeout, so losing the etcd leader froze the
+// Kubernetes API for 5-6 s; kube-vip then needed its 5 s lease on top, and the
+// VIP moved after 12-13 s. 200 ms / 2 s (etcd's own defaults are 100 ms / 1 s)
+// re-elected in about 3 s on the failover test and still tolerates
+// round trips of tens of milliseconds and short disk stalls.
+const (
+	EtcdHeartbeatMS       = "200"
+	EtcdElectionTimeoutMS = "2000"
+)
+
 // DefaultEvictionSeconds is the HA default toleration for not-ready and
 // unreachable nodes (kube-apiserver), in seconds.
 const DefaultEvictionSeconds = "60"
@@ -150,6 +161,8 @@ func RenderServerConfig(o ServerOptions) string {
 	// single-instance workload was down 8m39s, most of it waiting for eviction.
 	// Pods that set their own tolerations keep them.
 	fmt.Fprintf(&b, "kube-apiserver-arg:\n  - %s\n  - %s\n", yamlQuote("default-not-ready-toleration-seconds="+DefaultEvictionSeconds), yamlQuote("default-unreachable-toleration-seconds="+DefaultEvictionSeconds))
+	// Same values on every server: they all render this config.
+	fmt.Fprintf(&b, "etcd-arg:\n  - %s\n  - %s\n", yamlQuote("heartbeat-interval="+EtcdHeartbeatMS), yamlQuote("election-timeout="+EtcdElectionTimeoutMS))
 	e := o.Snapshots
 	field("etcd-snapshot-schedule-cron", e.Cron)
 	if e.Retention > 0 {
