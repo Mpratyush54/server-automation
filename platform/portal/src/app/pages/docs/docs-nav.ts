@@ -58,6 +58,7 @@ export const DOC_GROUPS: DocGroup[] = [
     label: 'Guides',
     id: 'guides',
     pages: [
+      p('Build from Git', 'guides/builds'),
       p('Databases', 'guides/databases', {
         children: [
           p('Slow queries and database health', 'operations/database-monitoring'),

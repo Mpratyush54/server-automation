@@ -40,7 +40,7 @@ func TestHAConfig(t *testing.T) {
 	if strings.Contains(got, "cluster-init") || strings.Contains(got, "etcd-s3") || !strings.Contains(got, "server: \"https://node:6443\"\n") {
 		t.Fatal(got)
 	}
-	want = "# Managed by platformctl\nserver: \"https://node:6443\"\ntoken-file: \"/agent\"\nresolv-conf: " + ResolvConfPath + "\nnode-ip: \"::1\"\n"
+	want = "# Managed by platformctl\nserver: \"https://node:6443\"\ntoken-file: \"/agent\"\nresolv-conf: " + ResolvConfPath + "\nkubelet-arg:\n  - \"pod-max-pids=4096\"\nnode-ip: \"::1\"\n"
 	if got := RenderAgentConfig(AgentOptions{"https://node:6443", "/agent", "::1"}); got != want {
 		t.Fatal(got)
 	}

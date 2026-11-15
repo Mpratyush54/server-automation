@@ -265,6 +265,8 @@
       </section>
     }
 
+    @if (project) { <app-builds-panel [projectId]="project.id" [canManage]="role === 'devops' || role === 'admin' || role === 'tech_lead'" /> }
+
     @if (project) { <div id="releases"><app-releases-panel [projectId]="project.id" /></div> }
 
     <div id="gitops" class="stack">

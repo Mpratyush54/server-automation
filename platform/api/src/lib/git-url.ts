@@ -22,14 +22,14 @@ export function normalizeGitUrl(input: string | null | undefined): string {
     let host = u.hostname.toLowerCase();
     if (host === 'www.github.com') host = 'github.com';
     if (host === 'www.gitlab.com') host = 'gitlab.com';
-    let path = u.pathname.replace(/\/+/g, '/').replace(/\.git$/i, '').replace(/\/$/, '');
+    let path = u.pathname.replace(/\/+/g, '/').replace(/\/+$/, '').replace(/\.git$/i, '');
     path = path.toLowerCase();
     return `${host}${path}`;
   } catch {
     return s
       .toLowerCase()
+      .replace(/\/+$/, '')
       .replace(/\.git$/i, '')
-      .replace(/\/$/, '')
       .replace(/^https?:\/\//, '');
   }
 }

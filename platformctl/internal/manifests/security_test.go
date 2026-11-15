@@ -24,7 +24,9 @@ func TestAPIRBACIsDedicatedAndResourceScoped(t *testing.T) {
 			t.Fatalf("excess permission %s", bad)
 		}
 	}
-	for _, required := range []string{"kind: ServiceAccount", "name: platform-api", "resourceNames:", "platform-env", "platform-rotate-pending", "platform-credentials", "platform-oidc-signing-key", "namespace: databases", "namespace: argocd", "name: platform-namespace-baseline", "kind: ValidatingAdmissionPolicy", "name: platform-project-namespaces", "failurePolicy: Fail"} {
+	for _, required := range []string{"kind: ServiceAccount", "name: platform-api", "resourceNames:", "platform-env", "platform-rotate-pending", "platform-credentials", "platform-oidc-signing-key", "namespace: databases", "namespace: argocd", "name: platform-namespace-baseline", "kind: ValidatingAdmissionPolicy", "name: platform-project-namespaces", "failurePolicy: Fail",
+		// #55: the project-namespace "secrets: create" grant is limited to the named pull Secret.
+		"name: platform-project-secrets", "object.metadata.name == 'source-registry'", "object.type == 'kubernetes.io/dockerconfigjson'", "key: platform.io/project, operator: Exists"} {
 		if !strings.Contains(rbac, required) {
 			t.Fatalf("missing scoped permission %s", required)
 		}
@@ -121,7 +123,8 @@ func rbacRules(t *testing.T, manifest, kind, name, namespace string) []rbacRule 
 
 // TestAPIRBACIsExactlyTheWaveOneUnion pins the platform-api grants to what the
 // API code uses: the pre-existing rules plus #19 (leader Lease), #20 (named
-// config Secrets), #21 (backup status ConfigMaps) and #22 (namespace baseline).
+// config Secrets), #21 (backup status ConfigMaps), #22 (namespace baseline),
+// and #55 (source workload reads and the named registry pull Secret).
 // Anything broader must be added here deliberately.
 func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 	embedded, err := Read("platform-api-rbac.yaml")
@@ -158,6 +161,7 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 		{`[""]`, `["secrets"]`, `["platform-env","platform-rotate-pending"]`, `["get", "update"]`},
 		{`[""]`, `["secrets"]`, `["platform-credentials","platform-oidc-signing-key"]`, `["get", "update"]`}, // #20
 		{`[""]`, `["secrets"]`, `["platform-rotate-pending"]`, `["delete"]`},
+		{`[""]`, `["secrets"]`, `["registry-token-signer"]`, `["get"]`}, // #55
 		{`["apps"]`, `["deployments"]`, `["platform-api"]`, `["patch"]`},
 		{`[""]`, `["secrets"]`, "", `["create"]`},
 		{`["coordination.k8s.io"]`, `["leases"]`, "", `["create"]`},                               // #19
@@ -185,6 +189,10 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 		{`[""]`, `["services"]`, "", `["get", "create", "update", "delete"]`},
 		{`["networking.k8s.io"]`, `["ingresses"]`, "", `["update"]`},
 		{`["apps"]`, `["deployments/scale"]`, "", `["patch"]`},
+		{`["apps"]`, `["deployments"]`, "", `["get"]`},
+		{`[""]`, `["services"]`, "", `["get"]`},
+		{`[""]`, `["secrets"]`, `["source-registry"]`, `["get", "update"]`},
+		{`[""]`, `["secrets"]`, "", `["create"]`},
 	})
 	if strings.Contains(manifest, "kind: ClusterRoleBinding\nmetadata:\n  name: platform-namespace-baseline") {
 		t.Fatal("platform-namespace-baseline must only be bound per project namespace")

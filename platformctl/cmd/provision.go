@@ -152,6 +152,7 @@ func provisionGraph(c *config.Config) []stepDef {
 		// MinIO IAM needs the platform API (its OpenID issuer), so the API's scoped
 		// storage user is created after "platform"; the API restarts with it.
 		{name: "storage-scoped", deps: []string{"platform", "minio"}, args: install("storage-scoped"), fn: components.SetupBundledStorage},
+		{name: "builds", deps: []string{"storage-scoped", "ingress", "platform"}, skip: !components.BuildsEnabled(c), args: install("builds"), fn: components.InstallBuilds},
 	}
 }
 

@@ -24,6 +24,18 @@ import * as k8s from '@kubernetes/client-node';
 import { v4 as uuidv4 } from 'uuid';
 import { loadKubeConfig } from '../lib/kube-config';
 import { requestTelemetryOriginsSync } from '../lib/telemetry-origins';
+import { RepositoryInUseError, isRepositoryConflict, repositoryKey, setProjectRepository } from '../lib/repository-binding';
+import { Not } from 'typeorm';
+
+/** Rejects a repository that another active project already links (409 for the caller). */
+async function assertRepositoryFree(url: unknown, exceptProjectId?: string): Promise<void> {
+  const key = repositoryKey(typeof url === 'string' ? url : null);
+  if (!key) return;
+  const ds = await getDb();
+  const where: any = { repositoryKey: key, isActive: true };
+  if (exceptProjectId) where.id = Not(exceptProjectId);
+  if (await ds.getRepository(Project).findOne({ where })) throw new RepositoryInUseError();
+}
 
 const router = Router();
 
@@ -75,17 +87,21 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
       return res.status(409).json({ error: 'Project name already exists' });
     }
 
+    if (body.repositoryUrl !== undefined && body.repositoryUrl !== null && typeof body.repositoryUrl !== 'string') {
+      return res.status(400).json({ error: 'repositoryUrl must be a string' });
+    }
+    await assertRepositoryFree(body.repositoryUrl);
     const project = ds.getRepository(Project).create({
       id: uuidv4(),
       name: body.name,
       stack: body.stack,
       description: body.description,
-      repositoryUrl: body.repositoryUrl,
       gitRevision: explicitRevision(body.gitRevision) || null,
       domain: body.domain,
       clickupListId: body.clickupListId,
       createdById: userId,
     });
+    setProjectRepository(project, body.repositoryUrl);
     const saved = await ds.getRepository(Project).save(project);
     const baseDomain = body.domain || process.env.DOMAIN || 'example.com';
 
@@ -120,6 +136,7 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
     requestTelemetryOriginsSync(); // environment hosts are browser origins
     return res.status(201).json(withRelations || saved);
   } catch (err: any) {
+    if (err instanceof RepositoryInUseError || isRepositoryConflict(err)) return res.status(409).json({ error: new RepositoryInUseError().message });
     return res.status(400).json({ error: err.message });
   }
 });
@@ -168,8 +185,21 @@ router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
     }
 
     if (body.gitRevision !== undefined) project.gitRevision = explicitRevision(body.gitRevision) || null;
-    if (body.repositoryUrl !== undefined && body.repositoryUrl !== project.repositoryUrl) project.defaultBranch = null;
-    const allowedFields = ['name', 'stack', 'description', 'repositoryUrl', 'domain', 'clickupListId'];
+    if (body.repositoryUrl !== undefined) {
+      if (body.repositoryUrl !== null && typeof body.repositoryUrl !== 'string') return res.status(400).json({ error: 'repositoryUrl must be a string' });
+      if (repositoryKey(body.repositoryUrl) !== repositoryKey(project.repositoryUrl)) {
+        // While build-on-push is on, only a platform administrator may point builds at another repository.
+        const user = (req as AuthenticatedRequest).user;
+        const building = (project.environments || []).some(e => e.isActive && e.buildOnPush);
+        if (building && (user?.role !== UserRole.ADMIN || (req as AuthenticatedRequest).agentToken)) {
+          return res.status(403).json({ error: 'Only a platform administrator can change the repository while builds are enabled' });
+        }
+        await assertRepositoryFree(body.repositoryUrl, project.id);
+      }
+      if (body.repositoryUrl !== project.repositoryUrl) project.defaultBranch = null;
+      setProjectRepository(project, body.repositoryUrl);
+    }
+    const allowedFields = ['name', 'stack', 'description', 'domain', 'clickupListId'];
     const domainChanged = body.domain !== undefined && body.domain !== project.domain;
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
@@ -202,6 +232,7 @@ router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
     const fresh = await repo.findOne({ where: { id: updated.id }, relations: ['environments', 'deployments'] });
     return res.json(fresh || updated);
   } catch (err: any) {
+    if (err instanceof RepositoryInUseError || isRepositoryConflict(err)) return res.status(409).json({ error: new RepositoryInUseError().message });
     return res.status(400).json({ error: err.message });
   }
 });

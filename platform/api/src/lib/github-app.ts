@@ -361,6 +361,36 @@ export async function githubAuthorizationFor(owner: string, repo: string): Promi
   return process.env.GITHUB_TOKEN ? `Bearer ${process.env.GITHUB_TOKEN}` : null;
 }
 
+/**
+ * A dedicated, never-cached installation token limited to one repository with read-only
+ * contents access. Source builds mint one per clone (and per webhook verification) and revoke
+ * it when done, so it can never be reused for another repository or outlive its purpose.
+ */
+export async function mintScopedInstallationToken(owner: string, repo: string): Promise<{ token: string; expiresAt: number }> {
+  const app = await loadGithubApp();
+  if (!app) throw new GithubAppError('Connect the GitHub App and install it on this repository to build from source', 409);
+  const inst = await findInstallationForRepo(owner, repo);
+  if (!inst) throw new GithubAppError('Install the GitHub App on this repository to build from source', 409);
+  if (!/^\d{1,20}$/.test(String(inst.installationId))) throw new GithubAppError('Invalid installation id');
+  const res = await fetch(`${GITHUB_API}/app/installations/${inst.installationId}/access_tokens`, {
+    method: 'POST',
+    redirect: 'error',
+    headers: { ...appHeaders(signAppJwt(app.appId, app.privateKey)), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ repositories: [repo], permissions: { contents: 'read' } }),
+  });
+  if (!res.ok) throw new GithubAppError(`GitHub refused a repository-scoped token (${res.status})`, 502);
+  const data: any = await res.json();
+  if (!data?.token) throw new GithubAppError('GitHub returned no installation token', 502);
+  return { token: String(data.token), expiresAt: Date.parse(data.expires_at) || Date.now() + 60 * 60 * 1000 };
+}
+
+/** Revoke an installation token early (DELETE /installation/token). A 401 means it is already dead. */
+export async function revokeInstallationToken(token: string): Promise<void> {
+  if (!token) return;
+  const res = await fetch(`${GITHUB_API}/installation/token`, { method: 'DELETE', redirect: 'error', headers: appHeaders(token, 'token') });
+  if (!res.ok && res.status !== 401) throw new GithubAppError(`GitHub token revocation failed (${res.status})`, 502);
+}
+
 /** HTTPS clone URL carrying an installation token (for in-cluster builds), or null. */
 export async function authenticatedCloneUrl(owner: string, repo: string): Promise<string | null> {
   const app = await loadGithubApp();

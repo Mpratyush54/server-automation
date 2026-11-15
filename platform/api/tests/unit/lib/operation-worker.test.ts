@@ -6,6 +6,10 @@ const resumeOperations = jest.fn().mockResolvedValue({ resumed: [], busy: [] });
 const cleanup = jest.fn().mockResolvedValue(undefined);
 const dispatchOutbox = jest.fn().mockResolvedValue(0);
 const acquireLock = jest.fn();
+const recoverBuildQueue = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../../src/lib/build-op', () => ({ recoverBuildQueue: () => recoverBuildQueue() }));
+const syncSourcePullSecrets = jest.fn().mockResolvedValue({ written: 0, failed: 0 });
+jest.mock('../../../src/lib/source-pull-sync', () => ({ syncSourcePullSecrets: () => syncSourcePullSecrets() }));
 
 jest.mock('../../../src/lib/operations', () => ({
   resumeOperations: (...a: unknown[]) => resumeOperations(...a),
@@ -18,7 +22,7 @@ import { LeadershipListener, setLeadershipForTests } from '../../../src/lib/lead
 import { isJobTimerActive, unregisterAllJobs } from '../../../src/lib/scheduler';
 import {
   OPERATION_CLEANUP_JOB, OPERATION_RESUME_JOB, OUTBOX_DISPATCH_JOB,
-  isOperationLeader, startOperationWorker, stopOperationWorker,
+  isOperationLeader, startOperationWorker, stopOperationWorker, runOperationResume,
 } from '../../../src/lib/operation-worker';
 
 class ManualLeader {
@@ -36,6 +40,8 @@ describe('operation worker on the leader lease', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     delete process.env.JOBS_EXTERNAL;
+    delete process.env.BUILDS_ENABLED;
+    recoverBuildQueue.mockClear();
     leader = new ManualLeader();
     setLeadershipForTests(leader as any);
     resumeOperations.mockClear();
@@ -90,4 +96,23 @@ describe('operation worker on the leader lease', () => {
     await jest.advanceTimersByTimeAsync(120_000);
     expect(acquireLock).not.toHaveBeenCalled();
   });
+});
+
+it('repairs the build queue before resuming operations only when source builds are enabled', async () => {
+  process.env.BUILDS_ENABLED = 'true';
+  await runOperationResume();
+  expect(recoverBuildQueue).toHaveBeenCalled();
+  expect(syncSourcePullSecrets).toHaveBeenCalled();
+  recoverBuildQueue.mockClear(); syncSourcePullSecrets.mockClear();
+  process.env.BUILDS_ENABLED = 'false';
+  await runOperationResume();
+  expect(recoverBuildQueue).not.toHaveBeenCalled(); expect(syncSourcePullSecrets).not.toHaveBeenCalled();
+});
+
+it('keeps resuming operations when pull Secrets cannot be refreshed', async () => {
+  process.env.BUILDS_ENABLED = 'true';
+  syncSourcePullSecrets.mockRejectedValueOnce(new Error('signer unavailable'));
+  jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  await expect(runOperationResume()).resolves.toBeUndefined();
+  process.env.BUILDS_ENABLED = 'false';
 });

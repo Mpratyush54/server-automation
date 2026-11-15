@@ -37,6 +37,15 @@ export class Environment {
   @Column({ type: 'jsonb', nullable: true })
   autoscaling: AutoscalingSettings | null;
 
+  @Column({ type: 'boolean', default: false, name: 'build_on_push' })
+  buildOnPush: boolean;
+
+  @Column({ type: 'varchar', length: 200, nullable: true, name: 'build_branch' })
+  buildBranch: string | null;
+
+  @Column({ type: 'text', nullable: true, name: 'source_image' })
+  sourceImage: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }

@@ -1,6 +1,7 @@
 package k3s
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,7 +41,13 @@ func RegistriesYAML(githubToken string) string {
 // WriteRegistries writes registries.yaml before k3s starts. It reports whether
 // the file changed; a running k3s must be restarted to pick up a change.
 func WriteRegistries(githubToken string) (bool, error) {
-	content := RegistriesYAML(githubToken)
+	var settings BuildRegistrySettings
+	if data, err := os.ReadFile(buildRegistrySettingsPath); err == nil {
+		if err := json.Unmarshal(data, &settings); err != nil {
+			return false, err
+		}
+	}
+	content := BuildRegistriesYAML(githubToken, settings)
 	if content == "" {
 		return false, nil
 	}
@@ -266,8 +273,15 @@ func upstreamDNS() []string {
 // are encrypted as they are next written (platformctl rewrites its own on
 // every provision/update; `k3s secrets-encrypt reencrypt` covers the rest).
 func ServerConfigYAML() string {
-	return "# Managed by platformctl\ndisable:\n  - traefik\nresolv-conf: " + ResolvConfPath + "\nsecrets-encryption: true\n"
+	return "# Managed by platformctl\ndisable:\n  - traefik\nresolv-conf: " + ResolvConfPath + "\nsecrets-encryption: true\n" + KubeletArgsYAML
 }
+
+// PodMaxPIDs caps the processes of each pod (kubelet podPidsLimit), so one
+// workload or build cannot exhaust the node's PID space.
+const PodMaxPIDs = 4096
+
+// KubeletArgsYAML is part of every node's config: servers and agents alike.
+var KubeletArgsYAML = fmt.Sprintf("kubelet-arg:\n  - %q\n", fmt.Sprintf("pod-max-pids=%d", PodMaxPIDs))
 
 // ResolvConf renders the upstream resolver file.
 func ResolvConf(servers []string) string {

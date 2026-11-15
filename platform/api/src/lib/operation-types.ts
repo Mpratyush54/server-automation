@@ -7,3 +7,5 @@ import './db-provision-op';
 import './secret-rotate';
 
 import './storage-migrate-op';
+
+import './build-op';

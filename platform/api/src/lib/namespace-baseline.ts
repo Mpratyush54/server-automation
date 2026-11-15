@@ -11,7 +11,7 @@ export interface BaselineSettings {
 }
 const managed = { 'app.kubernetes.io/managed-by': 'platform-namespace-baseline' };
 /** Platform/system namespaces that must never be adopted as a project namespace (mirrored in the RBAC admission policy). */
-export const reservedNamespaces = ['default', 'platform', 'databases', 'preview', 'ingress-nginx', 'argocd', 'cert-manager', 'monitoring', 'oauth2-proxy', 'portainer', 'storage', 'keda'];
+export const reservedNamespaces = ['default', 'platform', 'databases', 'preview', 'ingress-nginx', 'argocd', 'cert-manager', 'monitoring', 'oauth2-proxy', 'portainer', 'storage', 'keda', 'builds', 'registry'];
 export const isReservedNamespace = (name: string) => reservedNamespaces.includes(name) || name.startsWith('kube-');
 // Public egress must never turn into an allow to another tenant or host network.
 export const privateNetworks = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', '169.254.0.0/16', '100.64.0.0/10', '0.0.0.0/8', '224.0.0.0/4', '240.0.0.0/4'];

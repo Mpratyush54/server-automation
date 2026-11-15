@@ -59,6 +59,8 @@ func All() []Component {
 		{"argocd", "ArgoCD GitOps", InstallArgoCD},
 		{"monitoring", "Grafana + Prometheus + Loki", InstallMonitoring},
 		{"telemetry", "Full profile telemetry backends and collector", InstallTelemetry},
+		{"registry-gc", "Collect unreferenced registry blobs during a maintenance window", InstallRegistryGC},
+		{"builds", "Source builds and authenticated S3 registry (opt-in)", InstallBuilds},
 		{"synthetics", "Synthetic monitoring namespace, egress policies and API RBAC (full profile)", InstallSynthetics},
 		{"keda", "Request autoscaling and preview activation (full profile, opt-in)", InstallKEDA},
 		{"oauth2-proxy", "OAuth2 authentication proxy", InstallOAuthProxy},
@@ -855,6 +857,9 @@ func platformEnvValues(cfg *config.Config) map[string]string {
 		"PLATFORM_NAME": cfg.PlatformName, "DOMAIN": cfg.Domain, "ADMIN_EMAIL": cfg.AdminEmail,
 		"OIDC_ISSUER": cfg.OIDCIssuer(), "OIDC_CLIENTS": cfg.OIDCClientsJSON(),
 		"CORS_ORIGINS": "https://" + cfg.Domain,
+	}
+	for k, v := range buildsEnvValues(cfg) {
+		m[k] = v
 	}
 	if cfg.IsHA() {
 		m["REDIS_SENTINEL_HOSTS"] = RedisSentinelHosts()

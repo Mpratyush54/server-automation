@@ -61,7 +61,7 @@ describe('DocsComponent', () => {
     expect(component.docSections.map((g) => g.label)).toEqual(['Get started', 'Guides', 'Operations', 'Reference', 'More']);
     const labels = (id: string) => component.docSections.find((g) => g.id === id)!.pages.map((p) => p.label);
     expect(labels('get-started')).toEqual(['What Platform is', 'Install', 'Your first project', 'Deploy an app']);
-    expect(labels('guides')).toEqual(['Databases', 'Backups and restore', 'Monitoring and alerts', 'Run on several servers', 'Security and sign-in', 'AI agents and MCP']);
+    expect(labels('guides')).toEqual(['Build from Git', 'Databases', 'Backups and restore', 'Monitoring and alerts', 'Run on several servers', 'Security and sign-in', 'AI agents and MCP']);
     expect(labels('operations')).toEqual(['Upgrade', 'Recover', 'Troubleshooting']);
     expect(labels('reference')).toEqual(['CLI', 'API', 'Settings', 'SDKs']);
     expect(component.docUrl(component.flatPages[0])).toBe('/docs');
