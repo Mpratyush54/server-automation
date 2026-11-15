@@ -172,3 +172,12 @@ func TestPlatformNamespacesSkipStorageWithExternalObjectStorage(t *testing.T) {
 		t.Fatalf("external: %v", external)
 	}
 }
+
+// The Portainer chart defaults to pullPolicy Always, which fails offline even
+// though the bundle imported the pinned image.
+func TestPortainerValuesUseLocalImage(t *testing.T) {
+	v := readManifest("portainer-values.yaml")
+	if !strings.Contains(v, "image:\n  pullPolicy: IfNotPresent") && !strings.Contains(v, "image:\r\n  pullPolicy: IfNotPresent") {
+		t.Fatalf("portainer-values.yaml must set image.pullPolicy: IfNotPresent:\n%s", v)
+	}
+}

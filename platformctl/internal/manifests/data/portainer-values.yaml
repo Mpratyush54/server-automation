@@ -1,3 +1,8 @@
+# The chart pulls on every start (pullPolicy: Always). The tag is pinned and
+# the offline bundle imports the image, so use the local copy: with Always,
+# Portainer was stuck in ImagePullBackOff on a server without internet.
+image:
+  pullPolicy: IfNotPresent
 ingress:
   enabled: false
 service:
