@@ -5,11 +5,11 @@ jest.mock('../../../src/lib/build-runtime', () => {
   class BuildStopped extends Error {}
   return { BuildStopped, cancelBuildJob: jest.fn(), runBuildJob: jest.fn(), cleanupBuildSecret: jest.fn(), registryManifest: jest.fn(async () => `sha256:${'a'.repeat(64)}`), signBuiltImage: jest.fn() };
 });
-const mockVerify = jest.fn(async (..._a: any[]) => true);
-jest.mock('../../../src/lib/build-source', () => ({ BuildSourceError: class extends Error {}, verifyCommitOnBranch: (...a: any[]) => mockVerify(...a) }));
+const mockVerify = jest.fn(async (..._a: any[]): Promise<string> => 'head');
+jest.mock('../../../src/lib/build-source', () => ({ BuildSourceError: class extends Error {}, checkBranchHead: (...a: any[]) => mockVerify(...a) }));
 const mockDeploy = jest.fn();
 jest.mock('../../../src/lib/deploy-op', () => ({ deployOperation: { steps: [{ name: 'apply', run: (...args: any[]) => mockDeploy(...args) }], onFailed: jest.fn() } }));
-import { BuildLimitError, assertManualBuildAllowed, buildOperation, enqueueBuild, queuePushBuilds, recoverBuildQueue } from '../../../src/lib/build-op';
+import { BuildLimitError, BuildProviderUnavailableError, BuildSupersededError, assertManualBuildAllowed, buildOperation, enqueueBuild, queuePushBuilds, recoverBuildQueue } from '../../../src/lib/build-op';
 import { BuildStopped, runBuildJob, cleanupBuildSecret, registryManifest } from '../../../src/lib/build-runtime';
 import { MemoryOperationStore } from '../../../src/lib/operation-store';
 import { runOperation, setOperationStore } from '../../../src/lib/operations';
@@ -33,7 +33,7 @@ beforeEach(async () => {
   await mockRepos.Project.save(project); await mockRepos.Environment.save(env);
   jest.spyOn(global, 'setImmediate').mockImplementation((() => 0) as any);
   (runBuildJob as jest.Mock).mockImplementation(async (_b: any, _url: string, hooks: any) => { await hooks.markSubmitted(); return digest; });
-  mockVerify.mockResolvedValue(true);
+  mockVerify.mockResolvedValue('head');
 });
 afterEach(() => { jest.restoreAllMocks(); setOperationStore(null); });
 
@@ -58,25 +58,73 @@ describe('push builds', () => {
     expect(mockVerify).toHaveBeenCalledWith('https://github.com/acme/app.git', 'main', 'a'.repeat(40));
   });
 
-  it('reject and audit a SHA that is not on the linked branch (for example a fork commit)', async () => {
-    mockVerify.mockResolvedValueOnce(false);
+  it('reject and audit a SHA that is not on the linked branch', async () => {
+    mockVerify.mockResolvedValueOnce('not-on-branch');
     expect(await queuePushBuilds(project, 'main', 'f'.repeat(40))).toBe('rejected');
     expect(mockRepos.Build.rows).toHaveLength(0);
     expect(mockRepos.AuditLog.rows[0]).toMatchObject({ action: 'build.push_rejected', targetId: 'p', metadata: { branch: 'main', commit: 'f'.repeat(40) } });
   });
 
-  it('reject without queuing when verification itself fails or the SHA is malformed', async () => {
-    mockVerify.mockRejectedValueOnce(new Error('provider unavailable'));
-    expect(await queuePushBuilds(project, 'main', 'a'.repeat(40))).toBe('rejected');
+  it('reject a malformed SHA without asking the provider', async () => {
     expect(await queuePushBuilds(project, 'main', 'unknown')).toBe('rejected');
-    expect(mockRepos.Build.rows).toHaveLength(0);
+    expect(mockVerify).not.toHaveBeenCalled(); expect(mockRepos.Build.rows).toHaveLength(0);
+  });
+
+  it('raise a retryable error, without auditing a rejection, when the provider cannot answer', async () => {
+    mockVerify.mockRejectedValueOnce(new Error('provider unavailable'));
+    await expect(queuePushBuilds(project, 'main', 'a'.repeat(40))).rejects.toBeInstanceOf(BuildProviderUnavailableError);
+    expect(mockRepos.Build.rows).toHaveLength(0); expect(mockRepos.AuditLog.rows).toHaveLength(0);
+  });
+
+  it('skip a commit that is no longer the branch head', async () => {
+    mockVerify.mockResolvedValueOnce('superseded');
+    expect(await queuePushBuilds(project, 'main', 'a'.repeat(40))).toBe('superseded');
+    expect(mockRepos.Build.rows).toHaveLength(0); expect(mockRepos.AuditLog.rows).toHaveLength(0);
+  });
+
+  it('never let a commit observed earlier cancel or replace one observed later', async () => {
+    const newer = await enqueueBuild(project, env, 'main', 'b'.repeat(40), 'push', { headCheckedAt: new Date(2000) });
+    await expect(enqueueBuild(project, env, 'main', 'a'.repeat(40), 'push', { headCheckedAt: new Date(1000) })).rejects.toBeInstanceOf(BuildSupersededError);
+    expect(mockRepos.Build.rows).toHaveLength(1);
+    expect(mockRepos.Build.rows.find((b: any) => b.id === newer.id).status).toBe('queued');
+    // The same holds once the newer build has finished.
+    await mockRepos.Build.update(newer.id, { status: 'succeeded', imageDigest: 'sha256:new' });
+    await expect(enqueueBuild(project, env, 'main', 'a'.repeat(40), 'push', { headCheckedAt: new Date(1500) })).rejects.toBeInstanceOf(BuildSupersededError);
+  });
+
+  it('report an older push as superseded when every environment has a newer build', async () => {
+    await enqueueBuild(project, env, 'main', 'b'.repeat(40), 'push', { headCheckedAt: new Date(Date.now() + 60_000) });
+    expect(await queuePushBuilds(project, 'main', 'a'.repeat(40))).toBe('superseded');
+  });
+
+  it('deploy the existing image again when a built commit is pushed again', async () => {
+    const first = await enqueueBuild(project, env, 'main', 'a'.repeat(40), 'push', { headCheckedAt: new Date(1000) });
+    await mockRepos.Build.update(first.id, { status: 'succeeded', imageDigest: digest });
+    await enqueueBuild(project, env, 'main', 'b'.repeat(40), 'push', { headCheckedAt: new Date(2000) });
+    await mockRepos.Build.update({ commitSha: 'b'.repeat(40) }, { status: 'succeeded', imageDigest: `sha256:${'e'.repeat(64)}` });
+    const again = await enqueueBuild(project, env, 'main', 'a'.repeat(40), 'push', { headCheckedAt: new Date(3000) });
+    expect(again.id).not.toBe(first.id);
+    expect(again).toMatchObject({ status: 'succeeded', imageDigest: digest, imageTag: first.imageTag });
+    await runOperation(again.id);
+    expect(runBuildJob).not.toHaveBeenCalled();
+    expect(mockDeploy).toHaveBeenCalledTimes(1);
+    expect(mockRepos.Environment.rows[0].sourceImage).toBe(`registry.example/p-p/e-e@${digest}`);
+  });
+
+  it('build again a pushed commit whose earlier build failed or whose image was pruned', async () => {
+    const failed = await enqueueBuild(project, env, 'main', 'a'.repeat(40), 'push', { headCheckedAt: new Date(1000) });
+    await mockRepos.Build.update(failed.id, { status: 'failed' });
+    const retry = await enqueueBuild(project, env, 'main', 'a'.repeat(40), 'push', { headCheckedAt: new Date(2000) });
+    expect(retry.id).not.toBe(failed.id); expect(retry.status).toBe('queued');
+    await mockRepos.Build.update(retry.id, { status: 'succeeded', imageDigest: digest, prunedAt: new Date() });
+    expect((await enqueueBuild(project, env, 'main', 'a'.repeat(40), 'push', { headCheckedAt: new Date(3000) })).status).toBe('queued');
   });
 
   it('supersede older queued builds of the same environment, but not admitted ones', async () => {
     const older = await enqueueBuild(project, env, 'main', 'a'.repeat(40), 'push');
     const admitted = await enqueueBuild(project, env, 'main', 'b'.repeat(40), 'user');
     await mockRepos.Build.update(admitted.id, { jobSubmittedAt: new Date() });
-    await enqueueBuild(project, env, 'main', 'c'.repeat(40), 'push');
+    await enqueueBuild(project, env, 'main', 'c'.repeat(40), 'push', { headCheckedAt: new Date(Date.now() + 1000) });
     const rows = Object.fromEntries(mockRepos.Build.rows.map((b: any) => [b.id, b]));
     expect(rows[older.id].status).toBe('cancelled');
     expect(rows[older.id].error).toContain('Superseded');
@@ -156,8 +204,8 @@ it('a failed build cannot update the environment image or deploy, and keeps a us
 });
 
 it('a superseded build stays cancelled and never runs', async () => {
-  const build = await enqueueBuild(project, env, 'main', 'a'.repeat(40), 'push');
-  await enqueueBuild(project, env, 'main', 'b'.repeat(40), 'push');
+  const build = await enqueueBuild(project, env, 'main', 'a'.repeat(40), 'push', { headCheckedAt: new Date(1000) });
+  await enqueueBuild(project, env, 'main', 'b'.repeat(40), 'push', { headCheckedAt: new Date(2000) });
   await runOperation(build.id);
   expect(runBuildJob).not.toHaveBeenCalled();
   expect(mockRepos.Build.rows.find((b: any) => b.id === build.id).status).toBe('cancelled');

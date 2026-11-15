@@ -16,7 +16,8 @@ const mockEnqueue = jest.fn(async (..._args: any[]) => ({ id: 'b', status: 'queu
 const mockManual = jest.fn(async (..._args: any[]) => undefined);
 jest.mock('../../../src/lib/build-op', () => {
   class BuildLimitError extends Error {}
-  return { BuildLimitError, buildsEnabled: () => process.env.BUILDS_ENABLED === 'true', enqueueBuild: (...args: any[]) => mockEnqueue(...args),
+  class BuildSupersededError extends Error {}
+  return { BuildLimitError, BuildSupersededError, buildsEnabled: () => process.env.BUILDS_ENABLED === 'true', enqueueBuild: (...args: any[]) => mockEnqueue(...args),
     assertManualBuildAllowed: (...args: any[]) => mockManual(...args) };
 });
 jest.mock('../../../src/lib/git-remote', () => ({ fetchBranchCommits: jest.fn(async () => [{ sha: 'a'.repeat(40) }]),
@@ -62,7 +63,7 @@ it('queues only the branch commit resolved by the server', async () => {
   mockRepo.findOneBy.mockResolvedValueOnce(approvedProject).mockResolvedValueOnce({ id: 'e' });
   const result = await request(app).post(base).set('Authorization', 'test').send({ environmentId: 'e', branch: 'main', commitSha: 'untrusted' });
   expect(result.status).toBe(202);
-  expect(mockEnqueue).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'main', 'a'.repeat(40), 'user');
+  expect(mockEnqueue).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'main', 'a'.repeat(40), 'user', { headCheckedAt: expect.any(Date) });
 });
 it('rate limits manual builds per project with 429 and a clear message', async () => {
   const { BuildLimitError } = jest.requireMock('../../../src/lib/build-op');

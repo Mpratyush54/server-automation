@@ -61,28 +61,51 @@ export async function revokeCloneCredential(revoke: CloneRevocation | null | und
 const SHA = /^[a-f0-9]{40}$/;
 
 /**
- * True only when `sha` is the head of `branch` in the project's linked repository, or an
- * ancestor of that head. Webhook payloads are not trusted for this: the provider is asked
- * directly, about the repository linked to the project (never the one named in the payload).
+ * Where a pushed commit stands on the linked branch, as the provider reports it now:
+ * - `head`: it is the branch head, so it may be built;
+ * - `superseded`: it is an ancestor of the head (a newer commit exists), so it is skipped;
+ * - `not-on-branch`: the provider definitely does not have it on that branch.
  */
-export async function verifyCommitOnBranch(repositoryUrl: string, branch: string, sha: string): Promise<boolean> {
-  if (!SHA.test(sha)) return false;
+export type BranchHeadCheck = 'head' | 'superseded' | 'not-on-branch';
+
+/** The provider could not answer (unavailable, rate limited, no credential); the push may be retried. */
+export class BuildProviderError extends Error {}
+
+async function providerFetch(url: string, init: RequestInit): Promise<Response> {
+  try { return await fetch(url, { ...init, redirect: 'error' }); }
+  catch { throw new BuildProviderError('Git provider unavailable'); }
+}
+
+function unavailable(res: Response): never { throw new BuildProviderError(`Git provider answered ${res.status}`); }
+
+/**
+ * Compares `sha` with the current head of `branch` in the project's linked repository. Webhook
+ * payloads are not trusted for this: the provider is asked directly, about the repository linked
+ * to the project (never the one named in the payload). Only definite answers are returned;
+ * anything else throws BuildProviderError.
+ */
+export async function checkBranchHead(repositoryUrl: string, branch: string, sha: string): Promise<BranchHeadCheck> {
+  if (!SHA.test(sha)) return 'not-on-branch';
   const parsed = parseGitRemote(repositoryUrl);
-  if (!parsed || parsed.provider === 'unknown') return false;
+  if (!parsed || parsed.provider === 'unknown') return 'not-on-branch';
   if (parsed.provider === 'github') {
-    const { token } = await mintScopedInstallationToken(parsed.owner, parsed.repo);
+    let token: string;
+    try { ({ token } = await mintScopedInstallationToken(parsed.owner, parsed.repo)); }
+    catch { throw new BuildProviderError('GitHub App token unavailable'); }
     try {
       const headers = { Authorization: `token ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'platform-api', 'X-GitHub-Api-Version': '2022-11-28' };
       const base = `${parsed.apiBase}/repos/${parsed.owner}/${parsed.repo}`;
-      const branchRes = await fetch(`${base}/branches/${encodeURIComponent(branch)}`, { headers, redirect: 'error' });
-      if (!branchRes.ok) return false;
+      const branchRes = await providerFetch(`${base}/branches/${encodeURIComponent(branch)}`, { headers });
+      if (branchRes.status === 404) return 'not-on-branch';
+      if (!branchRes.ok) unavailable(branchRes);
       const head = String((await branchRes.json() as any)?.commit?.sha || '');
-      if (!SHA.test(head)) return false;
-      if (head === sha) return true;
-      const cmp = await fetch(`${base}/compare/${sha}...${head}`, { headers, redirect: 'error' });
-      if (!cmp.ok) return false;
+      if (!SHA.test(head)) throw new BuildProviderError('GitHub returned no branch head');
+      if (head === sha) return 'head';
+      const cmp = await providerFetch(`${base}/compare/${sha}...${head}`, { headers });
+      if (cmp.status === 404) return 'not-on-branch';
+      if (!cmp.ok) unavailable(cmp);
       const result: any = await cmp.json();
-      return result?.status === 'ahead' && result?.merge_base_commit?.sha === sha;
+      return result?.status === 'ahead' && result?.merge_base_commit?.sha === sha ? 'superseded' : 'not-on-branch';
     } finally {
       await revokeInstallationToken(token).catch(() => undefined);
     }
@@ -90,15 +113,18 @@ export async function verifyCommitOnBranch(repositoryUrl: string, branch: string
   // GitLab has no repository-scoped API token equivalent; the connected token is used only
   // inside the API process for these two read calls and is never handed to a build.
   const apiToken = await gitlabApiToken().catch(() => '');
-  if (!apiToken) return false;
+  if (!apiToken) throw new BuildProviderError('GitLab token unavailable');
   const headers = { 'PRIVATE-TOKEN': apiToken, 'User-Agent': 'platform-api' };
   const base = `${parsed.apiBase}/projects/${encodeURIComponent(`${parsed.owner}/${parsed.repo}`)}/repository`;
-  const branchRes = await fetch(`${base}/branches/${encodeURIComponent(branch)}`, { headers, redirect: 'error' });
-  if (!branchRes.ok) return false;
+  const branchRes = await providerFetch(`${base}/branches/${encodeURIComponent(branch)}`, { headers });
+  if (branchRes.status === 404) return 'not-on-branch';
+  if (!branchRes.ok) unavailable(branchRes);
   const head = String((await branchRes.json() as any)?.commit?.id || '');
-  if (!SHA.test(head)) return false;
-  if (head === sha) return true;
-  const mb = await fetch(`${base}/merge_base?refs[]=${sha}&refs[]=${head}`, { headers, redirect: 'error' });
-  if (!mb.ok) return false;
-  return String((await mb.json() as any)?.id || '') === sha;
+  if (!SHA.test(head)) throw new BuildProviderError('GitLab returned no branch head');
+  if (head === sha) return 'head';
+  const mb = await providerFetch(`${base}/merge_base?refs[]=${sha}&refs[]=${head}`, { headers });
+  // GitLab answers 400/404 when a ref is unknown to the repository.
+  if (mb.status === 400 || mb.status === 404) return 'not-on-branch';
+  if (!mb.ok) unavailable(mb);
+  return String((await mb.json() as any)?.id || '') === sha ? 'superseded' : 'not-on-branch';
 }

@@ -8,7 +8,7 @@ import { AuthenticatedRequest, expressAuthenticate, logAudit } from '../middlewa
 import { UserRole } from '../entities/User';
 import { idempotency } from '../middleware/idempotency';
 import { requireProjectAccess } from '../lib/project-access';
-import { BuildLimitError, assertManualBuildAllowed, buildsEnabled, enqueueBuild } from '../lib/build-op';
+import { BuildLimitError, BuildSupersededError, assertManualBuildAllowed, buildsEnabled, enqueueBuild } from '../lib/build-op';
 import { fetchBranchCommits } from '../lib/git-remote';
 import { validateBuildRef } from '../lib/build-spec';
 import { parseGitRemote } from '../lib/git-remote';
@@ -90,13 +90,14 @@ router.post('/projects/:projectId/builds', idempotency('POST /projects/:projectI
     if (!project?.repositoryUrl || !env) return res.status(404).json({ error: 'Linked project environment not found' });
     validateBuildRef(req.body.branch, 'a'.repeat(40));
     await assertManualBuildAllowed(project.id);
+    const headCheckedAt = new Date();
     const commits = await fetchBranchCommits(project.repositoryUrl, req.body.branch, 1);
     if (!commits[0]) return res.status(400).json({ error: 'Branch has no commit' });
-    const build = await enqueueBuild(project, env, req.body.branch, commits[0].sha, (req as AuthenticatedRequest).user!.id);
+    const build = await enqueueBuild(project, env, req.body.branch, commits[0].sha, (req as AuthenticatedRequest).user!.id, { headCheckedAt });
     return res.status(202).json({ id: build.id, operationId: build.id, status: build.status });
   } catch (error) {
     if (error instanceof BuildLimitError) return res.status(429).json({ error: error.message });
-    if (error instanceof RepositoryNotApprovedError) return res.status(409).json({ error: error.message });
+    if (error instanceof RepositoryNotApprovedError || error instanceof BuildSupersededError) return res.status(409).json({ error: error.message });
     return res.status(400).json({ error: 'Could not queue source build' });
   }
 });

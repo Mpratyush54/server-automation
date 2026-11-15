@@ -3,7 +3,7 @@ const mockRevoke = jest.fn(async (..._a: any[]) => undefined);
 const mockGitlabToken = jest.fn(async () => 'glpat-instance-token');
 jest.mock('../../../src/lib/github-app', () => ({ mintScopedInstallationToken: (...a: any[]) => mockMint(...a), revokeInstallationToken: (...a: any[]) => mockRevoke(...a) }));
 jest.mock('../../../src/lib/gitlab-app', () => ({ gitlabApiToken: () => mockGitlabToken() }));
-import { mintCloneCredential, revokeCloneCredential, verifyCommitOnBranch } from '../../../src/lib/build-source';
+import { BuildProviderError, checkBranchHead, mintCloneCredential, revokeCloneCredential } from '../../../src/lib/build-source';
 
 const sha = 'a'.repeat(40);
 const approved = (repositoryUrl: string) => ({ repositoryUrl, repositoryApprovedAt: new Date(), repositoryApprovedKey: repositoryUrl.replace(/^https:\/\//, '').replace(/\.git$/, '').toLowerCase() });
@@ -66,14 +66,14 @@ describe('clone credentials', () => {
 describe('webhook commit verification', () => {
   it('accepts the branch head and revokes the verification token', async () => {
     fetchMock.mockResolvedValueOnce(json(200, { commit: { sha } }));
-    expect(await verifyCommitOnBranch('https://github.com/acme/app.git', 'main', sha)).toBe(true);
+    expect(await checkBranchHead('https://github.com/acme/app.git', 'main', sha)).toBe('head');
     expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/acme/app/branches/main');
     expect(mockRevoke).toHaveBeenCalledWith('ghs_scoped_token');
   });
 
-  it('accepts an ancestor of the branch head', async () => {
+  it('reports an ancestor of the branch head as superseded, not as the head', async () => {
     fetchMock.mockResolvedValueOnce(json(200, { commit: { sha: head } })).mockResolvedValueOnce(json(200, { status: 'ahead', merge_base_commit: { sha } }));
-    expect(await verifyCommitOnBranch('https://github.com/acme/app.git', 'main', sha)).toBe(true);
+    expect(await checkBranchHead('https://github.com/acme/app.git', 'main', sha)).toBe('superseded');
     expect(fetchMock.mock.calls[1][0]).toBe(`https://api.github.com/repos/acme/app/compare/${sha}...${head}`);
   });
 
@@ -81,25 +81,47 @@ describe('webhook commit verification', () => {
     ['a diverged (for example fork-only) commit', json(200, { status: 'diverged', merge_base_commit: { sha: 'c'.repeat(40) } })],
     ['a commit newer than the branch head', json(200, { status: 'behind', merge_base_commit: { sha: head } })],
     ['a commit unknown to the repository', json(404, { message: 'Not Found' })],
-  ])('rejects %s', async (_label, compare) => {
+  ])('reports %s as not on the branch', async (_label, compare) => {
     fetchMock.mockResolvedValueOnce(json(200, { commit: { sha: head } })).mockResolvedValueOnce(compare);
-    expect(await verifyCommitOnBranch('https://github.com/acme/app.git', 'main', sha)).toBe(false);
+    expect(await checkBranchHead('https://github.com/acme/app.git', 'main', sha)).toBe('not-on-branch');
     expect(mockRevoke).toHaveBeenCalled();
   });
 
-  it('rejects a missing branch and malformed SHAs without calling the provider', async () => {
+  it('reports a missing branch and malformed SHAs as not on the branch without calling the provider for the SHA', async () => {
     fetchMock.mockResolvedValueOnce(json(404, {}));
-    expect(await verifyCommitOnBranch('https://github.com/acme/app.git', 'gone', sha)).toBe(false);
+    expect(await checkBranchHead('https://github.com/acme/app.git', 'gone', sha)).toBe('not-on-branch');
     fetchMock.mockClear();
-    expect(await verifyCommitOnBranch('https://github.com/acme/app.git', 'main', 'unknown')).toBe(false);
+    expect(await checkBranchHead('https://github.com/acme/app.git', 'main', 'unknown')).toBe('not-on-branch');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('verifies GitLab pushes with the merge base of the branch head', async () => {
+  it.each([
+    ['a server error on the branch lookup', () => fetchMock.mockResolvedValueOnce(json(502, {}))],
+    ['a rate limit on the branch lookup', () => fetchMock.mockResolvedValueOnce(json(403, { message: 'API rate limit exceeded' }))],
+    ['a server error on the comparison', () => fetchMock.mockResolvedValueOnce(json(200, { commit: { sha: head } })).mockResolvedValueOnce(json(500, {}))],
+    ['a network failure', () => fetchMock.mockRejectedValueOnce(new Error('ECONNRESET'))],
+    ['a token mint failure', () => mockMint.mockRejectedValueOnce(new Error('installation unavailable'))],
+  ])('raises a provider error for %s instead of answering', async (_label, arrange) => {
+    arrange();
+    await expect(checkBranchHead('https://github.com/acme/app.git', 'main', sha)).rejects.toBeInstanceOf(BuildProviderError);
+  });
+
+  it('checks GitLab pushes against the branch head', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, { commit: { id: sha } }));
+    expect(await checkBranchHead('https://gitlab.com/group/app.git', 'main', sha)).toBe('head');
     fetchMock.mockResolvedValueOnce(json(200, { commit: { id: head } })).mockResolvedValueOnce(json(200, { id: sha }));
-    expect(await verifyCommitOnBranch('https://gitlab.com/group/app.git', 'main', sha)).toBe(true);
-    expect(fetchMock.mock.calls[1][0]).toContain(`/repository/merge_base?refs[]=${sha}&refs[]=${head}`);
+    expect(await checkBranchHead('https://gitlab.com/group/app.git', 'main', sha)).toBe('superseded');
+    expect(fetchMock.mock.calls[2][0]).toContain(`/repository/merge_base?refs[]=${sha}&refs[]=${head}`);
     fetchMock.mockResolvedValueOnce(json(200, { commit: { id: head } })).mockResolvedValueOnce(json(200, { id: 'c'.repeat(40) }));
-    expect(await verifyCommitOnBranch('https://gitlab.com/group/app.git', 'main', sha)).toBe(false);
+    expect(await checkBranchHead('https://gitlab.com/group/app.git', 'main', sha)).toBe('not-on-branch');
+    fetchMock.mockResolvedValueOnce(json(200, { commit: { id: head } })).mockResolvedValueOnce(json(400, { message: 'invalid ref' }));
+    expect(await checkBranchHead('https://gitlab.com/group/app.git', 'main', sha)).toBe('not-on-branch');
+  });
+
+  it('raises a provider error when GitLab cannot be asked', async () => {
+    mockGitlabToken.mockResolvedValueOnce('');
+    await expect(checkBranchHead('https://gitlab.com/group/app.git', 'main', sha)).rejects.toBeInstanceOf(BuildProviderError);
+    fetchMock.mockResolvedValueOnce(json(429, {}));
+    await expect(checkBranchHead('https://gitlab.com/group/app.git', 'main', sha)).rejects.toBeInstanceOf(BuildProviderError);
   });
 });

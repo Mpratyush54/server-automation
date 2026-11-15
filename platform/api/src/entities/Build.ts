@@ -4,7 +4,8 @@ import { Entity, PrimaryColumn, Column, CreateDateColumn, Index } from 'typeorm'
 export type BuildStatus = 'queued' | 'building' | 'succeeded' | 'failed' | 'cancelled';
 
 @Entity('builds')
-@Index('builds_push_commit', ['environmentId', 'commitSha'], { unique: true, where: `triggered_by = 'push'` })
+/** One queued or running push build per environment and commit; finished builds may repeat. */
+@Index('builds_push_commit', ['environmentId', 'commitSha'], { unique: true, where: `triggered_by = 'push' AND status IN ('queued', 'building')` })
 export class Build {
   @PrimaryColumn('uuid') id: string;
   @Column({ name: 'project_id', type: 'uuid' }) projectId: string;
@@ -24,5 +25,7 @@ export class Build {
   @Column({ type: 'text', nullable: true }) error: string | null;
   @Column({ name: 'deployment_id', type: 'uuid', nullable: true }) deploymentId: string | null;
   @Column({ name: 'pruned_at', type: 'timestamp', nullable: true }) prunedAt: Date | null;
+  /** When the commit was confirmed as the branch head; orders builds of the same environment. */
+  @Column({ name: 'head_checked_at', type: 'timestamp', nullable: true }) headCheckedAt: Date | null;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
 }

@@ -3,11 +3,15 @@ import request from 'supertest';
 const mockPush = jest.fn(async (..._args: any[]): Promise<string> => 'queued');
 const mockClaim = jest.fn(async () => true);
 const mockVerify = jest.fn(async () => true);
-jest.mock('../../../src/lib/build-op', () => ({ queuePushBuilds: (...args: any[]) => mockPush(...args) }));
+jest.mock('../../../src/lib/build-op', () => {
+  class BuildProviderUnavailableError extends Error {}
+  return { BuildProviderUnavailableError, queuePushBuilds: (...args: any[]) => mockPush(...args) };
+});
+const mockRelease = jest.fn();
 const mockFindProject = jest.fn(async (..._a: any[]): Promise<any> => ({ id: 'p' }));
 jest.mock('../../../src/config/database', () => ({ getDb: async () => ({ getRepository: () => ({ findOne: (...a: any[]) => mockFindProject(...a) }) }) }));
 jest.mock('../../../src/lib/webhook-dedupe', () => ({
-  webhookDeliveryId: () => 'delivery', claimWebhookDelivery: () => mockClaim(), releaseWebhookDelivery: jest.fn(),
+  webhookDeliveryId: () => 'delivery', claimWebhookDelivery: () => mockClaim(), releaseWebhookDelivery: (...a: any[]) => mockRelease(...a),
 }));
 jest.mock('../../../src/lib/github-app', () => ({ githubWebhookSecrets: async () => [], verifyHubSignature: () => mockVerify(), handleInstallationWebhook: jest.fn() }));
 jest.mock('../../../src/lib/gitlab-app', () => ({ gitlabWebhookSecrets: async () => [], verifyGitlabTokenAgainst: () => mockVerify() }));
@@ -75,4 +79,21 @@ it('does not build for a repository that is not approved', async () => {
   const result = await request(app).post('/webhooks/github').set('x-github-event', 'push')
     .send({ ref: 'refs/heads/main', after: 'a'.repeat(40), repository: { clone_url: 'https://github.com/acme/app.git' } });
   expect(result.status).toBe(200); expect(result.body).toEqual({ success: false, message: expect.stringContaining('has not approved this repository') });
+});
+
+it.each(['github', 'gitlab'])('answers 503 and releases the %s delivery when the provider cannot confirm the commit', async provider => {
+  const { BuildProviderUnavailableError } = jest.requireMock('../../../src/lib/build-op');
+  mockPush.mockRejectedValueOnce(new BuildProviderUnavailableError('retry'));
+  const result = await request(app).post(`/webhooks/${provider}`).set(provider === 'github' ? 'x-github-event' : 'x-gitlab-event', provider === 'github' ? 'push' : 'Push Hook')
+    .send({ ref: 'refs/heads/main', after: 'a'.repeat(40), repository: { clone_url: 'https://github.com/acme/app.git' }, project: { http_url: 'https://gitlab.com/acme/app.git' } });
+  expect(result.status).toBe(503);
+  await new Promise(resolve => setImmediate(resolve));
+  expect(mockRelease).toHaveBeenCalledWith(provider, 'delivery');
+});
+
+it('reports a push of a commit that is no longer the branch head as skipped', async () => {
+  mockPush.mockResolvedValueOnce('superseded');
+  const result = await request(app).post('/webhooks/github').set('x-github-event', 'push')
+    .send({ ref: 'refs/heads/main', after: 'a'.repeat(40), repository: { clone_url: 'https://github.com/acme/app.git' } });
+  expect(result.status).toBe(200); expect(result.body.message).toContain('a newer commit exists');
 });

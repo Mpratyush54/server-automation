@@ -1,4 +1,4 @@
-import { PushBuildResult, queuePushBuilds } from '../lib/build-op';
+import { BuildProviderUnavailableError, PushBuildResult, queuePushBuilds } from '../lib/build-op';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { Project } from '../entities/Project';
@@ -51,6 +51,7 @@ async function verifyGitLabToken(token: string | undefined): Promise<boolean> {
 function pushBuildResponse(result: PushBuildResult) {
   if (result === 'queued') return { success: true, message: 'Source build queued' };
   if (result === 'limited') return { success: false, message: 'Source build not queued: project build queue is full' };
+  if (result === 'superseded') return { success: true, message: 'Source build skipped: a newer commit exists on the linked branch' };
   if (result === 'unapproved') return { success: false, message: 'Source build not queued: a platform administrator has not approved this repository' };
   return { success: false, message: 'Source build rejected: commit is not on the linked branch' };
 }
@@ -204,6 +205,8 @@ router.post('/webhooks/github', async (req: Request, res: Response) => {
 
     return res.json({ success: true, message: 'Event ignored' });
   } catch (err: any) {
+    // 5xx releases the delivery claim so the provider's redelivery is processed.
+    if (err instanceof BuildProviderUnavailableError) return res.status(503).json({ error: err.message });
     return res.status(400).json({ error: err.message });
   }
 });
@@ -345,6 +348,8 @@ router.post('/webhooks/gitlab', async (req: Request, res: Response) => {
 
     return res.json({ success: true, message: 'Event ignored' });
   } catch (err: any) {
+    // 5xx releases the delivery claim so the provider's redelivery is processed.
+    if (err instanceof BuildProviderUnavailableError) return res.status(503).json({ error: err.message });
     return res.status(400).json({ error: err.message });
   }
 });
