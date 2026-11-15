@@ -16,7 +16,7 @@ import (
 // older platformctl (placeholder client secrets, public-URL server calls, no
 // client registry) converges to the current, self-contained setup.
 func RepairSSO(cfg *config.Config) error {
-	color.Cyan("\n  ■ Repairing SSO wiring (OIDC client registry, Grafana, ArgoCD, oauth2-proxy, Portainer)...")
+	color.Cyan("\n  ■ Repairing SSO wiring (OIDC client registry, Grafana, ArgoCD, MinIO, oauth2-proxy, Portainer)...")
 	var failed []string
 	step := func(name string, fn func() error) {
 		if err := fn(); err != nil {
@@ -50,6 +50,15 @@ kubectl -n platform rollout status deploy/platform-api --timeout=180s >/dev/null
 				return err
 			}
 			return patchArgoCDSubpath(cfg)
+		})
+	}
+	if !cfg.ObjectStorageExternal() {
+		// Installs from before the CA mount get it from the current values.
+		step("MinIO SSO", func() error {
+			if _, err := publishMinioCA(); err != nil {
+				return err
+			}
+			return helmReapplyValues(cfg, "minio", MinioNamespace, "minio", "minio-values.yaml")
 		})
 	}
 	step("oauth2-proxy", func() error {

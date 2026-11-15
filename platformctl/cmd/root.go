@@ -156,9 +156,9 @@ var repairCmd = &cobra.Command{
 
   1. Ensures per-client OIDC secrets exist (saved to /etc/platform/.env).
   2. Re-applies the API's OIDC issuer and client registry, and the SSO
-     settings of Grafana, ArgoCD, oauth2-proxy and Portainer.
+     settings of Grafana, ArgoCD, MinIO, oauth2-proxy and Portainer.
   3. Ensures a valid TLS certificate: Let's Encrypt when possible, otherwise
-     the platform's internal CA, and makes ArgoCD trust it.`,
+     the platform's internal CA, and makes ArgoCD and MinIO trust it.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		unlock, err := state.AcquireLock("repair")
 		if err != nil {

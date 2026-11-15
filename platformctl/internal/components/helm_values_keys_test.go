@@ -196,10 +196,12 @@ func TestHAMinioHelmKeysVerified(t *testing.T) {
 	paths = append(paths, "persistence.size", "image.repository", "console.image.repository", "defaultBuckets")
 	checkVerifiedKeys(t, "minio", paths,
 		[]string{"auth.rootUser", "auth.rootPassword", "resources", "console.resources", "console.extraEnvVars", "extraEnvVars",
+			"extraVolumes", "extraVolumeMounts", "console.extraVolumes", "console.extraVolumeMounts",
 			"ingress.enabled", "mode", "statefulset.replicaCount", "statefulset.drivesPerNode", "statefulset.zones",
 			"global.defaultStorageClass", "podAntiAffinityPreset", "pdb.create", "pdb.maxUnavailable",
 			"persistence.storageClass", "persistence.size", "image.repository", "console.image.repository", "defaultBuckets"},
-		[]string{"mode", "statefulset.replicaCount", "statefulset.drivesPerNode", "statefulset.zones", "persistence.storageClass"})
+		[]string{"mode", "statefulset.replicaCount", "statefulset.drivesPerNode", "statefulset.zones", "persistence.storageClass",
+			"extraVolumes", "extraVolumeMounts", "console.extraVolumes", "console.extraVolumeMounts"})
 }
 
 func TestHALonghornHelmKeysVerified(t *testing.T) {

@@ -222,6 +222,11 @@ func InstallMinIO(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing MinIO...")
+	if cfg.InstallCertManager {
+		// Its OpenID sign-in must trust the internal CA from the first start
+		// (see minio_ca.go); provision runs this step after cert-manager.
+		prepareMinioCA()
+	}
 	tmpFile, err := temporaryManifest("minio-values.yaml", cfg)
 	if err != nil {
 		return err
