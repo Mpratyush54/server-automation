@@ -314,15 +314,33 @@ func init() {
 			return e
 		}
 		defer unlock()
-		start := time.Now()
-		e = backup.TestPostgres(c.Target, id, key)
-		if se := backup.PublishStatus("restore-test", id, start, backup.Manifest{}, e); se != nil {
-			fmt.Fprintln(os.Stderr, "restore-test status publication failed:", se)
-		}
-		return e
+		return runRestoreTest(cmd.OutOrStdout(), c.Target, id, key)
 	}}
 	testCmd.Flags().StringVar(&testID, "from", "", "backup ID (default latest complete)")
 	backupCmd.AddCommand(testCmd)
+}
+
+// Swapped in tests.
+var (
+	restoreTestPostgres  = backup.TestPostgres
+	publishRestoreStatus = backup.PublishStatus
+)
+
+// runRestoreTest restores backup id's PostgreSQL dumps into a scratch
+// database, publishes the result and, on success, says what was checked and
+// how long it took.
+func runRestoreTest(w io.Writer, target, id string, key []byte) error {
+	start := time.Now()
+	e := restoreTestPostgres(target, id, key)
+	if se := publishRestoreStatus("restore-test", id, start, backup.Manifest{}, e); se != nil {
+		fmt.Fprintln(os.Stderr, "restore-test status publication failed:", se)
+	}
+	if e != nil {
+		return e
+	}
+	fmt.Fprintf(w, "Restore test passed: backup %s decrypted, its PostgreSQL databases restored into a scratch database and the platform data (users, projects) read back in %s. The scratch database was dropped.\n",
+		id, time.Since(start).Round(time.Second))
+	return nil
 }
 
 // readIdentity reads and validates an age identity from r (stdin). It is held
