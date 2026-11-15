@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/backup"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/harden"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ingressha"
@@ -238,10 +239,11 @@ var joinPreflight = func(host, role, token string) *preflight.Result {
 
 // Swapped in tests.
 var (
-	k3sJoin       = k3s.Join
-	joinHarden    = func() error { return runHardening() }
-	upsertEnvKey  = config.UpsertEnvKey
-	provisionedFn = func() bool { return state.IsDone("platform") }
+	k3sJoin            = k3s.Join
+	joinBuildIsolation = components.RefreshBuildIsolation
+	joinHarden         = func() error { return runHardening() }
+	upsertEnvKey       = config.UpsertEnvKey
+	provisionedFn      = func() bool { return state.IsDone("platform") }
 )
 
 func runJoin(stdin io.Reader) error {
@@ -353,6 +355,15 @@ func runJoin(stdin io.Reader) error {
 	if !cfg.SkipHardening {
 		if err := joinHarden(); err != nil {
 			return fmt.Errorf("host hardening: %w (k3s joined; fix and run `sudo platformctl harden --auto`)", err)
+		}
+	}
+	if components.BuildsEnabled(cfg) {
+		if role == k3s.RoleServer {
+			if err := joinBuildIsolation(cfg); err != nil {
+				return fmt.Errorf("refresh build isolation: %w", err)
+			}
+		} else {
+			fmt.Println("  Builds: re-run sudo platformctl install builds on a server to refresh blocked node addresses; add this agent's public IPv4 to BUILDS_EXTRA_BLOCKED_CIDRS if needed.")
 		}
 	}
 	printLonghornJoinHint(os.Stdout)

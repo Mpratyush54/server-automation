@@ -1,6 +1,7 @@
 package components
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -11,8 +12,10 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
+	"net/http"
 	"net/netip"
 	"net/url"
 	"os"
@@ -44,8 +47,8 @@ const (
 // build Job (platform/api/src/lib/build-spec.ts) for the BuildKit container only.
 const (
 	BuildRuntimeLabel           = "cairn.dev/build-runtime"
-	BuildRuntimeVersion         = "v1"
-	BuildkitSeccompProfilePath  = "/var/lib/kubelet/seccomp/cairn/buildkit-v1.json"
+	BuildRuntimeVersion         = "v2"
+	BuildkitSeccompProfilePath  = "/var/lib/kubelet/seccomp/cairn/buildkit-v2.json"
 	BuildkitAppArmorProfileName = "cairn-buildkit-v1"
 	buildkitAppArmorProfilePath = "/etc/apparmor.d/cairn-buildkit-v1"
 )
@@ -64,6 +67,8 @@ type BuildNetworks struct {
 	Cluster []netip.Prefix
 	// Nodes holds node addresses known at install time.
 	Nodes []netip.Prefix
+	// Public holds the platform domain and this instance's public IPv4 addresses.
+	Public []netip.Prefix
 }
 
 // DefaultBuildNetworks uses the k3s default pod and service CIDRs.
@@ -74,7 +79,7 @@ func DefaultBuildNetworks() BuildNetworks {
 
 // installedBuildNetworks reads the pod and service CIDRs from the k3s config
 // (failing closed on a config it cannot parse) and the nodes' addresses.
-func installedBuildNetworks() (BuildNetworks, error) {
+func installedBuildNetworks(c *config.Config) (BuildNetworks, error) {
 	data, err := os.ReadFile(k3s.ServerConfigPath)
 	if err != nil && !os.IsNotExist(err) {
 		return BuildNetworks{}, err
@@ -85,7 +90,77 @@ func installedBuildNetworks() (BuildNetworks, error) {
 	}
 	out, _ := shell.OutputBash(`export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 kubectl get nodes -o jsonpath='{range .items[*].status.addresses[*]}{.type} {.address}{"\n"}{end}' 2>/dev/null || true`)
-	return BuildNetworks{Cluster: cluster, Nodes: nodeAddressPrefixes(out)}, nil
+	public := buildPublicAddresses(&http.Client{
+		Timeout:       time.Second,
+		Transport:     &http.Transport{Proxy: nil},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	})
+	return BuildNetworks{Cluster: cluster, Nodes: nodeAddressPrefixes(out), Public: public}, nil
+}
+
+// buildPublicAddresses returns this instance's public IPv4 from cloud metadata
+// (AWS IMDSv2) when available. It deliberately does not resolve DOMAIN: a
+// domain behind a CDN resolves to addresses shared with unrelated sites, and
+// blocking those would break downloads. Metadata is optional and uses a single
+// one-second deadline for the token and address requests.
+func buildPublicAddresses(client interface {
+	Do(*http.Request) (*http.Response, error)
+}) []netip.Prefix {
+	var addresses []netip.Addr
+	metadataCtx, stop := context.WithTimeout(context.Background(), time.Second)
+	defer stop()
+	request := func(method, path, token string) string {
+		req, err := http.NewRequestWithContext(metadataCtx, method, "http://169.254.169.254/latest/"+path, nil)
+		if err != nil {
+			return ""
+		}
+		if method == http.MethodPut {
+			req.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", "60")
+		}
+		if token != "" {
+			req.Header.Set("X-aws-ec2-metadata-token", token)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return ""
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return ""
+		}
+		data, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(data))
+	}
+	if token := request(http.MethodPut, "api/token", ""); token != "" {
+		if ip, err := netip.ParseAddr(request(http.MethodGet, "meta-data/public-ipv4", token)); err == nil && ip.Is4() {
+			addresses = append(addresses, ip)
+		}
+	}
+	var prefixes []netip.Prefix
+	for _, ip := range addresses {
+		if ip.Is4() {
+			prefixes = append(prefixes, netip.PrefixFrom(ip, 32))
+		}
+	}
+	slices.SortFunc(prefixes, func(a, b netip.Prefix) int { return a.Addr().Compare(b.Addr()) })
+	return slices.Compact(prefixes)
+}
+
+// RefreshBuildIsolation updates build egress after a server joins the cluster.
+func RefreshBuildIsolation(c *config.Config) error {
+	networks, err := installedBuildNetworks(c)
+	if err != nil {
+		return err
+	}
+	manifest, err := BuildNamespaceManifest(c, networks)
+	if err != nil {
+		return err
+	}
+	_, err = shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, manifest)
+	return err
 }
 
 // nodeAddressPrefixes parses "<type> <address>" lines (InternalIP/ExternalIP).
@@ -116,7 +191,8 @@ func (n BuildNetworks) blocked() []netip.Prefix {
 		out = append(out, netip.MustParsePrefix(b))
 	}
 	out = append(out, n.Cluster...)
-	return append(out, n.Nodes...)
+	out = append(out, n.Nodes...)
+	return append(out, n.Public...)
 }
 
 var bucketName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
@@ -351,6 +427,16 @@ func BuildNamespaceManifest(c *config.Config, n BuildNetworks) (string, error) {
 	if nodes, err := cidrList(c.BuildsRegistryNodeCIDRs, "BUILDS_REGISTRY_NODE_CIDRS"); err == nil {
 		n.Nodes = append(append([]netip.Prefix{}, n.Nodes...), nodes...)
 	}
+	extra, err := cidrList(c.BuildsExtraBlockedCIDRs, "BUILDS_EXTRA_BLOCKED_CIDRS")
+	if err != nil {
+		return "", err
+	}
+	for _, p := range extra {
+		if p.Bits() == 0 {
+			return "", fmt.Errorf("BUILDS_EXTRA_BLOCKED_CIDRS must not contain default routes")
+		}
+	}
+	n.Public = append(append([]netip.Prefix{}, n.Public...), extra...)
 	peers, err := BuildEgressPeers(c.BuildsEgressCIDRs, n)
 	if err != nil {
 		return "", err
@@ -500,8 +586,7 @@ func RegistryTokenSignerMatches(keyPEM, certPEM string) bool {
 // confines those calls to namespaces the container itself created.
 // Netfilter netlink sockets are refused: builds have no use for packet
 // filtering configuration inside their own network namespace.
-// The new mount API (fsopen, fsmount, move_mount, open_tree, ...) stays
-// allowed until a real-server run shows the bundled runc does not use it.
+// The new mount API returns ENOSYS so runc falls back to mount(2).
 const (
 	afNetlink        = 16 // AF_NETLINK
 	netlinkNetfilter = 12 // NETLINK_NETFILTER
@@ -521,6 +606,8 @@ func BuildkitSeccompProfile() string {
 			{"names": deny, "action": "SCMP_ACT_ERRNO", "errnoRet": 1},
 			// ENOSYS, not EPERM: runtimes treat a missing keyring API as "not supported".
 			{"names": []string{"add_key", "keyctl", "request_key"}, "action": "SCMP_ACT_ERRNO", "errnoRet": 38},
+			// ENOSYS makes runc fall back to the namespace-confined mount(2) API.
+			{"names": []string{"fsopen", "fsconfig", "fsmount", "fspick", "move_mount", "open_tree", "mount_setattr"}, "action": "SCMP_ACT_ERRNO", "errnoRet": 38},
 			// socket(AF_NETLINK, *, NETLINK_NETFILTER): EPROTONOSUPPORT. Conditions are ANDed.
 			{"names": []string{"socket"}, "action": "SCMP_ACT_ERRNO", "errnoRet": 93, "args": []map[string]any{
 				{"index": 0, "value": afNetlink, "op": "SCMP_CMP_EQ"},
@@ -656,7 +743,7 @@ func InstallBuilds(c *config.Config) error {
 	if !BuildsEnabled(c) {
 		return nil
 	}
-	networks, err := installedBuildNetworks()
+	networks, err := installedBuildNetworks(c)
 	if err != nil {
 		return fmt.Errorf("read cluster networks: %w", err)
 	}

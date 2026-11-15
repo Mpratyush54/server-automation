@@ -79,7 +79,8 @@ describe('source build Job', () => {
   it('relaxes the runtime only for the BuildKit container, with node-local profiles and no privileged settings', () => {
     const pod: any = render().spec.template.spec;
     expect(pod.securityContext.seccompProfile).toEqual({ type: 'RuntimeDefault' });
-    expect(pod.nodeSelector).toEqual({ [BUILD_RUNTIME_LABEL]: 'v1' });
+    expect(BUILDKIT_SECCOMP_PROFILE).toBe('cairn/buildkit-v2.json');
+    expect(pod.nodeSelector).toEqual({ [BUILD_RUNTIME_LABEL]: 'v2' });
     // Only the setuid ID-mapping helpers' capabilities remain; see buildkitSecurityContext.
     expect(byName('buildkit').securityContext).toEqual({ allowPrivilegeEscalation: true, capabilities: { drop: ['ALL'], add: ['SETUID', 'SETGID'] },
       seccompProfile: { type: 'Localhost', localhostProfile: BUILDKIT_SECCOMP_PROFILE },
