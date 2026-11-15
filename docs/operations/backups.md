@@ -147,8 +147,15 @@ cat identity.txt | ssh you@server \
 Run this drill on a test server every few months, so a real restore is routine. It never touches the production server.
 
 1. **Point in time.** On a test server with its own backup prefix: create a project, note the time, delete the project, then run `sudo platformctl restore --pitr <noted time> --confirm`. The project is back.
-2. **Full rebuild.** Create a fresh VM and follow [Rebuild everything on a new server](#rebuild-everything-on-a-new-server) with the production target settings and the newest archive, but a test domain and `--source-server` set to the production archive name. Sign in and check projects, secrets and files.
-3. Write down how long each step took, then delete the test VM. A restore only reads from the target; it does not change the production backups.
+2. **Full rebuild.** Create a fresh VM and follow [Rebuild everything on a new server](#rebuild-everything-on-a-new-server) with the production target settings, the newest archive and `--source-server` set to the production archive name. Then sign in and check projects, secrets and files.
+
+   The rebuilt server takes over the production domain, even if you give `provision` a different one. The archive puts back the old `/etc/platform/.env`, the `platform-env` Secret and the Argo CD Applications, and they all name the production domain. So pass the production `DOMAIN`, and keep the drill server out of reach of your users:
+
+   - Do not point DNS or a load balancer at it.
+   - To open the portal, add the production hostnames with the test VM's address to the hosts file on your own computer (`/etc/hosts`, or `C:\Windows\System32\drivers\etc\hosts`), and remove them afterwards. The browser may warn about the certificate, because the drill server cannot get one without DNS.
+   - If your provider allows it, limit inbound traffic to your own IP address.
+
+3. Write down how long each step took, then delete the test VM. A restore only reads production's backups; it does not change them. While the drill server runs, it saves its own PostgreSQL change log in the same target under its own server name (`postgres/<server name>/`, shown by `platformctl status`). Delete that folder after the drill.
 
 ## Back up one project database
 
