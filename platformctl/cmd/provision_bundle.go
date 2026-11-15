@@ -4,10 +4,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/fatih/color"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/apt"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/bundle"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/helm"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/images"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/stack"
@@ -83,7 +86,11 @@ func installHelm(s hostSources) error {
 // digest once k3s has imported its archives (see images.AliasDigestRefs).
 // Used by `provision --bundle` and `join --bundle`.
 func nameBundleImages() error {
-	res, err := images.AliasDigestRefs(context.Background(), images.DigestPinned())
+	refs, err := bundleDigestRefs(stack.DefaultPaths.Staging)
+	if err != nil {
+		return err
+	}
+	res, err := images.AliasDigestRefs(context.Background(), refs)
 	if err != nil {
 		return err
 	}
@@ -94,4 +101,51 @@ func nameBundleImages() error {
 		color.Green("  ✓ %d digest-pinned image(s) resolve from the bundle", len(res.Named))
 	}
 	return nil
+}
+
+// bundleDigestRefs are the digest-pinned references to name after import: the
+// third-party ones of the embedded image list and the Cairn images the staged
+// bundle manifest lists (none for a bundle from an older release).
+func bundleDigestRefs(staging string) ([]string, error) {
+	refs := images.DigestPinned()
+	m, ok, err := bundle.ReadStagedManifest(staging)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		refs = append(refs, m.PlatformImages...)
+	}
+	return refs, nil
+}
+
+// provisionReadManifest is swapped in tests.
+var provisionReadManifest = bundle.ReadManifest
+
+// applyBundleImageTag points provision at the Cairn images in the bundle, so
+// the API, portal, profile ingest and synthetics runner start without a
+// registry pull. Only a default PLATFORM_IMAGE_TAG is replaced; one set in the
+// environment or saved by an earlier provision is kept, with a warning when
+// it differs. It reports whether c.ImageTag changed.
+func applyBundleImageTag(c *config.Config, m bundle.Manifest) bool {
+	if m.PlatformImageTag == "" {
+		return false // a bundle from an older release: no Cairn images
+	}
+	for _, ref := range m.PlatformImages {
+		if !strings.HasPrefix(ref, strings.TrimRight(c.ImageRegistry, "/")+"/") {
+			color.Yellow("  ⚠ the bundle's Cairn images are from another registry than PLATFORM_IMAGE_REGISTRY=%s (%s); they are pulled from the registry", c.ImageRegistry, ref)
+			return false
+		}
+	}
+	switch {
+	case c.ImageTag == m.PlatformImageTag:
+		return false
+	case c.ImageTagSource == "":
+		color.Cyan("  · PLATFORM_IMAGE_TAG=%s: the Cairn images in the bundle", m.PlatformImageTag)
+		c.ImageTag = m.PlatformImageTag
+		return true
+	default:
+		color.Yellow("  ⚠ PLATFORM_IMAGE_TAG=%s differs from the Cairn images in the bundle (%s); the API and portal images are pulled from %s",
+			c.ImageTag, m.PlatformImageTag, c.ImageRegistry)
+		return false
+	}
 }

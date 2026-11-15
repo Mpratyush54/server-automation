@@ -6,10 +6,11 @@
 //	k3s/k3s, k3s/k3s-install.sh                  pinned binary and installer
 //	helm/helm                                    pinned Helm binary (offline provision)
 //	packages/ubuntu-<release>/<arch>/*.deb,Packages  node packages + dependencies (flat apt repository)
-//	manifest.json                                versions + file list (informational)
+//	manifest.json                                versions, file list and the Cairn image references
 //	SHA256SUMS                                   sha256sum output for every other file
 //	k3s/k3s-airgap-images-<arch>.tar.zst         k3s airgap images
 //	images/platform-images-<arch>.tar.zst        `docker save | zstd` of images.txt
+//	images/cairn-images-<arch>.tar.zst           the Cairn API, portal, profile ingest and synthetics runner images
 //	charts/<name>-<version>.tgz                  helm pull output, one per pinned chart
 //
 // Install must run BEFORE k3s is installed/started: k3s auto-imports every
@@ -70,6 +71,12 @@ func InstallWithOptions(bundlePath string, opts Options) error {
 	if err := verifySidecar(bundlePath); err != nil {
 		return err
 	}
+	if opts.StagingDir != "" {
+		// A manifest staged from an earlier bundle must not describe this one.
+		if err := os.Remove(filepath.Join(opts.StagingDir, ManifestFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("bundle: %w", err)
+		}
+	}
 
 	f, err := os.Open(bundlePath)
 	if err != nil {
@@ -128,6 +135,12 @@ func InstallWithOptions(bundlePath string, opts Options) error {
 		}
 
 		dest := destination(name, opts)
+		if name == "manifest.json" && opts.StagingDir != "" && sums[name] != "" {
+			// Staged only when SHA256SUMS covers it (bundles from older
+			// releases list no manifest): provision and join read the Cairn
+			// image references from it (ReadStagedManifest).
+			dest = filepath.Join(opts.StagingDir, ManifestFile)
+		}
 		if dest == "" {
 			// manifest.json and anything unknown: not installed.
 			if _, err := io.Copy(io.Discard, tr); err != nil {

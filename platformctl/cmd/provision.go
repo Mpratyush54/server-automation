@@ -219,6 +219,17 @@ func runProvision() error {
 		return err
 	}
 
+	// A local bundle carries this release's Cairn images: use their tag before
+	// it is saved (`--bundle auto` fetches the bundle of this release, whose tag
+	// is checked once it is installed).
+	if bundleFlag != "" && bundleFlag != "auto" {
+		if m, err := provisionReadManifest(bundleFlag); err != nil {
+			color.Yellow("  ⚠ could not read the bundle manifest: %v", err)
+		} else {
+			applyBundleImageTag(cfg, m)
+		}
+	}
+
 	// Child steps load their config from this file — it must be written before
 	// any cluster step starts.
 	if err := cfg.SaveEnvFile("/etc/platform/.env"); err != nil {
@@ -269,6 +280,13 @@ func runProvision() error {
 		}
 		sources = bundleSources(provisionStackPaths, runtime.GOARCH)
 		sources.warnMissing()
+		if bundleFlag == "auto" {
+			if m, ok, err := bundle.ReadStagedManifest(provisionStackPaths.Staging); err != nil {
+				color.Yellow("  ⚠ could not read the bundle manifest: %v", err)
+			} else if ok && applyBundleImageTag(cfg, m) {
+				_ = cfg.SaveEnvFile("/etc/platform/.env")
+			}
+		}
 	}
 	// Prerequisites (apt) are only needed by the cluster steps, not by helm or
 	// k3s: install them in the background too, and wait before the cluster steps.

@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -42,8 +43,12 @@ esac
 echo "docker $*" >> "$STUB_LOG"
 case "$1" in
   info) ;;
-  pull) ;;
-  image) echo amd64 ;;
+  pull) case "$*" in *"${STUB_MISSING:-no-such-image}"*) exit 1 ;; esac ;;
+  image)
+    case "$*" in
+      *RepoDigests*) ref="${*: -1}"; printf '%s@sha256:%s\n' "${ref%:*}" "$(printf %s "$ref" | sha256sum | cut -c1-64)" ;;
+      *) echo amd64 ;;
+    esac ;;
   tag) ;;
   save) printf 'saved:%s\n' "$*" ;;
   run)
@@ -191,18 +196,46 @@ func TestBuildBundleScriptHelmAndDigestImages(t *testing.T) {
 	if !strings.Contains(r.log, "docker tag "+pinned+" registry.k8s.io/ingress-nginx/controller:v1.15.1\n") {
 		t.Fatalf("digest-pinned image not tagged:\n%s", r.log)
 	}
-	var save string
+	var saves []string
 	for _, line := range strings.Split(r.log, "\n") {
 		if strings.HasPrefix(line, "docker save ") {
-			save = line
+			saves = append(saves, line)
 		}
 	}
-	if save != "docker save registry.k8s.io/ingress-nginx/controller:v1.15.1 registry.k8s.io/pause:3.10" {
-		t.Fatalf("docker save must use tag references only, got %q", save)
+	if len(saves) != 2 || saves[0] != "docker save registry.k8s.io/ingress-nginx/controller:v1.15.1 registry.k8s.io/pause:3.10" {
+		t.Fatalf("docker save must use tag references only, got %q", saves)
 	}
 	manifest, _ := os.ReadFile(filepath.Join(r.stage, "manifest.json"))
 	if !strings.Contains(string(manifest), pinned) {
 		t.Fatalf("manifest.json must keep the pinned reference:\n%s", manifest)
+	}
+
+	// The Cairn images of the release tag, saved under their tag into their
+	// own archive and pinned by registry digest in the checksummed manifest.
+	var cairn []string
+	for _, repo := range []string{"platform-api", "platform-portal", "platform-profile-ingest", "platform-synthetics-runner"} {
+		cairn = append(cairn, "ghcr.io/mpratyush54/"+repo+":0.0.0-test")
+	}
+	if saves[1] != "docker save "+strings.Join(cairn, " ") {
+		t.Fatalf("Cairn images saved as %q", saves[1])
+	}
+	if _, err := os.Stat(filepath.Join(r.stage, "images", "cairn-images-amd64.tar.zst")); err != nil {
+		t.Fatal(err)
+	}
+	var m Manifest
+	if err := json.Unmarshal(manifest, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.PlatformImageTag != "0.0.0-test" || len(m.PlatformImages) != len(cairn) {
+		t.Fatalf("manifest Cairn images: %+v", m)
+	}
+	for i, ref := range m.PlatformImages {
+		if !strings.HasPrefix(ref, cairn[i]+"@sha256:") || len(ref) != len(cairn[i])+len("@sha256:")+64 {
+			t.Fatalf("%q is not %s pinned by digest", ref, cairn[i])
+		}
+	}
+	if !strings.Contains(string(sums), " manifest.json\n") && !strings.Contains(string(sums), " *manifest.json\n") {
+		t.Fatalf("SHA256SUMS does not cover manifest.json:\n%s", sums)
 	}
 }
 
@@ -213,7 +246,15 @@ func TestBuildBundleScriptRejectsBadHelmChecksum(t *testing.T) {
 	}
 }
 
-// Stack builds (SKIP_PACKAGES=1) carry neither node packages nor Helm.
+// A release bundle without its Cairn images is not built.
+func TestBuildBundleScriptRequiresCairnImages(t *testing.T) {
+	r := runBuildBundle(t, "", "STUB_MISSING=platform-portal:")
+	if r.err == nil || !strings.Contains(r.out, "ghcr.io/mpratyush54/platform-portal:0.0.0-test is not available") {
+		t.Fatalf("want missing image failure, got %v:\n%s", r.err, r.out)
+	}
+}
+
+// Stack builds (SKIP_PACKAGES=1) carry neither node packages, Helm nor the Cairn images.
 func TestBuildBundleScriptStackSkipsHelm(t *testing.T) {
 	r := runBuildBundle(t, "", "SKIP_PACKAGES=1")
 	if r.err != nil {
@@ -227,5 +268,11 @@ func TestBuildBundleScriptStackSkipsHelm(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(filepath.Join(r.stage, "packages")); len(entries) != 0 {
 		t.Fatal("stack build staged packages")
+	}
+	if strings.Contains(r.log, "platform-api") {
+		t.Fatalf("stack build pulled the Cairn images:\n%s", r.log)
+	}
+	if _, err := os.Stat(filepath.Join(r.stage, "images", "cairn-images-amd64.tar.zst")); !os.IsNotExist(err) {
+		t.Fatal("stack build staged the Cairn images")
 	}
 }

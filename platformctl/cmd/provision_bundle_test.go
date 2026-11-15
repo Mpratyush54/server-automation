@@ -3,8 +3,13 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/bundle"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/images"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/stack"
 )
 
@@ -106,5 +111,70 @@ func TestProvisionWithOlderBundleDownloadsWhatItLacks(t *testing.T) {
 	}
 	if len(*calls) != 2 || (*calls)[0] != "apt-online" || (*calls)[1] != "helm-online" {
 		t.Fatalf("calls = %v", *calls)
+	}
+}
+
+func cairnManifest(tag string) bundle.Manifest {
+	return bundle.Manifest{PlatformImageTag: tag, PlatformImages: []string{
+		"ghcr.io/mpratyush54/platform-api:" + tag + "@sha256:" + strings.Repeat("a", 64),
+		"ghcr.io/mpratyush54/platform-portal:" + tag + "@sha256:" + strings.Repeat("b", 64),
+	}}
+}
+
+// A bundle provision uses the bundle's Cairn images unless the operator chose
+// another tag (environment or saved .env), which is kept with a warning.
+func TestApplyBundleImageTag(t *testing.T) {
+	for _, tc := range []struct {
+		name, tag, source, registry string
+		manifest                    bundle.Manifest
+		wantTag                     string
+		wantChanged                 bool
+	}{
+		{name: "default tag replaced", tag: "latest", manifest: cairnManifest("1.4.0"), wantTag: "1.4.0", wantChanged: true},
+		{name: "same tag", tag: "1.4.0", manifest: cairnManifest("1.4.0"), wantTag: "1.4.0"},
+		{name: "explicit tag kept", tag: "1.3.0", source: config.ImageTagFromEnv, manifest: cairnManifest("1.4.0"), wantTag: "1.3.0"},
+		{name: "saved tag kept", tag: "1.3.0", source: config.ImageTagSaved, manifest: cairnManifest("1.4.0"), wantTag: "1.3.0"},
+		{name: "older bundle", tag: "latest", manifest: bundle.Manifest{}, wantTag: "latest"},
+		{name: "other registry", tag: "latest", registry: "registry.example.com/cairn", manifest: cairnManifest("1.4.0"), wantTag: "latest"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			registry := tc.registry
+			if registry == "" {
+				registry = "ghcr.io/mpratyush54"
+			}
+			c := &config.Config{ImageRegistry: registry, ImageTag: tc.tag, ImageTagSource: tc.source}
+			if changed := applyBundleImageTag(c, tc.manifest); changed != tc.wantChanged || c.ImageTag != tc.wantTag {
+				t.Fatalf("changed=%v tag=%q, want %v %q", changed, c.ImageTag, tc.wantChanged, tc.wantTag)
+			}
+		})
+	}
+}
+
+// After import, the Cairn images get their digest names too, so the API and
+// portal resolve by digest (rollbacks, `platformctl update`) without a registry.
+func TestBundleDigestRefsIncludeCairnImages(t *testing.T) {
+	dir := t.TempDir()
+	refs, err := bundleDigestRefs(dir)
+	if err != nil || len(refs) != len(images.DigestPinned()) {
+		t.Fatalf("without a staged manifest: %v %v", refs, err)
+	}
+	m := cairnManifest("1.4.0")
+	data := `{"platformImageTag":"1.4.0","platformImages":["` + strings.Join(m.PlatformImages, `","`) + `"]}`
+	if err := os.WriteFile(filepath.Join(dir, bundle.ManifestFile), []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	refs, err = bundleDigestRefs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range m.PlatformImages {
+		if !slices.Contains(refs, want) {
+			t.Fatalf("%s missing from %v", want, refs)
+		}
+	}
+	for _, ref := range m.PlatformImages {
+		if _, _, ok := images.DigestAlias(ref); !ok {
+			t.Fatalf("%s cannot be named by digest", ref)
+		}
 	}
 }

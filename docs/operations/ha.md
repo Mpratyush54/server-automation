@@ -92,7 +92,7 @@ When you add a machine that was not in `PLATFORM_CLUSTER_NODES`, add its IP on e
 
 ## Join without internet access
 
-A node that can reach only the cluster network can join from the offline bundle of the same platformctl release, for its architecture: `platform-bundle-<version>-<amd64|arm64>.tar.zst`. The release publishes it in parts; join them with `cat platform-bundle-<version>-amd64.tar.zst.part* > platform-bundle-<version>-amd64.tar.zst` and keep the `.sha256` file next to it. The bundle holds the pinned k3s binary and installer, the k3s and platform images (kube-vip included), and the Ubuntu 22.04 and 24.04 packages the node needs (Longhorn prerequisites and host hardening packages, with their dependencies). Bundles from releases without offline join support lack k3s and the packages; join refuses them.
+A node that can reach only the cluster network can join from the offline bundle of the same platformctl release, for its architecture: `platform-bundle-<version>-<amd64|arm64>.tar.zst`. The release publishes it in parts; join them with `cat platform-bundle-<version>-amd64.tar.zst.part* > platform-bundle-<version>-amd64.tar.zst` and keep the `.sha256` file next to it. The bundle holds the pinned k3s binary and installer, the k3s and third-party images (kube-vip included), this release's Cairn images, and the Ubuntu 22.04 and 24.04 packages the node needs (Longhorn prerequisites and host hardening packages, with their dependencies). Bundles from releases without offline join support lack k3s and the packages; join refuses them.
 
 Copy the bundle, its `.sha256` file, the token file (mode `0600`) and, for servers, the join settings file to the new node. On a server:
 

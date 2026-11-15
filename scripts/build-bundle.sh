@@ -9,12 +9,14 @@
 #   k3s/k3s, k3s/k3s-install.sh               pinned binary and installer
 #   helm/helm                                pinned Helm binary (checksum-verified) for offline provision
 #   packages/ubuntu-<release>/<arch>/         flat apt repository (*.deb + Packages) for offline provision and join
-#   SHA256SUMS                               checksums of every file below
-#   manifest.json                            versions + file list
+#   SHA256SUMS                               checksums of every file below and of manifest.json
+#   manifest.json                            versions, file list, Cairn image tag and digests
 #   k3s/k3s-airgap-images-<arch>.tar.zst     k3s airgap images for versions.K3sVersion
 #   images/platform-images-<arch>.tar.zst    docker save | zstd of internal/images/images.txt
 #                                            (digest-pinned images are saved under their tag;
 #                                            platformctl names them by digest after import)
+#   images/cairn-images-<arch>.tar.zst       the Cairn API, portal, profile ingest and synthetics
+#                                            runner images of this release (release bundle only)
 #   charts/<name>-<version>.tgz              helm pull of every chart in `platformctl charts --json`
 #
 # Output: $OUT_DIR (default ./dist) gets the bundle and <bundle>.sha256.
@@ -29,8 +31,12 @@
 #   IMAGE_GROUPS  split the images into N tarballs (default 1), so they can be
 #                 downloaded and imported in parallel (scripts/build-stack.sh)
 #   STAGE_ONLY    copy the staged files to this directory instead of packaging
-#   SKIP_PACKAGES set to 1 to leave out the Ubuntu node packages and the Helm
-#                 binary (stack builds: they ship only in the release bundle)
+#   SKIP_PACKAGES set to 1 to leave out the Ubuntu node packages, the Helm
+#                 binary and the Cairn images (stack builds: they ship only in
+#                 the release bundle)
+#   PLATFORM_IMAGE_REGISTRY  registry of the Cairn images (default ghcr.io/mpratyush54)
+#   PLATFORM_IMAGES_TAG      their tag (default: <version> without a leading "v")
+#   PLATFORM_IMAGES_WAIT     seconds to wait for them to be published (default 0)
 set -euo pipefail
 
 die() { echo "build-bundle: error: $*" >&2; exit 1; }
@@ -260,21 +266,72 @@ else
   done
 fi
 
+# --- Cairn images ----------------------------------------------------------
+# The release bundle carries this release's own images (not the stack: they
+# are tag-dependent), so `provision --bundle` needs no registry. Their tag is
+# the release tag without "v" (docker-build.yml publishes 1.2.3 for v1.2.3),
+# which `provision --bundle` uses as PLATFORM_IMAGE_TAG. Each is pinned by its
+# registry digest in manifest.json (platformImages) and saved under its tag;
+# platformctl adds the digest names after import, as for the images above.
+# docker-build.yml may still be building them when the release starts this
+# job: PLATFORM_IMAGES_WAIT (seconds, default 0) waits for them.
+CAIRN_IMAGES="platform-api platform-portal platform-profile-ingest platform-synthetics-runner"
+PLATFORM_IMAGE_REGISTRY="${PLATFORM_IMAGE_REGISTRY:-ghcr.io/mpratyush54}"
+PLATFORM_IMAGES_TAG="${PLATFORM_IMAGES_TAG:-${VERSION#v}}"
+PLATFORM_IMAGES_WAIT="${PLATFORM_IMAGES_WAIT:-0}"
+platform_tag=""
+platform_pinned=()
+if [[ "${SKIP_PACKAGES:-}" != 1 ]]; then
+  [[ "$PLATFORM_IMAGE_REGISTRY" =~ ^[a-z0-9][a-z0-9._/:-]*$ ]] || die "invalid PLATFORM_IMAGE_REGISTRY '$PLATFORM_IMAGE_REGISTRY'"
+  [[ "$PLATFORM_IMAGES_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$ ]] || die "invalid PLATFORM_IMAGES_TAG '$PLATFORM_IMAGES_TAG'"
+  [[ "$PLATFORM_IMAGES_WAIT" =~ ^[0-9]+$ ]] || die "PLATFORM_IMAGES_WAIT must be a number of seconds"
+  deadline=$((SECONDS + PLATFORM_IMAGES_WAIT))
+  cairn_refs=()
+  for repo in $CAIRN_IMAGES; do
+    ref="$PLATFORM_IMAGE_REGISTRY/$repo:$PLATFORM_IMAGES_TAG"
+    log "docker pull --platform linux/$ARCH $ref"
+    until docker pull --quiet --platform "linux/$ARCH" "$ref" >/dev/null; do
+      ((SECONDS < deadline)) || die "$ref is not available (PLATFORM_IMAGES_WAIT=$PLATFORM_IMAGES_WAIT)"
+      log "waiting for $ref to be published"
+      sleep 30
+    done
+    got_arch="$(docker_inspect_arch "$ref")"
+    [[ "$got_arch" == "$ARCH" ]] || die "$ref resolved to '${got_arch:-nothing}', want $ARCH"
+    # The registry digest of the pulled reference (the multi-arch index).
+    digest="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$ref" |
+      awk -v want="$PLATFORM_IMAGE_REGISTRY/$repo" -F@ '$1 == want {print $2; exit}')"
+    [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || die "no registry digest for $ref"
+    cairn_refs+=("$ref")
+    platform_pinned+=("$ref@$digest")
+  done
+  IMG_FILE="cairn-images-${ARCH}.tar.zst"
+  log "docker save ${#cairn_refs[@]} Cairn images -> $IMG_FILE"
+  docker_save "${cairn_refs[@]}" | zstd -q -f -T0 "-$ZSTD_LEVEL" -o "$STAGE/images/$IMG_FILE"
+  platform_tag="$PLATFORM_IMAGES_TAG"
+fi
+
 # --- manifest + checksums --------------------------------------------------
 (cd "$STAGE" && find k3s images charts packages helm -type f | LC_ALL=C sort) >"$WORK/files.txt"
 printf '%s\n' "${IMAGES[@]}" >"$WORK/images.txt"
+printf '%s\n' "${platform_pinned[@]}" >"$WORK/platform-images.txt"
 jq -n \
   --arg version "$VERSION" --arg arch "$ARCH" \
   --arg k3s "$K3S_VERSION" --arg helm "$HELM_VERSION" \
   --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg platformImageTag "$platform_tag" \
   --slurpfile charts "$WORK/charts.json" \
   --rawfile files "$WORK/files.txt" \
   --rawfile images "$WORK/images.txt" \
+  --rawfile platformImages "$WORK/platform-images.txt" \
   '{version: $version, arch: $arch, k3s: $k3s, helm: $helm, created: $created,
     charts: [$charts[0].charts[] | {name, version}],
     images: ($images | split("\n") | map(select(length > 0))),
+    platformImageTag: $platformImageTag,
+    platformImages: ($platformImages | split("\n") | map(select(length > 0))),
     files: ($files | split("\n") | map(select(length > 0)))}' >"$STAGE/manifest.json"
-(cd "$STAGE" && xargs -d '\n' sha256sum <"$WORK/files.txt" >SHA256SUMS)
+# manifest.json is checksummed too: platformctl reads the Cairn image tag and
+# digests from it.
+(cd "$STAGE" && { cat "$WORK/files.txt"; echo manifest.json; } | xargs -d '\n' sha256sum >SHA256SUMS)
 
 if [[ -n "${STAGE_ONLY:-}" ]]; then
   mkdir -p "$STAGE_ONLY"

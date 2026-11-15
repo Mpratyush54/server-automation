@@ -41,8 +41,14 @@ type Config struct {
 
 	ImageRegistry string
 	ImageTag      string
-	RepoURL       string
-	GitHubToken   string
+
+	// ImageTagSource is where ImageTag came from: ImageTagFromEnv (the
+	// process environment), ImageTagSaved (/etc/platform/.env) or "" (the
+	// release default). `provision --bundle` replaces only the default.
+	ImageTagSource string
+
+	RepoURL     string
+	GitHubToken string
 
 	InstallArgoCD      bool
 	InstallMonitoring  bool
@@ -219,6 +225,7 @@ func Load() *Config {
 		IngressVIPInterface: strings.TrimSpace(os.Getenv("INGRESS_VIP_INTERFACE")),
 		APIVIP:              strings.TrimSpace(os.Getenv("API_VIP")),
 	}
+	c.ImageTagSource = imageTagSource()
 	c.IngressHAMode = resolveIngressHAMode(os.Getenv("INGRESS_HA_MODE"), c.IngressVIP)
 	c.resolveProfile(explicit)
 	_, profileExplicit := explicit["PLATFORM_PROFILE"]
@@ -865,6 +872,24 @@ func profileDefaults(name string) (map[string]bool, error) {
 
 // explicitEnv returns PLATFORM_PROFILE and INSTALL_* values present in the
 // process environment that were not injected by an earlier loadDotEnv.
+// Values of Config.ImageTagSource.
+const (
+	ImageTagFromEnv = "env"
+	ImageTagSaved   = "saved"
+)
+
+func imageTagSource() string {
+	v := os.Getenv("PLATFORM_IMAGE_TAG")
+	switch {
+	case v == "":
+		return ""
+	case dotenvLoaded["PLATFORM_IMAGE_TAG"] == v:
+		return ImageTagSaved
+	default:
+		return ImageTagFromEnv
+	}
+}
+
 func explicitEnv() map[string]string {
 	out := map[string]string{}
 	for _, k := range append([]string{"PLATFORM_PROFILE"}, installKeys...) {

@@ -168,7 +168,8 @@ process environment variables take precedence. See [Host hardening](../guides/ho
 
 Releases include `platform-bundle-<version>-<arch>.tar.zst` and a `.sha256` file. The
 bundle holds the pinned k3s binary, its installer and airgap images, the Helm binary, all
-pinned Helm charts (`platformctl charts --json`), the third-party container images, and the
+pinned Helm charts (`platformctl charts --json`), the third-party container images, the
+release's own Cairn images (API, portal, profile ingest and synthetics runner), and the
 Ubuntu 22.04 and 24.04 packages provision and join install (prerequisites, Longhorn
 prerequisites and host hardening packages, with their dependencies). The bundle is larger
 than GitHub's 2 GiB per-asset limit, so a release carries it as `.tar.zst.part00`,
@@ -191,14 +192,18 @@ With `--bundle <path>`, provision downloads none of the components the bundle ca
   source, as [join](../operations/ha.md#join-without-internet-access) does; it stops when the
   OS is not Ubuntu 22.04 or 24.04 or when a dependency is not in the bundle
 - it installs Helm and k3s from the bundle, with no download fallback for k3s
-- after k3s starts, it adds the digest names of images that charts pin by digest (the
-  ingress-nginx controller and its admission webhook job), so they start without a registry
+- it uses the bundle's Cairn images: when `PLATFORM_IMAGE_TAG` is not set (in the
+  environment or in `/etc/platform/.env` from an earlier provision), provision sets it to the
+  bundle's tag (the release version, such as `1.4.0`); when it is set to another tag, or
+  `PLATFORM_IMAGE_REGISTRY` is not the registry the bundle's images come from, provision
+  prints a warning and those images are pulled from the registry
+- after k3s starts, it adds the digest names of images pinned by digest (the ingress-nginx
+  controller and its admission webhook job, and the Cairn images, whose digests the bundle's
+  manifest records), so they start without a registry
 
-The Cairn API and portal images are not in the bundle: the server needs to reach their
-registry (`PLATFORM_IMAGE_REGISTRY`), or have them imported into containerd first. Your applications'
-images also need a registry the server can reach. A bundle from an older release that lacks
-Helm, k3s or the packages still works; provision downloads the missing parts and prints a
-warning. `--bundle auto` downloads the bundle itself, so it needs internet access. Without
+Your applications' images need a registry the server can reach. A bundle from an older
+release that lacks Helm, k3s, the packages or the Cairn images still works; provision
+downloads the missing parts and prints a warning. `--bundle auto` downloads the bundle itself, so it needs internet access. Without
 `--bundle`, provision works as before: packages from the apt mirrors, Helm from
 `get.helm.sh`, and the [platform stack](../operations/platform-stack.md).
 
@@ -207,6 +212,10 @@ To build a bundle locally (needs curl, jq, helm 3, docker, zstd):
 ```bash
 scripts/build-bundle.sh v1.0.0 amd64   # writes dist/platform-bundle-v1.0.0-amd64.tar.zst
 ```
+
+The Cairn images are taken from `PLATFORM_IMAGE_REGISTRY` (default `ghcr.io/mpratyush54`)
+with the tag `PLATFORM_IMAGES_TAG` (default: the version without its `v`); they must exist
+for that architecture. The platform stack carries none of them, nor the packages or Helm.
 
 ## Day-2 operations
 

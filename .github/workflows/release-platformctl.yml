@@ -164,6 +164,9 @@ jobs:
       - name: Build bundle
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The Cairn images of this tag come from docker-build.yml and
+          # synthetics-runner-image.yml, which run at the same time.
+          PLATFORM_IMAGES_WAIT: "3600"
         run: bash scripts/build-bundle.sh "$TAG" "${{ matrix.arch }}"
 
       - name: Upload workflow artifact
