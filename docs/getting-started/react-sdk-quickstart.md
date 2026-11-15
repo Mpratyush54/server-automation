@@ -2,7 +2,7 @@
 
 Instrument a React (or Next.js) app with HTTP metrics, an error boundary, and a floating bug reporter.
 
-Package: [`@mpratyush54/sdk-react`](https://www.npmjs.com/package/@mpratyush54/sdk-react) · Examples: [`sdk-react/examples`](../../sdk-react/examples)
+Package: [`@mpratyush54/sdk-react`](https://www.npmjs.com/package/@mpratyush54/sdk-react) · Examples: [`sdk-react/examples`](https://github.com/Mpratyush54/server-automation/tree/master/sdk-react/examples)
 
 ## Installation
 
@@ -78,15 +78,15 @@ Calls made with the context `api` Axios client are timed and posted to `/api/sdk
 
 ## Next.js App Router
 
-Wrap a **client** layout (see [`sdk-react/examples/nextjs-app-router.tsx`](../../sdk-react/examples/nextjs-app-router.tsx)) using `NEXT_PUBLIC_PLATFORM_*` env vars.
+Wrap a **client** layout (see [`sdk-react/examples/nextjs-app-router.tsx`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-react/examples/nextjs-app-router.tsx)) using `NEXT_PUBLIC_PLATFORM_*` env vars.
 
 ## More examples
 
 | Path | Topic |
 |------|--------|
-| [`basic-app.tsx`](../../sdk-react/examples/basic-app.tsx) | Provider + hook |
-| [`with-bug-reporter.tsx`](../../sdk-react/examples/with-bug-reporter.tsx) | Boundary + widget |
-| [`examples/sdk-apps/react-web`](../../examples/sdk-apps/react-web) | Deployed demo |
+| [`basic-app.tsx`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-react/examples/basic-app.tsx) | Provider + hook |
+| [`with-bug-reporter.tsx`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-react/examples/with-bug-reporter.tsx) | Boundary + widget |
+| [`examples/sdk-apps/react-web`](https://github.com/Mpratyush54/server-automation/tree/master/examples/sdk-apps/react-web) | Deployed demo |
 
 ## API reference
 

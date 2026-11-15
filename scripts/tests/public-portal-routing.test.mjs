@@ -185,6 +185,24 @@ httpTest('legacy landing URLs redirect to the canonical homepage and preserve qu
   }
 });
 
+httpTest('pages that moved out of the docs root redirect permanently to their new address', async () => {
+  for (const [old, now] of [
+    ['/docs/host-hardening', '/docs/guides/host-hardening'],
+    ['/docs/host-hardening/', '/docs/guides/host-hardening'],
+    ['/docs/namespace-isolation', '/docs/guides/namespace-isolation'],
+    ['/docs/gitops-branches?x=1', '/docs/guides/gitops-branches?x=1'],
+    ['/docs/observability-releases', '/docs/observability/releases'],
+    ['/docs/host-hardening.md', '/docs/guides/host-hardening.md'],
+  ]) {
+    const response = await fetch(baseUrl + old, { redirect: 'manual' });
+    assert.equal(response.status, 301, old);
+    const location = new URL(response.headers.get('location'), baseUrl);
+    assert.equal(location.pathname + location.search, now, old);
+    assert.ok(response.headers.get('content-security-policy'), `${old}: security headers`);
+    assert.ok(rendered.has(now.split('?')[0].replace(/\.md$/, '')), `${now} has no generated page`);
+  }
+});
+
 httpTest('both videos support byte-range seeking without authentication', async () => {
   for (const file of ['platform-overview.mp4', 'platform-short.mp4']) {
     const response = await fetch(`${baseUrl}/media/${file}`, { headers: { Range: 'bytes=0-1023' } });

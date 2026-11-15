@@ -1,6 +1,6 @@
 # PlatformErrorHandler
 
-An Angular `ErrorHandler` implementation that captures unhandled exceptions and forwards them to the Platform bug-report API.
+An Angular `ErrorHandler` implementation that captures unhandled exceptions and forwards them to the Cairn bug-report API.
 
 ---
 

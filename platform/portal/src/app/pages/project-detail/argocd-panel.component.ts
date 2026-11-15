@@ -17,7 +17,7 @@ import { firstValueFrom } from 'rxjs';
         </div>
       </div>
       <div class="argo-body">
-        <p class="argo-note">The server keeps each environment matched to Git and fixes drift on its own. <a href="https://platform.pratyushes.dev/docs/gitops-branches" target="_blank" rel="noopener">Learn more</a></p>
+        <p class="argo-note">The server keeps each environment matched to Git and fixes drift on its own. <a href="https://platform.pratyushes.dev/docs/guides/gitops-branches" target="_blank" rel="noopener">Learn more</a></p>
         <dl class="facts">
           <dt>Git</dt><dd><span class="status" [class.status-ok]="view?.syncStatus === 'Synced'" [class.status-warn]="view?.syncStatus === 'OutOfSync'">{{ syncLabel(view?.syncStatus) }}</span></dd>
           <dt>Health</dt><dd><span class="status" [class.status-ok]="view?.healthStatus === 'Healthy'" [class.status-warn]="view?.healthStatus === 'Progressing'" [class.status-down]="view?.healthStatus === 'Degraded' || view?.healthStatus === 'Missing'">{{ healthLabel(view?.healthStatus) }}</span></dd>

@@ -48,14 +48,14 @@ When created by `PlatformClient.init(databases=["redis"])`, the config comes fro
 `GET /api/sdk/db-credentials?projectId=…&dbTypes=redis&environment=…`, which returns a
 per-project/environment ACL user (`username`, `password`) confined to `keyPrefix`
 (`plat:<project>:<env>:`). The SDK maps `keyPrefix` to `key_prefix`. If the request fails the
-manager uses the environment variables above; if the Platform reports a Redis provisioning
+manager uses the environment variables above; if Cairn reports a Redis provisioning
 error the manager is registered but not connected.
 
 ### Sentinel (ha profile)
 
 When `sentinels` is set (a list of `{"host", "port"}` dicts, `(host, port)` tuples or a
 `host:port,...` string), `connect()` uses `redis.sentinel.Sentinel(...).master_for(master_name)`
-instead of `host`/`port`. On the Platform's `ha` profile the db-credentials response includes
+instead of `host`/`port`. On Cairn's `ha` profile the db-credentials response includes
 `sentinels`, `masterName`, `sentinelUsername` and `sentinelPassword`; the SDK maps them to these
 keys. redis-py rediscovers the master after a failover and turns a `READONLY` reply from a
 demoted master into a reconnect, so no restart is needed. `redis_mgr.mode` is `"sentinel"` or

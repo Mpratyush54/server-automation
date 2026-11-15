@@ -139,4 +139,5 @@ Auto-registers a webhook on GitHub or GitLab for a project. Detects the provider
 
 - [Deployments API](deployments.md)
 - [Projects API](projects.md)
-- [CI/CD Setup Guide](/docs/deployment/ci-cd-setup)
+- [Connect GitHub or GitLab](../../guides/git-providers.md)
+- [Deploy an app](../../getting-started/deploy-your-app.md)

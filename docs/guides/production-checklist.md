@@ -109,7 +109,7 @@ curl -s https://$DOMAIN/api/health
 | Prometheus targets healthy | `kubectl get pods -n monitoring` |
 | Loki receiving logs | Grafana Explore → Loki → run Log query |
 | Pre-built dashboards loaded | Platform Overview, API Performance, Service Health |
-| OIDC SSO works | Log in via Platform credentials |
+| OIDC SSO works | Log in via Cairn credentials |
 
 ---
 
@@ -175,8 +175,8 @@ kubectl get pods -A -o json | jq '.items[] | {name: .metadata.name, ns: .metadat
 
 | Service | CPU Request | CPU Limit | Memory Request | Memory Limit |
 |---|---|---|---|---|
-| Platform API | 100m | 500m | 256Mi | 512Mi |
-| Platform Portal | 50m | 200m | 128Mi | 256Mi |
+| Cairn API | 100m | 500m | 256Mi | 512Mi |
+| Cairn portal | 50m | 200m | 128Mi | 256Mi |
 | PostgreSQL | 500m | 2000m | 1Gi | 4Gi |
 | MongoDB | 500m | 2000m | 1Gi | 4Gi |
 | Redis | 100m | 500m | 256Mi | 512Mi |

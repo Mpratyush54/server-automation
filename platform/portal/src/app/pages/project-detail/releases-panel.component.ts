@@ -11,7 +11,7 @@ import { OperationProgressComponent } from '../../shared/operation-progress.comp
     <section class="card card-flush" aria-label="Release tracking">
       <div class="card-header"><h2>Before and after a deployment</h2></div>
       <div class="rp-body">
-      <p class="rp-hint">See whether a deployment made errors or response times worse. <a href="https://platform.pratyushes.dev/docs/observability-releases" target="_blank" rel="noopener">Learn more</a></p>
+      <p class="rp-hint">See whether a deployment made errors or response times worse. <a href="https://platform.pratyushes.dev/docs/observability/releases" target="_blank" rel="noopener">Learn more</a></p>
       @if (message) { <p class="rp-msg" role="status">{{message}}</p> }
       <div class="rp-controls">
         <div class="form-group"><label for="rp-release">Deployment</label>

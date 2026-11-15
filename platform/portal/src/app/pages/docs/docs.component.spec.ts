@@ -48,8 +48,10 @@ describe('DocsComponent', () => {
     for (const page of ['upgrades', 'telemetry-privacy', 'alerting', 'synthetics', 'database-monitoring', 'postgres-replication', 'status-pages', 'heatmaps', 'frontend-rum', 'observability']) {
       expect(pages.some((p) => p.page === page)).withContext(page).toBeTrue();
     }
-    const root = pages.find((p) => p.page === 'host-hardening')!;
-    expect(component.docUrl(root)).toBe('/docs/host-hardening');
+    const root = pages.find((p) => p.page === 'faq')!;
+    expect(component.docUrl(root)).toBe('/docs/faq');
+    const moved = pages.find((p) => p.page === 'host-hardening')!;
+    expect(component.docUrl(moved)).toBe('/docs/guides/host-hardening');
     expect(pages.every((p) => !component.docUrl(p).includes('//'))).toBeTrue();
   });
 
@@ -60,7 +62,7 @@ describe('DocsComponent', () => {
   it('groups the sidebar by task, starting with Get started', () => {
     expect(component.docSections.map((g) => g.label)).toEqual(['Get started', 'Guides', 'Operations', 'Reference', 'More']);
     const labels = (id: string) => component.docSections.find((g) => g.id === id)!.pages.map((p) => p.label);
-    expect(labels('get-started')).toEqual(['What Platform is', 'Install', 'Your first project', 'Deploy an app']);
+    expect(labels('get-started')).toEqual(['What Cairn is', 'Install', 'Your first project', 'Deploy an app']);
     expect(labels('guides')).toEqual(['Build from Git', 'Databases', 'Backups and restore', 'Monitoring and alerts', 'Run on several servers', 'Security and sign-in', 'AI agents and MCP']);
     expect(labels('operations')).toEqual(['Upgrade', 'Recover', 'Troubleshooting']);
     expect(labels('reference')).toEqual(['CLI', 'API', 'Settings', 'SDKs']);
@@ -76,6 +78,18 @@ describe('DocsComponent', () => {
     expect(navigate).toHaveBeenCalledWith('/docs/troubleshooting/README', { replaceUrl: true });
     params.next(convertToParamMap({ section: 'guides' }));
     expect(navigate).toHaveBeenCalledWith('/docs/guides/databases', { replaceUrl: true });
+  });
+
+  it('sends the old addresses of pages that moved out of the docs root to their new place', () => {
+    for (const [old, now] of [
+      ['host-hardening', '/docs/guides/host-hardening'],
+      ['namespace-isolation', '/docs/guides/namespace-isolation'],
+      ['gitops-branches', '/docs/guides/gitops-branches'],
+      ['observability-releases', '/docs/observability/releases'],
+    ]) {
+      params.next(convertToParamMap({ section: old }));
+      expect(navigate).withContext(old).toHaveBeenCalledWith(now, { replaceUrl: true });
+    }
   });
 
   it('shows a page\'s children only while it or a child is open, with a breadcrumb trail', async () => {

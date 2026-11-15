@@ -6,14 +6,14 @@ Runnable and copy-paste examples for every official SDK, plus the multi-app clus
 
 | SDK | Package | Package examples | Quickstart |
 |-----|---------|------------------|------------|
-| Node.js | `@mpratyush54/sdk-node` | [`sdk-node/examples`](../../sdk-node/examples) | [Node quickstart](node-sdk-quickstart.md) |
-| React | `@mpratyush54/sdk-react` | [`sdk-react/examples`](../../sdk-react/examples) | [React quickstart](react-sdk-quickstart.md) |
-| Angular | `@mpratyush54/sdk-angular` | [`sdk-angular/examples`](../../sdk-angular/examples) | [Angular quickstart](angular-sdk-quickstart.md) |
-| Python | `mpratyush54-sdk` | [`sdk-python/examples`](../../sdk-python/examples) | [Python quickstart](python-sdk-quickstart.md) |
+| Node.js | `@mpratyush54/sdk-node` | [`sdk-node/examples`](https://github.com/Mpratyush54/server-automation/tree/master/sdk-node/examples) | [Node quickstart](node-sdk-quickstart.md) |
+| React | `@mpratyush54/sdk-react` | [`sdk-react/examples`](https://github.com/Mpratyush54/server-automation/tree/master/sdk-react/examples) | [React quickstart](react-sdk-quickstart.md) |
+| Angular | `@mpratyush54/sdk-angular` | [`sdk-angular/examples`](https://github.com/Mpratyush54/server-automation/tree/master/sdk-angular/examples) | [Angular quickstart](angular-sdk-quickstart.md) |
+| Python | `mpratyush54-sdk` | [`sdk-python/examples`](https://github.com/Mpratyush54/server-automation/tree/master/sdk-python/examples) | [Python quickstart](python-sdk-quickstart.md) |
 
 ## Cluster demo (Node + React + Angular)
 
-[`examples/sdk-apps`](../../examples/sdk-apps) registers via the Node SDK, ensures Postgres/Mongo/Redis, serves React and Angular UIs, and ships telemetry to the portal.
+[`examples/sdk-apps`](https://github.com/Mpratyush54/server-automation/tree/master/examples/sdk-apps) registers via the Node SDK, ensures Postgres/Mongo/Redis, serves React and Angular UIs, and ships telemetry to the portal.
 
 ```powershell
 cd examples/sdk-apps

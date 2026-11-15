@@ -21,7 +21,7 @@ etcd datastore, mounted volumes and pod filesystem overlays. When free space
 on `/var` drops below the kubelet eviction threshold (default: 10%), the
 kubelet evicts pods to reclaim space.
 
-The most common causes on a Platform install:
+The most common causes on a Cairn install:
 
 - Old container images that were never cleaned up (previous `latest` tags)
 - Prometheus TSDB grew past its retention window

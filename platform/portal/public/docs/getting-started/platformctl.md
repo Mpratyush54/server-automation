@@ -1,6 +1,6 @@
 # platformctl CLI
 
-`platformctl` installs and manages Platform on an Ubuntu server. This page lists every command and the main options.
+`platformctl` installs and manages Cairn on an Ubuntu server. This page lists every command and the main options.
 
 Run it as root or with `sudo`. It uses pre-built images, so nothing is compiled on the server.
 
@@ -13,11 +13,13 @@ curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/down
 sudo platformctl provision
 ```
 
-Non-interactive (CI / automation):
+Non-interactive (CI / automation). A fresh install needs an off-site backup target (`BACKUP_S3_BUCKET`, with `BACKUP_S3_ACCESS_KEY` and `BACKUP_S3_SECRET_KEY` from the environment) or an explicit `--local-backups`:
 
 ```bash
-sudo DOMAIN=platform.example.com ADMIN_EMAIL=you@example.com platformctl provision --auto
+sudo DOMAIN=platform.example.com ADMIN_EMAIL=you@example.com platformctl provision --auto --local-backups
 ```
+
+To use a bucket instead, see [Install without questions](installation.md#install-without-questions).
 
 `install.sh` puts the `platformctl` binary on `PATH`. Config lives in `/etc/platform/.env` (override with `--config`).
 
@@ -27,18 +29,19 @@ Requirements: Ubuntu 22.04+, sudo, at least 4 GB RAM and 40 GB free disk (8 GB a
 
 | Command | What it does |
 |---|---|
-| `platformctl provision` | Full bootstrap: k3s, databases, ArgoCD, monitoring, Platform API + portal |
+| `platformctl provision` | Full bootstrap: k3s, databases, ArgoCD, monitoring, Cairn API + portal |
 | `platformctl install <component>` | Install or re-run one component (see list below) |
 | `platformctl status` | Health check of cluster components (HA: nodes, roles, etcd health and quorum) |
 | `platformctl seed` | Seed the admin user from `/etc/platform/.env` |
-| `platformctl update` | Pull newest GHCR images and roll Platform deployments |
+| `platformctl update` | Pull newest GHCR images and roll Cairn deployments |
 | `platformctl recover` | Backup host files, persist passwords to disk, then restore API/Postgres login after a broken rotate |
 | `platformctl repair` | Fix HTTPS certificates and single sign-on for the bundled tools; safe to run any time |
 | `platformctl upgrade` | Upgrade to a newer release with a backup, health checks and rollback ([Upgrade](../operations/upgrades.md)) |
 | `platformctl backup` | Copy `/etc/platform/.env` and database secrets to `/var/lib/platform/backups/<timestamp>/` (not encrypted) |
 | `platformctl backup init\|list\|schedule\|restore-test` | Encrypted off-site backups ([Backups and restore](../operations/backups.md)); `backup --all` takes one |
+| `platformctl backup target set\|show\|test` | Change, show or test the off-site backup target ([Backups and restore](../operations/backups.md#choose-where-backups-go)) |
 | `platformctl restore` | Restore an encrypted backup; reads the private key from standard input |
-| `platformctl harden` | Apply or re-apply the host security baseline ([Host hardening](../host-hardening.md)) |
+| `platformctl harden` | Apply or re-apply the host security baseline ([Host hardening](../guides/host-hardening.md)) |
 | `platformctl mfa disable --user <email>` | Remove a user's two-factor sign-in when no admin can ([Recover](../operations/recover.md)) |
 | `platformctl join` | Join this node to an HA cluster as a server or agent ([High availability](../operations/ha.md)) |
 | `platformctl token create\|rotate\|install` | Create, rotate and install cluster join tokens (HA) |
@@ -73,7 +76,7 @@ sudo platformctl install platform
 | `monitoring` | Grafana + Prometheus + Loki |
 | `oauth2-proxy` | OAuth2 proxy |
 | `portainer` | Portainer UI with Platform SSO |
-| `platform` | Platform API + portal |
+| `platform` | Cairn API + portal |
 | `routing` | Ingress routes |
 | `auto-update` | GHCR image updater + CronJob |
 
@@ -86,7 +89,7 @@ sudo platformctl install platform
 
 ## Install speed, logs and timings
 
-`provision` installs cluster components in parallel, respecting dependencies (databases before the Platform API, ingress before routing):
+`provision` installs cluster components in parallel, respecting dependencies (databases before the Cairn API, ingress before routing):
 
 ```bash
 sudo platformctl provision --auto              # default: 4 steps at a time
@@ -134,7 +137,7 @@ saved as `POSTGRES_REPLICATION`); change it later with
 `sudo platformctl postgres replication set sync|async`. See
 [Synchronous or asynchronous database replication](../operations/postgres-replication.md).
 
-The profile also sets the Platform API replica count: `1` on `minimal`, `2` otherwise
+The profile also sets the Cairn API replica count: `1` on `minimal`, `2` otherwise
 (rolling updates with `maxUnavailable: 0` and a PodDisruptionBudget). Override it with
 `API_REPLICAS=<1-10>`; see [Scaling](../deployment/scaling.md#api-replicas-shared-state-and-zero-downtime-deploys).
 
@@ -159,7 +162,7 @@ sudo INGRESS_IP_RATE_LIMIT=5000 INGRESS_IP_BURST=10000 INGRESS_IP_CONNECTIONS=40
 
 Values are saved in `/etc/platform/.env` and re-applied by subsequent
 `platformctl install ingress-nginx` runs. You can also edit the saved file;
-process environment variables take precedence. See [Host hardening](../host-hardening.md#ingress-defaults-and-optional-waf).
+process environment variables take precedence. See [Host hardening](../guides/host-hardening.md#ingress-defaults-and-optional-waf).
 
 ## Offline bundle
 

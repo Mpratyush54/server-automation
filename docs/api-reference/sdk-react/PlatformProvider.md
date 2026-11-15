@@ -1,6 +1,6 @@
 # PlatformProvider
 
-React context provider that makes the Platform API client and configuration available to all child components.
+React context provider that makes the Cairn API client and configuration available to all child components.
 
 ---
 
@@ -35,9 +35,9 @@ interface PlatformProviderProps {
 
 | Prop | Type | Description |
 |---|---|---|
-| `apiBase` | `string` | **Required.** Platform API base URL (e.g. `https://platform.example.com`) |
+| `apiBase` | `string` | **Required.** Cairn API base URL (e.g. `https://platform.example.com`) |
 | `token` | `string` | **Required.** SDK bearer token for API authentication |
-| `projectId` | `string` | **Required.** Your Platform project ID |
+| `projectId` | `string` | **Required.** Your Cairn project ID |
 | `environment?` | `string` | Deployment environment label (defaults to `'production'` in metric reports) |
 | `appName?` | `string` | Optional application name |
 

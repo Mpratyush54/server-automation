@@ -1,6 +1,6 @@
 # Install
 
-This page helps you install Platform on a Linux server and sign in to the portal.
+This page helps you install Cairn on a Linux server and sign in to the portal.
 
 ## Before you start
 
@@ -10,6 +10,7 @@ You need:
 - At least **4 GB of memory and 40 GB of free disk**. 8 GB and 80 GB are better for real use.
 - Ports **80 and 443** open to the internet, and port 6443 free.
 - A domain name that points at the server. No domain yet? Use `<server-ip>.sslip.io`, which works without any DNS setup.
+- **Somewhere to keep backups off the server:** a bucket in S3-compatible storage (AWS S3, Cloudflare R2, Backblaze B2, or MinIO on another machine) and an access key that can list, read, write and delete in it. The installer asks for it, because losing the server must not lose your backups. Just trying Cairn out? You can choose to keep backups on the server instead and add a bucket later.
 
 ## Install in two commands
 
@@ -20,7 +21,7 @@ curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/down
 sudo platformctl provision
 ```
 
-The first command downloads `platformctl`, the Platform installer, and checks it against the release checksums. The second command sets up the whole platform.
+The first command downloads `platformctl`, the Cairn installer, and checks it against the release checksums. The second command sets up the whole platform.
 
 `provision` asks a few questions. Press Enter to accept the value in brackets:
 
@@ -28,9 +29,12 @@ The first command downloads `platformctl`, the Platform installer, and checks it
 |---|---|
 | Domain | Your domain, or the suggested `<server-ip>.sslip.io` |
 | Admin email | The email you will sign in with. It is also used for Let's Encrypt certificates. |
-| Platform display name | Any name. `Platform` is fine. |
+| Platform display name | The name shown in the portal and in emails, for example `Cairn` or your team's name. |
 | Admin password | A password, or press Enter to generate one |
-| Optional components | Argo CD, monitoring, Portainer, HTTPS certificates and automatic updates. Keep the defaults unless you have a reason. |
+| Optional components | Argo CD, monitoring, Portainer, HTTPS certificates, automatic image updates and daily patch upgrades. Keep the defaults unless you have a reason. |
+| Backups | Answer yes, then enter the bucket's endpoint (press Enter for AWS S3), bucket name, region, an optional folder, and the access key and secret. The secret is not shown as you type. Answer no only to keep backups on this server (not recommended). |
+
+Before it installs anything, the installer writes a small test file to the bucket, reads it back and deletes it. If that fails, it tells you why (for example a wrong key or region) and asks again.
 
 The install takes a while. When it finishes, it prints the portal address and your sign-in details:
 
@@ -47,14 +51,33 @@ Login (password required):
 
 Open the portal address in a browser and sign in with the admin email and password. The password is also saved on the server in `/etc/platform/.env` as `ADMIN_PASSWORD`.
 
-Next: [create your first project](first-project.md).
+If you kept backups on the server, the portal and `platformctl status` say **Backups are stored only on this server** until you add a bucket with `sudo platformctl backup target set`. See [Backups and restore](../operations/backups.md#choose-where-backups-go).
+
+## Next steps
+
+- [Create your first project](first-project.md), then [deploy your app](deploy-your-app.md).
+- Connect an AI assistant such as Claude, ChatGPT, Cursor or VS Code: paste `https://<your-domain>/mcp` into it and sign in. See [Connect an AI assistant](../mcp/setup.md).
+- Want Cairn to build images from your source code? Builds are off by default; see [Build from Git](../guides/builds.md) to turn them on.
 
 ## Install without questions
 
-For scripts and CI, pass the answers as environment variables and add `--auto`:
+For scripts and CI, pass the answers as environment variables and add `--auto`. A backup target is required: either give the bucket, or pass `--local-backups` to keep backups only on this server.
+
+Type the backup access key and secret into your shell first and pass them on with `sudo -E`, so they never appear on the command line (anything typed after `sudo` is saved in the system log):
 
 ```bash
-sudo DOMAIN=platform.example.com ADMIN_EMAIL=you@example.com platformctl provision --auto
+read -rp 'Access key ID: ' BACKUP_S3_ACCESS_KEY
+read -rsp 'Secret access key: ' BACKUP_S3_SECRET_KEY; echo
+export BACKUP_S3_ACCESS_KEY BACKUP_S3_SECRET_KEY
+sudo -E env DOMAIN=platform.example.com ADMIN_EMAIL=you@example.com \
+  BACKUP_S3_BUCKET=cairn-backups BACKUP_S3_REGION=us-east-1 \
+  platformctl provision --auto
+```
+
+For Cloudflare R2, Backblaze B2 or MinIO, also set `BACKUP_S3_ENDPOINT`. For a quick test server without a bucket:
+
+```bash
+sudo DOMAIN=platform.example.com ADMIN_EMAIL=you@example.com platformctl provision --auto --local-backups
 ```
 
 A password is generated when you do not set `ADMIN_PASSWORD`. It is printed once and saved in `/etc/platform/.env`.
@@ -87,7 +110,7 @@ On `ha`, `provision` also asks how the database copies writes between servers: `
 
 ### What the installer changes
 
-`provision` installs k3s (a small Kubernetes) and its own container runtime. Docker is not installed. It also applies a host security baseline: firewall, SSH safeguards and automatic security updates. See [Host hardening](../host-hardening.md). To leave host security to yourself, add `--skip-hardening`.
+`provision` installs k3s (a small Kubernetes) and its own container runtime. Docker is not installed. It also applies a host security baseline: firewall, SSH safeguards and automatic security updates. See [Host hardening](../guides/host-hardening.md). To leave host security to yourself, add `--skip-hardening`.
 
 Configuration is saved in `/etc/platform/.env`. Use `--config <path>` to read another file. For a step-by-step view of the install, see [What the installer does](../deployment/bootstrap.md).
 
@@ -98,7 +121,7 @@ Set these as environment variables before `provision`:
 | Variable | Default | What it does |
 |---|---|---|
 | `PLATFORM_PROFILE` | `standard` | Same as `--profile` |
-| `PLATFORM_IMAGE_REGISTRY` | `ghcr.io/mpratyush54` | Where Platform images come from, for example your fork |
+| `PLATFORM_IMAGE_REGISTRY` | `ghcr.io/mpratyush54` | Where Cairn images come from, for example your fork |
 | `PLATFORM_IMAGE_TAG` | The release version | Pins the API and portal image version |
 | `AUTO_UPDATE` | `true` | Keeps images on the newest release tag |
 | `GITHUB_TOKEN` | Not set | Lets the server pull private images from GHCR |
@@ -108,9 +131,9 @@ More options, such as install speed and offline installs, are on the [CLI](platf
 
 ### Windows and macOS
 
-Platform runs on Linux. On Windows or macOS, use an Ubuntu virtual machine or a cloud server.
+Cairn runs on Linux. On Windows or macOS, use an Ubuntu virtual machine or a cloud server.
 
-## Run Platform on your laptop
+## Run Cairn on your laptop
 
 This is for contributors and SDK developers. It runs the API and portal from source, with the databases in Docker.
 

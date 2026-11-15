@@ -1,6 +1,6 @@
 # Database Schema
 
-Platform uses PostgreSQL as its primary database with TypeORM for entity management; the schema is owned by versioned migrations.
+Cairn uses PostgreSQL as its primary database with TypeORM for entity management; the schema is owned by versioned migrations.
 
 ## Entity Relationship Diagram
 
@@ -307,7 +307,7 @@ erDiagram
 
 ## MongoDB Collections
 
-Platform also uses MongoDB (via Mongoose) for high-volume, ephemeral data:
+Cairn also uses MongoDB (via Mongoose) for high-volume, ephemeral data:
 
 | Collection | Schema | Purpose |
 |---|---|---|

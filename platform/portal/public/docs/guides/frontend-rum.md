@@ -117,7 +117,7 @@ setConsent({ replay: true });   // setConsent({ replay: false }) stops recording
 | `snapshotOnNavigation` | `true` | Take a page snapshot after route changes |
 | `endpoint`, `userId`, `flushIntervalMs`, `maxChunkBytes` | — / — / 5000 / 65536 | Upload target, user id, upload interval, chunk size |
 
-The demo apps in `examples/sdk-apps/react-web` and `examples/sdk-apps/angular-web` show replay with a consent banner. See [examples/sdk-apps/README.md](../../examples/sdk-apps/README.md#session-replay-40).
+The demo apps in `examples/sdk-apps/react-web` and `examples/sdk-apps/angular-web` show replay with a consent banner. See [examples/sdk-apps/README.md](https://github.com/Mpratyush54/server-automation/blob/master/examples/sdk-apps/README.md#session-replay-40).
 
 ## Options
 
