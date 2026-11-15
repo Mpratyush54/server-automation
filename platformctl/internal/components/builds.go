@@ -539,7 +539,9 @@ func BuildkitSeccompProfile() string {
 // BuildkitAppArmorProfile follows the container runtime's default profile and
 // additionally allows creating user namespaces and the mounts rootless BuildKit
 // performs inside them (Ubuntu restricts unprivileged user namespaces to
-// profiles that allow them). Host /proc and /sys writes stay denied.
+// profiles that allow them). Host /proc and /sys writes stay denied. ABI 4.0
+// mediates POSIX message queues; runc mounts /dev/mqueue for every RUN step
+// (inside the step's own IPC namespace), so they are allowed explicitly.
 func BuildkitAppArmorProfile() string {
 	return `abi <abi/4.0>,
 include <tunables/global>
@@ -555,6 +557,7 @@ profile ` + BuildkitAppArmorProfileName + ` flags=(attach_disconnected,mediate_d
   remount,
   pivot_root,
   userns,
+  mqueue,
   signal (receive) peer=unconfined,
   signal (send,receive) peer=` + BuildkitAppArmorProfileName + `,
 

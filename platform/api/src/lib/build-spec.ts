@@ -50,7 +50,7 @@ const heavy = { requests: { cpu: '250m', memory: '512Mi', 'ephemeral-storage': '
 const light = { requests: { cpu: '100m', memory: '128Mi', 'ephemeral-storage': '256Mi' }, limits: { cpu: '1', memory: '1Gi', 'ephemeral-storage': '2Gi' } };
 const locked = { allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } };
 /**
- * Rootless BuildKit maps its subordinate user range with the setuid newuidmap/newgidmap helpers,
+ * Rootless BuildKit maps its subordinate user range with the newuidmap/newgidmap helpers (file capabilities cap_setuid/cap_setgid),
  * which need privilege escalation and CAP_SETUID/CAP_SETGID in the bounding set; every other
  * capability is dropped. Inside the user namespace it creates, BuildKit holds only capabilities
  * scoped to that namespace.

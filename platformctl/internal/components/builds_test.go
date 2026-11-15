@@ -338,7 +338,7 @@ func TestBuildkitRuntimeProfilesAreNarrow(t *testing.T) {
 		}
 	}
 	apparmor := BuildkitAppArmorProfile()
-	for _, want := range []string{"profile " + BuildkitAppArmorProfileName, "userns,", "deny /sys/firmware/** rwklx", "deny @{PROC}/sysrq-trigger rwklx"} {
+	for _, want := range []string{"profile " + BuildkitAppArmorProfileName, "userns,", "mqueue,", "deny /sys/firmware/** rwklx", "deny @{PROC}/sysrq-trigger rwklx"} {
 		if !strings.Contains(apparmor, want) {
 			t.Errorf("AppArmor profile missing %s", want)
 		}
