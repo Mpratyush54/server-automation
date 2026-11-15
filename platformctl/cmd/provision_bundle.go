@@ -86,6 +86,7 @@ func installHelm(s hostSources) error {
 // digest once k3s has imported its archives (see images.AliasDigestRefs).
 // Used by `provision --bundle` and `join --bundle`.
 func nameBundleImages() error {
+	waitBundleImports()
 	refs, err := bundleDigestRefs(stack.DefaultPaths.Staging)
 	if err != nil {
 		return err
