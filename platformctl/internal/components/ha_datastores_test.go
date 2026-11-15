@@ -259,3 +259,37 @@ func TestWriteHADatastoreStatus(t *testing.T) {
 		}
 	}
 }
+
+// The 3-node power-off test showed "primary , members 3/3" while there was no
+// primary and one of three pods existed: hello lists configured members.
+func TestMongoStatusLine(t *testing.T) {
+	line, ok := mongoStatusLine("rs0", "", 1, 3)
+	if ok || !strings.Contains(line, "NO PRIMARY") || !strings.Contains(line, "1/3 members ready") || strings.Contains(line, "3/3") {
+		t.Fatalf("no primary not flagged: %q", line)
+	}
+	line, ok = mongoStatusLine("rs0", "mongodb-1:27017", 2, 3)
+	if ok || !strings.HasPrefix(line, "⚠") || !strings.Contains(line, "2/3 members ready") {
+		t.Fatalf("missing member not flagged: %q", line)
+	}
+	line, ok = mongoStatusLine("", "mongodb-1:27017", 3, 3)
+	if !ok || line != "MongoDB replica set rs0: primary mongodb-1:27017, 3/3 members ready" {
+		t.Fatalf("healthy set: %q %v", line, ok)
+	}
+	if line, ok = mongoStatusLine("rs0", "mongodb-1:27017", -1, 3); ok || !strings.Contains(line, "unknown") {
+		t.Fatalf("unknown ready count must not look healthy: %q", line)
+	}
+}
+
+func TestParseReadyOfWant(t *testing.T) {
+	for in, want := range map[string][2]int{"3/3": {3, 3}, "/3": {0, 3}, " 1/3\n": {1, 3}} {
+		r, w, err := parseReadyOfWant(in)
+		if err != nil || r != want[0] || w != want[1] {
+			t.Fatalf("%q: %d %d %v", in, r, w, err)
+		}
+	}
+	for _, bad := range []string{"", "3", "x/3", "1/"} {
+		if _, _, err := parseReadyOfWant(bad); err == nil {
+			t.Fatalf("accepted %q", bad)
+		}
+	}
+}

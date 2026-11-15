@@ -32,7 +32,7 @@ This example uses servers `10.0.0.11`, `10.0.0.12` and `10.0.0.13`, the floating
 
    `PLATFORM_CLUSTER_NODES` tells the firewall which machines may talk to each other. You can also give the private subnet, such as `10.0.0.0/24`.
 
-   `provision` also asks whether database writes wait for a copy on a second server (`sync`, the default: no confirmed write is lost) or not (`async`: faster failover, but the last seconds of writes can be lost). See [Synchronous or asynchronous database replication](postgres-replication.md). Add `--postgres-replication sync|async` to skip the question.
+   `provision` also asks whether database writes wait for a copy on a second server (`sync`, the default: no confirmed write is lost) or not (`async`: writes do not wait, but the last confirmed writes can be lost when a server dies; failover takes about 1 to 2 minutes in both modes). See [Synchronous or asynchronous database replication](postgres-replication.md). Add `--postgres-replication sync|async` to skip the question.
 
 2. Still on the first server, create a join token and a join settings file:
 
@@ -192,6 +192,42 @@ Upgrade one server at a time, servers before agents. Wait until each one is `Rea
 | A joined server does not start after a reboot: `cred/passwd newer than datastore` | See [Server stops after a reboot](#server-stops-after-a-reboot). |
 | Database backups fail: archive is not empty | A new database cluster cannot reuse a used backup location. Set a new bucket or prefix in `POSTGRES_BACKUP_DESTINATION` and keep the old backups. |
 | Applying the database cluster fails: webhook not ready | The installer retries for about two minutes. Check `kubectl -n cnpg-system rollout status deploy/cnpg-cloudnative-pg`, then run it again. |
+| `platformctl status` shows `Longhorn volumes: ... FAULTED` | A volume lost its only copy, often a one-copy `longhorn-single` volume after a server was powered off. Longhorn does not repair it on its own. See [Recover a faulted volume](#recover-a-faulted-volume). |
+| `platformctl status` shows `MongoDB replica set rs0: NO PRIMARY` | Fewer than two of the three members are running, so the set accepts no writes. Check `kubectl -n databases get pods -l app.kubernetes.io/name=mongodb -o wide`; a member stuck because its volume is faulted needs [Recover a faulted volume](#recover-a-faulted-volume). |
+| `platformctl status` warns that the CloudNativePG operator replicas are on one node | Both replicas started on the first server before the others joined. Run `sudo platformctl install longhorn` (it restarts the operator once more servers are Ready) or `kubectl -n cnpg-system rollout restart deploy/cnpg-cloudnative-pg`. Only the operator restarts; the database keeps running. |
+
+### Recover a faulted volume
+
+A Longhorn volume is *faulted* when none of its copies can be used. MongoDB and Redis members use the `longhorn-single` StorageClass, which keeps one copy on the member's server, because the replica set and Sentinel already keep a full copy on each server. If that server is powered off hard, its volume can come back faulted. The member's pod then cannot start, and Longhorn does not repair the volume by itself.
+
+`platformctl status` names each faulted volume with its PVC and namespace:
+
+```text
+  ✗ Longhorn volumes: 11 healthy, 1 FAULTED
+    ✗ Longhorn volume pvc-3f2c... is faulted (PVC datadir-mongodb-0 in namespace databases)
+```
+
+For a MongoDB or Redis member, the other two members still hold all the data. The safe recovery is to give the member an empty volume and let it copy the data from the others. `platformctl` does not do this for you, because it deletes the member's old volume.
+
+1. Make sure the other members are healthy. For MongoDB, `platformctl status` must show a primary and 2 of 3 members ready. For Redis, it must show a master. If they are not, stop here: the faulted volume may hold the only copy.
+2. Delete the PVC and the pod of that member. Use the names from `platformctl status`; for `datadir-mongodb-0`:
+
+   ```bash
+   kubectl -n databases delete pvc datadir-mongodb-0 --wait=false
+   kubectl -n databases delete pod mongodb-0
+   ```
+
+   The StatefulSet creates a new pod and a new, empty volume.
+3. Watch the member come back and copy the data. MongoDB lists the member as `STARTUP2` while it copies, then as `SECONDARY`:
+
+   ```bash
+   kubectl -n databases get pods -l app.kubernetes.io/name=mongodb -w
+   sudo platformctl status
+   ```
+
+4. The old Longhorn volume is removed with its PVC. If it stays in the Longhorn UI as detached and faulted, delete it there.
+
+Do not do this for a volume that is not a replica set or Sentinel member, such as a MinIO drive or an app volume: there the volume may hold data that exists nowhere else. Restore those from a backup instead (see [Back up a cluster](#back-up-a-cluster)).
 
 ## How it works
 
@@ -471,10 +507,13 @@ On `ha`, the bundled MongoDB, Redis and MinIO run replicated on Longhorn volumes
 `platformctl status` on the first server reports:
 
 ```text
-  MongoDB replica set rs0: primary mongodb-1.mongodb-headless.databases.svc.cluster.local:27017, members 3/3
+  MongoDB replica set rs0: primary mongodb-1.mongodb-headless.databases.svc.cluster.local:27017, 3/3 members ready
   Redis Sentinel mymaster: master redis-node-0.redis-headless.databases.svc.cluster.local:6379
   MinIO distributed: 4/4 pods ready
+  Longhorn volumes: 12 healthy
 ```
+
+The MongoDB member count is the number of ready pods. Status shows `NO PRIMARY (writes fail)` in red when the replica set has no primary, and a warning while fewer than three members are ready. The Longhorn line lists every faulted volume with its PVC and namespace; see [Recover a faulted volume](#recover-a-faulted-volume). With external object storage, the MinIO line shows the endpoint instead.
 
 #### MongoDB replica set
 
@@ -589,8 +628,10 @@ using the provider's IAM controls. Use R2's S3 endpoint with region `auto`, or
 GCS's S3 interoperability endpoint with HMAC credentials; native GCS service
 account JSON is not an S3 credential.
 
-External mode skips MinIO, its IAM bootstrap, console/SSO routes and the
-`longhorn-minio` StorageClass. API uploads, replays, backups, telemetry and the
+External mode skips MinIO, its IAM bootstrap, console/SSO routes, the `storage`
+namespace and the `longhorn-minio` StorageClass. If an install already has a
+`storage` namespace from bundled mode, the installer leaves it and its volumes
+alone; it never deletes them. API uploads, replays, backups, telemetry and the
 build registry use the configured endpoint, region and addressing mode. The
 installer does not manage external IAM users, console SSO or lifecycle policies.
 Configure bucket lifecycle, multipart-upload cleanup, retention, versioning and
@@ -651,7 +692,9 @@ Migrate with a backup and restore:
 
 The `ha` profile installs the CloudNativePG (CNPG) operator (chart 0.29.1, operator 1.30.1) in `cnpg-system` and a `postgresql` Cluster in `databases`, using PostgreSQL 18.6 (the CNPG `system` image, which includes pgaudit). Fresh single-node installs run the same operator with one instance. An existing Bitnami release, StatefulSet or Helm-managed `postgresql` Service blocks the install without changing its data; see [Migrating from a single-node install](#migrating-from-a-single-node-install).
 
-**Topology.** Three instances run on separate nodes (required pod anti-affinity). With `POSTGRES_REPLICATION=sync` (the default), one quorum synchronous standby acknowledges writes: no acknowledged write is lost while a synchronous standby is available. `dataDurability: preferred` lets the primary keep accepting writes when no standby is available (initial provisioning on one node, or two database nodes lost); such writes lack the synchronous guarantee. With `POSTGRES_REPLICATION=async`, the `synchronous` stanza is left out: failover after a power-off is faster, but the last seconds of acknowledged writes can be lost. Switch live with `sudo platformctl postgres replication set sync|async` (a configuration reload, no restart). See [Synchronous or asynchronous database replication](postgres-replication.md). On the first server only the primary needs to become Ready; the standbys stay Pending until nodes join. CNPG manages PodDisruptionBudgets for voluntary disruptions.
+**Operator.** On `ha` the operator runs two replicas with leader election, spread over the nodes by a topology spread constraint, and an operator pod on a failed node is replaced after 30 seconds. The other profiles run one replica. The operator is installed while only the first server exists, so both replicas start there; `sudo platformctl install longhorn`, the step you run after the joins, restarts the operator once more servers are Ready so the replicas move apart. Only the operator restarts, not the database. `platformctl status` warns while both replicas are on one node: if that node fails, no operator is left to promote a standby, and in a power-off test with no operator on the surviving servers promotion took about two minutes.
+
+**Topology.** Three instances run on separate nodes (required pod anti-affinity). With `POSTGRES_REPLICATION=sync` (the default), one quorum synchronous standby acknowledges writes: no acknowledged write is lost while a synchronous standby is available. `dataDurability: preferred` lets the primary keep accepting writes when no standby is available (initial provisioning on one node, or two database nodes lost); such writes lack the synchronous guarantee. With `POSTGRES_REPLICATION=async`, the `synchronous` stanza is left out: commits do not wait for a standby, but the last acknowledged writes can be lost when the primary's server fails. Failover after a node loss takes about 1 to 2 minutes in both modes. Switch live with `sudo platformctl postgres replication set sync|async` (a configuration reload, no restart). See [Synchronous or asynchronous database replication](postgres-replication.md). On the first server only the primary needs to become Ready; the standbys stay Pending until nodes join. CNPG manages PodDisruptionBudgets for voluntary disruptions.
 
 **Resources and storage.** Each instance requests 100m CPU and 512Mi, is limited to two CPUs and 1Gi, and has a 10Gi volume. `POSTGRES_HA_STORAGE_CLASS` defaults to `local-path` even though Longhorn is the cluster default: PostgreSQL replicates its own data, and Longhorn replicas underneath would store each write nine times and move WAL fsync across the network. Set a different DNS-1123 StorageClass name before creating the Cluster if needed; changing an existing volume's class needs a storage migration.
 
@@ -719,7 +762,7 @@ kubectl -n databases delete pod "$primary"
 kubectl -n databases get cluster postgresql -w
 ```
 
-Also test powering off the primary's node, with etcd quorum and two database nodes still available. Expect promotion in tens of seconds after the failure is detected. Check that writes resume, acknowledged data remains, and the returning instance rejoins as a standby. Do not remove more nodes while the cluster is degraded.
+Also test powering off the primary's node, with etcd quorum and two database nodes still available. Expect a new primary about 30 seconds after deleting the pod, and about 1 to 2 minutes after powering off the node (Kubernetes has to notice the node is gone first). Check that writes resume, acknowledged data remains, and the returning instance rejoins as a standby. Do not remove more nodes while the cluster is degraded.
 
 #### Migrating from a single-node install
 

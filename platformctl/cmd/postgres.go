@@ -73,10 +73,11 @@ func init() {
 		Long: `Shows how PostgreSQL copies writes to the standbys on the ha profile.
 
   sync   every write waits for a second server: no confirmed write is lost when
-         a server dies, but writes pause during failover (about 2 minutes on
-         a server power-off).
-  async  writes are confirmed right away: failover takes about 70 seconds, but
-         the last few seconds of writes can be lost when a server dies.
+         a server dies. Writes pause during failover: about 1 to 2 minutes
+         when a server is lost.
+  async  writes are confirmed right away, without waiting for a standby.
+         Failover also takes about 1 to 2 minutes when a server is lost, and
+         the last writes confirmed before the failure can be lost.
 
 Explainer: ` + config.PostgresReplicationDocsURL,
 		Args: cobra.NoArgs,
@@ -114,7 +115,7 @@ Explainer: ` + config.PostgresReplicationDocsURL,
 	})
 	postgresCmd.AddCommand(replication)
 	provisionCmd.Flags().StringVar(&postgresReplicationFlag, "postgres-replication", "",
-		"ha profile: sync (default; no data loss, writes pause during failover) or async (faster failover, may lose the last seconds); env POSTGRES_REPLICATION")
+		"ha profile: sync (default; no confirmed write lost, writes pause about 1-2 minutes when a server is lost) or async (writes do not wait for a standby; the last confirmed writes can be lost); env POSTGRES_REPLICATION")
 
 	migrate := &cobra.Command{
 		Use:   "migrate",

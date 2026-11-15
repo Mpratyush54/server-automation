@@ -190,3 +190,54 @@ func TestExternalTelemetryAddressingKeys(t *testing.T) {
 		t.Fatal("bundled values changed")
 	}
 }
+
+// A wrong secret key: HEAD answers a bare 403, PUT answers SignatureDoesNotMatch.
+// Both messages must name object storage (not the backup target), point at
+// the keys and never contain them.
+func TestPrepareObjectStorageWrongSecretNamesObjectStorage(t *testing.T) {
+	for name, handler := range map[string]http.HandlerFunc{
+		"head 403": func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(403) },
+		"signature": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "HEAD" {
+				w.WriteHeader(200)
+				return
+			}
+			w.WriteHeader(403)
+			io.WriteString(w, `<Error><Code>SignatureDoesNotMatch</Code><Message>The request signature we calculated does not match</Message></Error>`)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(handler)
+			defer server.Close()
+			c := externalObjectConfig()
+			c.ObjectStorage.Endpoint = server.URL
+			c.ObjectStorage.ForcePathStyle = true
+			err := PrepareObjectStorage(c, map[string]string{"OBJECT_STORAGE_ACCESS_KEY": "AKIDEXAMPLEACCESS", "OBJECT_STORAGE_SECRET_KEY": "wrong-secret-value"})
+			if err == nil {
+				t.Fatal("accepted a wrong secret key")
+			}
+			msg := err.Error()
+			if strings.Count(msg, "object storage") < 2 {
+				t.Errorf("the S3 error does not name object storage: %q", msg)
+			}
+			for _, want := range []string{"external object storage", "access key", "secret key"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("missing %q in %q", want, msg)
+				}
+			}
+			for _, bad := range []string{"backup target", "wrong-secret-value", "AKIDEXAMPLEACCESS"} {
+				if strings.Contains(msg, bad) {
+					t.Errorf("message contains %q: %q", bad, msg)
+				}
+			}
+		})
+	}
+}
+
+func TestPrepareObjectStorageMissingKeys(t *testing.T) {
+	c := externalObjectConfig()
+	err := PrepareObjectStorage(c, map[string]string{"OBJECT_STORAGE_ACCESS_KEY": "a"})
+	if err == nil || !strings.Contains(err.Error(), "external object storage needs an access key and a secret key") {
+		t.Fatal(err)
+	}
+}

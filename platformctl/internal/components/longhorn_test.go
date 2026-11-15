@@ -211,3 +211,37 @@ func TestLonghornMonitoringManifest(t *testing.T) {
 		}
 	}
 }
+
+func TestSummarizeLonghornVolumesFlagsFaulted(t *testing.T) {
+	raw := `{"items":[
+	 {"metadata":{"name":"pvc-aaa"},"status":{"state":"attached","robustness":"healthy","kubernetesStatus":{"pvcName":"datadir-mongodb-1","namespace":"databases"}}},
+	 {"metadata":{"name":"pvc-bbb"},"status":{"state":"attached","robustness":"degraded","kubernetesStatus":{"pvcName":"minio-0","namespace":"storage"}}},
+	 {"metadata":{"name":"pvc-ccc"},"status":{"state":"detached","robustness":"faulted","kubernetesStatus":{"pvcName":"datadir-mongodb-0","namespace":"databases"}}},
+	 {"metadata":{"name":"pvc-ddd"},"status":{"state":"detached","robustness":"unknown"}}]}`
+	sum, err := summarizeLonghornVolumes([]byte(raw))
+	if err != nil || sum.Total != 4 || sum.Healthy != 1 || sum.Degraded != 1 || len(sum.Faulted) != 1 {
+		t.Fatalf("%+v %v", sum, err)
+	}
+	if sum.Faulted[0] != "Longhorn volume pvc-ccc is faulted (PVC datadir-mongodb-0 in namespace databases)" {
+		t.Fatalf("%q", sum.Faulted[0])
+	}
+	var b strings.Builder
+	writeLonghornVolumeStatus(&b, sum)
+	out := b.String()
+	for _, want := range []string{"1 healthy, 1 degraded, 1 FAULTED, 1 detached or unknown", "pvc-ccc", "datadir-mongodb-0", "databases", LonghornFaultedVolumeDocsURL} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	if _, err := summarizeLonghornVolumes([]byte("nope")); err == nil {
+		t.Fatal("accepted bad JSON")
+	}
+}
+
+func TestWriteLonghornVolumeStatusHealthy(t *testing.T) {
+	var b strings.Builder
+	writeLonghornVolumeStatus(&b, longhornVolumeSummary{Total: 2, Healthy: 2})
+	if out := b.String(); out != "  Longhorn volumes: 2 healthy\n" {
+		t.Fatalf("%q", out)
+	}
+}

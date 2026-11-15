@@ -33,12 +33,16 @@ func PrepareObjectStorage(c *config.Config, credentials map[string]string) error
 	if !c.ObjectStorageExternal() {
 		return nil
 	}
+	if credentials["OBJECT_STORAGE_ACCESS_KEY"] == "" || credentials["OBJECT_STORAGE_SECRET_KEY"] == "" {
+		return fmt.Errorf("external object storage needs an access key and a secret key")
+	}
 	for _, purpose := range config.ObjectStoragePurposes {
 		t := backup.S3Target{Endpoint: c.ObjectStorage.Endpoint, Region: c.ObjectStorage.Region, Bucket: c.ObjectBucket(purpose), AccessKey: credentials["OBJECT_STORAGE_ACCESS_KEY"], SecretKey: credentials["OBJECT_STORAGE_SECRET_KEY"]}
 		if err := t.Validate(); err != nil {
 			return fmt.Errorf("external object storage: %w", err)
 		}
 		client := backup.NewS3Client(t)
+		client.Label = backup.ObjectStorageLabel
 		client.VirtualHostedStyle = !c.ObjectStorage.ForcePathStyle
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		err := client.EnsureBucket(ctx, t.Bucket)
@@ -47,7 +51,7 @@ func PrepareObjectStorage(c *config.Config, credentials map[string]string) error
 		}
 		cancel()
 		if err != nil {
-			return fmt.Errorf("external object storage (%s): %w", purpose, err)
+			return fmt.Errorf("external object storage check failed for the %s bucket: %w", purpose, err)
 		}
 	}
 	return nil

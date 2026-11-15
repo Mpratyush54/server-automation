@@ -260,8 +260,21 @@ const unsignedPayload = "UNSIGNED-PAYLOAD"
 type S3Client struct {
 	Target             S3Target
 	VirtualHostedStyle bool
-	HTTP               *http.Client
-	Now                func() time.Time
+	// Label names the store in error messages; empty means "the backup
+	// target". External object storage (#176) sets ObjectStorageLabel.
+	Label string
+	HTTP  *http.Client
+	Now   func() time.Time
+}
+
+// ObjectStorageLabel is the S3Client.Label of the external object storage check.
+const ObjectStorageLabel = "object storage"
+
+func (c *S3Client) label() string {
+	if c.Label != "" {
+		return c.Label
+	}
+	return "the backup target"
 }
 
 func NewS3Client(t S3Target) *S3Client {
@@ -470,29 +483,33 @@ func (c *S3Client) doRequest(ctx context.Context, client *http.Client, method, b
 	return client.Do(req)
 }
 
-// s3Error turns a failed response into a plain message without credentials.
+// s3Error turns a failed response into a plain message without credentials:
+// it names the endpoint, bucket and prefix, never the keys.
 func (c *S3Client) s3Error(step string, status int, body []byte, err error) error {
-	where := c.Target.Describe()
+	name := c.label()
+	at := name + " " + c.Target.Describe()
 	if err != nil {
 		var dns *net.DNSError
 		if errors.As(err, &dns) {
-			return fmt.Errorf("cannot %s the backup target: the address %s was not found (check the endpoint)", step, c.Target.EndpointHost())
+			return fmt.Errorf("cannot %s %s: the address %s was not found (check the endpoint)", step, name, c.Target.EndpointHost())
 		}
-		return fmt.Errorf("cannot %s the backup target: %s did not answer (check the endpoint and the server's outbound network)", step, c.Target.EndpointHost())
+		return fmt.Errorf("cannot %s %s: %s did not answer (check the endpoint and the server's outbound network)", step, name, c.Target.EndpointHost())
 	}
 	var e struct{ Code, Message string }
 	_ = xml.Unmarshal(body, &e)
 	switch {
 	case e.Code == "NoSuchKey" || (status == 404 && e.Code == "" && strings.HasPrefix(step, "read back")):
-		return fmt.Errorf("cannot %s the backup target %s: the object does not exist", step, where)
+		return fmt.Errorf("cannot %s %s: the object does not exist", step, at)
 	case e.Code == "NoSuchBucket" || status == 404:
-		return fmt.Errorf("cannot %s the backup target: bucket %q does not exist at %s", step, c.Target.Bucket, c.Target.EndpointHost())
+		return fmt.Errorf("cannot %s %s: bucket %q does not exist at %s", step, name, c.Target.Bucket, c.Target.EndpointHost())
 	case e.Code == "InvalidAccessKeyId" || e.Code == "SignatureDoesNotMatch":
-		return fmt.Errorf("cannot %s the backup target %s: the access key or secret key is wrong", step, where)
+		return fmt.Errorf("cannot %s %s: the access key or secret key is wrong", step, at)
 	case e.Code == "AuthorizationHeaderMalformed" || e.Code == "PermanentRedirect" || status == 301:
-		return fmt.Errorf("cannot %s the backup target %s: wrong region (set the bucket's region)", step, where)
+		return fmt.Errorf("cannot %s %s: wrong region (set the bucket's region)", step, at)
 	case status == 403:
-		return fmt.Errorf("cannot %s the backup target %s: access denied (the key needs list, read, write and delete permission on the bucket)", step, where)
+		// A HEAD request has no error body, so a wrong secret key and a key
+		// without permission both arrive as a bare 403.
+		return fmt.Errorf("cannot %s %s: access denied. Check the access key and secret key, and that the key may list, read, write and delete objects in the bucket", step, at)
 	}
 	code := e.Code
 	if code == "" {
@@ -501,7 +518,7 @@ func (c *S3Client) s3Error(step string, status int, body []byte, err error) erro
 	if msg := strings.TrimSpace(e.Message); msg != "" && len(msg) <= 200 {
 		code += " (" + msg + ")"
 	}
-	return fmt.Errorf("cannot %s the backup target %s: the store answered %d %s", step, where, status, code)
+	return fmt.Errorf("cannot %s %s: the store answered %d %s", step, at, status, code)
 }
 
 // Probe writes, reads back and deletes a small object under the prefix. It
@@ -521,7 +538,7 @@ func (c *S3Client) Probe(ctx context.Context) error {
 		return c.s3Error("read back from", st, b, err)
 	}
 	if !bytes.Equal(b, payload) {
-		return fmt.Errorf("the backup target %s returned different data than was written", c.Target.Describe())
+		return fmt.Errorf("%s %s returned different data than was written", c.label(), c.Target.Describe())
 	}
 	if st, b, err := c.do(ctx, http.MethodDelete, key, nil, nil); err != nil || st/100 != 2 {
 		return c.s3Error("delete from", st, b, err)

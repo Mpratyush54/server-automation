@@ -102,3 +102,19 @@ func TestPostgresReplicationCommands(t *testing.T) {
 	}
 	var _ components.PGReplicationOps = pgReplicationOps()
 }
+
+func TestPostgresReplicationHelpFigures(t *testing.T) {
+	replication, _, err := rootCmd.Find([]string{"postgres", "replication"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage := provisionCmd.Flags().Lookup("postgres-replication").Usage
+	for _, text := range []string{replication.Long, usage} {
+		if strings.Contains(text, "70 seconds") || strings.Contains(text, "faster failover") {
+			t.Errorf("stale failover claim: %q", text)
+		}
+		if !strings.Contains(text, "1-2 minutes") && !strings.Contains(text, "1 to 2 minutes") {
+			t.Errorf("no failover figure: %q", text)
+		}
+	}
+}

@@ -95,3 +95,22 @@ func TestPromptPostgresReplication(t *testing.T) {
 		}
 	}
 }
+
+// Measured on 3 servers: a node loss took 63 s (sync) to about 127 s (async)
+// to promote, and async lost an acknowledged write. The text must not promise
+// a faster async failover.
+func TestPostgresReplicationChoicesHonestFigures(t *testing.T) {
+	var b bytes.Buffer
+	PostgresReplicationChoices(&b)
+	out := b.String()
+	for _, want := range []string{"1 to 2 minutes", "can be lost", PostgresReplicationDocsURL} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	for _, bad := range []string{"70 seconds", "faster", "last few seconds"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("stale claim %q in:\n%s", bad, out)
+		}
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/fatih/color"
@@ -153,20 +154,72 @@ func writeHADatastoreStatus(w io.Writer, mongoLine, redisLine, minioLine string,
 	}
 }
 
+// parseReadyOfWant parses "<ready>/<want>" from a StatefulSet jsonpath; an
+// empty ready count (no pod ready yet) is 0.
+func parseReadyOfWant(out string) (ready, want int, err error) {
+	r, w, ok := strings.Cut(strings.TrimSpace(out), "/")
+	if !ok {
+		return 0, 0, fmt.Errorf("unexpected StatefulSet status %q", strings.TrimSpace(out))
+	}
+	if strings.TrimSpace(r) != "" {
+		if ready, err = strconv.Atoi(strings.TrimSpace(r)); err != nil {
+			return 0, 0, fmt.Errorf("unexpected ready count %q", r)
+		}
+	}
+	if want, err = strconv.Atoi(strings.TrimSpace(w)); err != nil {
+		return 0, 0, fmt.Errorf("unexpected replica count %q", w)
+	}
+	return ready, want, nil
+}
+
+// mongoStatusLine formats the MongoDB replica set line. ready and want are
+// the StatefulSet's ready and desired pods (ready < 0: unknown). db.hello()
+// lists the configured members whether or not they run, so it cannot tell
+// how many are healthy; the ready pods can. An empty primary means the set
+// accepts no writes. ok is false when the line must be shown as a problem.
+func mongoStatusLine(setName, primary string, ready, want int) (line string, ok bool) {
+	if setName == "" {
+		setName = MongoReplicaSetName
+	}
+	members := fmt.Sprintf("%d/%d members ready", ready, want)
+	if ready < 0 {
+		members = "ready members unknown"
+	}
+	if strings.TrimSpace(primary) == "" {
+		return fmt.Sprintf("✗ MongoDB replica set %s: NO PRIMARY (writes fail), %s", setName, members), false
+	}
+	if ready < 0 || ready < want {
+		return fmt.Sprintf("⚠ MongoDB replica set %s: primary %s, %s", setName, primary, members), false
+	}
+	return fmt.Sprintf("MongoDB replica set %s: primary %s, %s", setName, primary, members), true
+}
+
 // PrintHADatastoreStatus prints Mongo/Redis/MinIO HA status; failures are warnings only.
-func PrintHADatastoreStatus(w io.Writer) {
+func PrintHADatastoreStatus(w io.Writer, cfg *config.Config) {
 	var mongoLine, redisLine, minioLine string
 	var warnings []string
 
+	ready, want := -1, MongoReplicaCount
+	if out, err := shell.Output("kubectl", "-n", "databases", "get", "sts", "mongodb",
+		"-o", "jsonpath={.status.readyReplicas}/{.spec.replicas}"); err == nil {
+		if r, n, perr := parseReadyOfWant(out); perr == nil {
+			ready, want = r, n
+		}
+	}
 	if out, err := execFirstMember("mongodb", MongoReplicaCount, "mongodb", "mongosh", "--quiet", "--eval", "JSON.stringify(db.hello())"); err != nil {
-		warnings = append(warnings, color.YellowString("⚠ MongoDB replica set status unavailable: %v", err))
-	} else if primary, hosts, setName, err := parseMongoHello(out); err != nil {
+		warnings = append(warnings, color.RedString("✗ MongoDB replica set status unavailable (%d/%d members ready): %v", max(ready, 0), want, err))
+	} else if primary, _, setName, err := parseMongoHello(out); err != nil {
 		warnings = append(warnings, color.YellowString("⚠ MongoDB replica set status unavailable: %v", err))
 	} else {
-		if setName == "" {
-			setName = MongoReplicaSetName
+		line, ok := mongoStatusLine(setName, primary, ready, want)
+		switch {
+		case ok:
+			mongoLine = line
+		case strings.HasPrefix(line, "✗"):
+			mongoLine = color.RedString("%s", line)
+		default:
+			mongoLine = color.YellowString("%s", line)
 		}
-		mongoLine = fmt.Sprintf("MongoDB replica set %s: primary %s, members %d/%d", setName, primary, len(hosts), MongoReplicaCount)
 	}
 
 	sentinelEval := `pw() { local v="${!1:-}" f="${1}_FILE"; if [ -z "$v" ] && [ -n "${!f:-}" ]; then v=$(cat "${!f}"); fi; printf "%s" "$v"; }; export REDISCLI_AUTH="$(pw REDIS_PASSWORD)"; redis-cli -p 26379 SENTINEL get-master-addr-by-name mymaster`
@@ -178,7 +231,9 @@ func PrintHADatastoreStatus(w io.Writer) {
 		redisLine = fmt.Sprintf("Redis Sentinel %s: master %s", RedisSentinelMaster, master)
 	}
 
-	if out, err := shell.Output("kubectl", "-n", "storage", "get", "sts", "minio",
+	if cfg.ObjectStorageExternal() {
+		minioLine = "Object storage: external (" + cfg.ObjectStorage.Endpoint + ")"
+	} else if out, err := shell.Output("kubectl", "-n", "storage", "get", "sts", "minio",
 		"-o", "jsonpath={.status.readyReplicas}/{.spec.replicas}"); err != nil {
 		warnings = append(warnings, color.YellowString("⚠ MinIO distributed status unavailable: %v", err))
 	} else {

@@ -13,8 +13,9 @@ const (
 	// server failure loses no acknowledged write. Writes pause until failover
 	// finishes when the primary's server fails.
 	PostgresReplicationSync = "sync"
-	// PostgresReplicationAsync commits on the primary alone: faster failover,
-	// but the last seconds of writes can be lost when the primary's server fails.
+	// PostgresReplicationAsync commits on the primary alone: writes do not
+	// wait for a standby, but the last acknowledged writes can be lost when
+	// the primary's server fails. Failover is not faster than with sync.
 	PostgresReplicationAsync = "async"
 )
 
@@ -59,9 +60,11 @@ func (c *Config) loadPostgresReplication() {
 // and by `platformctl postgres replication show`.
 func PostgresReplicationChoices(w io.Writer) {
 	fmt.Fprintln(w, "    sync  (default) Every write is copied to a second server before it is confirmed.")
-	fmt.Fprintln(w, "                    No confirmed write is lost if a server dies; writes pause about 2 minutes during failover.")
+	fmt.Fprintln(w, "                    No confirmed write is lost if a server dies. Writes pause during failover:")
+	fmt.Fprintln(w, "                    about 1 to 2 minutes when a server is lost.")
 	fmt.Fprintln(w, "    async           Writes are confirmed right away and copied a moment later.")
-	fmt.Fprintln(w, "                    Failover takes about 70 seconds, but the last few seconds of writes can be lost.")
+	fmt.Fprintln(w, "                    Failover also takes about 1 to 2 minutes when a server is lost, and the")
+	fmt.Fprintln(w, "                    last writes confirmed before the failure can be lost.")
 	fmt.Fprintf(w, "    Which one to pick: %s\n", PostgresReplicationDocsURL)
 }
 

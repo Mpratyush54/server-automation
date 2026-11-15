@@ -475,6 +475,9 @@ func installPostgresCNPG(cfg *config.Config) error {
 	if err = shell.RunBash(cnpgHelmScript(f.Name())); err != nil {
 		return fmt.Errorf("install CloudNativePG: %w", err)
 	}
+	if err = SpreadCNPGOperator(cfg); err != nil {
+		color.Yellow("  ⚠ %v", err)
+	}
 	if err = applyTelemetryJSON(map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]string{"name": "databases"}}); err != nil {
 		return err
 	}
@@ -856,7 +859,7 @@ func pgReplicationSummary(mode string) string {
 	case config.PostgresReplicationSync:
 		return "sync (each write waits for a standby; no confirmed write lost when a server fails)"
 	case config.PostgresReplicationAsync:
-		return "async (fastest failover; the last seconds of writes can be lost when a server fails)"
+		return "async (writes do not wait for a standby; the last confirmed writes can be lost when a server fails)"
 	}
 	return "single instance (no standbys)"
 }

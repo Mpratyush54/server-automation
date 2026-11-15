@@ -153,3 +153,22 @@ func TestDaemonSetReadyCheck(t *testing.T) {
 		t.Fatalf("unexpected check: %s", c)
 	}
 }
+
+func TestPlatformNamespacesSkipStorageWithExternalObjectStorage(t *testing.T) {
+	has := func(list []string, ns string) bool {
+		for _, n := range list {
+			if n == ns {
+				return true
+			}
+		}
+		return false
+	}
+	bundled := platformNamespaces(&config.Config{Profile: config.ProfileHA})
+	if !has(bundled, "storage") || !has(bundled, "platform") || !has(bundled, "databases") {
+		t.Fatalf("bundled: %v", bundled)
+	}
+	external := platformNamespaces(&config.Config{Profile: config.ProfileHA, ObjectStorage: config.ObjectStorageSettings{Mode: "external"}})
+	if has(external, "storage") || !has(external, "platform") || len(external) != len(bundled)-1 {
+		t.Fatalf("external: %v", external)
+	}
+}

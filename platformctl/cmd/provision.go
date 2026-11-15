@@ -334,7 +334,7 @@ func runProvision() error {
 	importImagesFromStack(stackDone)
 
 	// ── Wave 1: cluster basics.
-	if err := hostStep("namespaces", components.Namespace); err != nil {
+	if err := hostStep("namespaces", func() error { return components.Namespace(cfg) }); err != nil {
 		return err
 	}
 	// Target credentials (held in memory since the prompt) go to Kubernetes

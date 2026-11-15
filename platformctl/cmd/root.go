@@ -68,10 +68,12 @@ var statusCmd = &cobra.Command{
 				color.Red("  ✗ cluster status: %v", err)
 			}
 			if joinedRole() != "server" {
-				components.PrintHADatastoreStatus(os.Stdout)
+				components.PrintHADatastoreStatus(os.Stdout, cfg)
+				components.PrintLonghornVolumeStatus(os.Stdout)
 			}
 		}
 		if components.PostgresUsesCNPG(cfg) {
+			components.PrintCNPGOperatorStatus(os.Stdout, cfg)
 			components.PrintPostgresHAStatus(os.Stdout)
 		} else {
 			color.Yellow("  PostgreSQL: Bitnami release (no point-in-time recovery); move it to CloudNativePG: sudo platformctl postgres migrate --confirm")

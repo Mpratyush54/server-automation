@@ -17,29 +17,33 @@ The question is only about timing. When your app saves something, when does the 
 
 ## What happens when a server dies
 
-These numbers come from tests on three cloud servers, where we powered off one server while an app kept writing.
+These numbers come from tests on three cloud servers, where we stopped the database or powered off one server while an app kept writing.
 
-**With sync**, no confirmed write is lost. The standby that is promoted already has every write the old primary confirmed. The cost is a pause: after a server is powered off, writes stop for about **2 to 2.5 minutes** until the failover is complete. Anything that saves data during that time waits or fails and has to be retried.
+**In both modes, losing a server interrupts writes for about 1 to 2 minutes.** Kubernetes first has to notice that the server is gone, and only then is a standby promoted. Anything that saves data during that time waits or fails and has to be retried. Async does not make this failover faster.
 
-**With async**, the failover is faster: about **70 seconds**, and writes keep flowing on the remaining servers. The cost is that the last few seconds of writes confirmed before the failure can be lost, because they had not reached a standby yet. Your app was told "saved", but after the failover those rows are not there.
+**With sync**, no confirmed write is lost. The standby that is promoted already has every write the old primary confirmed.
 
-When only the database process crashes or restarts, and the server stays up, failover takes about **24 seconds** in both modes.
+**With async**, the last writes confirmed before the failure can be lost, because they had not reached a standby yet. Your app was told "saved", but after the failover those rows are not there. In our power-off test with async, one confirmed write was lost.
+
+When only the database process crashes or restarts, and the server stays up, failover is quicker: about **30 seconds**.
 
 | | Sync (default) | Async |
 |---|---|---|
-| A confirmed write is lost when a server dies | Never | The last few seconds can be |
-| Writes pause after a server is powered off | About 2 to 2.5 minutes | About 70 seconds |
-| Failover after a database crash (server stays up) | About 24 seconds | About 24 seconds |
+| A confirmed write is lost when a server dies | Never | The last writes before the failure can be |
+| Writes pause after a server is lost | About 1 to 2 minutes | About 1 to 2 minutes |
+| Writes pause after a database crash (server stays up) | About 30 seconds | About 30 seconds |
 | Speed of each write in normal operation | A little slower: waits for the network round trip to another server | Fastest |
+
+Measured on the test cluster: with sync, killing the primary database process led to a new primary after 26.5 seconds and writes resumed after 35.8 seconds; powering off the primary's server led to a new primary after 62.9 seconds and writes resumed after 71.3 seconds. With async, powering off the primary's server took about 127 seconds, in a test where the database operator was running on the server that was powered off. Your times depend on your servers and network.
 
 ## Which one to choose
 
-Ask yourself: if the last few seconds of writes vanished, could you get them back?
+Ask yourself: if the last writes before a server failure vanished, could you get them back?
 
 - **Choose sync** for money, orders, payments, sign-ups, messages, and anything else you cannot re-create. This is the default.
-- **Choose async** for caches, analytics, logs, and apps that already retry their writes or can rebuild their data. Here a shorter interruption matters more than the last few seconds.
+- **Choose async** for caches, analytics, logs, and apps that already retry their writes or can rebuild their data, when the speed of each write matters more than the last writes before a failure. Async does not shorten the interruption when a server is lost.
 
-If you are not sure, keep sync. A longer pause is visible and recovers by itself. A lost order is often noticed only when a customer complains.
+If you are not sure, keep sync. A pause is visible and recovers by itself. A lost order is often noticed only when a customer complains.
 
 The choice applies to the whole database server: the platform's own data and every project database on it use the same mode.
 
@@ -51,9 +55,11 @@ On the first server, `platformctl provision --profile ha` asks:
   ■ PostgreSQL replication
     The database keeps a copy on each of the three servers. Choose how writes are copied:
     sync  (default) Every write is copied to a second server before it is confirmed.
-                    No confirmed write is lost if a server dies; writes pause about 2 minutes during failover.
+                    No confirmed write is lost if a server dies. Writes pause during failover:
+                    about 1 to 2 minutes when a server is lost.
     async           Writes are confirmed right away and copied a moment later.
-                    Failover takes about 70 seconds, but the last few seconds of writes can be lost.
+                    Failover also takes about 1 to 2 minutes when a server is lost, and the
+                    last writes confirmed before the failure can be lost.
   ? Replication mode (sync/async) [sync]:
 ```
 
@@ -94,7 +100,7 @@ Replication and backups protect against different things, and you need both.
 - **Replication** keeps the database running when a server dies. It does not help when data is deleted by mistake: the delete is copied to every standby within a second.
 - **Backups** let you go back in time. Cairn continuously archives the database's change log to your backup target and takes a daily full backup. You can [restore the database to any moment](backups.md#restore-the-database-to-a-moment-in-time) since the oldest kept backup.
 
-Both modes are backed up the same way, and backups protect you in both modes against deleted data, a broken migration or losing all servers. The only extra risk of async is the one described above: the last few seconds of writes before a server failure. Those seconds had not reached the backup either, so a backup cannot fill that gap.
+Both modes are backed up the same way, and backups protect you in both modes against deleted data, a broken migration or losing all servers. The only extra risk of async is the one described above: the last writes before a server failure. Those writes had not reached the backup either, so a backup cannot fill that gap.
 
 ## Details
 

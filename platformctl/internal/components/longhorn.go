@@ -3,6 +3,7 @@ package components
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -301,6 +302,12 @@ func InstallLonghorn(cfg *config.Config) error {
 	if err := applyLonghornBackups(cfg); err != nil {
 		return err
 	}
+	// `install longhorn` is the step run after joins. The CloudNativePG
+	// operator was installed while only the first server existed, so its two
+	// replicas share that node until they are restarted.
+	if err := SpreadCNPGOperator(cfg); err != nil {
+		color.Yellow("  ⚠ %v", err)
+	}
 	if cfg.ObjectStorageExternal() {
 		color.Green("  Longhorn installed as default StorageClass (%d replicas)", replicas)
 	} else {
@@ -413,4 +420,98 @@ func WriteLocalStorageSkip(root string) error {
 		return err
 	}
 	return os.WriteFile(path, []byte(LocalStorageSkipContent), 0644)
+}
+
+// LonghornFaultedVolumeDocsURL explains how to recover a faulted volume.
+const LonghornFaultedVolumeDocsURL = "https://platform.pratyushes.dev/docs/operations/ha#recover-a-faulted-volume"
+
+// longhornVolumeSummary counts Longhorn volumes by robustness and describes
+// each faulted one (volume, PVC and namespace).
+type longhornVolumeSummary struct {
+	Total, Healthy, Degraded int
+	Faulted                  []string
+}
+
+// summarizeLonghornVolumes reads `kubectl get volumes.longhorn.io -o json`.
+// A faulted volume has no usable replica: its pod cannot start, and Longhorn
+// does not repair it on its own.
+func summarizeLonghornVolumes(raw []byte) (longhornVolumeSummary, error) {
+	var sum longhornVolumeSummary
+	var list struct {
+		Items []struct {
+			Metadata struct{ Name string }
+			Status   struct {
+				State            string
+				Robustness       string
+				KubernetesStatus struct {
+					PVCName   string `json:"pvcName"`
+					Namespace string
+				} `json:"kubernetesStatus"`
+			}
+		}
+	}
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return sum, fmt.Errorf("parse Longhorn volumes: %w", err)
+	}
+	for _, v := range list.Items {
+		sum.Total++
+		switch strings.ToLower(v.Status.Robustness) {
+		case "healthy":
+			sum.Healthy++
+		case "degraded":
+			sum.Degraded++
+		case "faulted":
+			d := "Longhorn volume " + v.Metadata.Name + " is faulted"
+			if k := v.Status.KubernetesStatus; k.PVCName != "" {
+				ns := k.Namespace
+				if ns == "" {
+					ns = "?"
+				}
+				d += fmt.Sprintf(" (PVC %s in namespace %s)", k.PVCName, ns)
+			} else {
+				d += " (no PVC)"
+			}
+			sum.Faulted = append(sum.Faulted, d)
+		}
+	}
+	return sum, nil
+}
+
+// writeLonghornVolumeStatus prints the summary; faulted volumes are listed
+// one per line with the recovery guide.
+func writeLonghornVolumeStatus(w io.Writer, sum longhornVolumeSummary) {
+	line := fmt.Sprintf("Longhorn volumes: %d healthy", sum.Healthy)
+	if sum.Degraded > 0 {
+		line += fmt.Sprintf(", %d degraded", sum.Degraded)
+	}
+	if len(sum.Faulted) > 0 {
+		line += fmt.Sprintf(", %d FAULTED", len(sum.Faulted))
+	}
+	if other := sum.Total - sum.Healthy - sum.Degraded - len(sum.Faulted); other > 0 {
+		line += fmt.Sprintf(", %d detached or unknown", other)
+	}
+	if len(sum.Faulted) == 0 {
+		fmt.Fprintf(w, "  %s\n", line)
+		return
+	}
+	color.New(color.FgRed).Fprintf(w, "  ✗ %s\n", line)
+	for _, f := range sum.Faulted {
+		color.New(color.FgRed).Fprintf(w, "    ✗ %s\n", f)
+	}
+	fmt.Fprintf(w, "    A faulted volume is not repaired automatically. Recovery: %s\n", LonghornFaultedVolumeDocsURL)
+}
+
+// PrintLonghornVolumeStatus prints the Longhorn volume line of `platformctl status` (ha).
+func PrintLonghornVolumeStatus(w io.Writer) {
+	out, err := shell.Output("kubectl", "-n", LonghornNamespace, "get", "volumes.longhorn.io", "-o", "json")
+	if err != nil {
+		color.New(color.FgYellow).Fprintf(w, "  ⚠ Longhorn volume status unavailable: %v\n", err)
+		return
+	}
+	sum, err := summarizeLonghornVolumes([]byte(out))
+	if err != nil {
+		color.New(color.FgYellow).Fprintf(w, "  ⚠ Longhorn volume status unavailable: %v\n", err)
+		return
+	}
+	writeLonghornVolumeStatus(w, sum)
 }

@@ -83,18 +83,25 @@ func Find(name string) *Component {
 	return nil
 }
 
-func Namespace() error {
+// platformNamespaces are the namespaces provision creates. The storage
+// namespace only holds the bundled MinIO, so it is left out with
+// OBJECT_STORAGE_MODE=external. Nothing is ever deleted here: an install that
+// switched from bundled to external keeps its storage namespace and data.
+func platformNamespaces(cfg *config.Config) []string {
+	nss := []string{"platform", "databases", "monitoring"}
+	if !cfg.ObjectStorageExternal() {
+		nss = append(nss, "storage")
+	}
+	return append(nss, "argocd", "portainer", "cert-manager", "ingress-nginx", "oauth2-proxy")
+}
+
+func Namespace(cfg *config.Config) error {
 	if state.IsDone("namespaces") {
 		color.Green("  ✓ Namespaces already created")
 		return nil
 	}
 	color.Cyan("\n  ■ Creating namespaces...")
-	nss := []string{
-		"platform", "databases", "monitoring", "storage",
-		"argocd", "portainer", "cert-manager",
-		"ingress-nginx", "oauth2-proxy",
-	}
-	for _, ns := range nss {
+	for _, ns := range platformNamespaces(cfg) {
 		if err := shell.RunBash(fmt.Sprintf(
 			`kubectl create namespace %s --dry-run=client -o yaml | kubectl apply -f -`, ns)); err != nil {
 			return err
