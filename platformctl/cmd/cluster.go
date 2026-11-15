@@ -283,8 +283,9 @@ func runJoin(stdin io.Reader) error {
 		cfg.Cluster.NodeIP = strings.TrimSpace(joinNodeIP)
 	}
 	applyJoinIngressFlags(cfg)
+	var cluster ingressha.JoinSettings
 	if role == k3s.RoleServer {
-		if err := checkJoinIngressSettings(cfg, joinSettingsFile, os.Stderr); err != nil {
+		if cluster, err = checkJoinIngressSettings(cfg, joinSettingsFile, os.Stderr); err != nil {
 			return err
 		}
 	} else if joinSettingsFile != "" {
@@ -299,6 +300,7 @@ func runJoin(stdin io.Reader) error {
 	}
 	opts := clusterServerOptions(cfg)
 	opts.AgentToken = agentToken
+	adoptClusterEtcdS3(&opts, cluster)
 	if role == k3s.RoleAgent {
 		opts = k3s.ServerOptions{NodeIP: cfg.Cluster.NodeIP}
 	}
@@ -384,37 +386,52 @@ func applyJoinIngressFlags(c *config.Config) {
 // match the cluster's. It runs before any host change. Without credentials
 // for the cluster API, the settings file from `token create --role server` is
 // the record of the cluster's settings this node can check against.
-func checkJoinIngressSettings(c *config.Config, settingsFile string, warn io.Writer) error {
+func checkJoinIngressSettings(c *config.Config, settingsFile string, warn io.Writer) (ingressha.JoinSettings, error) {
+	var none ingressha.JoinSettings
 	if err := c.ValidateIngressHA(); err != nil {
-		return fmt.Errorf("ingress HA settings: %w", err)
+		return none, fmt.Errorf("ingress HA settings: %w", err)
 	}
 	if settingsFile == "" {
 		fmt.Fprintf(warn, "  Warning: no --join-settings file; this server uses INGRESS_HA_MODE=%s without checking it against the cluster.\n", c.IngressHAMode)
 		fmt.Fprintln(warn, "  If it differs from the cluster's, k3s refuses to join (critical config mismatch).")
-		return nil
+		fmt.Fprintln(warn, "  Without the file this server also does not upload etcd snapshots to the off-site backup target.")
+		return none, nil
 	}
 	if settingsFile == "-" {
-		return fmt.Errorf("--join-settings needs a file path (standard input is reserved for the token)")
+		return none, fmt.Errorf("--join-settings needs a file path (standard input is reserved for the token)")
 	}
 	f, err := os.Open(settingsFile)
 	if err != nil {
-		return fmt.Errorf("--join-settings: %w", err)
+		return none, fmt.Errorf("--join-settings: %w", err)
 	}
 	defer f.Close()
 	data, err := io.ReadAll(io.LimitReader(f, ingressha.MaxJoinSettingsSize+1))
 	if err != nil {
-		return fmt.Errorf("--join-settings: %w", err)
+		return none, fmt.Errorf("--join-settings: %w", err)
 	}
 	cluster, err := ingressha.ParseJoinSettings(data)
 	if err != nil {
-		return fmt.Errorf("--join-settings: %w", err)
+		return none, fmt.Errorf("--join-settings: %w", err)
 	}
 	if diff := ingressha.Mismatches(cluster, ingressha.JoinSettingsFromConfig(c)); len(diff) > 0 {
-		return fmt.Errorf("this server's ingress HA settings differ from the cluster's (k3s would refuse the server, or kube-vip would be configured differently):\n    %s\n  set --ingress-ha-mode, --ingress-vip, --ingress-vip-interface and --api-vip (or the matching environment variables) to the values in %s",
+		return none, fmt.Errorf("this server's ingress HA settings differ from the cluster's (k3s would refuse the server, or kube-vip would be configured differently):\n    %s\n  set --ingress-ha-mode, --ingress-vip, --ingress-vip-interface and --api-vip (or the matching environment variables) to the values in %s",
 			strings.Join(diff, "\n    "), settingsFile)
 	}
 	color.Green("  ✓ Ingress HA settings match the cluster (%s)", cluster.Mode)
-	return nil
+	return cluster, nil
+}
+
+// adoptClusterEtcdS3 makes a joining server upload etcd snapshots to the
+// cluster's off-site backup target (#186): the join settings carry only the
+// name of the kube-system Secret with the target, and it goes into this
+// node's k3s config before k3s first starts here. Explicit ETCD_S3_* settings
+// on this node win; a node that already resolved a Secret keeps it.
+func adoptClusterEtcdS3(o *k3s.ServerOptions, cluster ingressha.JoinSettings) {
+	if cluster.EtcdS3ConfigSecret == "" || o.Snapshots.S3Enabled() || o.Snapshots.S3ConfigSecret != "" {
+		return
+	}
+	o.Snapshots.S3ConfigSecret = cluster.EtcdS3ConfigSecret
+	color.Green("  ✓ etcd snapshots from this server go to the off-site backup target (Secret kube-system/%s)", cluster.EtcdS3ConfigSecret)
 }
 
 // joinEnv are the .env keys a joined node keeps.
@@ -520,7 +537,9 @@ func runTokenCreate(stdout io.Writer) error {
 // writeJoinSettings writes the cluster's non-secret join settings to a file,
 // or prints them on stderr (stdout carries only the token) with a hint.
 func writeJoinSettings(stderr io.Writer, c *config.Config, output string) error {
-	body := ingressha.JoinSettingsFromConfig(c).Render()
+	settings := ingressha.JoinSettingsFromConfig(c)
+	settings.EtcdS3ConfigSecret = etcdS3ConfigSecret(c)
+	body := settings.Render()
 	if output == "" {
 		fmt.Fprintln(stderr, "Join settings for new servers (no secrets). Save them as a file and pass it to")
 		fmt.Fprintln(stderr, "`platformctl join --role server --join-settings <file>`, or rerun with --settings-output <file>:")

@@ -248,16 +248,19 @@ A server token file holds two lines: the server token and the cluster's agent to
 
 `token create --role agent` without `--ttl` prints the static agent token. With `--ttl` (10m to 720h) it creates an expiring bootstrap token. Without `--output`, the token is printed once to standard output. Tokens use the k3s secure format (`K10<ca-hash>::...`): the joining node checks the cluster's CA against the hash before it sends any credential. The token is never accepted on the command line and is never printed to logs.
 
-The join settings file holds only the cluster's ingress HA settings:
+The join settings file holds the cluster's ingress HA settings and, when backups go to an off-site target, the name of the Secret that holds the etcd snapshot target:
 
 ```
 # platformctl join settings v1
-# Cluster ingress HA settings for `platformctl join --role server --join-settings <file>`. No secrets.
+# Cluster ingress HA and etcd snapshot settings for `platformctl join --role server --join-settings <file>`. No secrets.
 INGRESS_HA_MODE=vip
 INGRESS_VIP=10.0.0.50
 INGRESS_VIP_INTERFACE=
 API_VIP=10.0.0.60
+ETCD_S3_CONFIG_SECRET=platform-etcd-s3
 ```
+
+`ETCD_S3_CONFIG_SECRET` is only a name. The endpoint and keys stay in that Secret inside the cluster. A joining server writes it into its k3s config before k3s starts there, so it uploads etcd snapshots too. It is not compared like the ingress settings, and the line is left out when backups are local only.
 
 Without `--settings-output`, `token create --role server` prints the same block on standard error (standard output carries only the token). Agents need no settings file. A joining node has no credentials for the cluster API before k3s runs, so this file is how it learns the cluster's settings.
 
@@ -631,7 +634,7 @@ Every server takes etcd snapshots on a schedule:
 | `ETCD_S3_REGION` / `ETCD_S3_FOLDER` | | Optional region and folder |
 | `ETCD_S3_ACCESS_KEY` / `ETCD_S3_SECRET_KEY` | | Credentials |
 
-Without these settings, snapshots go to `<prefix>/etcd/` in the [backup target](backups.md#the-backup-target): `config.yaml` names the Secret `kube-system/platform-etcd-s3` (`etcd-s3-config-secret`) and holds no key. Set them before `provision` and `join --role server`. Explicit S3 credentials are stored in `/etc/rancher/k3s/config.yaml` (mode 0600). Use an off-site bucket: the bundled MinIO runs inside the cluster it would have to restore. List snapshots with `k3s etcd-snapshot ls`. Restore with the k3s procedure (`k3s server --cluster-reset --cluster-reset-restore-path=<snapshot>` on one server, then rejoin the others). `platformctl backup --all` also puts an etcd snapshot in its encrypted archive.
+Without these settings, snapshots go to `<prefix>/etcd/` in the [backup target](backups.md#the-backup-target): `config.yaml` names the Secret `kube-system/platform-etcd-s3` (`etcd-s3-config-secret`) and holds no key. Joining servers get the same setting from the join settings file (`ETCD_S3_CONFIG_SECRET`), so pass `--join-settings` to every `join --role server`. A server that joined without it, or with an older `platformctl`, takes no off-site snapshots. To fix it, re-run `join` on that server with a fresh settings file. This restarts k3s on that server only. Set the `ETCD_S3_*` variables before `provision` and `join --role server`. Explicit S3 credentials are stored in `/etc/rancher/k3s/config.yaml` (mode 0600). Use an off-site bucket: the bundled MinIO runs inside the cluster it would have to restore. List snapshots with `k3s etcd-snapshot ls`. Restore with the k3s procedure (`k3s server --cluster-reset --cluster-reset-restore-path=<snapshot>` on one server, then rejoin the others). `platformctl backup --all` also puts an etcd snapshot in its encrypted archive.
 
 ### Longhorn backups to S3
 
