@@ -169,7 +169,7 @@ export async function runBuildJob(build: Build, source: RepositorySource, hooks:
       build.jobSubmittedAt = new Date();
       await hooks.markSubmitted();
       const owner = { metadata: { ownerReferences: [{ apiVersion: 'batch/v1', kind: 'Job', name, uid: job.metadata.uid }] } };
-      for (const secret of [cloneSecretName(build.id), pushSecretName(build.id)]) await core.patchNamespacedSecret({ namespace: BUILD_NAMESPACE, name: secret, body: owner });
+      for (const secret of [cloneSecretName(build.id), pushSecretName(build.id)]) await core.patchNamespacedSecret({ namespace: BUILD_NAMESPACE, name: secret, body: owner }, k8s.setHeaderOptions('Content-Type', k8s.PatchStrategy.MergePatch));
       break;
     } catch (error) {
       if (!submitted && revoke) {

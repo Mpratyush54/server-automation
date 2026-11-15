@@ -1,6 +1,6 @@
 const mockCore = { listNamespacedPod: jest.fn(), readNamespacedPodLog: jest.fn(), createNamespacedSecret: jest.fn(), replaceNamespacedSecret: jest.fn(), readNamespacedSecret: jest.fn(), patchNamespacedSecret: jest.fn(), deleteNamespacedSecret: jest.fn() };
 const mockBatch = { readNamespacedJob: jest.fn(), listNamespacedJob: jest.fn(), createNamespacedJob: jest.fn(), deleteNamespacedJob: jest.fn() };
-jest.mock('@kubernetes/client-node', () => ({ CoreV1Api: 'core', BatchV1Api: 'batch', KubeConfig: class { makeApiClient(type: string) { return type === 'core' ? mockCore : mockBatch; } } }));
+jest.mock('@kubernetes/client-node', () => ({ CoreV1Api: 'core', BatchV1Api: 'batch', PatchStrategy: { MergePatch: 'application/merge-patch+json' }, setHeaderOptions: (key: string, value: string) => ({ headers: { [key]: value } }), KubeConfig: class { makeApiClient(type: string) { return type === 'core' ? mockCore : mockBatch; } } }));
 jest.mock('../../../src/lib/kube-config', () => ({ loadKubeConfig: jest.fn() }));
 const mockMint = jest.fn();
 const mockRevoke = jest.fn(async (..._a: any[]) => undefined);
@@ -65,6 +65,8 @@ it('waits for global and per-project admission, then submits once with separate 
   expect(JSON.stringify(secrets['build-b-push'])).not.toContain('ghs_clone_secret');
   expect(mockCore.patchNamespacedSecret).toHaveBeenCalledTimes(2);
   expect(mockCore.patchNamespacedSecret.mock.calls[0][0].body.metadata.ownerReferences[0].uid).toBe('uid');
+  // The owner reference is a merge patch; the client's default (JSON Patch) is rejected by the API server.
+  expect(mockCore.patchNamespacedSecret.mock.calls[0][1]).toEqual({ headers: { 'Content-Type': 'application/merge-patch+json' } });
 });
 
 it('revokes the Git credential as soon as the clone step has finished', async () => {
