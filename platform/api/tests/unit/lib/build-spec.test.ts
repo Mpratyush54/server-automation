@@ -138,3 +138,10 @@ it('renders a restricted source workload that re-authorizes every pull', () => {
   expect(dep.spec.template.spec.containers[0].readinessProbe.tcpSocket.port).toBe(8080);
   expect(dep.spec.template.spec.securityContext.runAsNonRoot).toBe(true);
 });
+
+it('uses a crane release that accepts the in-cluster token realm (a private ClusterIP)', () => {
+  const { BUILD_IMAGES } = require('../../../src/lib/build-spec');
+  const [, minor, patch] = /:v0\.(\d+)\.(\d+)$/.exec(BUILD_IMAGES.publish)!.map(Number);
+  // crane v0.21.4 and later reject realms on private addresses, which fails every push.
+  expect(minor < 21 || (minor === 21 && patch < 4)).toBe(true);
+});
