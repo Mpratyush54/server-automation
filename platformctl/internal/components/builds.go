@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -743,7 +744,43 @@ func InstallBuilds(c *config.Config) error {
 	if err := shell.RunBash("kubectl -n registry rollout status deployment/registry --timeout=180s"); err != nil {
 		return err
 	}
+	if err := publishBuildsAvailability(c); err != nil {
+		return err
+	}
 	return state.MarkDone("builds")
+}
+
+// buildsEnvValues are the API settings (platform-env) that publish build
+// availability and the registry name.
+func buildsEnvValues(c *config.Config) map[string]string {
+	return map[string]string{"BUILDS_ENABLED": strconv.FormatBool(BuildsEnabled(c)), "BUILDS_REGISTRY": "registry." + c.Domain}
+}
+
+// buildsEnvPatch returns the merge patch for platform-env when its build
+// settings differ from the configuration, or ok=false when they already match.
+func buildsEnvPatch(c *config.Config, current func(key string) string) (patch string, ok bool) {
+	want := buildsEnvValues(c)
+	for k, v := range want {
+		if current(k) != v {
+			data, _ := json.Marshal(map[string]any{"stringData": want})
+			return string(data), true
+		}
+	}
+	return "", false
+}
+
+// publishBuildsAvailability updates platform-env when builds are enabled on an
+// existing installation (provision writes the same values with the platform
+// step) and restarts the API so it reads them.
+func publishBuildsAvailability(c *config.Config) error {
+	patch, ok := buildsEnvPatch(c, func(key string) string { return kubeSecretValue("platform", "platform-env", key) })
+	if !ok {
+		return nil
+	}
+	if err := shell.Run("kubectl", "-n", "platform", "patch", "secret", "platform-env", "--type", "merge", "-p", patch); err != nil {
+		return fmt.Errorf("publish build settings to the API: %w", err)
+	}
+	return shell.RunBash("kubectl -n platform rollout restart deployment/platform-api >/dev/null && kubectl -n platform rollout status deployment/platform-api --timeout=300s")
 }
 
 const registryStorageScript = `set -euo pipefail

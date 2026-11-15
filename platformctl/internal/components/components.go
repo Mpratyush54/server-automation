@@ -839,7 +839,6 @@ func UsePlatformImages(api, portal string) { platformImages.api, platformImages.
 // platformEnvValues is the platform-env Secret data for InstallPlatform.
 func platformEnvValues(cfg *config.Config) map[string]string {
 	m := map[string]string{
-		"BUILDS_ENABLED": strconv.FormatBool(BuildsEnabled(cfg)), "BUILDS_REGISTRY": "registry." + cfg.Domain,
 		"NODE_ENV": "production", "PORT": "3000", "JWT_SECRET": cfg.JWTSecret,
 		"SECRETS_ENCRYPTION_KEY": cfg.SecretsEncryptionKey, "PLATFORM_WEBHOOK_SECRET": cfg.WebhookSecret,
 		"POSTGRES_HOST": "postgresql.databases", "POSTGRES_PORT": "5432", "POSTGRES_DB": "platform", "POSTGRES_USER": "postgres",
@@ -855,6 +854,9 @@ func platformEnvValues(cfg *config.Config) map[string]string {
 		"PLATFORM_NAME": cfg.PlatformName, "DOMAIN": cfg.Domain, "ADMIN_EMAIL": cfg.AdminEmail,
 		"OIDC_ISSUER": cfg.OIDCIssuer(), "OIDC_CLIENTS": cfg.OIDCClientsJSON(),
 		"CORS_ORIGINS": "https://" + cfg.Domain,
+	}
+	for k, v := range buildsEnvValues(cfg) {
+		m[k] = v
 	}
 	if cfg.IsHA() {
 		m["REDIS_SENTINEL_HOSTS"] = RedisSentinelHosts()

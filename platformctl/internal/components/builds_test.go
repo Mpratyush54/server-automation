@@ -379,3 +379,19 @@ func TestRegistryGCIsBoundedAndPreservesCacheManifests(t *testing.T) {
 		t.Fatal("cache manifests must remain referenced")
 	}
 }
+
+func TestBuildsEnvPatchPublishesAvailabilityOnExistingInstall(t *testing.T) {
+	c := &config.Config{Profile: config.ProfileStandard, BuildsEnabled: true, Domain: "example.test"}
+	current := map[string]string{"BUILDS_ENABLED": "false", "BUILDS_REGISTRY": "registry.example.test"}
+	patch, ok := buildsEnvPatch(c, func(k string) string { return current[k] })
+	if !ok || !strings.Contains(patch, `"BUILDS_ENABLED":"true"`) || !strings.Contains(patch, `"BUILDS_REGISTRY":"registry.example.test"`) {
+		t.Fatalf("expected a patch enabling builds, got ok=%v %s", ok, patch)
+	}
+	current["BUILDS_ENABLED"] = "true"
+	if _, ok := buildsEnvPatch(c, func(k string) string { return current[k] }); ok {
+		t.Fatal("no patch (and no API restart) expected when platform-env already matches")
+	}
+	if got := platformEnvValues(c); got["BUILDS_ENABLED"] != "true" || got["BUILDS_REGISTRY"] != "registry.example.test" {
+		t.Fatalf("platform-env must carry the same build settings: %v", got)
+	}
+}
