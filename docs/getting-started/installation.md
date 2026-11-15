@@ -194,6 +194,8 @@ The API runs on port 3000. On first start it creates its tables and demo users. 
 
 All database ports are bound to `127.0.0.1` only. To try the monitoring stack locally, also run `docker compose up -d minio loki prometheus grafana`.
 
+The compose file uses the same major versions the platform runs in production (PostgreSQL 18, Redis 8, Grafana 13, Loki 3). If you have a `pgdata` volume from an older compose file (PostgreSQL 16), PostgreSQL 18 won't use it. Dump what you need, then run `docker compose down -v` and start again.
+
 ## Use existing S3 object storage
 
 Fresh installs on any profile can use AWS S3, R2, GCS interoperability storage or
