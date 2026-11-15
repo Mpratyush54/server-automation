@@ -236,3 +236,66 @@ func TestMongoPasswordIsAttachedToFlag(t *testing.T) {
 		}
 	}
 }
+
+// A backup that fails after uploading some artifacts removes them, so no
+// partial archives/<id>/ folder is left in the target.
+func TestFailedBackupRemovesUploadedArtifacts(t *testing.T) {
+	k := identity(t)
+	c := engineConfig(t, k)
+	c.Components = []string{"config", "postgres", "minio"}
+	m, e := Create(c, "test", &fakeDriver{fail: "minio"})
+	if e == nil || m.ID == "" {
+		t.Fatal("capture should fail", e)
+	}
+	target, _ := ParseTarget(c.Target)
+	if _, e = os.Stat(filepath.Join(target.Path, m.ID)); !os.IsNotExist(e) {
+		entries, _ := os.ReadDir(filepath.Join(target.Path, m.ID))
+		t.Fatalf("partial folder left behind: %v", entries)
+	}
+}
+
+func TestDiscardLogsCleanupFailure(t *testing.T) {
+	var log strings.Builder
+	old := CleanupLog
+	CleanupLog = &log
+	t.Cleanup(func() { CleanupLog = old })
+	dir := t.TempDir()
+	s := Store{Target{Path: dir}}
+	id := "20261115T030000.000000000Z"
+	// A non-empty directory where a file is expected cannot be removed.
+	if e := os.MkdirAll(filepath.Join(dir, id, "config.tar.age", "x"), 0700); e != nil {
+		t.Fatal(e)
+	}
+	s.discard(id, []string{"config.tar.age"}, "postgres.tar.age")
+	if !strings.Contains(log.String(), "backup "+id+" failed and 1 of its uploaded files could not be removed") {
+		t.Fatalf("log: %q", log.String())
+	}
+	// A missing object (the failed upload) is not reported.
+	log.Reset()
+	s.discard(id, nil, "postgres.tar.age")
+	if log.Len() != 0 {
+		t.Fatalf("missing attempted object reported: %q", log.String())
+	}
+}
+
+func TestListFlagsFoldersWithoutManifest(t *testing.T) {
+	k := identity(t)
+	c := engineConfig(t, k)
+	m, e := Create(c, "test", &fakeDriver{})
+	if e != nil {
+		t.Fatal(e)
+	}
+	target, _ := ParseTarget(c.Target)
+	partial := "20261115T030000.000000000Z"
+	if e = os.MkdirAll(filepath.Join(target.Path, partial), 0700); e != nil {
+		t.Fatal(e)
+	}
+	_ = os.WriteFile(filepath.Join(target.Path, partial, "config.tar.age"), []byte("x"), 0600)
+	items, incomplete, e := (Store{target}).ListWithIncomplete()
+	if e != nil || len(items) != 1 || items[0].ID != m.ID || !reflect.DeepEqual(incomplete, []string{partial}) {
+		t.Fatal(items, incomplete, e)
+	}
+	if items, e = (Store{target}).List(); e != nil || len(items) != 1 {
+		t.Fatal(items, e)
+	}
+}

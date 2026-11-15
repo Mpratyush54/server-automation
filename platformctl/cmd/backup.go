@@ -161,10 +161,11 @@ func init() {
 		if e != nil {
 			return e
 		}
-		items, e := (backup.Store{Target: t}).List()
+		items, incomplete, e := (backup.Store{Target: t}).ListWithIncomplete()
 		if e != nil {
 			return e
 		}
+		warnIncompleteBackups(cmd.ErrOrStderr(), incomplete)
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(items)
 	}})
 	var recipient string
@@ -318,6 +319,14 @@ func init() {
 	}}
 	testCmd.Flags().StringVar(&testID, "from", "", "backup ID (default latest complete)")
 	backupCmd.AddCommand(testCmd)
+}
+
+// warnIncompleteBackups flags folders without backup.json on stderr; stdout
+// keeps carrying only the JSON list of complete backups.
+func warnIncompleteBackups(w io.Writer, ids []string) {
+	for _, id := range ids {
+		fmt.Fprintf(w, "Warning: %s/ has no backup.json: a failed or interrupted backup, or one still uploading. It is not listed and cannot be restored.\n", id)
+	}
 }
 
 // Swapped in tests.

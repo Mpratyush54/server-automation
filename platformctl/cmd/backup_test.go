@@ -58,3 +58,16 @@ func TestRestoreConfigNeedsTargetOnFreshVM(t *testing.T) {
 		t.Fatal(c, e)
 	}
 }
+
+func TestWarnIncompleteBackups(t *testing.T) {
+	var b strings.Builder
+	warnIncompleteBackups(&b, []string{"20261115T030000.000000000Z"})
+	if !strings.Contains(b.String(), "20261115T030000.000000000Z/ has no backup.json") {
+		t.Fatal(b.String())
+	}
+	b.Reset()
+	warnIncompleteBackups(&b, nil)
+	if b.Len() != 0 {
+		t.Fatal(b.String())
+	}
+}

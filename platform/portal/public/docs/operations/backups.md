@@ -238,7 +238,7 @@ Every backup or restore checks for the tools it needs before touching anything a
 
 ### Contents and format
 
-Each backup has a unique UTC ID. `backup.json` in the backup is a version-1 manifest with `version`, `id`, `createdAt`, `platformVersion` and `artifacts` (component, file name, SHA-256 of the encrypted file and its size). Each artifact is an age-encrypted tar named `<component>.tar.age`. No private key is stored. The manifest is uploaded last and marks the backup complete, so failed uploads are never listed. Partial uploads can be removed by hand from the prefix. Checksums detect damage, but a manifest is not a signature: keep a trusted copy or use bucket object locking or versioning.
+Each backup has a unique UTC ID. `backup.json` in the backup is a version-1 manifest with `version`, `id`, `createdAt`, `platformVersion` and `artifacts` (component, file name, SHA-256 of the encrypted file and its size). Each artifact is an age-encrypted tar named `<component>.tar.age`. No private key is stored. The manifest is uploaded last and marks the backup complete, so failed uploads are never listed. When a backup fails, platformctl deletes the files it already uploaded for that ID. If that cleanup fails too, it says so, and `backup list` warns about each folder without `backup.json` (on standard error, so the JSON list stays clean). Such a folder cannot be restored. Delete it by hand once no backup is running. Checksums detect damage, but a manifest is not a signature: keep a trusted copy or use bucket object locking or versioning.
 
 Database passwords are read inside the database containers, from the environment variable or the `*_FILE` password file, never on the host or in command arguments.
 
