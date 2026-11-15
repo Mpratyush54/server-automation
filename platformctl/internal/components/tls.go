@@ -55,9 +55,12 @@ spec:
 ` + contact + `    privateKeySecretRef:
       name: letsencrypt-prod
     solvers:
+    # ClusterIP: project namespaces forbid NodePort Services (quota), and
+    # ingress-nginx reaches the solver through its Service endpoints.
     - http01:
         ingress:
           ingressClassName: nginx
+          serviceType: ClusterIP
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
