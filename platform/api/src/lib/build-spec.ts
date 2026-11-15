@@ -7,11 +7,8 @@ export const BUILD_IMAGES = {
   buildkit: 'moby/buildkit:v0.20.2-rootless',
   buildpacks: 'paketobuildpacks/builder-jammy-base:0.4.674',
   runImage: 'paketobuildpacks/run-jammy-base:0.1.285',
-  // Debug variant: the publish step needs a shell for its archive checks. Kept below v0.21.4, which
-  // refuses token realms on private IP addresses: the registry's realm is the platform API's
-  // ClusterIP (node container runtimes cannot resolve cluster DNS names). The publish step sends
-  // its pre-minted token and never fetches one from the realm.
-  publish: 'gcr.io/go-containerregistry/crane/debug:v0.21.3',
+  // Debug variant: the publish step needs a shell for its archive checks.
+  publish: 'gcr.io/go-containerregistry/crane/debug:v0.21.5',
 };
 /** Nodes where platformctl installed the BuildKit runtime profiles carry this label. */
 export const BUILD_RUNTIME_LABEL = 'cairn.dev/build-runtime';
