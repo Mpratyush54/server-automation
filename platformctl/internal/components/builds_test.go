@@ -395,3 +395,13 @@ func TestBuildsEnvPatchPublishesAvailabilityOnExistingInstall(t *testing.T) {
 		t.Fatalf("platform-env must carry the same build settings: %v", got)
 	}
 }
+
+func TestRegistryRestartsWhenTheTokenCertificateChanges(t *testing.T) {
+	a, b := registryCertPatch("cert-a"), registryCertPatch("cert-b")
+	if a == b || a != registryCertPatch("cert-a") {
+		t.Fatalf("patch must change with the certificate and only then: %s %s", a, b)
+	}
+	if !strings.Contains(a, `"cairn.dev/token-cert"`) || !strings.Contains(a, `"template"`) {
+		t.Fatalf("patch must annotate the pod template: %s", a)
+	}
+}

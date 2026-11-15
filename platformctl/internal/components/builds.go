@@ -743,6 +743,11 @@ func InstallBuilds(c *config.Config) error {
 			return err
 		}
 	}
+	// The registry reads its token certificate only at start: roll it when the certificate changes.
+	if _, err := shell.RunWithInput("kubectl", []string{"-n", "registry", "patch", "deployment", "registry", "--type", "merge", "--patch-file", "/dev/stdin"},
+		registryCertPatch(kubeSecretValue("registry", "registry-token-cert", "cert.pem"))); err != nil {
+		return err
+	}
 	if err := shell.RunBash("kubectl -n registry rollout status deployment/registry --timeout=180s"); err != nil {
 		return err
 	}
@@ -750,6 +755,16 @@ func InstallBuilds(c *config.Config) error {
 		return err
 	}
 	return state.MarkDone("builds")
+}
+
+// registryCertPatch annotates the registry pod template with the token
+// certificate's fingerprint, so replacing the certificate (signer rotation)
+// restarts the registry and an unchanged one does not.
+func registryCertPatch(certPEM string) string {
+	sum := sha256.Sum256([]byte(certPEM))
+	data, _ := json.Marshal(map[string]any{"spec": map[string]any{"template": map[string]any{"metadata": map[string]any{
+		"annotations": map[string]string{"cairn.dev/token-cert": hex.EncodeToString(sum[:16])}}}}})
+	return string(data)
 }
 
 // buildsEnvValues are the API settings (platform-env) that publish build
