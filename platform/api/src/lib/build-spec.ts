@@ -49,6 +49,18 @@ const kindIs = (kind: 'dockerfile' | 'buildpacks') => `[ "$(cat /meta/kind)" = $
 const heavy = { requests: { cpu: '250m', memory: '512Mi', 'ephemeral-storage': '1Gi' }, limits: { cpu: '2', memory: '3Gi', 'ephemeral-storage': '12Gi' } };
 const light = { requests: { cpu: '100m', memory: '128Mi', 'ephemeral-storage': '256Mi' }, limits: { cpu: '1', memory: '1Gi', 'ephemeral-storage': '2Gi' } };
 const locked = { allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } };
+/**
+ * Rootless BuildKit maps its subordinate user range with the setuid newuidmap/newgidmap helpers,
+ * which need privilege escalation and CAP_SETUID/CAP_SETGID in the bounding set; every other
+ * capability is dropped. Inside the user namespace it creates, BuildKit holds only capabilities
+ * scoped to that namespace.
+ */
+export const buildkitSecurityContext = {
+  allowPrivilegeEscalation: true,
+  capabilities: { drop: ['ALL'], add: ['SETUID', 'SETGID'] },
+  seccompProfile: { type: 'Localhost', localhostProfile: BUILDKIT_SECCOMP_PROFILE },
+  appArmorProfile: { type: 'Localhost', localhostProfile: BUILDKIT_APPARMOR_PROFILE },
+};
 const ca = { name: 'ca', mountPath: '/etc/ssl/certs/ca-certificates.crt', subPath: 'ca.crt', readOnly: true };
 const meta = (readOnly: boolean) => ({ name: 'meta', mountPath: '/meta', readOnly });
 
@@ -111,7 +123,7 @@ if [ -f /workspace/Dockerfile ]; then echo dockerfile > /meta/kind; else echo bu
 exec buildctl-daemonless.sh build --frontend dockerfile.v0 --local context=/workspace --local dockerfile=/workspace --output "type=docker,name=$IMAGE,dest=/out/image.tar"`],
             env: [{ name: 'IMAGE', value: image }, { name: 'BUILDKITD_FLAGS', value: '--oci-worker-no-process-sandbox --oci-worker-snapshotter=native' }],
             volumeMounts: [{ name: 'source', mountPath: '/workspace' }, meta(true), { name: 'out', mountPath: '/out' }, { name: 'buildkit-state', mountPath: '/home/user/.local/share/buildkit' }, ca],
-            securityContext: { seccompProfile: { type: 'Localhost', localhostProfile: BUILDKIT_SECCOMP_PROFILE }, appArmorProfile: { type: 'Localhost', localhostProfile: BUILDKIT_APPARMOR_PROFILE } },
+            securityContext: buildkitSecurityContext,
             resources: heavy },
           // Buildpacks: the lifecycle is split so buildpack code (detect, build) never runs in a
           // container that holds registry credentials (the model pack uses for untrusted builders).

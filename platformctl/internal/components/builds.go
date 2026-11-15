@@ -411,6 +411,15 @@ func RegistryTokenSignerMatches(keyPEM, certPEM string) bool {
 // user-namespace, mount and pivot_root calls rootless BuildKit uses to sandbox
 // RUN steps. It applies only to the BuildKit container; the kernel still
 // confines those calls to namespaces the container itself created.
+// Netfilter netlink sockets are refused: builds have no use for packet
+// filtering configuration inside their own network namespace.
+// The new mount API (fsopen, fsmount, move_mount, open_tree, ...) stays
+// allowed until a real-server run shows the bundled runc does not use it.
+const (
+	afNetlink        = 16 // AF_NETLINK
+	netlinkNetfilter = 12 // NETLINK_NETFILTER
+)
+
 func BuildkitSeccompProfile() string {
 	deny := []string{"acct", "bpf", "clock_adjtime", "clock_settime", "create_module", "delete_module", "fanotify_init", "finit_module",
 		"get_kernel_syms", "get_mempolicy", "init_module", "io_uring_enter", "io_uring_register", "io_uring_setup", "ioperm", "iopl", "kcmp",
@@ -425,6 +434,11 @@ func BuildkitSeccompProfile() string {
 			{"names": deny, "action": "SCMP_ACT_ERRNO", "errnoRet": 1},
 			// ENOSYS, not EPERM: runtimes treat a missing keyring API as "not supported".
 			{"names": []string{"add_key", "keyctl", "request_key"}, "action": "SCMP_ACT_ERRNO", "errnoRet": 38},
+			// socket(AF_NETLINK, *, NETLINK_NETFILTER): EPROTONOSUPPORT. Conditions are ANDed.
+			{"names": []string{"socket"}, "action": "SCMP_ACT_ERRNO", "errnoRet": 93, "args": []map[string]any{
+				{"index": 0, "value": afNetlink, "op": "SCMP_CMP_EQ"},
+				{"index": 2, "value": netlinkNetfilter, "op": "SCMP_CMP_EQ"},
+			}},
 		},
 	}
 	data, _ := json.MarshalIndent(profile, "", "  ")

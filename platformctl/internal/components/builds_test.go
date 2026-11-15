@@ -230,26 +230,44 @@ func TestBuildkitRuntimeProfilesAreNarrow(t *testing.T) {
 		Syscalls      []struct {
 			Names  []string `json:"names"`
 			Action string   `json:"action"`
+			Args   []struct {
+				Index uint   `json:"index"`
+				Value uint64 `json:"value"`
+				Op    string `json:"op"`
+			} `json:"args"`
 		} `json:"syscalls"`
 	}
 	if err := json.Unmarshal([]byte(BuildkitSeccompProfile()), &profile); err != nil {
 		t.Fatal(err)
 	}
 	denied := map[string]bool{}
+	netfilter := false
 	for _, rule := range profile.Syscalls {
 		if rule.Action != "SCMP_ACT_ERRNO" {
 			t.Fatalf("unexpected action %s", rule.Action)
 		}
+		if len(rule.Args) > 0 {
+			if len(rule.Names) != 1 || rule.Names[0] != "socket" || len(rule.Args) != 2 ||
+				rule.Args[0].Index != 0 || rule.Args[0].Value != 16 || rule.Args[0].Op != "SCMP_CMP_EQ" ||
+				rule.Args[1].Index != 2 || rule.Args[1].Value != 12 || rule.Args[1].Op != "SCMP_CMP_EQ" {
+				t.Fatalf("unexpected conditional rule %+v", rule)
+			}
+			netfilter = true
+			continue
+		}
 		for _, n := range rule.Names {
 			denied[n] = true
 		}
+	}
+	if !netfilter {
+		t.Error("seccomp profile must refuse netfilter netlink sockets")
 	}
 	for _, must := range []string{"bpf", "ptrace", "kexec_load", "init_module", "finit_module", "keyctl", "add_key", "perf_event_open", "io_uring_setup", "open_by_handle_at", "userfaultfd"} {
 		if !denied[must] {
 			t.Errorf("seccomp profile must deny %s", must)
 		}
 	}
-	for _, needed := range []string{"unshare", "clone", "mount", "pivot_root", "setns"} {
+	for _, needed := range []string{"unshare", "clone", "mount", "pivot_root", "setns", "socket"} {
 		if denied[needed] {
 			t.Errorf("rootless BuildKit needs %s", needed)
 		}

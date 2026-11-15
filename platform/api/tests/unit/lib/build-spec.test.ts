@@ -78,7 +78,9 @@ describe('source build Job', () => {
     const pod: any = render().spec.template.spec;
     expect(pod.securityContext.seccompProfile).toEqual({ type: 'RuntimeDefault' });
     expect(pod.nodeSelector).toEqual({ [BUILD_RUNTIME_LABEL]: 'v1' });
-    expect(byName('buildkit').securityContext).toEqual({ seccompProfile: { type: 'Localhost', localhostProfile: BUILDKIT_SECCOMP_PROFILE },
+    // Only the setuid ID-mapping helpers' capabilities remain; see buildkitSecurityContext.
+    expect(byName('buildkit').securityContext).toEqual({ allowPrivilegeEscalation: true, capabilities: { drop: ['ALL'], add: ['SETUID', 'SETGID'] },
+      seccompProfile: { type: 'Localhost', localhostProfile: BUILDKIT_SECCOMP_PROFILE },
       appArmorProfile: { type: 'Localhost', localhostProfile: BUILDKIT_APPARMOR_PROFILE } });
     for (const c of all().filter(c => c.name !== 'buildkit')) {
       expect(c.securityContext).toEqual({ allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } });
