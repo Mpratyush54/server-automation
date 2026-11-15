@@ -32,6 +32,8 @@ This example uses servers `10.0.0.11`, `10.0.0.12` and `10.0.0.13`, the floating
 
    `PLATFORM_CLUSTER_NODES` tells the firewall which machines may talk to each other. You can also give the private subnet, such as `10.0.0.0/24`.
 
+   `provision` also asks whether database writes wait for a copy on a second server (`sync`, the default: no confirmed write is lost) or not (`async`: faster failover, but the last seconds of writes can be lost). See [Synchronous or asynchronous database replication](postgres-replication.md). Add `--postgres-replication sync|async` to skip the question.
+
 2. Still on the first server, create a join token and a join settings file:
 
    ```bash
@@ -226,6 +228,7 @@ The firewall already accepts TCP 80/443 to any local address, including a VIP, a
 | `POSTGRES_BACKUP_ENDPOINT` | PostgreSQL | Optional HTTP(S) S3 endpoint |
 | `POSTGRES_BACKUP_SECRET` | PostgreSQL | External credentials Secret in `databases` (required with a destination) |
 | `POSTGRES_BACKUP_RETENTION` | PostgreSQL | Retention (default `14d`; positive `d`, `w` or `m`) |
+| `POSTGRES_REPLICATION` | PostgreSQL | `sync` (default) or `async`; see [database replication](postgres-replication.md). Flag: `provision --postgres-replication` |
 | `LONGHORN_REPLICAS` | storage | `1`, `2` or `3`; unset means automatic |
 | `LONGHORN_BACKUP_TARGET` / `LONGHORN_BACKUP_SECRET` | storage | Longhorn S3 backup target and credentials Secret name |
 
@@ -534,7 +537,7 @@ Migrate with a backup and restore:
 
 The `ha` profile installs the CloudNativePG (CNPG) operator (chart 0.29.1, operator 1.30.1) in `cnpg-system` and a `postgresql` Cluster in `databases`, using PostgreSQL 18.6 (the CNPG `system` image, which includes pgaudit). Fresh single-node installs run the same operator with one instance. An existing Bitnami release, StatefulSet or Helm-managed `postgresql` Service blocks the install without changing its data; see [Migrating from a single-node install](#migrating-from-a-single-node-install).
 
-**Topology.** Three instances run on separate nodes (required pod anti-affinity). One quorum synchronous standby acknowledges writes: no acknowledged write is lost while a synchronous standby is available. `dataDurability: preferred` lets the primary keep accepting writes when no standby is available (initial provisioning on one node, or two database nodes lost); such writes lack the synchronous guarantee. On the first server only the primary needs to become Ready; the standbys stay Pending until nodes join. CNPG manages PodDisruptionBudgets for voluntary disruptions.
+**Topology.** Three instances run on separate nodes (required pod anti-affinity). With `POSTGRES_REPLICATION=sync` (the default), one quorum synchronous standby acknowledges writes: no acknowledged write is lost while a synchronous standby is available. `dataDurability: preferred` lets the primary keep accepting writes when no standby is available (initial provisioning on one node, or two database nodes lost); such writes lack the synchronous guarantee. With `POSTGRES_REPLICATION=async`, the `synchronous` stanza is left out: failover after a power-off is faster, but the last seconds of acknowledged writes can be lost. Switch live with `sudo platformctl postgres replication set sync|async` (a configuration reload, no restart). See [Synchronous or asynchronous database replication](postgres-replication.md). On the first server only the primary needs to become Ready; the standbys stay Pending until nodes join. CNPG manages PodDisruptionBudgets for voluntary disruptions.
 
 **Resources and storage.** Each instance requests 100m CPU and 512Mi, is limited to two CPUs and 1Gi, and has a 10Gi volume. `POSTGRES_HA_STORAGE_CLASS` defaults to `local-path` even though Longhorn is the cluster default: PostgreSQL replicates its own data, and Longhorn replicas underneath would store each write nine times and move WAL fsync across the network. Set a different DNS-1123 StorageClass name before creating the Cluster if needed; changing an existing volume's class needs a storage migration.
 
@@ -544,7 +547,7 @@ The `ha` profile installs the CloudNativePG (CNPG) operator (chart 0.29.1, opera
 
 **Monitoring.** With monitoring enabled, `postgresql-monitoring` installs the `postgresql` PodMonitor and `postgresql-ha` PrometheusRule in `monitoring`. Relabeling keeps `pg_up` and `project_database_*` compatible with [database monitoring](database-monitoring.md). Alerts: an instance down for 5 minutes, no primary for 2 minutes, replication lag over 60 seconds for 10 minutes, WAL archive failures, and a newest backup older than two days.
 
-`platformctl status` prints the Cluster phase, ready and desired count, the primary, both endpoints, WAL archiving (`ok`, `FAILING` or `not configured`), the last successful backup and the first recoverability point. It warns when fewer than three instances are ready. Details:
+`platformctl status` prints the Cluster phase, ready and desired count, the primary, both endpoints, the replication mode (`sync` or `async`), WAL archiving (`ok`, `FAILING` or `not configured`), the last successful backup and the first recoverability point. It warns when fewer than three instances are ready. Details:
 
 ```bash
 kubectl -n databases get cluster postgresql
@@ -710,6 +713,7 @@ PostgreSQL apps need no change: `postgresql.databases:5432` always points at the
 
 - [Host hardening](../host-hardening.md)
 - [Backups](backups.md)
+- [Synchronous or asynchronous database replication](postgres-replication.md)
 - [Upgrade](upgrades.md)
 - [Scaling](../deployment/scaling.md)
 - [platformctl CLI](../getting-started/platformctl.md)

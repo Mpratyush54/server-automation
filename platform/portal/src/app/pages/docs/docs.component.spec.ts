@@ -45,7 +45,7 @@ describe('DocsComponent', () => {
 
   it('lists the operations and Phase 4 guides, with root-level pages at /docs/<page>', () => {
     const pages = component.flatPages;
-    for (const page of ['upgrades', 'telemetry-privacy', 'alerting', 'synthetics', 'database-monitoring', 'status-pages', 'heatmaps', 'frontend-rum', 'observability']) {
+    for (const page of ['upgrades', 'telemetry-privacy', 'alerting', 'synthetics', 'database-monitoring', 'postgres-replication', 'status-pages', 'heatmaps', 'frontend-rum', 'observability']) {
       expect(pages.some((p) => p.page === page)).withContext(page).toBeTrue();
     }
     const root = pages.find((p) => p.page === 'host-hardening')!;

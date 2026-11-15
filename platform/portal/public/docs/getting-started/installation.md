@@ -74,6 +74,8 @@ sudo platformctl provision --profile minimal
 | `full` | Everything in standard, plus traces, profiles and uptime probes. See [Turn on full monitoring](../operations/telemetry.md). |
 | `ha` | Everything in full, on several servers. See [High availability](../operations/ha.md). |
 
+On `ha`, `provision` also asks how the database copies writes between servers: `sync` (the default; no confirmed write is lost when a server dies, but writes pause during failover) or `async` (faster failover, but the last few seconds of writes can be lost). [Which one to choose](../operations/postgres-replication.md). Pass `--postgres-replication sync|async` to answer it in advance.
+
 ## If something goes wrong
 
 - **Run it again.** `provision` remembers finished steps in `/etc/platform/.bootstrap_state` and picks up where it stopped.

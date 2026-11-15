@@ -42,6 +42,7 @@ Requirements: Ubuntu 22.04+, sudo, at least 4 GB RAM and 40 GB free disk (8 GB a
 | `platformctl mfa disable --user <email>` | Remove a user's two-factor sign-in when no admin can ([Recover](../operations/recover.md)) |
 | `platformctl join` | Join this node to an HA cluster as a server or agent ([High availability](../operations/ha.md)) |
 | `platformctl token create\|rotate\|install` | Create, rotate and install cluster join tokens (HA) |
+| `platformctl postgres replication [set sync\|async]` | Show or switch synchronous/asynchronous database replication on `ha` ([Database replication](../operations/postgres-replication.md)) |
 | `platformctl version` | Print CLI version and default image tag |
 | `platformctl --help` | List commands |
 
@@ -128,6 +129,10 @@ The `ha` profile installs everything in `full` on a multi-node cluster: the firs
 server starts k3s with embedded etcd (`cluster-init`) and further nodes join with
 `platformctl join`. Set `PLATFORM_CLUSTER_NODES` (all node IPs or a CIDR) so the host
 firewall admits the other nodes. See [High availability](../operations/ha.md).
+It also asks for the PostgreSQL replication mode (`--postgres-replication sync|async`,
+saved as `POSTGRES_REPLICATION`); change it later with
+`sudo platformctl postgres replication set sync|async`. See
+[Synchronous or asynchronous database replication](../operations/postgres-replication.md).
 
 The profile also sets the Platform API replica count: `1` on `minimal`, `2` otherwise
 (rolling updates with `maxUnavailable: 0` and a PodDisruptionBudget). Override it with
