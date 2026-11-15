@@ -11,7 +11,7 @@ jest.mock('../../../src/lib/build-source', () => ({ BuildSourceError: class exte
 const mockDeploy = jest.fn();
 jest.mock('../../../src/lib/deploy-op', () => ({ deployOperation: { steps: [{ name: 'apply', run: (...args: any[]) => mockDeploy(...args) }], onFailed: jest.fn() } }));
 import { BuildLimitError, BuildProviderUnavailableError, BuildSupersededError, assertManualBuildAllowed, buildOperation, enqueueBuild, pruneBuildImages, queuePushBuilds, recoverBuildQueue } from '../../../src/lib/build-op';
-import { BuildStopped, RegistryNotFoundError, runBuildJob, cleanupBuildSecret, registryManifest } from '../../../src/lib/build-runtime';
+import { BuildStopped, RegistryNotFoundError, cancelBuildJob, runBuildJob, cleanupBuildSecret, registryManifest } from '../../../src/lib/build-runtime';
 import { MemoryOperationStore } from '../../../src/lib/operation-store';
 import { runOperation, setOperationStore } from '../../../src/lib/operations';
 import { resetMemoryLocksForTests } from '../../../src/lib/locks';
@@ -210,6 +210,15 @@ it('a superseded build stays cancelled and never runs', async () => {
   await runOperation(build.id);
   expect(runBuildJob).not.toHaveBeenCalled();
   expect(mockRepos.Build.rows.find((b: any) => b.id === build.id).status).toBe('cancelled');
+});
+
+it('cancels the Job and removes its Secrets on failure even after the project was deactivated', async () => {
+  const build = await enqueueBuild(project, env, 'main', 'a'.repeat(40), 'push');
+  await mockRepos.Project.update('p', { isActive: false });
+  await buildOperation.onFailed!({ state: { buildId: build.id, deploymentId: '' } } as any, 'stopped');
+  expect(cancelBuildJob).toHaveBeenCalledWith(expect.objectContaining({ id: build.id }));
+  expect(cleanupBuildSecret).toHaveBeenCalledWith(expect.objectContaining({ id: build.id }));
+  expect(mockRepos.Build.rows[0].status).toBe('failed');
 });
 
 it('repairs queued rows created before an operation was saved', async () => {

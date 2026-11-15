@@ -20,5 +20,7 @@ export class SourceBuilds1799000000550 implements MigrationInterface {
   async down(q: QueryRunner): Promise<void> {
     await q.query('DROP TABLE builds');
     await q.query('ALTER TABLE environments DROP COLUMN build_on_push, DROP COLUMN build_branch, DROP COLUMN source_image');
+    // Digest-pinned source images can exceed the previous width; they are cut, not rejected.
+    await q.query('ALTER TABLE deployments ALTER COLUMN image_tag TYPE varchar(200) USING left(image_tag, 200)');
   }
 }

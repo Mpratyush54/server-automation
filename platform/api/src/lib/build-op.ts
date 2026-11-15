@@ -80,7 +80,11 @@ export const buildOperation = defineOperation<BuildState>({
   type: BUILD_OPERATION, resume: 'continue', maxAttempts: 3,
   summarize: s => ({ buildId: s.buildId, deploymentId: s.deploymentId }),
   async onFailed(ctx, error) {
-    const { repo, build } = await loadBuild(ctx.state.buildId);
+    // Not loadBuild: the Job and its Secrets are cleaned up even when the project or environment
+    // has been deactivated since the build started.
+    const repo = (await getDb()).getRepository(Build);
+    const build = await repo.findOneBy({ id: ctx.state.buildId });
+    if (!build) return;
     if (build.status !== 'succeeded') {
       await cancelBuildJob(build);
       if (build.status !== 'cancelled') {
