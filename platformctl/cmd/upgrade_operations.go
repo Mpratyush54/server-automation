@@ -65,5 +65,5 @@ func checkActiveOperations() error {
 	for _, op := range result.Recent {
 		recent = append(recent, fmt.Sprintf("type=%s status=%s updatedAt=%s", op.Type, op.Status, op.UpdatedAt))
 	}
-	return fmt.Errorf("%d active operations; wait for completion before upgrading; newest: %s", *result.Count, strings.Join(recent, "; "))
+	return fmt.Errorf("%d active operation(s); wait for completion before upgrading; newest: %s", *result.Count, strings.Join(recent, "; "))
 }

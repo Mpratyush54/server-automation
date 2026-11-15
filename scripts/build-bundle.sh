@@ -129,7 +129,7 @@ fi
 # from the bundle (must equal apt.BundlePackages in
 # platformctl/internal/apt/apt.go): Longhorn prerequisites, host hardening
 # packages, the commands preflight needs and provision's prerequisites.
-OFFLINE_PACKAGES="open-iscsi nfs-common util-linux dmsetup unattended-upgrades fail2ban chrony nftables curl openssl wget jq unzip gnupg ca-certificates apt-transport-https python3 apache2-utils netcat-openbsd"
+OFFLINE_PACKAGES="open-iscsi nfs-common util-linux dmsetup unattended-upgrades fail2ban chrony nftables curl openssl wget jq unzip gnupg ca-certificates apt-transport-https python3 apache2-utils sqlite3 netcat-openbsd"
 # One flat apt repository per supported Ubuntu release, built in a container
 # of that release and architecture (arm64 runs under QEMU in CI). The
 # dependency closure is resolved against an empty dpkg status, so it includes

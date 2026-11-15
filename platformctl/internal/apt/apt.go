@@ -15,10 +15,10 @@ const prereqsScript = `
 		apt-get update -qq
 		apt-get install -y -qq \
 		  curl wget jq unzip gnupg ca-certificates \
-		  apt-transport-https openssl python3 apache2-utils \
+		  apt-transport-https openssl python3 apache2-utils sqlite3 \
 		  netcat-openbsd || apt-get install -y -qq \
 		  curl wget jq unzip gnupg ca-certificates \
-		  apt-transport-https openssl python3 apache2-utils
+		  apt-transport-https openssl python3 apache2-utils sqlite3
 	`
 
 func InstallPrereqs() error {
@@ -103,7 +103,7 @@ const OfflinePackages = "open-iscsi nfs-common util-linux dmsetup unattended-upg
 
 // PrereqPackages are the prerequisites provision installs (see prereqsScript)
 // that OfflinePackages lacks.
-const PrereqPackages = "wget jq unzip gnupg ca-certificates apt-transport-https python3 apache2-utils netcat-openbsd"
+const PrereqPackages = "wget jq unzip gnupg ca-certificates apt-transport-https python3 apache2-utils sqlite3 netcat-openbsd"
 
 // BundlePackages are the packages scripts/build-bundle.sh puts in the release
 // bundle (TestBundleScriptPackageList keeps both lists equal) and what an
