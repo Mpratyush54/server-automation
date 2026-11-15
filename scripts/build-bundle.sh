@@ -6,6 +6,8 @@
 #   arch     amd64 | arm64
 #
 # Contents (installed by platformctl/internal/bundle):
+#   k3s/k3s, k3s/k3s-install.sh               pinned binary and installer
+#   packages/ubuntu-<release>/<arch>/         flat apt repository (*.deb + Packages) for offline join
 #   SHA256SUMS                               checksums of every file below
 #   manifest.json                            versions + file list
 #   k3s/k3s-airgap-images-<arch>.tar.zst     k3s airgap images for versions.K3sVersion
@@ -24,6 +26,7 @@
 #   IMAGE_GROUPS  split the images into N tarballs (default 1), so they can be
 #                 downloaded and imported in parallel (scripts/build-stack.sh)
 #   STAGE_ONLY    copy the staged files to this directory instead of packaging
+#   SKIP_PACKAGES set to 1 to leave out the Ubuntu node packages (stack builds)
 set -euo pipefail
 
 die() { echo "build-bundle: error: $*" >&2; exit 1; }
@@ -52,7 +55,7 @@ done
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 STAGE="$WORK/bundle"
-mkdir -p "$STAGE/k3s" "$STAGE/images" "$STAGE/charts" "$OUT_DIR"
+mkdir -p "$STAGE/k3s" "$STAGE/images" "$STAGE/charts" "$STAGE/packages" "$OUT_DIR"
 
 # --- pinned versions -------------------------------------------------------
 if [[ -n "${CHARTS_JSON:-}" ]]; then
@@ -77,6 +80,67 @@ log "downloading $K3S_URL"
 # anonymous downloads have failed while authenticated ones kept working.
 curl -fSL --retry 5 --retry-delay 5 ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} \
   -o "$STAGE/k3s/$K3S_FILE" "$K3S_URL"
+
+# --- k3s installer ---------------------------------------------------------
+fetch() {
+  local auth=()
+  if [[ -n "${GITHUB_TOKEN:-}" && "$1" == https://github.com/* ]]; then
+    auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
+  fi
+  curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors "${auth[@]}" -o "$2" "$1"
+}
+K3S_BIN=k3s
+[[ "$ARCH" == arm64 ]] && K3S_BIN=k3s-arm64
+fetch "https://github.com/k3s-io/k3s/releases/download/$K3S_TAG_ENC/$K3S_BIN" "$STAGE/k3s/k3s"
+fetch "https://github.com/k3s-io/k3s/releases/download/$K3S_TAG_ENC/sha256sum-$ARCH.txt" "$WORK/k3s.sums"
+want="$(awk -v f="$K3S_BIN" '$2 == f {print $1}' "$WORK/k3s.sums")"
+[[ "$(sha256sum "$STAGE/k3s/k3s" | cut -d' ' -f1)" == "$want" ]] || die "k3s binary checksum mismatch"
+fetch "https://raw.githubusercontent.com/k3s-io/k3s/$K3S_TAG_ENC/install.sh" "$STAGE/k3s/k3s-install.sh"
+head -1 "$STAGE/k3s/k3s-install.sh" | grep -q '^#!/bin/sh' || die "invalid k3s installer"
+
+# --- Ubuntu node packages --------------------------------------------------
+# Offline `platformctl join` installs these from the bundle (must equal
+# apt.OfflinePackages in platformctl/internal/apt/apt.go): Longhorn
+# prerequisites, host hardening packages and the commands preflight needs.
+OFFLINE_PACKAGES="open-iscsi nfs-common util-linux dmsetup unattended-upgrades fail2ban chrony nftables curl openssl"
+# One flat apt repository per supported Ubuntu release, built in a container
+# of that release and architecture (arm64 runs under QEMU in CI). The
+# dependency closure is resolved against an empty dpkg status, so it includes
+# base packages a minimal node may lack; apt on the node installs only what is
+# missing. apt-get download verifies every file against the signed archive
+# index; SHA256SUMS below records the checksums platformctl verifies.
+# SKIP_PACKAGES=1 leaves them out (the platform stack does not carry them).
+if [[ "${SKIP_PACKAGES:-}" != 1 ]]; then
+  for release in 22.04 24.04; do
+    image="ubuntu:$release"
+    package_dir="$STAGE/packages/ubuntu-$release/$ARCH"
+    mkdir -p "$package_dir"
+    log "resolving node packages for Ubuntu $release ($ARCH)"
+    docker pull --quiet --platform "linux/$ARCH" "$image" >/dev/null
+    docker run --rm -i --platform "linux/$ARCH" \
+      -e ARCH="$ARCH" -e OFFLINE_PACKAGES="$OFFLINE_PACKAGES" -e OWNER="$(id -u):$(id -g)" \
+      -v "$package_dir:/packages" "$image" bash -s <<'PACKAGES'
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+[ "$(dpkg --print-architecture)" = "$ARCH" ] || { echo "container is $(dpkg --print-architecture), want $ARCH" >&2; exit 1; }
+apt-get update -qq
+apt-get install -y -qq --no-install-recommends apt-utils >/dev/null
+: > /tmp/empty-status
+# shellcheck disable=SC2086 # OFFLINE_PACKAGES is a list
+apt-get -o Dir::State::status=/tmp/empty-status --simulate install $OFFLINE_PACKAGES \
+  | awk '$1 == "Inst" {print $2 "=" substr($3, 2)}' > /tmp/packages
+test -s /tmp/packages
+cd /packages
+xargs -r apt-get -o APT::Sandbox::User=root download < /tmp/packages
+want=$(wc -l < /tmp/packages)
+got=$(find . -maxdepth 1 -name '*.deb' | wc -l)
+[ "$want" -eq "$got" ] || { echo "downloaded $got of $want packages" >&2; exit 1; }
+apt-ftparchive packages . > Packages
+chown "$OWNER" ./*.deb Packages
+PACKAGES
+    [[ -s "$package_dir/Packages" ]] || die "no package index for Ubuntu $release ($ARCH)"
+  done
+fi
 
 # --- helm charts -----------------------------------------------------------
 export HELM_CACHE_HOME="$WORK/helm/cache" HELM_CONFIG_HOME="$WORK/helm/config" HELM_DATA_HOME="$WORK/helm/data"
@@ -159,7 +223,7 @@ else
 fi
 
 # --- manifest + checksums --------------------------------------------------
-(cd "$STAGE" && find k3s images charts -type f | LC_ALL=C sort) >"$WORK/files.txt"
+(cd "$STAGE" && find k3s images charts packages -type f | LC_ALL=C sort) >"$WORK/files.txt"
 printf '%s\n' "${IMAGES[@]}" >"$WORK/images.txt"
 jq -n \
   --arg version "$VERSION" --arg arch "$ARCH" \
@@ -184,7 +248,7 @@ fi
 # --- package ---------------------------------------------------------------
 # Contents are already compressed; a low level keeps packaging fast.
 log "packaging $OUT_DIR/$BUNDLE"
-tar -C "$STAGE" -cf - SHA256SUMS manifest.json k3s images charts | zstd -q -T0 -3 -o "$OUT_DIR/$BUNDLE" -f
+tar -C "$STAGE" -cf - SHA256SUMS manifest.json k3s images charts packages | zstd -q -T0 -3 -o "$OUT_DIR/$BUNDLE" -f
 (cd "$OUT_DIR" && sha256sum "$BUNDLE" >"$BUNDLE.sha256")
 # GitHub release assets must be smaller than 2 GiB; the bundle is larger.
 # Releases publish .part00, .part01, ... (the .sha256 covers the whole

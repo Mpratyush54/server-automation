@@ -22,6 +22,11 @@ func clusterTest(t *testing.T) {
 	dir := t.TempDir()
 	state.SetPath(filepath.Join(dir, "state"))
 	state.SetLockPath(filepath.Join(dir, "lock"))
+	oldStage, oldBundle, oldPackages := joinStageBundle, joinBundle, joinOfflinePackages
+	t.Cleanup(func() { joinStageBundle, joinBundle, joinOfflinePackages = oldStage, oldBundle, oldPackages })
+	joinStageBundle = func(string) error { return nil }
+	joinOfflinePackages = func() error { return nil }
+	joinBundle = ""
 	oldCfg := *cfg
 	oldBuildIsolation := joinBuildIsolation
 	t.Cleanup(func() { joinBuildIsolation = oldBuildIsolation })

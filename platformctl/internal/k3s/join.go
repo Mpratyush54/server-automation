@@ -109,7 +109,7 @@ func Join(role Role, serverURL, token, githubToken string, o ServerOptions) (err
 		return err
 	}
 	if !joinIsInstalled() {
-		if err := joinInstall(exec); err != nil {
+		if err := installJoinK3s(exec, o.Offline); err != nil {
 			return err
 		}
 	} else if changed || registriesChanged {
@@ -131,6 +131,17 @@ func Join(role Role, serverURL, token, githubToken string, o ServerOptions) (err
 		return err
 	}
 	return state.MarkDone("k3s")
+}
+
+// installJoinK3s preserves online fallback but never downloads for a bundle join.
+func installJoinK3s(exec string, offline bool) error {
+	if !offline {
+		return joinInstall(exec)
+	}
+	if !stackPaths.Staged() {
+		return fmt.Errorf("offline join requires the staged k3s binary and installer")
+	}
+	return installFromStack(exec)
 }
 
 // RotateServerToken runs `k3s token rotate` without --new-token: k3s generates
