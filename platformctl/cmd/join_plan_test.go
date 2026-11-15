@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"slices"
@@ -142,5 +143,31 @@ func TestJoinViaAPIVIP(t *testing.T) {
 	c := &config.Config{APIVIP: "10.0.0.60"}
 	if !joinViaAPIVIP("10.0.0.60", c) || joinViaAPIVIP("10.0.0.11", c) || joinViaAPIVIP("10.0.0.60", &config.Config{}) {
 		t.Fatal("API VIP detection")
+	}
+}
+
+func TestJoinRefreshesBuildIsolation(t *testing.T) {
+	for _, role := range []string{"server", "agent"} {
+		for _, enabled := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/%t", role, enabled), func(t *testing.T) {
+				clusterTest(t)
+				joinRole, joinServer, joinTokenFile, joinNodes = role, "https://10.0.0.11:6443", "-", "10.0.0.0/24"
+				t.Setenv("BUILDS_ENABLED", fmt.Sprint(enabled))
+				cfg.BuildsEnabled, cfg.Profile = enabled, config.ProfileHA
+				k3sJoin = func(k3s.Role, string, string, string, k3s.ServerOptions) error { return nil }
+				called := false
+				joinBuildIsolation = func(*config.Config) error { called = true; return nil }
+				out, err := captureStdout(t, func() error { return runJoin(strings.NewReader(testToken)) })
+				if err != nil {
+					t.Fatal(err)
+				}
+				if called != (enabled && role == "server") {
+					t.Fatal("incorrect build isolation refresh")
+				}
+				if enabled && role == "agent" && !strings.Contains(out, "BUILDS_EXTRA_BLOCKED_CIDRS") {
+					t.Fatal("agent join must explain how to refresh isolation")
+				}
+			})
+		}
 	}
 }

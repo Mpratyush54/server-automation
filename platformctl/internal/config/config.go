@@ -92,6 +92,8 @@ type Config struct {
 	// BuildsRegistryNodeCIDRs lists node addresses allowed to pull from the
 	// in-cluster build registry besides the local node (needed on ha).
 	BuildsRegistryNodeCIDRs string
+	// BuildsExtraBlockedCIDRs lists additional networks excluded from build egress.
+	BuildsExtraBlockedCIDRs string
 
 	// Profile is the install profile (minimal|standard|full) that set the
 	// Install* defaults. See ApplyProfile.
@@ -219,6 +221,7 @@ func Load() *Config {
 	c.BuildsEgressCIDRs = getEnv("BUILDS_EGRESS_CIDRS", "")
 	c.BuildsS3Endpoint = getEnv("BUILDS_S3_ENDPOINT", "")
 	c.BuildsS3Bucket = getEnv("BUILDS_S3_BUCKET", "platform-registry")
+	c.BuildsExtraBlockedCIDRs = getEnv("BUILDS_EXTRA_BLOCKED_CIDRS", "")
 	c.BuildsRegistryNodeCIDRs = getEnv("BUILDS_REGISTRY_NODE_CIDRS", "")
 	c.loadCluster()
 	c.LonghornReplicas, _ = strconv.Atoi(strings.TrimSpace(os.Getenv("LONGHORN_REPLICAS")))
@@ -589,6 +592,15 @@ func (c *Config) GenerateSecrets() {
 }
 
 func (c *Config) SaveEnvFile(path string) error {
+	for _, raw := range strings.Split(c.BuildsExtraBlockedCIDRs, ",") {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
+		if err != nil || prefix != prefix.Masked() || prefix.Bits() == 0 {
+			return fmt.Errorf("BUILDS_EXTRA_BLOCKED_CIDRS must list network CIDRs, not default routes")
+		}
+	}
 	// These numeric settings cross the parent/child boundary through .env.
 	for _, value := range []string{c.TelemetryRetentionDays, c.TelemetrySamplingPercentage, c.TelemetryLokiDatasourceUID} {
 		if strings.ContainsAny(value, "\r\n") {
@@ -640,7 +652,7 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("INGRESS_IP_BURST=%d\n", c.IngressIPBurst))
 	b.WriteString(fmt.Sprintf("INGRESS_IP_CONNECTIONS=%d\n", c.IngressIPConnections))
 	b.WriteString(fmt.Sprintf("PLATFORM_PROFILE=%s\n", c.profileName()))
-	b.WriteString(fmt.Sprintf("BUILDS_ENABLED=%t\nBUILDS_EGRESS_CIDRS=%s\nBUILDS_S3_ENDPOINT=%s\nBUILDS_S3_BUCKET=%s\nBUILDS_REGISTRY_NODE_CIDRS=%s\n", c.BuildsEnabled, c.BuildsEgressCIDRs, c.BuildsS3Endpoint, c.BuildsS3Bucket, c.BuildsRegistryNodeCIDRs))
+	b.WriteString(fmt.Sprintf("BUILDS_ENABLED=%t\nBUILDS_EGRESS_CIDRS=%s\nBUILDS_S3_ENDPOINT=%s\nBUILDS_S3_BUCKET=%s\nBUILDS_REGISTRY_NODE_CIDRS=%s\nBUILDS_EXTRA_BLOCKED_CIDRS=%s\n", c.BuildsEnabled, c.BuildsEgressCIDRs, c.BuildsS3Endpoint, c.BuildsS3Bucket, c.BuildsRegistryNodeCIDRs, c.BuildsExtraBlockedCIDRs))
 	if c.TelemetrySamplingPercentage != "" {
 		b.WriteString(fmt.Sprintf("TELEMETRY_SAMPLING_PERCENTAGE=%s\n", c.TelemetrySamplingPercentage))
 	}

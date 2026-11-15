@@ -23,6 +23,9 @@ func clusterTest(t *testing.T) {
 	state.SetPath(filepath.Join(dir, "state"))
 	state.SetLockPath(filepath.Join(dir, "lock"))
 	oldCfg := *cfg
+	oldBuildIsolation := joinBuildIsolation
+	t.Cleanup(func() { joinBuildIsolation = oldBuildIsolation })
+	joinBuildIsolation = func(*config.Config) error { t.Fatal("unexpected build isolation refresh"); return nil }
 	oldRole, oldRoot, oldJoin, oldPre := joinedRole, requireRoot, k3sJoin, joinPreflight
 	oldHarden, oldUpsert, oldProv := joinHarden, upsertEnvKey, provisionedFn
 	oldFlags := []string{joinRole, joinServer, joinTokenFile, joinNodes, joinNodeIP}
@@ -57,6 +60,7 @@ func clusterTest(t *testing.T) {
 	upsertEnvKey = func(path, k, v string) error { return nil }
 	cfg.SkipHardening, cfg.SkipPreflight = false, false
 	cfg.Cluster = config.Cluster{}
+	cfg.BuildsEnabled = false
 }
 
 func TestK3sServerOptionsSingleNodeUnchanged(t *testing.T) {

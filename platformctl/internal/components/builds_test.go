@@ -2,12 +2,17 @@ package components
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
 	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 )
@@ -293,6 +298,7 @@ func TestBuildkitRuntimeProfilesAreNarrow(t *testing.T) {
 	var profile struct {
 		DefaultAction string `json:"defaultAction"`
 		Syscalls      []struct {
+			Errno  uint     `json:"errnoRet"`
 			Names  []string `json:"names"`
 			Action string   `json:"action"`
 			Args   []struct {
@@ -306,6 +312,7 @@ func TestBuildkitRuntimeProfilesAreNarrow(t *testing.T) {
 		t.Fatal(err)
 	}
 	denied := map[string]bool{}
+	errnos := map[string]uint{}
 	netfilter := false
 	for _, rule := range profile.Syscalls {
 		if rule.Action != "SCMP_ACT_ERRNO" {
@@ -322,6 +329,7 @@ func TestBuildkitRuntimeProfilesAreNarrow(t *testing.T) {
 		}
 		for _, n := range rule.Names {
 			denied[n] = true
+			errnos[n] = rule.Errno
 		}
 	}
 	if !netfilter {
@@ -335,6 +343,11 @@ func TestBuildkitRuntimeProfilesAreNarrow(t *testing.T) {
 	for _, needed := range []string{"unshare", "clone", "mount", "pivot_root", "setns", "socket"} {
 		if denied[needed] {
 			t.Errorf("rootless BuildKit needs %s", needed)
+		}
+	}
+	for _, name := range []string{"fsopen", "fsconfig", "fsmount", "fspick", "move_mount", "open_tree", "mount_setattr"} {
+		if !denied[name] || errnos[name] != 38 {
+			t.Errorf("%s must return ENOSYS, got %d", name, errnos[name])
 		}
 	}
 	apparmor := BuildkitAppArmorProfile()
@@ -403,5 +416,116 @@ func TestRegistryRestartsWhenTheTokenCertificateChanges(t *testing.T) {
 	}
 	if !strings.Contains(a, `"cairn.dev/token-cert"`) || !strings.Contains(a, `"template"`) {
 		t.Fatalf("patch must annotate the pod template: %s", a)
+	}
+}
+
+type buildMetadataClient func(*http.Request) (*http.Response, error)
+
+func (f buildMetadataClient) Do(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestBuildPublicAddresses(t *testing.T) {
+	for _, tc := range []struct {
+		name, token, address string
+		status               int
+		unreachable          bool
+		want                 []string
+	}{
+		{"success", "test-token", "203.0.113.9", 200, false, []string{"203.0.113.9/32"}},
+		{"invalid", "test-token", "invalid", 200, false, nil},
+		{"ipv6", "test-token", "2001:db8::1", 200, false, nil},
+		{"empty token", "", "", 200, false, nil},
+		{"http error", "", "", 403, false, nil},
+		{"unreachable", "", "", 0, true, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			client := buildMetadataClient(func(r *http.Request) (*http.Response, error) {
+				calls++
+				deadline, ok := r.Context().Deadline()
+				if !ok || time.Until(deadline) > time.Second {
+					t.Fatal("metadata must have a one-second deadline")
+				}
+				if r.URL.Host != "169.254.169.254" {
+					t.Fatalf("unexpected metadata host %s", r.URL.Host)
+				}
+				if tc.unreachable {
+					return nil, errors.New("unreachable")
+				}
+				body := tc.token
+				if calls == 1 {
+					if r.Method != "PUT" || r.URL.Path != "/latest/api/token" || r.Header.Get("X-aws-ec2-metadata-token-ttl-seconds") != "60" {
+						t.Fatal("missing IMDSv2 token request")
+					}
+				} else {
+					if calls != 2 || r.Method != "GET" || r.URL.Path != "/latest/meta-data/public-ipv4" || r.Header.Get("X-aws-ec2-metadata-token") != tc.token {
+						t.Fatal("missing IMDSv2 address request")
+					}
+					body = tc.address
+				}
+				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(body))}, nil
+			})
+			got := buildPublicAddresses(client)
+			var gotS []string
+			for _, p := range got {
+				gotS = append(gotS, p.String())
+			}
+			if !slices.Equal(gotS, tc.want) {
+				t.Fatalf("got %v, want %v", gotS, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildMetadataAddressFailureIsOptional(t *testing.T) {
+	for _, fail := range []string{"status", "network", "deadline"} {
+		t.Run(fail, func(t *testing.T) {
+			calls := 0
+			got := buildPublicAddresses(buildMetadataClient(func(r *http.Request) (*http.Response, error) {
+				calls++
+				if calls == 1 {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("token"))}, nil
+				}
+				switch fail {
+				case "status":
+					return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("unavailable"))}, nil
+				case "deadline":
+					<-r.Context().Done()
+					return nil, r.Context().Err()
+				default:
+					return nil, errors.New("unreachable")
+				}
+			}))
+			if len(got) != 0 || calls != 2 {
+				t.Fatalf("metadata failure must yield no addresses: %v (%d requests)", got, calls)
+			}
+		})
+	}
+}
+
+func TestBuildPublicAndExtraNetworksExcluded(t *testing.T) {
+	c := &config.Config{Profile: config.ProfileStandard, BuildsEnabled: true, BuildsEgressCIDRs: "203.0.113.0/24", BuildsExtraBlockedCIDRs: "203.0.113.8/32,203.0.113.16/28,203.0.113.8/32"}
+	n := DefaultBuildNetworks()
+	n.Nodes = []netip.Prefix{netip.MustParsePrefix("203.0.113.7/32")}
+	n.Public = []netip.Prefix{netip.MustParsePrefix("203.0.113.7/32"), netip.MustParsePrefix("203.0.113.8/32")}
+	manifest, err := BuildNamespaceManifest(c, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(manifest, "except: [203.0.113.7/32, 203.0.113.8/32, 203.0.113.16/28]") {
+		t.Fatalf("missing deduplicated public exclusions: %s", manifest)
+	}
+	again, err := BuildNamespaceManifest(c, n)
+	if err != nil || again != manifest {
+		t.Fatal("manifest must be idempotent")
+	}
+	for _, bad := range []string{"bad", "0.0.0.0/0", "::/0", "203.0.113.1/24"} {
+		c.BuildsExtraBlockedCIDRs = bad
+		if _, err := BuildNamespaceManifest(c, n); err == nil {
+			t.Errorf("accepted extra CIDR %s", bad)
+		}
+	}
+	c.BuildsExtraBlockedCIDRs = "203.0.113.0/24"
+	if _, err := BuildNamespaceManifest(c, n); err == nil {
+		t.Fatal("egress wholly inside extra block must fail")
 	}
 }

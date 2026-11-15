@@ -725,3 +725,26 @@ func TestSaveEnvFileIngressHAOnlyOnHA(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildExtraBlockedCIDRsRoundTrip(t *testing.T) {
+	value := "203.0.113.7/32,198.51.100.0/24"
+	t.Setenv("BUILDS_EXTRA_BLOCKED_CIDRS", value)
+	c := Load()
+	if c.BuildsExtraBlockedCIDRs != value {
+		t.Fatal("extra blocked CIDRs not loaded")
+	}
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := c.SaveEnvFile(path); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(data), "BUILDS_EXTRA_BLOCKED_CIDRS="+value+"\n") {
+		t.Fatal("extra blocked CIDRs not persisted")
+	}
+	for _, bad := range []string{"invalid", "0.0.0.0/0", "::/0", "203.0.113.1/24", "203.0.113.7/32\nOTHER=value"} {
+		c.BuildsExtraBlockedCIDRs = bad
+		if err := c.SaveEnvFile(path); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}

@@ -12,9 +12,9 @@ export const BUILD_IMAGES = {
 };
 /** Nodes where platformctl installed the BuildKit runtime profiles carry this label. */
 export const BUILD_RUNTIME_LABEL = 'cairn.dev/build-runtime';
-export const BUILD_RUNTIME_VERSION = 'v1';
+export const BUILD_RUNTIME_VERSION = 'v2';
 /** Node-local profiles, relative to the kubelet seccomp root and the loaded AppArmor profiles. */
-export const BUILDKIT_SECCOMP_PROFILE = 'cairn/buildkit-v1.json';
+export const BUILDKIT_SECCOMP_PROFILE = 'cairn/buildkit-v2.json';
 export const BUILDKIT_APPARMOR_PROFILE = 'cairn-buildkit-v1';
 
 /** Containers that execute repository-controlled code. They never receive credentials. */
