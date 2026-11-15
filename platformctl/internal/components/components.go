@@ -1622,6 +1622,9 @@ var imagePresentLocally = func(image string) bool {
 	return shell.RunSilent("k3s", "crictl", "inspecti", image) == nil
 }
 
+// ImagePresentLocally reports whether containerd on this node has the image.
+func ImagePresentLocally(image string) bool { return imagePresentLocally(image) }
+
 // UpdateImages resolves moving GHCR tags before changing the pod template.
 // Order (after PrepareUpdate moved host state into Secrets, #20): migration Job
 // template + database backup, then the digest script runs the migrate Job and

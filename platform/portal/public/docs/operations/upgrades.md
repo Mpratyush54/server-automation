@@ -54,7 +54,7 @@ It also refuses to go down a version or skip a major version.
 | `--yes` | Accept the plan without a prompt (for scripts). |
 | `--patch-only` | Only take a newer patch in the installed minor version (for example 1.4.0 to 1.4.2). |
 | `--history` | Print the local upgrade history. |
-| `--allow-unreleased` | Accept a `--to` tag that is not published. Only for testing a local build whose binary and images are already on the server. |
+| `--allow-unreleased` | Accept a `--to` tag that is not published. Only for testing a local build whose binary and images are already on the server. The running images may then use a tag without a digest (for example from an install with local images), as long as they come from the same repository as the target and are on the server, so a rollback can restore them. |
 | `--restore-failed-migration` | Allow restoring the database if a migration the release marks as irreversible fails. Reads the backup's private key on standard input. `--yes` never grants this. |
 
 ## If something goes wrong
@@ -76,7 +76,7 @@ Every day at 04:20 UTC the server runs `platformctl upgrade --patch-only --yes`.
 
 ## Upgrade from an older release
 
-Releases from before the `upgrade` command existed cannot upgrade themselves. Install the **target** release's `platformctl` with its installer, then upgrade the existing cluster. Do not run `provision` again.
+Upgrades work from **v1.3.0-rc.3**, the first release that contains `platformctl upgrade`, onwards. Releases from before the `upgrade` command existed (v1.3.0-rc.2, v1.2.0 and earlier) cannot upgrade themselves. Install the **target** release's `platformctl` with its installer, then upgrade the existing cluster. Do not run `provision` again.
 
 ```sh
 curl -fsSL https://github.com/Mpratyush54/server-automation/releases/download/<target>/install.sh -o install.sh

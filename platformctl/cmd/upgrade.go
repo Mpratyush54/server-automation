@@ -435,15 +435,43 @@ func upgradePlan(api, portal string) (upgrade.Plan, error) {
 		if old == "" {
 			return upgrade.Plan{}, fmt.Errorf("missing %s image", x.d)
 		}
-		// Local test builds (--allow-unreleased) have no registry digest: the
-		// deployed target tag itself is accepted, nothing else.
-		if !strings.Contains(old, "@sha256:") && !(upgrade.AllowUnreleased && old == x.target) {
+		if !strings.Contains(old, "@sha256:") && !unreleasedRollbackImage(old, x.target) {
+			if upgrade.AllowUnreleased {
+				return upgrade.Plan{}, fmt.Errorf("%s uses the mutable tag %s; with --allow-unreleased it must be in the same repository as %s and present on this node so a rollback can restore it", x.d, old, x.target)
+			}
 			return upgrade.Plan{}, fmt.Errorf("%s uses a mutable tag; run platformctl update to pin images before a release upgrade", x.d)
 		}
 		images = append(images, upgrade.Image{Deployment: x.d, Container: x.c, Before: old, After: x.target})
 	}
 	return upgrade.Compute(installed, pins, images), nil
 }
+
+// upgradeImageOnNode is swapped in tests.
+var upgradeImageOnNode = components.ImagePresentLocally
+
+// unreleasedRollbackImage accepts a deployed image without a registry digest
+// only when testing a local build (--allow-unreleased): an install from local
+// images runs a mutable tag such as platform-api:1.99.0-test.1, and the next
+// local build has another tag. Rollback restores that tag, so it must name the
+// same repository as the target and already be in containerd on this node
+// (nothing is pulled). Release upgrades still require digest-pinned images.
+func unreleasedRollbackImage(old, target string) bool {
+	if !upgrade.AllowUnreleased {
+		return false
+	}
+	if old == target {
+		return true
+	}
+	repo := func(image string) string {
+		image, _, _ = strings.Cut(image, "@")
+		if i := strings.LastIndex(image, ":"); i > strings.LastIndex(image, "/") {
+			image = image[:i]
+		}
+		return image
+	}
+	return repo(old) == repo(target) && upgradeImageOnNode(old)
+}
+
 func upgradePreflight() error {
 	out, e := upgradeRun("sh", "-c", `df -Pk /var/lib | awk 'NR==2 {print $4}'; awk '/MemAvailable:/ {print $2}' /proc/meminfo`)
 	if e != nil {
