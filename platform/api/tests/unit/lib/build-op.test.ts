@@ -3,14 +3,15 @@ const mockRepos: Record<string, any> = {};
 jest.mock('../../../src/config/database', () => ({ getDb: async () => ({ getRepository: (e: any) => mockRepos[e.name] }) }));
 jest.mock('../../../src/lib/build-runtime', () => {
   class BuildStopped extends Error {}
-  return { BuildStopped, cancelBuildJob: jest.fn(), runBuildJob: jest.fn(), cleanupBuildSecret: jest.fn(), registryManifest: jest.fn(async () => `sha256:${'a'.repeat(64)}`), signBuiltImage: jest.fn() };
+  class RegistryNotFoundError extends Error {}
+  return { BuildStopped, RegistryNotFoundError, cancelBuildJob: jest.fn(), runBuildJob: jest.fn(), cleanupBuildSecret: jest.fn(), registryManifest: jest.fn(async () => `sha256:${'a'.repeat(64)}`), signBuiltImage: jest.fn() };
 });
 const mockVerify = jest.fn(async (..._a: any[]): Promise<string> => 'head');
 jest.mock('../../../src/lib/build-source', () => ({ BuildSourceError: class extends Error {}, checkBranchHead: (...a: any[]) => mockVerify(...a) }));
 const mockDeploy = jest.fn();
 jest.mock('../../../src/lib/deploy-op', () => ({ deployOperation: { steps: [{ name: 'apply', run: (...args: any[]) => mockDeploy(...args) }], onFailed: jest.fn() } }));
-import { BuildLimitError, BuildProviderUnavailableError, BuildSupersededError, assertManualBuildAllowed, buildOperation, enqueueBuild, queuePushBuilds, recoverBuildQueue } from '../../../src/lib/build-op';
-import { BuildStopped, runBuildJob, cleanupBuildSecret, registryManifest } from '../../../src/lib/build-runtime';
+import { BuildLimitError, BuildProviderUnavailableError, BuildSupersededError, assertManualBuildAllowed, buildOperation, enqueueBuild, pruneBuildImages, queuePushBuilds, recoverBuildQueue } from '../../../src/lib/build-op';
+import { BuildStopped, RegistryNotFoundError, runBuildJob, cleanupBuildSecret, registryManifest } from '../../../src/lib/build-runtime';
 import { MemoryOperationStore } from '../../../src/lib/operation-store';
 import { runOperation, setOperationStore } from '../../../src/lib/operations';
 import { resetMemoryLocksForTests } from '../../../src/lib/locks';
@@ -243,4 +244,41 @@ it('defers registry cleanup failures without failing an already healthy rollout'
   await buildOperation.steps[buildOperation.steps.length - 1].run(ctx);
   expect(ctx.setOutput).toHaveBeenCalledWith({ retention: 'Deferred until the next successful build' });
   delete process.env.BUILDS_RETAIN;
+});
+
+describe('retention', () => {
+  const seed = async () => {
+    process.env.BUILDS_RETAIN = '1';
+    for (const [id, age] of [['old', 1], ['new', 2]] as const) {
+      await mockRepos.Build.save({ id, environmentId: 'e', status: 'succeeded', imageTag: `registry.example/p:${id}`, imageDigest: `sha256:${id}`, createdAt: new Date(age) });
+    }
+  };
+  afterEach(() => { delete process.env.BUILDS_RETAIN; });
+
+  it('prunes old images when the repository has no cache image (Dockerfile builds)', async () => {
+    await seed();
+    (registryManifest as jest.Mock).mockImplementation(async (_image: string, method?: string) => {
+      if (method === 'DELETE') return '';
+      throw new RegistryNotFoundError('Registry has no such manifest');
+    });
+    await pruneBuildImages('e');
+    expect(registryManifest).toHaveBeenCalledWith('registry.example/p@sha256:old', 'DELETE');
+    expect(mockRepos.Build.rows.find((b: any) => b.id === 'old').prunedAt).toBeInstanceOf(Date);
+    expect(mockRepos.Build.rows.find((b: any) => b.id === 'new').prunedAt).toBeUndefined();
+  });
+
+  it('keeps every image when the cache image cannot be checked', async () => {
+    await seed();
+    (registryManifest as jest.Mock).mockRejectedValueOnce(new Error('Registry HEAD failed (503)'));
+    await expect(pruneBuildImages('e')).rejects.toThrow('503');
+    expect(registryManifest).not.toHaveBeenCalledWith(expect.anything(), 'DELETE');
+    expect(mockRepos.Build.rows.every((b: any) => !b.prunedAt)).toBe(true);
+  });
+
+  it('protects images that share the cache digest', async () => {
+    await seed();
+    (registryManifest as jest.Mock).mockImplementation(async (_image: string, method?: string) => (method === 'DELETE' ? '' : 'sha256:old'));
+    await pruneBuildImages('e');
+    expect(registryManifest).not.toHaveBeenCalledWith(expect.anything(), 'DELETE');
+  });
 });

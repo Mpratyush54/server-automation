@@ -133,6 +133,16 @@ it('redacts credentials, registry tokens and bounds stored logs', () => {
   for (const secret of [token, encoded, 'user:pass', 'gldt-abc', jwtLike]) expect(logs).not.toContain(secret);
 });
 
+it('distinguishes a missing manifest from other registry failures', async () => {
+  const { RegistryNotFoundError } = jest.requireActual('../../../src/lib/build-runtime');
+  mockAxios.mockResolvedValueOnce({ status: 404, headers: {} });
+  await expect(registryManifest('registry.example.com/p-p1/e-e1:cache')).rejects.toBeInstanceOf(RegistryNotFoundError);
+  mockAxios.mockResolvedValueOnce({ status: 503, headers: {} });
+  const failure = registryManifest('registry.example.com/p-p1/e-e1:cache');
+  await expect(failure).rejects.toThrow('503');
+  await expect(failure).rejects.not.toBeInstanceOf(RegistryNotFoundError);
+});
+
 it('deletes manifests in-cluster as the retention identity', async () => {
   mockAxios.mockResolvedValue({ status: 202, headers: {} });
   await registryManifest(`registry.example.com/p-p1/e-e1@${digest}`, 'DELETE');

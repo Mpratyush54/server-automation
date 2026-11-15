@@ -8,7 +8,7 @@ import { createOperation, defineOperation, getOperation, runOperation } from './
 import { deployOperation } from './deploy-op';
 import { projectLockKey, LockBusyError } from './locks';
 import { positiveBuildInt, retentionCandidates, validateBuildRef } from './build-spec';
-import { BuildStopped, cancelBuildJob, cleanupBuildSecret, registryManifest, runBuildJob, signBuiltImage } from './build-runtime';
+import { BuildStopped, RegistryNotFoundError, cancelBuildJob, cleanupBuildSecret, registryManifest, runBuildJob, signBuiltImage } from './build-runtime';
 import { BuildSourceError, checkBranchHead } from './build-source';
 import { AuditLog } from '../entities/AuditLog';
 import { RepositoryNotApprovedError, repositoryApproved } from './repository-binding';
@@ -63,7 +63,10 @@ export async function pruneBuildImages(environmentId: string): Promise<void> {
   if (live) protectedImages.push(live.imageTag);
   if (builds[0]) {
     const cache = `${builds[0].imageTag.slice(0, builds[0].imageTag.lastIndexOf(':'))}:cache`;
-    try { protectedImages.push(`cache@${await registryManifest(cache)}`); } catch { return; }
+    // Dockerfile builds never push a cache image: a missing cache has nothing to protect. Any other
+    // registry error stops retention, since the cache digest could not be confirmed.
+    try { protectedImages.push(`cache@${await registryManifest(cache)}`); }
+    catch (error) { if (!(error instanceof RegistryNotFoundError)) throw error; }
   }
   for (const build of retentionCandidates(builds, positiveBuildInt(process.env.BUILDS_RETAIN, 10, 1000), protectedImages)) {
     const repository = build.imageTag.slice(0, build.imageTag.lastIndexOf(':'));

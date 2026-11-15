@@ -70,7 +70,7 @@ The installer publishes the availability flag and registry name in the API's env
 
 ## Retention and storage cleanup
 
-After a deployment, Cairn removes old image manifests beyond the retention count. It protects the current deployed image, in-flight deployments, and digests shared with retained builds or the registry cache. Historical deployment rows remain for auditing; images beyond retention may no longer be available for rollback. Failed builds do not count as retained successful images.
+After a deployment, Cairn removes old image manifests beyond the retention count. It protects the current deployed image, in-flight deployments, and digests shared with retained builds or the registry cache. Environments without a registry cache (Dockerfile builds) are cleaned up too. If the registry cannot be checked, cleanup is skipped until the next successful build. Historical deployment rows remain for auditing; images beyond retention may no longer be available for rollback. Failed builds do not count as retained successful images.
 
 Distribution reclaims unreferenced blobs in a separate maintenance step. Pause new builds, wait for active builds and deploys to finish, then run:
 

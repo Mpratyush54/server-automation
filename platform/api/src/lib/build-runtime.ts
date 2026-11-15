@@ -202,6 +202,9 @@ export async function runBuildJob(build: Build, source: RepositorySource, hooks:
   }
 }
 
+/** The registry has no manifest for the reference (HEAD answered 404). */
+export class RegistryNotFoundError extends Error {}
+
 /** Manifest HEAD/DELETE as the API's retention identity, over the in-cluster registry Service. */
 export async function registryManifest(image: string, method: 'HEAD' | 'DELETE' = 'HEAD'): Promise<string> {
   const registry = process.env.BUILDS_REGISTRY || '';
@@ -216,6 +219,7 @@ export async function registryManifest(image: string, method: 'HEAD' | 'DELETE' 
     headers: { Authorization: `Bearer ${await retentionToken(repository)}`, Accept: 'application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json' },
   });
   if (method === 'DELETE' && response.status === 404) return '';
+  if (method === 'HEAD' && response.status === 404) throw new RegistryNotFoundError('Registry has no such manifest');
   if (response.status < 200 || response.status >= 300) throw new Error(`Registry ${method} failed (${response.status})`);
   const digest = String(response.headers['docker-content-digest'] || '');
   if (method === 'HEAD' && !/^sha256:[a-f0-9]{64}$/.test(digest)) throw new Error('Registry returned no image digest');
