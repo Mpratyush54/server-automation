@@ -2,7 +2,7 @@ import { applySourceWorkload, sourceWorkloadReady } from './source-deploy';
 import { releaseVersion } from './release-version';
 import { injectRelease } from './release-workloads';
 import * as k8s from '@kubernetes/client-node';
-import { MoreThan } from 'typeorm';
+import { MoreThan, Not } from 'typeorm';
 import { getDb } from '../config/database';
 import { Deployment, DeploymentStatus } from '../entities/Deployment';
 import { Environment, EnvironmentName } from '../entities/Environment';
@@ -14,6 +14,15 @@ import { defineOperation } from './operations';
 import { loadKubeConfig } from './kube-config';
 
 export const DEPLOY_OPERATION = 'deployment.deploy';
+
+/**
+ * Later deployments of the same environment. Excludes the deployment itself: PostgreSQL stores
+ * created_at with microseconds while the loaded Date has milliseconds, so a plain "created after"
+ * comparison also matches the row it was loaded from.
+ */
+export function newerDeploymentWhere(dep: { id: string; environmentId: string | null; createdAt: Date }) {
+  return { environmentId: dep.environmentId as string, createdAt: MoreThan(dep.createdAt), id: Not(dep.id) };
+}
 
 /** Non-secret state of a deploy (visible via GET /operations/:id). */
 type DeployState = {
@@ -93,7 +102,7 @@ export const deployOperation = defineOperation<DeployState>({
         const { ds, dep, project, env } = await load(ctx.state.deploymentId);
         const repo = ds.getRepository(Deployment);
         if (ctx.resumed && dep.environmentId) {
-          const newer = await repo.findOne({ where: { environmentId: dep.environmentId, createdAt: MoreThan(dep.createdAt) } });
+          const newer = await repo.findOne({ where: newerDeploymentWhere(dep) });
           if (newer) throw new Error(`superseded by deployment ${newer.id}`);
         }
         // Namespace isolation baseline (#22): labels, PSA, NetworkPolicies, quota, LimitRange.
