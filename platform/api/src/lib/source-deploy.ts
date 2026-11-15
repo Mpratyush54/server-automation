@@ -1,6 +1,7 @@
 import * as k8s from '@kubernetes/client-node';
 import { loadKubeConfig } from './kube-config';
 import { pullCredential } from './registry-token';
+import { releaseEnv } from './release-version';
 
 function clients() {
   const kc = new k8s.KubeConfig(); loadKubeConfig(kc);
@@ -8,7 +9,12 @@ function clients() {
 }
 const body = (r: any) => r.body || r;
 
-export function sourceWorkload(namespace: string, name: string, image: string, projectId: string, environmentName: string) {
+/**
+ * The release metadata (PLATFORM_RELEASE, OTEL_*) is part of the workload from the start: the
+ * generic release injection would roll the Deployment a second time and needs workload rights
+ * (StatefulSets) the API does not have in project namespaces.
+ */
+export function sourceWorkload(namespace: string, name: string, image: string, projectId: string, environmentName: string, release?: string) {
   const labels = { app: name, 'platform.io/project': projectId, 'platform.io/env': environmentName };
   return { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name, namespace, labels }, spec: {
     replicas: 1, selector: { matchLabels: { app: name } }, template: { metadata: { labels }, spec: {
@@ -16,7 +22,7 @@ export function sourceWorkload(namespace: string, name: string, image: string, p
       securityContext: { runAsNonRoot: true, seccompProfile: { type: 'RuntimeDefault' } },
       // Always: the kubelet re-authorizes every pull with this namespace's credential, so an image
       // another project already cached on the node cannot be started by digest without access.
-      containers: [{ name: 'app', image, imagePullPolicy: 'Always', ports: [{ containerPort: 8080 }], env: [{ name: 'PORT', value: '8080' }],
+      containers: [{ name: 'app', image, imagePullPolicy: 'Always', ports: [{ containerPort: 8080 }], env: [{ name: 'PORT', value: '8080' }, ...(release ? releaseEnv(release) : [])],
         readinessProbe: { tcpSocket: { port: 8080 }, initialDelaySeconds: 3, periodSeconds: 5 },
         resources: { requests: { cpu: '100m', memory: '128Mi' }, limits: { cpu: '1', memory: '512Mi' } },
         securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } },
@@ -50,10 +56,10 @@ export async function applySourcePullSecret(namespace: string, projectId: string
   }
 }
 
-export async function applySourceWorkload(namespace: string, name: string, image: string, projectId: string, environmentName: string): Promise<void> {
+export async function applySourceWorkload(namespace: string, name: string, image: string, projectId: string, environmentName: string, release?: string): Promise<void> {
   const { apps, core } = clients();
   await applySourcePullSecret(namespace, projectId);
-  const desired: any = sourceWorkload(namespace, name, image, projectId, environmentName);
+  const desired: any = sourceWorkload(namespace, name, image, projectId, environmentName, release);
   try {
     const current = body(await apps.readNamespacedDeployment({ namespace, name }));
     if (current.metadata?.labels?.['platform.io/project'] !== projectId) throw new Error('Source deployment name is already in use');

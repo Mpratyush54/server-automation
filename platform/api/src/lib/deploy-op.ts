@@ -125,7 +125,7 @@ export const deployOperation = defineOperation<DeployState>({
         if (dep.metadata?.sourceBuild) {
           const name = `source-${env.id}`;
           if (env.namespace !== target.namespace) { env.namespace = target.namespace; await ds.getRepository(Environment).save(env); }
-          await applySourceWorkload(env.namespace, name, dep.imageTag, project.id, String(env.name));
+          await applySourceWorkload(env.namespace, name, dep.imageTag, project.id, String(env.name), releaseVersion(dep));
           ctx.state.source = true; ctx.state.appName = name; ctx.state.destNs = env.namespace;
           if (env.domain) await ensureProjectIngress({ projectId: project.id, environmentName: String(env.name),
             name, namespace: env.namespace, host: env.domain, serviceName: name, servicePort: 80 });
@@ -228,7 +228,8 @@ export const deployOperation = defineOperation<DeployState>({
       async run(ctx) {
         const { ds, dep, project, env } = await load(ctx.state.deploymentId);
         // Keep the original three-step operation layout so interrupted pre-upgrade operations can resume.
-        if (!ctx.state.preview) await injectRelease(env.namespace, project.id, releaseVersion(dep));
+        // Source workloads carry the release metadata from the apply step (sourceWorkload).
+        if (!ctx.state.preview && !ctx.state.source) await injectRelease(env.namespace, project.id, releaseVersion(dep));
         dep.status = DeploymentStatus.DEPLOYED;
         dep.deployedAt = dep.deployedAt || new Date();
         if (env.domain) {

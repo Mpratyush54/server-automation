@@ -50,3 +50,12 @@ it('writes a pull-only credential for this project only, never a shared push cre
   expect(a.password).not.toBe(b.password);
   expect(Object.keys(configs[0].auths)).toEqual(['registry.example.com']);
 });
+
+it('sets the release metadata in the workload itself (no second rollout, no StatefulSet access needed)', async () => {
+  const { sourceWorkload } = await import('../../../src/lib/source-deploy');
+  const env = sourceWorkload('ns', 'app', 'registry.example/p/e@sha256:' + 'a'.repeat(64), 'p1', 'staging', 'c'.repeat(40)).spec.template.spec.containers[0].env;
+  expect(env).toEqual(expect.arrayContaining([{ name: 'PORT', value: '8080' }, { name: 'PLATFORM_RELEASE', value: 'c'.repeat(40) },
+    { name: 'OTEL_SERVICE_VERSION', value: 'c'.repeat(40) }]));
+  const plain = sourceWorkload('ns', 'app', 'img', 'p1', 'staging').spec.template.spec.containers[0].env;
+  expect(plain).toEqual([{ name: 'PORT', value: '8080' }]);
+});
