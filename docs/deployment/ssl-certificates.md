@@ -1,6 +1,6 @@
 # SSL Certificates (Let's Encrypt + cert-manager)
 
-Platform uses **cert-manager** with **Let's Encrypt** to automatically provision and renew TLS certificates for all ingress endpoints.
+Cairn uses **cert-manager** with **Let's Encrypt** to automatically provision and renew TLS certificates for all ingress endpoints.
 
 ---
 
@@ -124,7 +124,7 @@ kubectl describe clusterissuer letsencrypt-prod
 
 ## 3. Annotate Ingress for Automatic Certificate Provisioning
 
-The Platform Ingress is annotated to automatically request certificates from cert-manager:
+The Cairn Ingress is annotated to automatically request certificates from cert-manager:
 
 ```yaml
 apiVersion: networking.k8s.io/v1

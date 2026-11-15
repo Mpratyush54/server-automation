@@ -68,7 +68,7 @@ func TestProvisionRestoreHintOnFreshServer(t *testing.T) {
 	if err == nil {
 		t.Fatal("missing backup ID accepted")
 	}
-	for _, hint := range []string{"on a configured server", "on a fresh server", "ls <backup-directory>/", "mc ls <alias>/<bucket>/<prefix>/", "backup.json"} {
+	for _, hint := range []string{"on a configured server", "on a fresh server", "ls <backup-directory>/", "AWS CLI", "backup.json"} {
 		if !strings.Contains(err.Error(), hint) {
 			t.Errorf("restore hint %q missing %q", err, hint)
 		}

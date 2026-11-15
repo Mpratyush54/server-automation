@@ -2,7 +2,7 @@
 
 Instrument a Node.js service with registration, heartbeats, route metrics, logging, and optional managed databases.
 
-Package: [`@mpratyush54/sdk-node`](https://www.npmjs.com/package/@mpratyush54/sdk-node) · Source examples: [`sdk-node/examples`](../../sdk-node/examples)
+Package: [`@mpratyush54/sdk-node`](https://www.npmjs.com/package/@mpratyush54/sdk-node) · Source examples: [`sdk-node/examples`](https://github.com/Mpratyush54/server-automation/tree/master/sdk-node/examples)
 
 ## Installation
 
@@ -103,11 +103,11 @@ A mismatched SDK git origin returns **409**.
 
 | Path | Topic |
 |------|--------|
-| [`sdk-node/examples/01-express-basic.js`](../../sdk-node/examples/01-express-basic.js) | Health + middleware |
-| [`sdk-node/examples/02-express-databases.js`](../../sdk-node/examples/02-express-databases.js) | DB check route |
-| [`sdk-node/examples/03-logging-metrics.js`](../../sdk-node/examples/03-logging-metrics.js) | Logger + `metrics.record` |
-| [`sdk-node/examples/04-gitops-register.js`](../../sdk-node/examples/04-gitops-register.js) | GitOps fields |
-| [`examples/sdk-apps`](../../examples/sdk-apps) | Full Node/React/Angular demo on cluster |
+| [`sdk-node/examples/01-express-basic.js`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-node/examples/01-express-basic.js) | Health + middleware |
+| [`sdk-node/examples/02-express-databases.js`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-node/examples/02-express-databases.js) | DB check route |
+| [`sdk-node/examples/03-logging-metrics.js`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-node/examples/03-logging-metrics.js) | Logger + `metrics.record` |
+| [`sdk-node/examples/04-gitops-register.js`](https://github.com/Mpratyush54/server-automation/blob/master/sdk-node/examples/04-gitops-register.js) | GitOps fields |
+| [`examples/sdk-apps`](https://github.com/Mpratyush54/server-automation/tree/master/examples/sdk-apps) | Full Node/React/Angular demo on cluster |
 
 ## API reference
 

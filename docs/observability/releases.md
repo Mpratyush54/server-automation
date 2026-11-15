@@ -30,7 +30,7 @@ Use fixed image tags or digests and real commits. A floating tag such as `latest
 
 ## Get alerted about a bad deploy
 
-When you open a completed comparison with at least 20 requests on each side, the platform sends a warning alert if p95 latency went up by more than 20%, or the error rate went up by more than one percentage point. This is a one-off check when the comparison is read, not continuous monitoring. Route it in [alerting](operations/alerting.md).
+When you open a completed comparison with at least 20 requests on each side, the platform sends a warning alert if p95 latency went up by more than 20%, or the error rate went up by more than one percentage point. This is a one-off check when the comparison is read, not continuous monitoring. Route it in [alerting](../operations/alerting.md).
 
 Every successful deploy also sends a deploy alert event. Automatic rollback is not available.
 

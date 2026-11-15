@@ -38,7 +38,7 @@ The installer creates the first admin account. Its email and password are printe
 - **GitHub or GitLab sign-in.** Once a Git provider is connected, people can sign in with it instead of a password. See [Connect GitHub or GitLab](git-providers.md).
 - **One sign-in for the bundled tools.** Grafana, Argo CD, Portainer and the file-storage console use your Cairn account. You do not need separate passwords.
 - **Secrets.** Keep passwords and API keys in Cairn, not in your repository. See [Secrets](secrets-management.md).
-- **The server.** The installer turns on a firewall, SSH safeguards and automatic security updates. See [Host hardening](../host-hardening.md).
+- **The server.** The installer turns on a firewall, SSH safeguards and automatic security updates. See [Host hardening](host-hardening.md).
 
 ## How it works
 

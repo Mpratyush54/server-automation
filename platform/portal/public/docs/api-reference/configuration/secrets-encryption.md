@@ -2,7 +2,7 @@
 
 ## Algorithm
 
-Platform uses **AES-256-GCM** (Galois/Counter Mode) for secret encryption at rest.
+Cairn uses **AES-256-GCM** (Galois/Counter Mode) for secret encryption at rest.
 
 | Parameter | Value |
 |---|---|

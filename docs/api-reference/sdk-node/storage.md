@@ -1,6 +1,6 @@
 # StorageClient
 
-Upload, sign download URLs, and delete files through the Platform storage API.
+Upload, sign download URLs, and delete files through the Cairn storage API.
 
 ---
 

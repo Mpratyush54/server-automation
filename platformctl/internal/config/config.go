@@ -74,6 +74,11 @@ type Config struct {
 	PostgresBackupEndpoint    string
 	PostgresBackupSecret      string
 	PostgresBackupRetention   string
+	// PostgresReplication is sync (default) or async (POSTGRES_REPLICATION,
+	// ha profile only): whether a commit waits for a standby. See
+	// docs/operations/postgres-replication.md.
+	PostgresReplication       string
+	postgresReplicationChosen bool
 	// PostgresEngine is cnpg or bitnami (POSTGRES_ENGINE; "" = decide from
 	// the install state, see components.PostgresUsesCNPG).
 	PostgresEngine string
@@ -233,6 +238,7 @@ func Load() *Config {
 	c.PostgresBackupEndpoint = getEnv("POSTGRES_BACKUP_ENDPOINT", "")
 	c.PostgresBackupSecret = getEnv("POSTGRES_BACKUP_SECRET", "")
 	c.PostgresBackupRetention = getEnv("POSTGRES_BACKUP_RETENTION", "14d")
+	c.loadPostgresReplication()
 	c.LonghornBackupTarget = strings.TrimSpace(os.Getenv("LONGHORN_BACKUP_TARGET"))
 	c.LonghornBackupSecret = strings.TrimSpace(os.Getenv("LONGHORN_BACKUP_SECRET"))
 	c.loadBackup()
@@ -614,6 +620,11 @@ func (c *Config) SaveEnvFile(path string) error {
 	if strings.ContainsAny(c.PostgresHAStorageClass+c.PostgresBackupDestination+c.PostgresBackupEndpoint+c.PostgresBackupSecret+c.PostgresBackupRetention, "\r\n") {
 		return fmt.Errorf("PostgreSQL HA settings cannot contain line breaks")
 	}
+	if c.IsHA() {
+		if err := c.ValidatePostgresReplication(); err != nil {
+			return err
+		}
+	}
 	if idx := strings.LastIndexAny(path, "/\\"); idx != -1 {
 		dir := path[:idx]
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -694,6 +705,7 @@ func (c *Config) SaveEnvFile(path string) error {
 		b.WriteString(fmt.Sprintf("POSTGRES_BACKUP_ENDPOINT=%s\n", c.PostgresBackupEndpoint))
 		b.WriteString(fmt.Sprintf("POSTGRES_BACKUP_SECRET=%s\n", c.PostgresBackupSecret))
 		b.WriteString(fmt.Sprintf("POSTGRES_BACKUP_RETENTION=%s\n", c.PostgresBackupRetention))
+		b.WriteString(fmt.Sprintf("POSTGRES_REPLICATION=%s\n", NormalizePostgresReplication(c.PostgresReplication)))
 		b.WriteString(fmt.Sprintf("INGRESS_HA_MODE=%s\n", c.IngressHAMode))
 		b.WriteString(fmt.Sprintf("INGRESS_VIP=%s\n", c.IngressVIP))
 		b.WriteString(fmt.Sprintf("INGRESS_VIP_INTERFACE=%s\n", c.IngressVIPInterface))

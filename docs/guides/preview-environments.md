@@ -13,7 +13,7 @@ sequenceDiagram
     autonumber
     actor Dev as Developer
     participant Git as Git host
-    participant API as Platform API
+    participant API as Cairn API
     participant K8s as k3s cluster
     participant CU as ClickUp / SMTP
 
@@ -163,7 +163,7 @@ POST /api/config
 
 ### SDK Injection in Previews
 
-When a service runs in preview mode with the Platform SDK, the config endpoint automatically resolves the correct environment and injects the appropriate secrets:
+When a service runs in preview mode with the Cairn SDK, the config endpoint automatically resolves the correct environment and injects the appropriate secrets:
 
 ```http
 GET /api/sdk/config?projectId=<projectId>&environmentId=<preview-env-id>

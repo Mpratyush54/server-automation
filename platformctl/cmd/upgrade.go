@@ -227,7 +227,7 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 					return e
 				}
 			}
-			bc, ce := backup.ReadConfig("/etc/platform/backup.json")
+			bc, ce := readResolvedBackupConfig("/etc/platform/backup.json")
 			if ce != nil {
 				if os.IsNotExist(ce) {
 					resume, re := (backup.HostDriver{}).Quiesce()
@@ -469,7 +469,7 @@ func upgradePreflight() error {
 		return e
 	}
 	if _, e = os.Stat("/etc/platform/backup.json"); e == nil {
-		bc, e := backup.ReadConfig("/etc/platform/backup.json")
+		bc, e := readResolvedBackupConfig("/etc/platform/backup.json")
 		if e != nil {
 			return e
 		}
@@ -521,7 +521,7 @@ func healthyPods(raw []byte) error {
 
 func upgradeBackup(source string) (string, error) {
 	if _, e := os.Stat("/etc/platform/backup.json"); e == nil {
-		c, e := backup.ReadConfig("/etc/platform/backup.json")
+		c, e := readResolvedBackupConfig("/etc/platform/backup.json")
 		if e != nil {
 			return "", e
 		}

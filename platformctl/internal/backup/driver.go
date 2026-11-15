@@ -22,14 +22,11 @@ var restoreScript string
 // containers, not placed in command arguments or printed in command logs.
 type HostDriver struct{ MinioAlias string }
 
-func runScript(script, component, dir, alias string) error {
+func runScript(script, component, dir string) error {
 	// Normalise line endings: a Windows (autocrlf) checkout must not embed CRLF.
 	body := strings.ReplaceAll(commonScript+"\n"+script, "\r\n", "\n")
 	c := exec.Command("bash", "-c", body, "platform-backup", component, dir)
 	c.Env = append(os.Environ(), "KUBECONFIG=/etc/rancher/k3s/k3s.yaml")
-	if alias != "" {
-		c.Env = append(c.Env, "PLATFORM_BACKUP_MINIO_SOURCE="+alias)
-	}
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
 	if e := c.Run(); e != nil {
@@ -37,11 +34,18 @@ func runScript(script, component, dir, alias string) error {
 	}
 	return nil
 }
+
 func (d HostDriver) Capture(component, dir string) error {
-	return runScript(captureScript, component, dir, d.MinioAlias)
+	if component == "minio" {
+		return captureMinioBuckets(dir, d.MinioAlias)
+	}
+	return runScript(captureScript, component, dir)
 }
 func (d HostDriver) Restore(component, dir string) error {
-	return runScript(restoreScript, component, dir, d.MinioAlias)
+	if component == "minio" {
+		return restoreMinioBuckets(dir, d.MinioAlias)
+	}
+	return runScript(restoreScript, component, dir)
 }
 
 func kubectl(args ...string) (string, error) {

@@ -1,41 +1,31 @@
 package backup
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
 
 // Store publishes backup.json last: an interrupted upload is never listed or
 // eligible for retention. Targets must be dedicated prefixes, never bucket roots
-// containing unrelated data. mc reads credentials from its existing config.
+// containing unrelated data. Remote (s3://) transfers use the built-in S3 client
+// with credentials from UseExternalTarget.
 type Store struct{ Target Target }
 
-// mcEnv holds MC_HOST_<alias> for the external target. It is added only to
-// mc's own environment, never to files, arguments or other child processes.
-var mcEnv []string
+// externalS3 holds credentials for the configured off-site target. It is set by
+// UseExternalTarget and used only by Store remote operations.
+var externalS3 *S3Target
 
-// UseExternalTarget makes the external target reachable as the mc alias
-// MCAlias for this process's mc calls.
-func UseExternalTarget(t S3Target) { mcEnv = []string{t.MCEnv()} }
-
-func runMC(args ...string) ([]byte, error) {
-	c := exec.Command("mc", args...)
-	if len(mcEnv) > 0 {
-		c.Env = append(os.Environ(), mcEnv...)
-	}
-	var errout strings.Builder
-	c.Stderr = &errout
-	b, e := c.Output()
-	if e != nil {
-		return nil, fmt.Errorf("mc operation failed: %w", e)
-	}
-	return b, nil
+// UseExternalTarget makes the configured backup target available for archive
+// put/get/list/delete through the built-in S3 client.
+func UseExternalTarget(t S3Target) {
+	t = t.Normalize()
+	externalS3 = &t
 }
+
 func copyFile(src, dst string) error {
 	in, e := os.Open(src)
 	if e != nil {
@@ -56,52 +46,129 @@ func copyFile(src, dst string) error {
 	}
 	return ce
 }
+
 func (s Store) object(id, file string) (string, error) {
 	if !safeName.MatchString(id) || !safeName.MatchString(file) {
 		return "", fmt.Errorf("invalid backup object name")
 	}
 	return s.Target.Path + "/" + id + "/" + file, nil
 }
+
+// remoteRef resolves an s3 Store path (alias/bucket[/prefix...]/id/file) into
+// a client, bucket and object key. The alias "platformtarget" is the
+// configured off-site target (UseExternalTarget); any other alias is an mc
+// alias from an older configuration (see mc_compat.go).
+func (s Store) remoteRef(id, file string) (*S3Client, string, string, error) {
+	p, err := s.object(id, file)
+	if err != nil {
+		return nil, "", "", err
+	}
+	return resolveRemote(p)
+}
+
+func resolveRemote(fullPath string) (*S3Client, string, string, error) {
+	parts := strings.Split(strings.Trim(fullPath, "/"), "/")
+	if len(parts) < 2 {
+		return nil, "", "", fmt.Errorf("invalid S3 target path")
+	}
+	alias, bucket, key := parts[0], parts[1], strings.Join(parts[2:], "/")
+	if alias == MCAlias && externalS3 != nil {
+		if bucket != externalS3.Bucket {
+			return nil, "", "", fmt.Errorf("S3 target bucket %q does not match the configured backup target bucket %q", bucket, externalS3.Bucket)
+		}
+		return NewS3Client(*externalS3), bucket, key, nil
+	}
+	// s3://<mc alias>/... from a configuration written before #195.
+	t, err := legacyTarget(alias, bucket)
+	if err != nil {
+		if alias == MCAlias {
+			return nil, "", "", fmt.Errorf("the off-site backup target's credentials are not loaded; set \"target\": \"external\" in backup.json (or pass --target external)")
+		}
+		return nil, "", "", err
+	}
+	return NewS3Client(t), bucket, key, nil
+}
+
+// legacyTargets caches resolved mc aliases for this process.
+var legacyTargets = map[string]S3Target{}
+
+func legacyTarget(alias, bucket string) (S3Target, error) {
+	id := alias + "/" + bucket
+	if t, ok := legacyTargets[id]; ok {
+		return t, nil
+	}
+	t, err := legacyAliasTarget(alias, bucket)
+	if err != nil {
+		return S3Target{}, err
+	}
+	legacyTargets[id] = t
+	return t, nil
+}
+
+// ctx is the context for archive transfers: no overall deadline (a large
+// archive on a slow link may take hours); the client's dial, header and idle
+// timeouts catch a dead connection.
+func (s Store) ctx() (context.Context, context.CancelFunc) {
+	return context.WithCancel(context.Background())
+}
+
 func (s Store) Put(id, file, src string) error {
-	p, e := s.object(id, file)
-	if e != nil {
-		return e
+	if !s.Target.Remote {
+		p, e := s.object(id, file)
+		if e != nil {
+			return e
+		}
+		return copyFile(src, p)
 	}
-	if s.Target.Remote {
-		_, e = runMC("cp", src, p)
-		return e
+	client, bucket, key, err := s.remoteRef(id, file)
+	if err != nil {
+		return err
 	}
-	return copyFile(src, p)
+	ctx, cancel := s.ctx()
+	defer cancel()
+	return client.PutFile(ctx, bucket, key, src)
 }
+
 func (s Store) Get(id, file, dst string) error {
-	p, e := s.object(id, file)
-	if e != nil {
-		return e
+	if !s.Target.Remote {
+		p, e := s.object(id, file)
+		if e != nil {
+			return e
+		}
+		return copyFile(p, dst)
 	}
-	if s.Target.Remote {
-		_, e = runMC("cp", p, dst)
-		return e
+	client, bucket, key, err := s.remoteRef(id, file)
+	if err != nil {
+		return err
 	}
-	return copyFile(p, dst)
+	ctx, cancel := s.ctx()
+	defer cancel()
+	return client.GetFile(ctx, bucket, key, dst)
 }
+
 // CleanupLog receives best-effort cleanup failures; a variable for tests.
 var CleanupLog io.Writer = os.Stderr
 
 // remove deletes one object of a backup.
 func (s Store) remove(id, file string) error {
-	p, e := s.object(id, file)
-	if e != nil {
-		return e
-	}
-	if s.Target.Remote {
-		_, e = runMC("rm", p)
-	} else {
+	if !s.Target.Remote {
+		p, e := s.object(id, file)
+		if e != nil {
+			return e
+		}
 		e = os.Remove(p)
+		if e != nil && !os.IsNotExist(e) {
+			return e
+		}
+		return nil
 	}
-	if e != nil && !os.IsNotExist(e) {
-		return e
+	client, bucket, key, err := s.remoteRef(id, file)
+	if err != nil {
+		return err
 	}
-	return nil
+	ctx, cancel := s.ctx()
+	defer cancel()
+	return client.DeleteObject(ctx, bucket, key)
 }
 
 // discard removes the objects of a backup that failed before backup.json was
@@ -138,27 +205,17 @@ func (s Store) List() ([]Manifest, error) {
 func (s Store) ListWithIncomplete() ([]Manifest, []string, error) {
 	var ids []string
 	if s.Target.Remote {
-		b, e := runMC("ls", "--json", s.Target.Path+"/")
-		if e != nil {
-			return nil, nil, e
+		client, _, prefix, err := resolveRemote(s.Target.Path)
+		if err != nil {
+			return nil, nil, err
 		}
-		dec := json.NewDecoder(strings.NewReader(string(b)))
-		for dec.More() {
-			var v struct {
-				Key    string `json:"key"`
-				Type   string `json:"type"`
-				Status string `json:"status"`
-			}
-			if e = dec.Decode(&v); e != nil {
-				return nil, nil, e
-			}
-			if v.Status == "error" {
-				return nil, nil, fmt.Errorf("list target failed")
-			}
-			if v.Type == "folder" {
-				ids = append(ids, strings.TrimSuffix(v.Key, "/"))
-			}
+		ctx, cancel := s.ctx()
+		defer cancel()
+		folders, err := client.ListFolders(ctx, prefix)
+		if err != nil {
+			return nil, nil, err
 		}
+		ids = folders
 	} else {
 		entries, e := os.ReadDir(s.Target.Path)
 		if os.IsNotExist(e) {
@@ -200,6 +257,7 @@ func (s Store) ListWithIncomplete() ([]Manifest, []string, error) {
 	}
 	return result, incomplete, nil
 }
+
 func (s Store) Retain(r Retention) error {
 	items, e := s.List()
 	if e != nil {

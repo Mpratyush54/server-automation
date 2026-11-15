@@ -23,6 +23,8 @@ type Driver interface {
 }
 
 func (c Config) Validate() error {
+	// minioAlias names an mc alias for a non-bundled MinIO source; it is read
+	// from mc's config file without the mc binary (see mc_compat.go).
 	if c.MinioAlias != "" && !safeName.MatchString(c.MinioAlias) {
 		return fmt.Errorf("invalid MinIO alias")
 	}

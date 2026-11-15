@@ -1,6 +1,6 @@
 # Testing
 
-The Platform project includes multiple layers of testing: unit tests for the API, integration tests for API routes, deployment tests for the Kubernetes cluster, external route tests, and SDK package tests.
+Cairn includes multiple layers of testing: unit tests for the API, integration tests for API routes, deployment tests for the Kubernetes cluster, external route tests, and SDK package tests.
 
 ---
 
@@ -110,7 +110,7 @@ sudo ./platform-bootstrap/tests/test-deployment.sh <domain>
 | 5 | Database Connectivity | 3 | PostgreSQL (`pg_isready`), MongoDB (`db.runCommand({ping:1})`), Redis (`PING`) |
 | 6 | Storage | 1 | MinIO pod is accessible |
 | 7 | Monitoring | 1 | Grafana returns HTTP 200/302 |
-| 8 | Secrets | 1 | Platform Kubernetes Secret exists |
+| 8 | Secrets | 1 | Cairn Kubernetes Secret exists |
 | 9 | Certificates | 1 | Let's Encrypt certificate is issued and Ready |
 | 10 | DNS / Networking | 1 | IPv4 precedence configured for DNS resolution |
 | 11 | Portainer | 1 | Portainer pod is Running |

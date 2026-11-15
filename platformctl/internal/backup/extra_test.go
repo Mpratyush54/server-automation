@@ -71,7 +71,7 @@ func TestRequiredTools(t *testing.T) {
 		t.Fatal(got)
 	}
 	got = RequiredTools([]string{"config", "postgres", "minio", "k3s"}, true, false)
-	if !reflect.DeepEqual(got, []string{"bash", "jq", "kubectl", "mc", "sqlite3"}) {
+	if !reflect.DeepEqual(got, []string{"bash", "kubectl", "sqlite3"}) {
 		t.Fatal(got)
 	}
 	got = RequiredTools([]string{"config", "redis", "k3s"}, false, true)
@@ -89,8 +89,8 @@ func TestCheckToolsNamesEveryMissingTool(t *testing.T) {
 		}
 		return "", errors.New("missing")
 	}
-	e := CheckTools([]string{"kubectl", "mc", "jq"})
-	if e == nil || !strings.Contains(e.Error(), "mc, jq") {
+	e := CheckTools([]string{"kubectl", "jq"})
+	if e == nil || !strings.Contains(e.Error(), "jq") {
 		t.Fatal(e)
 	}
 	if e = CheckTools([]string{"kubectl"}); e != nil {

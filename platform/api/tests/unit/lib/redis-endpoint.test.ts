@@ -157,7 +157,7 @@ describe('sentinel ACL helpers', () => {
     expect(pass).toMatch(/^[a-f0-9]{64}$/);
     expect(deriveSentinelPassword('platform-secret')).toBe(pass);
     expect(buildSentinelAclSetUserArgs(pass)).toEqual([
-      'SETUSER', SENTINEL_ACL_USER, 'reset', 'on', `>${pass}`,
+      'SETUSER', SENTINEL_ACL_USER, 'on', `>${pass}`,
       '-@all',
       '+ping', '+auth', '+hello',
       '+client|setname', '+client|getname',

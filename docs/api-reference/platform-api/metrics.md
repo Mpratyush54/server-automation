@@ -147,4 +147,4 @@ Ingests API metrics from SDK agents. Accepts an array of metric records. Used in
 
 - [Audit Logs API](audit-logs.md)
 - [Monitoring Guide](/docs/guides/monitoring)
-- [SDK Metrics Guide](/docs/guides/sdk-metrics-and-logging)
+- [Search logs, traces and metrics](../../guides/observability.md)

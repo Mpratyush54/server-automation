@@ -1,6 +1,6 @@
 # captureConsole
 
-Patches the global `console.log`, `console.warn`, `console.error`, and `console.debug` functions so every call is also forwarded to the Platform logger.
+Patches the global `console.log`, `console.warn`, `console.error`, and `console.debug` functions so every call is also forwarded to the Cairn logger.
 
 ---
 
@@ -36,7 +36,7 @@ output (e.g. `platform.logger.info` echo, internal error messages) is never re-c
 `captureConsole()` cannot recurse. Calling it twice is a no-op; call the returned function to restore
 the original console methods.
 
-| Console method | Platform log level |
+| Console method | Cairn log level |
 |---|---|
 | `console.log` | `INFO` |
 | `console.warn` | `WARN` |
@@ -66,12 +66,12 @@ async function main() {
     platformUrl: 'https://platform.example.com',
   });
 
-  // After this point all console output is also sent to Platform
+  // After this point all console output is also sent to Cairn
   client.captureConsole();
 
-  console.log('Application started');        // → Platform log (INFO)
-  console.warn('Deprecated API called');     // → Platform log (WARN)
-  console.error(new Error('DB timeout'));    // → Platform log (ERROR)
+  console.log('Application started');        // → Cairn log (INFO)
+  console.warn('Deprecated API called');     // → Cairn log (WARN)
+  console.error(new Error('DB timeout'));    // → Cairn log (ERROR)
 
   // Later — optional cleanup (stops logger flush too)
   await client.shutdown();

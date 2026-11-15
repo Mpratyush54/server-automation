@@ -27,7 +27,9 @@ function setup() {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'e2e-backup-'));
   const bin = path.join(dir, 'bin');
   mkdirSync(bin);
-  for (const [name, body] of [['platformctl', FAKE], ['sqlite3', '#!/bin/sh\n'], ['jq', '#!/bin/sh\n']]) {
+  // kubectl answers whether the bundled MinIO Service exists.
+  const kubectl = '#!/bin/sh\n[ "$FAKE_MINIO" = 1 ]\n';
+  for (const [name, body] of [['platformctl', FAKE], ['sqlite3', '#!/bin/sh\n'], ['jq', '#!/bin/sh\n'], ['kubectl', kubectl]]) {
     writeFileSync(path.join(bin, name), body);
     chmodSync(path.join(bin, name), 0o755);
   }
@@ -60,6 +62,14 @@ test('init, backup, list and restore-test with the identity on stdin only', () =
   assert.equal(readFileSync(ctx.stdin, 'utf8').trim(), identity);
   assert.ok(!r.stdout.includes(identity) && !r.stderr.includes(identity), 'identity printed');
   assert.match(r.stdout, /restore test passed/);
+});
+
+test('MinIO files are included when the bundled MinIO is installed', () => {
+  const ctx = setup();
+  const r = run(ctx, { FAKE_MINIO: '1' });
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  const init = readFileSync(ctx.log, 'utf8').split('\x1e').filter(Boolean)[0].split('\0').filter(Boolean);
+  assert.equal(init[init.indexOf('--components') + 1], 'config,postgres,mongo,redis,k3s,minio');
 });
 
 test('a backup missing from the listing fails the smoke test', () => {
