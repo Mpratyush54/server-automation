@@ -71,6 +71,13 @@ func TestIngressSecurityValuesNonHAUnchanged(t *testing.T) {
 			if _, ok := service["annotations"]; ok {
 				t.Fatal("non-ha must not set service annotations")
 			}
+			cm := controller["config"].(map[string]string)
+			if _, ok := cm["load-balance"]; ok {
+				t.Fatal("non-ha must keep the default load balancing")
+			}
+			if _, ok := cm["proxy-connect-timeout"]; ok {
+				t.Fatal("non-ha must keep the default connect timeout")
+			}
 			if service["externalTrafficPolicy"] != "Local" || service["allocateLoadBalancerNodePorts"] != true {
 				t.Fatalf("%v", service)
 			}
@@ -94,6 +101,11 @@ func TestIngressSecurityValuesHA(t *testing.T) {
 	}
 	if service["externalTrafficPolicy"] != "Local" || service["allocateLoadBalancerNodePorts"] != true {
 		t.Fatal(service)
+	}
+	// Failover tuning: steer around pods of a powered-off server.
+	cm := controller["config"].(map[string]string)
+	if cm["load-balance"] != "ewma" || cm["proxy-connect-timeout"] != "1" {
+		t.Fatalf("ha failover tuning missing: %v", cm)
 	}
 
 	ext := &config.Config{Profile: config.ProfileHA, IngressHAMode: config.IngressHAModeExternal}

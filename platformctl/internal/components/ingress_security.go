@@ -89,6 +89,17 @@ func IngressSecurityValues(c *config.Config) map[string]any {
 	}
 	if c.IsHA() {
 		controller["kind"] = "DaemonSet"
+		// A server that loses power keeps its pods in the Service endpoints
+		// until the node is marked NotReady (about 40 s). Meanwhile the
+		// default round robin sends every other request to the dead pod and
+		// waits 5 s to connect, and its single retry often picks the same
+		// pod again, so clients saw errors for 40 s (#54 failover test).
+		// EWMA scores the dead pod by its connect timeouts and steers
+		// traffic and the retry to the live replicas; a 1 s connect timeout
+		// (in-cluster connects take milliseconds) keeps that retry fast.
+		cfgMap := controller["config"].(map[string]string)
+		cfgMap["load-balance"] = "ewma"
+		cfgMap["proxy-connect-timeout"] = "1"
 		if strings.ToLower(strings.TrimSpace(c.IngressHAMode)) == config.IngressHAModeVIP && c.IngressVIP != "" {
 			service["annotations"] = map[string]string{
 				"kube-vip.io/loadbalancerIPs": c.IngressVIP,
