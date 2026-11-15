@@ -357,3 +357,60 @@ func TestCleanupServiceLB(t *testing.T) {
 		t.Fatalf("calls = %v", *calls)
 	}
 }
+
+func TestRefreshManifest(t *testing.T) {
+	prefixes := []netip.Prefix{netip.MustParsePrefix("10.0.0.10/24")}
+	vip := &config.Config{Profile: config.ProfileHA, IngressHAMode: config.IngressHAModeVIP, IngressVIP: "10.0.0.50", APIVIP: "10.0.0.60"}
+
+	t.Run("stale copy is re-rendered", func(t *testing.T) {
+		h, calls := testHost(t, prefixes)
+		if err := os.MkdirAll(filepath.Dir(h.path(ManifestPath)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(h.path(ManifestPath), []byte("old kube-vip settings"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		changed, err := h.RefreshManifest(vip)
+		if err != nil || !changed {
+			t.Fatalf("changed=%v err=%v", changed, err)
+		}
+		want, _ := KubeVIPManifest(vip)
+		got, _ := os.ReadFile(h.path(ManifestPath))
+		if string(got) != want {
+			t.Fatal("manifest not identical to the rendered one")
+		}
+		if _, err := os.Stat(h.path(K3sFragmentPath)); !os.IsNotExist(err) {
+			t.Fatal("refresh must not write the k3s fragment (needs a restart)")
+		}
+		if len(*calls) != 0 {
+			t.Fatalf("refresh must not run commands: %v", *calls)
+		}
+		if changed, _ := h.RefreshManifest(vip); changed {
+			t.Fatal("second refresh must be a no-op")
+		}
+	})
+
+	t.Run("no manifest, agent or other mode: untouched", func(t *testing.T) {
+		h, _ := testHost(t, prefixes)
+		if changed, err := h.RefreshManifest(vip); err != nil || changed {
+			t.Fatalf("created a manifest on a host without one: %v %v", changed, err)
+		}
+		if _, err := os.Stat(h.path(ManifestPath)); !os.IsNotExist(err) {
+			t.Fatal("manifest created")
+		}
+		_ = os.MkdirAll(filepath.Dir(h.path(ManifestPath)), 0o755)
+		_ = os.WriteFile(h.path(ManifestPath), []byte("old"), 0o600)
+		for _, c := range []*config.Config{
+			{Profile: config.ProfileHA, IngressHAMode: config.IngressHAModeExternal},
+			{Profile: config.ProfileStandard},
+			nil,
+		} {
+			if changed, err := h.RefreshManifest(c); err != nil || changed {
+				t.Fatalf("%+v: changed=%v err=%v", c, changed, err)
+			}
+		}
+		if got, _ := os.ReadFile(h.path(ManifestPath)); string(got) != "old" {
+			t.Fatal("manifest changed outside vip mode")
+		}
+	})
+}

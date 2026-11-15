@@ -33,7 +33,7 @@ Requirements: Ubuntu 22.04+, sudo, at least 4 GB RAM and 40 GB free disk (8 GB a
 | `platformctl install <component>` | Install or re-run one component (see list below) |
 | `platformctl status` | Health check of cluster components (HA: nodes, roles, etcd health and quorum) |
 | `platformctl seed` | Seed the admin user from `/etc/platform/.env` |
-| `platformctl update` | Pull newest GHCR images and roll Cairn deployments |
+| `platformctl update` | Pull newest GHCR images and roll Cairn deployments; on `ha` servers also refresh the local kube-vip manifest (joined servers: only that) |
 | `platformctl recover` | Backup host files, persist passwords to disk, then restore API/Postgres login after a broken rotate |
 | `platformctl repair` | Fix HTTPS certificates and single sign-on for the bundled tools; safe to run any time |
 | `platformctl upgrade` | Upgrade to a newer release with a backup, health checks and rollback ([Upgrade](../operations/upgrades.md)) |

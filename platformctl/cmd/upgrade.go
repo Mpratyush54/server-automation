@@ -339,6 +339,8 @@ func finishUpgradeInstallation() error {
 	if e = components.InstallAutoUpdate(cfg); e != nil {
 		return fmt.Errorf("release is healthy; auto-update schedule needs repair: %w", e)
 	}
+	// This server only; the others refresh theirs with `platformctl update`.
+	refreshLocalKubeVIP(os.Stdout)
 	return nil
 }
 

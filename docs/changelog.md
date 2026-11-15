@@ -13,6 +13,7 @@
 - **GDPR delete** also removes error-tracking events, replay objects/sessions and submits Loki delete requests. See [operations/telemetry-privacy.md](operations/telemetry-privacy.md).
 
 ### Fixed (found by full-profile VM testing)
+- **ha upgrades and kube-vip:** `platformctl upgrade` and `platformctl update` refresh the local server's kube-vip manifest to the installed release; run `sudo platformctl update` on every other server after an upgrade (on joined servers it only refreshes local files). See [operations/ha.md](operations/ha.md#upgrade).
 - **Offline bundle (#12, #179):** `provision --bundle` no longer downloads Helm or apt packages: the release bundle carries the Helm binary and provision installs its prerequisites from the bundle's packages, as `join --bundle` does. The bundle also carries the release's Cairn images (API, portal, profile ingest, synthetics runner), which provision uses when `PLATFORM_IMAGE_TAG` is not set. Digest-pinned images (ingress-nginx controller and admission webhook) resolve on offline nodes, which failed with ImagePullBackOff. See [getting-started/platformctl.md](getting-started/platformctl.md#offline-bundle).
 - Browser RUM was blocked by CORS on every install: the API now publishes the Faro allow-list (`monitoring/telemetry-origins`).
 - Collector ingress returns 429/503 with `Retry-After` for throttling (was 500); ingress-nginx preserves real client IPs (`externalTrafficPolicy: Local`), so per-IP limits are per client again.

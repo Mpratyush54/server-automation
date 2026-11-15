@@ -176,6 +176,15 @@ Agents keep working: they use a separate token. Keep the old token with older cl
 
 Upgrade one server at a time, servers before agents. Wait until each one is `Ready` in `kubectl get nodes` before the next. Do not leave servers on different `platformctl` releases for longer than the rollout. See [Upgrade](upgrades.md).
 
+`platformctl upgrade` changes the cluster from the server it runs on and refreshes only that server's kube-vip manifest. k3s applies each server's own copy whenever k3s starts there, so a server with an older copy would put the old kube-vip back after a restart. On every other server, install the same `platformctl` release and refresh its copy:
+
+```sh
+sudo env PLATFORMCTL_VERSION=<target> bash install.sh
+sudo platformctl update
+```
+
+On a server that joined the cluster, `update` only refreshes the local kube-vip manifest; it does not roll images (that happens from the first server). Check that all copies match with `sudo sha256sum /var/lib/rancher/k3s/server/manifests/platform-kube-vip.yaml` on each server.
+
 ## Troubleshooting
 
 | Symptom | Fix |

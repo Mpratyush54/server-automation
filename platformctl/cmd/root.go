@@ -119,14 +119,14 @@ func Execute() {
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Pull newest Platform images from GHCR and roll deployments",
+	Short: "Pull newest Platform images from GHCR and roll deployments; refresh this server's kube-vip manifest",
+	Long: `Refreshes this server's kube-vip manifest (ha, vip mode) to the installed
+platformctl release, then pulls the newest Platform images and rolls the
+deployments. After an upgrade, run it on every server: k3s applies each
+server's own kube-vip manifest when it starts there. On a node that joined
+the cluster it only refreshes the local files.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
-		// Move host state into Secrets and drop the hostPath before rolling (#20).
-		if err := components.PrepareUpdate(cfg); err != nil {
-			return err
-		}
-		return components.UpdateImages(cfg)
+		return runUpdate(cmd.OutOrStdout())
 	},
 }
 

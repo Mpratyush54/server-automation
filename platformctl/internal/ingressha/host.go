@@ -278,3 +278,23 @@ func realDefaultInterface() (string, error) {
 	}
 	return "", fmt.Errorf("no IPv4 default route in /proc/net/route")
 }
+
+// RefreshManifest re-renders the kube-vip auto-deploy manifest on a server
+// that already has one, so a new platformctl release's kube-vip settings reach
+// this server's copy. k3s re-applies a changed file on its own (no restart).
+// Each server applies its own copy whenever its k3s starts, so a server left
+// with an older copy would put the old DaemonSet back: every server needs this.
+//
+// It never creates the manifest (agents, external mode, and servers set up by
+// provision/join keep their own lifecycle) and never touches the k3s fragment,
+// whose changes need a k3s restart that provision and join manage.
+func (h Host) RefreshManifest(c *config.Config) (changed bool, err error) {
+	if c == nil || !c.IsHA() || strings.ToLower(strings.TrimSpace(c.IngressHAMode)) != config.IngressHAModeVIP || !h.exists(ManifestPath) {
+		return false, nil
+	}
+	manifest, err := KubeVIPManifest(c)
+	if err != nil {
+		return false, err
+	}
+	return h.writeOrRemove(ManifestPath, manifest)
+}
