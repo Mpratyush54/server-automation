@@ -24,3 +24,15 @@ it('keys repositories so only the oldest active project keeps a shared repositor
   expect(updates).toEqual({ old: 'github.com/acme/app', gone: 'github.com/acme/app', dup: null, none: null });
   expect(queries[queries.length - 1]).toContain('CREATE UNIQUE INDEX IF NOT EXISTS projects_repository_key_active');
 });
+
+it('declares the builds foreign keys and indexes the migration creates, so the drift check is clean', async () => {
+  const { getMetadataArgsStorage } = await import('typeorm');
+  const { Build } = await import('../../../src/entities/Build');
+  const storage = getMetadataArgsStorage();
+  const indices = storage.indices.filter(i => i.target === Build).map(i => i.name).sort();
+  expect(indices).toEqual(['builds_project_created', 'builds_project_status', 'builds_push_commit']);
+  const joins = storage.joinColumns.filter(j => j.target === Build).map(j => [j.name, j.foreignKeyConstraintName]).sort();
+  expect(joins).toEqual([['environment_id', 'builds_environment_id_fkey'], ['project_id', 'builds_project_id_fkey']]);
+  const relations = storage.relations.filter(r => r.target === Build).map(r => r.options.onDelete);
+  expect(relations).toEqual(['CASCADE', 'CASCADE']);
+});

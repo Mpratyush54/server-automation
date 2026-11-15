@@ -1,15 +1,24 @@
-import { Entity, PrimaryColumn, Column, CreateDateColumn, Index } from 'typeorm';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, Index, ManyToOne, JoinColumn } from 'typeorm';
+import { Environment } from './Environment';
+import { Project } from './Project';
 
 /** `cancelled`: superseded by a newer push before its Job was admitted. */
 export type BuildStatus = 'queued' | 'building' | 'succeeded' | 'failed' | 'cancelled';
 
 @Entity('builds')
 /** One queued or running push build per environment and commit; finished builds may repeat. */
+@Index('builds_project_created', ['projectId', 'createdAt'])
+@Index('builds_project_status', ['projectId', 'status'])
 @Index('builds_push_commit', ['environmentId', 'commitSha'], { unique: true, where: `triggered_by = 'push' AND status IN ('queued', 'building')` })
 export class Build {
   @PrimaryColumn('uuid') id: string;
   @Column({ name: 'project_id', type: 'uuid' }) projectId: string;
+  // Declared like the migration (REFERENCES ... ON DELETE CASCADE) so the migrate drift check stays clean.
+  @ManyToOne(() => Project, { onDelete: 'CASCADE', nullable: false })
+  @JoinColumn({ name: 'project_id', foreignKeyConstraintName: 'builds_project_id_fkey' }) project?: Project;
   @Column({ name: 'environment_id', type: 'uuid' }) environmentId: string;
+  @ManyToOne(() => Environment, { onDelete: 'CASCADE', nullable: false })
+  @JoinColumn({ name: 'environment_id', foreignKeyConstraintName: 'builds_environment_id_fkey' }) environment?: Environment;
   @Column({ name: 'commit_sha', type: 'varchar', length: 40 }) commitSha: string;
   @Column({ type: 'varchar', length: 200 }) branch: string;
   @Column({ type: 'varchar', length: 20, default: 'queued' }) status: BuildStatus;
