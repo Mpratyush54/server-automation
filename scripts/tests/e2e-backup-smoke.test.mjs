@@ -39,7 +39,7 @@ function setup() {
 function run(ctx, extra = {}) {
   return spawnSync('bash', ['-c', 'PATH="$(cd "$1" && pwd):$PATH"; exec bash "$2"', '_', posix(ctx.bin), posix(script)], {
     encoding: 'utf8',
-    env: { ...process.env, FAKE_LOG: posix(ctx.log), FAKE_STDIN: posix(ctx.stdin), FAKE_IDENTITY: identity, E2E_BACKUP_CONFIG: posix(path.join(ctx.dir, 'backup.json')), E2E_BACKUP_TARGET: 'file://' + posix(path.join(ctx.dir, 'backups')), ...extra },
+    env: { ...process.env, FAKE_LOG: posix(ctx.log), FAKE_STDIN: posix(ctx.stdin), FAKE_IDENTITY: identity, E2E_BACKUP_CONFIG: posix(path.join(ctx.dir, 'backup.json')), E2E_BACKUP_TARGET: 'file://' + posix(path.join(ctx.dir, 'backups')), E2E_KUBECTL: posix(path.join(ctx.bin, 'kubectl')), ...extra },
   });
 }
 

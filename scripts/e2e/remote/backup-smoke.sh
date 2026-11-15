@@ -21,7 +21,8 @@ target=${E2E_BACKUP_TARGET:-file:///var/lib/platform/e2e-backups}
 cfg=${E2E_BACKUP_CONFIG:-/root/e2e-backup.json}
 rm -f "$cfg"
 components=config,postgres,mongo,redis,k3s
-if kubectl -n storage get svc minio >/dev/null 2>&1; then components+=,minio; fi
+kubectl=${E2E_KUBECTL:-kubectl}  # overridable for unit tests
+if "$kubectl" -n storage get svc minio >/dev/null 2>&1; then components+=,minio; fi
 identity=$(platformctl backup init --backup-config "$cfg" --target "$target" \
   --components "$components" 2>/dev/null | grep -m1 '^AGE-SECRET-KEY-' || true)
 [[ -n "$identity" ]] || { echo "backup init did not produce an identity" >&2; exit 1; }
