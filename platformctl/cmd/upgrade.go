@@ -483,8 +483,11 @@ func upgradePreflight() error {
 	}
 	disk, de := strconv.ParseInt(f[0], 10, 64)
 	ram, re := strconv.ParseInt(f[1], 10, 64)
-	if de != nil || re != nil || disk < 2*1024*1024 || ram < 512*1024 {
-		return fmt.Errorf("free at least 2 GiB under /var/lib and 512 MiB available RAM")
+	if de != nil || re != nil {
+		return fmt.Errorf("cannot determine disk/RAM headroom")
+	}
+	if e = headroomError(disk, ram); e != nil {
+		return e
 	}
 	for _, ns := range []string{"platform", "databases", "storage"} {
 		raw, e := uk("-n", ns, "get", "pods", "-o", "json")
@@ -506,6 +509,9 @@ func upgradePreflight() error {
 		if e = bc.Validate(); e != nil {
 			return e
 		}
+		if e = upgradeBackupTools(bc); e != nil {
+			return e
+		}
 		t, e := backup.ParseTarget(bc.Target)
 		if e != nil {
 			return e
@@ -519,6 +525,30 @@ func upgradePreflight() error {
 	}
 	return nil
 }
+
+// upgradeBackupTools refuses before anything changes (and in --dry-run) when
+// the encrypted pre-upgrade backup would fail for a missing host tool, e.g.
+// sqlite3 for the k3s SQLite datastore, which provision does not install.
+func upgradeBackupTools(bc backup.Config) error {
+	if e := backup.CheckTools(captureTools(bc)); e != nil {
+		return fmt.Errorf("the encrypted backup taken before the upgrade cannot run: %w; install them (for example: sudo apt-get install -y sqlite3 jq) and retry", e)
+	}
+	return nil
+}
+
+// headroomError names the resource that is short and how much is there
+// (sizes in KiB, as df -k and /proc/meminfo report them).
+func headroomError(diskKiB, ramKiB int64) error {
+	const minDisk, minRAM = 2 * 1024 * 1024, 512 * 1024
+	if diskKiB < minDisk {
+		return fmt.Errorf("only %d MiB free under /var/lib; the backup and new images need at least 2 GiB: free space there (for example old local backups in /var/lib/platform/backups) and retry", diskKiB/1024)
+	}
+	if ramKiB < minRAM {
+		return fmt.Errorf("only %d MiB of RAM available; the upgrade needs at least 512 MiB: stop other workloads on this server and retry", ramKiB/1024)
+	}
+	return nil
+}
+
 func healthyPods(raw []byte) error {
 	var list struct {
 		Items []struct {

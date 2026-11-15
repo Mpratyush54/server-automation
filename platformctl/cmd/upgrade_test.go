@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/backup"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/upgrade"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
 	"os"
@@ -92,6 +93,26 @@ func TestUpgradePlanAndPreflightUseInjectedCommands(t *testing.T) {
 	upgradeRun = func(string, ...string) (string, error) { return "", errors.New("offline") }
 	if e = upgradePreflight(); e == nil {
 		t.Fatal("expected failure")
+	}
+}
+
+func TestUpgradeBackupToolsRefusesMissingSqlite(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	e := upgradeBackupTools(backup.Config{Target: "external", Components: []string{"k3s"}})
+	if e == nil || !strings.Contains(e.Error(), "sqlite3") || !strings.Contains(e.Error(), "before the upgrade") {
+		t.Fatal(e)
+	}
+}
+
+func TestHeadroomErrorNamesTheShortResource(t *testing.T) {
+	if e := headroomError(1994744, 8<<20); e == nil || !strings.Contains(e.Error(), "only 1947 MiB free under /var/lib") || strings.Contains(e.Error(), "RAM") {
+		t.Fatal(e)
+	}
+	if e := headroomError(50<<20, 300*1024); e == nil || !strings.Contains(e.Error(), "only 300 MiB of RAM available") {
+		t.Fatal(e)
+	}
+	if e := headroomError(2<<20, 512*1024); e != nil {
+		t.Fatal(e)
 	}
 }
 
