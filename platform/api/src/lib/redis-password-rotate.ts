@@ -148,11 +148,13 @@ export async function rotateSentinelPassword(previous: string, next: string): Pr
 }
 
 /**
- * Second phase of a rotation: make `next` the only password of the default user, plat-api
- * and plat-sentinel on every member. Idempotent; run it only after the databases/redis
- * Secret holding `next` has reached the pods (their probes read it from the mount).
+ * Second phase of a rotation: make `next` the only password of the default user and
+ * plat-api on every member. plat-sentinel keeps exactly `next` and `previous` (when given),
+ * so apps that read discovery credentials before this rotation keep discovering until the
+ * next rotation's drop. Idempotent; run it only after the databases/redis Secret holding
+ * `next` has reached the pods (their probes read it from the mount).
  */
-export async function dropPreviousSentinelPassword(next: string): Promise<void> {
+export async function dropPreviousSentinelPassword(next: string, previous?: string): Promise<void> {
   const sentinelNext = process.env.REDIS_SENTINEL_PASSWORD || next;
   await withHaMembers(
     [next],
@@ -166,7 +168,9 @@ export async function dropPreviousSentinelPassword(next: string): Promise<void> 
         await client.call('ACL', 'SETUSER', 'default', 'resetpass', `>${next}`);
       }
       for (const client of sentinelClients) {
-        await client.call('ACL', ...withResetPass(buildSentinelAclSetUserArgs(deriveSentinelPassword(next))));
+        const args = withResetPass(buildSentinelAclSetUserArgs(deriveSentinelPassword(next)));
+        if (previous && previous !== next) args.push(`>${deriveSentinelPassword(previous)}`);
+        await client.call('ACL', ...args);
         await client.call('ACL', 'SETUSER', 'default', 'resetpass', `>${sentinelNext}`);
         await client.call('SENTINEL', 'FLUSHCONFIG');
       }

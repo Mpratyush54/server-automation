@@ -13,8 +13,9 @@ import { createOperation, defineOperation, getOperation, StepContext } from './o
  * databases/redis Secret and kubelet refreshes that mount only after a delay (about
  * 60-90 s). Dropping the old password before then made every probe fail with NOAUTH and
  * restarted the pods. This operation waits REDIS_DROP_DELAY_MS after the Secret was
- * patched, then makes the new password the only one for the default user, plat-api and
- * plat-sentinel.
+ * patched, then makes the new password the only one for the default user and plat-api.
+ * plat-sentinel keeps the new and the one previous password, so apps that have not
+ * restarted keep discovering until the next rotation's drop removes the older one.
  *
  * It is stored in the operations table and picked up by the leader's resume job, so it
  * survives API restarts and does not hold up the rotation request. The step is idempotent
@@ -31,8 +32,10 @@ export const REDIS_DROP_MAX_TRIES = 30;
 const ROTATION_LOCK_KEY = platformLockKey('secret-rotation');
 
 type DropState = {
-  /** The password that must remain; the only secret in this state (stored encrypted). */
+  /** The password that must remain (state is stored encrypted). */
   next: string;
+  /** The password being replaced; only its derived plat-sentinel password is kept. */
+  previous?: string;
   /** Epoch ms before which the old password must stay valid. */
   notBefore: number;
   tries: number;
@@ -100,7 +103,7 @@ export const redisPasswordDropOperation = defineOperation<DropState>({
 
         const { dropPreviousSentinelPassword } = await import('./redis-password-rotate');
         try {
-          await dropPreviousSentinelPassword(s.next);
+          await dropPreviousSentinelPassword(s.next, s.previous);
         } catch (err: any) {
           // The error text is generic (never echoes credentials).
           return retryLater(ctx, String(err?.message || 'Redis unavailable').slice(0, 200));
@@ -119,6 +122,7 @@ export const redisPasswordDropOperation = defineOperation<DropState>({
 export async function scheduleRedisPasswordDrop(opts: {
   rotationOperationId: string;
   next: string;
+  previous?: string;
   actorUserId?: string | null;
   delayMs?: number;
 }): Promise<{ operationId: string; notBefore: Date }> {
@@ -133,7 +137,7 @@ export async function scheduleRedisPasswordDrop(opts: {
     id,
     lockKey: ROTATION_LOCK_KEY,
     input: { kind: 'redis-password-drop', rotationOperationId: opts.rotationOperationId },
-    state: { next: opts.next, notBefore, tries: 0 },
+    state: { next: opts.next, previous: opts.previous, notBefore, tries: 0 },
     createdById: opts.actorUserId || null,
   });
   return { operationId: id, notBefore: new Date(notBefore) };

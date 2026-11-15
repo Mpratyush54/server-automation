@@ -44,7 +44,9 @@ MongoDB, file storage and Portainer are left alone so the API never restarts wit
 
 On the high-availability install (Redis with Sentinel), the portal rotates every data node and Sentinel live, without restarting Redis. Project ACL users keep working. The Redis Secret and platform credentials are updated after all members have changed; the chart reads the Secret again on restart. Runtime configuration is persisted where writable.
 
-The old Redis password keeps working for about three minutes after the rotation. Redis health checks read the password from the Redis Secret, and Kubernetes takes a minute or two to give pods the new copy. A follow-up step (`platform.redis-password-drop`) then removes the old password, including the old Sentinel discovery password. It survives API restarts and does nothing if a newer rotation has already replaced the password. Connected apps stay connected. An app that uses Sentinel discovery gets the new discovery password when it restarts and the SDK registers again; restart such apps after a rotation so a later reconnect does not fail.
+The old Redis password keeps working for about three minutes after the rotation. Redis health checks read the password from the Redis Secret, and Kubernetes takes a minute or two to give pods the new copy. A follow-up step (`platform.redis-password-drop`) then removes the old password. It survives API restarts and does nothing if a newer rotation has already replaced the password.
+
+The old Sentinel discovery password that apps use stays valid until the next rotation. An app gets the new one when it restarts and the SDK registers again. Restart apps that use Sentinel discovery before you rotate again, or they cannot find Redis on their next reconnect.
 
 If an HA Redis rotation is interrupted, retry **Rotate all secrets**. Cairn retains the pending password pair and checks each member with both passwords before continuing. Keep the pending credentials until rotation succeeds; a reachable master alone does not mean every member has rotated.
 

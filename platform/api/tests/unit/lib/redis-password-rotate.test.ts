@@ -116,24 +116,38 @@ it('retains a separately configured Sentinel password', async () => {
   for (const [label, node] of mockNodes) expect(node.passwords).toEqual(new Set([label.endsWith(':26379') ? 'separate' : 'new']));
 });
 
-it('drops the previous default, plat-api and plat-sentinel passwords and is idempotent', async () => {
+it('drops the previous default and plat-api passwords, keeps one previous plat-sentinel password, and is idempotent', async () => {
   await rotateSentinelPassword('old', 'new');
-  await dropPreviousSentinelPassword('new');
+  await dropPreviousSentinelPassword('new', 'old');
   const check = () => {
     for (const [label, node] of mockNodes) {
       expect(node.passwords).toEqual(new Set(['new']));
       expect(node.users.get('plat_project')).toEqual(new Set(['project-password']));
-      const user = label.endsWith(':6379') ? 'plat-api' : 'plat-sentinel';
-      const derive = label.endsWith(':6379') ? deriveApiRedisPassword : deriveSentinelPassword;
-      expect(node.users.get(user)).toEqual(new Set([derive('new')]));
+      if (label.endsWith(':6379')) {
+        expect(node.users.get('plat-api')).toEqual(new Set([deriveApiRedisPassword('new')]));
+      } else {
+        expect(node.users.get('plat-sentinel')).toEqual(new Set([deriveSentinelPassword('new'), deriveSentinelPassword('old')]));
+      }
     }
   };
   check();
   mockCommands.length = 0;
-  await dropPreviousSentinelPassword('new');
+  await dropPreviousSentinelPassword('new', 'old');
   check();
   // Each ACL change is a single atomic SETUSER with resetpass: no window without a password.
   expect(mockCommands.filter((c) => c[1] === 'ACL').every((c) => c.includes('resetpass'))).toBe(true);
+});
+
+it("removes the older plat-sentinel password on the next rotation's drop", async () => {
+  await rotateSentinelPassword('old', 'new');
+  await dropPreviousSentinelPassword('new', 'old');
+  await rotateSentinelPassword('new', 'newer');
+  await dropPreviousSentinelPassword('newer', 'new');
+  for (const [label, node] of mockNodes) {
+    if (!label.endsWith(':26379')) continue;
+    expect(node.users.get('plat-sentinel')).toEqual(new Set([deriveSentinelPassword('newer'), deriveSentinelPassword('new')]));
+    expect(node.users.get('plat-sentinel')!.has(deriveSentinelPassword('old'))).toBe(false);
+  }
 });
 
 it('refuses to drop when a member does not accept the new password yet, changing nothing', async () => {

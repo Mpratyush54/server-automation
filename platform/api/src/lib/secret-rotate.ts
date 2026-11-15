@@ -353,6 +353,7 @@ export const secretRotationOperation = defineOperation<RotationState>({
           const { notBefore } = await scheduleRedisPasswordDrop({
             rotationOperationId: ctx.operationId,
             next: s.redisPassword,
+            previous: s.previousRedis,
             actorUserId: s.actorUserId || null,
           });
           push(ctx, {

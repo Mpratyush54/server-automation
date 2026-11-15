@@ -81,12 +81,15 @@ function oldValid(): boolean {
   return [...mockNodes.values()].every((n) => n.passwords.has('old'));
 }
 
+/** Default user and plat-api: new only. plat-sentinel: new plus the one previous password. */
 function onlyNew() {
   for (const [label, node] of mockNodes) {
     expect(node.passwords).toEqual(new Set(['new']));
-    const user = label.endsWith(':6379') ? 'plat-api' : 'plat-sentinel';
-    const derive = label.endsWith(':6379') ? deriveApiRedisPassword : deriveSentinelPassword;
-    expect(node.users.get(user)).toEqual(new Set([derive('new')]));
+    if (label.endsWith(':6379')) {
+      expect(node.users.get('plat-api')).toEqual(new Set([deriveApiRedisPassword('new')]));
+    } else {
+      expect(node.users.get('plat-sentinel')).toEqual(new Set([deriveSentinelPassword('new'), deriveSentinelPassword('old')]));
+    }
   }
 }
 
@@ -117,7 +120,7 @@ afterEach(() => {
 
 it('keeps the old password valid after the request and drops it in the delayed step', async () => {
   await rotateSentinelPassword('old', 'new');
-  const { operationId, notBefore } = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new' });
+  const { operationId, notBefore } = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new', previous: 'old' });
   expect(notBefore.getTime()).toBe(now + REDIS_DROP_DELAY_MS);
   expect(REDIS_DROP_DELAY_MS).toBeGreaterThanOrEqual(120_000);
   expect(oldValid()).toBe(true);
@@ -146,10 +149,31 @@ it('keeps the old password valid after the request and drops it in the delayed s
   onlyNew();
 });
 
+it("old plat-sentinel password survives the drop and is gone after the next rotation's drop", async () => {
+  await rotateSentinelPassword('old', 'new');
+  await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new', previous: 'old' });
+  now += REDIS_DROP_DELAY_MS;
+  await sweep();
+  onlyNew();
+
+  await rotateSentinelPassword('new', 'newer');
+  mockSecrets['databases/redis'] = { 'redis-password': 'newer' };
+  const second = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-2', next: 'newer', previous: 'new' });
+  now += REDIS_DROP_DELAY_MS;
+  await sweep();
+  expect((await getOperation(second.operationId))!.status).toBe('succeeded');
+  for (const [label, node] of mockNodes) {
+    expect(node.passwords).toEqual(new Set(['newer']));
+    if (label.endsWith(':26379')) {
+      expect(node.users.get('plat-sentinel')).toEqual(new Set([deriveSentinelPassword('newer'), deriveSentinelPassword('new')]));
+    }
+  }
+});
+
 it('re-running is a no-op: same operation, and a finished one is not run again', async () => {
   await rotateSentinelPassword('old', 'new');
-  const first = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new' });
-  const again = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new' });
+  const first = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new', previous: 'old' });
+  const again = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new', previous: 'old' });
   expect(again.operationId).toBe(first.operationId);
   expect(first.operationId).toBe(redisDropOperationId('rot-1'));
   expect(redisDropOperationId('rot-1')).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
@@ -166,7 +190,7 @@ it('re-running is a no-op: same operation, and a finished one is not run again',
 
 it('resumes after the API was killed in the middle of the step', async () => {
   await rotateSentinelPassword('old', 'new');
-  const { operationId } = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new' });
+  const { operationId } = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new', previous: 'old' });
   now += REDIS_DROP_DELAY_MS;
 
   // The pod died while the step was running: the persisted record says "running",
@@ -189,7 +213,7 @@ it('resumes after the API was killed in the middle of the step', async () => {
 
 it('retries later when a member is unreachable, then completes', async () => {
   await rotateSentinelPassword('old', 'new');
-  const { operationId } = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new' });
+  const { operationId } = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new', previous: 'old' });
   now += REDIS_DROP_DELAY_MS;
   mockFail = 'redis-node-1.redis-headless:26379 ACL SETUSER';
   await sweep();
@@ -208,7 +232,7 @@ it('retries later when a member is unreachable, then completes', async () => {
 
 it('does nothing when a newer rotation replaced the password', async () => {
   await rotateSentinelPassword('old', 'new');
-  const { operationId } = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new' });
+  const { operationId } = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new', previous: 'old' });
   mockSecrets['databases/redis'] = { 'redis-password': 'newer' };
   now += REDIS_DROP_DELAY_MS;
   mockCommands.length = 0;
@@ -222,7 +246,7 @@ it('does nothing when a newer rotation replaced the password', async () => {
 
 it('does nothing while a newer rotation is pending', async () => {
   await rotateSentinelPassword('old', 'new');
-  const { operationId } = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new' });
+  const { operationId } = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new', previous: 'old' });
   mockSecrets['platform/platform-rotate-pending'] = { REDIS_PASSWORD_OLD: 'new', REDIS_PASSWORD_NEW: 'newer' };
   now += REDIS_DROP_DELAY_MS;
   await sweep();
@@ -232,7 +256,7 @@ it('does nothing while a newer rotation is pending', async () => {
 
 it('gives up after the retry budget and leaves both passwords working', async () => {
   await rotateSentinelPassword('old', 'new');
-  const { operationId } = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new' });
+  const { operationId } = await scheduleRedisPasswordDrop({ rotationOperationId: 'rot-1', next: 'new', previous: 'old' });
   mockNodes.get('redis-node-2.redis-headless:6379')!.passwords = new Set(['old']);
   now += REDIS_DROP_DELAY_MS;
   for (let i = 0; i < REDIS_DROP_MAX_TRIES; i++) {
