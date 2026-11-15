@@ -24,6 +24,22 @@ updates:
     groups:
       npm-minor-and-patch:
         update-types: [ "minor", "patch" ]
+      # react-dom peers on the exact react major, so these only resolve as one update.
+      react-major:
+        patterns: [ "react", "react-dom", "@types/react", "@types/react-dom" ]
+        update-types: [ "major" ]
+    ignore:
+      # Node type definitions follow the Node runtime major (Node 22 LTS).
+      # Raise them together with the runtime, not on their own.
+      - dependency-name: "@types/node"
+        update-types: [ "version-update:semver-major" ]
+      # platform/api needs a real migration for Express 5 (req.params typed as
+      # string | string[], req.body undefined without a parser, the "simple" query
+      # parser, path-to-regexp 8). Do it as its own change.
+      - dependency-name: "express"
+        update-types: [ "version-update:semver-major" ]
+      - dependency-name: "@types/express"
+        update-types: [ "version-update:semver-major" ]
 
   - package-ecosystem: "gomod"
     directory: "/platformctl"
@@ -57,6 +73,15 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 5
+    ignore:
+      # Odd-numbered Node lines (23, 25, 27, ...) never become LTS. Images stay on
+      # an LTS line (Node 22 today) and move to the next LTS on purpose.
+      - dependency-name: "node"
+        update-types: [ "version-update:semver-major" ]
+      # nginx odd minors (1.31, 1.33, ...) are mainline. Stay on the stable line
+      # (1.30) and take its patches; move to the next stable line on purpose.
+      - dependency-name: "nginxinc/nginx-unprivileged"
+        update-types: [ "version-update:semver-minor" ]
 
   - package-ecosystem: "docker-compose"
     directory: "/"
@@ -64,3 +89,9 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 5
+    ignore:
+      # The dev compose file tracks the majors production runs
+      # (platformctl/internal/versions, platformctl/internal/images/images.txt).
+      # Raise a major here when production moves to it.
+      - dependency-name: "*"
+        update-types: [ "version-update:semver-major" ]
