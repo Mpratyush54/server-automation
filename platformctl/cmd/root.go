@@ -67,10 +67,9 @@ var statusCmd = &cobra.Command{
 			if err := printClusterStatus(os.Stdout); err != nil {
 				color.Red("  ✗ cluster status: %v", err)
 			}
-			if joinedRole() != "server" {
-				components.PrintHADatastoreStatus(os.Stdout, cfg)
-				components.PrintLonghornVolumeStatus(os.Stdout)
-			}
+			// Also on joined servers: when the first server is down they are
+			// where an operator checks the datastores and the volumes.
+			statusHADatastores(os.Stdout)
 		}
 		if components.PostgresUsesCNPG(cfg) {
 			components.PrintCNPGOperatorStatus(os.Stdout, cfg)

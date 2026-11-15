@@ -233,11 +233,14 @@ func PrintHADatastoreStatus(w io.Writer, cfg *config.Config) {
 
 	if cfg.ObjectStorageExternal() {
 		minioLine = "Object storage: external (" + cfg.ObjectStorage.Endpoint + ")"
-	} else if out, err := shell.Output("kubectl", "-n", "storage", "get", "sts", "minio",
-		"-o", "jsonpath={.status.readyReplicas}/{.spec.replicas}"); err != nil {
-		warnings = append(warnings, color.YellowString("⚠ MinIO distributed status unavailable: %v", err))
 	} else {
-		minioLine = fmt.Sprintf("MinIO distributed: %s pods ready", strings.TrimSpace(out))
+		out, err := shell.Output("kubectl", "-n", "storage", "get", "sts", "minio",
+			"-o", "jsonpath={.status.readyReplicas}/{.spec.replicas}")
+		line, warn := minioStatusLine(out, err)
+		if warn != "" {
+			warnings = append(warnings, color.YellowString("%s", warn))
+		}
+		minioLine = line
 	}
 
 	writeHADatastoreStatus(w, mongoLine, redisLine, minioLine, warnings...)
@@ -258,4 +261,17 @@ var execFirstMember = func(prefix string, n int, container string, cmd ...string
 		lastErr = err
 	}
 	return "", lastErr
+}
+
+// minioStatusLine formats the MinIO line from `kubectl get sts minio`. A
+// missing StatefulSet means the cluster uses external object storage: joined
+// servers do not have the first server's OBJECT_STORAGE_* settings.
+func minioStatusLine(out string, err error) (line, warn string) {
+	if err != nil {
+		if strings.Contains(out, "NotFound") || strings.Contains(err.Error(), "NotFound") {
+			return "Object storage: no bundled MinIO in this cluster (external object storage)", ""
+		}
+		return "", fmt.Sprintf("⚠ MinIO distributed status unavailable: %v", err)
+	}
+	return fmt.Sprintf("MinIO distributed: %s pods ready", strings.TrimSpace(out)), ""
 }

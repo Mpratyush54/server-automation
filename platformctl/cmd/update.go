@@ -50,3 +50,4 @@ func runUpdate(out io.Writer) error {
 	}
 	return updateImages()
 }
+

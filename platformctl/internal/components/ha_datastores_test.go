@@ -2,6 +2,7 @@ package components
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
@@ -291,5 +292,19 @@ func TestParseReadyOfWant(t *testing.T) {
 		if _, _, err := parseReadyOfWant(bad); err == nil {
 			t.Fatalf("accepted %q", bad)
 		}
+	}
+}
+
+func TestMinioStatusLine(t *testing.T) {
+	if line, warn := minioStatusLine("4/4", nil); line != "MinIO distributed: 4/4 pods ready" || warn != "" {
+		t.Fatalf("%q %q", line, warn)
+	}
+	// Joined servers lack OBJECT_STORAGE_*: a cluster without MinIO is external storage, not a fault.
+	notFound := `Error from server (NotFound): statefulsets.apps "minio" not found`
+	if line, warn := minioStatusLine(notFound, errors.New("exit status 1")); !strings.Contains(line, "external object storage") || warn != "" {
+		t.Fatalf("%q %q", line, warn)
+	}
+	if line, warn := minioStatusLine("", errors.New("connection refused")); line != "" || !strings.Contains(warn, "unavailable") {
+		t.Fatalf("%q %q", line, warn)
 	}
 }
