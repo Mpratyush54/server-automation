@@ -17,13 +17,13 @@ sudo platformctl provision
 
 ## What you get
 
-- **Deploys from Git.** Pick a branch and commit, and Cairn deploys the Kubernetes files in your repository with Argo CD. Branches can get their own preview environment.
+- **Deploys from Git.** Pick a branch and commit, and Cairn deploys the Kubernetes files in your repository with Argo CD. Branches can get their own preview environment. Cairn can also build images from your source code, if you turn builds on.
 - **Databases.** PostgreSQL, MongoDB and Redis run on the server. Each project gets its own credentials.
 - **Secrets.** Encrypted settings for each environment, with history and rollback.
 - **Monitoring.** Logs, metrics, traces, error tracking, uptime checks and alerts, in the portal.
 - **Sign-in and roles.** Passwords, two-factor sign-in, GitHub or GitLab sign-in, and roles that limit who can do what.
 - **Backups.** Encrypted backups to S3-compatible storage, and a restore you can test.
-- **AI agents.** An MCP server lets tools such as Cursor and Claude work with your server through scoped tokens and guarded commands.
+- **AI agents.** Paste your server's `/mcp` address into Claude, ChatGPT, Cursor or VS Code and sign in. Assistants get only the access you approve, and risky commands wait for a person.
 - **SDKs.** Node.js, Python, React and Angular libraries connect your app to logs, metrics and databases.
 
 ## How it fits together

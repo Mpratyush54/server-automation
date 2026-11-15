@@ -13,11 +13,13 @@ curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/down
 sudo platformctl provision
 ```
 
-Non-interactive (CI / automation):
+Non-interactive (CI / automation). A fresh install needs an off-site backup target (`BACKUP_S3_BUCKET`, with `BACKUP_S3_ACCESS_KEY` and `BACKUP_S3_SECRET_KEY` from the environment) or an explicit `--local-backups`:
 
 ```bash
-sudo DOMAIN=platform.example.com ADMIN_EMAIL=you@example.com platformctl provision --auto
+sudo DOMAIN=platform.example.com ADMIN_EMAIL=you@example.com platformctl provision --auto --local-backups
 ```
+
+To use a bucket instead, see [Install without questions](installation.md#install-without-questions).
 
 `install.sh` puts the `platformctl` binary on `PATH`. Config lives in `/etc/platform/.env` (override with `--config`).
 
@@ -37,6 +39,7 @@ Requirements: Ubuntu 22.04+, sudo, at least 4 GB RAM and 40 GB free disk (8 GB a
 | `platformctl upgrade` | Upgrade to a newer release with a backup, health checks and rollback ([Upgrade](../operations/upgrades.md)) |
 | `platformctl backup` | Copy `/etc/platform/.env` and database secrets to `/var/lib/platform/backups/<timestamp>/` (not encrypted) |
 | `platformctl backup init\|list\|schedule\|restore-test` | Encrypted off-site backups ([Backups and restore](../operations/backups.md)); `backup --all` takes one |
+| `platformctl backup target set\|show\|test` | Change, show or test the off-site backup target ([Backups and restore](../operations/backups.md#choose-where-backups-go)) |
 | `platformctl restore` | Restore an encrypted backup; reads the private key from standard input |
 | `platformctl harden` | Apply or re-apply the host security baseline ([Host hardening](../guides/host-hardening.md)) |
 | `platformctl mfa disable --user <email>` | Remove a user's two-factor sign-in when no admin can ([Recover](../operations/recover.md)) |

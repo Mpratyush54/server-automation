@@ -2,7 +2,9 @@
 
 This page helps you deploy your app from Git to one of your project's environments.
 
-Cairn does not build your code. It deploys the Kubernetes files in your repository, using an image you have already built, for example with GitHub Actions or GitLab CI. Argo CD keeps the environment in sync with those files.
+By default Cairn deploys the Kubernetes files in your repository, using an image you have already built, for example with GitHub Actions or GitLab CI. Argo CD keeps the environment in sync with those files. That is what this page covers.
+
+Want Cairn to build the image from your source code instead? That is an opt-in feature your server administrator turns on; see [Build from Git](../guides/builds.md).
 
 ## What your repository needs
 
@@ -73,15 +75,15 @@ spec:
 
 Leave out `namespace`. Cairn puts each environment in its own namespace. Containers must run as a non-root user, as in the example, because project namespaces use the Kubernetes "restricted" security level. See [Namespace isolation](../guides/namespace-isolation.md).
 
-A working example lives in the repository at [`examples/sdk-demo/k8s`](https://github.com/Mpratyush54/SERVER-automation/tree/master/examples/sdk-demo/k8s).
+A working example lives in the repository at [`examples/sdk-demo/k8s`](https://github.com/Mpratyush54/server-automation/tree/master/examples/sdk-demo/k8s). Push these files to your repository before you deploy.
 
 ## Deploy
 
 1. Open your project and go to **Deployments**.
-2. In **Deploy**, choose the **Target environment**, for example `development`.
-3. Choose a **Branch or tag** and a **Commit**. Leave the commit empty to use the newest one.
-4. If your files are not in `k8s`, enter the folder in **Manifests path in repo**.
-5. Select **Pull from Git and deploy**.
+2. In **Deploy**, choose the **Environment**, for example `development`.
+3. Choose a **Branch or tag** and a **Commit**. Leave the commit as it is to ship the newest one.
+4. If your files are not in `k8s`, open **Advanced** and enter the folder in **Folder with deploy files**.
+5. Select **Deploy**.
 
 The progress shows each step: apply the files, wait until the app is healthy, then finish. A deploy that is not healthy within about three minutes is marked as failed, with the reason.
 
@@ -89,8 +91,8 @@ When it succeeds, open the environment's address from **Environments** on the sa
 
 ## Roll back or redeploy
 
-- **Deployment history** lists every deploy. Select **Rollback** to go back to an earlier one.
-- **Git releases** lists your repository's tags. Select **Deploy this version** to deploy a release.
+- **History** lists every deploy. Select **Rollback** to go back to an earlier one.
+- **Releases** lists your repository's tagged releases. Select **Deploy** next to one to ship it.
 
 ## Preview a branch
 
