@@ -79,6 +79,7 @@ func TestRunJoinPreparesNodeBeforeK3s(t *testing.T) {
 				}
 				return nil
 			}
+			joinWaitKubelet = func() error { calls = append(calls, "kubelet-ready"); return nil }
 			joinHarden = func() error { calls = append(calls, "harden"); return nil }
 			env := map[string]string{}
 			upsertEnvKey = func(path, k, v string) error { env[k] = v; return nil }
@@ -87,9 +88,9 @@ func TestRunJoinPreparesNodeBeforeK3s(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := []string{"longhorn-prereqs", "k3s", "harden"}
+			want := []string{"longhorn-prereqs", "k3s", "kubelet-ready", "harden"}
 			if role == k3s.RoleServer {
-				want = []string{"longhorn-prereqs", "local-storage-skip", "ingress-ha-config", "k3s", "harden"}
+				want = []string{"longhorn-prereqs", "local-storage-skip", "ingress-ha-config", "k3s", "kubelet-ready", "harden"}
 			}
 			if !slices.Equal(calls, want) {
 				t.Fatalf("calls = %v, want %v", calls, want)

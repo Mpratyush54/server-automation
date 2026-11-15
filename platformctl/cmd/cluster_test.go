@@ -62,6 +62,9 @@ func clusterTest(t *testing.T) {
 	provisionedFn = func() bool { return false }
 	joinPreflight = func(host, role, token string) *preflight.Result { return &preflight.Result{Passed: true} }
 	joinHarden = func() error { return nil }
+	oldWaitKubelet := joinWaitKubelet
+	t.Cleanup(func() { joinWaitKubelet = oldWaitKubelet })
+	joinWaitKubelet = func() error { return nil }
 	upsertEnvKey = func(path, k, v string) error { return nil }
 	cfg.SkipHardening, cfg.SkipPreflight = false, false
 	cfg.Cluster = config.Cluster{}

@@ -367,6 +367,9 @@ func runJoin(stdin io.Reader) error {
 	color.Green("  ✓ Joined the cluster as %s", role)
 
 	if !cfg.SkipHardening {
+		if err := joinWaitKubelet(); err != nil {
+			return fmt.Errorf("host hardening: %w (k3s joined; run `sudo platformctl harden --auto` once the node is Ready)", err)
+		}
 		if err := joinHarden(); err != nil {
 			return fmt.Errorf("host hardening: %w (k3s joined; fix and run `sudo platformctl harden --auto`)", err)
 		}
