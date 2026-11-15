@@ -81,6 +81,9 @@ fi
 // SetupBundledStorage creates the API's bucket-scoped MinIO user (provision step
 // "storage-scoped", after "platform").
 func SetupBundledStorage(cfg *config.Config) error {
+	if cfg.ObjectStorageExternal() {
+		return nil
+	}
 	fmt.Println("  ■ Configuring scoped MinIO credentials for the API...")
 	if err := shell.RunBashEnv(minioStorageScript, map[string]string{"ROOT_ACCESS": cfg.MinioAccessKey, "ROOT_SECRET": cfg.MinioSecretKey}); err != nil {
 		return fmt.Errorf("configure scoped MinIO storage credentials: %w", err)

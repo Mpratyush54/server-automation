@@ -173,3 +173,23 @@ kubectl create secret generic platform-env \
   --from-literal=SECRETS_ENCRYPTION_KEY="$SECRETS_ENCRYPTION_KEY" \
   # ... all other vars
 ```
+
+## Installer object storage
+
+Fresh installs only; see [external object storage](../../operations/ha.md#external-object-storage-fresh-installs-only).
+These settings are saved in `/etc/platform/.env` and passed to the API by the installer.
+
+| Variable | Default | Description |
+|---|---|---|
+| `OBJECT_STORAGE_MODE` | `bundled` | `bundled` or `external`, on any profile. External skips MinIO and its console/SSO/bootstrap steps. |
+| `OBJECT_STORAGE_ENDPOINT` | Empty | Required in external mode: S3 API URL with no credentials, path or query. |
+| `OBJECT_STORAGE_REGION` | `us-east-1` | Signing region; R2 uses `auto`. |
+| `OBJECT_STORAGE_BUCKET_PREFIX` | `cairn` | Unique bucket prefix; buckets are `<prefix>-<purpose>` for uploads, backups, replays, loki, tempo, pyroscope and registry. |
+| `OBJECT_STORAGE_FORCE_PATH_STYLE` | `true` | `true` for path addressing, `false` for virtual-hosted addressing. |
+
+Credentials use Kubernetes Secret `platform/platform-object-storage` keys
+`OBJECT_STORAGE_ACCESS_KEY` and `OBJECT_STORAGE_SECRET_KEY`, written from stdin
+with `provision --object-storage-credentials-stdin` or hidden interactive prompts.
+Do not put these keys in argv or the host `.env` file. Namespace-local consumer
+Secrets are derived from the master Secret. Missing buckets are created through
+S3 when permitted; write/read/delete preflight must pass before k3s starts.

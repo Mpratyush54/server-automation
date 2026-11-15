@@ -112,7 +112,7 @@ func provisionGraph(c *config.Config) []stepDef {
 		{name: "postgresql", deps: []string{"longhorn"}, args: install("postgresql"), fn: components.InstallPostgreSQL},
 		{name: "mongodb", deps: []string{"longhorn"}, args: install("mongodb"), fn: components.InstallMongoDB},
 		{name: "redis", deps: []string{"longhorn"}, args: install("redis"), fn: components.InstallRedis},
-		{name: "minio", deps: []string{"longhorn"}, args: install("minio"), fn: components.InstallMinIO},
+		{name: "minio", skip: c.ObjectStorageExternal(), deps: []string{"longhorn"}, args: install("minio"), fn: components.InstallMinIO},
 		{name: "ingress-nginx", args: install("ingress-nginx"), fn: components.InstallIngressNginx},
 		{name: "cert-manager", skip: !c.InstallCertManager, args: install("cert-manager"), fn: components.InstallCertManager},
 		{name: "portainer", deps: []string{"longhorn"}, skip: !c.InstallPortainer, args: install("portainer"), fn: components.InstallPortainer},
@@ -151,7 +151,7 @@ func provisionGraph(c *config.Config) []stepDef {
 		{name: "seed", deps: []string{"platform"}, args: []string{"seed"}, fn: components.SeedAdmin, warnOnly: true},
 		// MinIO IAM needs the platform API (its OpenID issuer), so the API's scoped
 		// storage user is created after "platform"; the API restarts with it.
-		{name: "storage-scoped", deps: []string{"platform", "minio"}, args: install("storage-scoped"), fn: components.SetupBundledStorage},
+		{name: "storage-scoped", skip: c.ObjectStorageExternal(), deps: []string{"platform", "minio"}, args: install("storage-scoped"), fn: components.SetupBundledStorage},
 		{name: "builds", deps: []string{"storage-scoped", "ingress", "platform"}, skip: !components.BuildsEnabled(c), args: install("builds"), fn: components.InstallBuilds},
 	}
 }
@@ -183,6 +183,9 @@ func runProvision() error {
 		color.Cyan("  Profile: %s\n", profileFlag)
 	}
 
+	if err := checkObjectStorageFlags(cfg); err != nil {
+		return err
+	}
 	if !cfg.NonInteractive {
 		if err := cfg.PromptInteractive(); err != nil {
 			return err
@@ -196,6 +199,9 @@ func runProvision() error {
 		return err
 	}
 	if err := resolvePostgresReplication(cfg, os.Stdin, os.Stdout); err != nil {
+		return err
+	}
+	if err := resolveObjectStorage(cfg, os.Stdin); err != nil {
 		return err
 	}
 	// The backup target is checked before anything is installed (#186).
@@ -333,6 +339,9 @@ func runProvision() error {
 	}
 	// Target credentials (held in memory since the prompt) go to Kubernetes
 	// Secrets before any step that archives to the target starts.
+	if err := hostStep("object-storage", func() error { return components.EnsureObjectStorage(cfg, objectCredentials) }); err != nil {
+		return err
+	}
 	if err := hostStep("backup-target", func() error { return components.EnsureBackupTarget(cfg) }); err != nil {
 		return err
 	}

@@ -144,7 +144,7 @@ func InstallTelemetry(c *config.Config) error {
 			return err
 		}
 		path := f.Name()
-		_, err = f.WriteString(telemetryValues(name, days, sampling))
+		_, err = f.WriteString(telemetryObjectValues(c, name, days, sampling))
 		closeErr := f.Close()
 		if err == nil {
 			err = closeErr
@@ -193,6 +193,9 @@ func applyTelemetryJSON(v any) error {
 }
 
 func telemetryStorage(c *config.Config) error {
+	if c.ObjectStorageExternal() {
+		return externalTelemetrySecrets(c)
+	}
 	// Root credentials exist only for the duration of the IAM bootstrap jobs.
 	if err := applyTelemetryJSON(map[string]any{"apiVersion": "v1", "kind": "Secret", "metadata": map[string]string{"name": "telemetry-bootstrap", "namespace": "monitoring"}, "stringData": map[string]string{"ROOT_USER": c.MinioAccessKey, "ROOT_PASSWORD": c.MinioSecretKey}}); err != nil {
 		return err

@@ -83,6 +83,9 @@ func pgBackupTarget(cfg *config.Config) (*pgBackup, error) {
 			}
 			return &pgBackup{t.PostgresDestination(), t.Endpoint, backup.PostgresTargetSecret, "REGION"}, nil
 		}
+		if cfg.ObjectStorageExternal() {
+			return &pgBackup{"s3://" + cfg.ObjectBucket("backups") + "/postgres/", cfg.ObjectStorage.Endpoint, "platform-object-storage-s3", "REGION"}, nil
+		}
 		return &pgBackup{"s3://postgres-backups/", "http://minio.storage.svc.cluster.local:9000", "postgresql-backup-s3", ""}, nil
 	}
 	if !pgDestinationRE.MatchString(cfg.PostgresBackupDestination) {
@@ -586,6 +589,14 @@ func InstallPostgresBackup(cfg *config.Config) error {
 		}
 		if !exists {
 			return fmt.Errorf("POSTGRES_BACKUP_SECRET %s must exist in namespace databases with ACCESS_KEY_ID and ACCESS_SECRET_KEY", b.Secret)
+		}
+	} else if cfg.ObjectStorageExternal() {
+		d, e := objectStorageCredentials()
+		if e != nil {
+			return e
+		}
+		if e := applySecret("databases", b.Secret, map[string]string{"ACCESS_KEY_ID": d["OBJECT_STORAGE_ACCESS_KEY"], "ACCESS_SECRET_KEY": d["OBJECT_STORAGE_SECRET_KEY"], "REGION": cfg.ObjectStorage.Region}); e != nil {
+			return e
 		}
 	} else if err = pgBundledStorage(cfg, b); err != nil {
 		return err

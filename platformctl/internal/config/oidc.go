@@ -58,13 +58,17 @@ type OIDCClient struct {
 // the exact redirect URI each one uses.
 func (c *Config) OIDCClients() []OIDCClient {
 	d := c.Domain
-	return []OIDCClient{
+	clients := []OIDCClient{
 		{ID: "grafana", Secret: c.OIDCSecretGrafana, RedirectURIs: []string{"https://" + d + "/grafana/login/generic_oauth"}},
 		{ID: "argocd", Secret: c.OIDCSecretArgoCD, RedirectURIs: []string{"https://" + d + "/argocd/auth/callback"}},
 		{ID: "portainer", Secret: c.OIDCSecretPortainer, RedirectURIs: []string{"https://portainer." + d + "/"}},
 		{ID: "oauth2-proxy", Secret: c.OIDCSecretOAuth2Proxy, RedirectURIs: []string{"https://" + d + "/oauth2/callback"}},
 		{ID: "minio", Secret: c.OIDCSecretMinio, RedirectURIs: []string{"https://minio." + d + "/oauth_callback"}},
 	}
+	if c.ObjectStorageExternal() {
+		clients = clients[:len(clients)-1]
+	}
+	return clients
 }
 
 // OIDCClientsJSON renders the registry for the API's OIDC_CLIENTS variable.

@@ -539,7 +539,91 @@ kubectl -n longhorn-system get volumes.longhorn.io -o custom-columns=NAME:.metad
 kubectl -n longhorn-system patch volumes.longhorn.io <pv-name> --type merge -p '{"spec":{"numberOfReplicas":2}}'
 ```
 
-Raise the count to 2 before the cluster drops below four nodes; lower it to 1 only once each MinIO pod runs on its own node. Apps can also keep their own files in an external bucket through [storage providers](storage-providers.md); the bundled MinIO still holds the platform's own data.
+Raise the count to 2 before the cluster drops below four nodes; lower it to 1 only once each MinIO pod runs on its own node. Apps can also keep their own files in an external bucket through [storage providers](storage-providers.md); bundled mode keeps the platform's own data in MinIO. Fresh installs can instead use the external option below.
+
+
+#### External object storage (fresh installs only)
+
+Set `OBJECT_STORAGE_MODE=external` to use an S3-compatible endpoint for Cairn's
+own data and the default app storage provider. This works on every profile; the
+interactive `ha` installer asks which mode to use. The default remains `bundled`.
+Moving an existing bundled installation to external storage is not supported.
+
+For a non-interactive fresh install, pass non-secret settings as flags (or use
+the corresponding `OBJECT_STORAGE_*` environment variables):
+
+```bash
+# The protected file contains exactly two lines: access key ID, secret access key.
+sudo platformctl provision --auto --profile ha \
+  --object-storage-mode external \
+  --object-storage-endpoint https://s3.eu-west-1.amazonaws.com \
+  --object-storage-region eu-west-1 \
+  --object-storage-bucket-prefix my-cairn \
+  --object-storage-force-path-style=false \
+  --object-storage-credentials-stdin < /secure/object-storage-credentials
+```
+
+Credentials are never accepted as flags or saved to `/etc/platform/.env`. They
+are sent on stdin to Kubernetes Secret `platform/platform-object-storage`, with
+keys `OBJECT_STORAGE_ACCESS_KEY` and `OBJECT_STORAGE_SECRET_KEY`. On reruns, the
+installer reuses this Secret; it may also be supplied before provisioning when
+using an existing cluster. Interactive installs can enter credentials at hidden
+prompts. Keep credentials out of shell history and logs. Consumers that need
+another Secret format receive a namespace-local copy.
+
+Buckets are `<prefix>-uploads`, `<prefix>-backups`, `<prefix>-replays`,
+`<prefix>-loki`, `<prefix>-tempo`, `<prefix>-pyroscope`, and `<prefix>-registry`.
+Before k3s starts, the installer checks each bucket, creates missing buckets
+through S3, and writes, reads back and deletes a temporary probe object. A failed
+probe stops provisioning. Pre-create buckets when your provider does not support
+S3 bucket creation (including providers requiring their own bucket-management API).
+The endpoint must be reachable both from the provisioning host and cluster pods;
+for direct upload URLs it must also be reachable by clients.
+
+The key needs `s3:ListBucket`, `s3:GetBucketLocation`,
+`s3:ListBucketMultipartUploads` on these buckets, plus `s3:GetObject`,
+`s3:PutObject`, `s3:DeleteObject`, `s3:AbortMultipartUpload`, and
+`s3:ListMultipartUploadParts` on their objects. `s3:CreateBucket` is needed only
+when buckets do not already exist. Scope the key to this installation's buckets
+using the provider's IAM controls. Use R2's S3 endpoint with region `auto`, or
+GCS's S3 interoperability endpoint with HMAC credentials; native GCS service
+account JSON is not an S3 credential.
+
+External mode skips MinIO, its IAM bootstrap, console/SSO routes and the
+`longhorn-minio` StorageClass. API uploads, replays, backups, telemetry and the
+build registry use the configured endpoint, region and addressing mode. The
+installer does not manage external IAM users, console SSO or lifecycle policies.
+Configure bucket lifecycle, multipart-upload cleanup, retention, versioning and
+replication at your provider. For browser uploads, configure bucket CORS to allow
+your portal origin and the required GET, PUT and HEAD methods. Keep lifecycle expiry at least as long as Cairn's
+configured retention and PostgreSQL recovery window.
+
+Bundled MinIO expires session replay objects after 365 days as a backstop
+(per-project retention is applied by the API); add an equivalent lifecycle rule
+for the `replays/` prefix of `<prefix>-replays` if you want the same limit.
+
+Use an `https://` endpoint whose certificate is trusted by the public CA bundle,
+as for the [backup target](backups.md); a private or self-signed CA is not
+supported. Plain `http://` works only on a private network you trust. Path-style
+requests (`OBJECT_STORAGE_FORCE_PATH_STYLE=true`, the default) work with most
+S3-compatible stores; with `false`, requests go to `<bucket>.<endpoint host>`,
+so the endpoint's certificate must cover that name. The bucket prefix may not
+contain dots for the same reason.
+
+Rotating the access key is not automated yet: the installer copies the key from
+`platform/platform-object-storage` into the telemetry, registry and PostgreSQL
+backup Secrets when those components are installed.
+
+Unless a separate backup target or explicit local-backup choice is supplied,
+`<prefix>-backups` also becomes the existing external backup target for PostgreSQL
+WAL/base backups, encrypted `platformctl backup` archives, etcd snapshots and
+Longhorn backups. An explicitly configured backup target keeps precedence; see
+[backups](backups.md). With an explicit local-backup choice, encrypted archives stay local while
+PostgreSQL still uses external object storage rather than a missing MinIO service.
+Encrypted archive defaults omit the bundled `minio` capture component: external
+bucket contents need provider-managed protection and are not mirrored into the
+archive. Enable encrypted archives with `platformctl backup init --recipient ...`
+and `platformctl backup schedule` as usual.
 
 #### Migrating an existing single-node install
 

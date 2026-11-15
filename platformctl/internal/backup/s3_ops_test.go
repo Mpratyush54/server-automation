@@ -30,12 +30,13 @@ type richFakeS3 struct {
 	maxKeys   int // ListObjectsV2 page size (0 = unlimited)
 	failPart  int // fail UploadPart with this part number (0 = none)
 
-	completeErr  bool     // CompleteMultipartUpload answers 200 with an <Error> body
-	deleteFail   string   // DeleteObjects reports this key as failed
-	deleteSizes  []int    // number of keys in each DeleteObjects request
-	noToken      bool     // truncated listings without NextContinuationToken
-	partMD5s     int      // UploadPart requests carrying a correct Content-MD5
-	bodyRequests []string // "METHOD key" of every request that had a body
+	completeErr  bool            // CompleteMultipartUpload answers 200 with an <Error> body
+	deleteFail   string          // DeleteObjects reports this key as failed
+	deleteSizes  []int           // number of keys in each DeleteObjects request
+	noToken      bool            // truncated listings without NextContinuationToken
+	partMD5s     int             // UploadPart requests carrying a correct Content-MD5
+	bodyRequests []string        // "METHOD key" of every request that had a body
+	created      map[string]bool // buckets made by CreateBucket
 }
 
 func newRichFakeS3() *richFakeS3 {
@@ -196,8 +197,24 @@ func (f *richFakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// HeadBucket: a bucket exists once created or holding objects.
+	if key == "" && r.Method == http.MethodHead {
+		exists := f.created[bucket]
+		for k := range f.objects {
+			exists = exists || strings.HasPrefix(k, bucket+"/")
+		}
+		if !exists {
+			w.WriteHeader(404)
+		}
+		return
+	}
+
 	// Create bucket
 	if key == "" && r.Method == http.MethodPut {
+		if f.created == nil {
+			f.created = map[string]bool{}
+		}
+		f.created[bucket] = true
 		w.WriteHeader(200)
 		return
 	}

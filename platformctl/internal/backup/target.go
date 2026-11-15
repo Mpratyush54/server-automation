@@ -248,7 +248,8 @@ func SecretManifest(namespace, name string, data map[string]string) map[string]a
 }
 
 // ---------------------------------------------------------------------------
-// S3 client (AWS Signature Version 4, path-style requests). Used for backup
+// S3 client (AWS Signature Version 4, path-style requests unless
+// VirtualHostedStyle is set). Used for backup
 // target probe/list and for archive put/get/delete (including multipart).
 
 const unsignedPayload = "UNSIGNED-PAYLOAD"
@@ -257,9 +258,10 @@ const unsignedPayload = "UNSIGNED-PAYLOAD"
 // Small requests (probe, list, delete) use HTTP's overall Timeout; object
 // transfers use the same Transport without one (see transferHTTP).
 type S3Client struct {
-	Target S3Target
-	HTTP   *http.Client
-	Now    func() time.Time
+	Target             S3Target
+	VirtualHostedStyle bool
+	HTTP               *http.Client
+	Now                func() time.Time
 }
 
 func NewS3Client(t S3Target) *S3Client {
@@ -407,14 +409,20 @@ func SignWithHash(req *http.Request, payloadHash, accessKey, secretKey, region s
 	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+accessKey+"/"+scope+", SignedHeaders="+signed+", Signature="+sig)
 }
 
-// objectURL builds a path-style URL for bucket[/key].
+// objectURL builds the URL for bucket[/key]: path-style by default,
+// <bucket>.<host>/<key> when VirtualHostedStyle is set (external object
+// storage, #176). Requests without a bucket (ListBuckets) use the bare host.
 func (c *S3Client) objectURL(bucket, key string, query url.Values) (*url.URL, error) {
 	u, err := url.Parse(c.Target.EndpointURL())
 	if err != nil {
 		return nil, err
 	}
 	u.Path = "/"
-	if bucket != "" {
+	switch {
+	case bucket != "" && c.VirtualHostedStyle:
+		u.Host = bucket + "." + u.Host
+		u.Path += key
+	case bucket != "":
 		u.Path += bucket
 		if key != "" {
 			u.Path += "/" + key

@@ -460,9 +460,32 @@ func (c *S3Client) ListBuckets(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
-// EnsureBucket creates bucket unless this account already owns it.
+// EnsureBucket creates bucket unless it already exists. An existing bucket
+// (HEAD answers 2xx) needs no CreateBucket permission, so operators can
+// pre-create buckets; any HEAD answer other than 404 is reported, so an
+// authorization failure is never mistaken for a missing bucket. Outside
+// us-east-1 (and R2's "auto") the create request names the region, as AWS
+// requires.
 func (c *S3Client) EnsureBucket(ctx context.Context, bucket string) error {
-	st, b, err := c.doBucket(ctx, http.MethodPut, bucket, "", nil, nil)
+	st, b, err := c.doBucket(ctx, http.MethodHead, bucket, "", nil, nil)
+	if err == nil && st/100 == 2 {
+		return nil
+	}
+	if err != nil || st != http.StatusNotFound {
+		return c.s3Error("check bucket "+bucket+" on", st, b, err)
+	}
+	var body []byte
+	if region := c.Target.SigningRegion(); region != "us-east-1" && region != "auto" {
+		body, err = xml.Marshal(struct {
+			XMLName  xml.Name `xml:"CreateBucketConfiguration"`
+			XMLNS    string   `xml:"xmlns,attr"`
+			Location string   `xml:"LocationConstraint"`
+		}{XMLNS: "http://s3.amazonaws.com/doc/2006-03-01/", Location: region})
+		if err != nil {
+			return err
+		}
+	}
+	st, b, err = c.doBucket(ctx, http.MethodPut, bucket, "", nil, body)
 	if err != nil {
 		return c.s3Error("write to", st, b, err)
 	}

@@ -27,9 +27,9 @@ const (
 	// Sentinel already keep a copy per node, so three Longhorn replicas of
 	// each member would store every byte nine times.
 	LonghornSingleStorageClass = "longhorn-single"
-	LocalPathStorageClass     = "local-path"
-	LonghornNamespace         = "longhorn-system"
-	LocalStorageSkipFile      = "/var/lib/rancher/k3s/server/manifests/local-storage.yaml.skip"
+	LocalPathStorageClass      = "local-path"
+	LonghornNamespace          = "longhorn-system"
+	LocalStorageSkipFile       = "/var/lib/rancher/k3s/server/manifests/local-storage.yaml.skip"
 )
 
 // HAStorageClass is a stable helper for Postgres/Mongo/Redis/MinIO HA (#51/#52)
@@ -273,7 +273,7 @@ func InstallLonghorn(cfg *config.Config) error {
 		return fmt.Errorf("Longhorn CSI readiness timed out: %w", err)
 	}
 	minioReplicas := MinioStorageReplicaCount(nodes)
-	if err := applyLonghornMinioStorageClass(minioReplicas); err != nil {
+	if err := ensureMinioStorageClass(cfg, minioReplicas); err != nil {
 		return err
 	}
 	if err := applyLonghornSingleStorageClass(); err != nil {
@@ -301,8 +301,19 @@ func InstallLonghorn(cfg *config.Config) error {
 	if err := applyLonghornBackups(cfg); err != nil {
 		return err
 	}
-	color.Green("  ✓ Longhorn installed as default StorageClass (%d replicas); %s for MinIO drives (%d replica(s))", replicas, LonghornMinioStorageClass, minioReplicas)
+	if cfg.ObjectStorageExternal() {
+		color.Green("  Longhorn installed as default StorageClass (%d replicas)", replicas)
+	} else {
+		color.Green("  ✓ Longhorn installed as default StorageClass (%d replicas); %s for MinIO drives (%d replica(s))", replicas, LonghornMinioStorageClass, minioReplicas)
+	}
 	return state.MarkDone("longhorn")
+}
+
+func ensureMinioStorageClass(cfg *config.Config, replicas int) error {
+	if cfg.ObjectStorageExternal() {
+		return nil
+	}
+	return applyLonghornMinioStorageClass(replicas)
 }
 
 // longhornBackupStore is the backup target URL and credential Secret:

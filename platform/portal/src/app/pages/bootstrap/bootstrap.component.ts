@@ -123,6 +123,8 @@ sudo platformctl provision`;
         { label: 'ingress-nginx', namespace: 'ingress-nginx',  status: services['ingress-nginx'] || 'unknown', detail: 'HTTP routing' },
         { label: 'cert-manager',  namespace: 'cert-manager',   status: services['cert-manager']  || 'unknown', detail: 'TLS certificates' },
       ];
+      // External object storage (#176) has no bundled MinIO pods to report.
+      if (res?.objectStorage === 'external') this.statusServices = this.statusServices.filter(s => s.label !== 'MinIO');
 
       // Also update integration configured status from backend env check
       if (res?.integrations) {

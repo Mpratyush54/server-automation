@@ -1,3 +1,4 @@
+import { objectStorageConfig } from './object-storage-config';
 /**
  * Object storage for session replay chunks (#40).
  *
@@ -33,12 +34,14 @@ export function replaySessionPrefix(projectId: string, sessionId: string): strin
 }
 
 export function replayStoreConfig(env: NodeJS.ProcessEnv = process.env) {
+  const object = objectStorageConfig(env);
   return {
-    endpoint: env.REPLAYS_S3_ENDPOINT || env.MINIO_ENDPOINT || '',
-    bucket: env.REPLAYS_BUCKET || 'replays',
-    accessKeyId: env.REPLAYS_S3_ACCESS_KEY || env.MINIO_API_ACCESS_KEY || env.MINIO_ACCESS_KEY || '',
-    secretAccessKey: env.REPLAYS_S3_SECRET_KEY || env.MINIO_API_SECRET_KEY || env.MINIO_SECRET_KEY || '',
-    region: env.REPLAYS_S3_REGION || 'us-east-1',
+    ...(object ? { forcePathStyle: object.forcePathStyle } : {}),
+    endpoint: env.REPLAYS_S3_ENDPOINT || object?.endpoint || env.MINIO_ENDPOINT || '',
+    bucket: env.REPLAYS_BUCKET || object?.bucket('replays') || 'replays',
+    accessKeyId: env.REPLAYS_S3_ACCESS_KEY || object?.accessKeyId || env.MINIO_API_ACCESS_KEY || env.MINIO_ACCESS_KEY || '',
+    secretAccessKey: env.REPLAYS_S3_SECRET_KEY || object?.secretAccessKey || env.MINIO_API_SECRET_KEY || env.MINIO_SECRET_KEY || '',
+    region: env.REPLAYS_S3_REGION || object?.region || 'us-east-1',
   };
 }
 
@@ -54,7 +57,7 @@ class S3ReplayStore implements ReplayObjectStore {
       this.client = new this.sdk.S3Client({
         endpoint: this.cfg.endpoint,
         region: this.cfg.region,
-        forcePathStyle: true,
+        forcePathStyle: this.cfg.forcePathStyle ?? true,
         credentials: { accessKeyId: this.cfg.accessKeyId, secretAccessKey: this.cfg.secretAccessKey },
       });
     }

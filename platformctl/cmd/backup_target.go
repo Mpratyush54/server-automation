@@ -59,6 +59,11 @@ func applyBackupFlags(c *config.Config) {
 // local-only needs an explicit choice on fresh installs.
 func resolveBackupTarget(c *config.Config) error {
 	applyBackupFlags(c)
+	if c.ObjectStorageExternal() && c.Backup.Mode == "" && c.Backup.Bucket == "" && !c.Backup.LocalOnly {
+		c.Backup = config.BackupSettings{Mode: config.BackupModeExternal, Endpoint: c.ObjectStorage.Endpoint,
+			Region: c.ObjectStorage.Region, Bucket: c.ObjectBucket("backups"), AgeRecipient: c.Backup.AgeRecipient,
+			AccessKey: objectCredentials["OBJECT_STORAGE_ACCESS_KEY"], SecretKey: objectCredentials["OBJECT_STORAGE_SECRET_KEY"]}
+	}
 	fresh := !state.IsDone("postgresql")
 	if !c.NonInteractive && c.Backup.Mode == "" && !c.Backup.LocalOnly && c.Backup.Bucket == "" {
 		promptBackup(c)
@@ -127,7 +132,7 @@ func saveBackupEnv(c *config.Config) error {
 
 // defaultArchiveTarget is the backup.json target for this install.
 func defaultArchiveTarget(c *config.Config) string {
-	if c.BackupExternal() {
+	if c.BackupExternal() || (c.ObjectStorageExternal() && !c.Backup.LocalOnly && c.Backup.Mode != config.BackupModeLocal) {
 		return backup.ExternalTargetKeyword
 	}
 	return defaultLocalArchiveTarget
@@ -138,6 +143,15 @@ func defaultArchiveTarget(c *config.Config) string {
 func resolveArchiveTarget(raw string) (string, error) {
 	if raw != backup.ExternalTargetKeyword {
 		return raw, nil
+	}
+	if cfg.ObjectStorageExternal() && !cfg.BackupExternal() {
+		d, err := components.ReadObjectStorageCredentials()
+		if err != nil {
+			return "", err
+		}
+		t := backup.S3Target{Endpoint: cfg.ObjectStorage.Endpoint, Bucket: cfg.ObjectBucket("backups"), Region: cfg.ObjectStorage.Region, AccessKey: d["OBJECT_STORAGE_ACCESS_KEY"], SecretKey: d["OBJECT_STORAGE_SECRET_KEY"]}
+		backup.UseExternalTarget(t)
+		return t.ArchiveTarget(), nil
 	}
 	t, err := components.ReadBackupTarget()
 	if err != nil {
@@ -162,6 +176,7 @@ func finishBackupSetup(w io.Writer, c *config.Config) {
 	}
 	bc := backup.Config{Target: defaultArchiveTarget(c), Recipient: c.Backup.AgeRecipient, Retention: backup.Retention{Daily: 7, Weekly: 4, Monthly: 12},
 		Components: []string{"config", "postgres", "mongo", "redis", "minio", "k3s"}}
+	bc.Components = objectBackupComponents(c, bc.Components)
 	if err := writeBackupConfig(bc); err != nil {
 		color.Yellow("  ⚠ encrypted backups not configured: %v", err)
 		return
