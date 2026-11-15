@@ -32,6 +32,8 @@ This example uses servers `10.0.0.11`, `10.0.0.12` and `10.0.0.13`, the floating
 
    `PLATFORM_CLUSTER_NODES` tells the firewall which machines may talk to each other. You can also give the private subnet, such as `10.0.0.0/24`.
 
+   Until the other servers join, the first server runs only the first MongoDB, Redis and PostgreSQL member: the others need a node each (and room for their volumes). `provision` waits only for the first members and prints that the rest start when the remaining servers join; they start on their own after step 3.
+
    `provision` also asks whether database writes wait for a copy on a second server (`sync`, the default: no confirmed write is lost) or not (`async`: writes do not wait, but the last confirmed writes can be lost when a server dies; failover takes about 1 to 2 minutes in both modes). See [Synchronous or asynchronous database replication](postgres-replication.md). Add `--postgres-replication sync|async` to skip the question.
 
 2. Still on the first server, create a join token and a join settings file:

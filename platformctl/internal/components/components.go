@@ -201,14 +201,14 @@ func InstallMongoDB(cfg *config.Config) error {
 	if err := checkHAMigration(cfg, "mongodb"); err != nil {
 		return err
 	}
-	return mongodbRelease(cfg).reconcile("--wait", "--timeout", "10m")
+	return installHADatastore(cfg, mongodbRelease(cfg), "mongodb-0")
 }
 
 func InstallRedis(cfg *config.Config) error {
 	if err := checkHAMigration(cfg, "redis"); err != nil {
 		return err
 	}
-	return redisRelease(cfg).reconcile("--wait", "--timeout", "10m")
+	return installHADatastore(cfg, redisRelease(cfg), "redis-node-0")
 }
 
 func InstallMinIO(cfg *config.Config) error {

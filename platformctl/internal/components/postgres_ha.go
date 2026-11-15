@@ -625,7 +625,7 @@ func InstallPostgresBackup(cfg *config.Config) error {
 	// standby by default, and on ha the standbys restart with the plugin
 	// sidecar one by one afterwards; a backup sent to one before that failed
 	// with "requested plugin is not available" (#186 ha test).
-	if err = shell.RunBash(pgPluginRolloutScript); err != nil {
+	if err = shell.RunBashEnv(pgPluginRolloutScript, pgPluginRolloutEnv(cfg)); err != nil {
 		return fmt.Errorf("PostgreSQL instances did not all restart with the backup plugin: %w", err)
 	}
 	m := pgResource("ScheduledBackup", "postgresql-daily")
@@ -750,11 +750,15 @@ for _ in $(seq 1 120); do
   st=$(kubectl -n databases get clusters.postgresql.cnpg.io postgresql -o jsonpath='{.status.phase}/{.status.readyInstances}/{.spec.instances}' 2>/dev/null || true)
   pods=$(kubectl -n databases get pods -l cnpg.io/cluster=postgresql,cnpg.io/podRole=instance -o jsonpath='{range .items[*]}{.metadata.name}={.spec.containers[*].name} {.spec.initContainers[*].name}{"\n"}{end}' 2>/dev/null || true)
   want=${st##*/}
+  n=$(printf '%s\n' "$pods" | grep -c 'plugin-barman-cloud' || true)
+  total=$(printf '%s\n' "$pods" | grep -c '=' || true)
   case "$st" in "Cluster in healthy state/$want/$want")
-    n=$(printf '%s\n' "$pods" | grep -c 'plugin-barman-cloud' || true)
-    total=$(printf '%s\n' "$pods" | grep -c '=' || true)
     if [ "$total" -ge "$want" ] && [ "$n" -eq "$total" ]; then exit 0; fi ;;
   esac
+  # PG_READY_WANT (fewer nodes than instances): standbys stay Pending until
+  # servers join, so only the instances that can run must be ready.
+  ready=$(printf '%s' "$st" | cut -d/ -f2)
+  if [ -n "${PG_READY_WANT:-}" ] && [ "${ready:-0}" -ge "$PG_READY_WANT" ] && [ "$total" -ge 1 ] && [ "$n" -eq "$total" ]; then exit 0; fi
   sleep 5
 done
 echo "PostgreSQL instances not all ready with the backup plugin after 10 minutes: $st" >&2
@@ -1133,3 +1137,13 @@ const pgPrimaryPodShell = `pg_primary_pod() {
   fi
 }
 `
+
+// pgPluginRolloutEnv lets the plugin rollout wait accept the instances that
+// can run on a partial ha cluster (one instance per node).
+func pgPluginRolloutEnv(cfg *config.Config) map[string]string {
+	if partial, nodes := haPartialCluster(cfg); partial {
+		color.Yellow("  PostgreSQL: %d of %d nodes Ready; the backup plugin is checked on the running instances, standbys follow when the remaining servers join", nodes, haFullNodes)
+		return map[string]string{"PG_READY_WANT": fmt.Sprint(nodes)}
+	}
+	return nil
+}
