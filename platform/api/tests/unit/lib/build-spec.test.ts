@@ -85,7 +85,11 @@ describe('source build Job', () => {
       seccompProfile: { type: 'Localhost', localhostProfile: BUILDKIT_SECCOMP_PROFILE },
       appArmorProfile: { type: 'Localhost', localhostProfile: BUILDKIT_APPARMOR_PROFILE } });
     for (const c of all().filter(c => c.name !== 'buildkit')) {
-      expect(c.securityContext).toEqual({ allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } });
+      const { runAsUser, runAsGroup, ...rest } = c.securityContext;
+      expect(rest).toEqual({ allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } });
+      // The lifecycle runs as the builder's CNB user so it never needs CAP_SETUID to switch users.
+      if (c.name.startsWith('bp-') || c.name === 'export' || c.name === 'clone') expect([runAsUser, runAsGroup]).toEqual([1001, 1000]);
+      else expect(runAsUser).toBeUndefined();
     }
     expect(JSON.stringify(render())).not.toMatch(/privileged|hostPath|Unconfined|hostNetwork|hostPID/);
   });

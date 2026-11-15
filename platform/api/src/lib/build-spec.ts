@@ -53,6 +53,13 @@ const heavy = { requests: { cpu: '250m', memory: '512Mi', 'ephemeral-storage': '
 const light = { requests: { cpu: '100m', memory: '128Mi', 'ephemeral-storage': '256Mi' }, limits: { cpu: '1', memory: '1Gi', 'ephemeral-storage': '2Gi' } };
 const locked = { allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } };
 /**
+ * The Buildpacks lifecycle switches to the builder's CNB user (1001:1000 in BUILD_IMAGES.buildpacks)
+ * unless it already runs as that user, which needs CAP_SETUID. Its phases therefore run as that
+ * user, and so does the clone step, so that buildpacks can write to the cloned workspace.
+ */
+const CNB_USER = { runAsUser: 1001, runAsGroup: 1000 };
+const lockedCnb = { ...locked, ...CNB_USER };
+/**
  * Rootless BuildKit maps its subordinate user range with the newuidmap/newgidmap helpers (file capabilities cap_setuid/cap_setgid),
  * which need privilege escalation and CAP_SETUID/CAP_SETGID in the bounding set; every other
  * capability is dropped. Inside the user namespace it creates, BuildKit holds only capabilities
@@ -118,7 +125,7 @@ rm -rf /workspace/.git
 if [ -f /workspace/Dockerfile ]; then echo dockerfile > /meta/kind; else echo buildpacks > /meta/kind; fi`],
             env: [{ name: 'REPOSITORY', value: repositoryUrl }, { name: 'COMMIT', value: build.commitSha }, { name: 'HOME', value: '/tmp' }, { name: 'GIT_TERMINAL_PROMPT', value: '0' }],
             volumeMounts: [{ name: 'source', mountPath: '/workspace' }, meta(false), { name: 'git-auth', mountPath: '/git-auth', readOnly: true }, ca],
-            securityContext: locked, resources: light },
+            securityContext: lockedCnb, resources: light },
           // UNTRUSTED: Dockerfile RUN steps. Node-local seccomp/AppArmor profiles allow the
           // user-namespace and mount operations rootless BuildKit needs, for this container only.
           { name: 'buildkit', image: BUILD_IMAGES.buildkit, workingDir: '/workspace',
@@ -134,22 +141,22 @@ exec buildctl-daemonless.sh build --frontend dockerfile.v0 --local context=/work
             command: ['/bin/bash', '-ec', `${kindIs('buildpacks')}
 exec /cnb/lifecycle/analyzer -layers=/layers -run-image="$RUN_IMAGE" "$IMAGE"`],
             env: [...trustedLifecycleEnv, { name: 'RUN_IMAGE', value: BUILD_IMAGES.runImage }],
-            volumeMounts: [meta(true), { name: 'layers', mountPath: '/layers' }], securityContext: locked, resources: light },
+            volumeMounts: [meta(true), { name: 'layers', mountPath: '/layers' }], securityContext: lockedCnb, resources: light },
           { name: 'bp-detect', image: BUILD_IMAGES.buildpacks,
             command: ['/bin/bash', '-ec', `${kindIs('buildpacks')}
 exec /cnb/lifecycle/detector -app=/workspace -layers=/layers`],
             env: lifecycleEnv,
-            volumeMounts: [{ name: 'source', mountPath: '/workspace' }, meta(true), { name: 'layers', mountPath: '/layers' }, ca], securityContext: locked, resources: heavy },
+            volumeMounts: [{ name: 'source', mountPath: '/workspace' }, meta(true), { name: 'layers', mountPath: '/layers' }, ca], securityContext: lockedCnb, resources: heavy },
           { name: 'bp-restore', image: BUILD_IMAGES.buildpacks,
             command: ['/bin/bash', '-ec', `${kindIs('buildpacks')}
 exec /cnb/lifecycle/restorer -layers=/layers -cache-image="$CACHE"`],
             env: trustedLifecycleEnv,
-            volumeMounts: [meta(true), { name: 'layers', mountPath: '/layers' }], securityContext: locked, resources: light },
+            volumeMounts: [meta(true), { name: 'layers', mountPath: '/layers' }], securityContext: lockedCnb, resources: light },
           { name: 'bp-build', image: BUILD_IMAGES.buildpacks,
             command: ['/bin/bash', '-ec', `${kindIs('buildpacks')}
 exec /cnb/lifecycle/builder -app=/workspace -layers=/layers`],
             env: lifecycleEnv,
-            volumeMounts: [{ name: 'source', mountPath: '/workspace' }, meta(true), { name: 'layers', mountPath: '/layers' }, ca], securityContext: locked, resources: heavy },
+            volumeMounts: [{ name: 'source', mountPath: '/workspace' }, meta(true), { name: 'layers', mountPath: '/layers' }, ca], securityContext: lockedCnb, resources: heavy },
         ],
         containers: [
           // TRUSTED: pushes the archive BuildKit produced; crane reports the digest it pushed.
@@ -169,7 +176,7 @@ test -n "$digest"
 printf '%s@%s' "$REPOSITORY" "$digest" > /dev/termination-log`],
             env: [...trustedLifecycleEnv, { name: 'REPOSITORY', value: repository }],
             volumeMounts: [{ name: 'source', mountPath: '/workspace', readOnly: true }, meta(true), { name: 'layers', mountPath: '/layers' }],
-            securityContext: locked, resources: light },
+            securityContext: lockedCnb, resources: light },
         ],
       } },
     },
