@@ -1,4 +1,4 @@
-import { rotateSentinelPassword } from '../../../src/lib/redis-password-rotate';
+import { dropPreviousSentinelPassword, rotateSentinelPassword } from '../../../src/lib/redis-password-rotate';
 import { deriveApiRedisPassword } from '../../../src/lib/redis';
 import { deriveSentinelPassword } from '../../../src/lib/redis-endpoint';
 
@@ -76,7 +76,8 @@ it('rotates all nodes in phases, including a replica absent from discovery, and 
   expect(Math.max(...masterauth)).toBeLessThan(Math.min(...requirepass));
   expect(Math.max(...requirepass)).toBeLessThan(Math.min(...authpass));
   for (const [label, node] of mockNodes) {
-    expect(node.passwords).toEqual(new Set(['new']));
+    // Old stays valid until the delayed drop: probes read the Secret mount, which lags.
+    expect(node.passwords).toEqual(new Set(['old', 'new']));
     expect(node.users.get('plat_project')).toEqual(new Set(['project-password']));
     const user = label.endsWith(':6379') ? 'plat-api' : 'plat-sentinel';
     const derive = label.endsWith(':6379') ? deriveApiRedisPassword : deriveSentinelPassword;
@@ -97,7 +98,7 @@ it.each([
   await expect(rotateSentinelPassword('old', 'new')).rejects.toThrow('rotation incomplete');
   mockFail = '';
   await rotateSentinelPassword('old', 'new');
-  for (const node of mockNodes.values()) expect(node.passwords).toEqual(new Set(['new']));
+  for (const node of mockNodes.values()) expect(node.passwords).toEqual(new Set(['old', 'new']));
 });
 
 it('preflights every member and makes no changes when a node is unavailable', async () => {
@@ -110,7 +111,38 @@ it('retains a separately configured Sentinel password', async () => {
   process.env.REDIS_SENTINEL_PASSWORD = 'separate';
   for (const [label, node] of mockNodes) if (label.endsWith(':26379')) node.passwords = new Set(['separate']);
   await rotateSentinelPassword('old', 'new');
+  for (const [label, node] of mockNodes) expect(node.passwords).toEqual(new Set(label.endsWith(':26379') ? ['separate'] : ['old', 'new']));
+  await dropPreviousSentinelPassword('new');
   for (const [label, node] of mockNodes) expect(node.passwords).toEqual(new Set([label.endsWith(':26379') ? 'separate' : 'new']));
+});
+
+it('drops the previous default, plat-api and plat-sentinel passwords and is idempotent', async () => {
+  await rotateSentinelPassword('old', 'new');
+  await dropPreviousSentinelPassword('new');
+  const check = () => {
+    for (const [label, node] of mockNodes) {
+      expect(node.passwords).toEqual(new Set(['new']));
+      expect(node.users.get('plat_project')).toEqual(new Set(['project-password']));
+      const user = label.endsWith(':6379') ? 'plat-api' : 'plat-sentinel';
+      const derive = label.endsWith(':6379') ? deriveApiRedisPassword : deriveSentinelPassword;
+      expect(node.users.get(user)).toEqual(new Set([derive('new')]));
+    }
+  };
+  check();
+  mockCommands.length = 0;
+  await dropPreviousSentinelPassword('new');
+  check();
+  // Each ACL change is a single atomic SETUSER with resetpass: no window without a password.
+  expect(mockCommands.filter((c) => c[1] === 'ACL').every((c) => c.includes('resetpass'))).toBe(true);
+});
+
+it('refuses to drop when a member does not accept the new password yet, changing nothing', async () => {
+  await rotateSentinelPassword('old', 'new');
+  mockNodes.get('redis-node-2.redis-headless:6379')!.passwords = new Set(['old']);
+  mockCommands.length = 0;
+  await expect(dropPreviousSentinelPassword('new')).rejects.toThrow('stays valid');
+  expect(mockCommands.some((c) => c.includes('resetpass'))).toBe(false);
+  expect(mockNodes.get('redis-node-0.redis-headless:6379')!.passwords).toEqual(new Set(['old', 'new']));
 });
 
 it('tolerates read-only data config but propagates unexpected persistence failures', async () => {

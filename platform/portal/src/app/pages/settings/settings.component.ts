@@ -508,7 +508,7 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
         </div>
         <div class="st-field">
           <input id="st-rotate-confirm" class="mono" [(ngModel)]="rotateConfirm" placeholder="Type ROTATE" autocomplete="off">
-          <span class="form-hint">New values are shown <strong>once</strong>. Copy them into a password manager.</span>
+          <span class="form-hint">New values are shown <strong>once</strong>. Copy them into a password manager. If this page loses them, read the admin password on the server: <code>sudo platformctl update</code>, then <code>sudo cat /etc/platform/credentials/admin</code>.</span>
           <details class="st-details">
             <summary>What gets rotated</summary>
             <p class="st-note">The admin account, the database, the cache, the webhook secret and the deploy tool. If a service rejects the new password, Cairn retries and fixes it without SSH. MongoDB, file storage (MinIO), Portainer and the sign-in key (JWT) are left unchanged.</p>
@@ -524,6 +524,9 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
       <div class="st-body st-rotate-out">
         @if (rotateError) {
           <p class="st-msg st-err" role="alert">{{ rotateError }}</p>
+          @if (rotateAnswerLost) {
+            <p class="st-note">The rotation may still have finished. The new admin password is saved on the cluster. To read it, run <code>sudo platformctl update</code> on the server, then <code>sudo cat /etc/platform/credentials/admin</code>. Check the progress below before you rotate again.</p>
+          }
         }
         @if (rotationOperationId) {
           <app-operation-progress [operationId]="rotationOperationId" title="Password rotation"></app-operation-progress>
@@ -587,6 +590,8 @@ export class SettingsComponent implements OnInit {
   rotateConfirm = '';
   rotating = false;
   rotateError = '';
+  /** The request failed without an answer (gateway timeout, lost connection): values may exist only on the cluster. */
+  rotateAnswerLost = false;
   rotateValues: Record<string, string> | null = null;
   rotateResults: any[] = [];
   /** Latest secret-rotation operation (live step progress, also after an API restart). */
@@ -839,6 +844,7 @@ export class SettingsComponent implements OnInit {
 
   async rotateSecrets() {
     this.rotateError = '';
+    this.rotateAnswerLost = false;
     this.rotateValues = null;
     this.rotateResults = [];
     if (this.rotateConfirm !== 'ROTATE') {
@@ -860,6 +866,7 @@ export class SettingsComponent implements OnInit {
       this.rotateError = err.status === 409
         ? 'Another secret rotation is already in progress.'
         : err.error?.error || err.message || 'Rotation failed';
+      this.rotateAnswerLost = !err.status || err.status >= 500;
       // The API may have restarted mid-rotation: show the (resumed) operation.
       void this.loadLatestRotation();
     } finally {

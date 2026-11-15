@@ -92,12 +92,16 @@ import os from 'os';
 import path from 'path';
 
 describe('secret-rotate', () => {
-  let rotatePlatformSecrets: (opts: { actorUserId?: string }) => Promise<{ results: any[]; values: Record<string, string>; status: string }>;
+  let rotatePlatformSecrets: (opts: { actorUserId?: string }) => Promise<{ results: any[]; values: Record<string, string>; status: string; operationId: string }>;
 
   beforeAll(async () => {
     ({ rotatePlatformSecrets } = await import('../../../src/lib/secret-rotate'));
   });
-  beforeEach(() => {
+  beforeEach(async () => {
+    // Fresh step log per test (a scheduled Redis drop must not leak into the next test).
+    const { setOperationStore } = await import('../../../src/lib/operations');
+    const { MemoryOperationStore } = await import('../../../src/lib/operation-store');
+    setOperationStore(new MemoryOperationStore());
     patchSecretData.mockReset().mockResolvedValue(undefined);
     readSecretData.mockReset().mockResolvedValue({});
     rotateSentinelPassword.mockReset().mockResolvedValue(undefined);
@@ -130,6 +134,13 @@ describe('secret-rotate', () => {
     const result = await rotatePlatformSecrets({ actorUserId: 'admin-1' });
     expect(rotateSentinelPassword).toHaveBeenCalledWith('old-redis', result.values.REDIS_PASSWORD);
     expect(patchSecretData).toHaveBeenCalledWith('databases', 'redis', { 'redis-password': result.values.REDIS_PASSWORD });
+    // The old password is removed later by a durable follow-up, not inside this request.
+    const { getOperation } = await import('../../../src/lib/operations');
+    const { redisDropOperationId, REDIS_PASSWORD_DROP_OPERATION } = await import('../../../src/lib/redis-password-drop');
+    const drop = await getOperation(redisDropOperationId(result.operationId));
+    expect(drop).toMatchObject({ type: REDIS_PASSWORD_DROP_OPERATION, status: 'pending' });
+    expect(drop!.steps[0].attempts).toBe(0);
+    expect(JSON.stringify(result.results)).toContain('REDIS_PREVIOUS_PASSWORD');
   });
 
   it('keeps pending HA credentials on failure and reuses them on a new portal request', async () => {
@@ -373,10 +384,13 @@ describe('secret-rotate', () => {
     expect(result.status).toBe('succeeded');
     const op = await getOperation(result.operationId);
     expect(op!.steps.map((s) => s.name)).toEqual([
-      'admin-password', 'write-ahead', 'redis-password', 'postgres-password',
+      'admin-password', 'write-ahead', 'redis-password', 'schedule-redis-drop', 'postgres-password',
       'patch-secrets', 'argocd-password', 'finalize', 'restart-api',
     ]);
     expect(op!.steps.every((s) => s.status === 'succeeded')).toBe(true);
+    // Single-node Redis: CONFIG SET requirepass already replaced the password; nothing to drop.
+    const { redisDropOperationId } = await import('../../../src/lib/redis-password-drop');
+    expect(await getOperation(redisDropOperationId(result.operationId))).toBeNull();
     // credentials never stay in the step log
     expect(JSON.stringify(op)).not.toContain(result.values.POSTGRES_PASSWORD);
     expect(op!.state).toEqual({});

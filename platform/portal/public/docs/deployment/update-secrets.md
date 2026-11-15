@@ -19,6 +19,17 @@ Then, on the server, refresh the backup copy of the passwords:
 sudo platformctl update
 ```
 
+### If the page lost the new values
+
+If the page shows an error such as `502` or loses the connection, the rotation may still have finished. The new admin password is saved in the cluster (Secret `platform/platform-credentials`). To read it, run on the server:
+
+```bash
+sudo platformctl update
+sudo cat /etc/platform/credentials/admin
+```
+
+Check the progress panel before you rotate again.
+
 ## What gets rotated
 
 | Rotated | Not rotated |
@@ -31,7 +42,9 @@ sudo platformctl update
 
 MongoDB, file storage and Portainer are left alone so the API never restarts with a password those services would reject.
 
-On the high-availability install (Redis with Sentinel), the portal rotates every data node and Sentinel live, without restarting Redis. API and project ACL users keep working, including Sentinel discovery credentials already issued to SDK clients. The Redis Secret and platform credentials are updated after all members have changed; the chart reads the Secret again on restart. Runtime configuration is persisted where writable.
+On the high-availability install (Redis with Sentinel), the portal rotates every data node and Sentinel live, without restarting Redis. Project ACL users keep working. The Redis Secret and platform credentials are updated after all members have changed; the chart reads the Secret again on restart. Runtime configuration is persisted where writable.
+
+The old Redis password keeps working for about three minutes after the rotation. Redis health checks read the password from the Redis Secret, and Kubernetes takes a minute or two to give pods the new copy. A follow-up step (`platform.redis-password-drop`) then removes the old password, including the old Sentinel discovery password. It survives API restarts and does nothing if a newer rotation has already replaced the password. Connected apps stay connected. An app that uses Sentinel discovery gets the new discovery password when it restarts and the SDK registers again; restart such apps after a rotation so a later reconnect does not fail.
 
 If an HA Redis rotation is interrupted, retry **Rotate all secrets**. Cairn retains the pending password pair and checks each member with both passwords before continuing. Keep the pending credentials until rotation succeeds; a reachable master alone does not mean every member has rotated.
 
@@ -78,12 +91,13 @@ The rotation runs as a tracked operation (`platform/api/src/lib/secret-rotate.ts
 
 1. **admin-password** — the new admin password is hashed into every admin user.
 2. **write-ahead** — the previous and next datastore passwords are written to `platform-credentials` and to `platform-rotate-pending`. If neither can be written, the rotation stops and no datastore password changes.
-3. **redis-password** — the Redis password is changed.
-4. **postgres-password** — the PostgreSQL password is changed and the API reconnects.
-5. **patch-secrets** — the webhook secret in `platform-env`, and the `postgresql` and `redis` secrets in `databases`, are updated.
-6. **argocd-password** — `argocd-secret` and `argocd-initial-admin-secret` are updated.
-7. **finalize** — `platform-rotate-pending` is cleared when both datastores rotated, and admins and DevOps users get a notification.
-8. **restart-api** — the API deployment restarts. This step is not repeated after a crash.
+3. **redis-password** — the Redis password is changed. On HA installs the old one stays valid for now.
+4. **schedule-redis-drop** — HA only: schedules the follow-up that removes the old Redis password about three minutes later, once pods have the new Secret.
+5. **postgres-password** — the PostgreSQL password is changed and the API reconnects.
+6. **patch-secrets** — the webhook secret in `platform-env`, and the `postgresql` and `redis` secrets in `databases`, are updated.
+7. **argocd-password** — `argocd-secret` and `argocd-initial-admin-secret` are updated.
+8. **finalize** — `platform-rotate-pending` is cleared when both datastores rotated, and admins and DevOps users get a notification.
+9. **restart-api** — the API deployment restarts. This step is not repeated after a crash.
 
 When the API starts, it also checks which stored password works and syncs the secrets to it.
 

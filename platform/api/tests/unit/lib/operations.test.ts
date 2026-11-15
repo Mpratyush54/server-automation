@@ -277,3 +277,46 @@ describe('sensitive state', () => {
     expect(publicOperation(operation).input).toBeNull();
   });
 });
+
+defineOperation({
+  type: 'test.defer',
+  maxAttempts: 2,
+  steps: [step('a'), {
+    name: 'wait',
+    async run(ctx: any) {
+      calls.push(`run:wait:${ctx.attempt}`);
+      if (Date.now() < ctx.state.until) ctx.defer(ctx.state.until, 'not yet');
+      ctx.setOutput({ done: true });
+    },
+  }],
+});
+
+describe('deferred steps', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('parks the operation without counting an attempt, skips it until due, then finishes', async () => {
+    let now = 1_000_000;
+    jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const { operation } = await executeOperation('test.defer', { state: { until: now + 5_000 } });
+    expect(operation.status).toBe('pending');
+    expect(operation.steps[1]).toMatchObject({ status: 'pending', attempts: 0 });
+    expect(operation.steps[1].output).toMatchObject({ waitingReason: 'not yet' });
+
+    // Re-deferring many times never trips maxAttempts.
+    for (let i = 0; i < 3; i++) {
+      now += 1_000;
+      expect((await resumeOperations()).resumed).toEqual([]);
+    }
+    await runOperation(operation.id);
+    await runOperation(operation.id);
+    expect((await store.get(operation.id))!.status).toBe('pending');
+
+    now += 5_000;
+    expect((await resumeOperations()).resumed).toEqual([operation.id]);
+    await waitForActiveRuns();
+    const done = (await store.get(operation.id))!;
+    expect(done.status).toBe('succeeded');
+    expect(done.steps[1].output).toEqual({ done: true });
+    expect(calls.filter((c) => c === 'run:a:1')).toHaveLength(1);
+  });
+});

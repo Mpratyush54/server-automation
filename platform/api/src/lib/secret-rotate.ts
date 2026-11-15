@@ -16,6 +16,7 @@ import { persistPlatformEnv } from './host-env';
 import { k8sStatusCode, PLATFORM_CREDENTIALS_SECRET } from './config-store';
 import { acquireLockOrThrow, LockHandle, platformLockKey } from './locks';
 import { defineOperation, executeOperation, newOperationId, StepContext } from './operations';
+import { scheduleRedisPasswordDrop } from './redis-password-drop';
 
 function randomSecret(bytes = 18): string {
   return crypto.randomBytes(bytes).toString('base64url');
@@ -210,7 +211,11 @@ function push(ctx: StepContext<RotationState>, ...items: RotateResult[]) {
  *  2. write-ahead         previous+next passwords to platform-credentials (ConfigStore) and
  *                         platform-rotate-pending;
  *                         refuses to continue (fails the operation) when neither is durable
- *  3. redis-password      CONFIG SET requirepass; HA probes every member and completes all phases
+ *  3. redis-password      CONFIG SET requirepass; HA probes every member and completes all phases,
+ *                         leaving the previous password valid too
+ *  3b. schedule-redis-drop HA only: durable follow-up operation that removes the previous
+ *                         password once the new Secret has reached the Redis pods (their
+ *                         liveness probes read it from the mount)
  *  4. postgres-password   ALTER USER + TypeORM reconnect (on resume: same check)
  *  5. patch-secrets       platform-env (webhook secret only), databases/postgresql, databases/redis
  *  6. argocd-password     argocd-secret + argocd-initial-admin-secret
@@ -335,6 +340,33 @@ export const secretRotationOperation = defineOperation<RotationState>({
           if (redisSentinelConfig() && !saved.ok) throw new Error('Redis credentials could not be persisted; retain pending credentials and retry');
         } else {
           await healRedis(s.results);
+        }
+      },
+    },
+    {
+      name: 'schedule-redis-drop',
+      async run(ctx) {
+        const s = ctx.state;
+        const { redisSentinelConfig } = await import('./redis-endpoint');
+        if (!s.redisOk || !redisSentinelConfig()) return;
+        try {
+          const { notBefore } = await scheduleRedisPasswordDrop({
+            rotationOperationId: ctx.operationId,
+            next: s.redisPassword,
+            actorUserId: s.actorUserId || null,
+          });
+          push(ctx, {
+            key: 'REDIS_PREVIOUS_PASSWORD',
+            ok: true,
+            detail: `previous password stays valid until the new one reaches every Redis pod; removed after ${notBefore.toISOString()}`,
+          });
+        } catch (err: any) {
+          // Not fatal: Redis works with both passwords; the next rotation removes the old one.
+          push(ctx, {
+            key: 'REDIS_PREVIOUS_PASSWORD',
+            ok: false,
+            detail: `could not schedule removal of the previous password (${err?.message || 'unknown error'}); it stays valid until the next rotation`,
+          });
         }
       },
     },
