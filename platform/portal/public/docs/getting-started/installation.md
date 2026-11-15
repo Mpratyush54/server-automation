@@ -85,7 +85,7 @@ sudo platformctl provision --profile minimal
 
 ### What the installer changes
 
-`provision` installs k3s (a small Kubernetes) and its own container runtime. Docker is not installed. It also applies a host security baseline: firewall, SSH safeguards and automatic security updates. See [Host hardening](../host-hardening.md). To leave host security to yourself, add `--skip-hardening`.
+`provision` installs k3s (a small Kubernetes) and its own container runtime. Docker is not installed. It also applies a host security baseline: firewall, SSH safeguards and automatic security updates. See [Host hardening](../guides/host-hardening.md). To leave host security to yourself, add `--skip-hardening`.
 
 Configuration is saved in `/etc/platform/.env`. Use `--config <path>` to read another file. For a step-by-step view of the install, see [What the installer does](../deployment/bootstrap.md).
 

@@ -204,7 +204,7 @@ etcd needs a majority of servers (`n/2 + 1`) to accept writes. Agents do not run
 | 10250 | TCP | kubelet (logs, exec, metrics) | all nodes |
 | 8472 | UDP | flannel VXLAN pod network | all nodes |
 
-With host hardening on (the default), platformctl opens these ports only to the addresses in `PLATFORM_CLUSTER_NODES`. Everything else stays as on a single node: 22, 80 and 443 are public, the rest is dropped. With `API_VIP` set, hardening also accepts TCP 6443 to `API_VIP` from the node subnet. Longhorn needs no extra ports: its traffic stays on the pod network and iSCSI is node-local. Cloud security groups must allow the same ports. See [Host hardening](../host-hardening.md).
+With host hardening on (the default), platformctl opens these ports only to the addresses in `PLATFORM_CLUSTER_NODES`. Everything else stays as on a single node: 22, 80 and 443 are public, the rest is dropped. With `API_VIP` set, hardening also accepts TCP 6443 to `API_VIP` from the node subnet. Longhorn needs no extra ports: its traffic stays on the pod network and iSCSI is node-local. Cloud security groups must allow the same ports. See [Host hardening](../guides/host-hardening.md).
 
 The firewall already accepts TCP 80/443 to any local address, including a VIP, and forwards connections whose original destination port is 80/443. It does not filter ARP. Drop-ins in `/etc/rancher/k3s/config.yaml.d/` are accepted, except drop-ins that set the cluster or service CIDRs.
 
@@ -708,7 +708,7 @@ PostgreSQL apps need no change: `postgresql.databases:5432` always points at the
 
 ## Related
 
-- [Host hardening](../host-hardening.md)
+- [Host hardening](../guides/host-hardening.md)
 - [Backups](backups.md)
 - [Upgrade](upgrades.md)
 - [Scaling](../deployment/scaling.md)

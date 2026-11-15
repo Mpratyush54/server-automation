@@ -28,15 +28,15 @@ This file provides a machine-readable index of all documentation pages for LLM c
 - `docs/observability/error-tracking.md` — Track and fix errors: grouping, assign/resolve, source maps, alerts
 - `docs/operations/alerting.md` — Get alerts when something breaks: channels, monitors, SLOs, silences, on-call
 - `docs/operations/synthetics.md` — Check that your site is up: HTTP, multistep and browser uptime checks
-- `docs/observability-releases.md` — Compare releases and roll back: release markers, before/after comparison
+- `docs/observability/releases.md` — Compare releases and roll back: release markers, before/after comparison
 - `docs/operations/telemetry.md` — Turn on full monitoring: the full install profile for traces, logs and profiles
 - `docs/operations/telemetry-privacy.md` — Privacy and data retention: scrubbing, consent, retention, GDPR delete
 - `docs/operations/database-monitoring.md` — See slow queries and database health per project
 - `docs/operations/storage-providers.md` — Store files in S3, R2 or another bucket: Settings > Storage
 - `docs/operations/backups.md` — Back up and restore your server: platformctl backup, schedule, restore, restore tests
 - `docs/operations/ha.md` — Run Cairn on several servers: ha profile, join, failover, datastores
-- `docs/host-hardening.md` — Secure the server: firewall, SSH, ingress defaults, optional WAF
-- `docs/namespace-isolation.md` — How projects are kept apart: namespaces, network policies, quotas
+- `docs/guides/host-hardening.md` — Secure the server: firewall, SSH, ingress defaults, optional WAF
+- `docs/guides/namespace-isolation.md` — How projects are kept apart: namespaces, network policies, quotas
 - `docs/operations/image-signing.md` — Check that Cairn images are genuine: scanning, signing, admission
 - `docs/mcp/overview.md` — Let an AI assistant work with your server: MCP overview
 - `docs/mcp/setup.md` — Connect Cursor or Claude to Cairn: agent tokens, MCP server setup

@@ -38,7 +38,7 @@ Requirements: Ubuntu 22.04+, sudo, at least 4 GB RAM and 40 GB free disk (8 GB a
 | `platformctl backup` | Copy `/etc/platform/.env` and database secrets to `/var/lib/platform/backups/<timestamp>/` (not encrypted) |
 | `platformctl backup init\|list\|schedule\|restore-test` | Encrypted off-site backups ([Backups and restore](../operations/backups.md)); `backup --all` takes one |
 | `platformctl restore` | Restore an encrypted backup; reads the private key from standard input |
-| `platformctl harden` | Apply or re-apply the host security baseline ([Host hardening](../host-hardening.md)) |
+| `platformctl harden` | Apply or re-apply the host security baseline ([Host hardening](../guides/host-hardening.md)) |
 | `platformctl mfa disable --user <email>` | Remove a user's two-factor sign-in when no admin can ([Recover](../operations/recover.md)) |
 | `platformctl join` | Join this node to an HA cluster as a server or agent ([High availability](../operations/ha.md)) |
 | `platformctl token create\|rotate\|install` | Create, rotate and install cluster join tokens (HA) |
@@ -154,7 +154,7 @@ sudo INGRESS_IP_RATE_LIMIT=5000 INGRESS_IP_BURST=10000 INGRESS_IP_CONNECTIONS=40
 
 Values are saved in `/etc/platform/.env` and re-applied by subsequent
 `platformctl install ingress-nginx` runs. You can also edit the saved file;
-process environment variables take precedence. See [Host hardening](../host-hardening.md#ingress-defaults-and-optional-waf).
+process environment variables take precedence. See [Host hardening](../guides/host-hardening.md#ingress-defaults-and-optional-waf).
 
 ## Offline bundle
 

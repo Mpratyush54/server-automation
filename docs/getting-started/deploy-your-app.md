@@ -71,7 +71,7 @@ spec:
               drop: ["ALL"]
 ```
 
-Leave out `namespace`. Cairn puts each environment in its own namespace. Containers must run as a non-root user, as in the example, because project namespaces use the Kubernetes "restricted" security level. See [Namespace isolation](../namespace-isolation.md).
+Leave out `namespace`. Cairn puts each environment in its own namespace. Containers must run as a non-root user, as in the example, because project namespaces use the Kubernetes "restricted" security level. See [Namespace isolation](../guides/namespace-isolation.md).
 
 A working example lives in the repository at [`examples/sdk-demo/k8s`](https://github.com/Mpratyush54/SERVER-automation/tree/master/examples/sdk-demo/k8s).
 
@@ -98,7 +98,7 @@ A preview environment gives a branch its own short-lived address, so others can 
 
 ## Details
 
-- **Which commit is used.** An explicit branch or commit wins. Otherwise the project's Git revision setting is used, then the repository's default branch. See [Branches and Argo CD](../gitops-branches.md).
+- **Which commit is used.** An explicit branch or commit wins. Otherwise the project's Git revision setting is used, then the repository's default branch. See [Branches and Argo CD](../guides/gitops-branches.md).
 - **Sync and refresh.** The project's Argo CD panel shows sync and health, and lets you refresh or sync an environment by hand.
 - **Logs and metrics.** Once your app runs, see [Monitoring and alerts](../guides/monitoring.md).
 - **Before going live.** Work through the [Production checklist](../guides/production-checklist.md).

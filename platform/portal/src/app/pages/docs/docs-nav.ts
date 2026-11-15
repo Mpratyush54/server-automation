@@ -1,10 +1,11 @@
 /**
  * Documentation navigation (#189): pages grouped by the task people come with.
  *
- * Every entry points at a Markdown file under docs/ (copied to public/docs),
- * so URLs stay the same as before: /docs/<section>/<page>, /docs/<page> for
- * files at the docs root, and /docs for docs/index.md. Grouping only changes
- * where a page appears in the sidebar, never its address.
+ * Every entry points at a Markdown file under docs/ (copied to public/docs):
+ * /docs/<section>/<page>, /docs/<page> for files at the docs root, and /docs
+ * for docs/index.md. Grouping only changes where a page appears in the
+ * sidebar, never its address. When a file does move, add its old address to
+ * MOVED_DOCS so links people saved keep working.
  */
 
 export interface DocPage {
@@ -36,7 +37,7 @@ export const DOC_GROUPS: DocGroup[] = [
     label: 'Get started',
     id: 'get-started',
     pages: [
-      p('What Platform is', ''),
+      p('What Cairn is', ''),
       p('Install', 'getting-started/installation', {
         children: [
           p('What the installer does', 'deployment/bootstrap'),
@@ -48,7 +49,7 @@ export const DOC_GROUPS: DocGroup[] = [
         children: [
           p('Preview environments', 'guides/preview-environments'),
           p('Connect GitHub or GitLab', 'guides/git-providers'),
-          p('Branches and Argo CD', 'gitops-branches'),
+          p('Branches and Argo CD', 'guides/gitops-branches'),
           p('Production checklist', 'guides/production-checklist'),
         ],
       }),
@@ -77,7 +78,7 @@ export const DOC_GROUPS: DocGroup[] = [
           p('Status pages', 'guides/status-pages'),
           p('Browser monitoring', 'guides/frontend-rum'),
           p('Heatmaps', 'guides/heatmaps'),
-          p('Releases and rollback', 'observability-releases'),
+          p('Releases and rollback', 'observability/releases'),
           p('Full monitoring', 'operations/telemetry'),
           p('Privacy and retention', 'operations/telemetry-privacy'),
         ],
@@ -90,8 +91,8 @@ export const DOC_GROUPS: DocGroup[] = [
           p('Two-factor sign-in', 'guides/mfa'),
           p('App secrets and settings', 'guides/secrets-management'),
           p('Rotate passwords', 'deployment/update-secrets'),
-          p('Secure the server', 'host-hardening'),
-          p('Project isolation', 'namespace-isolation'),
+          p('Secure the server', 'guides/host-hardening'),
+          p('Project isolation', 'guides/namespace-isolation'),
           p('Image signing', 'operations/image-signing'),
         ],
       }),
@@ -205,7 +206,7 @@ export const DOC_GROUPS: DocGroup[] = [
     label: 'More',
     id: 'more',
     pages: [
-      p('How Platform works', 'architecture/overview', {
+      p('How Cairn works', 'architecture/overview', {
         children: [
           p('Request flow', 'architecture/data-flow'),
           p('Sign-in flow', 'architecture/auth-flow'),
@@ -232,12 +233,24 @@ export const DOC_GROUPS: DocGroup[] = [
 ];
 
 /**
- * Short addresses that lead to a page (e.g. /docs/install). Old addresses
- * keep working on their own because no file moved; these are additions.
- * A folder name that is not a page (e.g. /docs/guides) still resolves to the
- * first page in that folder, as before.
+ * Pages that used to sit at the docs root, by their old /docs/<page> address.
+ * nginx.public.conf answers these with a 301 (keep the two lists in step);
+ * the viewer also follows them for in-app navigation.
+ */
+export const MOVED_DOCS: Record<string, string> = {
+  'host-hardening': '/docs/guides/host-hardening',
+  'namespace-isolation': '/docs/guides/namespace-isolation',
+  'gitops-branches': '/docs/guides/gitops-branches',
+  'observability-releases': '/docs/observability/releases',
+};
+
+/**
+ * Short addresses that lead to a page (e.g. /docs/install), plus the old
+ * addresses of moved pages. A folder name that is not a page (e.g.
+ * /docs/guides) still resolves to the first page in that folder, as before.
  */
 export const DOC_ALIASES: Record<string, string> = {
+  ...MOVED_DOCS,
   'get-started': '/docs',
   guides: '/docs/guides/databases',
   operations: '/docs/operations/upgrades',
