@@ -2,11 +2,11 @@
 
 This page helps you deploy your app from Git to one of your project's environments.
 
-Platform does not build your code. It deploys the Kubernetes files in your repository, using an image you have already built, for example with GitHub Actions or GitLab CI. Argo CD keeps the environment in sync with those files.
+Cairn does not build your code. It deploys the Kubernetes files in your repository, using an image you have already built, for example with GitHub Actions or GitLab CI. Argo CD keeps the environment in sync with those files.
 
 ## What your repository needs
 
-A folder with your Kubernetes files. Platform looks in `k8s` unless you choose another path. At minimum, add a Deployment and a Service that listens on **port 80**. Platform points the environment's address at that Service.
+A folder with your Kubernetes files. Cairn looks in `k8s` unless you choose another path. At minimum, add a Deployment and a Service that listens on **port 80**. Cairn points the environment's address at that Service.
 
 ```text
 your-repo/
@@ -71,7 +71,7 @@ spec:
               drop: ["ALL"]
 ```
 
-Leave out `namespace`. Platform puts each environment in its own namespace. Containers must run as a non-root user, as in the example, because project namespaces use the Kubernetes "restricted" security level. See [Namespace isolation](../namespace-isolation.md).
+Leave out `namespace`. Cairn puts each environment in its own namespace. Containers must run as a non-root user, as in the example, because project namespaces use the Kubernetes "restricted" security level. See [Namespace isolation](../namespace-isolation.md).
 
 A working example lives in the repository at [`examples/sdk-demo/k8s`](https://github.com/Mpratyush54/SERVER-automation/tree/master/examples/sdk-demo/k8s).
 

@@ -13,7 +13,7 @@ graph TB
             LPP[local-path-provisioner]
         end
 
-        subgraph PLATFORM_NS[Platform namespaces]
+        subgraph PLATFORM_NS[Cairn namespaces]
             CAPS[caps]
             CM[cert-manager]
             ING[ingress-nginx]
@@ -35,7 +35,7 @@ graph TB
 
 | Namespace | Purpose | Services | Ingress |
 |-----------|---------|----------|---------|
-| **caps** | Platform control plane | `api-service`, `portal-service` | `/`, `/api` |
+| **caps** | Cairn control plane | `api-service`, `portal-service` | `/`, `/api` |
 | **cert-manager** | SSL certificate management | `cert-manager`, `cert-manager-webhook`, `cert-manager-cainjector` | None |
 | **ingress-nginx** | Ingress controller | `ingress-nginx-controller` (host network) | All inbound traffic |
 | **monitoring** | Observability stack | `grafana`, `prometheus`, `kube-state-metrics` | `/grafana` |
@@ -88,7 +88,7 @@ graph TB
     ING_PORT --> PORT_SRV
 ```
 
-### Ingress Configuration (Platform)
+### Ingress Configuration (Cairn)
 
 ```yaml
 # D:\SERVER-automation\platform\templates\k8s\ingress.yaml

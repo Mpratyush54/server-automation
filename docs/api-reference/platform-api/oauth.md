@@ -158,7 +158,7 @@ Authorization: Bearer eyJhbGciOiJSUzI1NiIs...
 ## OAuth Flow Summary
 
 ```
-Client App                    Platform API
+Client App                    Cairn API
     |                              |
     |--- GET /.well-known --------->|  Discover endpoints
     |<-- Discovery document --------|

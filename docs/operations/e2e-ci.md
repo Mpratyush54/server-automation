@@ -8,7 +8,7 @@ destroys the server. It also gates releases: a stable version only becomes the
 
 ## What runs when
 
-| Trigger | Profiles | platformctl | Platform images | Stack |
+| Trigger | Profiles | platformctl | Cairn images | Stack |
 |---|---|---|---|---|
 | Nightly (02:23 UTC, `master`) | `minimal` and `full` | built from the commit | `master` | `edge` |
 | Tag push `vX.Y.Z` / `vX.Y.Z-rc.N` | `minimal` and `full` | the release binary (checksum verified) | `X.Y.Z[-rc.N]` | `stable` |

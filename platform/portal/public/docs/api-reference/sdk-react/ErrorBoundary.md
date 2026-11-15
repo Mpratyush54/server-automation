@@ -1,6 +1,6 @@
 # ErrorBoundary
 
-A React class component that catches JavaScript errors anywhere in its child component tree, logs those errors to the Platform API, and displays a fallback UI.
+A React class component that catches JavaScript errors anywhere in its child component tree, logs those errors to the Cairn API, and displays a fallback UI.
 
 ---
 
@@ -24,7 +24,7 @@ interface ErrorBoundaryProps {
 
 | Prop | Type | Description |
 |---|---|---|
-| `config?` | `PlatformConfig` | Platform configuration (see [`PlatformProvider`](PlatformProvider.md)). Defaults to the enclosing `<PlatformProvider>`'s config; with neither, crashes are not reported and a warning is logged. |
+| `config?` | `PlatformConfig` | Cairn configuration (see [`PlatformProvider`](PlatformProvider.md)). Defaults to the enclosing `<PlatformProvider>`'s config; with neither, crashes are not reported and a warning is logged. |
 | `children` | `ReactNode` | Component tree to wrap |
 | `fallback?` | `ReactNode` | Custom error UI (defaults to a red "Something went wrong" message) |
 

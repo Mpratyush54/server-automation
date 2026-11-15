@@ -1,6 +1,6 @@
 # Project Structure
 
-Platform is a monorepo containing the backend API, admin dashboard, four SDKs, a cluster bootstrap tool, and documentation.
+Cairn is a monorepo containing the backend API, admin dashboard, four SDKs, a cluster bootstrap tool, and documentation.
 
 ```mermaid
 graph TB

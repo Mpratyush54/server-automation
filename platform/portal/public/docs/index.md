@@ -1,12 +1,12 @@
-# What Platform is
+# What Cairn is
 
-Platform turns one Ubuntu server, or a small cluster, into your own place to deploy and run apps.
+Cairn turns one Ubuntu server, or a small cluster, into your own place to deploy and run apps.
 
 You install it with one command. You then get a web portal where you create projects, deploy them from Git, add databases, keep secrets, and watch logs, metrics and errors. Everything runs on your own machine.
 
 ## Start here
 
-1. [Install Platform](getting-started/installation.md) on a server.
+1. [Install Cairn](getting-started/installation.md) on a server.
 2. [Create your first project](getting-started/first-project.md) in the portal.
 3. [Deploy an app](getting-started/deploy-your-app.md) from your Git repository.
 
@@ -17,7 +17,7 @@ sudo platformctl provision
 
 ## What you get
 
-- **Deploys from Git.** Pick a branch and commit, and Platform deploys the Kubernetes files in your repository with Argo CD. Branches can get their own preview environment.
+- **Deploys from Git.** Pick a branch and commit, and Cairn deploys the Kubernetes files in your repository with Argo CD. Branches can get their own preview environment.
 - **Databases.** PostgreSQL, MongoDB and Redis run on the server. Each project gets its own credentials.
 - **Secrets.** Encrypted settings for each environment, with history and rollback.
 - **Monitoring.** Logs, metrics, traces, error tracking, uptime checks and alerts, in the portal.
@@ -28,7 +28,7 @@ sudo platformctl provision
 
 ## How it fits together
 
-Platform runs on k3s, a small Kubernetes distribution. The installer, `platformctl`, sets up k3s, the databases, Argo CD, the monitoring stack, and the Platform API and portal. Each project environment gets its own Kubernetes namespace.
+Cairn runs on k3s, a small Kubernetes distribution. The installer, `platformctl`, sets up k3s, the databases, Argo CD, the monitoring stack, and the Cairn API and portal. Each project environment gets its own Kubernetes namespace.
 
 ```text
               Browser / SDK
@@ -37,12 +37,12 @@ Platform runs on k3s, a small Kubernetes distribution. The installer, `platformc
                     |
    +----------------+----------------+
    |                |                |
-Platform API     Portal           Argo CD
+Cairn API        Portal           Argo CD
    |
 PostgreSQL · MongoDB · Redis · MinIO
 ```
 
-For the full picture, see [How Platform works](architecture/overview.md).
+For the full picture, see [How Cairn works](architecture/overview.md).
 
 ## Find your way around
 

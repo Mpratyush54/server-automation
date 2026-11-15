@@ -7,7 +7,7 @@ sequenceDiagram
     participant Browser as Browser / Client
     participant Nginx as Nginx Ingress
     participant Portal as Portal (Angular)
-    participant API as Platform API
+    participant API as Cairn API
     participant PG as PostgreSQL
     participant Mongo as MongoDB
     participant Redis as Redis
@@ -49,7 +49,7 @@ Annotations applied to Ingress resources:
 | Path | Destination | Service | Port |
 |------|------------|---------|------|
 | `/` | Portal (Angular SPA) | `portal-service` | 80 |
-| `/api` | Platform API | `api-service` | 3000 |
+| `/api` | Cairn API | `api-service` | 3000 |
 | `/grafana` | Grafana dashboards | `grafana-service` | 3001 |
 | `/argocd` | ArgoCD UI | `argocd-server` | 443 |
 | `/portainer` | Portainer | `portainer-service` | 9000 |

@@ -2,7 +2,7 @@
 
 ## Symptom
 
-Clicking "Sign in with SSO" on the ArgoCD login page redirects to Platform's
+Clicking "Sign in with SSO" on the ArgoCD login page redirects to Cairn's
 `/oauth2/start`, then loops back with:
 
 ```
@@ -64,7 +64,7 @@ kubectl -n argocd rollout status  deployment/argocd-server
 
 ### 5. Wait 30 s for oauth2-proxy to refresh its cached endpoints
 
-If Platform uses oauth2-proxy in front of ArgoCD, its cached OIDC discovery
+If Cairn uses oauth2-proxy in front of ArgoCD, its cached OIDC discovery
 document also needs to invalidate. Restart it if the loop persists:
 
 ```bash

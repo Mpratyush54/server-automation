@@ -9,7 +9,7 @@
 | `DOMAIN` | `localhost:3000` | Public-facing domain (used for CORS, preview URLs, OIDC issuer) | |
 | `PORTAL_URL` | `http://localhost:4200` | Portal URL for CORS and OAuth redirects | |
 | `NODE_ENV` | `development` | Node.js environment (`development`, `production`) | |
-| `PLATFORM_ENV` | `production` | Platform deployment environment name | |
+| `PLATFORM_ENV` | `production` | Cairn deployment environment name | |
 | `PLATFORM_URL` | — | Full platform URL for portal builds | |
 | `KUBECONFIG` | `~/.kube/config` | Path to Kubernetes kubeconfig | |
 | **PostgreSQL** | | | |
@@ -29,7 +29,7 @@
 | `PLATFORM_REDIS_DB` | `0` | Redis database index | |
 | **Shared API state (Redis)** | | | |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `redis-master.databases.svc.cluster.local` / `6379` / `0` | Redis for login state, one-time codes, rate limits and permission-cache invalidation | |
-| `REDIS_PASSWORD` | — | Platform Redis password; the API derives and creates its own ACL user (`plat-api`, keys `plat:api:*`) from it | Yes |
+| `REDIS_PASSWORD` | — | Cairn Redis password; the API derives and creates its own ACL user (`plat-api`, keys `plat:api:*`) from it | Yes |
 | `REDIS_API_USERNAME` / `REDIS_API_PASSWORD` | — | Use an externally managed ACL user instead | |
 | `REDIS_SENTINEL_HOSTS` | — | Comma-separated Sentinel `host:port` list (default port 26379). When set, every API Redis client finds the master through Sentinel and ACL users are created on every node; platformctl sets it on the `ha` profile | |
 | `REDIS_SENTINEL_MASTER` | `mymaster` | Sentinel master set name | |
@@ -89,7 +89,7 @@
 | `PLATFORM_IMAGE_TAG` | `latest` | Docker image tag to deploy | |
 | `PLATFORM_REPO_URL` | — | Container registry URL | |
 | **Component Toggles** | | | |
-| `API_REPLICAS` | `2` (`1` on `minimal`) | Platform API replica count (1–10); a PodDisruptionBudget is added when ≥ 2 | |
+| `API_REPLICAS` | `2` (`1` on `minimal`) | Cairn API replica count (1–10); a PodDisruptionBudget is added when ≥ 2 | |
 | `INSTALL_ARGOCD` | `y` | Install ArgoCD | |
 | `INSTALL_MONITORING` | `y` | Install Grafana + Prometheus + Loki | |
 | `INSTALL_PORTAINER` | `y` | Install Portainer | |

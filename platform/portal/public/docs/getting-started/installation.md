@@ -1,6 +1,6 @@
 # Install
 
-This page helps you install Platform on a Linux server and sign in to the portal.
+This page helps you install Cairn on a Linux server and sign in to the portal.
 
 ## Before you start
 
@@ -20,7 +20,7 @@ curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/down
 sudo platformctl provision
 ```
 
-The first command downloads `platformctl`, the Platform installer, and checks it against the release checksums. The second command sets up the whole platform.
+The first command downloads `platformctl`, the Cairn installer, and checks it against the release checksums. The second command sets up the whole platform.
 
 `provision` asks a few questions. Press Enter to accept the value in brackets:
 
@@ -96,7 +96,7 @@ Set these as environment variables before `provision`:
 | Variable | Default | What it does |
 |---|---|---|
 | `PLATFORM_PROFILE` | `standard` | Same as `--profile` |
-| `PLATFORM_IMAGE_REGISTRY` | `ghcr.io/mpratyush54` | Where Platform images come from, for example your fork |
+| `PLATFORM_IMAGE_REGISTRY` | `ghcr.io/mpratyush54` | Where Cairn images come from, for example your fork |
 | `PLATFORM_IMAGE_TAG` | The release version | Pins the API and portal image version |
 | `AUTO_UPDATE` | `true` | Keeps images on the newest release tag |
 | `GITHUB_TOKEN` | Not set | Lets the server pull private images from GHCR |
@@ -106,9 +106,9 @@ More options, such as install speed and offline installs, are on the [CLI](platf
 
 ### Windows and macOS
 
-Platform runs on Linux. On Windows or macOS, use an Ubuntu virtual machine or a cloud server.
+Cairn runs on Linux. On Windows or macOS, use an Ubuntu virtual machine or a cloud server.
 
-## Run Platform on your laptop
+## Run Cairn on your laptop
 
 This is for contributors and SDK developers. It runs the API and portal from source, with the databases in Docker.
 

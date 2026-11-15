@@ -1,10 +1,10 @@
-# Platform Documentation — LLM-Friendly Index
+# Cairn Documentation — LLM-Friendly Index
 
 This file provides a machine-readable index of all documentation pages for LLM context ingestion.
 
 ## File Index
 
-- `docs/index.md` — What Platform is, how to start, where to find things
+- `docs/index.md` — What Cairn is, how to start, where to find things
 - `docs/getting-started/installation.md` — Install on a server (and local development at the end)
 - `docs/getting-started/project-structure.md` — Monorepo directory map
 - `docs/getting-started/first-project.md` — Create a project, get an SDK token

@@ -8,7 +8,7 @@ graph TB
         Browser["Browser/Client"]
         Ingress["Nginx Ingress<br/>SSL Termination"]
         Portal["Portal<br/>Angular 19 :80"]
-        API["Platform API<br/>Express/TS :3000"]
+        API["Cairn API<br/>Express/TS :3000"]
         ArgoCD["ArgoCD<br/>GitOps :443"]
     end
     subgraph DataPlane["Data Plane"]
@@ -41,7 +41,7 @@ graph TB
 
 <div class="dashboard-card">
   <div class="dashboard-card-header">
-    <h4>Platform API</h4>
+    <h4>Cairn API</h4>
   </div>
   <p><strong>Express 4 + TypeScript + TypeORM + Mongoose</strong> — REST backend handling auth, CRUD, secrets, deployments, SDK endpoints, and audit logging. Connects to PostgreSQL for relational data and MongoDB for time-series/logs.</p>
 </div>
@@ -117,7 +117,7 @@ graph LR
 ## Multi-SDK Architecture
 
 Four SDKs sit inside customer applications. Each auto-registers with the
-Platform API on startup, then talks to a fixed set of SDK endpoints for
+Cairn API on startup, then talks to a fixed set of SDK endpoints for
 heartbeat, log shipping, metrics, bug reports, and config pull.
 
 ```mermaid
@@ -129,7 +129,7 @@ graph LR
         ReactApp["React<br/>@mpratyush54/sdk-react"]
         AngularApp["Angular<br/>@mpratyush54/sdk-angular"]
     end
-    subgraph API["Platform API — /api/sdk/*"]
+    subgraph API["Cairn API — /api/sdk/*"]
         direction TB
         Register["POST /register"]
         Heartbeat["POST /heartbeat"]
@@ -201,7 +201,7 @@ Which SDK uses which endpoint:
 
 ```mermaid
 graph LR
-    API["Platform API"]
+    API["Cairn API"]
     GitLab["GitLab CI/CD"]
     GitHub["GitHub Actions"]
     ClickUp["ClickUp Tasks"]
@@ -228,7 +228,7 @@ graph LR
 
 ### Secrets
 
-- **Built-in encrypted secrets store:** project secrets are stored in Platform's own Secret entity (AES-256-GCM) and managed from the Secrets page or the secrets API — no external secret manager is required
+- **Built-in encrypted secrets store:** project secrets are stored in Cairn's own Secret entity (AES-256-GCM) and managed from the Secrets page or the secrets API — no external secret manager is required
 - `fetchSecrets(projectId, environment)` reads them and returns a plaintext map
 - Used by SDK config endpoint (`GET /api/sdk/config`) and DB credentials endpoint (`GET /api/sdk/db-credentials`)
 

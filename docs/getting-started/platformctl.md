@@ -1,6 +1,6 @@
 # platformctl CLI
 
-`platformctl` installs and manages Platform on an Ubuntu server. This page lists every command and the main options.
+`platformctl` installs and manages Cairn on an Ubuntu server. This page lists every command and the main options.
 
 Run it as root or with `sudo`. It uses pre-built images, so nothing is compiled on the server.
 
@@ -27,11 +27,11 @@ Requirements: Ubuntu 22.04+, sudo, at least 4 GB RAM and 40 GB free disk (8 GB a
 
 | Command | What it does |
 |---|---|
-| `platformctl provision` | Full bootstrap: k3s, databases, ArgoCD, monitoring, Platform API + portal |
+| `platformctl provision` | Full bootstrap: k3s, databases, ArgoCD, monitoring, Cairn API + portal |
 | `platformctl install <component>` | Install or re-run one component (see list below) |
 | `platformctl status` | Health check of cluster components (HA: nodes, roles, etcd health and quorum) |
 | `platformctl seed` | Seed the admin user from `/etc/platform/.env` |
-| `platformctl update` | Pull newest GHCR images and roll Platform deployments |
+| `platformctl update` | Pull newest GHCR images and roll Cairn deployments |
 | `platformctl recover` | Backup host files, persist passwords to disk, then restore API/Postgres login after a broken rotate |
 | `platformctl repair` | Fix HTTPS certificates and single sign-on for the bundled tools; safe to run any time |
 | `platformctl upgrade` | Upgrade to a newer release with a backup, health checks and rollback ([Upgrade](../operations/upgrades.md)) |
@@ -72,7 +72,7 @@ sudo platformctl install platform
 | `monitoring` | Grafana + Prometheus + Loki |
 | `oauth2-proxy` | OAuth2 proxy |
 | `portainer` | Portainer UI with Platform SSO |
-| `platform` | Platform API + portal |
+| `platform` | Cairn API + portal |
 | `routing` | Ingress routes |
 | `auto-update` | GHCR image updater + CronJob |
 
@@ -85,7 +85,7 @@ sudo platformctl install platform
 
 ## Install speed, logs and timings
 
-`provision` installs cluster components in parallel, respecting dependencies (databases before the Platform API, ingress before routing):
+`provision` installs cluster components in parallel, respecting dependencies (databases before the Cairn API, ingress before routing):
 
 ```bash
 sudo platformctl provision --auto              # default: 4 steps at a time
@@ -129,7 +129,7 @@ server starts k3s with embedded etcd (`cluster-init`) and further nodes join wit
 `platformctl join`. Set `PLATFORM_CLUSTER_NODES` (all node IPs or a CIDR) so the host
 firewall admits the other nodes. See [High availability](../operations/ha.md).
 
-The profile also sets the Platform API replica count: `1` on `minimal`, `2` otherwise
+The profile also sets the Cairn API replica count: `1` on `minimal`, `2` otherwise
 (rolling updates with `maxUnavailable: 0` and a PodDisruptionBudget). Override it with
 `API_REPLICAS=<1-10>`; see [Scaling](../deployment/scaling.md#api-replicas-shared-state-and-zero-downtime-deploys).
 

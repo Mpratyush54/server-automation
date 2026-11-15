@@ -45,8 +45,8 @@ await client.init(options: PlatformOptions): Promise<void>
 
 | Property | Type | Default | Description |
 |---|---|---|---|
-| `projectName` | `string` | — | **Required.** Your Platform project name |
-| `platformUrl` | `string` | — | **Required.** Platform API base URL (e.g. `https://platform.example.com`) |
+| `projectName` | `string` | — | **Required.** Your Cairn project name |
+| `platformUrl` | `string` | — | **Required.** Cairn API base URL (e.g. `https://platform.example.com`) |
 | `sdkToken` | `string?` | `process.env.PLATFORM_SDK_TOKEN` | Bearer token for API authentication |
 | `environmentName` | `string` | `'development'` | Deployment environment label |
 | `version` | `string` | `'1.0.0'` | Application version |
@@ -67,7 +67,7 @@ await client.init(options: PlatformOptions): Promise<void>
 
 1. Configures the internal HTTP client with the platform URL and auth header.
 2. Configures the logger, metrics tracker, config client, and storage client with project context.
-3. **Registers** the service with the Platform API (`POST /api/sdk/register`).
+3. **Registers** the service with the Cairn API (`POST /api/sdk/register`).
 4. Loads remote config values and starts a background refresh (every 30 s).
 5. Starts a **heartbeat** (every 15 s) sending CPU %, memory, uptime, and DB health.
 6. Starts **CPU sampling** (every 10 s) for real-time CPU utilisation.
@@ -105,7 +105,7 @@ See [expressMiddleware](expressMiddleware.md).
 client.captureConsole(): this
 ```
 
-Patches `console.log`, `console.warn`, `console.error`, and `console.debug` to forward all output to the Platform logger. Returns `this` for chaining.
+Patches `console.log`, `console.warn`, `console.error`, and `console.debug` to forward all output to the Cairn logger. Returns `this` for chaining.
 
 See [captureConsole](captureConsole.md).
 
@@ -117,7 +117,7 @@ See [captureConsole](captureConsole.md).
 client.winstonTransport(): object
 ```
 
-Returns an object with a `log()` method that satisfies the Winston transport interface. Every log entry is forwarded to the Platform logger.
+Returns an object with a `log()` method that satisfies the Winston transport interface. Every log entry is forwarded to the Cairn logger.
 
 ---
 
@@ -127,7 +127,7 @@ Returns an object with a `log()` method that satisfies the Winston transport int
 client.pinoTransport(): { write: (chunk: string) => void }
 ```
 
-Returns a stream-like object with a `write()` method that accepts newline-delimited JSON Pino output and forwards it to the Platform logger.
+Returns a stream-like object with a `write()` method that accepts newline-delimited JSON Pino output and forwards it to the Cairn logger.
 
 ---
 
@@ -139,7 +139,7 @@ await client.shutdown(): Promise<void>
 
 - Stops heartbeat, CPU sampling, metrics flush, config refresh, and logger flush.
 - Disconnects all database managers (PostgreSQL, MongoDB, Redis).
-- Deregisters the service from the Platform API (`POST /api/sdk/deregister`).
+- Deregisters the service from the Cairn API (`POST /api/sdk/deregister`).
 
 ---
 
