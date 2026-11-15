@@ -5,6 +5,7 @@ package state
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"syscall"
 )
 
@@ -14,7 +15,7 @@ func AcquireLock(owner string) (unlock func(), err error) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if err := os.MkdirAll("/etc/platform", 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0755); err != nil {
 		return nil, err
 	}
 
