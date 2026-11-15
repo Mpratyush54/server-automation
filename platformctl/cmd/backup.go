@@ -37,6 +37,7 @@ func backupSettings() (backup.Config, error) {
 	}
 	return c, c.Validate()
 }
+
 func warnLocal(c backup.Config) {
 	t, _ := backup.ParseTarget(c.Target)
 	if !t.Remote {
@@ -119,7 +120,7 @@ func wrapProvisionRestore() {
 			id = args[0]
 		}
 		if id == "" {
-			return fmt.Errorf("--restore-from needs a backup ID (positional or --restore-id); on a configured server, list them with `platformctl backup list`; on a fresh server, inspect the target with `ls <backup-directory>/` (file://) or `mc ls <alias>/<bucket>/<prefix>/` (s3://) and choose a backup ID directory containing backup.json")
+			return fmt.Errorf("--restore-from needs a backup ID (positional or --restore-id); on a configured server, list them with `platformctl backup list`; on a fresh server, inspect the target with `ls <backup-directory>/` (file://) or the AWS CLI against the S3 prefix (see docs/operations/backups.md) and choose a backup ID directory containing backup.json")
 		}
 		if !cfg.NonInteractive {
 			return fmt.Errorf("--restore-from requires --auto: stdin carries the age identity, not interactive answers")
@@ -141,7 +142,7 @@ func wrapProvisionRestore() {
 		color.Cyan("\n  ■ Restoring backup %s from %s", id, provisionRestoreFrom)
 		return runRestore(provisionRestoreFrom, id, "", identity)
 	}
-	provisionCmd.Flags().StringVar(&provisionRestoreFrom, "restore-from", "", "after provisioning, restore a backup from this target (external = the off-site target set up by this provision, file:///... or s3://mc-alias/bucket/prefix); age identity on stdin, requires --auto")
+	provisionCmd.Flags().StringVar(&provisionRestoreFrom, "restore-from", "", "after provisioning, restore a backup from this target (external = the off-site target set up by this provision, or file:///...); age identity on stdin, requires --auto")
 	provisionCmd.Flags().StringVar(&provisionRestoreID, "restore-id", "", "backup ID to restore with --restore-from (or pass it as the positional argument)")
 }
 
@@ -150,7 +151,7 @@ func init() {
 	backupCmd.Short = "Back up credentials locally, or all configured components encrypted with --all"
 	backupCmd.Args = cobra.NoArgs
 	backupCmd.PersistentFlags().StringVar(&backupConfigPath, "backup-config", "/etc/platform/backup.json", "backup configuration (contains only the public age recipient)")
-	backupCmd.PersistentFlags().StringVar(&backupTarget, "target", "", "override the configured target: external (the off-site target), file:///path or s3://mc-alias/bucket/prefix")
+	backupCmd.PersistentFlags().StringVar(&backupTarget, "target", "", "override the configured target: external (the off-site target) or file:///path")
 	backupCmd.Flags().BoolVar(&backupAll, "all", false, "create encrypted component backup and enforce retention")
 	backupCmd.AddCommand(&cobra.Command{Use: "list", Short: "List complete backups on the target", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		c, e := backupSettings()

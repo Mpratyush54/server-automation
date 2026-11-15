@@ -67,16 +67,5 @@ pg_container() {
   cluster=$(kubectl -n databases get pod "$1" -o jsonpath='{.metadata.labels.cnpg\.io/cluster}')
   if [ "$cluster" = postgresql ]; then printf postgres; else printf postgresql; fi
 }
-# minio_source: use the configured mc alias, or derive one for the bundled
-# MinIO from its Secret and ClusterIP (reachable from the k3s host). The
-# credential lives only in this process environment (MC_HOST_*), never on disk.
-minio_source() {
-  if [ -n "${PLATFORM_BACKUP_MINIO_SOURCE:-}" ]; then MINIO_SRC=$PLATFORM_BACKUP_MINIO_SOURCE; return; fi
-  local ip user pass
-  ip=$(kubectl -n storage get svc minio -o jsonpath='{.spec.clusterIP}')
-  user=$(kubectl -n storage get secret minio -o jsonpath='{.data.root-user}' | base64 -d)
-  pass=$(kubectl -n storage get secret minio -o jsonpath='{.data.root-password}' | base64 -d)
-  [ -n "$ip" ] && [ -n "$user" ] && [ -n "$pass" ] || { echo "bundled MinIO not found; set minioAlias in backup.json" >&2; return 1; }
-  export MC_HOST_platformsrc="http://$(jq -rn --arg v "$user" '$v|@uri'):$(jq -rn --arg v "$pass" '$v|@uri')@$ip:9000"
-  MINIO_SRC=platformsrc
-}
+# MinIO file capture/restore uses platformctl's built-in S3 client against the
+# bundled MinIO Service (see minio_files.go). No host mc alias is required.

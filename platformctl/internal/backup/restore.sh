@@ -86,13 +86,9 @@ mongo)
   ' -- "$remote"
   ;;
 minio)
-  minio_source
-  for bucket_dir in "$src/objects"/*; do
-    [ -d "$bucket_dir" ] || continue
-    bucket=${bucket_dir##*/}
-    mc mb --ignore-existing "$MINIO_SRC/$bucket"
-    mc mirror --overwrite "$bucket_dir/" "$MINIO_SRC/$bucket/"
-  done
+  # MinIO file restore runs in platformctl (built-in S3 client), not this script.
+  echo 'minio restore is handled by platformctl' >&2
+  exit 1
   ;;
 redis)
   p=$(redis_master_pod)
