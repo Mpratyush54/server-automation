@@ -123,6 +123,29 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
+      # Optional copy to the Cairn registry; skipped unless CAIRN_REGISTRY_* secrets are set.
+      - name: Copy to the Cairn registry
+        if: github.event_name != 'pull_request'
+        env:
+          CAIRN_REGISTRY_USERNAME: ${{ secrets.CAIRN_REGISTRY_USERNAME }}
+          CAIRN_REGISTRY_PASSWORD: ${{ secrets.CAIRN_REGISTRY_PASSWORD }}
+          CAIRN_REGISTRY: registry.cairnpaas.dev/cairn
+          SOURCE: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.image }}
+          IMAGE: ${{ matrix.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          if [ -z "$CAIRN_REGISTRY_USERNAME" ] || [ -z "$CAIRN_REGISTRY_PASSWORD" ]; then
+            echo "CAIRN_REGISTRY_* secrets not set; skipping"
+            exit 0
+          fi
+          printf '%s' "$CAIRN_REGISTRY_PASSWORD" | docker login "${CAIRN_REGISTRY%%/*}" -u "$CAIRN_REGISTRY_USERNAME" --password-stdin
+          args=()
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && args+=(-t "$CAIRN_REGISTRY/$IMAGE:${tag##*:}")
+          done <<< "$TAGS"
+          docker buildx imagetools create "${args[@]}" "$SOURCE@$DIGEST"
+
       - name: Install Cosign
         if: github.event_name != 'pull_request'
         uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
