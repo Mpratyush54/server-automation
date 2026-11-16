@@ -1,0 +1,12 @@
+{
+  "title": "Deploy an app from Git",
+  "cues": [
+    { "from": "start", "to": "named", "text": "Name the app. Cairn checks the name is free." },
+    { "from": "named", "to": "review", "text": "Connect the repository and the branch to deploy." },
+    { "from": "review", "to": "created", "text": "Review and create the project." },
+    { "from": "created", "to": "deploying", "text": "Deploy the branch to production." },
+    { "from": "deploying", "to": "deployed", "text": "Cairn applies the Kubernetes files from the repository." },
+    { "from": "deployed", "to": "live", "text": "Deployed and healthy, with its commit on record." },
+    { "from": "live", "text": "The app, live at its own address." }
+  ]
+}

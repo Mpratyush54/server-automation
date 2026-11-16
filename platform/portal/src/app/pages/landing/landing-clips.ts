@@ -74,9 +74,9 @@ export const FEATURE_CLIPS: FeatureClip[] = [
     copy: 'Send encrypted backups to your own S3-compatible bucket, then run a restore test that restores the latest one into a scratch database and checks it. Settings shows when each last ran.',
     guide: { label: 'Back up and restore', path: '/docs/operations/backups' },
     shows: [
-      'Pointing backups at an S3-compatible bucket and testing access',
+      'Checking the off-site bucket with platformctl backup target test',
       'Taking an encrypted archive',
-      'Running platformctl backup restore-test',
+      'A restore test: the latest archive restored into a scratch database and checked',
       'The result in the portal, under Settings, Security, Recovery backups',
     ],
   },
