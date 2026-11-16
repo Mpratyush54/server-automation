@@ -38,7 +38,10 @@ vm_ssh 'sudo install -m 0755 /tmp/platformctl /usr/local/bin/platformctl && rm -
 log "provisioning profile=$E2E_PROFILE images=$E2E_IMAGE_TAG stack=${E2E_STACK:-default}"
 start=$(date +%s)
 rc=0
-vm_ssh 'sudo bash -c '\''set -a; . /root/platform-e2e.env; set +a; exec platformctl provision --auto --profile "$PLATFORM_PROFILE"'\''' \
+# The CI VM has no off-site backup target, and --auto refuses a fresh install
+# without one (#186). Releases that predate that rule lack the flag, so only
+# pass it when this platformctl knows it (upgrade jobs provision older ones).
+vm_ssh 'sudo bash -c '\''set -a; . /root/platform-e2e.env; set +a; extra=; platformctl provision --help 2>&1 | grep -q -- --local-backups && extra=--local-backups; exec platformctl provision --auto --profile "$PLATFORM_PROFILE" $extra'\''' \
   > "$E2E_WORK/provision-console.log" 2>&1 || rc=$?
 secs=$(( $(date +%s) - start ))
 status=ok
