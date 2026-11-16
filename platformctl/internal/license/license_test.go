@@ -242,13 +242,18 @@ func TestEnsureChecksSignedSums(t *testing.T) {
 	srv := testServer(t, map[string][]byte{
 		"cairn-license-linux-amd64": bin,
 		"SHA256SUMS":                []byte(sha(bin) + "  cairn-license-linux-amd64\n"),
-		"SHA256SUMS.sig":            []byte("sig"),
-		"SHA256SUMS.pem":            []byte("pem"),
+		"SHA256SUMS.sigstore.json":  []byte("bundle"),
 	})
 	dest := filepath.Join(t.TempDir(), "cairn-license")
 	verified := 0
 	in := Installer{Version: "v1.0.0", SHA256: map[string]string{"amd64": sha(bin)}, BaseURL: srv.URL, Arch: "amd64", Dest: dest, HTTP: srv.Client(),
-		Cosign: func(_ context.Context, sums, sig, cert string) error { verified++; return nil }}
+		Cosign: func(_ context.Context, sums, sig, cert string) error {
+			if cert != "" || filepath.Base(sig) != "SHA256SUMS.sigstore.json" {
+				t.Errorf("sig=%q cert=%q, want the bundle only", sig, cert)
+			}
+			verified++
+			return nil
+		}}
 	if _, err := in.Ensure(context.Background()); err != nil || verified != 1 {
 		t.Fatalf("err=%v verified=%d", err, verified)
 	}

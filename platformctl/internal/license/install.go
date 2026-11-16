@@ -50,10 +50,14 @@ func DefaultInstaller(staged string) Installer {
 	}
 	if path, err := exec.LookPath("cosign"); err == nil {
 		in.Cosign = func(ctx context.Context, sums, sig, cert string) error {
-			out, err := exec.CommandContext(ctx, path, "verify-blob",
-				"--certificate", cert, "--signature", sig,
+			args := []string{"verify-blob", "--bundle", sig}
+			if cert != "" {
+				args = []string{"verify-blob", "--certificate", cert, "--signature", sig}
+			}
+			args = append(args,
 				"--certificate-identity-regexp", versions.LicenseClientCosignIdentityRegexp,
-				"--certificate-oidc-issuer", versions.LicenseClientCosignIssuer, sums).CombinedOutput()
+				"--certificate-oidc-issuer", versions.LicenseClientCosignIssuer, sums)
+			out, err := exec.CommandContext(ctx, path, args...).CombinedOutput()
 			if err != nil {
 				return fmt.Errorf("cosign verify-blob: %w: %s", err, strings.TrimSpace(string(out)))
 			}
@@ -171,6 +175,9 @@ func (in Installer) verifySignature(ctx context.Context, name, want string) erro
 	defer os.RemoveAll(dir)
 	paths := map[string]string{}
 	for _, f := range []string{versions.LicenseClientSumsFile, versions.LicenseClientSigFile, versions.LicenseClientCertFile} {
+		if f == "" {
+			continue
+		}
 		body, err := in.get(ctx, in.url(f))
 		if err != nil {
 			return err
