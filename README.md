@@ -115,3 +115,9 @@ Bug reports and ideas are welcome in [Issues](https://github.com/Mpratyush54/SER
 Please report security problems privately through
 [GitHub security advisories](https://github.com/Mpratyush54/SERVER-automation/security/advisories/new),
 not in public issues. Commits follow Conventional Commits (`feat:`, `fix:`, `docs:`).
+
+## License
+
+Cairn is source-available under the [Cairn Source-Available License](LICENSE). Running it
+needs a license key from <https://cairnpaas.dev>; a free Personal key is available at
+<https://cairnpaas.dev/signup>.

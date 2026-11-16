@@ -42,7 +42,7 @@
   "files": [
     "dist"
   ],
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "peerDependencies": {
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/api-logs": "^0.57.2",
