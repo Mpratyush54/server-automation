@@ -134,7 +134,7 @@ for (const path of ['/robots.txt', '/llms.txt', '/llms-full.txt', '/docs/index.m
     if (path.endsWith('.md')) assert.match(response.headers.get('content-type'), /^text\/markdown/);
     if (path.endsWith('.md')) {
       const canonical = path === '/docs/index.md' ? '/docs' : path.slice(0, -3);
-      assert.equal(response.headers.get('link'), `<https://platform.pratyushes.dev${canonical}>; rel="canonical"`);
+      assert.equal(response.headers.get('link'), `<https://cairnpaas.dev${canonical}>; rel="canonical"`);
     }
   });
 }

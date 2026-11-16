@@ -3,6 +3,9 @@ import { publicDocsUrl } from './public-domain.guard';
 
 describe('isPublicMarketingHost', () => {
   it('matches the configured marketing host exactly', () => {
+    expect(MARKETING_HOSTS).toContain('cairnpaas.dev');
+    expect(isPublicMarketingHost('cairnpaas.dev')).toBeTrue();
+    expect(isPublicMarketingHost('www.cairnpaas.dev')).toBeFalse();
     expect(MARKETING_HOSTS).toContain('platform.pratyushes.dev');
     expect(isPublicMarketingHost('platform.pratyushes.dev')).toBeTrue();
     expect(isPublicMarketingHost('PLATFORM.pratyushes.dev.')).toBeTrue();
@@ -24,9 +27,9 @@ describe('isPublicMarketingHost', () => {
 describe('publicDocsUrl', () => {
   it('keeps the docs path, query and fragment on the public site', () => {
     expect(publicDocsUrl('/docs/getting-started/installation?x=1#sign-in'))
-      .toBe('https://platform.pratyushes.dev/docs/getting-started/installation?x=1#sign-in');
+      .toBe('https://cairnpaas.dev/docs/getting-started/installation?x=1#sign-in');
   });
   it('falls back to the docs home for anything else', () => {
-    expect(publicDocsUrl('/login')).toBe('https://platform.pratyushes.dev/docs');
+    expect(publicDocsUrl('/login')).toBe('https://cairnpaas.dev/docs');
   });
 });
