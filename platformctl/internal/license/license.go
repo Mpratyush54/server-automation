@@ -274,3 +274,15 @@ func (c *Client) RegistryCredentials(ctx context.Context) (RegistryCredentials, 
 	}
 	return rc, nil
 }
+
+// SendReport runs `report --file`. Errors never include the client's output.
+func (c *Client) SendReport(ctx context.Context, file string) error {
+	_, _, code, err := c.run(ctx, []string{"report", "--file", file}, "")
+	if err != nil {
+		return fmt.Errorf("run license client: %w", err)
+	}
+	if code != 0 {
+		return fmt.Errorf("report exited %d", code)
+	}
+	return nil
+}

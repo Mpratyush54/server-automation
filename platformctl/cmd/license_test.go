@@ -18,6 +18,7 @@ import (
 type licenseFake struct {
 	log       string
 	status    string
+	report    string
 	published []license.Status
 	auth      []k3s.ImageRegistryAuth
 	restarts  int
@@ -48,7 +49,9 @@ func stubLicense(t *testing.T, enforce bool, codes map[string]int, creds string)
 	if creds != "" {
 		credsCase = "  registry-credentials) echo '" + creds + "'; exit 0 ;;\n"
 	}
+	f.report = filepath.Join(dir, "report.json")
 	script := "#!/usr/bin/env bash\necho \"$*\" >> '" + logf + "'\n" +
+		"[ \"$1\" = report ] && cp \"$3\" '" + filepath.ToSlash(f.report) + "'\n" +
 		"for a; do [ \"$a\" = - ] && { read -r k; echo \"stdin:$k\" >> '" + logf + "'; }; done\n" +
 		"code=0\ncase \"$1\" in\n" + credsCase + cases.String() + "esac\n" +
 		"echo '{\"command\":\"'$1'\",\"status\":\"x\",\"plan\":\"personal\",\"expires_at\":\"2027-01-01T00:00:00Z\"}'\nexit $code\n"
@@ -60,11 +63,11 @@ func stubLicense(t *testing.T, enforce bool, codes map[string]int, creds string)
 
 	oldInst, oldRun, oldPath, oldNodes, oldPub := licenseInstaller, licenseRunner, licenseStatusPath, licenseNodeCount, licensePublish
 	oldAuth, oldRestart, oldK3s, oldInteractive, oldNow := licenseWriteRegistryAuth, licenseRestartK3s, licenseK3sInstalled, licenseInteractive, licenseNow
-	oldEnforce, oldRegistry, oldKeyFile := cfg.LicenseEnforce, cfg.ImageRegistry, licenseKeyFile
+	oldEnforce, oldRegistry, oldKeyFile, oldDiagnostics := cfg.LicenseEnforce, cfg.ImageRegistry, licenseKeyFile, cfg.Diagnostics
 	t.Cleanup(func() {
 		licenseInstaller, licenseRunner, licenseStatusPath, licenseNodeCount, licensePublish = oldInst, oldRun, oldPath, oldNodes, oldPub
 		licenseWriteRegistryAuth, licenseRestartK3s, licenseK3sInstalled, licenseInteractive, licenseNow = oldAuth, oldRestart, oldK3s, oldInteractive, oldNow
-		cfg.LicenseEnforce, cfg.ImageRegistry, licenseKeyFile = oldEnforce, oldRegistry, oldKeyFile
+		cfg.LicenseEnforce, cfg.ImageRegistry, licenseKeyFile, cfg.Diagnostics = oldEnforce, oldRegistry, oldKeyFile, oldDiagnostics
 	})
 	licenseInstaller = func() license.Installer { return license.Installer{Override: src, Dest: dest} }
 	licenseRunner = func(ctx context.Context, path string, args []string, stdin string) ([]byte, []byte, int, error) {
@@ -88,6 +91,7 @@ func stubLicense(t *testing.T, enforce bool, codes map[string]int, creds string)
 	licenseNow = func() time.Time { return time.Unix(0, 0) }
 	licenseKeyFile = ""
 	cfg.LicenseEnforce = enforce
+	cfg.Diagnostics = false
 	cfg.ImageRegistry = config.DefaultImageRegistry
 	t.Setenv(license.EnvKey, "")
 	return f

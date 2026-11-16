@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/diagnostics"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
@@ -34,7 +35,9 @@ var provisionCmd = &cobra.Command{
 	Use:   "provision",
 	Short: "Full server bootstrap from pre-built images",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runProvision()
+		err := runProvision()
+		sendDiagnostics(diagnostics.KindProvision, err)
+		return err
 	},
 }
 
@@ -128,7 +131,9 @@ deployments. After an upgrade, run it on every server: k3s applies each
 server's own kube-vip manifest when it starts there. On a node that joined
 the cluster it only refreshes the local files.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runUpdate(cmd.OutOrStdout())
+		err := runUpdate(cmd.OutOrStdout())
+		sendDiagnostics(diagnostics.KindUpdate, err)
+		return err
 	},
 }
 

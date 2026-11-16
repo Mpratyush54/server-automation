@@ -13,6 +13,7 @@ import (
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/backup"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/diagnostics"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/helm"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
@@ -23,6 +24,9 @@ import (
 
 var upgradeTo, applyFrom string
 var upgradeYes, upgradeDry, upgradeHistory, upgradePatch, upgradeRestore, upgradeUnreleased bool
+
+// upgradeDelegated is set when the run is handed to the target release binary.
+var upgradeDelegated bool
 
 const upgradeState = "/var/lib/platformctl/state/upgrade-history.json"
 
@@ -41,7 +45,13 @@ var upgradeRun = func(name string, args ...string) (string, error) {
 func uk(args ...string) (string, error) { return upgradeRun("kubectl", args...) }
 
 func init() {
-	c := &cobra.Command{Use: "upgrade", Short: "Upgrade a release with backup, health gates and rollback", Args: cobra.NoArgs, RunE: runUpgrade}
+	c := &cobra.Command{Use: "upgrade", Short: "Upgrade a release with backup, health gates and rollback", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		err := runUpgrade(cmd, args)
+		if !upgradeDelegated && !upgradeHistory && !upgradeDry {
+			sendDiagnostics(diagnostics.KindUpgrade, err)
+		}
+		return err
+	}}
 	c.Flags().StringVar(&upgradeTo, "to", "", "target release (default latest stable)")
 	c.Flags().StringVar(&applyFrom, "apply-from", "", "internal target-binary handoff")
 	_ = c.Flags().MarkHidden("apply-from")
@@ -127,6 +137,7 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		if licenseKeyFile != "" {
 			args = append(args, "--license-key-file", licenseKeyFile)
 		}
+		upgradeDelegated = true
 		child := exec.Command(binary, args...)
 		child.Stdin = cmd.InOrStdin()
 		child.Stdout = cmd.OutOrStdout()

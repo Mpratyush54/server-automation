@@ -1586,7 +1586,14 @@ func ProvisionComplete(cfg *config.Config) {
 	fmt.Printf("    kubectl get pods -A\n")
 }
 
-func CheckHealth() error {
+// ComponentHealth is one result of HealthStatus.
+type ComponentHealth struct {
+	Name    string
+	Healthy bool
+}
+
+// HealthStatus runs the `platformctl status` component checks without printing.
+func HealthStatus() []ComponentHealth {
 	type check struct {
 		name string
 		cmd  string
@@ -1599,14 +1606,21 @@ func CheckHealth() error {
 		{"Ingress NGINX", daemonSetReadyCheck("ingress-nginx", "ingress-nginx-controller") + " || " + deploymentReadyCheck("ingress-nginx", "ingress-nginx-controller")},
 		{"ArgoCD", deploymentReadyCheck("argocd", "argocd-server")},
 	}
-
-	var failed []string
+	out := make([]ComponentHealth, 0, len(checks))
 	for _, c := range checks {
-		if err := shell.RunBash(c.cmd); err != nil {
-			failed = append(failed, c.name)
-			color.Red("  ✗ %s", c.name)
+		out = append(out, ComponentHealth{Name: c.name, Healthy: shell.RunBash(c.cmd) == nil})
+	}
+	return out
+}
+
+func CheckHealth() error {
+	var failed []string
+	for _, c := range HealthStatus() {
+		if !c.Healthy {
+			failed = append(failed, c.Name)
+			color.Red("  ✗ %s", c.Name)
 		} else {
-			color.Green("  ✓ %s", c.name)
+			color.Green("  ✓ %s", c.Name)
 		}
 	}
 

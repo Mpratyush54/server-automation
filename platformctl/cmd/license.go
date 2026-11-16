@@ -16,6 +16,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/diagnostics"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/k3s"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/license"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
@@ -409,6 +410,7 @@ func runLicenseRefresh(out io.Writer) error {
 	}
 	s := recordLicense(out, r, true)
 	fmt.Fprintf(out, "license: %s\n", s.Summary())
+	sendDiagnostics(diagnostics.KindPeriodic, nil)
 	return nil
 }
 

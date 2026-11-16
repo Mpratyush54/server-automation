@@ -13,6 +13,7 @@ import (
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/backup"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/diagnostics"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/harden"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ingressha"
@@ -60,7 +61,11 @@ server whose ServiceLB setting differs). Pass the settings file written by
 installing anything when they differ. Agents ignore these settings.
 
 See docs/operations/ha.md.`,
-	RunE: func(cmd *cobra.Command, args []string) error { return runJoin(os.Stdin) },
+	RunE: func(cmd *cobra.Command, args []string) error {
+		err := runJoin(os.Stdin)
+		sendDiagnostics(diagnostics.KindJoin, err)
+		return err
+	},
 }
 
 var tokenCmd = &cobra.Command{
