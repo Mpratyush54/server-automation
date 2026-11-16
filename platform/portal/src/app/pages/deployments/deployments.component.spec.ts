@@ -4,6 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { DeploymentsComponent } from './deployments.component';
 import { ApiService } from '../../services/api.service';
 import { of } from 'rxjs';
+import { ToastService } from '../../shared/feedback/feedback.service';
 
 describe('DeploymentsComponent', () => {
   let apiService: jasmine.SpyObj<ApiService>;
@@ -62,23 +63,23 @@ describe('DeploymentsComponent', () => {
 
   it('should rollback a deployment', async () => {
     apiService.rollback.and.returnValue(of({}));
-    spyOn(window, 'alert');
+    const ok = spyOn(TestBed.inject(ToastService), 'ok');
 
     const fixture = TestBed.createComponent(DeploymentsComponent);
     fixture.componentInstance.rollbackDto = { projectId: 'p1', deploymentId: 'd1' };
 
     await fixture.componentInstance.rollback();
 
-    expect(window.alert).toHaveBeenCalledWith('Rollback initiated');
+    expect(ok).toHaveBeenCalledWith('Rollback started');
   });
 
   it('should restart a deployment', async () => {
     apiService.restartDeployment.and.returnValue(of({}));
-    spyOn(window, 'alert');
+    const ok = spyOn(TestBed.inject(ToastService), 'ok');
 
     const fixture = TestBed.createComponent(DeploymentsComponent);
     await fixture.componentInstance.restart('d1');
 
-    expect(window.alert).toHaveBeenCalledWith('Restart initiated');
+    expect(ok).toHaveBeenCalledWith('Restart started');
   });
 });

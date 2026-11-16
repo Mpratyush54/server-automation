@@ -58,6 +58,8 @@ func TestProvisionGraphCriticalDeps(t *testing.T) {
 		// Image Updater + Argo Application need ArgoCD's CRDs.
 		"auto-update": {"argocd", "platform"},
 		"seed":        {"platform"},
+		// MinIO mounts the internal CA, published once cert-manager issued it.
+		"minio": {"cert-manager"},
 	}
 	for step, want := range must {
 		for _, d := range want {

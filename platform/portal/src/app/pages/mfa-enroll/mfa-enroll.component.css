@@ -1,0 +1,26 @@
+/* Forced two-factor enrolment (standalone page, same frame as sign-in). */
+.mfe-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  background: rgb(var(--canvas));
+}
+.mfe-panel { width: 100%; max-width: 560px; }
+.mfe-card {
+  padding: 28px;
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--line));
+  border-radius: 10px;
+}
+.mfe-title { margin: 0; font-size: 1.375rem; font-weight: 600; color: rgb(var(--fg)); }
+.mfe-sub { margin: 6px 0 24px; font-size: 0.875rem; color: rgb(var(--fg-2)); }
+.mfe-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid rgb(var(--line));
+}
+@media (max-width: 480px) { .mfe-card { padding: 20px; } }

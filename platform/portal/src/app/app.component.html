@@ -1,8 +1,5 @@
 @if (!isLoginPage && !isLandingPage && !isDocsPage && !isPublicStatusPage) {
   <div class="app-layout">
-    <!-- Sleek Next.js background glow -->
-    <div class="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-900/20 blur-[120px] pointer-events-none"></div>
-    <div class="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-purple-900/10 blur-[120px] pointer-events-none"></div>
     @if (isMobile && mobileNavOpen) {
       <div class="sidebar-backdrop" data-testid="sidebar-backdrop" (click)="closeMobileNav()" aria-hidden="true"></div>
     }
@@ -25,3 +22,4 @@
 
 <!-- Step-up prompt for sensitive actions (#24) -->
 <app-step-up-modal></app-step-up-modal>
+<app-feedback-host></app-feedback-host>

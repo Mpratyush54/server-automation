@@ -7,34 +7,69 @@ import {
 } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { landingMedia } from './landing-media';
+import { SiteHeaderComponent } from '../../shared/site/site-header.component';
+import { SiteFooterComponent } from '../../shared/site/site-footer.component';
+
+/**
+ * One step of the hero's failover story. The timings and figures come from
+ * the 3-node power-off test (Phase 5): node NotReady at 42 s, PostgreSQL
+ * promoted at 70 s, writes resumed at 2 m 33 s with no confirmed write lost.
+ */
+export interface TopologyStep {
+  /** Node index (0..2) that is down in this step, or -1. */
+  down: number;
+  /** Line added to the event log when the step starts. */
+  log: { time: string; text: string; tone: 'ok' | 'warn' | 'down' | '' };
+  /** Caption under the diagram. */
+  caption: string;
+  durationMs: number;
+}
+
+export const TOPOLOGY_STEPS: TopologyStep[] = [
+  { down: -1, durationMs: 4200, caption: 'Three servers share the work. Your app is served from all of them.',
+    log: { time: '18:05:40', text: 'all 3 servers healthy', tone: 'ok' } },
+  { down: 1, durationMs: 3200, caption: 'A server loses power.',
+    log: { time: '18:06:06', text: 'node-2 stopped responding', tone: 'down' } },
+  { down: 1, durationMs: 3200, caption: 'The others take over its work: the database moves its primary to a healthy server.',
+    log: { time: '18:07:16', text: 'postgres primary promoted on node-1', tone: 'warn' } },
+  { down: 1, durationMs: 4200, caption: 'Traffic flows through the remaining servers. Every confirmed write is kept.',
+    log: { time: '18:08:46', text: 'writes resumed, 0 confirmed writes lost', tone: 'ok' } },
+  { down: -1, durationMs: 4200, caption: 'When the server comes back, it rejoins on its own.',
+    log: { time: '18:15:02', text: 'node-2 rejoined the cluster', tone: 'ok' } },
+];
 
 @Component({
   selector: 'app-landing',
   standalone: true,
-  imports: [RouterModule],
+  imports: [RouterModule, SiteHeaderComponent, SiteFooterComponent],
   templateUrl: './landing.component.html',
   styleUrl: './landing.component.css',
 })
 export class LandingComponent implements AfterViewInit, OnDestroy {
-  @ViewChild('storyElement') private storyElement?: ElementRef<HTMLElement>;
+  @ViewChild('topologyElement') private topologyElement?: ElementRef<HTMLElement>;
   @ViewChild('landscapeVideo')
   private landscapeVideo?: ElementRef<HTMLVideoElement>;
   @ViewChild('portraitVideo')
   private portraitVideo?: ElementRef<HTMLVideoElement>;
   readonly media = landingMedia;
-  readonly storyChapterCount = 6;
-  storyStep = 0;
-  storyPaused = false;
-  storyVisible = true;
+  readonly steps = TOPOLOGY_STEPS;
+  readonly nodes = [
+    { name: 'node-1', ip: '10.0.0.11' },
+    { name: 'node-2', ip: '10.0.0.12' },
+    { name: 'node-3', ip: '10.0.0.13' },
+  ];
+  step = 0;
+  paused = false;
+  visible = true;
   landscapeStarted = false;
   portraitStarted = false;
   videoError = '';
-  private storyTimer?: ReturnType<typeof setInterval>;
-  private storyObserver?: IntersectionObserver;
+  private timer?: ReturnType<typeof setTimeout>;
+  private observer?: IntersectionObserver;
   private motionPreference?: MediaQueryList;
   private portraitPreference?: MediaQueryList;
   private readonly onMotionChange = (event: MediaQueryListEvent) => {
-    if (event.matches) this.storyPaused = true;
+    if (event.matches) this.pause();
   };
   private readonly onOrientationChange = () => {
     if (this.portraitPreference?.matches)
@@ -46,50 +81,65 @@ export class LandingComponent implements AfterViewInit, OnDestroy {
     'curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash\nsudo platformctl provision';
   private copyTimer?: ReturnType<typeof setTimeout>;
 
+  get current(): TopologyStep {
+    return this.steps[this.step];
+  }
+
+  /** Log lines shown so far in this cycle (newest last). */
+  get logLines() {
+    return this.steps.slice(0, this.step + 1).map((s) => s.log);
+  }
+
+  isDown(index: number): boolean {
+    return this.current.down === index;
+  }
+
   ngAfterViewInit() {
-    this.motionPreference = window.matchMedia(
-      '(prefers-reduced-motion: reduce)',
-    );
-    // Defer this preference update beyond Angular's initial change-detection pass.
-    Promise.resolve().then(() => {
-      this.storyPaused = this.motionPreference?.matches ?? false;
-    });
+    this.motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.motionPreference.addEventListener('change', this.onMotionChange);
     this.portraitPreference = window.matchMedia(
       '(max-width: 760px), (orientation: portrait) and (max-width: 1050px)',
     );
-    this.portraitPreference.addEventListener(
-      'change',
-      this.onOrientationChange,
-    );
-    if (typeof IntersectionObserver !== 'undefined' && this.storyElement) {
-      this.storyObserver = new IntersectionObserver(
-        ([entry]) => {
-          this.storyVisible = entry.isIntersecting;
-        },
-        { threshold: 0.15 },
-      );
-      this.storyObserver.observe(this.storyElement.nativeElement);
+    this.portraitPreference.addEventListener('change', this.onOrientationChange);
+    if (typeof IntersectionObserver !== 'undefined' && this.topologyElement) {
+      this.observer = new IntersectionObserver(([entry]) => {
+        this.visible = entry.isIntersecting;
+      }, { threshold: 0.2 });
+      this.observer.observe(this.topologyElement.nativeElement);
     }
-    this.startStoryClock();
+    // Reduced motion: show the rerouted state still, with the full log.
+    Promise.resolve().then(() => {
+      if (this.motionPreference?.matches) {
+        this.step = 3;
+        this.paused = true;
+      } else {
+        this.schedule();
+      }
+    });
   }
 
-  private startStoryClock() {
-    if (this.storyTimer) clearInterval(this.storyTimer);
-    this.storyTimer = setInterval(() => {
-      if (!this.storyPaused && this.storyVisible && !document.hidden)
-        this.storyStep = (this.storyStep + 1) % this.storyChapterCount;
-    }, 6000);
+  private schedule() {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      if (!this.paused && this.visible && !document.hidden) {
+        this.step = (this.step + 1) % this.steps.length;
+      }
+      this.schedule();
+    }, this.current.durationMs);
   }
 
-  selectStory(step: number) {
-    this.storyStep = step;
-    this.startStoryClock();
+  pause() {
+    this.paused = true;
   }
 
-  toggleStory() {
-    this.storyPaused = !this.storyPaused;
-    this.startStoryClock();
+  togglePlayback() {
+    this.paused = !this.paused;
+    if (!this.paused) this.schedule();
+  }
+
+  selectStep(index: number) {
+    this.step = index;
+    this.paused = true;
   }
 
   onVideoPlay(format: 'landscape' | 'portrait') {
@@ -109,8 +159,7 @@ export class LandingComponent implements AfterViewInit, OnDestroy {
       await video.play();
       this.onVideoPlay(format);
     } catch {
-      this.videoError =
-        'The video could not start. Please try the play button again.';
+      this.videoError = 'The video could not start. Press play to try again.';
     }
   }
 
@@ -142,12 +191,9 @@ export class LandingComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy() {
     if (this.copyTimer) clearTimeout(this.copyTimer);
-    if (this.storyTimer) clearInterval(this.storyTimer);
-    this.storyObserver?.disconnect();
+    if (this.timer) clearTimeout(this.timer);
+    this.observer?.disconnect();
     this.motionPreference?.removeEventListener('change', this.onMotionChange);
-    this.portraitPreference?.removeEventListener(
-      'change',
-      this.onOrientationChange,
-    );
+    this.portraitPreference?.removeEventListener('change', this.onOrientationChange);
   }
 }

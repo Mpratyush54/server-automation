@@ -8,16 +8,13 @@ import (
 )
 
 // RequiredTools lists host binaries an operation needs. remote is true for an
-// s3:// target (uploads go through mc). restore adds restore-only helpers.
+// s3:// target (uploads use the built-in S3 client; no host mc). restore adds
+// restore-only helpers.
 func RequiredTools(components []string, remote, restore bool) []string {
 	need := map[string]bool{"bash": true, "kubectl": true}
-	if remote {
-		need["mc"] = true
-	}
+	_ = remote // archives talk to S3 from platformctl; no extra host tool
 	for _, c := range components {
 		switch c {
-		case "minio":
-			need["mc"], need["jq"] = true, true
 		case "config":
 			if restore {
 				need["jq"] = true
@@ -52,7 +49,7 @@ func CheckTools(tools []string) error {
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("missing required tools on PATH: %s (see docs/operations/backups.md#setup)", strings.Join(missing, ", "))
+		return fmt.Errorf("missing required tools on PATH: %s (see docs/operations/backups.md#turn-on-encrypted-nightly-archives)", strings.Join(missing, ", "))
 	}
 	return nil
 }

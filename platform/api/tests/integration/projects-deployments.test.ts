@@ -15,6 +15,7 @@ jest.mock('@kubernetes/client-node', () => ({
 jest.mock('../../src/lib/k8s', () => ({
   checkK8sConnection: jest.fn().mockResolvedValue(true),
   getK8sNodes:        jest.fn().mockResolvedValue([]),
+  getK8sNodeMetrics: jest.fn().mockResolvedValue({ metricsAvailable: false, nodes: [] }),
   getK8sNamespaces:   jest.fn().mockResolvedValue([]),
   getK8sPods:         jest.fn().mockResolvedValue([]),
   getPodLogs:         jest.fn().mockResolvedValue(''),
@@ -780,6 +781,14 @@ describe('Deployments API', () => {
   });
 
   describe('PATCH /api/deployments/:id/scale', () => {
+    it('rejects manual scale while environment autoscaling is enabled', async () => {
+      envRepo.findOne.mockResolvedValue({ ...seedEnv, autoscaling: { enabled: true } });
+      const r = await request(app).patch(`/api/deployments/${DEPLOY_ID}/scale`)
+        .set('Authorization', `Bearer ${T.devops}`).send({ replicas: 3 });
+      expect(r.status).toBe(400);
+      expect(r.body.error).toMatch(/Disable autoscaling/);
+      expect(require('../../src/lib/k8s').operateProjectWorkloads).not.toHaveBeenCalled();
+    });
     it('200/400 — devops can scale', async () => {
       const r = await request(app)
         .patch(`/api/deployments/${DEPLOY_ID}/scale`)

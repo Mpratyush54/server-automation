@@ -18,7 +18,7 @@ describe('Project namespace isolation status', () => {
   function render(baseline: any) {
     const fixture = TestBed.createComponent(ProjectDetailComponent);
     spyOn(fixture.componentInstance, 'ngOnInit').and.stub();
-    fixture.componentInstance.activeTab = 'isolation-only';
+    fixture.componentInstance.section = 'settings';
     fixture.componentInstance.project = { name: 'Example', namespaceBaselines: [baseline] };
     fixture.detectChanges();
     return fixture;

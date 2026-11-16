@@ -12,6 +12,7 @@ jest.mock('@kubernetes/client-node', () => ({
 jest.mock('../../src/lib/k8s', () => ({
   checkK8sConnection: jest.fn().mockResolvedValue(true),
   getK8sNodes: jest.fn().mockResolvedValue([]),
+  getK8sNodeMetrics: jest.fn().mockResolvedValue({ metricsAvailable: false, nodes: [] }),
   getK8sNamespaces: jest.fn().mockResolvedValue([]),
   getK8sPods: jest.fn().mockResolvedValue([]),
   getPodLogs: jest.fn().mockResolvedValue(''),
@@ -122,7 +123,10 @@ describe('OAuth2 / OIDC SSO Integration Tests', () => {
       expect(res.body.id_token_signing_alg_values_supported).toContain('RS256');
       expect(res.body.response_types_supported).toEqual(['code']);
       expect(res.body.code_challenge_methods_supported).toEqual(['S256']);
-      expect(res.body.token_endpoint_auth_methods_supported).toEqual(['client_secret_basic', 'client_secret_post']);
+      // Static clients authenticate with a secret; remote MCP clients (#193) are public (PKCE).
+      expect(res.body.token_endpoint_auth_methods_supported).toEqual(['none', 'client_secret_basic', 'client_secret_post']);
+      expect(res.body.registration_endpoint).toBe('https://platform.example.test/api/oauth/register');
+      expect(res.body.grant_types_supported).toEqual(['authorization_code', 'refresh_token']);
     });
   });
 
@@ -250,6 +254,28 @@ describe('OAuth2 / OIDC SSO Integration Tests', () => {
   });
 
   describe('POST /api/oauth/token and GET /api/oauth/userinfo flow', () => {
+    it.each([
+      ['admin', 'admin'], ['Admin', 'admin'], ['ADMIN', 'admin'], ['aDmIn', 'admin'],
+      ['devops', 'devops'], ['DevOps', 'devops'], ['DEVOPS', 'devops'],
+      ['tech_lead', 'tech_lead'], ['Tech Lead', 'tech_lead'], ['TECH_LEAD', 'tech_lead'],
+      ['developer', 'developer'], ['viewer', 'viewer'],
+    ])('normalizes %s groups for Grafana in ID tokens and userinfo', async (role, group) => {
+      mockUserRepository.findOne.mockResolvedValue({ ...mockUser, role });
+      const redirect = 'https://platform.example.test/grafana/login/generic_oauth';
+      const code = await issueCode({}, 'grafana', redirect);
+      const res = await request(app)
+        .post('/api/oauth/token')
+        .set('Authorization', basic('grafana', GRAFANA_SECRET))
+        .type('form')
+        .send({ code, redirect_uri: redirect, grant_type: 'authorization_code' });
+      expect(res.status).toBe(200);
+      expect((jwt.decode(res.body.id_token) as any).groups).toEqual([group]);
+      const userinfo = await request(app).get('/api/oauth/userinfo')
+        .set('Authorization', `Bearer ${res.body.access_token}`);
+      expect(userinfo.status).toBe(200);
+      expect(userinfo.body.groups).toEqual([group]);
+    });
+
     it('includes amr and the portal auth_time in the ID token (#24)', async () => {
       const authTime = Math.floor(Date.now() / 1000) - 120;
       const mfaPortal = jwt.sign(

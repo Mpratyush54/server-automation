@@ -7,31 +7,10 @@
       aria-modal="true"
       aria-labelledby="docs-search-title"
       (click)="$event.stopPropagation()"
-      >
-      <div class="docs-search-dialog-heading">
-        <span id="docs-search-title">Search documentation</span
-          ><button
-          type="button"
-          class="docs-search-close"
-          (click)="closeSearch()"
-          aria-label="Close search"
-          >
-          Esc <span aria-hidden="true">×</span>
-        </button>
-      </div>
+    >
+      <h2 id="docs-search-title" class="sr-only">Search documentation</h2>
       <div class="docs-search-field">
-        <svg
-          aria-hidden="true"
-          width="21"
-          height="21"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.7"
-          >
-          <circle cx="10" cy="10" r="7" />
-          <path d="m15 15 6 6" />
-        </svg>
+        <svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4 4" /></svg>
         <input
           #searchInput
           type="search"
@@ -40,79 +19,46 @@
           aria-autocomplete="list"
           aria-controls="docs-search-results"
           [attr.aria-expanded]="results.length > 0"
-        [attr.aria-activedescendant]="
-          results.length ? 'docs-search-result-' + activeIndex : null
-        "
+          [attr.aria-activedescendant]="results.length ? 'docs-search-result-' + activeIndex : null"
           autocomplete="off"
-          placeholder="Search tools, commands, errors…"
+          placeholder="Search commands, settings, errors"
           [ngModel]="query"
           (ngModelChange)="updateQuery($event)"
-          />
-          @if (query) {
-            <button
-              type="button"
-              class="docs-search-clear"
-              (click)="chooseSuggestion('')"
-              aria-label="Clear search"
-              >
-              ×
-            </button>
-          }
-        </div>
-        <div class="docs-search-scroll">
-          @if (loading) {
-            <div class="docs-search-message" role="status">
-              Loading documentation search…
+        />
+        @if (query) {
+          <button type="button" class="docs-search-clear" (click)="chooseSuggestion('')">Clear</button>
+        }
+        <button type="button" class="docs-search-close" (click)="closeSearch()" aria-label="Close search">Esc</button>
+      </div>
+
+      <div class="docs-search-scroll">
+        @if (loading) {
+          <p class="docs-search-message" role="status">Loading search…</p>
+        }
+        @if (error) {
+          <div class="docs-search-message" role="alert">
+            <strong>Search couldn’t load.</strong>
+            <p>Check your connection, then try again.</p>
+            <button type="button" class="docs-search-link" (click)="loadIndex()">Retry search</button>
+          </div>
+        }
+        @if (!loading && !error && query.trim().length < 2) {
+          <div class="docs-search-start">
+            <p class="docs-search-start-label">Popular</p>
+            <div class="docs-search-chips">
+              @for (suggestion of suggestions; track suggestion) {
+                <button type="button" (click)="chooseSuggestion(suggestion)">{{ suggestion }}</button>
+              }
             </div>
-          }
-          @if (error) {
-            <div class="docs-search-message" role="alert">
-              <strong>Search couldn’t load.</strong>
-              <p>Please try again.</p>
-              <button type="button" (click)="loadIndex()">Retry search</button>
-            </div>
-          }
-          @if (!loading && !error && query.trim().length < 2) {
-            <div
-              class="docs-search-start"
-              >
-              <p>Find a page. Jump to the right section.</p>
-              <span>TRY A TOPIC</span>
-              <div>
-                @for (suggestion of suggestions; track suggestion) {
-                  <button
-                    type="button"
-                    (click)="chooseSuggestion(suggestion)"
-                    >
-                    {{ suggestion }} <span aria-hidden="true">↗</span>
-                  </button>
-                }
-              </div>
-              <p class="docs-search-start-hint">
-                Search page titles, instructions, configuration, and code examples.
-              </p>
-            </div>
-          }
-          @if (!loading && !error && query.trim().length >= 2) {
-            <p
-              class="docs-search-count"
-              role="status"
-              aria-live="polite"
-              >
-              {{ results.length ? results.length + " results" : "No results"
-              }}@if (results.length && results[0].fuzzy) {
-              <span>
-                · Including close matches</span
-                >
-            }
+          </div>
+        }
+        @if (!loading && !error && query.trim().length >= 2) {
+          <p class="docs-search-count" role="status" aria-live="polite">
+            {{ results.length ? results.length + (results.length === 1 ? ' result' : ' results') : 'No results' }}@if (results.length && results[0].fuzzy) {<span> · including close matches</span>}
           </p>
         }
-        <div
-          id="docs-search-results"
-          role="listbox"
-          aria-label="Documentation results"
-          >
-          @for (result of results; track result; let i = $index) {
+        <div id="docs-search-results" role="listbox" aria-label="Documentation results">
+          @for (result of results; track result.url + $index; let i = $index) {
             <a
               [id]="'docs-search-result-' + i"
               class="docs-search-result"
@@ -122,78 +68,30 @@
               [href]="result.url"
               (mousemove)="activeIndex = i"
               (click)="openResult($event, result)"
-              >
-              <div class="docs-search-result-category">{{ result.section }}</div>
-              <div class="docs-search-result-title">
-                <span
-                  >@for (part of highlight(result.title, query); track $index) {
-                  @if (part.match) {
-                    <mark>{{ part.text }}</mark
-                      >
-                      }@if (!part.match) {
-                      {{
-                      part.text
-                      }}
-                    }
-                    }</span
-                    ><span class="docs-search-result-arrow" aria-hidden="true">↵</span>
-                  </div>
-                  @if (result.heading !== result.title) {
-                    <div
-                      class="docs-search-result-heading"
-                      >
-                      <span aria-hidden="true">#</span>
-                      @for (part of highlight(result.heading, query); track $index) {
-                        @if (part.match) {
-                          <mark>{{ part.text }}</mark
-                            >
-                            }@if (!part.match) {
-                            {{
-                            part.text
-                            }}
-                          }
-                        }
-                      </div>
-                    }
-                    <p>
-                      @for (part of highlight(result.snippet, query); track $index) {
-                        @if (part.match) {
-                          <mark>{{ part.text }}</mark
-                            >
-                            }@if (!part.match) {
-                            {{
-                            part.text
-                            }}
-                          }
-                        }
-                      </p>
-                    </a>
-                  }
-                </div>
-                @if (
-                  !loading && !error && query.trim().length >= 2 && !results.length
-                  ) {
-                  <div
-                    class="docs-search-message"
-                    >
-                    <strong>No matches for “{{ query }}”</strong>
-                    <p>
-                      Try a tool name, a command, or part of an error message. For example:
-                      <button type="button" (click)="chooseSuggestion('WRONGPASS')">
-                        WRONGPASS</button
-                        >.
-                      </p>
-                    </div>
-                  }
-                </div>
-                <footer class="docs-search-footer">
-                  <span>{{
-                    documentCount
-                    ? documentCount + " pages · Full-text search"
-                    : "Platform documentation"
-                    }}</span
-                    ><span><kbd>↑</kbd><kbd>↓</kbd> Navigate <kbd>↵</kbd> Open</span>
-                  </footer>
-                </section>
-              </div>
-            }
+            >
+              <span class="docs-search-result-title">@for (part of highlight(result.title, query); track $index) {@if (part.match) {<mark>{{ part.text }}</mark>} @else {<ng-container>{{ part.text }}</ng-container>}}</span>
+              @if (result.heading !== result.title) {
+                <span class="docs-search-result-heading">@for (part of highlight(result.heading, query); track $index) {@if (part.match) {<mark>{{ part.text }}</mark>} @else {<ng-container>{{ part.text }}</ng-container>}}</span>
+              }
+              <span class="docs-search-result-snippet">@for (part of highlight(result.snippet, query); track $index) {@if (part.match) {<mark>{{ part.text }}</mark>} @else {<ng-container>{{ part.text }}</ng-container>}}</span>
+            </a>
+          }
+        </div>
+        @if (!loading && !error && query.trim().length >= 2 && !results.length) {
+          <div class="docs-search-message">
+            <strong>No matches for “{{ query }}”</strong>
+            <p>
+              Try a command, a setting name, or part of an error message, such as
+              <button type="button" class="docs-search-link" (click)="chooseSuggestion('WRONGPASS')">WRONGPASS</button>.
+            </p>
+          </div>
+        }
+      </div>
+
+      <footer class="docs-search-footer">
+        <span>{{ documentCount ? documentCount + ' pages' : 'Platform documentation' }}</span>
+        <span class="docs-search-keys"><kbd>↑</kbd><kbd>↓</kbd> to move <kbd>Enter</kbd> to open</span>
+      </footer>
+    </section>
+  </div>
+}

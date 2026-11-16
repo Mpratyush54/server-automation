@@ -58,3 +58,35 @@ func TestRestoreConfigNeedsTargetOnFreshVM(t *testing.T) {
 		t.Fatal(c, e)
 	}
 }
+
+func TestProvisionRestoreHintOnFreshServer(t *testing.T) {
+	oldPath, oldFrom, oldID := backupConfigPath, provisionRestoreFrom, provisionRestoreID
+	defer func() { backupConfigPath, provisionRestoreFrom, provisionRestoreID = oldPath, oldFrom, oldID }()
+	backupConfigPath = t.TempDir() + "/missing.json"
+	provisionRestoreFrom, provisionRestoreID = "s3://r2/bucket/prefix", ""
+	err := provisionCmd.RunE(provisionCmd, nil)
+	if err == nil {
+		t.Fatal("missing backup ID accepted")
+	}
+	for _, hint := range []string{"on a configured server", "on a fresh server", "ls <backup-directory>/", "AWS CLI", "backup.json"} {
+		if !strings.Contains(err.Error(), hint) {
+			t.Errorf("restore hint %q missing %q", err, hint)
+		}
+	}
+	if strings.Contains(err.Error(), "backup list --target") {
+		t.Fatal("restore hint still suggests a command requiring an existing config")
+	}
+}
+
+func TestWarnIncompleteBackups(t *testing.T) {
+	var b strings.Builder
+	warnIncompleteBackups(&b, []string{"20261115T030000.000000000Z"})
+	if !strings.Contains(b.String(), "20261115T030000.000000000Z/ has no backup.json") {
+		t.Fatal(b.String())
+	}
+	b.Reset()
+	warnIncompleteBackups(&b, nil)
+	if b.Len() != 0 {
+		t.Fatal(b.String())
+	}
+}

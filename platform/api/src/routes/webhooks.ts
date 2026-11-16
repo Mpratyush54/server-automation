@@ -1,3 +1,4 @@
+import { BuildProviderUnavailableError, PushBuildResult, queuePushBuilds } from '../lib/build-op';
 import { Router, Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { Project } from '../entities/Project';
@@ -9,6 +10,14 @@ import { deployK8sPreview, terminateK8sPreview, previewResourceName } from '../l
 import { githubWebhookSecrets, handleInstallationWebhook, verifyHubSignature } from '../lib/github-app';
 import { gitlabWebhookSecrets, verifyGitlabTokenAgainst } from '../lib/gitlab-app';
 import { claimWebhookDelivery, releaseWebhookDelivery, webhookDeliveryId, WebhookProvider } from '../lib/webhook-dedupe';
+import { repositoryKey } from '../lib/repository-binding';
+
+/** The active project linked to a repository; the key is unique across active projects. */
+async function projectForRepository(url: unknown): Promise<Project | null> {
+  const key = repositoryKey(typeof url === 'string' ? url : null);
+  if (!key) return null;
+  return (await getDb()).getRepository(Project).findOne({ where: { repositoryKey: key, isActive: true } });
+}
 
 /**
  * Skip provider retries of a delivery that was already processed (issue #23).
@@ -38,6 +47,15 @@ async function verifyGitLabToken(token: string | undefined): Promise<boolean> {
   return verifyGitlabTokenAgainst(token, await gitlabWebhookSecrets());
 }
 
+/** Source-build environments never fall through to the legacy flow, even when a push is rejected. */
+function pushBuildResponse(result: PushBuildResult) {
+  if (result === 'queued') return { success: true, message: 'Source build queued' };
+  if (result === 'limited') return { success: false, message: 'Source build not queued: project build queue is full' };
+  if (result === 'superseded') return { success: true, message: 'Source build skipped: a newer commit exists on the linked branch' };
+  if (result === 'unapproved') return { success: false, message: 'Source build not queued: a platform administrator has not approved this repository' };
+  return { success: false, message: 'Source build rejected: commit is not on the linked branch' };
+}
+
 const router = Router();
 
 router.post('/webhooks/github', async (req: Request, res: Response) => {
@@ -64,11 +82,14 @@ router.post('/webhooks/github', async (req: Request, res: Response) => {
       const branch = (payload.ref || '').replace('refs/heads/', '');
       const repoUrl = payload.repository?.clone_url || '';
       const ds = await getDb();
-      const project = await ds.getRepository(Project).findOne({ where: { repositoryUrl: repoUrl } });
+      const project = await projectForRepository(repoUrl);
 
       if (!project) return res.json({ success: false, message: 'No matching project' });
 
+      if (payload.deleted || !String(payload.ref).startsWith('refs/heads/')) return res.json({ success: true, message: 'Ref ignored' });
       const commitSha = payload.after || 'unknown';
+      const sourceBuild = await queuePushBuilds(project, branch, commitSha);
+      if (sourceBuild !== 'none') return res.json(pushBuildResponse(sourceBuild));
 
       if (branch === 'main' || branch === 'master') {
         const deployment = ds.getRepository(Deployment).create({
@@ -129,7 +150,7 @@ router.post('/webhooks/github', async (req: Request, res: Response) => {
       const branch = pr.head?.ref || '';
       const repoUrl = pr.base?.repo?.clone_url || '';
       const ds = await getDb();
-      const project = await ds.getRepository(Project).findOne({ where: { repositoryUrl: repoUrl } });
+      const project = await projectForRepository(repoUrl);
 
       if (!project) return res.json({ success: false, message: 'No matching project' });
 
@@ -184,6 +205,8 @@ router.post('/webhooks/github', async (req: Request, res: Response) => {
 
     return res.json({ success: true, message: 'Event ignored' });
   } catch (err: any) {
+    // 5xx releases the delivery claim so the provider's redelivery is processed.
+    if (err instanceof BuildProviderUnavailableError) return res.status(503).json({ error: err.message });
     return res.status(400).json({ error: err.message });
   }
 });
@@ -203,11 +226,14 @@ router.post('/webhooks/gitlab', async (req: Request, res: Response) => {
       const branch = (payload.ref || '').replace('refs/heads/', '');
       const repoUrl = payload.project?.http_url || payload.project?.clone_url || '';
       const ds = await getDb();
-      const project = await ds.getRepository(Project).findOne({ where: { repositoryUrl: repoUrl } });
+      const project = await projectForRepository(repoUrl);
 
       if (!project) return res.json({ success: false, message: 'No matching project' });
 
+      if (!String(payload.ref).startsWith('refs/heads/') || /^0+$/.test(payload.after || '')) return res.json({ success: true, message: 'Ref ignored' });
       const commitSha = payload.after || payload.checkout_sha || 'unknown';
+      const sourceBuild = await queuePushBuilds(project, branch, commitSha);
+      if (sourceBuild !== 'none') return res.json(pushBuildResponse(sourceBuild));
 
       if (branch === 'main' || branch === 'master') {
         const deployment = ds.getRepository(Deployment).create({
@@ -267,7 +293,7 @@ router.post('/webhooks/gitlab', async (req: Request, res: Response) => {
       const branch = mr.source_branch || '';
       const repoUrl = payload.project?.http_url || payload.project?.clone_url || '';
       const ds = await getDb();
-      const project = await ds.getRepository(Project).findOne({ where: { repositoryUrl: repoUrl } });
+      const project = await projectForRepository(repoUrl);
 
       if (!project) return res.json({ success: false, message: 'No matching project' });
 
@@ -322,6 +348,8 @@ router.post('/webhooks/gitlab', async (req: Request, res: Response) => {
 
     return res.json({ success: true, message: 'Event ignored' });
   } catch (err: any) {
+    // 5xx releases the delivery claim so the provider's redelivery is processed.
+    if (err instanceof BuildProviderUnavailableError) return res.status(503).json({ error: err.message });
     return res.status(400).json({ error: err.message });
   }
 });

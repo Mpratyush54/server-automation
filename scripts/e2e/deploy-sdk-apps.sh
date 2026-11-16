@@ -51,6 +51,12 @@ docker build --network host -q -f examples/sdk-apps/angular-web/Dockerfile -t sd
 step "import images into k3s"
 for img in sdk-node-api sdk-react-web sdk-angular-web; do
   docker save "$img:local" | vm_ssh 'sudo k3s ctr images import - >/dev/null'
+  # Multi-node (ha) clusters: the :local images must exist on every node the
+  # pods can land on. E2E_EXTRA_NODES lists the other nodes' addresses as seen
+  # from the VM; E2E_NODE_SSH_KEY is the key on the VM that reaches them.
+  for node in ${E2E_EXTRA_NODES:-}; do
+    docker save "$img:local" | vm_ssh "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -i ${E2E_NODE_SSH_KEY:-~/.ssh/id_ed25519} ubuntu@$node 'sudo k3s ctr images import - >/dev/null'"
+  done
 done
 
 step "apply manifests"

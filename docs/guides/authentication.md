@@ -1,148 +1,141 @@
-# Authentication & Authorization
+# Control who can sign in
 
-## JWT Token Format
+This page helps you add people to Cairn and decide what each person can do. You manage people in **Users** in the sidebar, and your own account on your **Profile** page.
 
-The Platform API issues JSON Web Tokens (JWT) for authentication. Tokens are signed with the `JWT_SECRET` environment variable using **HS256** (HMAC-SHA256) for regular logins and **RS256** (RSA-SHA256) for OIDC flows.
+## Add a person
 
-### Payload Structure
+1. Open **Users** in the sidebar and choose **New user**.
+2. Enter a name, email, username and a password of at least 8 characters.
+3. Pick a role, for example **Developer**, and save.
 
-```json
-{
-  "id": "11111111-1111-1111-1111-111111111111",
-  "email": "john@pratyushes.dev",
-  "name": "John Dev",
-  "role": "developer",
-  "amr": ["pwd", "otp", "mfa"],
-  "auth_time": 1719000000,
-  "iat": 1719000000,
-  "exp": 1719086400
-}
-```
+The person can now sign in with their email (or username) and that password. They can change the password on their **Profile** page.
 
-| Claim | Description |
+Only admins and DevOps users can create, edit or remove users.
+
+## Pick a role
+
+A role decides what a person can change. Every user has one of five roles.
+
+| Role | Can do |
 |---|---|
-| `id` | User UUID (Primary Key) |
-| `email` | User email address |
+| Admin | Everything |
+| DevOps | Manage infrastructure, users, secrets, databases and deployments |
+| Tech lead | Manage projects, deployments, configuration and secrets. Cannot manage users. |
+| Developer | See projects, trigger deployments, read logs and metrics |
+| Viewer | Read-only: projects, deployments, logs and metrics |
+
+The full list of what each role allows is in [Permissions](../api-reference/configuration/permissions.md).
+
+To change someone's role, open **Users**, choose **Edit** on the person, pick the new role and save. You cannot give someone a role higher than your own. Only admins can make someone an admin or change an admin account.
+
+## Your first admin account
+
+The installer creates the first admin account. Its email and password are printed at the end of the install and saved on the server in `/etc/platform/.env` as `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+
+## Other ways to sign in and stay safe
+
+- **Two-factor sign-in.** Each person can add an authenticator app. Admins and DevOps users must. See [Two-factor sign-in](mfa.md).
+- **GitHub or GitLab sign-in.** Once a Git provider is connected, people can sign in with it instead of a password. See [Connect GitHub or GitLab](git-providers.md).
+- **One sign-in for the bundled tools.** Grafana, Argo CD, Portainer and the file-storage console use your Cairn account. You do not need separate passwords.
+- **Secrets.** Keep passwords and API keys in Cairn, not in your repository. See [Secrets](secrets-management.md).
+- **The server.** The installer turns on a firewall, SSH safeguards and automatic security updates. See [Host hardening](host-hardening.md).
+
+## How it works
+
+### Sessions
+
+Signing in returns a session token (a signed JSON Web Token, or JWT). The portal sends it with every request.
+
+- A session lasts **24 hours**. There is no refresh token: after 24 hours you sign in again.
+- A session that is only allowed to finish two-factor enrolment lasts **1 hour**.
+- Session tokens are signed with `JWT_SECRET` using HS256.
+
+Session token claims:
+
+| Claim | Meaning |
+|---|---|
+| `id` | User ID |
+| `email` | Email address |
 | `name` | Display name |
-| `role` | Role preset: `admin`, `devops`, `tech_lead`, `developer`, `viewer` |
-| `amr` | Authentication methods (RFC 8176): `pwd` or `fed` (GitHub/GitLab), plus `otp` + `mfa` after a second factor |
-| `auth_time` | Time of the last authentication; refreshed by MFA step-up |
-| `mfa_enroll` | Only on sessions restricted to MFA enrolment |
-| `iat` | Issued-at timestamp (UNIX epoch) |
-| `exp` | Expiration timestamp — defaults to **24 hours** |
+| `role` | `admin`, `devops`, `tech_lead`, `developer` or `viewer` |
+| `amr` | How the user signed in: `pwd` (password) or `fed` (GitHub/GitLab), plus `otp` and `mfa` after a second factor |
+| `auth_time` | When the user last authenticated (seconds). A two-factor step-up refreshes it. |
+| `mfa_enroll` | Present only on sessions limited to two-factor enrolment |
+| `iat`, `exp` | Issued at and expiry |
 
-### Expiry
+Source: `platform/api/src/lib/session-token.ts`.
 
-Token lifetime is hard-coded at **24 hours** (`expiresIn: '24h'`). There is no refresh token mechanism — clients must re-authenticate after expiry.
+Users with two-factor sign-in turned on get a short challenge first, then a session after the code. See [Two-factor sign-in](mfa.md).
 
-```typescript
-// platform/api/src/routes/auth.ts:50-54
-const token = jwt.sign(
-  { id: user.id, email: user.email, name: user.name, role: user.role },
-  JWT_SECRET,
-  { expiresIn: '24h' }
-);
+### Roles and permissions
+
+Each role is a set of permission strings defined in `platform/api/src/config/permissions.ts`. There are 63 permissions in total. Admin has all of them. The exact list per role is in [Permissions](../api-reference/configuration/permissions.md).
+
+**Custom roles.** You can also create named roles with any set of permissions, through the API (the portal has no screen for this). A user keeps their built-in role and can also have one custom role. Their permissions are the two sets combined.
+
+System roles (`isSystem: true`) cannot be changed or deleted. Deleting a custom role removes it from every user who had it.
+
+**Permission cache.** The API caches each user's permissions for 60 seconds. Changing a user's role, or editing or deleting a custom role, clears the cache for the affected users. When several API replicas run, the clear is sent to every replica through Redis. While that channel is down, the API skips the cache and reads permissions from the database.
+
+### OIDC/SSO
+
+The API is also a small OpenID Connect (OIDC) provider. OIDC is the standard that lets other tools accept your Cairn sign-in. The installer registers the bundled tools as clients (`platformctl/internal/config/oidc.go`):
+
+| Client | Redirect address |
+|---|---|
+| `grafana` | `https://<domain>/grafana/login/generic_oauth` |
+| `argocd` | `https://<domain>/argocd/auth/callback` |
+| `portainer` | `https://portainer.<domain>/` |
+| `oauth2-proxy` | `https://<domain>/oauth2/callback` |
+| `minio` | `https://minio.<domain>/oauth_callback` |
+
+```mermaid
+sequenceDiagram
+    participant Client as Tool (for example Grafana)
+    participant Provider as Cairn API
+
+    Client->>Provider: 1. Send the user to sign in
+    Provider-->>Client: 2. Authorization code
+    Client->>Provider: 3. Exchange code (plus client secret)
+    Provider-->>Client: 4. Access token and ID token
 ```
 
----
+- Only the authorization code flow is supported. PKCE with S256 is supported.
+- An authorization code is single use and expires after **2 minutes**.
+- Access tokens and ID tokens are signed with RS256 and last **1 hour**.
+- The ID token includes `sub`, `email`, `name`, `groups` and `roles`. `groups` and `roles` both hold the user's role, for example `["devops"]`. `amr` and `auth_time` are copied from the portal session, so a tool can require two-factor sign-in.
+- The issuer is `https://<domain>/api/oauth`.
 
-## Password Login and MFA
+Grafana maps groups to its own roles with this rule (`platformctl/internal/manifests/data/grafana-values.yaml`):
 
-`POST /api/auth/login` takes an email (or username) and a password. Users with TOTP MFA get an
-`mfa_required` answer with a short-lived challenge token and finish with
-`POST /api/auth/mfa/challenge`; admins and devops users (policy `mfa.requiredRoles`) must enrol
-before they can use the portal. Revealing secrets and other sensitive actions need a recent
-second factor (step-up).
+```text
+contains(groups[*], 'Admin') && 'Admin' || contains(groups[*], 'DevOps') && 'Admin' || contains(groups[*], 'Tech Lead') && 'Editor' || 'Viewer'
+```
 
-See [Multi-factor authentication](mfa.md) for enrolment, recovery codes, step-up, the policy,
-admin reset and the `platformctl mfa disable` break-glass command.
+oauth2-proxy (installed from `platformctl/internal/manifests/data/oauth2-proxy-values.yaml`) is an OIDC client too. It uses the public authorize address for the browser and in-cluster addresses for token, keys and user info, so sign-in works before the public certificate is valid. Its cookie lasts 24 hours and refreshes every 5 minutes.
 
----
+## For developers / API
 
-## Role Presets
+### Sign in
 
-Five built-in role presets are defined in `platform/api/src/config/permissions.ts`. Each preset is a set of permission strings.
+`POST /api/auth/login` with `{ "email": "...", "password": "..." }`. You can send `username` instead of `email`. The answer is either a session token or, for users with two-factor sign-in, `mfa_required` and a challenge token to finish at `POST /api/auth/mfa/challenge`.
 
-| Role | Description | Typical User |
+### Users and roles
+
+| Method | Path | Needs |
 |---|---|---|
-| `admin` | Unrestricted access to every permission | Platform administrators |
-| `devops` | Full infrastructure, user, secret, and deployment management | DevOps engineers |
-| `tech_lead` | Project, deployment, config, and secret access (no user mgmt) | Senior developers managing projects |
-| `developer` | Read project info, trigger deployments, view logs | Application developers |
-| `viewer` | Read-only view of projects, deployments, logs, metrics | Stakeholders, read-only access |
+| `GET` | `/api/users` | admin, devops or tech lead |
+| `POST` | `/api/users` | admin or devops |
+| `PUT` / `DELETE` | `/api/users/:id` | admin or devops |
+| `PATCH` | `/api/users/:id/role` | `users.assign-role` |
+| `GET` | `/api/users/:id/permissions` | signed in |
+| `GET` | `/api/roles`, `/api/roles/:id` | `users.list` |
+| `POST` | `/api/roles` | `users.create` |
+| `PUT` | `/api/roles/:id` | `users.update` |
+| `DELETE` | `/api/roles/:id` | `users.delete` |
+| `GET` | `/api/permissions` | `users.list` |
 
-### Exact Permissions Per Preset
-
-#### `admin`
-
-All 48 permissions defined in the system (see [Permissions Reference](../api-reference/configuration/permissions.md)).
-
-#### `devops`
-
-```
-users.list, users.create, users.update, users.read-profile
-projects.list, projects.create, projects.update, projects.delete, projects.read
-deployments.trigger, deployments.terminate, deployments.restart, deployments.scale, deployments.read, deployments.rollback
-databases.provision, databases.backup, databases.restore, databases.delete, databases.create-connection, databases.delete-connection, databases.read
-config.read, config.update, config.delete, config.manage-feature-flags
-secrets.list, secrets.read, secrets.reveal, secrets.create, secrets.update, secrets.delete, secrets.export, secrets.import, secrets.rollback
-alerts.list, alerts.create, alerts.update, alerts.delete
-logs.read, logs.search, metrics.read, metrics.read-rpm
-settings.smtp.read, settings.smtp.manage, settings.storage.read, settings.storage.manage
-cluster.read, cluster.manage, cluster.pods.read, cluster.pods.delete
-cicd.register-webhook, cicd.read
-bootstrap.init, bootstrap.read
-audit.read
-sdk.send-logs, sdk.send-metrics, sdk.send-bug-reports
-auth.login, auth.manage-tokens
-```
-
-#### `tech_lead`
-
-```
-users.list, users.read-profile
-projects.list, projects.create, projects.update, projects.read
-deployments.trigger, deployments.terminate, deployments.read, deployments.rollback
-databases.read
-config.read, config.update, config.manage-feature-flags
-secrets.list, secrets.read, secrets.reveal, secrets.create, secrets.update, secrets.export, secrets.import
-alerts.list, alerts.create, alerts.update
-logs.read, logs.search, metrics.read, metrics.read-rpm
-cicd.read
-audit.read
-auth.login
-```
-
-#### `developer`
-
-```
-users.read-profile
-projects.list, projects.read
-deployments.trigger, deployments.read
-databases.read
-config.read
-alerts.list
-logs.read, metrics.read
-auth.login
-```
-
-#### `viewer`
-
-```
-projects.list, projects.read
-deployments.read
-logs.read
-metrics.read
-auth.login
-```
-
----
-
-## Custom Roles
-
-Custom roles extend the preset system. A user can have **both** a role preset and a custom role — permissions are merged.
-
-### Creating a Role via API
+Create a custom role:
 
 ```http
 POST /api/roles
@@ -152,204 +145,29 @@ Content-Type: application/json
 {
   "name": "database-admin",
   "description": "Can manage all database operations",
-  "permissions": [
-    "databases.provision",
-    "databases.backup",
-    "databases.restore",
-    "databases.delete",
-    "databases.create-connection"
-  ]
+  "permissions": ["databases.provision", "databases.backup", "databases.restore"]
 }
 ```
 
-**Response:**
-
-```json
-{
-  "id": "a1b2c3d4-...",
-  "name": "database-admin",
-  "description": "Can manage all database operations",
-  "permissions": ["databases.provision", "databases.backup", ...],
-  "isSystem": false,
-  "isActive": true,
-  "createdAt": "2025-06-21T12:00:00Z"
-}
-```
-
-### Assigning to a User
+Give it to a user (`role` sets the built-in role, `roleId` links the custom role):
 
 ```http
 PATCH /api/users/:id/role
 Authorization: Bearer <token>
 Content-Type: application/json
 
-{
-  "role": "developer",
-  "roleId": "a1b2c3d4-..."
-}
+{ "role": "developer", "roleId": "a1b2c3d4-..." }
 ```
 
-The `role` field sets the preset (`developer`). The `roleId` field links the custom role. Permission cache is automatically cleared for that user.
+### OIDC endpoints
 
-### Permission Merging
-
-When resolving permissions, the system merges:
-
-1. **Preset permissions** — from `ROLE_PRESETS[user.role]`
-2. **Custom role permissions** — from the `Role` entity linked via `user.roleId`
-
-```typescript
-// platform/api/src/middleware/auth.ts:35-50
-const preset = ROLE_PRESETS[user.role];
-if (preset) { for (const p of preset) perms.add(p); }
-
-if (user.roleId) {
-  const role = await ds.getRepository(Role).findOne({ where: { id: user.roleId } });
-  if (role && role.permissions) { for (const p of role.permissions) perms.add(p); }
-}
-```
-
-The merged set is cached for 60 seconds (see [Permission Cache Invalidation](#permission-cache-invalidation)).
-
-### Viewing a User's Effective Permissions
-
-```http
-GET /api/users/:id/permissions
-Authorization: Bearer <token>
-```
-
-### Editing / Deleting Custom Roles
-
-```http
-PUT    /api/roles/:id     # Update name, description, permissions
-DELETE /api/roles/:id     # Delete (unassigns all users, clears their cache)
-```
-
-> System roles (`isSystem: true`) cannot be modified or deleted.
-
----
-
-## OIDC / SSO
-
-Platform implements a built-in OAuth2 / OpenID Connect provider for single sign-on across services.
-
-### Architecture
-
-```mermaid
-graph LR
-    Browser["Browser (Client)"]
-    Proxy["OAuth2 Proxy<br/>(ingress-auth)"]
-    API["Platform API<br/>/api/oauth/*"]
-    Grafana["Grafana<br/>(OIDC Relying Party)"]
-    Portainer["Portainer<br/>(OIDC Relying Party)"]
-
-    Browser --> Proxy
-    Proxy --> API
-    Proxy --> Grafana
-    Proxy --> Portainer
-```
-
-### OAuth2 Proxy Integration
-
-The deployment includes **oauth2-proxy** as a sidecar for ingress-level authentication. Services that need SSO (Grafana, Portainer) use it as a reverse proxy.
-
-Configuration in `platform-bootstrap/manifests/oauth2-proxy-values.yaml`:
-
-```yaml
-config:
-  clientID: "oauth2-proxy"
-  clientSecret: "<placeholder>"
-  cookieSecret: "<generated>"
-  configFile: |
-    provider = "oidc"
-    oidc_issuer_url = "https://{DOMAIN}/api/oauth"
-    scope = "openid profile email groups"
-    redirect_url = "https://{DOMAIN}/oauth2/callback"
-    cookie_expire = "24h"
-    cookie_refresh = "5m"
-    pass_access_token = true
-    pass_authorization_header = true
-    set_authorization_header = true
-```
-
-### Grafana SSO
-
-Grafana is configured as an OIDC relying party in `platform-bootstrap/manifests/grafana-values.yaml`:
-
-```ini
-[auth.generic_oauth]
-enabled = true
-name = Platform
-allow_sign_up = true
-client_id = grafana
-client_secret = grafana-secret-placeholder
-scopes = openid profile email groups
-auth_url = https://{DOMAIN}/api/oauth/authorize
-token_url = https://{DOMAIN}/api/oauth/token
-api_url = https://{DOMAIN}/api/oauth/userinfo
-role_attribute_path = contains(groups[*], 'Admin') && 'Admin' || contains(groups[*], 'DevOps') && 'Admin' || contains(groups[*], 'Tech Lead') && 'Editor' || 'Viewer'
-```
-
-### Authorization Code Flow
-
-```mermaid
-sequenceDiagram
-    participant Client as Client (Service)
-    participant Provider as Platform OAuth2 Provider
-
-    Client->>Provider: 1. Auth Request
-    Provider-->>Client: 2. Authorization Code
-    Client->>Provider: 3. Token Request (code + secret)
-    Provider-->>Client: 4. Access Token + ID Token
-```
-
-1. **Authorize** — `GET /api/oauth/authorize?client_id=...&redirect_uri=...&response_type=code`
-2. **Code grant** — User authenticates via Portal, receives temporary authorization code (5-min TTL)
-3. **Token exchange** — `POST /api/oauth/token` with `code`, `client_id`, `redirect_uri`, `grant_type=authorization_code`
-4. **Tokens returned** — Access Token (RS256, 1h), ID Token (RS256, with `sub`, `email`, `groups`, `roles`)
-
-### JWKS Endpoint
-
-```http
-GET /api/oauth/jwks
-```
-
-Returns the RSA public key in JWK format for token verification by relying parties.
-
-### OpenID Configuration
-
-```http
-GET /api/oauth/.well-known/openid-configuration
-```
-
-Returns standard OIDC discovery document.
-
----
-
-## Permission Cache Invalidation
-
-Permissions are cached in-memory with a **60-second TTL** to reduce database load.
-
-```typescript
-// platform/api/src/middleware/auth.ts:10
-const PERMISSION_CACHE_TTL_MS = 60_000;
-```
-
-### Cache Clearing Triggers
-
-| Action | Cache Effect | Code Location |
+| Method | Path | Purpose |
 |---|---|---|
-| `PATCH /users/:id/role` | Clears cache for that user | `auth.ts:322` — `clearPermissionCache(id)` |
-| `PUT /roles/:id` | Clears cache for all users with that custom role | `auth.ts:435-436` |
-| `DELETE /roles/:id` | Clears cache for all affected users | `auth.ts:470` |
-| API restart | Entire cache cleared | In-memory map is recreated |
+| `GET` | `/api/oauth/.well-known/openid-configuration` | Discovery document |
+| `GET` | `/api/oauth/jwks` | Public signing keys |
+| `GET` | `/api/oauth/authorize` | Start sign-in (`client_id`, `redirect_uri`, `response_type=code`) |
+| `POST` | `/api/oauth/token` | Exchange the code (`grant_type=authorization_code`) |
+| `GET` | `/api/oauth/userinfo` | User info for an access token |
+| `POST` | `/api/oauth/signing-key/rotate` | Rotate the signing key (admin) |
 
-### Manual Cache Clear
-
-```typescript
-import { clearPermissionCache } from '../middleware/auth';
-clearPermissionCache();          // Clear ALL caches
-clearPermissionCache(userId);    // Clear single user's cache
-```
-
-> The permission cache is process-local. In multi-replica deployments, cache invalidation is per-instance. A future enhancement should use Redis for distributed caching.
+After a key rotation the previous key stays in the key list, so tokens it signed keep working until they expire.

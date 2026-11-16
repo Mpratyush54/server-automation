@@ -27,6 +27,8 @@ const mongo = new MongoManager(config?: MongoConfig);
 |---|---|---|
 | `uri` | `PLATFORM_MONGO_URI` | `mongodb://localhost:27017/platform` |
 
+On Cairn's `ha` profile the issued URI lists all three replica set members and `replicaSet=rs0`; the driver finds the primary and follows elections without a restart.
+
 ---
 
 ## Methods
@@ -61,7 +63,7 @@ Closes the Mongoose connection.
 
 ## Auto-connect via `PlatformClient`
 
-When `databases: ['mongo']` is passed to `init()`, credentials are fetched automatically from the Platform API (`GET /api/sdk/db-credentials`), and the manager is available at `client.db.mongo` immediately after `init()` resolves.
+When `databases: ['mongo']` is passed to `init()`, credentials are fetched automatically from the Cairn API (`GET /api/sdk/db-credentials`), and the manager is available at `client.db.mongo` immediately after `init()` resolves.
 
 ---
 

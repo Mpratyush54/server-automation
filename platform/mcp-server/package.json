@@ -5,11 +5,13 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
+    "sync-shared": "node scripts/sync-shared.mjs",
+    "prebuild": "node scripts/sync-shared.mjs",
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsc && node dist/index.js",
+    "dev": "npm run build && node dist/index.js",
     "smoke": "node scripts/smoke.mjs",
-    "test": "tsc && node --test test/security.test.mjs"
+    "test": "npm run build && node --test test/security.test.mjs"
   },
   "engines": {
     "node": ">=18"

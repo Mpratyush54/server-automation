@@ -10,7 +10,7 @@ const mode = process.argv[2];
 
 async function createProject(auth, label) {
   const name = `e2e-obs-${label}-${Date.now().toString(36)}`;
-  const r = await request(`${apiUrl()}/api/projects`, { method: 'POST', headers: auth, body: { name, stack: 'nodejs', domain: domain(), description: 'e2e observability scoping', repositoryUrl: 'https://github.com/Mpratyush54/server-automation' } });
+  const r = await request(`${apiUrl()}/api/projects`, { method: 'POST', headers: auth, body: { name, stack: 'nodejs', domain: domain(), description: 'e2e observability scoping' } });
   if (!expect(r.status === 201 && r.json?.id, `create project ${label}`, `HTTP ${r.status}`)) return null;
   return r.json.id;
 }

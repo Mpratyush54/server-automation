@@ -6,6 +6,10 @@ import * as k8s from '@kubernetes/client-node';
 import { PassThrough } from 'stream';
 import { deploymentRestartAnnotationsPatch, deploymentRestartJsonPatch } from './deployment-restart-patch';
 import { loadKubeConfig } from './kube-config';
+import { buildNodeResourceMetrics, type NodeResourceMetrics } from './node-metrics';
+
+export type { NodeResourceMetrics } from './node-metrics';
+export { parseResourceQuantity, buildNodeResourceMetrics } from './node-metrics';
 
 // ── Kubernetes client (in-cluster when running in a pod, local kubeconfig otherwise) ──
 function makeKubeConfig(): k8s.KubeConfig {
@@ -55,6 +59,30 @@ export async function getK8sNodes(): Promise<any[]> {
   } catch (err: any) {
     console.warn(`[k8s] getK8sNodes failed: ${err.message}`);
     return [];
+  }
+}
+
+/**
+ * Live node CPU/memory from metrics.k8s.io (metrics-server) plus allocatable capacity.
+ * Returns metricsAvailable=false and an empty list when the metrics API is missing — never invents data.
+ */
+export async function getK8sNodeMetrics(
+  deps?: {
+    listNodes?: () => Promise<{ items?: any[] }>;
+    getNodeMetrics?: () => Promise<{ items?: any[] }>;
+  },
+): Promise<{ metricsAvailable: boolean; nodes: NodeResourceMetrics[] }> {
+  try {
+    const listNodes = deps?.listNodes ?? (() => coreApi.listNode());
+    const getNodeMetrics = deps?.getNodeMetrics ?? (() => new k8s.Metrics(kc).getNodeMetrics());
+    const [nodeRes, metricsRes] = await Promise.all([listNodes(), getNodeMetrics()]);
+    return {
+      metricsAvailable: true,
+      nodes: buildNodeResourceMetrics(nodeRes.items || [], metricsRes.items || []),
+    };
+  } catch (err: any) {
+    console.warn(`[k8s] getK8sNodeMetrics failed: ${err.message}`);
+    return { metricsAvailable: false, nodes: [] };
   }
 }
 
@@ -190,6 +218,8 @@ export async function deployK8sPreview(
               name: 'web',
               image,
               env: releaseEnv(release),
+              resources: { requests: { cpu: '100m', memory: '128Mi' }, limits: { cpu: '500m', memory: '512Mi' } },
+              readinessProbe: { tcpSocket: { port: 80 }, periodSeconds: 2, failureThreshold: 30 },
               securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } },
               ports: [{ containerPort: 80 }],
             }],
@@ -645,12 +675,13 @@ export function previewResourceName(projectId: string, branch: string): string {
   return `preview-${createHash('sha256').update(projectId).digest('hex').slice(0, 16)}-${createHash('sha256').update(branch).digest('hex').slice(0, 16)}`;
 }
 
-export async function operateProjectWorkloads(namespace: string, appName: string, operation: 'restart' | 'scale' | 'terminate', replicas?: number): Promise<void> {
+export async function operateProjectWorkloads(namespace: string, appName: string, operation: 'restart' | 'scale' | 'terminate', replicas?: number, sourceBuild = false): Promise<void> {
   if (!namespace || ['default', 'platform', 'kube-system', 'preview'].includes(namespace)) throw new Error('Dedicated project namespace required');
   const response: any = await appsApi.listNamespacedDeployment({ namespace });
-  const deployments = (response.body || response).items || [];
+  const allDeployments = (response.body || response).items || [];
+  const deployments = sourceBuild ? allDeployments.filter((d: any) => d.metadata?.name === appName) : allDeployments;
   if (!deployments.length) throw new Error('No deployments found in project namespace');
-  if (operation === 'scale') {
+  if (operation === 'scale' && !sourceBuild) {
     const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
     const response: any = await customApi.getNamespacedCustomObject({ group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd', plural: 'applications', name: appName });
     const app = response.body || response;
@@ -661,7 +692,7 @@ export async function operateProjectWorkloads(namespace: string, appName: string
     app.spec.syncPolicy.syncOptions = Array.from(new Set([...(app.spec.syncPolicy.syncOptions || []), 'RespectIgnoreDifferences=true']));
     await customApi.replaceNamespacedCustomObject({ group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd', plural: 'applications', name: appName, body: app });
   }
-  if (operation === 'terminate') {
+  if (operation === 'terminate' && !sourceBuild) {
     const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
     // Delete the reconciler first so it cannot recreate the terminated workloads.
     await customApi.deleteNamespacedCustomObject({ group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd', plural: 'applications', name: appName });

@@ -23,13 +23,14 @@ config)
   fi
   ;;
 postgres)
-  p=$(pod postgresql)
-  kubectl -n databases exec "$p" -- bash -ec "$PWHELPER"'
+  p=$(pg_pod)
+  pg_container=$(pg_container "$p")
+  kubectl -n databases exec "$p" -c "$pg_container" -- bash -ec "$PWHELPER"'
     export PGPASSWORD="$(pw POSTGRES_PASSWORD)"
     pg_dumpall -U postgres --globals-only
   ' > "$dest/globals.sql"
   # Database names are data, never interpolated into shell source or filenames.
-  kubectl -n databases exec "$p" -- bash -ec "$PWHELPER"'
+  kubectl -n databases exec "$p" -c "$pg_container" -- bash -ec "$PWHELPER"'
     export PGPASSWORD="$(pw POSTGRES_PASSWORD)"
     work=$(mktemp -d); trap '\''rm -rf "$work"'\'' EXIT
     psql -U postgres -At -0 -c "SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname" > "$work/names"
@@ -42,13 +43,13 @@ postgres)
   ' > "$dest/databases.tar"
   ;;
 mongo)
-  p=$(pod mongodb)
+  p=$(mongo_pod)
   kubectl -n databases exec "$p" -- bash -ec "$PWHELPER"'
-    mongodump --username root --password "$(pw MONGODB_ROOT_PASSWORD)" --authenticationDatabase admin --archive --gzip' > "$dest/mongo.archive.gz"
+    mongodump --username root "--password=$(pw MONGODB_ROOT_PASSWORD)" --authenticationDatabase admin --archive --gzip' > "$dest/mongo.archive.gz"
   ;;
 redis)
-  p=$(kubectl -n databases get pods -l 'app.kubernetes.io/instance=redis,app.kubernetes.io/component=master' -o jsonpath='{.items[0].metadata.name}')
-  kubectl -n databases exec "$p" -- bash -ec "$PWHELPER"'
+  p=$(redis_master_pod)
+  kubectl -n databases exec "$p" -c redis -- bash -ec "$PWHELPER"'
     export REDISCLI_AUTH="$(pw REDIS_PASSWORD)"
     result=$(redis-cli BGSAVE)
     case "$result" in "Background saving started"|"Background saving already in progress"*) ;; *) echo "Redis BGSAVE failed" >&2;exit 1;; esac
@@ -65,23 +66,18 @@ redis)
   ' > "$dest/dump.rdb"
   ;;
 minio)
-  # The SOURCE alias is distinct from the backup target.
-  minio_source
-  mkdir "$dest/objects"
-  mc ls --json "$MINIO_SRC/" | jq -r 'select(.type == "folder") | .key' > "$dest/buckets"
-  while IFS= read -r bucket; do
-    bucket=${bucket%/}
-    [ "$bucket" != platform-backups ] || continue
-    case "$bucket" in ''|*[!a-z0-9.-]*|.|..) echo 'Invalid source bucket' >&2;exit 1;; esac
-    mkdir "$dest/objects/$bucket"
-    mc mirror "$MINIO_SRC/$bucket/" "$dest/objects/$bucket/"
-  done < "$dest/buckets"
+  # MinIO file capture runs in platformctl (built-in S3 client), not this script.
+  echo 'minio capture is handled by platformctl' >&2
+  exit 1
   ;;
 k3s)
   cp /var/lib/rancher/k3s/server/token "$dest/server-token"
   cp /etc/rancher/k3s/k3s.yaml "$dest/k3s.yaml"
   if [ -d /var/lib/rancher/k3s/server/db/etcd ]; then
     # Use a unique private snapshot directory; do not collect stale snapshots.
+    # The k3s server writes the snapshot and refuses a directory that does not
+    # exist yet (found on the 3-node ha test).
+    mkdir -p "$dest/etcd"
     k3s etcd-snapshot save --name platform-backup --etcd-snapshot-dir "$dest/etcd"
     printf 'etcd\n' > "$dest/datastore"
   else

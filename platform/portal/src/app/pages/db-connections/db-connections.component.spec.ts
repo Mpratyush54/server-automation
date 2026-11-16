@@ -4,6 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { DbConnectionsComponent } from './db-connections.component';
 import { ApiService } from '../../services/api.service';
 import { of } from 'rxjs';
+import { DialogService } from '../../shared/feedback/feedback.service';
 
 describe('DbConnectionsComponent', () => {
   let apiService: jasmine.SpyObj<ApiService>;
@@ -54,7 +55,7 @@ describe('DbConnectionsComponent', () => {
   });
 
   it('should delete a connection', async () => {
-    spyOn(window, 'confirm').and.returnValue(true);
+    const confirm = spyOn(TestBed.inject(DialogService), 'confirm').and.resolveTo(true);
     apiService.deleteDbConnection.and.returnValue(of({}));
 
     const fixture = TestBed.createComponent(DbConnectionsComponent);
@@ -62,11 +63,12 @@ describe('DbConnectionsComponent', () => {
 
     await fixture.componentInstance.delete('c1');
 
+    expect(confirm).toHaveBeenCalledWith(jasmine.objectContaining({ danger: true }));
     expect(fixture.componentInstance.connections.length).toBe(0);
   });
 
   it('should not delete when confirmation cancelled', async () => {
-    spyOn(window, 'confirm').and.returnValue(false);
+    spyOn(TestBed.inject(DialogService), 'confirm').and.resolveTo(false);
 
     const fixture = TestBed.createComponent(DbConnectionsComponent);
     fixture.componentInstance.connections = [{ id: 'c1' }];

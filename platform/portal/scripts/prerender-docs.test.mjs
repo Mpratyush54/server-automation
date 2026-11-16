@@ -28,3 +28,34 @@ test('prerendered docs are sanitized like the SPA', async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('prerendered docs get their own title, description, canonical, social tags and breadcrumbs', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'prerender-docs-'));
+  try {
+    const docsDir = join(root, 'docs');
+    const outputDir = join(root, 'out');
+    await mkdir(join(docsDir, 'guides'), { recursive: true });
+    await mkdir(outputDir, { recursive: true });
+    await writeFile(join(outputDir, 'index.html'), '<html><head><title>x</title><meta name="description" content="default"><link rel="canonical" href="https://platform.pratyushes.dev/"></head><body><app-root></app-root></body></html>');
+    await writeFile(join(docsDir, 'index.md'), '# Docs home\n\nStart here.\n');
+    await writeFile(join(docsDir, 'guides.md'), '# Guides\n\nTask guides.\n');
+    await writeFile(join(docsDir, 'guides', 'backups.md'), '# Back up "data"\n\nRun:\n\n```bash\nplatformctl backup\n```\n\nThis page helps you back up every database in a project and restore it later, on one server or many, without stopping your app.\n');
+    const pages = await prerenderDocs({ docsDir, outputDir });
+    assert.deepEqual(pages.map(url => new URL(url).pathname), ['/docs/guides', '/docs/guides/backups', '/docs']);
+    const html = await readFile(join(outputDir, 'prerender', 'docs', 'guides', 'backups', 'index.html'), 'utf8');
+    assert.match(html, /<title>Back up &quot;data&quot; \| Cairn Docs<\/title>/);
+    assert.match(html, /<meta name="description" content="This page helps you back up every database in a project and restore it later, on one server or many, without stopping your app\.">/);
+    assert.equal([...html.matchAll(/<meta name="description"/g)].length, 1);
+    assert.match(html, /<link rel="canonical" href="https:\/\/platform\.pratyushes\.dev\/docs\/guides\/backups">/);
+    assert.match(html, /<meta property="og:type" content="article">/);
+    assert.match(html, /<meta name="twitter:title" content="Back up &quot;data&quot; \| Cairn Docs">/);
+    const jsonLd = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(match => JSON.parse(match[1]));
+    const breadcrumbs = jsonLd.find(item => item['@type'] === 'BreadcrumbList');
+    assert.deepEqual(breadcrumbs.itemListElement.map(item => item.name), ['Cairn', 'Documentation', 'Guides', 'Back up "data"']);
+    assert.match(html, /<nav aria-label="Breadcrumb"><a href="\/">Cairn<\/a> \/ <a href="\/docs">Documentation<\/a> \/ <a href="\/docs\/guides">Guides<\/a><\/nav>/);
+    const sitemap = await readFile(join(outputDir, 'sitemap.xml'), 'utf8');
+    assert.match(sitemap, /<loc>https:\/\/platform\.pratyushes\.dev\/about<\/loc>/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

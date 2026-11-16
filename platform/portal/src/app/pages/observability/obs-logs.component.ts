@@ -17,45 +17,48 @@ export interface LogEntry { ts: string; line: string; labels: Record<string, str
   imports: [CommonModule, FormsModule],
   styleUrls: ['./obs-theme.css'],
   styles: [`
-    .lines { font-family: var(--font-code, ui-monospace, monospace); font-size: 0.78rem; max-height: 560px; overflow: auto; border: 1px solid var(--obs-border); border-radius: 6px; }
-    .line { display: grid; grid-template-columns: 160px 1fr auto; gap: 8px; padding: 3px 8px; border-bottom: 1px solid var(--obs-border); }
+    .lines { font-family: var(--font-code, ui-monospace, monospace); font-size: 0.8125rem; max-height: 560px; overflow: auto; border: 1px solid var(--obs-border); border-radius: 8px; }
+    .line { display: grid; grid-template-columns: 170px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 6px 12px; }
+    .line + .line { border-top: 1px solid var(--obs-border); }
     .line:hover { background: var(--obs-hover); }
-    .ts { color: var(--obs-muted); white-space: nowrap; }
+    @media (max-width: 640px) { .line { grid-template-columns: minmax(0, 1fr) auto; } .ts { grid-column: 1 / -1; } }
+    .ts { color: var(--obs-faint); white-space: nowrap; }
     .msg { white-space: pre-wrap; overflow-wrap: anywhere; }
     .lvl-error .msg { color: var(--obs-bad); }
     .lvl-warn .msg { color: var(--obs-warn); }
-    .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 8px; }
-    .filters label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--obs-muted); }
-    textarea { width: 100%; min-height: 54px; box-sizing: border-box; }
+    .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; }
+    .filters .obs-field input, .filters .obs-field select { width: 100%; min-width: 0; }
+    textarea { width: 100%; min-height: 56px; box-sizing: border-box; }
+    .logs-actions { margin-bottom: 16px; }
   `],
   template: `
-    <div class="obs-row" style="margin-bottom:8px">
+    <div class="obs-mode">
       <label><input type="radio" name="logmode" value="filters" [(ngModel)]="mode"> Filters</label>
-      <label><input type="radio" name="logmode" value="logql" [(ngModel)]="mode"> LogQL</label>
-      <span class="obs-faint">Queries are always limited to this project.</span>
+      <label><input type="radio" name="logmode" value="logql" [(ngModel)]="mode"> Query (LogQL)</label>
+      <span class="obs-faint">Only this project's logs are searched.</span>
     </div>
     @if (mode === 'filters') {
       <div class="filters">
-        <label>Service <input class="obs-input" [(ngModel)]="service" placeholder="any"></label>
-        <label>Level <select class="obs-select" [(ngModel)]="level"><option value="">any</option><option>error</option><option>warn</option><option>info</option><option>debug</option></select></label>
-        <label>Contains <input class="obs-input" [(ngModel)]="search" placeholder="text"></label>
-        <label>Trace id <input class="obs-input code" [(ngModel)]="traceIdFilter" placeholder="32 hex chars"></label>
+        <label class="obs-field">Service <input class="obs-input" [(ngModel)]="service" placeholder="any"></label>
+        <label class="obs-field">Level <select class="obs-select" [(ngModel)]="level"><option value="">Any</option><option value="error">Error</option><option value="warn">Warning</option><option value="info">Info</option><option value="debug">Debug</option></select></label>
+        <label class="obs-field">Contains <input class="obs-input" [(ngModel)]="search" placeholder="text"></label>
+        <label class="obs-field">Trace ID <input class="obs-input code" [(ngModel)]="traceIdFilter" placeholder="32 hex chars"></label>
       </div>
     } @else {
       <textarea class="obs-input" [(ngModel)]="query" aria-label="LogQL query" placeholder='{service_name="api"} |= "error"'></textarea>
     }
-    <div class="obs-row" style="margin:8px 0">
-      <button class="obs-btn primary" (click)="run()" [disabled]="loading">Run</button>
-      <label class="obs-row" style="gap:4px"><input type="checkbox" [(ngModel)]="live" (ngModelChange)="toggleLive()"> Live tail</label>
+    <div class="obs-actions logs-actions">
+      <button type="button" class="obs-btn primary" (click)="run()" [disabled]="loading">Run query</button>
+      <label><input type="checkbox" [(ngModel)]="live" (ngModelChange)="toggleLive()"> Live tail</label>
       @if (truncated) { <span class="obs-faint">Showing the newest {{ entries.length }} lines</span> }
     </div>
-    @if (error) { <div class="obs-banner error" role="alert">{{ error }}</div> }
-    @if (rangeNote) { <div class="obs-banner" role="status">{{ rangeNote }}</div> }
+    @if (error) { <div class="obs-banner error inset" role="alert">{{ error }}</div> }
+    @if (rangeNote) { <div class="obs-banner inset" role="status">{{ rangeNote }}</div> }
     @if (metricResult) {
-      <div class="obs-banner">This LogQL is a metric query ({{ metricResult.length }} series). Use the APM or Overview tabs for charts.</div>
+      <div class="obs-banner inset">This query returns numbers ({{ metricResult.length }} series), not log lines. See the charts on the other tabs.</div>
     }
     @if (!loading && !entries.length && !error && ran && !metricResult) {
-      <div class="obs-empty"><strong>No log lines</strong>Nothing matched in this time range.</div>
+      <div class="obs-empty"><strong>No log lines</strong>Nothing matched in this time range. Try a longer range or fewer filters.</div>
     }
     @if (entries.length) {
       <div class="lines" role="log" aria-label="Log lines">
@@ -63,7 +66,7 @@ export interface LogEntry { ts: string; line: string; labels: Record<string, str
           <div class="line" [class]="'line lvl-' + levelOf(e)">
             <span class="ts">{{ time(e.ts) | date: 'MMM d, HH:mm:ss.SSS' }}</span>
             <span class="msg"><span class="obs-faint">{{ e.labels['service_name'] || '' }}</span> {{ e.line }}</span>
-            <span>@if (e.traceId) { <button class="obs-btn" style="padding:0 6px" (click)="openTrace.emit(e.traceId)" [title]="'Open trace ' + e.traceId">Trace</button> }</span>
+            <span>@if (e.traceId) { <button type="button" class="obs-btn sm" (click)="openTrace.emit(e.traceId)" [title]="'Open trace ' + e.traceId">Trace</button> }</span>
           </div>
         }
       </div>

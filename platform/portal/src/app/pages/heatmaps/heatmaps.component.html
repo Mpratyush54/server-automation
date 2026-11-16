@@ -1,104 +1,135 @@
-<div class="hm-head">
-  <div>
-    <a [routerLink]="['/projects', projectId]" class="back">← Project</a>
-    <h1 class="page-title">Heatmaps</h1>
-    <p class="muted">Where visitors click and how far they scroll, per page. Anonymous aggregates from the browser SDK (<code>rum.heatmaps</code>); click positions are relative to the full document.</p>
+@if (!embedded) {
+  <a [routerLink]="['/projects', projectId]" class="hm-back">Back to project</a>
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Heatmaps</h1>
+      <p class="page-subtitle">Where visitors click and how far they scroll on each page. No personal data is kept.</p>
+    </div>
   </div>
-</div>
+} @else {
+  <div class="hm-embed-head">
+    <h2>Heatmaps</h2>
+    <p>Where visitors click and how far they scroll on each page.</p>
+  </div>
+}
 
-@if (error) { <div class="banner banner-error" role="alert">{{ error }}</div> }
+@if (error) { <div class="hm-banner" role="alert">{{ error }}</div> }
 
-<div class="toolbar">
-  <div class="seg" role="group" aria-label="Viewport">
+<div class="hm-toolbar">
+  <div class="hm-seg" role="group" aria-label="Viewport">
     @for (v of viewports; track v) {
-      <button type="button" class="btn btn-sm" [class.btn-primary]="viewport === v" (click)="setViewport(v)">{{ v }}</button>
+      <button type="button" [class.on]="viewport === v" [attr.aria-pressed]="viewport === v" (click)="setViewport(v)">{{ v }}</button>
     }
   </div>
-  <div class="seg" role="group" aria-label="Date range">
+  <div class="hm-seg" role="group" aria-label="Date range">
     @for (d of ranges; track d) {
-      <button type="button" class="btn btn-sm" [class.btn-primary]="rangeDays === d" (click)="setRange(d)">{{ d === 1 ? 'Today' : d + ' days' }}</button>
+      <button type="button" [class.on]="rangeDays === d" [attr.aria-pressed]="rangeDays === d" (click)="setRange(d)">{{ d === 1 ? 'Today' : d + ' days' }}</button>
     }
   </div>
-  <label class="session">Replay session
-    <input [(ngModel)]="replaySession" placeholder="auto" maxlength="128" (keyup.enter)="useSession()">
-  </label>
+  <details class="hm-adv">
+    <summary>Advanced</summary>
+    <label class="hm-session">
+      <span>Page picture from session</span>
+      <input [(ngModel)]="replaySession" placeholder="Automatic" maxlength="128" (keyup.enter)="useSession()">
+    </label>
+  </details>
 </div>
 
-<div class="layout">
-  <aside class="card pages">
-    <h2>Pages</h2>
+<div class="hm-layout">
+  <aside class="card card-flush hm-pages" aria-labelledby="hm-pages-title">
+    <div class="card-header">
+      <h2 id="hm-pages-title">Pages</h2>
+      @if (pages.length) { <span class="badge">{{ pages.length }}</span> }
+    </div>
     @if (!pages.length) {
-      <p class="muted empty">No heatmap data in this range. Enable <code>heatmaps: true</code> in the SDK's <code>rum</code> options.</p>
+      <p class="hm-empty">No clicks recorded in this range. To start collecting, set <code>heatmaps: true</code> in the browser SDK's <code>rum</code> options. <a href="https://platform.pratyushes.dev/docs/guides/heatmaps" target="_blank" rel="noopener">Learn more</a></p>
     }
     <ul>
       @for (p of pages; track p.page) {
         <li [class.active]="p.page === page">
-          <button type="button" class="row" (click)="selectPage(p.page)" [title]="p.page">
-            <span class="name">{{ p.page }}</span>
-            <span class="counts muted">{{ p.clicks }} clicks · {{ p.views }} views</span>
+          <button type="button" class="hm-row" (click)="selectPage(p.page)" [title]="p.page" [attr.aria-current]="p.page === page ? 'true' : null">
+            <span class="hm-name">{{ p.page }}</span>
+            <span class="hm-counts">{{ p.clicks }} clicks · {{ p.views }} views</span>
           </button>
         </li>
       }
     </ul>
   </aside>
 
-  <section class="main">
+  <div class="hm-main">
     @if (page) {
-      <div class="card">
-        <div class="detail-head">
-          <h2>{{ page }}</h2>
-          <span class="muted">
+      <section class="card card-flush" aria-labelledby="hm-page-title">
+        <div class="card-header">
+          <h2 id="hm-page-title" class="mono hm-page">{{ page }}</h2>
+          <span class="hm-meta">
             {{ click?.total || 0 }} clicks · {{ scroll?.views || 0 }} page views
             @if (loading) { · loading… }
           </span>
         </div>
-        @if (backgroundNote) { <p class="hint">{{ backgroundNote }}</p> }
-        <div class="stage-wrap">
-          <div #stage class="stage" [class.grid-bg]="background === 'grid'">
-            @if (background === 'snapshot') {
-              <!-- Read-only page snapshot from session replay: no scripts, no forms, CSP-restricted. -->
-              <iframe #frame class="snapshot" sandbox="allow-same-origin" referrerpolicy="no-referrer" title="Page snapshot" tabindex="-1" aria-hidden="true"></iframe>
-            }
-            <canvas #heat class="heat" role="img" [attr.aria-label]="'Click heatmap for ' + page"></canvas>
+        <div class="hm-body">
+          @if (backgroundNote) { <p class="hm-hint">{{ backgroundNote }}</p> }
+          <div class="hm-stage-wrap">
+            <div #stage class="stage" [class.grid-bg]="background === 'grid'">
+              @if (background === 'snapshot') {
+                <!-- Read-only page snapshot from session replay: no scripts, no forms, CSP-restricted. -->
+                <iframe #frame class="snapshot" sandbox="allow-same-origin" referrerpolicy="no-referrer" title="Page snapshot" tabindex="-1" aria-hidden="true"></iframe>
+              }
+              <canvas #heat class="heat" role="img" [attr.aria-label]="'Click heatmap for ' + page"></canvas>
+            </div>
           </div>
+          <div class="hm-legend" aria-hidden="true"><span>Fewer clicks</span><span class="hm-ramp"></span><span>More clicks</span></div>
         </div>
-        <div class="legend" aria-hidden="true"><span>fewer clicks</span><span class="ramp"></span><span>more clicks</span></div>
-      </div>
+      </section>
 
-      <div class="cols">
-        <div class="card">
-          <h2>Scroll depth</h2>
-          <p class="hint">Share of page views that reached each depth of the page.</p>
+      <div class="hm-cols">
+        <section class="card card-flush" aria-labelledby="hm-scroll-title">
+          <div class="card-header">
+            <h2 id="hm-scroll-title">Scroll depth</h2>
+          </div>
+          <div class="hm-body">
+            <p class="hm-hint">Share of page views that reached each depth of the page.</p>
+            @if (scroll?.views) {
+              <svg class="chart hm-chart" viewBox="0 0 100 50" preserveAspectRatio="none" role="img" aria-label="Scroll depth reach chart">
+                @for (b of bars; track b.depth) {
+                  <rect [attr.x]="b.x" [attr.y]="50 - b.height / 2" [attr.width]="b.width" [attr.height]="b.height / 2" class="hm-bar">
+                    <title>{{ b.depth }}% of page: {{ b.pct }}% of views</title>
+                  </rect>
+                }
+              </svg>
+              <div class="hm-axis"><span>Top</span><span>50%</span><span>Bottom</span></div>
+            } @else {
+              <p class="hm-none">No scroll data for this page yet.</p>
+            }
+          </div>
           @if (scroll?.views) {
-            <svg class="chart" viewBox="0 0 100 50" preserveAspectRatio="none" role="img" aria-label="Scroll depth reach chart">
-              @for (b of bars; track b.depth) {
-                <rect [attr.x]="b.x" [attr.y]="50 - b.height / 2" [attr.width]="b.width" [attr.height]="b.height / 2" class="bar">
-                  <title>{{ b.depth }}% of page: {{ b.pct }}% of views</title>
-                </rect>
-              }
-            </svg>
-            <div class="axis muted"><span>top</span><span>50%</span><span>bottom</span></div>
-            <div class="table-scroll"><table class="reach">
-              <tr><th>Reached 25%</th><th>50%</th><th>75%</th><th>100%</th></tr>
-              <tr><td>{{ pct(reachAt(25)) }}</td><td>{{ pct(reachAt(50)) }}</td><td>{{ pct(reachAt(75)) }}</td><td>{{ pct(reachAt(100)) }}</td></tr>
+            <div class="table-scroll"><table class="hm-reach">
+              <thead><tr><th>Reached 25%</th><th>50%</th><th>75%</th><th>100%</th></tr></thead>
+              <tbody><tr><td>{{ pct(reachAt(25)) }}</td><td>{{ pct(reachAt(50)) }}</td><td>{{ pct(reachAt(75)) }}</td><td>{{ pct(reachAt(100)) }}</td></tr></tbody>
             </table></div>
-          } @else {
-            <p class="muted">No scroll data for this page yet.</p>
           }
-        </div>
-        <div class="card">
-          <h2>Most clicked elements</h2>
+        </section>
+        <section class="card card-flush" aria-labelledby="hm-targets-title">
+          <div class="card-header">
+            <h2 id="hm-targets-title">Most clicked elements</h2>
+          </div>
           @if (click?.topTargets?.length) {
-            <div class="table-scroll"><table class="targets">
-              @for (t of click!.topTargets; track t.selector) {
-                <tr><td><code>{{ t.selector }}</code></td><td class="num">{{ t.count }}</td></tr>
-              }
+            <div class="table-scroll"><table>
+              <thead><tr><th>Element</th><th class="hm-num">Clicks</th></tr></thead>
+              <tbody>
+                @for (t of click!.topTargets; track t.selector) {
+                  <tr><td><code class="hm-selector">{{ t.selector }}</code></td><td class="hm-num">{{ t.count }}</td></tr>
+                }
+              </tbody>
             </table></div>
           } @else {
-            <p class="muted">No element data yet.</p>
+            <p class="hm-none hm-pad">No element data yet.</p>
           }
-        </div>
+        </section>
       </div>
+    } @else if (pages.length) {
+      <section class="card">
+        <p class="empty-state">Choose a page on the left to see where people click.</p>
+      </section>
     }
-  </section>
+  </div>
 </div>

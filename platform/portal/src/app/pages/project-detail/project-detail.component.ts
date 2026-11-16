@@ -1,3 +1,4 @@
+import { BuildsPanelComponent } from './builds-panel.component';
 import { DatabaseInsightsPanelComponent } from './database-insights-panel.component';
 import { ReleasesPanelComponent } from './releases-panel.component';
 import { AfterViewInit, Component, ElementRef, OnInit, OnDestroy, ViewChild, inject } from '@angular/core';
@@ -5,20 +6,40 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AutoscalingComponent } from './autoscaling.component';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { ArgocdPanelComponent } from './argocd-panel.component';
 import { OperationProgressComponent } from '../../shared/operation-progress.component';
 import { EnvironmentTabComponent } from './environment-tab/environment-tab.component';
-import { PrivacyTabComponent } from './privacy-tab/privacy-tab.component';
 import { TopologyGraphComponent } from './topology/topology-graph.component';
+import { ProjectOverviewComponent } from './project-overview.component';
+import { ProjectSettingsSectionComponent } from './project-settings-section.component';
+import {
+  PROJECT_SECTIONS, ProjectSection, StatusView, anchorForTab, currentDeployment, deploymentStatus,
+  monitoringViewForTab, projectStatus, sectionForTab, statusClass,
+} from './project-sections';
+import { ObsProjectComponent } from '../observability/obs-project.component';
+import { MONITORING_VIEWS, MonitoringView, VIEW_OBS_TABS, isMonitoringView } from '../observability/monitoring-views';
+import { ErrorsComponent } from '../errors/errors.component';
+import { ReplaysComponent } from '../replays/replays.component';
+import { HeatmapsComponent } from '../heatmaps/heatmaps.component';
+import { SyntheticsComponent } from '../synthetics/synthetics.component';
+import { StatusPageEditorComponent } from '../status-page/status-page-editor.component';
+import { ProjectAgentsComponent } from './project-agents.component';
+import { ProjectUsageComponent } from './project-usage.component';
+import { ToastService, DialogService, errorText } from '../../shared/feedback/feedback.service';
+
+/** Query params that belong to a monitoring view; cleared when leaving it. */
+const MONITORING_PARAMS = ['view', 'issue', 'check', 'trace', 'logTrace', 'service'] as const;
 
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [DatabaseInsightsPanelComponent, ReleasesPanelComponent, CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, PrivacyTabComponent, TopologyGraphComponent, ArgocdPanelComponent],
+  imports: [AutoscalingComponent, BuildsPanelComponent, DatabaseInsightsPanelComponent, ReleasesPanelComponent, CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent, ArgocdPanelComponent, ProjectOverviewComponent, ProjectSettingsSectionComponent,
+    ObsProjectComponent, ErrorsComponent, ReplaysComponent, HeatmapsComponent, SyntheticsComponent, StatusPageEditorComponent, ProjectAgentsComponent, ProjectUsageComponent],
   templateUrl: './project-detail.component.html',
-  styleUrl: './project-detail.component.css'
+  styleUrls: ['./project-section-shared.css', './project-detail.component.css']
 })
 export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit {
   project: any;
@@ -30,10 +51,25 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
   storageAnalytics: any = { totalBytes: 0, count: 0, providerBreakdown: {} };
   dbConnections: any[] = [];
 
-  activeTab = 'deployments';
+  /** Current section (#185); kept in `?tab=` so links and reloads land on it. */
+  section: ProjectSection = 'overview';
+  readonly sections = PROJECT_SECTIONS;
+  readonly statusClass = statusClass;
+  /** True once the first fetch finished (distinguishes "loading" from "not found"). */
+  loaded = false;
+  readonly storageQuotaBytes = 1024 * 1024 * 1024;
   @ViewChild('tabBar') private tabBar?: ElementRef<HTMLElement>;
-  /** #48: the Observability page replaces Metrics / API Latency / Logs when telemetry is installed. */
+  private pendingAnchor: string | null = null;
+  /** #48: full telemetry profile installed (traces, Loki logs, infra, profiles, RUM). */
   observabilityEnabled = false;
+  /** The observability status call has answered (avoids flashing the "needs full profile" notice). */
+  observabilityChecked = false;
+  /** Monitoring section view; kept in `?view=` (the page owns `?tab=`). */
+  monitoringView: MonitoringView = 'overview';
+  readonly monitoringViews = MONITORING_VIEWS;
+  readonly viewObsTabs = VIEW_OBS_TABS;
+  /** Error issue to open in the Errors view (from the overview list or `?issue=`). */
+  monitoringIssue = '';
   role = 'devops';
 
   // SDK Tokens
@@ -92,27 +128,73 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
 
   private router = inject(Router);
 
+  private toast = inject(ToastService);
+  private dialog = inject(DialogService);
+
   constructor(private route: ActivatedRoute, private api: ApiService, private auth: AuthService) {}
 
-  /** ?tab= deep link; the old Config/Secrets tabs were merged into Environment (#29). */
+  /**
+   * ?tab= deep link. Pre-#185 tab names (and the #29 config/secrets aliases) map
+   * onto the new sections; the URL is rewritten to the canonical section id and
+   * the page scrolls to the panel the old tab pointed at.
+   */
   private applyTabParam() {
-    const tab = this.route.snapshot?.queryParamMap?.get('tab');
+    const qp = this.route.snapshot?.queryParamMap;
+    const tab = qp?.get('tab');
     if (!tab) return;
-    if (tab === 'config' || tab === 'secrets') {
-      this.activeTab = 'environment';
-      this.router.navigate([], { relativeTo: this.route, queryParams: { tab: 'environment' }, queryParamsHandling: 'merge', replaceUrl: true });
-      return;
+    this.section = sectionForTab(tab);
+    this.pendingAnchor = anchorForTab(tab);
+    const view = qp?.get('view');
+    const legacyView = monitoringViewForTab(tab);
+    if (isMonitoringView(view)) this.monitoringView = view;
+    else if (legacyView && isMonitoringView(legacyView)) this.monitoringView = legacyView;
+    this.monitoringIssue = qp?.get('issue') || '';
+    if (tab !== this.section) this.writeTabParam(this.section, legacyView ? { view: this.monitoringView } : {});
+  }
+
+  private writeTabParam(section: ProjectSection, extra: Record<string, string | null> = {}) {
+    this.router.navigate([], { relativeTo: this.route, queryParams: { tab: section, ...extra }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  /** Switch the Monitoring view; `writeUrl` false when the URL was already written (embedded panel links). */
+  switchMonitoringView(view: MonitoringView, writeUrl = true, extra: Record<string, string> = {}) {
+    this.monitoringIssue = view === 'errors' ? extra['issue'] || '' : '';
+    const changed = view !== this.monitoringView;
+    this.monitoringView = view;
+    if ((changed || Object.keys(extra).length) && writeUrl) {
+      const cleared = Object.fromEntries(MONITORING_PARAMS.map((k) => [k, null]));
+      this.router.navigate([], { relativeTo: this.route, queryParams: { ...cleared, view, ...extra }, queryParamsHandling: 'merge', replaceUrl: true });
     }
-    this.activeTab = tab;
+    void this.loadMonitoringData();
+  }
+
+  /** Overview "Recent errors": open one issue (or the whole list) in the Errors view. */
+  openErrorIssue(id: string | null) {
+    this.switchMonitoringView('errors', true, id ? { issue: id } : {});
+  }
+
+  /** SDK data the current Monitoring view shows (heartbeats always; API latency and logs without full telemetry). */
+  loadMonitoringData(): Promise<unknown> {
+    const v = this.monitoringView;
+    const jobs: Promise<unknown>[] = [];
+    if (v === 'resources') jobs.push(this.loadMetrics());
+    if (v === 'traces' && !this.observabilityEnabled) jobs.push(this.loadApiMetrics());
+    if (v === 'logs' && !this.observabilityEnabled) jobs.push(this.loadLogs());
+    return Promise.all(jobs);
   }
 
   async ngOnInit() {
     this.role = (this.auth.getRole() || 'developer').toLowerCase();
     this.canManageAccess = this.role === 'admin' || this.role === 'devops' || this.auth.canManageUsers?.() === true;
     this.applyTabParam();
-    this.api.getObservabilityStatus?.()?.subscribe({ next: (s: any) => { this.observabilityEnabled = !!s?.enabled; }, error: () => {} });
+    this.api.getObservabilityStatus?.()?.subscribe({
+      next: (s: any) => { this.observabilityEnabled = !!s?.enabled; this.observabilityChecked = true; },
+      error: () => { this.observabilityChecked = true; },
+    });
 
     await this.fetchData();
+    if (this.section === 'monitoring') await this.loadMonitoringData();
+    if (this.section === 'data') await this.loadBackups();
     this.refreshTimer = setInterval(() => this.pollData(), 5000);
   }
 
@@ -145,6 +227,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
     await this.loadK8sPods();
     await this.loadArgoStatus();
     await this.loadMembers();
+    this.loaded = true;
   }
 
   async loadMembers() {
@@ -183,33 +266,41 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
     if (!this.project?.id) return;
     try {
       await firstValueFrom(this.api.updateProjectMember(this.project.id, m.id, role));
+      this.toast.ok('Role changed');
       await this.loadMembers();
     } catch (err: any) {
-      alert(err.error?.error || err.message);
+      this.toast.error('Role was not changed: ' + errorText(err));
       await this.loadMembers();
     }
   }
 
   async revokeMember(m: any) {
     if (!this.project?.id) return;
-    if (!confirm(`Revoke project access for ${m.user?.email || m.userId}?`)) return;
+    const who = m.user?.email || m.userId;
+    const ok = await this.dialog.confirm({
+      title: `Remove ${who} from this project?`,
+      message: 'They lose access to this project right away. You can add them again later.',
+      confirmLabel: 'Remove access',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.removeProjectMember(this.project.id, m.id));
+      this.toast.ok(`Access removed for ${who}`);
       await this.loadMembers();
     } catch (err: any) {
-      alert(err.error?.error || err.message);
+      this.toast.error('Access was not removed: ' + errorText(err));
     }
   }
 
   async pollData() {
-    if (this.activeTab === 'deployments' || this.hasInFlightDeploy()) {
+    const s = this.section;
+    if (s === 'overview' || s === 'deployments' || this.hasInFlightDeploy()) {
       await this.loadDeployments();
     }
-    if (this.activeTab === 'logs') await this.loadLogs();
-    if (this.activeTab === 'metrics') await this.loadMetrics();
-    if (this.activeTab === 'api-metrics') await this.loadApiMetrics();
-    if (this.activeTab === 'databases') await this.loadBackups();
-    if (this.activeTab === 'gitops') {
+    if (s === 'monitoring') await this.loadMonitoringData();
+    if (s === 'data') await this.loadBackups();
+    if (s === 'deployments') {
       await this.loadK8sPods();
       await this.loadArgoStatus();
     }
@@ -236,9 +327,9 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
         domain: this.project?.domain || '',
       };
       await this.loadGitInfo();
-      alert('Project settings saved.');
+      this.toast.ok('Project settings saved');
     } catch (err: any) {
-      alert('Failed to save settings: ' + (err.error?.error || err.message));
+      this.toast.error('Project settings were not saved: ' + errorText(err));
     } finally {
       this.savingSettings = false;
     }
@@ -399,7 +490,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
 
   async deploy() {
     if (!this.project?.repositoryUrl && !this.projectSettings.repositoryUrl) {
-      alert('Set a Git repository URL on this project first (Project Settings below), then Pull from Git & Deploy.');
+      this.toast.warn('Add a Git repository URL under Configuration, Git and domain, then deploy.');
       return;
     }
     if (!this.project.repositoryUrl && this.projectSettings.repositoryUrl) {
@@ -407,7 +498,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
     }
     const selectedEnv = this.project?.environments?.find((e: any) => e.id === this.deployDto.environmentId);
     if (this.role === 'developer' && selectedEnv?.name === 'production') {
-      alert('Developers are not authorized to deploy directly to production.');
+      this.toast.warn('Developers cannot deploy to production. Ask a tech lead or DevOps to deploy it.');
       return;
     }
     this.deployInProgress = true;
@@ -425,9 +516,9 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
       const started: any = await firstValueFrom(this.api.deploy(payload));
       this.deployOperationId = started?.operationId || null;
       await this.loadDeployments();
-      this.activeTab = 'deployments';
+      this.section = 'deployments';
     } catch (err: any) {
-      alert('Deploy failed: ' + (err.error?.error || err.message));
+      this.toast.error('Deployment did not start: ' + errorText(err));
     } finally {
       this.deployInProgress = false;
     }
@@ -438,7 +529,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
       await firstValueFrom(this.api.rollback({ deploymentId: depId }));
       await this.loadDeployments();
     } catch (err: any) {
-      alert('Rollback failed: ' + (err.error?.error || err.message));
+      this.toast.error('Rollback did not start: ' + errorText(err));
     }
   }
 
@@ -446,19 +537,26 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
     try {
       await firstValueFrom(this.api.restartDeployment(depId));
       await this.loadDeployments();
-      alert('Restart initiated');
+      this.toast.ok('Restart started');
     } catch (err: any) {
-      alert('Failed: ' + (err.error?.error || err.message));
+      this.toast.error('Restart did not start: ' + errorText(err));
     }
   }
 
   async deleteFile(fileId: string) {
-    if (!confirm('Delete this file?')) return;
+    const ok = await this.dialog.confirm({
+      title: 'Delete this file?',
+      message: 'The file is removed from storage. This cannot be undone.',
+      confirmLabel: 'Delete file',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.deleteFile(fileId));
+      this.toast.ok('File deleted');
       await this.loadFiles();
     } catch (err: any) {
-      alert('Failed: ' + (err.error?.error || err.message));
+      this.toast.error('File was not deleted: ' + errorText(err));
     }
   }
 
@@ -479,17 +577,25 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
       this.newKeyKind = 'server';
       await this.loadTokens();
     } catch (err: any) {
-      alert('Failed to generate SDK token: ' + (err.error?.error || err.message));
+      this.toast.error('SDK key was not created: ' + errorText(err));
     }
   }
 
   async revokeToken(tokenId: string) {
-    if (!this.project || !confirm('Are you sure you want to revoke this SDK token? The SDK will lose access immediately.')) return;
+    if (!this.project) return;
+    const ok = await this.dialog.confirm({
+      title: 'Revoke this SDK key?',
+      message: 'Apps using it stop sending data right away. This cannot be undone; create a new key to restore access.',
+      confirmLabel: 'Revoke key',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.deleteProjectToken(this.project.id, tokenId));
+      this.toast.ok('SDK key revoked');
       await this.loadTokens();
     } catch (err: any) {
-      alert('Failed to revoke token: ' + (err.error?.error || err.message));
+      this.toast.error('SDK key was not revoked: ' + errorText(err));
     }
   }
 
@@ -503,7 +609,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
     try {
       const res = await firstValueFrom(this.api.getPods());
       this.k8sConnected = res.k8sConnected;
-      const allPods = res.pods || [];
+      const allPods = res.k8sConnected ? res.pods || [] : [];
       const projNameLower = this.project.name.toLowerCase();
       this.pods = allPods.filter((pod: any) => 
         pod.name.toLowerCase().includes(projNameLower) || 
@@ -593,22 +699,31 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
   }
 
   async restartPod(pod: any) {
-    if (!confirm(`Are you sure you want to terminate and restart pod "${pod.name}" in namespace "${pod.namespace}"?`)) {
-      return;
-    }
+    const ok = await this.dialog.confirm({
+      title: `Restart pod ${pod.name}?`,
+      message: `The pod is deleted in namespace ${pod.namespace} and its controller starts a new one. Requests to it fail until the new pod is ready.`,
+      confirmLabel: 'Restart pod',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.deletePod(pod.namespace, pod.name));
-      alert(`Pod deletion command sent. Pod will be restarted by the deployment controller.`);
+      this.toast.ok('Pod restarted. Its controller is starting a new one.');
       await this.loadK8sPods();
     } catch (err: any) {
-      alert(`Failed to restart pod: ${err.error?.error || err.message}`);
+      this.toast.error('Pod was not restarted: ' + errorText(err));
     }
   }
 
   // Databases Methods
   async provisionDb(environment: string) {
     if (!this.project) return;
-    if (!confirm(`This will create a new isolated PostgreSQL database for "${this.project.name}" in ${environment}. Continue?`)) return;
+    const ok = await this.dialog.confirm({
+      title: `Create a PostgreSQL database for ${environment}?`,
+      message: `Cairn creates a new, isolated database for ${this.project.name} in ${environment} and shows its credentials once.`,
+      confirmLabel: 'Create database',
+    });
+    if (!ok) return;
     this.provisioningDb = true;
     this.provisionedCreds = null;
     try {
@@ -616,7 +731,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
       this.provisionedCreds = res;
       await this.loadDbConnections();
     } catch (err: any) {
-      alert('Database provisioning failed: ' + (err.error?.error || err.message));
+      this.toast.error('Database was not created: ' + errorText(err));
     } finally {
       this.provisioningDb = false;
     }
@@ -637,17 +752,22 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
 
   async triggerBackup() {
     if (!this.project || !this.backupDbName.trim()) {
-      alert('Please enter a database name to backup.');
+      this.toast.warn('Enter the name of the database to back up.');
       return;
     }
-    if (!confirm(`Backup "${this.backupDbName}"? This may take a while depending on database size.`)) return;
+    const ok = await this.dialog.confirm({
+      title: `Back up ${this.backupDbName}?`,
+      message: 'The backup runs in the background and can take a while for large databases. The app keeps running.',
+      confirmLabel: 'Start backup',
+    });
+    if (!ok) return;
     this.backupInProgress = true;
     try {
       await firstValueFrom(this.api.triggerBackup(this.project.id, this.backupDbName));
-      alert('Backup started! Refresh the list in a minute to check status.');
+      this.toast.ok('Backup started. It appears in the list when it finishes.');
       setTimeout(() => this.loadBackups(), 3000);
     } catch (err: any) {
-      alert('Backup failed: ' + (err.error?.error || err.message));
+      this.toast.error('Backup did not start: ' + errorText(err));
     } finally {
       this.backupInProgress = false;
     }
@@ -655,13 +775,19 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
 
   async restoreBackup(backup: any) {
     if (!this.project) return;
-    if (!confirm(`Restore "${backup.dbName}" from backup created at ${new Date(backup.createdAt).toLocaleString()}? This will OVERWRITE the current database contents.`)) return;
+    const ok = await this.dialog.confirm({
+      title: `Restore ${backup.dbName} from this backup?`,
+      message: `The current contents of ${backup.dbName} are replaced with the backup from ${new Date(backup.createdAt).toLocaleString()}. Changes made since then are lost.`,
+      confirmLabel: 'Restore backup',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.restoreBackup(this.project.id, 'db', backup.id));
-      alert('Restore started! Check the backup status in a moment.');
+      this.toast.ok('Restore started');
       setTimeout(() => this.loadBackups(), 3000);
     } catch (err: any) {
-      alert('Restore failed: ' + (err.error?.error || err.message));
+      this.toast.error('Restore did not start: ' + errorText(err));
     }
   }
 
@@ -675,9 +801,9 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
       };
       await firstValueFrom(this.api.createDbConnection(payload));
       await this.loadDbConnections();
-      alert('Database connection configured successfully!');
+      this.toast.ok('Database connection added');
     } catch (err: any) {
-      alert('Failed to configure database: ' + (err.error?.error || err.message));
+      this.toast.error('Database connection was not added: ' + errorText(err));
     }
   }
 
@@ -685,27 +811,89 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
     this.testingDbId = id;
     try {
       const res = await firstValueFrom(this.api.testDbConnection(id));
-      alert(`Connection test passed!\nStatus: ${res.status}\nLatency: ${res.latencyMs}ms`);
+      this.toast.ok(`Connection works: ${res.status}, ${res.latencyMs} ms`);
       await this.loadDbConnections();
     } catch (err: any) {
-      alert('Connection test failed: ' + (err.error?.error || err.message));
+      this.toast.error('Connection test failed: ' + errorText(err));
     } finally {
       this.testingDbId = '';
     }
   }
 
   async deleteDbConnection(id: string) {
-    if (!confirm('Are you sure you want to delete/disconnect this database connection?')) return;
+    const ok = await this.dialog.confirm({
+      title: 'Disconnect this database?',
+      message: 'The saved connection is removed from this project. The database and its data are not deleted.',
+      confirmLabel: 'Disconnect database',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.deleteDbConnection(id));
+      this.toast.ok('Database disconnected');
       await this.loadDbConnections();
     } catch (err: any) {
-      alert('Failed to delete connection: ' + (err.error?.error || err.message));
+      this.toast.error('Database was not disconnected: ' + errorText(err));
     }
   }
 
   ngAfterViewInit() {
     this.scrollActiveTabIntoView();
+    if (this.pendingAnchor) {
+      const anchor = this.pendingAnchor;
+      this.pendingAnchor = null;
+      this.scrollToAnchor(anchor);
+    }
+  }
+
+  get projectStatusView(): StatusView {
+    return projectStatus(this.project);
+  }
+
+  depStatus(status: string): StatusView {
+    return deploymentStatus(status);
+  }
+
+  /** Newest live deployment for an environment (else the newest attempt). */
+  envCurrent(environmentId: string): any | null {
+    return currentDeployment(this.deployments, environmentId);
+  }
+
+  get appUrl(): string | null {
+    const d = String(this.project?.domain || '').trim();
+    if (!d) return null;
+    return /^https?:\/\//.test(d) ? d : `https://${d}`;
+  }
+
+  get repoHref(): string | null {
+    const url = String(this.project?.repositoryUrl || '').trim();
+    return /^https?:\/\//.test(url) ? url.replace(/\.git$/, '') : null;
+  }
+
+  /** `owner/repo` for the header line, or the URL without the scheme. */
+  get repoLabel(): string {
+    const href = this.repoHref || '';
+    return href.replace(/^https?:\/\/(www\.)?(github\.com|gitlab\.com)\//, '').replace(/^https?:\/\//, '');
+  }
+
+  dbTypeLabel(t: string): string {
+    const map: Record<string, string> = { postgres: 'PostgreSQL', mongo: 'MongoDB', redis: 'Redis', mysql: 'MySQL' };
+    return map[String(t || '').toLowerCase()] || String(t || 'Unknown');
+  }
+
+  /** Header "Deploy": open the Deployments section and bring the deploy form into view. */
+  openDeployForm() {
+    this.switchSection('deployments');
+    this.scrollToAnchor('deploy-form', true);
+  }
+
+  private scrollToAnchor(id: string, focus = false) {
+    setTimeout(() => {
+      const el = typeof document !== 'undefined' ? document.getElementById(id) : null;
+      if (!el) return;
+      el.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+      if (focus) el.querySelector<HTMLElement>('select, input')?.focus({ preventScroll: true });
+    });
   }
 
   /** SDK token create: API allows platform admin, devops and tech_lead. */
@@ -722,27 +910,33 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
   scrollActiveTabIntoView() {
     setTimeout(() => {
       const bar = this.tabBar?.nativeElement;
-      const active = bar?.querySelector<HTMLElement>('.btn-primary');
+      const active = bar?.querySelector<HTMLElement>('.active');
       if (!bar || !active) return;
-      const left = active.offsetLeft; // .pd-tabs is position:relative (the offsetParent)
+      const left = active.offsetLeft; // .subnav is position:relative here (the offsetParent)
       const right = left + active.offsetWidth;
       if (left < bar.scrollLeft) bar.scrollLeft = Math.max(0, left - 16);
       else if (right > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = right - bar.clientWidth + 16;
     });
   }
 
-  switchTab(tab: string) {
-    this.activeTab = tab;
+  switchSection(section: ProjectSection) {
+    const changed = section !== this.section;
+    const leavingMonitoring = changed && this.section === 'monitoring';
+    this.section = section;
+    if (changed) {
+      const extra: Record<string, string | null> = leavingMonitoring ? Object.fromEntries(MONITORING_PARAMS.map((k) => [k, null])) : {};
+      if (section === 'monitoring') extra['view'] = this.monitoringView;
+      this.writeTabParam(section, extra);
+    }
     this.scrollActiveTabIntoView();
-    if (tab === 'api-metrics') this.loadApiMetrics();
-    if (tab === 'metrics') this.loadMetrics();
-    if (tab === 'deployments') this.loadDeployments();
-    if (tab === 'logs') this.loadLogs();
-    if (tab === 'access') this.loadMembers();
-    if (tab === 'gitops') {
+    if (section === 'overview' || section === 'deployments') this.loadDeployments();
+    if (section === 'deployments') {
       this.loadK8sPods();
       this.loadArgoStatus();
     }
+    if (section === 'monitoring') this.loadMonitoringData();
+    if (section === 'data') this.loadBackups();
+    if (section === 'settings') this.loadMembers();
   }
 
   formatBytes(bytes: number): string {

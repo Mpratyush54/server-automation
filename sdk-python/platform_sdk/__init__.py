@@ -105,11 +105,17 @@ class PlatformClient:
             if isinstance(redis_credentials, dict) and not provisioning_error:
                 redis_config = {
                     key: redis_credentials[key]
-                    for key in ("host", "port", "username", "password", "db", "url", "ssl")
+                    for key in ("host", "port", "username", "password", "db", "url", "ssl", "sentinels")
                     if key in redis_credentials
                 }
                 if "keyPrefix" in redis_credentials:
                     redis_config["key_prefix"] = redis_credentials["keyPrefix"]
+                if "masterName" in redis_credentials:
+                    redis_config["master_name"] = redis_credentials["masterName"]
+                if "sentinelUsername" in redis_credentials:
+                    redis_config["sentinel_username"] = redis_credentials["sentinelUsername"]
+                if "sentinelPassword" in redis_credentials:
+                    redis_config["sentinel_password"] = redis_credentials["sentinelPassword"]
             # Always registered so client.db["redis"] exists; helpers no-op while disconnected.
             self._db_connections["redis"] = RedisManager(redis_config or None)
             if provisioning_error:

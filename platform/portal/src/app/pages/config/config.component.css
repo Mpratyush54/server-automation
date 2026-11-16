@@ -1,0 +1,32 @@
+/* Configuration (cf-) */
+
+.cf-values { margin-bottom: 24px; }
+.cf-values h2 { display: inline-flex; align-items: center; gap: 8px; }
+.cf-lookup { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cf-lookup input { width: 220px; height: 32px; }
+@media (max-width: 640px) { .cf-lookup, .cf-lookup input { width: 100%; } }
+.cf-key { font-size: 0.8125rem; }
+.cf-value { overflow-wrap: anywhere; }
+
+.cf-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: 24px;
+  padding: 20px;
+}
+.cf-row + .cf-row { border-top: 1px solid rgb(var(--line)); }
+.cf-label label { display: block; font-size: 0.9375rem; font-weight: 500; color: rgb(var(--fg)); }
+.cf-label p { margin: 4px 0 0; font-size: 0.8125rem; color: rgb(var(--fg-3)); }
+.cf-field { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cf-check { display: inline-flex; align-items: center; gap: 8px; font-size: 0.875rem; color: rgb(var(--fg)); }
+.cf-check input { width: auto; }
+.cf-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 12px 20px;
+  border-top: 1px solid rgb(var(--line));
+  background: rgb(var(--raised) / 0.35);
+}
+@media (max-width: 720px) { .cf-row { grid-template-columns: 1fr; gap: 10px; } }

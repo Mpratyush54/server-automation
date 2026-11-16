@@ -56,58 +56,86 @@ const CONCURRENCY = 4;
   encapsulation: ViewEncapsulation.None,
   styleUrls: ['../../../../node_modules/rrweb-player/dist/style.css'],
   styles: [`
-    app-replay-player { display: block; color: #e4e4e7; }
-    app-replay-player h1 { margin: 8px 0 4px; overflow-wrap: anywhere; }
-    app-replay-player .muted { color: #a1a1aa; font-size: 13px; }
-    app-replay-player .layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; margin-top: 16px; }
-    app-replay-player .stage { flex: 1 1 720px; min-width: 0; max-width: 100%; overflow: hidden; }
-    app-replay-player .stage .rr-player { background: #fff; max-width: 100%; }
-    /* The controller sits on the player's white background: keep its text dark
-       (it otherwise inherits the portal's light text and disappears). */
-    app-replay-player .stage .rr-controller { color: #18181b; max-width: 100%; }
-    app-replay-player .stage .rr-controller__btns { flex-wrap: wrap; row-gap: 4px; }
-    app-replay-player .stage .rr-controller__btns button { color: #3f3f46; }
-    app-replay-player .stage .rr-controller__btns button.active { color: #fff; }
-    app-replay-player .stage .rr-controller__btns button:disabled { color: #a1a1aa; }
-    app-replay-player .stage .switch .label { color: #3f3f46; }
-    app-replay-player aside { flex: 0 1 360px; max-height: 640px; overflow: auto; border: 1px solid #27272a; border-radius: 8px; }
-    app-replay-player aside h2 { font-size: 13px; color: #a1a1aa; margin: 0; padding: 10px 12px; border-bottom: 1px solid #27272a; }
-    app-replay-player .marker { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #18181b; font-size: 12px; }
-    app-replay-player .marker button.seek { background: none; border: 0; color: #93c5fd; cursor: pointer; padding: 0; font-variant-numeric: tabular-nums; }
-    app-replay-player .marker .k-error { color: #f87171; }
-    app-replay-player .marker .k-network { color: #fbbf24; }
-    app-replay-player .marker .k-navigation { color: #60a5fa; }
-    app-replay-player .marker a { color: #a5b4fc; }
-    app-replay-player .label { overflow-wrap: anywhere; }
-    app-replay-player a.btn { background: #18181b; border: 1px solid #3f3f46; color: #e4e4e7; border-radius: 6px; padding: 6px 10px; text-decoration: none; font-size: 13px; }
-    app-replay-player .notice { border: 1px solid #3f3f46; border-radius: 8px; padding: 12px 14px; margin: 12px 0; background: #111; font-size: 13px; }
-    app-replay-player .err { color: #f87171; }
+    app-replay-player { display: block; }
+    app-replay-player .rpp-back { display: inline-block; margin-bottom: 12px; font-size: 0.875rem; color: rgb(var(--fg-2)); text-decoration: none; }
+    app-replay-player .rpp-back:hover { color: rgb(var(--fg)); text-decoration: underline; }
+    app-replay-player .rpp-title { overflow-wrap: anywhere; }
+    app-replay-player .rpp-status { margin: 0 0 16px; font-size: 0.875rem; color: rgb(var(--fg-3)); }
+    app-replay-player .rpp-notice {
+      margin-bottom: 24px;
+      padding: 12px 20px;
+      border: 1px solid rgb(var(--line));
+      border-left: 3px solid rgb(var(--down));
+      border-radius: 10px;
+      background: rgb(var(--surface));
+      font-size: 0.875rem;
+      color: rgb(var(--down));
+    }
+    app-replay-player .rpp-layout { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+    app-replay-player .rpp-stage { flex: 1 1 720px; min-width: 0; max-width: 100%; overflow: hidden; }
+    /* The recording is the user's page and the rrweb controller sits on a white
+       background in both themes: keep its text dark so it stays legible. */
+    app-replay-player .rpp-stage .rr-player { background: #fff; max-width: 100%; }
+    app-replay-player .rpp-stage .rr-controller { color: #18181b; max-width: 100%; }
+    app-replay-player .rpp-stage .rr-controller__btns { flex-wrap: wrap; row-gap: 4px; }
+    app-replay-player .rpp-stage .rr-controller__btns button { color: #3f3f46; }
+    app-replay-player .rpp-stage .rr-controller__btns button.active { color: #fff; }
+    app-replay-player .rpp-stage .rr-controller__btns button:disabled { color: #a1a1aa; }
+    app-replay-player .rpp-stage .switch .label { color: #3f3f46; }
+    app-replay-player .rpp-timeline { flex: 0 1 360px; min-width: 0; max-height: 640px; overflow: auto; }
+    app-replay-player .rpp-marker { display: flex; gap: 8px; padding: 8px 20px; border-bottom: 1px solid rgb(var(--line)); font-size: 0.8125rem; }
+    app-replay-player .rpp-marker:last-child { border-bottom: 0; }
+    app-replay-player .rpp-seek {
+      flex: none;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: rgb(var(--accent-text));
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-size: 0.8125rem;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+    }
+    app-replay-player .rpp-seek:hover { text-decoration: underline; }
+    app-replay-player .rpp-kind { flex: none; color: rgb(var(--fg-2)); }
+    app-replay-player .k-error { color: rgb(var(--down)); }
+    app-replay-player .k-network { color: rgb(var(--warn)); }
+    app-replay-player .k-navigation { color: rgb(var(--info)); }
+    app-replay-player .rpp-label { min-width: 0; overflow-wrap: anywhere; color: rgb(var(--fg)); }
+    app-replay-player .rpp-label a { margin-left: 6px; }
   `],
   template: `
-    <a class="btn" [routerLink]="['/projects', projectId, 'replays']">&larr; Sessions</a>
+    <a class="rpp-back" [routerLink]="['/projects', projectId]" [queryParams]="{ tab: 'monitoring', view: 'users' }">Back to sessions</a>
     @if (detail; as d) {
-      <h1 class="page-title">Session {{ d.session.session_id }}</h1>
-      <p class="muted">
-        {{ d.session.started_at | date:'medium' }} · {{ duration(d.session.duration_ms) }} · {{ d.session.pages.length }} page(s)
-        · {{ browser(d.session.user_agent) }} · user {{ d.session.user_id || 'anonymous' }}
-        @if (d.session.environment) { · {{ d.session.environment }} }
-        @if (d.session.release) { · {{ d.session.release }} }
-      </p>
+      <div class="page-header">
+        <div>
+          <h1 class="page-title rpp-title">Session <span class="mono">{{ d.session.session_id }}</span></h1>
+          <p class="page-subtitle">
+            {{ d.session.started_at | date:'medium' }} · {{ duration(d.session.duration_ms) }} · {{ d.session.pages.length }} {{ d.session.pages.length === 1 ? 'page' : 'pages' }}
+            · {{ browser(d.session.user_agent) }} · user {{ d.session.user_id || 'anonymous' }}
+            @if (d.session.environment) { · {{ d.session.environment }} }
+            @if (d.session.release) { · {{ d.session.release }} }
+          </p>
+        </div>
+      </div>
     }
-    @if (error) { <div class="notice err" role="alert">{{ error }}</div> }
-    @if (loading) { <p class="muted" data-test="loading">Loading recording… {{ progress }}</p> }
-    <div class="layout">
-      <div class="stage"><div #stage data-test="stage"></div></div>
+    @if (error) { <div class="rpp-notice" role="alert">{{ error }}</div> }
+    @if (loading) { <p class="rpp-status" data-test="loading">Loading recording… {{ progress }}</p> }
+    <div class="rpp-layout">
+      <div class="rpp-stage"><div #stage data-test="stage"></div></div>
       @if (markers.length || (detail?.errors?.length ?? 0)) {
-        <aside>
-          <h2>Timeline ({{ markers.length }})</h2>
+        <aside class="card card-flush rpp-timeline" aria-labelledby="rpp-timeline-title">
+          <div class="card-header">
+            <h2 id="rpp-timeline-title">Timeline</h2>
+            <span class="badge">{{ markers.length }}</span>
+          </div>
           @for (m of markers; track $index) {
-            <div class="marker" data-test="marker">
-              <button type="button" class="seek" (click)="seek(m)">{{ offset(m.offsetMs) }}</button>
-              <span [class]="'k-' + m.kind">{{ m.kind }}</span>
-              <span class="label">{{ m.label }}
-                @if (m.issueId) { <a [routerLink]="['/projects', projectId, 'errors']" [queryParams]="{ issue: m.issueId }">issue</a> }
-                @if (m.traceId) { <a [href]="trace(m.traceId)" target="_blank" rel="noopener">trace</a> }
+            <div class="rpp-marker" data-test="marker">
+              <button type="button" class="rpp-seek" (click)="seek(m)">{{ offset(m.offsetMs) }}</button>
+              <span class="rpp-kind" [class]="'rpp-kind k-' + m.kind">{{ m.kind }}</span>
+              <span class="rpp-label">{{ m.label }}
+                @if (m.issueId) { <a [routerLink]="['/projects', projectId]" [queryParams]="{ tab: 'monitoring', view: 'errors', issue: m.issueId }">Issue</a> }
+                @if (m.traceId) { <a [href]="trace(m.traceId)" target="_blank" rel="noopener">Trace</a> }
               </span>
             </div>
           }

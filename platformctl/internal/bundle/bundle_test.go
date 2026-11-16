@@ -106,7 +106,7 @@ func goodEntries() []entry {
 
 func testOpts(t *testing.T) Options {
 	root := t.TempDir()
-	return Options{ImagesDir: filepath.Join(root, "images"), ChartsDir: filepath.Join(root, "charts")}
+	return Options{ImagesDir: filepath.Join(root, "images"), ChartsDir: filepath.Join(root, "charts"), StagingDir: filepath.Join(root, "stack")}
 }
 
 func writeSidecar(t *testing.T, bundle string, sum string) {
@@ -326,5 +326,91 @@ func TestURL(t *testing.T) {
 	want := "https://github.com/Mpratyush54/server-automation/releases/download/v1.0.0/platform-bundle-v1.0.0-arm64.tar.zst"
 	if got := URL("v1.0.0", "arm64"); got != want {
 		t.Fatalf("URL = %s", got)
+	}
+}
+
+func TestOfflineJoinBundle(t *testing.T) {
+	opts := testOpts(t)
+	entries := goodEntries()
+	files := map[string]string{
+		"k3s/k3s":            "binary",
+		"k3s/k3s-install.sh": "#!/bin/sh\n",
+		"helm/helm":          "helm-binary",
+		"packages/ubuntu-22.04/amd64/open-iscsi_1_amd64.deb": "jammy-package",
+		"packages/ubuntu-24.04/arm64/nfs-common_1_arm64.deb": "noble-package",
+		"packages/ubuntu-24.04/arm64/Packages":               "Package: nfs-common\n",
+	}
+	for name, body := range files {
+		entries[0].body += fmt.Sprintf("%s  %s\n", sha(body), name)
+		entries = append(entries, entry{name: name, body: body})
+	}
+	if err := InstallWithOptions(buildBundle(t, t.TempDir(), entries), opts); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range files {
+		dest := filepath.Join(opts.StagingDir, filepath.FromSlash(name))
+		if strings.HasPrefix(name, "k3s/") || name == "helm/helm" {
+			dest = filepath.Join(opts.StagingDir, filepath.Base(name))
+		}
+		assertFile(t, dest, body)
+	}
+	assertFile(t, filepath.Join(opts.ImagesDir, "platform-images-amd64.tar.zst"), "platform-images")
+}
+
+func TestOfflineJoinBundleChecksumFailure(t *testing.T) {
+	opts := testOpts(t)
+	entries := []entry{
+		{name: "SHA256SUMS", body: sha("expected") + "  k3s/k3s\n"},
+		{name: "k3s/k3s", body: "different"},
+	}
+	err := InstallWithOptions(buildBundle(t, t.TempDir(), entries), opts)
+	if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(opts.StagingDir, "k3s")); !os.IsNotExist(err) {
+		t.Fatal("failed bundle left staged binary")
+	}
+}
+
+func TestOfflineJoinBundleRequiresChecksums(t *testing.T) {
+	opts := testOpts(t)
+	entries := []entry{
+		{name: "k3s/k3s", body: "binary"},
+		{name: "helm/helm", body: "helm-binary"},
+		{name: "packages/ubuntu-24.04/amd64/open-iscsi_1_amd64.deb", body: "package"},
+	}
+	err := InstallWithOptions(buildBundle(t, t.TempDir(), entries), opts)
+	if err == nil || !strings.Contains(err.Error(), "needs SHA256SUMS") {
+		t.Fatalf("got %v", err)
+	}
+	for _, f := range []string{"k3s", "helm"} {
+		if _, err := os.Stat(filepath.Join(opts.StagingDir, f)); !os.IsNotExist(err) {
+			t.Fatalf("unverified bundle left a staged %s binary", f)
+		}
+	}
+}
+
+func TestBundleMissingListedFile(t *testing.T) {
+	opts := testOpts(t)
+	entries := goodEntries()
+	entries[0].body += sha("package") + "  packages/ubuntu-22.04/amd64/open-iscsi_1_amd64.deb\n"
+	err := InstallWithOptions(buildBundle(t, t.TempDir(), entries), opts)
+	if err == nil || !strings.Contains(err.Error(), "missing from the archive") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestBundleIgnoresUnknownPackageLayouts(t *testing.T) {
+	opts := testOpts(t)
+	for _, name := range []string{
+		"packages/debian-12/amd64/a.deb",
+		"packages/ubuntu-22.04/riscv64/a.deb",
+		"packages/ubuntu-22.04/amd64/a.sh",
+		"packages/ubuntu-22.04/amd64/sub/a.deb",
+		"k3s/k3s-extra",
+	} {
+		if got := destination(name, opts); got != "" {
+			t.Errorf("destination(%q) = %q", name, got)
+		}
 	}
 }

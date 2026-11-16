@@ -1,0 +1,48 @@
+<div class="sp-backdrop" data-testid="search-backdrop" (click)="search.close()" aria-hidden="true"></div>
+<div class="sp-dialog" role="dialog" aria-modal="true" aria-label="Search">
+  <div class="sp-field">
+    <svg class="sp-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+    <input #input class="sp-input" type="text" data-testid="search-input"
+      role="combobox" aria-autocomplete="list" aria-controls="sp-listbox"
+      [attr.aria-expanded]="flat.length > 0" [attr.aria-activedescendant]="activeId"
+      placeholder="Search projects, pages, docs and actions" autocomplete="off" spellcheck="false"
+      [value]="query" (input)="onInput($any($event.target).value)" (keydown)="onKeydown($event)">
+    <kbd class="sp-esc">Esc</kbd>
+  </div>
+
+  <div class="sp-results" id="sp-listbox" role="listbox" aria-label="Search results">
+    @for (group of groups; track group.id) {
+      <div class="sp-group" role="group" [attr.aria-labelledby]="'sp-group-' + group.id">
+        <div class="sp-group-label" [id]="'sp-group-' + group.id" role="presentation">{{ group.label }}</div>
+        @for (item of group.items; track item.id) {
+          <div class="sp-option" role="option" [id]="optionId(item)" data-testid="search-option"
+            [class.sp-active]="flat.indexOf(item) === activeIndex"
+            [attr.aria-selected]="flat.indexOf(item) === activeIndex"
+            (mousedown)="$event.preventDefault()"
+            (mousemove)="activeIndex = flat.indexOf(item)"
+            (click)="choose(item)">
+            <span class="sp-label">{{ item.label }}</span>
+            @if (item.hint) {
+              <span class="sp-hint">{{ item.hint }}</span>
+            }
+          </div>
+        }
+      </div>
+    }
+    @if (!flat.length) {
+      <p class="sp-empty" role="presentation">
+        @if (query.trim()) {
+          Nothing matches "{{ query }}". Try a project name, a page such as Alerts, or a project and a section, like "shop logs".
+        } @else {
+          Type to search projects, pages, docs and actions. Your recent picks show up here.
+        }
+      </p>
+    }
+  </div>
+
+  <div class="sp-foot" aria-hidden="true">
+    <span><kbd>↑</kbd><kbd>↓</kbd> to move</span>
+    <span><kbd>Enter</kbd> to open</span>
+    <span><kbd>Esc</kbd> to close</span>
+  </div>
+</div>

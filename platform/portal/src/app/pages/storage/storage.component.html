@@ -1,29 +1,63 @@
-<div class="card">
-  <h2>Storage Analytics</h2>
-  <div class="form-group"><label>Project ID</label><input [(ngModel)]="projectId"></div>
-  <button class="btn btn-primary" (click)="loadAnalytics()" [disabled]="!projectId">Load</button>
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Storage</h1>
+    <p class="page-subtitle">Files your projects have uploaded and how much space they use.</p>
+  </div>
 </div>
 
 @if (analytics) {
-  <div class="grid-3">
-    <div class="card"><h2>Total Files</h2><div class="stat">{{ analytics.totalFiles }}</div></div>
-    <div class="card"><h2>Total Size</h2><div class="stat">{{ analytics.totalSize | number }} bytes</div></div>
-    <div class="card"><h2>By Provider</h2>@for (p of analytics.byProvider | keyvalue; track p.key) {
-    <div>{{ p.key }}: {{ p.value }} bytes</div>
-  }</div>
-</div>
+  <section class="card st-stats" aria-label="Storage summary">
+    <div class="st-stat">
+      <span class="st-stat-label">Files</span>
+      <span class="st-stat-value">{{ analytics.totalFiles ?? '—' }}</span>
+    </div>
+    <div class="st-stat">
+      <span class="st-stat-label">Total size</span>
+      <span class="st-stat-value">{{ analytics.totalSize | number }}</span>
+      <span class="st-stat-note">bytes</span>
+    </div>
+    <div class="st-stat">
+      <span class="st-stat-label">By storage service</span>
+      <dl class="facts st-providers">
+        @for (p of analytics.byProvider | keyvalue; track p.key) {
+          <dt>{{ p.key }}</dt><dd>{{ p.value | number }} bytes</dd>
+        } @empty {
+          <dd class="muted">No files yet</dd>
+        }
+      </dl>
+    </div>
+  </section>
 }
 
-<div class="card">
-  <h2>Files</h2>
-  <table>
-    <thead><tr><th>Name</th><th>Bucket</th><th>Provider</th><th>Size</th><th>Date</th></tr></thead>
-    <tbody>
-      @for (f of files; track f) {
-        <tr>
-          <td>{{ f.originalName }}</td><td>{{ f.bucket }}</td><td>{{ f.provider }}</td><td>{{ f.size | number }} B</td><td>{{ f.createdAt | date:'short' }}</td>
-        </tr>
-      }
-    </tbody>
-  </table>
-</div>
+<section class="card card-flush" aria-labelledby="st-files-title">
+  <div class="card-header">
+    <h2 id="st-files-title">Files @if (files.length > 0) { <span class="badge">{{ files.length }}</span> }</h2>
+    <div class="st-lookup">
+      <input id="st-project" class="mono" aria-label="Project ID" placeholder="Project ID" [(ngModel)]="projectId" autocomplete="off" (keyup.enter)="projectId && loadAnalytics()">
+      <button type="button" class="btn btn-sm btn-primary" (click)="loadAnalytics()" [disabled]="!projectId">Show files</button>
+    </div>
+  </div>
+  @if (files.length === 0) {
+    <div class="empty-state">
+      <strong>{{ analytics ? 'No files yet' : 'Choose a project' }}</strong>
+      {{ analytics ? 'Files your app uploads through the SDK show here.' : "Enter a project ID (shown on the project's page) to list the files it stores." }}
+    </div>
+  } @else {
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Name</th><th>Bucket</th><th>Stored in</th><th class="st-right">Size</th><th>Date</th></tr></thead>
+        <tbody>
+          @for (f of files; track f) {
+            <tr>
+              <td class="st-name">{{ f.originalName }}</td>
+              <td class="mono">{{ f.bucket }}</td>
+              <td>{{ f.provider }}</td>
+              <td class="st-right">{{ f.size | number }} B</td>
+              <td class="muted st-nowrap">{{ f.createdAt | date:'short' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>

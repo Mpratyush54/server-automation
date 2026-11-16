@@ -22,7 +22,7 @@ func TestRegistriesYAML(t *testing.T) {
 
 func TestServerConfigAndResolvConf(t *testing.T) {
 	y := ServerConfigYAML()
-	for _, want := range []string{"- traefik", "resolv-conf: " + ResolvConfPath, "secrets-encryption: true"} {
+	for _, want := range []string{"- traefik", "resolv-conf: " + ResolvConfPath, "secrets-encryption: true", "kubelet-arg:\n  - \"pod-max-pids=4096\"\n"} {
 		if !strings.Contains(y, want) {
 			t.Errorf("config.yaml missing %q:\n%s", want, y)
 		}
@@ -30,6 +30,21 @@ func TestServerConfigAndResolvConf(t *testing.T) {
 	r := ResolvConf([]string{"1.1.1.1", "8.8.8.8"})
 	if !strings.Contains(r, "nameserver 1.1.1.1\nnameserver 8.8.8.8\n") {
 		t.Errorf("bad resolv.conf:\n%s", r)
+	}
+}
+
+// Every node, server or agent, limits the processes of each pod.
+func TestEveryNodeLimitsPodPIDs(t *testing.T) {
+	want := "kubelet-arg:\n  - \"pod-max-pids=4096\"\n"
+	for name, cfg := range map[string]string{
+		"single server":  ServerConfigYAML(),
+		"ha server":      RenderServerConfig(ServerOptions{HA: true, ClusterInit: true, TokenFile: "/t"}),
+		"joining server": RenderServerConfig(ServerOptions{HA: true, ServerURL: "https://node:6443", TokenFile: "/t"}),
+		"agent":          RenderAgentConfig(AgentOptions{ServerURL: "https://node:6443", TokenFile: "/t"}),
+	} {
+		if strings.Count(cfg, "kubelet-arg:") != 1 || !strings.Contains(cfg, want) {
+			t.Errorf("%s config does not set pod-max-pids:\n%s", name, cfg)
+		}
 	}
 }
 
@@ -60,20 +75,20 @@ func TestInstallK3sFallsBackToMirror(t *testing.T) {
 	t.Cleanup(func() { installUpstream, installFromMirror = origUp, origMirror })
 
 	mirrored := 0
-	installUpstream = func() error { return errors.New("exit status 22") }
-	installFromMirror = func() error { mirrored++; return nil }
-	if err := installK3s(); err != nil || mirrored != 1 {
+	installUpstream = func(string) error { return errors.New("exit status 22") }
+	installFromMirror = func(string) error { mirrored++; return nil }
+	if err := installK3s(""); err != nil || mirrored != 1 {
 		t.Fatalf("expected mirror install, err=%v mirrored=%d", err, mirrored)
 	}
 
-	installUpstream = func() error { return nil }
-	if err := installK3s(); err != nil || mirrored != 1 {
+	installUpstream = func(string) error { return nil }
+	if err := installK3s(""); err != nil || mirrored != 1 {
 		t.Fatalf("mirror must not be used when upstream works (mirrored=%d)", mirrored)
 	}
 
-	installUpstream = func() error { return errors.New("upstream down") }
-	installFromMirror = func() error { return errors.New("mirror down") }
-	if err := installK3s(); err == nil || !strings.Contains(err.Error(), "upstream down") || !strings.Contains(err.Error(), "mirror down") {
+	installUpstream = func(string) error { return errors.New("upstream down") }
+	installFromMirror = func(string) error { return errors.New("mirror down") }
+	if err := installK3s(""); err == nil || !strings.Contains(err.Error(), "upstream down") || !strings.Contains(err.Error(), "mirror down") {
 		t.Fatalf("expected both causes, got %v", err)
 	}
 	if k3sMirrorFile("amd64") != "k3s" || k3sMirrorFile("arm64") != "k3s-arm64" {
@@ -83,16 +98,18 @@ func TestInstallK3sFallsBackToMirror(t *testing.T) {
 
 func TestInstallK3sPrefersTheStagedStack(t *testing.T) {
 	origUp, origMirror, origStack, origPaths := installUpstream, installFromMirror, installFromStack, stackPaths
-	t.Cleanup(func() { installUpstream, installFromMirror, installFromStack, stackPaths = origUp, origMirror, origStack, origPaths })
+	t.Cleanup(func() {
+		installUpstream, installFromMirror, installFromStack, stackPaths = origUp, origMirror, origStack, origPaths
+	})
 	dir := t.TempDir()
 	stackPaths.Staging = dir
 	calls := []string{}
-	installUpstream = func() error { calls = append(calls, "upstream"); return nil }
-	installFromMirror = func() error { calls = append(calls, "mirror"); return nil }
-	installFromStack = func() error { calls = append(calls, "stack"); return nil }
+	installUpstream = func(string) error { calls = append(calls, "upstream"); return nil }
+	installFromMirror = func(string) error { calls = append(calls, "mirror"); return nil }
+	installFromStack = func(string) error { calls = append(calls, "stack"); return nil }
 
 	// Nothing staged: the normal download.
-	if err := installK3s(); err != nil || strings.Join(calls, ",") != "upstream" {
+	if err := installK3s(""); err != nil || strings.Join(calls, ",") != "upstream" {
 		t.Fatalf("without a stack: calls=%v err=%v", calls, err)
 	}
 	// Staged: no download at all.
@@ -102,13 +119,44 @@ func TestInstallK3sPrefersTheStagedStack(t *testing.T) {
 		}
 	}
 	calls = nil
-	if err := installK3s(); err != nil || strings.Join(calls, ",") != "stack" {
+	if err := installK3s(""); err != nil || strings.Join(calls, ",") != "stack" {
 		t.Fatalf("with a staged stack: calls=%v err=%v", calls, err)
 	}
 	// A failing staged install falls back to the download.
 	calls = nil
-	installFromStack = func() error { calls = append(calls, "stack"); return errors.New("bad binary") }
-	if err := installK3s(); err != nil || strings.Join(calls, ",") != "stack,upstream" {
+	installFromStack = func(string) error { calls = append(calls, "stack"); return errors.New("bad binary") }
+	if err := installK3s(""); err != nil || strings.Join(calls, ",") != "stack,upstream" {
 		t.Fatalf("staged failure must fall back: calls=%v err=%v", calls, err)
+	}
+}
+
+// `provision --bundle` installs the bundle's staged k3s and never downloads,
+// not even when the staged install fails; without a bundle nothing changes.
+func TestInstallServerK3sOffline(t *testing.T) {
+	origUp, origMirror, origStack, origPaths := installUpstream, installFromMirror, installFromStack, stackPaths
+	t.Cleanup(func() {
+		installUpstream, installFromMirror, installFromStack, stackPaths = origUp, origMirror, origStack, origPaths
+	})
+	dir := t.TempDir()
+	stackPaths.Staging = dir
+	calls := []string{}
+	installUpstream = func(string) error { calls = append(calls, "upstream"); return nil }
+	installFromMirror = func(string) error { calls = append(calls, "mirror"); return nil }
+	installFromStack = func(string) error { calls = append(calls, "stack"); return errors.New("bad binary") }
+
+	if err := installServerK3s(true); err == nil || !strings.Contains(err.Error(), "offline provision requires the staged k3s") || len(calls) != 0 {
+		t.Fatalf("nothing staged: calls=%v err=%v", calls, err)
+	}
+	for _, f := range []string{"k3s", "k3s-install.sh"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := installServerK3s(true); err == nil || strings.Join(calls, ",") != "stack" {
+		t.Fatalf("staged failure must not download: calls=%v err=%v", calls, err)
+	}
+	calls = nil
+	if err := installServerK3s(false); err != nil || strings.Join(calls, ",") != "stack,upstream" {
+		t.Fatalf("online: calls=%v err=%v", calls, err)
 	}
 }

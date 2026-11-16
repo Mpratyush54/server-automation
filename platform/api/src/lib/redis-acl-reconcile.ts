@@ -7,9 +7,23 @@
  * /sdk/db-credentials again. This leader job compares `ACL USERS` with the Redis credentials
  * stored in project secrets every 15 s and re-creates missing users with their stored
  * passwords (same key/channel prefix restrictions), so apps recover within seconds of Redis.
+ *
+ * In Sentinel (HA) mode ACLs must be applied on every data node (they are not replicated),
+ * and the plat-sentinel discovery user is kept on every Sentinel.
  */
 import { getDb } from '../config/database';
 import { Secret } from '../entities/Secret';
+import {
+  API_REDIS_USER,
+  buildApiAclSetUserArgs,
+  deriveApiRedisPassword,
+} from './redis';
+import {
+  ensureSentinelUser,
+  forEachRedisDataNode,
+  redisSentinelConfig,
+  type RedisLike,
+} from './redis-endpoint';
 import { buildRedisAclSetUserArgs, decryptStoredSecret } from './project-db-ensure';
 import { registerLeaderJob } from './scheduler';
 
@@ -31,9 +45,9 @@ export interface StoredRedisUser {
 
 async function defaultAdmin(): Promise<RedisAdmin> {
   const { default: Redis } = await import('ioredis');
+  const { redisEndpointOptions } = await import('./redis-endpoint');
   const admin = new Redis({
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    ...redisEndpointOptions({ defaultHost: 'localhost' }),
     username: process.env.REDIS_USERNAME || undefined,
     password: process.env.REDIS_PASSWORD || undefined,
     lazyConnect: true,
@@ -73,41 +87,118 @@ export async function storedRedisUsers(): Promise<StoredRedisUser[]> {
   return out;
 }
 
-export async function reconcileProjectRedisUsers(deps: {
-  admin?: () => Promise<RedisAdmin>;
-  users?: () => Promise<StoredRedisUser[]>;
-  log?: (msg: string) => void;
-} = {}): Promise<{ checked: number; restored: string[] }> {
-  const users = await (deps.users ?? storedRedisUsers)();
-  if (users.length === 0) return { checked: 0, restored: [] };
-  const admin = await (deps.admin ?? defaultAdmin)();
+async function reconcileOnAdmin(
+  admin: RedisAdmin | RedisLike,
+  users: StoredRedisUser[],
+  log: (msg: string) => void,
+  opts: { ensureApiUser?: boolean } = {},
+): Promise<string[]> {
+  const present = new Set((await admin.call('ACL', 'USERS')) as string[]);
+  const platformPassword = process.env.REDIS_PASSWORD || '';
   const restored: string[] = [];
-  try {
-    const present = new Set((await admin.call('ACL', 'USERS')) as string[]);
-    const platformPassword = process.env.REDIS_PASSWORD || '';
-    for (const u of users) {
-      if (present.has(u.username)) continue;
-      // Legacy installs copied the platform password into project secrets: never grant it.
-      if (platformPassword && u.password === platformPassword) continue;
+
+  for (const u of users) {
+    if (present.has(u.username)) continue;
+    // Legacy installs copied the platform password into project secrets: never grant it.
+    if (platformPassword && u.password === platformPassword) continue;
+    try {
+      await admin.call('ACL', ...buildRedisAclSetUserArgs(u.username, u.password, u.keyPrefix));
+      restored.push(u.username);
+    } catch (err: any) {
+      log(`[redis-acl] could not restore ${u.username}: ${err?.message || err}`);
+    }
+  }
+
+  // Ensure the API ACL user exists on this node (unless an external user is configured).
+  if (opts.ensureApiUser && !process.env.REDIS_API_USERNAME && platformPassword) {
+    const apiUser = API_REDIS_USER;
+    if (!present.has(apiUser)) {
       try {
-        await admin.call('ACL', ...buildRedisAclSetUserArgs(u.username, u.password, u.keyPrefix));
-        restored.push(u.username);
+        await admin.call('ACL', ...buildApiAclSetUserArgs(apiUser, deriveApiRedisPassword(platformPassword)));
+        restored.push(apiUser);
       } catch (err: any) {
-        (deps.log ?? console.warn)(`[redis-acl] could not restore ${u.username}: ${err?.message || err}`);
+        log(`[redis-acl] could not restore ${apiUser}: ${err?.message || err}`);
       }
     }
-    if (restored.length > 0) {
-      await Promise.resolve(admin.call('ACL', 'SAVE')).catch(() => undefined); // only with an aclfile
-      (deps.log ?? console.log)(`[redis-acl] re-created ${restored.length} project Redis user(s) missing after a Redis restart`);
-    }
-  } finally {
-    admin.disconnect();
   }
-  return { checked: users.length, restored };
+
+  if (restored.length > 0) {
+    await Promise.resolve(admin.call('ACL', 'SAVE')).catch(() => undefined); // only with an aclfile
+  }
+  return restored;
+}
+
+export async function reconcileProjectRedisUsers(deps: {
+  admin?: () => Promise<RedisAdmin>;
+  /** Multi-node injection: when set, reconcile runs on each provided admin instead of discovering nodes. */
+  nodes?: () => Promise<Array<{ host: string; port: number; role: 'master' | 'replica'; admin: RedisAdmin }>>;
+  users?: () => Promise<StoredRedisUser[]>;
+  log?: (msg: string) => void;
+} = {}): Promise<{ checked: number; restored: string[]; nodes: number }> {
+  const users = await (deps.users ?? storedRedisUsers)();
+  // Existing single-admin injection path (unit tests).
+  if (deps.admin && !deps.nodes) {
+    if (users.length === 0) return { checked: 0, restored: [], nodes: 0 };
+    const admin = await deps.admin();
+    const log = deps.log ?? console.warn;
+    try {
+      const restored = await reconcileOnAdmin(admin, users, log, { ensureApiUser: false });
+      if (restored.length > 0) {
+        (deps.log ?? console.log)(`[redis-acl] re-created ${restored.length} project Redis user(s) missing after a Redis restart`);
+      }
+      return { checked: users.length, restored, nodes: 1 };
+    } finally {
+      admin.disconnect();
+    }
+  }
+
+  if (users.length === 0 && !deps.nodes && !process.env.REDIS_HOST && !process.env.REDIS_SENTINEL_HOSTS) {
+    return { checked: 0, restored: [], nodes: 0 };
+  }
+
+  const log = deps.log ?? console.warn;
+  const restoredSet = new Set<string>();
+  let nodeCount = 0;
+
+  if (deps.nodes) {
+    const nodes = await deps.nodes();
+    nodeCount = nodes.length;
+    for (const node of nodes) {
+      try {
+        const restored = await reconcileOnAdmin(node.admin, users, log, { ensureApiUser: true });
+        restored.forEach((u) => restoredSet.add(u));
+      } finally {
+        node.admin.disconnect();
+      }
+    }
+  } else {
+    const adminPassword = process.env.REDIS_PASSWORD || '';
+    const result = await forEachRedisDataNode(adminPassword, async (client) => {
+      const restored = await reconcileOnAdmin(client, users, log, { ensureApiUser: true });
+      restored.forEach((u) => restoredSet.add(u));
+    });
+    nodeCount = result.ok.length + result.failed.length;
+    for (const f of result.failed) {
+      log(`[redis-acl] node ${f.node}: ${f.error}`);
+    }
+  }
+
+  if (redisSentinelConfig()) {
+    const adminPassword = process.env.REDIS_PASSWORD || '';
+    await ensureSentinelUser(adminPassword).catch((err) => {
+      log(`[redis-acl] sentinel user ensure skipped: ${err?.message || err}`);
+    });
+  }
+
+  const restored = [...restoredSet];
+  if (restored.length > 0) {
+    (deps.log ?? console.log)(`[redis-acl] re-created ${restored.length} Redis user(s) missing after a Redis restart`);
+  }
+  return { checked: users.length, restored, nodes: nodeCount };
 }
 
 export function startRedisAclReconcile(): void {
-  if (!process.env.REDIS_HOST) return; // no Redis configured (dev/tests)
+  if (!process.env.REDIS_HOST && !process.env.REDIS_SENTINEL_HOSTS) return; // no Redis configured (dev/tests)
   registerLeaderJob({
     name: REDIS_ACL_RECONCILE_JOB,
     intervalMs: 15_000,

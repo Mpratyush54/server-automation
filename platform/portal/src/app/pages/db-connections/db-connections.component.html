@@ -1,24 +1,65 @@
-<div class="card">
-  <h2>Register DB Connection</h2>
-  <div class="form-group"><label>Project ID</label><input [(ngModel)]="newConn.projectId"></div>
-  <div class="form-group"><label>DB Type</label><select [(ngModel)]="newConn.dbType"><option value="postgres">PostgreSQL</option><option value="mongo">MongoDB</option><option value="redis">Redis</option></select></div>
-  <div class="form-group"><label>Pool Size</label><input type="number" [(ngModel)]="newConn.poolSize"></div>
-  <button class="btn btn-primary" (click)="create()" [disabled]="!newConn.projectId">Register</button>
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Database connections</h1>
+    <p class="page-subtitle">Database connections your services keep open, and whether each one is healthy.</p>
+  </div>
 </div>
 
-<div class="card">
-  <h2>Database Connections</h2>
-  <table>
-    <thead><tr><th>Project</th><th>Type</th><th>Pool Size</th><th>Status</th><th>Last Heartbeat</th><th></th></tr></thead>
-    <tbody>
-      @for (c of connections; track c) {
-        <tr>
-          <td>{{ c.projectId }}</td><td>{{ c.dbType }}</td><td>{{ c.poolSize }}</td>
-          <td><span class="badge" [class.badge-active]="c.status==='connected'" [class.badge-failed]="c.status==='error'">{{ c.status }}</span></td>
-          <td>{{ c.lastHeartbeat ? (c.lastHeartbeat | date:'short') : 'never' }}</td>
-          <td><button class="btn btn-danger btn-sm" (click)="delete(c.id)">Delete</button></td>
-        </tr>
-      }
-    </tbody>
-  </table>
-</div>
+<section class="card card-flush dc-list" aria-labelledby="dc-list-title">
+  <div class="card-header">
+    <h2 id="dc-list-title">Connections</h2>
+    @if (connections.length > 0) {
+      <span class="badge">{{ connections.length }}</span>
+    }
+  </div>
+  @if (connections.length === 0) {
+    <div class="empty-state">
+      <strong>No connections yet</strong>
+      Register a service's database connection below to watch whether it stays healthy.
+    </div>
+  } @else {
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Project</th><th>Database</th><th class="dc-right">Max open</th><th>Status</th><th>Last check-in</th><th class="dc-right"><span class="dc-sr">Actions</span></th></tr></thead>
+        <tbody>
+          @for (c of connections; track c) {
+            <tr>
+              <td class="mono dc-id">{{ c.projectId }}</td>
+              <td>{{ c.dbType }}</td>
+              <td class="dc-right">{{ c.poolSize }}</td>
+              <td><span class="status" [class.status-ok]="c.status === 'connected'" [class.status-down]="c.status === 'error'">{{ c.status | titlecase }}</span></td>
+              <td class="muted dc-nowrap">{{ c.lastHeartbeat ? (c.lastHeartbeat | date:'short') : 'Never' }}</td>
+              <td class="dc-right"><button type="button" class="btn btn-danger btn-sm" (click)="delete(c.id)">Delete</button></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>
+
+<section class="card card-flush dc-form" aria-labelledby="dc-new-title">
+  <div class="card-header">
+    <h2 id="dc-new-title">Register a connection</h2>
+  </div>
+  <div class="dc-body">
+    <div class="dc-grid">
+      <div class="form-group">
+        <label for="dc-project">Project ID</label>
+        <input id="dc-project" class="mono" [(ngModel)]="newConn.projectId" autocomplete="off">
+        <span class="form-hint">Shown on the project's page.</span>
+      </div>
+      <div class="form-group">
+        <label for="dc-type">Database</label>
+        <select id="dc-type" [(ngModel)]="newConn.dbType"><option value="postgres">PostgreSQL</option><option value="mongo">MongoDB</option><option value="redis">Redis</option></select>
+      </div>
+      <div class="form-group">
+        <label for="dc-pool">Max open connections</label>
+        <input id="dc-pool" type="number" [(ngModel)]="newConn.poolSize">
+      </div>
+    </div>
+  </div>
+  <div class="dc-footer">
+    <button type="button" class="btn btn-primary" (click)="create()" [disabled]="!newConn.projectId">Register connection</button>
+  </div>
+</section>

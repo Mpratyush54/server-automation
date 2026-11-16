@@ -15,6 +15,7 @@ jest.mock('@kubernetes/client-node', () => ({
 jest.mock('../../src/lib/k8s', () => ({
   checkK8sConnection: jest.fn().mockResolvedValue(true),
   getK8sNodes:        jest.fn().mockResolvedValue([]),
+  getK8sNodeMetrics: jest.fn().mockResolvedValue({ metricsAvailable: false, nodes: [] }),
   getK8sNamespaces:   jest.fn().mockResolvedValue([]),
   getK8sPods:         jest.fn().mockResolvedValue([]),
   getPodLogs:         jest.fn().mockResolvedValue(''),

@@ -1,1 +1,63 @@
-/* User management page styling */
+/* Users page. */
+.us-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding: 16px 20px;
+  border-left: 3px solid rgb(var(--down));
+  color: rgb(var(--fg));
+  font-size: 0.875rem;
+}
+
+.us-name { font-weight: 500; white-space: nowrap; }
+.us-sub { margin-top: 2px; font-size: 0.8125rem; color: rgb(var(--fg-3)); }
+.us-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.us-when { white-space: nowrap; color: rgb(var(--fg-2)); }
+.us-right { text-align: right; }
+.us-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Create / edit dialog. */
+.us-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(var(--canvas) / 0.8);
+}
+.us-dialog {
+  width: 100%;
+  max-width: 32rem;
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--line));
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.us-dialog-body { padding: 20px; overflow-y: auto; }
+.us-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+@media (max-width: 480px) { .us-pair { grid-template-columns: minmax(0, 1fr); } }
+.us-check { font-size: 0.875rem; color: rgb(var(--fg-2)); }
+.us-dialog-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 20px;
+  border-top: 1px solid rgb(var(--line));
+}
+
+.us-link { color: rgb(var(--accent-text)); }
+.us-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+.us-adv { margin-top: 16px; }
+.us-adv summary { cursor: pointer; font-size: 0.875rem; font-weight: 500; color: rgb(var(--fg-2)); }
+.us-adv summary:hover { color: rgb(var(--fg)); }
+.us-adv[open] summary { margin-bottom: 10px; }
+.us-adv .form-hint { margin: 0 0 12px; }

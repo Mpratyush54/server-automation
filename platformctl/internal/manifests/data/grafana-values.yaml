@@ -20,7 +20,7 @@ grafana:
       # Server-to-server calls go in-cluster so SSO works before/without a public cert.
       token_url: {{OIDC_INTERNAL}}/token
       api_url: {{OIDC_INTERNAL}}/userinfo
-      role_attribute_path: "contains(groups[*], 'Admin') && 'Admin' || contains(groups[*], 'DevOps') && 'Admin' || contains(groups[*], 'Tech Lead') && 'Editor' || 'Viewer'"
+      role_attribute_path: "contains(groups[*], 'admin') && 'Admin' || contains(groups[*], 'devops') && 'Admin' || contains(groups[*], 'tech_lead') && 'Editor' || 'Viewer'"
   ingress:
     enabled: false
 prometheus-node-exporter:

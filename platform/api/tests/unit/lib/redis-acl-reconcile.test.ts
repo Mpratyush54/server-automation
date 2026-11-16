@@ -27,7 +27,7 @@ afterEach(() => { delete process.env.REDIS_PASSWORD; });
 it('re-creates only the users missing after a Redis restart, with their stored password and prefix', async () => {
   const { admin, calls } = fakeAdmin(['plat_a_dev']);
   const r = await reconcileProjectRedisUsers({ admin: async () => admin, users: async () => [user('a'), user('b')], log: () => undefined });
-  expect(r).toEqual({ checked: 2, restored: ['plat_b_dev'] });
+  expect(r).toEqual({ checked: 2, restored: ['plat_b_dev'], nodes: 1 });
   const setuser = calls.filter((c) => c[1] === 'SETUSER');
   expect(setuser).toHaveLength(1);
   expect(setuser[0]).toEqual(['ACL', 'SETUSER', 'plat_b_dev', 'reset', 'on', '>pw-b-0123456789', '~plat:b:dev:*', '&plat:b:dev:*', '+@all', '-@admin', '-@dangerous']);
@@ -44,6 +44,27 @@ it('never grants the platform Redis password to a project user (legacy copies)',
 
 it('does not connect to Redis when no project has Redis credentials', async () => {
   const admin = jest.fn();
-  expect(await reconcileProjectRedisUsers({ admin, users: async () => [] })).toEqual({ checked: 0, restored: [] });
+  expect(await reconcileProjectRedisUsers({ admin, users: async () => [] })).toEqual({ checked: 0, restored: [], nodes: 0 });
   expect(admin).not.toHaveBeenCalled();
+});
+
+it('Sentinel mode: re-creates missing project and API users on every data node (ACLs are not replicated)', async () => {
+  process.env.REDIS_PASSWORD = 'platform-secret';
+  const master = fakeAdmin(['plat_a_dev', 'plat-api']);
+  const promoted = fakeAdmin([]); // replica restarted without an aclfile
+  const r = await reconcileProjectRedisUsers({
+    users: async () => [user('a')],
+    nodes: async () => [
+      { host: 'redis-node-0', port: 6379, role: 'master', admin: master.admin },
+      { host: 'redis-node-1', port: 6379, role: 'replica', admin: promoted.admin },
+    ],
+    log: () => undefined,
+  });
+  expect(r.nodes).toBe(2);
+  expect(r.restored.sort()).toEqual(['plat-api', 'plat_a_dev']);
+  expect(master.calls.some((c) => c[1] === 'SETUSER')).toBe(false);
+  const created = promoted.calls.filter((c) => c[1] === 'SETUSER').map((c) => c[2]);
+  expect(created.sort()).toEqual(['plat-api', 'plat_a_dev']);
+  expect(master.admin.disconnect).toHaveBeenCalled();
+  expect(promoted.admin.disconnect).toHaveBeenCalled();
 });

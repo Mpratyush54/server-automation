@@ -1,6 +1,6 @@
 # FAQ
 
-**Q: What databases does Platform use?**
+**Q: What databases does Cairn use?**
 
 PostgreSQL (primary — projects, users, permissions, secrets metadata), MongoDB
 (logs, metrics, deployment events, audit trail), Redis (sessions and cache). The
@@ -8,7 +8,7 @@ API provisions all three on-demand for user projects.
 
 ---
 
-**Q: Do I need Kubernetes to use Platform?**
+**Q: Do I need Kubernetes to use Cairn?**
 
 Not for local development — just Postgres, Mongo and Redis (Docker Compose is fine).
 For production, k3s (or any Kubernetes cluster) is required. The bootstrap installs
@@ -18,9 +18,9 @@ k3s automatically.
 
 **Q: How does authentication work?**
 
-Passwordless email-based JWT. Users enter their email and get a token — no password
-prompt anywhere in the flow. In production you can add OIDC/SSO from Settings →
-Authentication, and the Platform ships oauth2-proxy on-cluster so services that
+Users sign in with an email or username and a password, then a two-factor code if
+two-factor is on for their account (admins can require it for everyone). In production you can add OIDC/SSO from Settings →
+Authentication, and Cairn ships oauth2-proxy on-cluster so services that
 don't ship SSO in their OSS build (Portainer, MinIO) can still sit
 behind the same single sign-on.
 
@@ -34,7 +34,7 @@ account down, add an OIDC provider and disable email-only auth in Settings.
 
 ---
 
-**Q: Can I use Platform with my existing Kubernetes cluster?**
+**Q: Can I use Cairn with my existing Kubernetes cluster?**
 
 Yes. Run the bootstrap with `SKIP_K8S=true` — it will use your existing `kubectl`
 context instead of installing k3s.

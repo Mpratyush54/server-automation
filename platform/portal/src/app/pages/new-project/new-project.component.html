@@ -1,0 +1,394 @@
+<div class="page-header">
+  <div>
+    <a routerLink="/projects" class="np-crumb">Projects</a>
+    <h1 class="page-title">New project</h1>
+    <p class="page-subtitle">Set up an app in a few steps: its code, environments, databases, settings and team. Only the name is required.</p>
+  </div>
+</div>
+
+@if (phase === 'edit') {
+  <div class="np-layout">
+    <!-- Step list (desktop) -->
+    <nav class="np-steps" aria-label="Steps">
+      <ol>
+        @for (s of steps; track s.id; let i = $index) {
+          <li>
+            <button type="button" class="np-step" [ngClass]="'np-step-' + stepState(i)"
+              [attr.aria-current]="i === step ? 'step' : null" [disabled]="!canVisit(i)" (click)="goTo(i)"
+              [attr.data-testid]="'np-step-' + s.id">
+              <span class="np-step-mark" aria-hidden="true">
+                @if (stepState(i) === 'done') {
+                  <svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"></path></svg>
+                } @else { {{ i + 1 }} }
+              </span>
+              <span class="np-step-text">
+                <span>{{ s.label }}</span>
+                @if (s.optional) { <span class="np-step-opt">Optional</span> }
+              </span>
+              @if (stepState(i) === 'done') { <span class="sr-only">(complete)</span> }
+            </button>
+          </li>
+        }
+      </ol>
+    </nav>
+
+    <!-- Compact progress (mobile) -->
+    <div class="np-mobile-progress" aria-hidden="true">
+      <span>Step {{ step + 1 }} of {{ steps.length }}: {{ current.label }}</span>
+      <span class="np-meter"><span [ngClass]="'np-meter-' + (step + 1)"></span></span>
+    </div>
+
+    <section class="card card-flush np-panel" [attr.aria-labelledby]="'np-h-' + current.id">
+      <div class="np-panel-head">
+        <h2 #stepHeading tabindex="-1" [id]="'np-h-' + current.id">{{ current.title }}</h2>
+        @if (current.optional) { <span class="muted np-optional">Optional</span> }
+      </div>
+
+      <div class="np-body">
+        @switch (current.id) {
+          <!-- 1. App -->
+          @case ('app') {
+            <div class="form-group">
+              <label for="np-name">Name</label>
+              <input id="np-name" data-testid="np-name" [(ngModel)]="draft.name" placeholder="shop" autocomplete="off" spellcheck="false"
+                maxlength="40" [attr.aria-invalid]="nameError ? 'true' : null" aria-describedby="np-name-hint np-name-msg">
+              <span id="np-name-hint" class="form-hint">Lowercase letters, numbers and dashes. It becomes part of each environment's address and Kubernetes namespace.</span>
+              <span id="np-name-msg" aria-live="polite">
+                @if (nameError) { <span class="np-error">{{ nameError }}</span> }
+                @else if (draft.name) { <span class="status status-ok">{{ draft.name }} is available</span> }
+              </span>
+            </div>
+
+            <fieldset class="np-fieldset">
+              <legend>Stack</legend>
+              <div class="np-choices">
+                @for (s of stacks; track s.id) {
+                  <label class="np-choice" [class.np-choice-on]="draft.stack === s.id">
+                    <input type="radio" name="np-stack" [value]="s.id" [(ngModel)]="draft.stack">
+                    <span>
+                      <strong>{{ s.label }}</strong>
+                      <span class="np-choice-hint">{{ s.hint }}</span>
+                    </span>
+                  </label>
+                }
+              </div>
+              <span class="form-hint">Used for the default build and CI templates. You can change it later.</span>
+            </fieldset>
+
+            <div class="form-group">
+              <label for="np-desc">Description</label>
+              <textarea id="np-desc" [(ngModel)]="draft.description" rows="2" placeholder="Online shop and checkout API"></textarea>
+              <span class="form-hint">A short line so your team knows what this app is.</span>
+            </div>
+          }
+
+          <!-- 2. Code -->
+          @case ('code') {
+            <div class="np-note" [ngClass]="git.state === 'known' && !gitConnected ? 'np-note-warn' : ''">
+              @if (git.state === 'loading') {
+                <p>Checking which Git providers are connected…</p>
+              } @else if (git.state === 'unknown') {
+                <p>Your role cannot see which Git providers are connected. You can still enter the repository; an admin can connect GitHub or GitLab in Settings.</p>
+              } @else if (gitConnected) {
+                <p class="np-providers">
+                  <span class="status" [ngClass]="git.github ? 'status-ok' : ''">GitHub {{ git.github ? 'connected' : 'not connected' }}@if (git.githubOwner) { ({{ git.githubOwner }})}</span>
+                  <span class="status" [ngClass]="git.gitlab ? 'status-ok' : ''">GitLab {{ git.gitlab ? 'connected' : 'not connected' }}</span>
+                </p>
+              } @else {
+                <p><strong>No Git provider is connected yet.</strong> Cairn needs one to list branches, react to pushes and pull private repositories. You can add a public repository now, skip this step, or connect a provider first.</p>
+                <p><a routerLink="/settings" [queryParams]="{ tab: 'integrations' }" target="_blank" rel="noopener">Open Settings, Git linking in a new tab</a>. What you typed here stays.</p>
+              }
+            </div>
+
+            @if (repos.length) {
+              <div class="form-group">
+                <label for="np-repo-pick">Pick a repository</label>
+                <select id="np-repo-pick" [(ngModel)]="repoPick" (ngModelChange)="pickRepo()">
+                  <option value="">Choose from the connected GitHub App…</option>
+                  @for (r of repos; track r.fullName) {
+                    <option [value]="r.fullName">{{ r.fullName }}{{ r.private ? ' (private)' : '' }}</option>
+                  }
+                </select>
+              </div>
+            }
+
+            <div class="form-group">
+              <label for="np-repo">Repository address</label>
+              <input id="np-repo" data-testid="np-repo" [(ngModel)]="draft.repositoryUrl" placeholder="https://github.com/acme/shop" autocomplete="off" spellcheck="false"
+                [attr.aria-invalid]="repoError ? 'true' : null">
+              @if (repoError) { <span class="np-error">{{ repoError }}</span> }
+              @else if (repoInfo) { <span class="form-hint">{{ repoInfo.provider }} repository <span class="mono">{{ repoInfo.ownerRepo }}</span></span> }
+              @else { <span class="form-hint">GitHub or GitLab, over HTTPS or SSH. Leave empty to connect it later from the project's Configuration.</span> }
+              @if (repoWarning) { <span class="np-warn">{{ repoWarning }}</span> }
+            </div>
+
+            <div class="form-group">
+              <label for="np-branch">Branch to deploy</label>
+              <input id="np-branch" [(ngModel)]="draft.gitRevision" [placeholder]="suggestedBranch || 'main'" autocomplete="off" spellcheck="false"
+                [attr.aria-invalid]="revisionError ? 'true' : null">
+              @if (revisionError) { <span class="np-error">{{ revisionError }}</span> }
+              @else { <span class="form-hint">Leave empty to use the repository's default branch. Each deployment can still pick another branch, tag or commit.</span> }
+            </div>
+          }
+
+          <!-- 3. Environments -->
+          @case ('environments') {
+            <p class="np-lead">Cairn creates three environments for every project. Each one gets its own namespace and address.</p>
+
+            <div class="form-group">
+              <label for="np-domain">Base domain</label>
+              <input id="np-domain" data-testid="np-domain" [(ngModel)]="draft.domain" placeholder="example.com" autocomplete="off" spellcheck="false"
+                [attr.aria-invalid]="domainError ? 'true' : null">
+              @if (domainError) { <span class="np-error">{{ domainError }}</span> }
+              @else { <span class="form-hint">Point a wildcard DNS record (*.example.com) at your server. No domain yet? Use your server's IP with sslip.io, for example <span class="mono">203.0.113.7.sslip.io</span>. Leave empty to use the server's default domain.</span> }
+            </div>
+
+            <div class="table-scroll np-envs">
+              <table>
+                <thead><tr><th scope="col">Environment</th><th scope="col">Address</th></tr></thead>
+                <tbody>
+                  @for (e of environments; track e) {
+                    <tr>
+                      <td>{{ e }}</td>
+                      <td class="mono np-host" data-testid="np-host">{{ hostPreview(e) }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <p class="form-hint np-after">&lt;code&gt; is a short unique code Cairn adds once the project exists, so two apps never share an address.</p>
+          }
+
+          <!-- 4. Data -->
+          @case ('data') {
+            <p class="np-lead">Cairn can create an isolated PostgreSQL database for each environment. Its connection details are shown once, right after the project is created.</p>
+            @if (!canProvision) {
+              <div class="np-note np-note-warn"><p>Creating databases needs the DevOps or admin role. Ask one of them to add databases from the project's Data section after you create it.</p></div>
+            }
+            <ul class="np-checks">
+              @for (e of environments; track e) {
+                <li>
+                  <label>
+                    <input type="checkbox" [(ngModel)]="draft.databases[e]" [disabled]="!canProvision" [attr.data-testid]="'np-db-' + e">
+                    <span><strong>PostgreSQL for {{ e }}</strong></span>
+                  </label>
+                </li>
+              }
+            </ul>
+            <p class="form-hint np-after">Only PostgreSQL can be created here. To use an existing Redis, MongoDB or other database, add its connection on the project's Data section later.</p>
+          }
+
+          <!-- 5. Settings -->
+          @case ('settings') {
+            <h3 class="np-sub">Environment variables and secrets</h3>
+            <p class="np-lead">Values your app reads at runtime. Secrets are encrypted and never shown in full again.</p>
+            @if (draft.variables.length) {
+              <ul class="np-rows">
+                @for (v of draft.variables; track $index; let i = $index) {
+                  <li class="np-var">
+                    <div class="np-var-fields">
+                      <label class="np-field">
+                        <span>Name</span>
+                        <input [(ngModel)]="v.key" placeholder="API_URL" autocomplete="off" spellcheck="false" [attr.aria-invalid]="varErrors[i] ? 'true' : null" [attr.data-testid]="'np-var-key-' + i">
+                      </label>
+                      <label class="np-field">
+                        <span>Value</span>
+                        <input [type]="v.secret ? 'password' : 'text'" [(ngModel)]="v.value" autocomplete="off" spellcheck="false" [attr.data-testid]="'np-var-value-' + i">
+                      </label>
+                      <label class="np-field">
+                        <span>Applies to</span>
+                        <select [(ngModel)]="v.scope">
+                          <option value="all">All environments</option>
+                          @for (e of environments; track e) { <option [value]="e">{{ e }}</option> }
+                        </select>
+                      </label>
+                      <label class="np-secret"><input type="checkbox" [(ngModel)]="v.secret"> Secret</label>
+                      <button type="button" class="btn btn-ghost btn-sm" (click)="removeVar(i)" [attr.aria-label]="'Remove ' + (v.key || 'row')">Remove</button>
+                    </div>
+                    @if (varErrors[i]) { <span class="np-error">{{ varErrors[i] }}</span> }
+                  </li>
+                }
+              </ul>
+            }
+            <button type="button" class="btn btn-sm" (click)="addVar()" data-testid="np-add-var">Add variable</button>
+
+            <h3 class="np-sub np-sub-gap">Privacy</h3>
+            <p class="np-lead">Defaults for what the browser SDK collects from visitors. You can change them later in the project's settings.</p>
+            <ul class="np-checks">
+              <li><label><input type="checkbox" [(ngModel)]="draft.privacy.analytics"> <span><strong>Collect analytics by default</strong><span class="np-choice-hint">Page views and performance, until a visitor opts out.</span></span></label></li>
+              <li><label><input type="checkbox" [(ngModel)]="draft.privacy.replay"> <span><strong>Record session replays by default</strong><span class="np-choice-hint">Off is safer: visitors must opt in first.</span></span></label></li>
+              <li><label><input type="checkbox" [(ngModel)]="draft.privacy.scrubIps"> <span><strong>Hide visitor IP addresses</strong><span class="np-choice-hint">Removes IP addresses from errors, logs and replays.</span></span></label></li>
+            </ul>
+          }
+
+          <!-- 6. Team -->
+          @case ('team') {
+            <p class="np-lead">You are added as the owner. Add the people who should work on this app; admins and DevOps users can always see every project.</p>
+            @if (draft.members.length) {
+              <ul class="np-rows">
+                @for (m of draft.members; track $index; let i = $index) {
+                  <li class="np-var">
+                    <div class="np-member-fields">
+                      @if (users.length) {
+                        <label class="np-field">
+                          <span>Person</span>
+                          <select [(ngModel)]="m.userId" [attr.aria-invalid]="memberErrors[i] ? 'true' : null" [attr.data-testid]="'np-member-' + i">
+                            <option value="">Choose a person…</option>
+                            @for (u of users; track u.id) { <option [value]="u.id">{{ u.name }}{{ u.email && u.email !== u.name ? ' (' + u.email + ')' : '' }}</option> }
+                          </select>
+                        </label>
+                      } @else {
+                        <label class="np-field">
+                          <span>Email</span>
+                          <input type="email" [(ngModel)]="m.email" placeholder="ben@example.com" autocomplete="off" [attr.aria-invalid]="memberErrors[i] ? 'true' : null" [attr.data-testid]="'np-member-' + i">
+                        </label>
+                      }
+                      <label class="np-field">
+                        <span>Role</span>
+                        <select [(ngModel)]="m.role">
+                          @for (r of roles; track r.id) { <option [value]="r.id">{{ r.label }}</option> }
+                        </select>
+                      </label>
+                      <button type="button" class="btn btn-ghost btn-sm" (click)="removeMember(i)">Remove</button>
+                    </div>
+                    @if (memberErrors[i]) { <span class="np-error">{{ memberErrors[i] }}</span> }
+                    @else { <span class="form-hint">{{ roleHint(m.role) }}</span> }
+                  </li>
+                }
+              </ul>
+            }
+            @if (usersLoaded && !users.length) {
+              <p class="form-hint np-after">People must already have a Cairn account. Invite them on the Users page first if they do not.</p>
+            }
+            <button type="button" class="btn btn-sm" (click)="addMember()" data-testid="np-add-member">Add person</button>
+          }
+
+          <!-- 7. Review -->
+          @case ('review') {
+            <div class="np-review">
+              <section>
+                <div class="np-review-head"><h3>App</h3><button type="button" class="btn btn-ghost btn-sm" (click)="goTo(0)">Edit</button></div>
+                <dl class="facts">
+                  <dt>Name</dt><dd class="mono">{{ draft.name }}</dd>
+                  <dt>Stack</dt><dd>{{ stackLabel(draft.stack) }}</dd>
+                  <dt>Description</dt><dd>{{ draft.description || 'None' }}</dd>
+                </dl>
+              </section>
+              <section>
+                <div class="np-review-head"><h3>Code</h3><button type="button" class="btn btn-ghost btn-sm" (click)="goTo(1)">Edit</button></div>
+                <dl class="facts">
+                  <dt>Repository</dt><dd>@if (repoInfo) { {{ repoInfo.provider }} <span class="mono">{{ repoInfo.ownerRepo }}</span> } @else { Connect later }</dd>
+                  <dt>Branch</dt><dd>@if (draft.gitRevision) { <span class="mono">{{ draft.gitRevision }}</span> } @else { Repository default }</dd>
+                </dl>
+              </section>
+              <section>
+                <div class="np-review-head"><h3>Environments</h3><button type="button" class="btn btn-ghost btn-sm" (click)="goTo(2)">Edit</button></div>
+                <dl class="facts">
+                  <dt>Base domain</dt><dd>@if (draft.domain) { <span class="mono">{{ draft.domain }}</span> } @else { Server default }</dd>
+                  @for (e of environments; track e) { <dt>{{ e }}</dt><dd class="mono">{{ hostPreview(e) }}</dd> }
+                </dl>
+              </section>
+              <section>
+                <div class="np-review-head"><h3>Data</h3><button type="button" class="btn btn-ghost btn-sm" (click)="goTo(3)">Edit</button></div>
+                <p class="np-review-line">
+                  @if (anyDatabase) {
+                    PostgreSQL for
+                    @for (e of environments; track e) { @if (draft.databases[e]) { <span class="np-tag">{{ e }}</span> } }
+                  } @else { No databases now }
+                </p>
+              </section>
+              <section>
+                <div class="np-review-head"><h3>Settings</h3><button type="button" class="btn btn-ghost btn-sm" (click)="goTo(4)">Edit</button></div>
+                @if (usedVars.length) {
+                  <ul class="np-review-list">
+                    @for (v of usedVars; track $index) {
+                      <li><span class="mono">{{ v.key }}</span> <span class="muted">{{ v.secret ? 'secret' : 'variable' }}, {{ envLabel(v.scope) }}</span></li>
+                    }
+                  </ul>
+                } @else { <p class="np-review-line">No variables now</p> }
+                <p class="np-review-line muted">Analytics {{ draft.privacy.analytics ? 'on' : 'off' }}, session replay {{ draft.privacy.replay ? 'on' : 'off' }}, IP addresses {{ draft.privacy.scrubIps ? 'hidden' : 'kept' }}</p>
+              </section>
+              <section>
+                <div class="np-review-head"><h3>Team</h3><button type="button" class="btn btn-ghost btn-sm" (click)="goTo(5)">Edit</button></div>
+                <ul class="np-review-list">
+                  <li>You <span class="muted">owner</span></li>
+                  @for (m of usedMembers; track $index) {
+                    <li>{{ m.userId ? userName(m.userId) : m.email }} <span class="muted">{{ roleLabel(m.role).toLowerCase() }}</span></li>
+                  }
+                </ul>
+              </section>
+            </div>
+          }
+        }
+      </div>
+
+      <div class="np-foot">
+        <button type="button" class="btn" (click)="back()" [disabled]="step === 0" data-testid="np-back">Back</button>
+        <div class="np-foot-right">
+          @if (problem && current.id !== 'review') { <span class="np-reason" data-testid="np-reason">{{ problem }}</span> }
+          @if (current.id === 'review') {
+            <button type="button" class="btn btn-primary" (click)="create()" data-testid="np-create">Create project</button>
+          } @else {
+            <button type="button" class="btn btn-primary" (click)="next()" [disabled]="!!problem" data-testid="np-next">
+              {{ current.optional && step > 0 && isEmptyStep() ? 'Skip' : 'Next' }}
+            </button>
+          }
+        </div>
+      </div>
+    </section>
+  </div>
+} @else {
+  <!-- Creating -->
+  <section class="card card-flush np-run" aria-labelledby="np-run-title">
+    <div class="card-header">
+      <h2 id="np-run-title">
+        @if (phase === 'running') { Creating {{ draft.name }} }
+        @else if (phase === 'done') { {{ draft.name }} is ready }
+        @else if (project) { {{ draft.name }} was created, some items failed }
+        @else { {{ draft.name }} was not created }
+      </h2>
+      <span class="muted" aria-live="polite">{{ doneCount }} of {{ items.length }} done</span>
+    </div>
+    <ul class="np-items" aria-live="polite">
+      @for (it of items; track it.id) {
+        <li class="np-item" [attr.data-testid]="'np-item-' + it.id">
+          <div class="np-item-main">
+            <span>{{ it.label }}</span>
+            @if (it.error) { <span class="np-error">{{ it.error }}</span> }
+          </div>
+          <span class="status" [ngClass]="statusTone(it.status)">{{ statusWord(it.status) }}</span>
+          @if (it.status === 'failed' && !busy) {
+            <button type="button" class="btn btn-sm" (click)="retry(it)" [attr.data-testid]="'np-retry-' + it.id">Retry</button>
+          }
+        </li>
+      }
+    </ul>
+
+    @if (credentials.length) {
+      <div class="np-creds">
+        <h3>Database connection details</h3>
+        <p class="np-warn">These passwords are shown only once. Copy them now; store them in a password manager or as secrets.</p>
+        @for (c of credentials; track c.id) {
+          <div class="np-cred">
+            <span class="np-cred-label">{{ c.env }}</span>
+            <code class="mono np-cred-value">{{ c.result.connectionString || (c.result.username + '@' + c.result.host + ':' + c.result.port + '/' + c.result.dbName) }}</code>
+            <button type="button" class="btn btn-sm" (click)="copy(c.result.connectionString || '')">Copy</button>
+          </div>
+        }
+      </div>
+    }
+
+    <div class="np-foot">
+      @if (phase === 'partial' && !project) {
+        <button type="button" class="btn" (click)="editAgain()" data-testid="np-edit-again">Back to the form</button>
+        <button type="button" class="btn btn-primary" (click)="retryFailed()">Try again</button>
+      } @else if (phase === 'partial') {
+        <a class="btn" [routerLink]="['/projects', project.id]">Open project</a>
+        <button type="button" class="btn btn-primary" (click)="retryFailed()" data-testid="np-retry-all">Retry failed items</button>
+      } @else if (phase === 'done') {
+        <a class="btn" routerLink="/projects">All projects</a>
+        <a class="btn btn-primary" [routerLink]="['/projects', project.id]" [queryParams]="{ tab: 'deployments' }">Open project and deploy</a>
+      }
+    </div>
+  </section>
+}

@@ -1,0 +1,390 @@
+package components
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
+)
+
+func TestRenderPostgresCluster(t *testing.T) {
+	for _, tc := range []struct {
+		name, sc, retention string
+		backup, recovery    bool
+	}{
+		{name: "defaults"}, {name: "custom storage", sc: "fast-ssd"}, {name: "bundled backup", backup: true}, {name: "external backup", backup: true, retention: "4w"}, {name: "recovery", backup: true, recovery: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{Profile: config.ProfileHA, PostgresHAStorageClass: tc.sc, PostgresBackupRetention: tc.retention, PostgresPassword: "must-not-appear"}
+			opts := pgClusterOptions{ServerName: "postgresql-pitr-123"}
+			if tc.backup {
+				opts.Backup = &pgBackup{"s3://backups/prefix/", "https://s3.example.com", "external-s3", ""}
+				if tc.name == "bundled backup" {
+					opts.Backup, _ = pgBackupTarget(cfg)
+				}
+			}
+			if tc.recovery {
+				opts.Recovery = &pgRecovery{time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC), "postgresql"}
+			}
+			m, err := renderPostgresCluster(cfg, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			spec := m["spec"].(map[string]any)
+			if m["kind"] != "Cluster" || m["metadata"].(map[string]any)["name"] != "postgresql" || spec["instances"] != 3 || spec["imageName"] != versions.CNPGPostgresImage {
+				t.Fatal(m)
+			}
+			sc := tc.sc
+			if sc == "" {
+				sc = "local-path"
+			}
+			if spec["storage"].(map[string]string)["storageClass"] != sc {
+				t.Fatal(spec["storage"])
+			}
+			if spec["affinity"].(map[string]any)["podAntiAffinityType"] != "required" {
+				t.Fatal(spec["affinity"])
+			}
+			pg := spec["postgresql"].(map[string]any)
+			if !reflect.DeepEqual(pg["synchronous"], map[string]any{"method": "any", "number": 1, "dataDurability": "preferred"}) || !reflect.DeepEqual(pg["shared_preload_libraries"], []string{"pgaudit", "pg_stat_statements"}) {
+				t.Fatal(pg)
+			}
+			if spec["superuserSecret"].(map[string]string)["name"] != "postgresql" || spec["enableSuperuserAccess"] != true || spec["enablePDB"] != true || spec["primaryUpdateMethod"] != "switchover" || spec["smartShutdownTimeout"] != 15 {
+				t.Fatal(spec)
+			}
+			plugins, hasPlugins := spec["plugins"].([]any)
+			if _, inTree := spec["backup"]; inTree || hasPlugins != tc.backup {
+				t.Fatal(spec)
+			}
+			if tc.backup {
+				pl := plugins[0].(map[string]any)
+				params := pl["parameters"].(map[string]string)
+				if pl["name"] != BarmanCloudPluginName || pl["isWALArchiver"] != true || params["barmanObjectName"] != PGObjectStoreName || params["serverName"] != opts.ServerName {
+					t.Fatal(pl)
+				}
+				store := pgObjectStoreResource(cfg, opts.Backup)
+				conf := store["spec"].(map[string]any)["configuration"].(map[string]any)
+				ret := tc.retention
+				if ret == "" {
+					ret = "14d"
+				}
+				if store["kind"] != "ObjectStore" || store["spec"].(map[string]any)["retentionPolicy"] != ret || conf["destinationPath"] != opts.Backup.Destination || conf["endpointURL"] != opts.Backup.Endpoint {
+					t.Fatal(store)
+				}
+				if _, ok := conf["serverName"]; ok {
+					t.Fatal("serverName belongs to the Cluster's plugin parameters")
+				}
+				if !reflect.DeepEqual(conf["wal"], map[string]any{"compression": "gzip", "maxParallel": 2, "restoreAdditionalCommandArgs": []string{"--read-timeout", "5"}}) {
+					t.Fatal(conf)
+				}
+				// A WAL fetch from a hanging object store must not hold up promotion for minutes.
+				sidecar := store["spec"].(map[string]any)["instanceSidecarConfiguration"].(map[string]any)
+				if !reflect.DeepEqual(sidecar["env"], []any{map[string]any{"name": "AWS_RETRY_MODE", "value": "standard"}}) {
+					t.Fatal(sidecar)
+				}
+			}
+			if tc.recovery {
+				if _, ok := spec["bootstrap"].(map[string]any)["initdb"]; ok {
+					t.Fatal("initdb in recovery")
+				}
+				ext := spec["externalClusters"].([]any)[0].(map[string]any)
+				if ext["plugin"].(map[string]any)["parameters"].(map[string]string)["serverName"] != "postgresql" {
+					t.Fatal(ext)
+				}
+			}
+			raw, _ := json.Marshal(m)
+			if strings.Contains(string(raw), cfg.PostgresPassword) {
+				t.Fatal("password leaked")
+			}
+		})
+	}
+	m, err := renderPostgresCluster(&config.Config{}, pgClusterOptions{Backup: &pgBackup{"s3://backups/", "", "s3", ""}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := m["spec"].(map[string]any)["plugins"].([]any)[0].(map[string]any)["parameters"].(map[string]string)
+	if params["serverName"] != "postgresql" {
+		t.Fatal(params)
+	}
+	conf := pgObjectStoreResource(&config.Config{}, &pgBackup{"s3://backups/", "", "s3", ""})["spec"].(map[string]any)["configuration"].(map[string]any)
+	if _, ok := conf["endpointURL"]; ok {
+		t.Fatal(conf)
+	}
+	if _, err := renderPostgresCluster(&config.Config{}, pgClusterOptions{Recovery: &pgRecovery{}}); err == nil {
+		t.Fatal("recovery without backup")
+	}
+}
+
+func TestPGBackupTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  config.Config
+		want string
+	}{
+		{"defaults", config.Config{}, ""},
+		{"external", config.Config{PostgresBackupDestination: "s3://my-bucket/db/", PostgresBackupSecret: "s3-creds"}, ""},
+		{"bad destination", config.Config{PostgresBackupDestination: "s3://x/", PostgresBackupSecret: "s3"}, "DESTINATION"},
+		{"missing secret", config.Config{PostgresBackupDestination: "s3://backups/"}, "SECRET"},
+		{"bad retention", config.Config{PostgresBackupRetention: "0d"}, "RETENTION"},
+		{"bad endpoint", config.Config{PostgresBackupEndpoint: "https://example.com\n"}, "ENDPOINT"},
+		{"bad secret", config.Config{PostgresBackupSecret: "Bad_Secret"}, "SECRET"},
+		{"bad storage", config.Config{PostgresHAStorageClass: "bad_name"}, "STORAGE_CLASS"},
+		{"long label", config.Config{PostgresHAStorageClass: strings.Repeat("a", 64)}, "STORAGE_CLASS"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := pgBackupTarget(&tc.cfg)
+			if tc.want != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.want) {
+					t.Fatalf("%v", err)
+				}
+			} else if err != nil || b == nil {
+				t.Fatal(b, err)
+			}
+		})
+	}
+}
+
+func TestPGServiceAndQueries(t *testing.T) {
+	svc := pgAliasService()
+	labels := svc["metadata"].(map[string]any)["labels"].(map[string]string)
+	if _, ok := labels["app.kubernetes.io/name"]; ok {
+		t.Fatal(labels)
+	}
+	if !reflect.DeepEqual(svc["spec"].(map[string]any)["selector"], map[string]string{"cnpg.io/cluster": "postgresql", "cnpg.io/instanceRole": "primary"}) {
+		t.Fatal(svc)
+	}
+	cm := pgMonitoringConfigMap()
+	q := cm["data"].(map[string]string)["queries"]
+	for _, s := range []string{"project_database:", "primary: true", "datname LIKE 'plat_%'", "usage: LABEL", "usage: GAUGE"} {
+		if !strings.Contains(q, s) {
+			t.Fatal(q)
+		}
+	}
+}
+
+func TestWritePostgresHAStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw string
+		want      []string
+	}{
+		{"healthy", `{"spec":{"instances":3,"backup":{"barmanObjectStore":{}}},"status":{"phase":"Cluster in healthy state","readyInstances":3,"currentPrimary":"postgresql-2","lastSuccessfulBackup":"backup-time","firstRecoverabilityPoint":"first-time","conditions":[{"type":"ContinuousArchiving","status":"True"}]}}`, []string{"3/3 ready, primary postgresql-2", "WAL archiving: ok", "backup-time", "first-time"}},
+		{"plugin archiving", `{"spec":{"instances":3,"plugins":[{"name":"barman-cloud.cloudnative-pg.io","isWALArchiver":true,"parameters":{"barmanObjectName":"postgresql-backup","serverName":"pg-a"}}]},"status":{"conditions":[{"type":"ContinuousArchiving","status":"True"}]}}`, []string{"WAL archiving: ok (Barman Cloud plugin)", "plugin-backup-time", "plugin-first-time"}},
+		{"degraded", `{"spec":{"instances":3},"status":{"readyInstances":1}}`, []string{"1/3 ready", "WARNING", "not configured"}},
+		{"archive failed", `{"spec":{"backup":{"barmanObjectStore":{}}},"status":{"conditions":[{"type":"ContinuousArchiving","status":"False"}]}}`, []string{"WAL archiving: FAILING"}},
+		{"missing fields", `{}`, []string{"0/0 ready", "not configured"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var b bytes.Buffer
+			store := []byte(`{"status":{"serverRecoveryWindow":{"pg-a":{"firstRecoverabilityPoint":"plugin-first-time","lastSuccessfulBackupTime":"plugin-backup-time"}}}}`)
+			if err := writePostgresHAStatus(&b, []byte(tc.raw), store); err != nil {
+				t.Fatal(err)
+			}
+			for _, s := range tc.want {
+				if !strings.Contains(b.String(), s) {
+					t.Fatal(b.String())
+				}
+			}
+			if !strings.Contains(b.String(), "postgresql-ro.databases:5432") {
+				t.Fatal(b.String())
+			}
+		})
+	}
+	if err := writePostgresHAStatus(&bytes.Buffer{}, []byte("bad")); err == nil {
+		t.Fatal("invalid JSON accepted")
+	}
+}
+
+func TestPGPITRValidation(t *testing.T) {
+	now := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
+	raw := []byte(`{"spec":{"plugins":[{"name":"barman-cloud.cloudnative-pg.io","isWALArchiver":true,"parameters":{"barmanObjectName":"postgresql-backup","serverName":"postgresql"}}]}}`)
+	store := []byte(`{"spec":{"configuration":{"destinationPath":"s3://postgres-backups/"}},"status":{"serverRecoveryWindow":{"postgresql":{"firstRecoverabilityPoint":"2026-11-10T10:00:00Z"}}}}`)
+	for _, tc := range []struct {
+		target time.Time
+		fail   bool
+	}{{now.Add(time.Hour), true}, {now, true}, {now.Add(-72 * time.Hour), true}, {now.Add(-time.Hour), false}, {now.Add(-48 * time.Hour), false}} {
+		_, _, err := validatePGPITR(raw, store, tc.target, now)
+		if (err != nil) != tc.fail {
+			t.Fatal(tc, err)
+		}
+	}
+	// In-tree archiving must be migrated first; no archiving, a missing store or bad JSON fail.
+	for _, c := range [][2]string{
+		{`{"spec":{"backup":{"barmanObjectStore":{"serverName":"postgresql"}}},"status":{"firstRecoverabilityPoint":"2026-11-10T10:00:00Z"}}`, string(store)},
+		{`{}`, string(store)},
+		{string(raw), ``},
+		{`bad`, string(store)},
+	} {
+		if _, _, err := validatePGPITR([]byte(c[0]), []byte(c[1]), now.Add(-time.Hour), now); err == nil {
+			t.Fatal(c)
+		}
+	}
+	if got := pgPITRServerName(now); got != fmt.Sprintf("postgresql-pitr-%d", now.Unix()) {
+		t.Fatal(got)
+	}
+}
+
+func TestPGScripts(t *testing.T) {
+	for _, script := range []string{pgPrimaryReadyScript, pgPITRWALSwitchScript, pgPrimaryPodShell, cnpgHelmScript("/tmp/values ' file.yaml")} {
+		if strings.Contains(script, "\r") {
+			t.Fatal("CR in embedded shell")
+		}
+	}
+	s := cnpgHelmScript("/tmp/values ' file.yaml")
+	for _, v := range []string{"clear_helm_lock cnpg cnpg-system", "--timeout 10m", "rollout status deploy/cnpg-cloudnative-pg", "condition=Established", shellQuote("/tmp/values ' file.yaml")} {
+		if !strings.Contains(s, v) {
+			t.Fatal(s)
+		}
+	}
+	s = minioBucketUserScript("postgres-backups", "postgres-backup", "S3_ACCESS_KEY", "S3_SECRET_KEY")
+	if strings.Contains(s, "telemetry-postgres") || !strings.Contains(s, "arn:aws:s3:::postgres-backups/*") {
+		t.Fatal(s)
+	}
+	if !strings.Contains(minioJobWaitScript("databases", "backup-job", 20), "kubectl -n databases") {
+		t.Fatal("namespace missing")
+	}
+}
+
+func TestPGPrimaryPodSelection(t *testing.T) {
+	for _, cnpg := range []bool{false, true} {
+		primary := ""
+		wantPod, wantContainer := "postgresql-0", "postgresql"
+		if cnpg {
+			primary = "postgresql-2"
+			wantPod, wantContainer = primary, "postgres"
+		}
+		script := `kubectl() {
+  if [[ "$*" == *cnpg.io/instanceRole=primary* ]]; then printf '%s' ` + shellQuote(primary) + `; else printf postgresql-0; fi
+}
+` + pgPrimaryPodShell + "\npg_primary_pod\n[[ $PG_POD == " + shellQuote(wantPod) + " && $PG_CONTAINER == " + shellQuote(wantContainer) + " ]]\n"
+		if out, err := runJobShell(t, script); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+	}
+}
+
+func TestCNPGRecoveryPatchesSecretWithoutTrust(t *testing.T) {
+	start := strings.Index(recoverScript, `if [[ -z "$WORKING" && "$PG_CONTAINER" == postgres ]]`)
+	if start < 0 {
+		t.Fatal("CNPG recovery branch absent")
+	}
+	end := strings.Index(recoverScript[start:], "if [[ -z \"$WORKING\" ]]; then") + start
+	if start < 0 || end <= start {
+		t.Fatal("CNPG recovery branch absent")
+	}
+	for _, works := range []bool{false, true} {
+		result := "return 1"
+		if works {
+			result = `[[ $1 == target && $2 == postgres ]]`
+		}
+		script := `set -euo pipefail
+WORKING=""; PG_CONTAINER=postgres; PG_TARGET=target
+b64() { printf dGFyZ2V0; }
+kubectl() {
+  [[ "$*" == *'patch secret postgresql --type merge --patch-file=/dev/stdin'* ]] || return 91
+  local patch; patch=$(cat)
+  [[ "$patch" == '{"data":{"password":"dGFyZ2V0","postgres-password":"dGFyZ2V0"}}' ]]
+}
+
+sleep() { :; }
+persist_pg_now() { [[ $1 == target ]]; }
+psql_with_pw() { ` + result + `; }
+` + recoverScript[start:end] + `[[ "$WORKING" == target ]]`
+		out, err := runJobShell(t, script)
+		if (err == nil) != works {
+			t.Fatalf("works=%v: %v %s", works, err, out)
+		}
+		if !works && !strings.Contains(out, "CNPG did not apply") {
+			t.Fatal(out)
+		}
+	}
+}
+
+// Digests from the pre-refactor scripts protect non-HA telemetry behavior,
+// including the replay lifecycle policy, while PostgreSQL reuses the helpers.
+func TestTelemetryMinioScriptsRemainByteIdentical(t *testing.T) {
+	for name, want := range map[string]string{
+		"loki":      "7a2d9ac2fcd80345150592c4bbb0cf305956f1e1e98c668dd2f3db3520ed9373",
+		"tempo":     "88e8761fb1352f4239a7feed67dc4189f806c8e0dedb9be439e93de8790d1a1d",
+		"pyroscope": "5bcc93c501ba47b62a6f926886b49141a7c6d012f31cb50c877a048e5850f4a9",
+		"replays":   "add2b5462d32ec6640223aae4f1e3544f7a5682981fe115b3cbb2cfa10f300db",
+	} {
+		if got := fmt.Sprintf("%x", sha256.Sum256([]byte(telemetryBucketScript(name)))); got != want {
+			t.Fatalf("%s: %s", name, got)
+		}
+	}
+	if got := fmt.Sprintf("%x", sha256.Sum256([]byte(telemetryJobWaitScript("telemetry-storage-loki", 930)))); got != "2163fb435618201bb95d32463d01b42e121d06094561022bc589e833cd6c74c8" {
+		t.Fatal(got)
+	}
+}
+
+// Fresh ha install: the ScheduledBackup's immediate run raced the plugin's
+// registration and failed, leaving no base backup. The script must request a
+// backup after a failure and only succeed once one completed.
+func TestPGFirstBackupScript(t *testing.T) {
+	for _, want := range []string{"postgresql=completed", "kind: Backup", "method: plugin", BarmanCloudPluginName, "exit 1"} {
+		if !strings.Contains(pgFirstBackupScript, want) {
+			t.Fatalf("first-backup script lacks %q", want)
+		}
+	}
+}
+
+// PITR to a time after the last transaction failed: recovery needs a commit
+// record after the target, so the switch script commits one first.
+func TestPGPITRWritesCommitBeforeSwitch(t *testing.T) {
+	s := pgPITRWALSwitchScript
+	commit, sw := strings.Index(s, `sql "SELECT txid_current()"`), strings.Index(s, `sql "SELECT pg_switch_wal()"`)
+	if commit < 0 || sw < 0 || commit > sw {
+		t.Fatal("PITR must commit a transaction before switching WAL")
+	}
+}
+
+// The Barman Cloud plugin can skip recording the recovery window after a
+// base backup (status update conflict, #186 migration test); another base
+// backup is requested until the window shows up, at most twice.
+func TestPGEnsureRecoveryWindowRequestsBackup(t *testing.T) {
+	oldReady, oldReq, oldWait, oldPoll := pgWindowReady, pgRequestBackup, pgWindowWait, pgWindowPoll
+	t.Cleanup(func() { pgWindowReady, pgRequestBackup, pgWindowWait, pgWindowPoll = oldReady, oldReq, oldWait, oldPoll })
+	pgWindowWait, pgWindowPoll = time.Millisecond, time.Millisecond
+	var requested []string
+	pgRequestBackup = func(name string) error { requested = append(requested, name); return nil }
+
+	pgWindowReady = func(server string) bool { return server == "s1" && len(requested) == 1 }
+	if err := pgEnsureRecoveryWindow("s1"); err != nil || len(requested) != 1 {
+		t.Fatalf("err=%v requested=%v", err, requested)
+	}
+
+	requested = nil
+	pgWindowReady = func(string) bool { return false }
+	if err := pgEnsureRecoveryWindow("s1"); err == nil || len(requested) != 2 || !strings.Contains(err.Error(), "--pitr latest") {
+		t.Fatalf("err=%v requested=%v", err, requested)
+	}
+
+	requested = nil
+	pgWindowReady = func(string) bool { return true }
+	if err := pgEnsureRecoveryWindow("s1"); err != nil || len(requested) != 0 {
+		t.Fatalf("a recorded window needs no extra backup: err=%v requested=%v", err, requested)
+	}
+}
+
+// #186 ha test: the immediate backup and the one retry went to standbys still
+// without the plugin sidecar and failed, then the first-backup script waited
+// 15 minutes without retrying. Provision now waits for every instance to run
+// the sidecar, and the script retries up to three times.
+func TestPGBackupWaitsForPluginOnEveryInstance(t *testing.T) {
+	for _, want := range []string{"cnpg.io/podRole=instance", "plugin-barman-cloud", ".spec.initContainers[*].name", "Cluster in healthy state"} {
+		if !strings.Contains(pgPluginRolloutScript, want) {
+			t.Fatalf("rollout script lacks %q", want)
+		}
+	}
+	for _, want := range []string{`"$requests" -lt 3`, `"$idle" -ge 12`} {
+		if !strings.Contains(pgFirstBackupScript, want) {
+			t.Fatalf("first-backup script lacks %q", want)
+		}
+	}
+}

@@ -51,8 +51,9 @@ func RestoreUpgradeDatabase(cfg *config.Config, dump string) error {
 
 const upgradeRestoreScript = `set -euo pipefail
 [[ -s "$DUMP" ]] || { echo 'recorded database dump is missing or empty' >&2; exit 1; }
-PG_POD="$(kubectl -n databases get pod -l app.kubernetes.io/name=postgresql -o jsonpath='{.items[0].metadata.name}')"
+` + pgPrimaryPodShell + `
+pg_primary_pod
 [[ -n "$PG_POD" ]]
 # Password and archive travel over stdin, never as command arguments.
-{ printf '%s\n' "$PGPW"; cat "$DUMP"; } | kubectl -n databases exec -i "$PG_POD" -- bash -ec 'read -r PGPASSWORD; export PGPASSWORD; exec pg_restore -w -U postgres -d template1 --clean --if-exists --create --exit-on-error'
+{ printf '%s\n' "$PGPW"; cat "$DUMP"; } | kubectl -n databases exec -i "$PG_POD" -c "$PG_CONTAINER" -- bash -ec 'read -r PGPASSWORD; export PGPASSWORD; exec pg_restore -w -U postgres -d template1 --clean --if-exists --create --exit-on-error'
 `

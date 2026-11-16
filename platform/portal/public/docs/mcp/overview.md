@@ -1,74 +1,69 @@
-# Platform MCP
+# Let an AI assistant work with your server
 
-The Platform MCP server is how **humans** and **AI agents** (Cursor, Claude Desktop, Claude Code, and any MCP client) talk to a running Platform cluster.
+This page helps you connect an AI assistant, such as Claude, ChatGPT, Cursor, VS Code or Claude Code, to your Cairn server. In the portal, open any project, go to **Monitoring** and pick the **AI agents** view to copy the connector URL, see connected assistants and approve requests.
 
-It does **not** give the model a raw shell on your server. Every mutating or destructive action goes through:
+Cairn uses MCP (Model Context Protocol, the standard way AI tools call outside services). The assistant gets a fixed set of tools: check health, list projects, read logs, pods and nodes, and run a short list of allowed cluster commands. It never gets a shell on your server.
 
-1. An **agent token** (`plat_agent_*`) with explicit scopes
-2. A **command guard** (allowlist + deny list)
-3. A **human JWT** for anything destructive (agents cannot self-approve)
+## Connect an assistant
 
-Public docs live on the marketing site: [MCP overview](/docs/mcp/overview). The server source is [`platform/mcp-server/`](https://github.com/Mpratyush54/SERVER-automation/tree/master/platform/mcp-server).
+1. In the portal, open a project, go to **Monitoring**, then **AI agents**, and copy the **Connector URL** (your portal address followed by `/mcp`).
+2. Paste it into your assistant as a custom connector or remote MCP server.
+3. Sign in to Cairn in the browser window that opens, check the permissions and select **Approve**.
+4. Ask the assistant: "Check Cairn health and list my projects."
 
-## Who this is for
+Steps for each assistant: [Connect an AI assistant](setup.md).
 
-| Audience | Start here |
+> [!NOTE]
+> A connected assistant acts as you: it sees only your projects and never gets more than your role allows. Agent tokens, the alternative for scripts, work across the whole platform.
+
+## What keeps it safe
+
+- **Its own sign-in.** Each assistant gets only the permissions you ticked when you approved it, capped by your role. Disconnect it on the **AI agents** view and it stops working right away. Agent tokens work the same way: revoke one and its user is cut off.
+- **An allowlist.** Every command is checked first. Only listed commands run. Chained commands (`&&`, `|`, `;`) and known dangerous commands are always refused.
+- **A person for risky changes.** Deleting things, scaling, applying manifests and reading secrets wait in the **Waiting for approval** list on the **AI agents** view. Only a person can approve. An assistant or agent token cannot approve anything.
+
+Who can do what in the portal:
+
+| Action | Roles |
 |---|---|
-| Operator installing Cursor / Claude against a cluster | [Setup](/docs/mcp/setup) |
-| Anyone who wants the full tool list and risk policy | [Tools & policy](/docs/mcp/tools) |
-| AI agents / skill files that must follow the protocol | [For AI agents](/docs/mcp/for-agents) |
+| Connect an assistant, disconnect your own | everyone |
+| See and disconnect every assistant | Admin, DevOps |
+| Create and revoke agent tokens | Admin, DevOps |
+| See the approval queue | Admin, DevOps, Tech lead |
+| Approve or reject a command | Admin, DevOps |
 
-## What you get
+## More
 
-- **Agent tokens** — `plat_agent_*` secrets created by a human admin/devops. Shown **once**.
-- **Guarded commands** — `platform_run_command` always validates first. Read-only can run; mutating needs `confirm` + `reason`; destructive waits in a human queue.
-- **Read APIs** — projects, logs, pods, nodes, bootstrap status, audit logs.
-- **Deploys** — `platform_deploy` with `confirm: true` only after you checked the target.
-- **Live OpenAPI** — `GET /api/openapi.json` and MCP resource `platform://openapi`.
-- **Command policy** — MCP resource `platform://command-policy` (same rules the API enforces).
+| You want to | Read |
+|---|---|
+| Connect Claude, ChatGPT, Cursor, VS Code or Claude Code | [Connect an AI assistant](setup.md) |
+| See every tool and which commands are allowed | [Tools and command policy](tools.md) |
+| Give your assistant the rules it must follow | [Rules for AI agents](for-agents.md) |
 
-## Mental model
+## How it works
 
 ```
-AI client (Cursor / Claude)
-        │  stdio MCP
+AI assistant (Claude, ChatGPT, Cursor, VS Code, Claude Code)
+        │  MCP over HTTPS: https://<your-domain>/mcp
+        │  OAuth sign-in (you approve in the portal), or Authorization: Bearer plat_agent_…
         ▼
-platform-mcp-server  (this repo: platform/mcp-server)
-        │  HTTPS  Authorization: Bearer plat_agent_*  or human JWT
-        ▼
-Platform API  /api/agent-tokens  /api/agent/commands  /api/projects  …
+Cairn API  (same checks, permissions and audit as the portal)
         │
         ▼
-k3s cluster (only via allowlisted commands)
+Kubernetes cluster (only through allowlisted commands)
 ```
 
-## Typical human flow
+- The remote MCP endpoint is part of the Cairn API. Nothing runs on your computer. You can still run the MCP server from `platform/mcp-server` locally if you prefer; see [Run the MCP server locally](setup.md#run-the-mcp-server-locally).
+- Assistants sign in with OAuth 2.1: they register themselves, you approve them, and they receive short-lived tokens that only work on `/mcp`. Cairn stores only hashes of those tokens.
+- Agent tokens start with `plat_agent_`. The API stores only a bcrypt hash and a short lookup prefix. The full value is returned once, when the token is created.
+- Every tool result passes through a redaction step that removes tokens, passwords and other secrets before the assistant sees it.
+- Commands run inside the API pod without a shell, with a minimal environment (none of the API's own secrets), a 60-second limit and at most 2 MB of output.
+- Every executed command, approval, rejection and token change is written to the audit log.
+- Every connection, approval, disconnect and tool call of a connected assistant is written to the audit log too.
 
-1. Create an agent token with a human admin/devops login.
-2. Point the MCP server at your Platform URL (`https://your-domain` or `https://YOUR_IP`) and `PLATFORM_AGENT_TOKEN`.
-3. Ask the agent to check health, list projects, or inspect pods.
-4. For cluster commands, the agent **must** call `platform_run_command` with `command` only first.
-5. You (or the agent, after you agree) re-call with `confirm: true`.
-6. Destructive work: log in with `platform_login`, then approve or reject in the pending queue.
+## For developers / API
 
-## Typical agent flow
-
-See [For AI agents](/docs/mcp/for-agents). Short version:
-
-- Prefer dedicated tools (`platform_list_pods`, `platform_search_logs`) over shell.
-- Never set `confirm: true` until you have shown the validation result.
-- Never approve destructive commands with an agent token.
-- Never chain shell (`&&`, `|`, `;`, backticks) — the guard rejects it.
-
-## Requirements
-
-- A running Platform API (server install via `platformctl provision`, or local `npm run start`)
-- Node.js ≥ 18 to run `platform/mcp-server`
-- An agent token for authenticated tools (`platform_health` and OpenAPI work without one)
-
-## Next
-
-- [Setup](/docs/mcp/setup) — tokens, env, Cursor, Claude Desktop, IP-based installs
-- [Tools & policy](/docs/mcp/tools)
-- [For AI agents](/docs/mcp/for-agents)
-- [platformctl CLI](/docs/getting-started/platformctl)
+- Live API description: `GET /api/openapi.json`, also available to the assistant as the MCP resource `platform://openapi`.
+- Command policy for the assistant: MCP resource `platform://command-policy`.
+- The remote endpoint is `POST /mcp`; OAuth metadata is at `/.well-known/oauth-protected-resource/mcp` and `/.well-known/oauth-authorization-server`. Token endpoints are under `/api/agent-tokens`; command endpoints are under `/api/agent/commands`. The full list is in [Connect an AI assistant](setup.md#for-developers--api).
+- Source: [`platform/mcp-server/`](https://github.com/Mpratyush54/SERVER-automation/tree/master/platform/mcp-server).

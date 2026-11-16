@@ -1375,6 +1375,71 @@ paths:
       responses:
         '200':
           description: Rejected
+  /mcp/connections:
+    get:
+      tags: [AgentTokens]
+      summary: Connected AI assistants (remote MCP grants); own, or all for admin/devops (human JWT only)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: '{ connectorUrl, configured, connections[] }'
+  /mcp/connections/{id}:
+    delete:
+      tags: [AgentTokens]
+      summary: Disconnect an assistant (revokes the grant and all its tokens at once)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Disconnected
+        '404':
+          description: Not found or not yours
+  /oauth/register:
+    post:
+      tags: [Auth]
+      summary: Dynamic client registration for AI assistants (RFC 7591, public clients only, rate limited)
+      description: |
+        Body: redirect_uris (https, or http on 127.0.0.1/localhost/[::1]), optional client_name,
+        token_endpoint_auth_method "none", grant_types authorization_code/refresh_token.
+        The remote MCP endpoint itself is served at the site root: POST /mcp (Streamable HTTP),
+        with metadata at /.well-known/oauth-protected-resource/mcp and /.well-known/oauth-authorization-server.
+      responses:
+        '201':
+          description: Registered (client_id, no secret)
+        '400':
+          description: invalid_redirect_uri / invalid_client_metadata
+        '413':
+          description: Body too large
+        '503':
+          description: No public address configured, or too many pending registrations
+  /oauth/revoke:
+    post:
+      tags: [Auth]
+      summary: Token revocation (RFC 7009) for remote MCP clients; revoking a refresh token ends the connection
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [client_id, token]
+              properties:
+                client_id: { type: string }
+                token: { type: string }
+      responses:
+        '200':
+          description: Revoked (also for unknown tokens)
+  /oauth/consent:
+    get:
+      tags: [Auth]
+      summary: Consent details for an AI assistant authorization request (portal, human JWT)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Assistant name, redirect host, grantable scopes, step-up requirement
   /projects:
     get:
       tags: [Projects]

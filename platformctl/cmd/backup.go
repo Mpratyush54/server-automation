@@ -7,10 +7,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"filippo.io/age"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/backup"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 	"github.com/fatih/color"
@@ -20,6 +22,7 @@ import (
 var backupAll bool
 var backupConfigPath, backupTarget, restoreID, restoreComponent string
 var restoreConfirm bool
+var restorePITR, restoreSourceServer string
 
 func backupSettings() (backup.Config, error) {
 	c, e := backup.ReadConfig(backupConfigPath)
@@ -29,13 +32,30 @@ func backupSettings() (backup.Config, error) {
 	if backupTarget != "" {
 		c.Target = backupTarget
 	}
+	if c.Target, e = resolveArchiveTarget(c.Target); e != nil {
+		return c, e
+	}
 	return c, c.Validate()
 }
+
+// readResolvedBackupConfig reads backup.json and resolves the "external"
+// target to the off-site target's archive URL, loading its credentials into
+// memory for the built-in S3 client.
+func readResolvedBackupConfig(file string) (backup.Config, error) {
+	c, e := backup.ReadConfig(file)
+	if e != nil {
+		return c, e
+	}
+	c.Target, e = resolveArchiveTarget(c.Target)
+	return c, e
+}
+
 func warnLocal(c backup.Config) {
 	t, _ := backup.ParseTarget(c.Target)
 	if !t.Remote {
 		fmt.Fprintln(os.Stderr, "WARNING: local backups do not protect against server or disk loss; use an off-site S3/R2/B2 target.")
-	} else {
+	} else if !strings.HasPrefix(c.Target, "s3://"+backup.MCAlias+"/") {
+		// The off-site backup target (#186) needs no reminder.
 		fmt.Fprintln(os.Stderr, "Ensure the configured S3 alias is off-site; bundled MinIO does not protect against node loss.")
 	}
 }
@@ -112,13 +132,16 @@ func wrapProvisionRestore() {
 			id = args[0]
 		}
 		if id == "" {
-			return fmt.Errorf("--restore-from needs a backup ID (positional or --restore-id); list them with `platformctl backup list --target ...`")
+			return fmt.Errorf("--restore-from needs a backup ID (positional or --restore-id); on a configured server, list them with `platformctl backup list`; on a fresh server, inspect the target with `ls <backup-directory>/` (file://) or the AWS CLI against the S3 prefix (see docs/operations/backups.md) and choose a backup ID directory containing backup.json")
 		}
 		if !cfg.NonInteractive {
 			return fmt.Errorf("--restore-from requires --auto: stdin carries the age identity, not interactive answers")
 		}
-		if _, e := backup.ParseTarget(provisionRestoreFrom); e != nil {
-			return e
+		// "external" is the off-site target configured by this provision.
+		if provisionRestoreFrom != backup.ExternalTargetKeyword {
+			if _, e := backup.ParseTarget(provisionRestoreFrom); e != nil {
+				return e
+			}
 		}
 		identity, e := readIdentity(cmd.InOrStdin())
 		if e != nil {
@@ -131,7 +154,7 @@ func wrapProvisionRestore() {
 		color.Cyan("\n  ■ Restoring backup %s from %s", id, provisionRestoreFrom)
 		return runRestore(provisionRestoreFrom, id, "", identity)
 	}
-	provisionCmd.Flags().StringVar(&provisionRestoreFrom, "restore-from", "", "after provisioning, restore a backup from this target (file:///... or s3://mc-alias/bucket/prefix); age identity on stdin, requires --auto")
+	provisionCmd.Flags().StringVar(&provisionRestoreFrom, "restore-from", "", "after provisioning, restore a backup from this target (external = the off-site target set up by this provision, or file:///...); age identity on stdin, requires --auto")
 	provisionCmd.Flags().StringVar(&provisionRestoreID, "restore-id", "", "backup ID to restore with --restore-from (or pass it as the positional argument)")
 }
 
@@ -140,7 +163,7 @@ func init() {
 	backupCmd.Short = "Back up credentials locally, or all configured components encrypted with --all"
 	backupCmd.Args = cobra.NoArgs
 	backupCmd.PersistentFlags().StringVar(&backupConfigPath, "backup-config", "/etc/platform/backup.json", "backup configuration (contains only the public age recipient)")
-	backupCmd.PersistentFlags().StringVar(&backupTarget, "target", "", "override configured file:// or s3://mc-alias/bucket/prefix target")
+	backupCmd.PersistentFlags().StringVar(&backupTarget, "target", "", "override the configured target: external (the off-site target) or file:///path")
 	backupCmd.Flags().BoolVar(&backupAll, "all", false, "create encrypted component backup and enforce retention")
 	backupCmd.AddCommand(&cobra.Command{Use: "list", Short: "List complete backups on the target", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		c, e := backupSettings()
@@ -151,10 +174,11 @@ func init() {
 		if e != nil {
 			return e
 		}
-		items, e := (backup.Store{Target: t}).List()
+		items, incomplete, e := (backup.Store{Target: t}).ListWithIncomplete()
 		if e != nil {
 			return e
 		}
+		warnIncompleteBackups(cmd.ErrOrStderr(), incomplete)
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(items)
 	}})
 	var recipient string
@@ -173,11 +197,17 @@ func init() {
 		if e := backup.ValidateRecipient(recipient); e != nil {
 			return e
 		}
-		c := backup.Config{Target: backupTarget, Recipient: recipient, Retention: keep, Components: componentNames}
+		target := backupTarget
+		if target == "" {
+			target = defaultArchiveTarget(cfg)
+		}
+		c := backup.Config{Target: target, Recipient: recipient, Retention: keep, Components: objectBackupComponents(cfg, componentNames)}
 		if e := c.Validate(); e != nil {
 			return e
 		}
-		warnLocal(c)
+		if c.Target != backup.ExternalTargetKeyword {
+			warnLocal(c)
+		}
 		b, e := json.MarshalIndent(c, "", "  ")
 		if e != nil {
 			return e
@@ -221,28 +251,27 @@ func init() {
 		if _, e = os.Stat("/usr/local/bin/platformctl"); e != nil {
 			return fmt.Errorf("the CronJob runs /usr/local/bin/platformctl on the host: install the binary there first")
 		}
-		if e = backup.CheckTools(captureTools(c)); e != nil {
-			return e
-		}
-		if _, e = shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, backup.ScheduleYAML); e != nil {
-			return e
-		}
-		color.Green("  ✓ CronJob platform-backup-nightly installed (02:15 UTC)")
-		// Alert rules only where the monitoring stack (and its CRDs) exist.
-		if shell.RunSilent("kubectl", "get", "crd", "prometheusrules.monitoring.coreos.com") == nil {
-			if _, e = shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, backup.AlertsYAML); e != nil {
-				return fmt.Errorf("apply backup alert rules: %w", e)
-			}
-			color.Green("  ✓ PrometheusRule monitoring/platform-backups installed")
-		} else {
-			color.Yellow("  · monitoring not installed: backup failures are reported via portal notifications only")
-		}
-		return nil
+		return installSchedule(c)
 	}}
 	backupCmd.AddCommand(schedule)
 	restore := &cobra.Command{Use: "restore", Short: "Restore into a provisioned server; reads the age identity from stdin", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		if !restoreConfirm {
 			return fmt.Errorf("restore replaces data: stop project workloads, then pass --confirm")
+		}
+		if restorePITR != "" {
+			opts, err := pitrOptions(restorePITR, restoreSourceServer)
+			if err != nil {
+				return err
+			}
+			unlock, err := state.AcquireLock("restore-pitr")
+			if err != nil {
+				return err
+			}
+			defer unlock()
+			return components.RestorePostgresPITRWith(cfg, opts)
+		}
+		if restoreSourceServer != "" {
+			return fmt.Errorf("--source-server is only used with --pitr")
 		}
 		if restoreID == "" {
 			return fmt.Errorf("--from backup ID is required")
@@ -254,6 +283,8 @@ func init() {
 		defer clear(identity)
 		return runRestore(backupTarget, restoreID, restoreComponent, identity)
 	}}
+	restore.Flags().StringVar(&restorePITR, "pitr", "", "PostgreSQL recovery point: an RFC3339 time, or latest (all archived WAL); every profile on CloudNativePG; does not read an age identity")
+	restore.Flags().StringVar(&restoreSourceServer, "source-server", "", "with --pitr: recover from another server's archive in the backup target (for a rebuilt server; names: platformctl backup target show)")
 	restore.Flags().StringVar(&backupConfigPath, "backup-config", "/etc/platform/backup.json", "backup config")
 	restore.Flags().StringVar(&backupTarget, "target", "", "target override")
 	restore.Flags().StringVar(&restoreID, "from", "", "backup ID")
@@ -297,15 +328,41 @@ func init() {
 			return e
 		}
 		defer unlock()
-		start := time.Now()
-		e = backup.TestPostgres(c.Target, id, key)
-		if se := backup.PublishStatus("restore-test", id, start, backup.Manifest{}, e); se != nil {
-			fmt.Fprintln(os.Stderr, "restore-test status publication failed:", se)
-		}
-		return e
+		return runRestoreTest(cmd.OutOrStdout(), c.Target, id, key)
 	}}
 	testCmd.Flags().StringVar(&testID, "from", "", "backup ID (default latest complete)")
 	backupCmd.AddCommand(testCmd)
+}
+
+// warnIncompleteBackups flags folders without backup.json on stderr; stdout
+// keeps carrying only the JSON list of complete backups.
+func warnIncompleteBackups(w io.Writer, ids []string) {
+	for _, id := range ids {
+		fmt.Fprintf(w, "Warning: %s/ has no backup.json: a failed or interrupted backup, or one still uploading. It is not listed and cannot be restored.\n", id)
+	}
+}
+
+// Swapped in tests.
+var (
+	restoreTestPostgres  = backup.TestPostgres
+	publishRestoreStatus = backup.PublishStatus
+)
+
+// runRestoreTest restores backup id's PostgreSQL dumps into a scratch
+// database, publishes the result and, on success, says what was checked and
+// how long it took.
+func runRestoreTest(w io.Writer, target, id string, key []byte) error {
+	start := time.Now()
+	e := restoreTestPostgres(target, id, key)
+	if se := publishRestoreStatus("restore-test", id, start, backup.Manifest{}, e); se != nil {
+		fmt.Fprintln(os.Stderr, "restore-test status publication failed:", se)
+	}
+	if e != nil {
+		return e
+	}
+	fmt.Fprintf(w, "Restore test passed: backup %s decrypted, its PostgreSQL databases restored into a scratch database and the platform data (users, projects) read back in %s. The scratch database was dropped.\n",
+		id, time.Since(start).Round(time.Second))
+	return nil
 }
 
 // readIdentity reads and validates an age identity from r (stdin). It is held
@@ -335,6 +392,9 @@ func restoreConfig(target string) (backup.Config, error) {
 	}
 	if target != "" {
 		c.Target = target
+	}
+	if c.Target, e = resolveArchiveTarget(c.Target); e != nil {
+		return c, e
 	}
 	if _, e = backup.ParseTarget(c.Target); e != nil {
 		return c, e
@@ -366,4 +426,44 @@ func runRestore(target, id, component string, identity []byte) error {
 	}
 	color.Green("  ✓ Restored backup %s", id)
 	return nil
+}
+
+// installSchedule installs the nightly CronJob and, where monitoring exists,
+// the backup alert rules.
+func installSchedule(c backup.Config) error {
+	if _, e := os.Stat("/usr/local/bin/platformctl"); e != nil {
+		return fmt.Errorf("the CronJob runs /usr/local/bin/platformctl on the host: install the binary there first")
+	}
+	if e := backup.CheckTools(captureTools(c)); e != nil {
+		return e
+	}
+	if _, e := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, backup.ScheduleYAML); e != nil {
+		return e
+	}
+	color.Green("  ✓ CronJob platform-backup-nightly installed (02:15 UTC)")
+	// Alert rules only where the monitoring stack (and its CRDs) exist.
+	if shell.RunSilent("kubectl", "get", "crd", "prometheusrules.monitoring.coreos.com") == nil {
+		if _, e := shell.RunWithInput("kubectl", []string{"apply", "-f", "-"}, backup.AlertsYAML); e != nil {
+			return fmt.Errorf("apply backup alert rules: %w", e)
+		}
+		color.Green("  ✓ PrometheusRule monitoring/platform-backups installed")
+	} else {
+		color.Yellow("  · monitoring not installed: backup failures are reported via portal notifications only")
+	}
+	return nil
+}
+
+// pitrOptions parses --pitr (RFC3339 or "latest") and --source-server.
+func pitrOptions(raw, source string) (components.PITROptions, error) {
+	o := components.PITROptions{SourceServer: strings.TrimSpace(source)}
+	if strings.EqualFold(strings.TrimSpace(raw), "latest") {
+		o.Latest = true
+		return o, nil
+	}
+	t, err := time.Parse(time.RFC3339, strings.TrimSpace(raw))
+	if err != nil {
+		return o, fmt.Errorf("--pitr must be an RFC3339 time (for example 2026-11-12T10:00:00Z) or latest: %w", err)
+	}
+	o.Target = t
+	return o, nil
 }

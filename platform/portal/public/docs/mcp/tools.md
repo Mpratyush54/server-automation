@@ -1,128 +1,170 @@
-# MCP tools and command policy
+# What an AI assistant can do
 
-All MCP tools return JSON text. API errors include `status` and, on 401, a hint to set `PLATFORM_AGENT_TOKEN` or call `platform_login`.
+This page lists every tool the Cairn MCP server gives an AI assistant, and which cluster commands it may run. You manage the assistant's token and approve its requests in the portal: open a project, go to **Monitoring**, then **AI agents**.
 
-This page is the human reference. Agents should follow [For AI agents](/docs/mcp/for-agents) as well.
+Rules the assistant itself must follow: [Rules for AI agents](for-agents.md).
 
-## Session and identity
+An assistant connected through the connector URL (`https://<your-domain>/mcp`) gets every tool below except `platform_login`, `platform_logout`, the approval tools and `platform_deploy`, which need a person and are only on the local MCP server. It sees only the projects of the person who approved it.
 
-| Tool | Auth | Purpose |
+## Ask the assistant to look around
+
+These tools only read. They are the safest choice and the assistant should prefer them.
+
+| Tool | What it does | Permission it needs |
 |---|---|---|
-| `platform_health` | none | `GET /api/health` |
-| `platform_login` | none → stores JWT | Email + password; human session for approvals |
-| `platform_logout` | session | Clear the in-memory human JWT (does not unset `PLATFORM_AGENT_TOKEN`) |
-| `platform_whoami` | agent or human | `/api/agent-tokens/me` or `/api/users/me` |
-| `platform_bootstrap_status` | as configured | Infrastructure / bootstrap status |
+| `platform_health` | Checks that the server answers. | none |
+| `platform_whoami` | Shows which token or person the assistant is signed in as. | any |
+| `platform_bootstrap_status` | Shows install and component status. | any |
+| `platform_list_projects` | Lists projects. | Read every project |
+| `platform_get_project` | Shows one project (`id`). | Read every project |
+| `platform_search_logs` | Searches app logs. Filters: `projectId`, `environmentId`, `serviceName`, `level`, `search`, `limit` (default 50), `offset`. | Read logs |
+| `platform_list_pods` | Lists pods, optionally in one `namespace`. | Read nodes and pods, or Read install status |
+| `platform_list_nodes` | Lists cluster nodes. | Read nodes and pods, or Read install status |
+| `platform_get_pod_logs` | Shows one pod's logs (`namespace`, `podName`). | Read nodes and pods, Read install status, or Read logs |
+| `platform_audit_logs` | Shows recent audit log entries. | Read the audit log |
 
-## Read APIs
+Example: "List the pods in the `platform` namespace and show the last logs of the API pod."
 
-| Tool | Typical scope | Purpose |
-|---|---|---|
-| `platform_list_projects` | `projects:read` | List projects |
-| `platform_get_project` | `projects:read` | One project by `id` |
-| `platform_search_logs` | `logs:read` | Search application logs |
-| `platform_get_pod_logs` | `cluster:read` | Pod logs (`namespace`, `podName`) |
-| `platform_list_pods` | `cluster:read` | List pods (optional `namespace`) |
-| `platform_list_nodes` | `cluster:read` | Cluster nodes |
-| `platform_audit_logs` | `audit:read` | Audit log (DevOps / Tech Lead) |
+## Run a cluster command
 
-Prefer these over `platform_run_command` when they exist.
+`platform_run_command` takes one `command`, plus optional `reason`, `confirm` and `approvalId`. It always works in two steps:
 
-## Commands and deploys
+1. The assistant sends the command alone. Cairn checks it and answers with the risk level and what is needed. Nothing runs.
+2. The assistant sends it again with `confirm: true` (and a `reason` when asked). Now it runs.
 
-### `platform_run_command`
+Example:
 
-Arguments: `command` (required), optional `reason`, `confirm`, `approvalId`.
+```
+platform_run_command({ command: "kubectl get deploy -n platform" })
+platform_run_command({ command: "kubectl get deploy -n platform", confirm: true })
+```
 
-1. Always calls `POST /api/agent/commands/validate` first.
-2. If `confirm` is not true, returns `{ phase: "validation", validation, message }` — **stop and read it**.
-3. If `confirm` is true, calls `POST /api/agent/commands/execute`.
+## Which commands are allowed
 
-Never skip step 2 for mutating or destructive commands.
+Only one command per call. The command name comes first and the subcommand second, with no flags in between (`kubectl get pods -n platform` works, `kubectl -n platform get pods` does not).
 
-### Human queue
+### Runs after confirm
 
-| Tool | Auth | Purpose |
-|---|---|---|
-| `platform_list_pending_commands` | human JWT | Pending destructive commands |
-| `platform_approve_command` | human JWT | Approve by `id` |
-| `platform_reject_command` | human JWT | Reject by `id` (optional `reason`) |
+- `kubectl get`, `describe`, `top`, `api-resources`, `api-versions`, `version`, `cluster-info`
+- `kubectl logs`, `kubectl explain`, `kubectl rollout status`
+- `helm status`, `list`, `ls`, `history`, `show`
+- `platformctl status`, `version`, `info`, `health`
+- `uname`, `hostname`, `uptime`, `df`, `free`, `ps`, `whoami`, `id`, `date`, `pwd`, with only a few simple flags (for example `df -h`, `free -m`, `ps aux`)
 
-### `platform_deploy`
+### Runs after confirm and a reason
 
-`POST /api/deploy`. Required: `projectId`, `confirm: true`. Optional: `environmentId`, `version`, `branch`, `commitSha`, `imageTag`, `environmentName`, `gitPath`, `pullFromGit`, `metadata`.
+- `kubectl rollout restart`, `undo`, `pause`, `resume`
+- `kubectl annotate`, `kubectl label`
 
-Do not set `confirm` until environment, branch, and image tag are correct.
+### Needs a person's approval, then confirm and a reason
 
-## Allowlisted commands
+- Changes: `kubectl apply`, `create`, `patch`, `edit`, `scale`; `helm upgrade`, `install`, `rollback`
+- Deletes: `kubectl delete`; `kubectl drain`, `cordon`, `uncordon`; `helm uninstall`, `helm delete`; `platformctl destroy`, `teardown`, `reset`
+- Reading secrets: `kubectl get secret ... -o yaml` (or any output other than `wide` or `name`), `kubectl get --raw`, `kubectl cluster-info dump`, `helm get`
 
-Only **single** commands match. Shell chaining (`&&`, `|`, `;`, backticks) is denied.
+Anything not listed is refused (`no-matching-policy`).
 
-### Read-only (agent token; auto-approved)
+### Always refused
 
-- `kubectl get|describe|top|api-resources|api-versions|version|cluster-info`
-- `kubectl logs`
-- `kubectl explain`
-- `helm status|list|ls|get|history|show`
-- `platformctl status|version|info|health`
-- `uname`, `hostname`, `uptime`, `df`, `free`, `ps`, `env`, `printenv`, `whoami`, `id`, `date`, `pwd`, `ls`, `cat`, `head`, `tail`, `wc`
+- Chaining or substitution: `&&`, `;`, `|`, backticks, `$(`
+- `rm -rf /` and wiping home or root folders
+- `dd` from `/dev/`, `mkfs`
+- Turning off authentication or RBAC, or deleting cluster roles and role bindings
+- Sending secrets, passwords or tokens out with `curl` or `wget`
+- `curl` or `wget` to any host other than `localhost`, `127.0.0.1`, `ghcr.io` or `github.com`
+- `kubectl` or `helm` flags that switch cluster or identity, such as `--kubeconfig`, `--server`, `--token`, `--as`, `--insecure-skip-tls-verify`, `--post-renderer`
+- `DROP DATABASE`, `DROP SCHEMA`
+- Fork bombs and empty commands
 
-### Mutating (`confirm: true` + `reason`)
+## Approve a request
 
-- `kubectl rollout restart|status|undo|pause|resume`
-- `kubectl scale`
-- `kubectl apply`
-- `kubectl annotate|label`
-- `helm upgrade|install|rollback`
+When a command needs a person, the first step returns an `approvalId`. A person with the Admin or DevOps role approves it:
 
-### Destructive (human approval, then `confirm` + `reason` + `approvalId`)
+- **In the portal:** **Monitoring**, **AI agents**, **Waiting for approval**, then **Approve** or **Reject**.
+- **In the AI tool:** `platform_login` (accounts without two-factor sign-in only), then:
 
-- `kubectl delete`
-- `kubectl drain|cordon|uncordon`
-- `helm uninstall|delete`
-- `platformctl destroy|teardown|reset`
-
-Anything else is `no-matching-policy` and denied.
-
-## Denied patterns (always)
-
-- `rm -rf /` and recursive home/root wipes
-- `dd` from `/dev/`
-- `mkfs`
-- Disabling auth/RBAC / deleting clusterrole bindings
-- Shipping secrets/passwords/tokens out via curl/wget
-- Arbitrary curl/wget to hosts other than localhost, `ghcr.io`, `github.com`, `registry.*`
-- `DROP DATABASE` / `DROP SCHEMA`
-- Fork bombs
-- Empty command
-- Shell chaining / piping / substitution
-
-## MCP resources
-
-| URI | Content |
+| Tool | What it does |
 |---|---|
-| `platform://openapi` | Live OpenAPI JSON from `GET /api/openapi.json` |
-| `platform://command-policy` | Risk tiers and denied patterns (markdown) |
+| `platform_list_pending_commands` | Lists requests waiting for a person. |
+| `platform_approve_command` | Approves one request (`id`). |
+| `platform_reject_command` | Rejects one request (`id`, optional `reason`). |
 
-Read `platform://command-policy` before inventing commands.
+Then the assistant runs the command with `confirm: true`, a `reason` and the `approvalId`. An approval lasts one hour, is used once, and works only for the token that asked.
 
-## Default token scopes
+## Sign in as a person
 
-When `POST /api/agent-tokens` omits `scopes`:
+| Tool | What it does |
+|---|---|
+| `platform_login` | Signs in with `email` and `password`. Needed for approvals. Does not work for accounts with two-factor sign-in. |
+| `platform_logout` | Ends that session. The agent token stays. |
 
-- `commands:validate`
-- `commands:execute`
-- `projects:read`
-- `logs:read`
-- `cluster:read`
-- `audit:read`
-- `bootstrap:read`
+## Deploy
+
+`platform_deploy` starts a deployment. It needs `projectId` and `confirm: true`. Optional: `environmentId`, `environmentName`, `version`, `branch`, `commitSha`, `imageTag`, `gitPath`, `pullFromGit`, `metadata`.
+
+It works only with a person's session (Developer, Tech lead, DevOps or Admin), not with an agent token. It is only offered by the local MCP server. See [Deploy from an assistant](setup.md#deploy-from-an-assistant).
 
 ## Errors
 
 | Status | Meaning |
 |---|---|
-| **401** | Missing/expired credentials — set `PLATFORM_AGENT_TOKEN` or `platform_login` |
-| **403** | Scope, role, or policy denial |
-| **409** | A pending approval already exists for that command |
-| **400** | Validation failed (empty command, denied pattern, missing confirm/reason) |
+| 400 | The command is missing, needs `confirm: true` or a `reason`, or the `approvalId` belongs to a different command. |
+| 401 | No credentials, or they expired. Set `PLATFORM_AGENT_TOKEN` or call `platform_login`. |
+| 403 | Command refused, token lacks a permission, role too low, approval not yet approved or expired, or the action needs a person. |
+| 404 | The approval does not exist. |
+| 409 | The approval was already used, or someone else approved or rejected it first. |
+| 504 | The call took longer than the MCP server's time limit. |
+
+## How it works
+
+- All tools return JSON text. Errors include `status` and the API's answer; a `401` also includes a hint.
+- Tool results are redacted before the assistant sees them: tokens, passwords, cookies and keys become `[REDACTED]`.
+- Checking a command that needs approval creates a pending request, or reuses the same token's existing pending request for that command. Pending requests expire after one hour. Approving resets the hour.
+- Because `platform_run_command` checks the command again before running it, the second call for an approved command also opens a new pending request. It is harmless; reject it or let it expire.
+- Commands run inside the API pod, without a shell, with a 60-second limit, 2 MB of output, and only `PATH`, `HOME`, `KUBECONFIG` and the Kubernetes service address in the environment.
+- Mutating and destructive commands are recorded with their result. Every execution is written to the audit log as `agent_command.execute`.
+- With `AGENT_COMMAND_DRY_RUN=1` on the API (and always in tests), commands are checked but not run; the result says `[dry-run]`.
+
+## For developers / API
+
+Permission names, as the API uses them:
+
+| Portal label | Scope |
+|---|---|
+| Check commands against the policy | `commands:validate` |
+| Run allowed commands | `commands:execute` |
+| Read every project | `projects:read` |
+| Read logs | `logs:read` |
+| Read nodes and pods | `cluster:read` |
+| Read the audit log | `audit:read` |
+| Read install status | `bootstrap:read` |
+| Read session replays (personal data) | `replays:read` (not in the default set) |
+
+A token with `*` has every scope. Uploading source maps from CI needs the project-bound scope `errors:sourcemaps:<projectId>`; `projects:read` is not enough.
+
+Tool to API mapping:
+
+| Tool | API call |
+|---|---|
+| `platform_health` | `GET /api/health` |
+| `platform_whoami` | `GET /api/agent-tokens/me` (agent token) or `GET /api/users/me` |
+| `platform_bootstrap_status` | `GET /api/bootstrap/status` |
+| `platform_list_projects` / `platform_get_project` | `GET /api/projects`, `GET /api/projects/:id` |
+| `platform_search_logs` | `GET /api/logs/search` |
+| `platform_list_pods` / `platform_list_nodes` | `GET /api/bootstrap/pods`, `GET /api/bootstrap/nodes` |
+| `platform_get_pod_logs` | `GET /api/bootstrap/pods/:namespace/:podName/logs` |
+| `platform_audit_logs` | `GET /api/audit-logs` |
+| `platform_run_command` | `POST /api/agent/commands/validate`, then `POST /api/agent/commands/execute` |
+| `platform_list_pending_commands` | `GET /api/agent/commands/pending` |
+| `platform_approve_command` / `platform_reject_command` | `POST /api/agent/commands/:id/approve`, `.../reject` |
+| `platform_deploy` | `POST /api/deploy` |
+| `platform_login` | `POST /api/auth/login` |
+
+MCP resources:
+
+| URI | Content |
+|---|---|
+| `platform://openapi` | The live API description from `GET /api/openapi.json`. |
+| `platform://command-policy` | A short guide to risk levels and the approval flow (Markdown). This page is the complete list. |
+
+Source of truth for the allowlist: [`platform/api/src/lib/command-guard.ts`](https://github.com/Mpratyush54/SERVER-automation/blob/master/platform/api/src/lib/command-guard.ts).

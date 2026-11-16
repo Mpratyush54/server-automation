@@ -1,7 +1,8 @@
+import { applySourceWorkload, sourceWorkloadReady } from './source-deploy';
 import { releaseVersion } from './release-version';
 import { injectRelease } from './release-workloads';
 import * as k8s from '@kubernetes/client-node';
-import { MoreThan } from 'typeorm';
+import { MoreThan, Not } from 'typeorm';
 import { getDb } from '../config/database';
 import { Deployment, DeploymentStatus } from '../entities/Deployment';
 import { Environment, EnvironmentName } from '../entities/Environment';
@@ -11,13 +12,24 @@ import { reportNamespaceBaseline } from './namespace-backfill';
 import { ensureProjectNamespace } from './namespace-baseline';
 import { defineOperation } from './operations';
 import { loadKubeConfig } from './kube-config';
+import { applyEnvironmentAutoscaling } from './autoscaling-k8s';
 
 export const DEPLOY_OPERATION = 'deployment.deploy';
+
+/**
+ * Later deployments of the same environment. Excludes the deployment itself: PostgreSQL stores
+ * created_at with microseconds while the loaded Date has milliseconds, so a plain "created after"
+ * comparison also matches the row it was loaded from.
+ */
+export function newerDeploymentWhere(dep: { id: string; environmentId: string | null; createdAt: Date }) {
+  return { environmentId: dep.environmentId as string, createdAt: MoreThan(dep.createdAt), id: Not(dep.id) };
+}
 
 /** Non-secret state of a deploy (visible via GET /operations/:id). */
 type DeployState = {
   deploymentId: string;
   preview?: boolean;
+  source?: boolean;
   appName?: string;
   destNs?: string;
   host?: string;
@@ -91,7 +103,7 @@ export const deployOperation = defineOperation<DeployState>({
         const { ds, dep, project, env } = await load(ctx.state.deploymentId);
         const repo = ds.getRepository(Deployment);
         if (ctx.resumed && dep.environmentId) {
-          const newer = await repo.findOne({ where: { environmentId: dep.environmentId, createdAt: MoreThan(dep.createdAt) } });
+          const newer = await repo.findOne({ where: newerDeploymentWhere(dep) });
           if (newer) throw new Error(`superseded by deployment ${newer.id}`);
         }
         // Namespace isolation baseline (#22): labels, PSA, NetworkPolicies, quota, LimitRange.
@@ -110,6 +122,16 @@ export const deployOperation = defineOperation<DeployState>({
         await repo.save(dep);
         dep.status = DeploymentStatus.DEPLOYING;
         await repo.save(dep);
+
+        if (dep.metadata?.sourceBuild) {
+          const name = `source-${env.id}`;
+          if (env.namespace !== target.namespace) { env.namespace = target.namespace; await ds.getRepository(Environment).save(env); }
+          await applySourceWorkload(env.namespace, name, dep.imageTag, project.id, String(env.name), releaseVersion(dep));
+          ctx.state.source = true; ctx.state.appName = name; ctx.state.destNs = env.namespace;
+          if (env.domain) await ensureProjectIngress({ projectId: project.id, environmentName: String(env.name),
+            name, namespace: env.namespace, host: env.domain, serviceName: name, servicePort: 80 });
+          return;
+        }
 
         if (env.name === EnvironmentName.PREVIEW) {
           ctx.state.preview = true;
@@ -166,6 +188,13 @@ export const deployOperation = defineOperation<DeployState>({
     {
       name: 'wait-healthy',
       async run(ctx) {
+        if (ctx.state.source) {
+          for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
+            if (await sourceWorkloadReady(ctx.state.destNs!, ctx.state.appName!)) return;
+            await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+          }
+          throw new Error('Source workload readiness timed out');
+        }
         if (ctx.state.preview) {
           ctx.setOutput({ note: 'preview workload applied synchronously' });
           return;
@@ -200,7 +229,9 @@ export const deployOperation = defineOperation<DeployState>({
       async run(ctx) {
         const { ds, dep, project, env } = await load(ctx.state.deploymentId);
         // Keep the original three-step operation layout so interrupted pre-upgrade operations can resume.
-        if (!ctx.state.preview) await injectRelease(env.namespace, project.id, releaseVersion(dep));
+        // Source workloads carry the release metadata from the apply step (sourceWorkload).
+        if (!ctx.state.preview && !ctx.state.source) await injectRelease(env.namespace, project.id, releaseVersion(dep));
+        if (env.autoscaling?.enabled) await applyEnvironmentAutoscaling(env, env.autoscaling);
         dep.status = DeploymentStatus.DEPLOYED;
         dep.deployedAt = dep.deployedAt || new Date();
         if (env.domain) {

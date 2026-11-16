@@ -1,26 +1,38 @@
-<div class="card">
-  <h2>Search Logs</h2>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-    <div class="form-group"><label>Project ID</label><input [(ngModel)]="query.projectId"></div>
-    <div class="form-group"><label>Service Name</label><input [(ngModel)]="query.serviceName"></div>
-    <div class="form-group"><label>Level</label><select [(ngModel)]="query.level"><option value="">All</option><option>info</option><option>warn</option><option>error</option><option>debug</option></select></div>
-    <div class="form-group"><label>Search</label><input [(ngModel)]="query.search" placeholder="keyword"></div>
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Logs</h1>
+    <p class="page-subtitle">Search a project's log lines by service, level or keyword.</p>
   </div>
-  <button class="btn btn-primary" (click)="search()" [disabled]="!query.projectId">Search</button>
 </div>
 
-@if (logs.length) {
-  <div class="card">
-    <h2>Results ({{ total }})</h2>
-    @for (l of logs; track l) {
-      <div style="padding:8px 0;border-bottom:1px solid #e2e8f0;font-size:13px;">
-        <div style="display:flex;gap:8px;align-items:center;">
-          <span style="color:#64748b;">{{ l.timestamp | date:'medium' }}</span>
-          <span class="badge" [style.background]="l.level==='error'?'#f8d7da':'#e2e8f0'" [style.color]="l.level==='error'?'#721c24':'#475569'">{{ l.level }}</span>
-          <span style="font-weight:500;">{{ l.serviceName }}</span>
-        </div>
-        <div style="margin-top:4px;">{{ l.message }}</div>
-      </div>
-    }
+<section class="card card-flush" aria-labelledby="lg-results">
+  <div class="card-header">
+    <h2 id="lg-results">Log lines @if (logs.length) { <span class="badge">{{ total }}</span> }</h2>
   </div>
-}
+  <div class="lg-bar" role="search" aria-label="Search logs">
+    <input id="lg-project" class="mono" aria-label="Project ID" placeholder="Project ID" [(ngModel)]="query.projectId" autocomplete="off" (keyup.enter)="query.projectId && search()">
+    <input id="lg-service" aria-label="Service name" placeholder="Any service" [(ngModel)]="query.serviceName" autocomplete="off">
+    <select id="lg-level" aria-label="Level" [(ngModel)]="query.level"><option value="">Any level</option><option value="info">Info</option><option value="warn">Warning</option><option value="error">Error</option><option value="debug">Debug</option></select>
+    <input id="lg-q" type="search" aria-label="Search" [(ngModel)]="query.search" placeholder="Keyword" (keyup.enter)="query.projectId && search()">
+    <button type="button" class="btn btn-sm btn-primary" (click)="search()" [disabled]="!query.projectId">Search</button>
+  </div>
+  @if (logs.length) {
+    <ul class="lg-list">
+      @for (l of logs; track l) {
+        <li>
+          <div class="lg-meta">
+            <span class="muted">{{ l.timestamp | date:'medium' }}</span>
+            <span class="badge" [class.badge-failed]="l.level === 'error'">{{ l.level }}</span>
+            <span class="lg-service">{{ l.serviceName }}</span>
+          </div>
+          <div class="lg-msg mono">{{ l.message }}</div>
+        </li>
+      }
+    </ul>
+  } @else {
+    <div class="empty-state">
+      <strong>No log lines to show</strong>
+      Enter a project ID (shown on the project's page) and select Search. Your app's output appears here.
+    </div>
+  }
+</section>

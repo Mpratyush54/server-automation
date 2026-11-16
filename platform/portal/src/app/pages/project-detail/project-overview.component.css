@@ -1,0 +1,26 @@
+:host { display: block; }
+
+.ov-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+@media (min-width: 1100px) {
+  .ov-grid { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); align-items: start; }
+}
+.ov-main, .ov-side { display: flex; flex-direction: column; gap: 1.5rem; min-width: 0; }
+
+.ov-body { padding: 1rem 1.25rem; }
+
+.ov-envs { list-style: none; margin: 0; padding: 1rem 1.25rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; }
+.ov-env { padding: 1rem 1.25rem; border: 1px solid rgb(var(--line)); border-radius: 8px; display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+.ov-env-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.ov-env-name { margin: 0; font-size: 0.875rem; font-weight: 600; text-transform: capitalize; }
+.ov-note { margin: 0; font-size: 0.875rem; color: rgb(var(--fg-2)); overflow-wrap: anywhere; }
+.ov-ns { display: block; }
+
+.ov-links { display: flex; flex-direction: column; padding: 0.75rem 1.25rem; }
+.ov-links button {
+  text-align: left; background: transparent; border: 0; border-radius: 6px; cursor: pointer;
+  padding: 0.5rem 0.75rem; margin: 0 -0.75rem; font: inherit; font-size: 0.875rem; color: rgb(var(--accent-text));
+}
+.ov-links button:hover { background: rgb(var(--raised)); }
+
+/* Long URLs end in an ellipsis rather than breaking mid-word. */
+.po-url { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

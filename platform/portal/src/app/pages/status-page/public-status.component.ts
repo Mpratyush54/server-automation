@@ -140,8 +140,8 @@ export class PublicStatusComponent implements OnInit, OnDestroy {
   cssVars(): Record<string, string> {
     const b = this.payload?.branding;
     return {
-      '--sp-primary': b?.primaryColor || '#0f172a',
-      '--sp-accent': b?.accentColor || '#16a34a',
+      '--sp-primary': b?.primaryColor || 'rgb(var(--fg))',
+      '--sp-accent': b?.accentColor || 'rgb(var(--ok))',
     };
   }
 }

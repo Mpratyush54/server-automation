@@ -1,1 +1,23 @@
-/* Audit logs page styling */
+/* Audit log (al-) */
+
+.al-user { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.al-name { font-weight: 500; color: rgb(var(--fg)); }
+.al-email { font-size: 0.8125rem; color: rgb(var(--fg-3)); overflow-wrap: anywhere; }
+.al-action { font-size: 0.8125rem; color: rgb(var(--fg)); }
+.al-ip { font-size: 0.8125rem; white-space: nowrap; }
+.al-when { white-space: nowrap; }
+.al-meta {
+  margin: 0;
+  max-width: 300px;
+  max-height: 160px;
+  overflow: auto;
+  padding: 6px 8px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 6px;
+  background: rgb(var(--canvas));
+  color: rgb(var(--fg-2));
+  font-size: 0.75rem;
+}
+.al-target { margin-left: 6px; }
+.al-details summary { cursor: pointer; font-size: 0.8125rem; color: rgb(var(--accent-text)); }
+.al-details[open] summary { margin-bottom: 6px; }

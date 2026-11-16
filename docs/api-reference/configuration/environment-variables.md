@@ -9,18 +9,18 @@
 | `DOMAIN` | `localhost:3000` | Public-facing domain (used for CORS, preview URLs, OIDC issuer) | |
 | `PORTAL_URL` | `http://localhost:4200` | Portal URL for CORS and OAuth redirects | |
 | `NODE_ENV` | `development` | Node.js environment (`development`, `production`) | |
-| `PLATFORM_ENV` | `production` | Platform deployment environment name | |
+| `PLATFORM_ENV` | `production` | Cairn deployment environment name | |
 | `PLATFORM_URL` | — | Full platform URL for portal builds | |
 | `KUBECONFIG` | `~/.kube/config` | Path to Kubernetes kubeconfig | |
 | **PostgreSQL** | | | |
-| `PLATFORM_PG_HOST` | — | PostgreSQL hostname | ✓ |
+| `PLATFORM_PG_HOST` | — | PostgreSQL hostname | Yes |
 | `PLATFORM_PG_PORT` | `5432` | PostgreSQL port | |
 | `PLATFORM_PG_USER` | `platform` | PostgreSQL user | |
-| `PLATFORM_PG_PASSWORD` | — | PostgreSQL password | ✓ |
+| `PLATFORM_PG_PASSWORD` | — | PostgreSQL password | Yes |
 | `PLATFORM_PG_DB` | `platform` | PostgreSQL database name | |
 | `PLATFORM_PG_POOL` | `10` | Connection pool size | |
 | **MongoDB** | | | |
-| `PLATFORM_MONGO_URI` | — | MongoDB connection URI | ✓ |
+| `PLATFORM_MONGO_URI` | — | MongoDB connection URI | Yes |
 | `PLATFORM_MONGO_POOL` | `5` | Connection pool size | |
 | **Redis** | | | |
 | `PLATFORM_REDIS_HOST` | — | Redis hostname | |
@@ -29,13 +29,16 @@
 | `PLATFORM_REDIS_DB` | `0` | Redis database index | |
 | **Shared API state (Redis)** | | | |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `redis-master.databases.svc.cluster.local` / `6379` / `0` | Redis for login state, one-time codes, rate limits and permission-cache invalidation | |
-| `REDIS_PASSWORD` | — | Platform Redis password; the API derives and creates its own ACL user (`plat-api`, keys `plat:api:*`) from it | ✓ |
+| `REDIS_PASSWORD` | — | Cairn Redis password; the API derives and creates its own ACL user (`plat-api`, keys `plat:api:*`) from it | Yes |
 | `REDIS_API_USERNAME` / `REDIS_API_PASSWORD` | — | Use an externally managed ACL user instead | |
+| `REDIS_SENTINEL_HOSTS` | — | Comma-separated Sentinel `host:port` list (default port 26379). When set, every API Redis client finds the master through Sentinel and ACL users are created on every node; platformctl sets it on the `ha` profile | |
+| `REDIS_SENTINEL_MASTER` | `mymaster` | Sentinel master set name | |
+| `REDIS_SENTINEL_USERNAME` / `REDIS_SENTINEL_PASSWORD` | — / `REDIS_PASSWORD` | Credentials the API uses for Sentinel | |
 | `REDIS_OP_TIMEOUT_MS` | `2000` | Deadline for one state-store operation before it counts as unavailable | |
 | `PLATFORM_STATE_STORE` | `redis` | `memory` = per-process state for single-process local development only | |
 | `SHUTDOWN_TIMEOUT_MS` | `25000` | Graceful-shutdown drain deadline after SIGTERM | |
 | **Secrets Encryption** | | | |
-| `SECRETS_ENCRYPTION_KEY` | — | 32-byte master key for AES-256-GCM (base64 or hex) | ✓ |
+| `SECRETS_ENCRYPTION_KEY` | — | 32-byte master key for AES-256-GCM (base64 or hex) | Yes |
 | **JWT** | | | |
 | `JWT_SECRET` | `plat-super-secret-key` | JWT signing secret | |
 | **GitLab** | | | |
@@ -77,8 +80,8 @@
 | Variable | Default | Description | Required |
 |---|---|---|---|
 | **Domain & Identity** | | | |
-| `DOMAIN` | — | Primary domain (e.g. `platform.company.com`) | ✓ |
-| `ADMIN_EMAIL` | — | Admin email for Let's Encrypt + notifications | ✓ |
+| `DOMAIN` | — | Primary domain (e.g. `platform.company.com`) | Yes |
+| `ADMIN_EMAIL` | — | Admin email for Let's Encrypt + notifications | Yes |
 | `PLATFORM_NAME` | `Platform` | Display name for the platform | |
 | **Bootstrap Behaviour** | | | |
 | `NON_INTERACTIVE` | `false` | Skip all prompts (CI mode) | |
@@ -86,13 +89,13 @@
 | `PLATFORM_IMAGE_TAG` | `latest` | Docker image tag to deploy | |
 | `PLATFORM_REPO_URL` | — | Container registry URL | |
 | **Component Toggles** | | | |
-| `API_REPLICAS` | `2` (`1` on `minimal`) | Platform API replica count (1–10); a PodDisruptionBudget is added when ≥ 2 | |
+| `API_REPLICAS` | `2` (`1` on `minimal`) | Cairn API replica count (1–10); a PodDisruptionBudget is added when ≥ 2 | |
 | `INSTALL_ARGOCD` | `y` | Install ArgoCD | |
 | `INSTALL_MONITORING` | `y` | Install Grafana + Prometheus + Loki | |
 | `INSTALL_PORTAINER` | `y` | Install Portainer | |
 | `INSTALL_CERTMANAGER` | `y` | Install cert-manager | |
 | **Let's Encrypt** | | | |
-| `LE_EMAIL` | — | Email for Let's Encrypt certificate registration | ✓ |
+| `LE_EMAIL` | — | Email for Let's Encrypt certificate registration | Yes |
 | **Generated Secrets** | | | |
 | `POSTGRES_PASSWORD` | — | PostgreSQL admin password (auto-generated if blank) | |
 | `MONGO_PASSWORD` | — | MongoDB root password | |
@@ -170,3 +173,23 @@ kubectl create secret generic platform-env \
   --from-literal=SECRETS_ENCRYPTION_KEY="$SECRETS_ENCRYPTION_KEY" \
   # ... all other vars
 ```
+
+## Installer object storage
+
+Fresh installs only; see [external object storage](../../operations/ha.md#external-object-storage-fresh-installs-only).
+These settings are saved in `/etc/platform/.env` and passed to the API by the installer.
+
+| Variable | Default | Description |
+|---|---|---|
+| `OBJECT_STORAGE_MODE` | `bundled` | `bundled` or `external`, on any profile. External skips MinIO and its console/SSO/bootstrap steps. |
+| `OBJECT_STORAGE_ENDPOINT` | Empty | Required in external mode: S3 API URL with no credentials, path or query. |
+| `OBJECT_STORAGE_REGION` | `us-east-1` | Signing region; R2 uses `auto`. |
+| `OBJECT_STORAGE_BUCKET_PREFIX` | `cairn` | Unique bucket prefix; buckets are `<prefix>-<purpose>` for uploads, backups, replays, loki, tempo, pyroscope and registry. |
+| `OBJECT_STORAGE_FORCE_PATH_STYLE` | `true` | `true` for path addressing, `false` for virtual-hosted addressing. |
+
+Credentials use Kubernetes Secret `platform/platform-object-storage` keys
+`OBJECT_STORAGE_ACCESS_KEY` and `OBJECT_STORAGE_SECRET_KEY`, written from stdin
+with `provision --object-storage-credentials-stdin` or hidden interactive prompts.
+Do not put these keys in argv or the host `.env` file. Namespace-local consumer
+Secrets are derived from the master Secret. Missing buckets are created through
+S3 when permitted; write/read/delete preflight must pass before k3s starts.

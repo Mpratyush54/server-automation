@@ -1,1051 +1,857 @@
 @if (project) {
-  <div class="card mb-8" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(59, 130, 246, 0.05)); border-color: rgba(139, 92, 246, 0.2);">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
-      <div style="min-width:0;">
-        <h2 style="overflow-wrap:anywhere;font-size:1.75rem;margin:0;border:none;padding:0;background:linear-gradient(to right, #fff, #94a3b8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">{{ project.name }}</h2>
-        <p style="color:var(--color-text-secondary);margin:8px 0 0 0;font-size:0.95rem;">{{ project.description || 'No description provided' }}</p>
+  <header class="page-header">
+    <div class="min-w-0">
+      <div class="title-row">
+        <h1 class="page-title">{{ project.name }}</h1>
+        <span [class]="statusClass(projectStatusView.tone)" data-testid="project-status">{{ projectStatusView.label }}</span>
       </div>
-      <div style="display:flex;gap:8px;">
-        <span class="badge badge-active" style="font-size:0.8rem;padding:6px 14px;background-color:rgba(139,92,246,0.15);color:var(--primary);border-color:rgba(139,92,246,0.3);">{{ project.stack }}</span>
-        <span class="badge badge-active" style="font-size:0.8rem;padding:6px 14px;">{{ project.isActive ? 'Active' : 'Archived' }}</span>
-      </div>
+      <p class="page-subtitle meta">
+        @if (repoHref) {
+          <a [href]="repoHref" target="_blank" rel="noopener">{{ repoLabel }}</a>
+        } @else if (project.repositoryUrl) {
+          <span class="mono">{{ project.repositoryUrl }}</span>
+        } @else {
+          <span class="muted">No repository</span>
+        }
+        @if (appUrl) {
+          <span aria-hidden="true">·</span>
+          <a class="mono" [href]="appUrl" target="_blank" rel="noopener">{{ project.domain }}</a>
+        }
+        @if (project.stack) {
+          <span aria-hidden="true">·</span>
+          <span>{{ project.stack }}</span>
+        }
+      </p>
+      @if (project.description) {
+        <p class="page-subtitle">{{ project.description }}</p>
+      }
     </div>
-  </div>
+    <div class="actions">
+      @if (appUrl) {
+        <a class="btn" [href]="appUrl" target="_blank" rel="noopener">Open app</a>
+      }
+      <button type="button" class="btn btn-primary" (click)="openDeployForm()">Deploy</button>
+    </div>
+  </header>
+} @else if (loaded) {
+  <div class="card empty-state"><strong>Project not found</strong>It may have been deleted, or you no longer have access to it.</div>
 }
 
-@if (project?.namespaceBaselines?.length) {
-  <section class="card mb-8" aria-label="Namespace isolation">
-    <h2>Namespace isolation</h2>
-    @for (baseline of project.namespaceBaselines; track baseline.namespace) {
-      <div>
-        <code>{{ baseline.namespace }}</code>
-        <p>Network policies: {{ baseline.policyApplied ? 'Applied' : 'Missing or changed' }} · Pod Security: {{ baseline.psa || 'Unknown' }}</p>
-        @if (baseline.ownerMatches === false) {
-          <p>Namespace ownership labels do not match this project.</p>
-        }
-        @if (baseline.additionalPolicies?.length) {
-          <p>Additional policies require review: {{ baseline.additionalPolicies.join(', ') }}</p>
-        }
-        @if (baseline.quota && (!baseline.quotaApplied || !baseline.limitsApplied)) {
-          <p>Quota or resource defaults differ from the configured baseline.</p>
-        }
-        @if (baseline.error) {
-          <p>{{ baseline.error }}</p>
-        }
-        @if (baseline.psa && baseline.psa !== 'restricted') {
-          <p>Restricted Pod Security is in warn/audit mode. Review deployment warnings before enforcing.</p>
-        }
-        @if (baseline.quota) {
-          <div class="table-scroll"><table style="width:100%">
-            <thead><tr><th>Resource</th><th>Used</th><th>Quota</th></tr></thead>
-            <tbody>
-              @for (resource of baseline.quota.hard | keyvalue; track resource.key) {
-                <tr><td>{{ resource.key }}</td><td>{{ baseline.quota.used[$any(resource.key)] || '0' }}</td><td>{{ resource.value }}</td></tr>
-              }
-            </tbody>
-          </table></div>
-        }
-      </div>
-    }
-  </section>
-}
-
-<!-- Tab Navigation Bar -->
-<nav #tabBar class="pd-tabs" aria-label="Project sections">
-  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'deployments'" (click)="switchTab('deployments')">🚀 Deployments</button>
-  <a class="btn btn-sm" [routerLink]="['/projects', project?.id, 'observability']">📈 Observability</a>
-  @if (!observabilityEnabled) { <!-- #48: replaced by Observability when telemetry (full profile) is installed -->
-  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'metrics'" (click)="switchTab('metrics')">📊 Metrics</button>
-  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'api-metrics'" (click)="switchTab('api-metrics')">⚡ API Latency</button>
-  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'logs'" (click)="switchTab('logs')">📝 Logs</button>
+<nav #tabBar class="subnav" aria-label="Project sections">
+  @for (s of sections; track s.id) {
+    <button type="button" [class.active]="section === s.id" [attr.aria-current]="section === s.id ? 'page' : null"
+      [attr.data-section]="s.id" (click)="switchSection(s.id)">{{ s.label }}</button>
   }
-  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'environment'" (click)="switchTab('environment')">🧩 Environment</button>
-  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'privacy'" (click)="switchTab('privacy')">🔒 Privacy</button>
-  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'storage'" (click)="switchTab('storage')">📁 Storage</button>
-  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'environments'" (click)="switchTab('environments')">🌐 Environments</button>
-  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'access'" (click)="switchTab('access')">👥 Access</button>
-  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'sdk-tokens'" (click)="switchTab('sdk-tokens')">🔑 SDK Tokens</button>
-  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'gitops'" (click)="switchTab('gitops')">🐙 GitOps / ArgoCD</button>
-  <button class="btn btn-sm" [class.btn-primary]="activeTab === 'databases'" (click)="switchTab('databases')">🗄️ Databases</button>
-  <a class="btn btn-sm" [routerLink]="['/projects', project?.id, 'synthetics']">🩺 Synthetics</a>
-  <a class="btn btn-sm" [routerLink]="['/projects', project?.id, 'replays']">▶ Replays</a>
-  <a class="btn btn-sm" [routerLink]="['/projects', project?.id, 'status']">📡 Status page</a>
-  <a class="btn btn-sm" [routerLink]="['/projects', project?.id, 'heatmaps']">🔥 Heatmaps</a>
 </nav>
 
-<!-- DEPLOYMENTS TAB -->
-@if (activeTab === 'deployments') {
-  <div>
-    @if (project) { <app-releases-panel [projectId]="project.id" /> }
-    <div class="card" style="margin-bottom:20px;">
-      <h2 style="margin-top:0;">Project Settings — Git & Domain</h2>
-      <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;">
-        ArgoCD pulls manifests from this GitHub repository. The SDK <code>repositoryUrl</code> must match this origin exactly.
-        Set a custom domain so environments get routable hosts. Namespaces are server-assigned.
-      </p>
-      <div class="grid-2">
-        <div class="form-group">
-          <label>GitHub Repository URL</label>
-          <input [(ngModel)]="projectSettings.repositoryUrl" placeholder="https://github.com/org/repo.git" style="width:100%;">
-          <label style="display:block; margin-top:12px">Git revision override (next deployment)</label>
-          <input [(ngModel)]="projectSettings.gitRevision" [placeholder]="project?.defaultBranch || 'Automatic default branch'" style="width:100%">
-          <small>Leave empty to use the repository default branch: {{ project?.defaultBranch || 'HEAD (resolved on deploy)' }}.</small>
-        </div>
-        <div class="form-group">
-          <label>Custom Domain (base)</label>
-          <input [(ngModel)]="projectSettings.domain" placeholder="example.com or <server-ip>.sslip.io" style="width:100%;">
-        </div>
-      </div>
-      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-        <button class="btn btn-sm btn-primary" (click)="saveProjectSettings()" [disabled]="savingSettings || role === 'developer'">
-          {{ savingSettings ? 'Saving…' : 'Save Settings' }}
-        </button>
-        @if (project?.domain) {
-          <span style="font-size:0.8rem;color:var(--color-text-secondary);">
-            Live base: <code>{{ project.domain }}</code>
-          </span>
-        }
-      </div>
-    </div>
+<!-- OVERVIEW -->
+@if (section === 'overview') {
+  <app-project-overview
+    [project]="project"
+    [deployments]="deployments"
+    [members]="members"
+    [argoStatus]="argoStatus"
+    [aggregatedMetrics]="aggregatedMetrics"
+    [metricsCount]="metrics.length"
+    [observabilityEnabled]="observabilityEnabled"
+    (navigate)="switchSection($event)" />
+}
+
+<!-- DEPLOYMENTS: deploy form, releases, history, GitOps / Argo CD, environments -->
+@if (section === 'deployments') {
+  <div class="stack">
     @if (updateAvailable && latestRelease) {
-      <div class="card" style="margin-bottom:20px;background:rgba(16,185,129,0.08);border-color:rgba(16,185,129,0.35);">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
-          <div>
-            <h2 style="margin:0;border:0;padding:0;font-size:1.05rem;color:#34d399;">New GitHub release available</h2>
-            <p style="margin:6px 0 0 0;font-size:0.85rem;color:var(--color-text-secondary);">
-              Running <code>{{ currentDeployedVersion || 'none' }}</code>
-              → latest <code>{{ latestRelease.tag }}</code>
-              @if (latestRelease.name) {
-                <span> ({{ latestRelease.name }})</span>
-              }
-            </p>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            @if (latestRelease.htmlUrl) {
-              <a [href]="latestRelease.htmlUrl" target="_blank" class="btn btn-sm">View on GitHub</a>
-            }
-            <button class="btn btn-sm btn-primary" (click)="deployRelease(latestRelease)" [disabled]="deployInProgress || !deployDto.environmentId">
-              Update to {{ latestRelease.tag }}
-            </button>
-          </div>
+      <div class="notice notice-ok release-banner" role="status">
+        <div class="min-w-0">
+          <strong>{{ latestRelease.tag }} is available</strong>
+          <p class="hint">You are running <span class="mono">{{ currentDeployedVersion || 'nothing yet' }}</span>.</p>
+        </div>
+        <div class="actions">
+          @if (latestRelease.htmlUrl) {
+            <a [href]="latestRelease.htmlUrl" target="_blank" rel="noopener" class="btn btn-sm">View release</a>
+          }
+          <button type="button" class="btn btn-sm" (click)="deployRelease(latestRelease)" [disabled]="deployInProgress || !deployDto.environmentId">
+            Update to {{ latestRelease.tag }}
+          </button>
         </div>
       </div>
     }
-    @if (gitReleases.length) {
-      <div class="card" style="margin-bottom:20px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <h2 style="margin:0;">GitHub Releases</h2>
-          <button class="btn btn-sm" (click)="loadGitInfo()" [disabled]="gitLoading">Refresh</button>
+
+    <div class="deploy-grid">
+      <section id="deploy-form" class="card card-flush" aria-labelledby="deploy-title">
+        <div class="card-header">
+          <h2 id="deploy-title">Deploy</h2>
+          @if (gitMeta.ownerRepo) {
+            <button type="button" class="btn btn-sm btn-ghost" (click)="loadGitInfo()" [disabled]="gitLoading">Refresh from Git</button>
+          }
         </div>
-        <div style="overflow-x:auto;">
-          <table>
-            <thead>
-              <tr>
-                <th>Tag</th>
-                <th>Name</th>
-                <th>Published</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (r of gitReleases; track r) {
-                <tr>
-                  <td style="font-family:monospace;font-weight:700;">
-                    {{ r.tag }}
-                    @if (r.prerelease) {
-                      <span class="badge badge-pending" style="margin-left:6px;">pre</span>
-                    }
-                    @if (latestRelease?.tag === r.tag) {
-                      <span class="badge badge-active" style="margin-left:6px;">latest</span>
-                    }
-                  </td>
-                  <td>{{ r.name }}</td>
-                  <td style="font-size:0.8rem;color:var(--color-text-secondary);">{{ r.publishedAt | date:'short' }}</td>
-                  <td>
-                    <button class="btn btn-sm btn-primary" (click)="deployRelease(r)" [disabled]="deployInProgress || !deployDto.environmentId">
-                      Deploy this version
-                    </button>
-                  </td>
-                </tr>
+        <div class="panel-body">
+          @if (!project?.repositoryUrl && !projectSettings.repositoryUrl) {
+            <div class="notice notice-warn">
+              Add your repository in
+              <button type="button" class="link-button" (click)="switchSection('configuration')">Configuration</button>
+              first. Deployments come from there.
+            </div>
+          } @else if (gitMeta.ownerRepo) {
+            <p class="hint">From <a [href]="'https://github.com/' + gitMeta.ownerRepo" target="_blank" rel="noopener" class="mono">{{ gitMeta.ownerRepo }}</a>. Pick what to ship and where.</p>
+          }
+          @if (gitLoading) {
+            <p class="hint" role="status">Loading branches and releases…</p>
+          }
+          @if (gitError) {
+            <div class="notice notice-down actions" role="alert">
+              <span class="min-w-0">{{ gitError }}</span>
+              <button type="button" class="btn btn-sm" (click)="loadGitInfo()">Retry</button>
+            </div>
+          }
+          <div class="form-group">
+            <label for="deploy-env">Environment</label>
+            <select id="deploy-env" [(ngModel)]="deployDto.environmentId">
+              @for (env of project?.environments; track env.id) {
+                <option [value]="env.id">{{ env.name }}</option>
               }
-            </tbody>
-          </table>
-        </div>
-      </div>
-    }
-    <div class="grid-2">
-      <div class="card">
-        <h2>Trigger Deployment</h2>
-        <p style="color:var(--color-text-secondary);font-size:0.8rem;margin-top:0;">
-          Values are loaded from GitHub — pick a real branch/commit, or use a release above.
-        </p>
-        @if (!project?.repositoryUrl && !projectSettings.repositoryUrl) {
-          <div style="margin-bottom:12px;padding:10px 12px;border-radius:8px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#fde047;font-size:0.85rem;">
-            Set a GitHub repository URL above before deploying.
+            </select>
           </div>
-        }
-        @if (gitLoading) {
-          <div style="margin-bottom:12px;font-size:0.85rem;color:var(--color-text-secondary);">
-            Loading branches &amp; releases from GitHub…
-          </div>
-        }
-        @if (gitError) {
-          <div style="margin-bottom:12px;padding:10px 12px;border-radius:8px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;font-size:0.85rem;">
-            {{ gitError }}
-            <button class="btn btn-sm" style="margin-left:8px;" (click)="loadGitInfo()">Retry</button>
-          </div>
-        }
-        @if (gitMeta.ownerRepo) {
-          <div style="margin-bottom:12px;font-size:0.8rem;color:var(--color-text-secondary);">
-            Repo: <a [href]="'https://github.com/' + gitMeta.ownerRepo" target="_blank" style="color:var(--primary);"><code>{{ gitMeta.ownerRepo }}</code></a>
-            <button class="btn btn-sm" style="margin-left:8px;" (click)="loadGitInfo()" [disabled]="gitLoading">Refresh from GitHub</button>
-          </div>
-        }
-        <div class="form-group">
-          <label>Target Environment</label>
-          <select [(ngModel)]="deployDto.environmentId" style="width:100%;">
-            @for (env of project?.environments; track env) {
-              <option [value]="env.id">{{ env.name | uppercase }}</option>
+          <div class="form-group">
+            <label for="deploy-branch">Branch or tag</label>
+            @if (gitBranches.length) {
+              <select id="deploy-branch" [(ngModel)]="deployDto.branch" (ngModelChange)="onBranchChange($event)">
+                @for (b of gitBranches; track b.name) {
+                  <option [value]="b.name">{{ b.name }}{{ b.sha ? ' — ' + (b.sha | slice:0:7) : '' }}</option>
+                }
+              </select>
+            } @else {
+              <input id="deploy-branch" [(ngModel)]="deployDto.branch" (change)="onBranchChange()" placeholder="HEAD">
             }
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Git Branch / Tag</label>
-          @if (gitBranches.length) {
-            <select [(ngModel)]="deployDto.branch" (ngModelChange)="onBranchChange($event)" style="width:100%;">
-              @for (b of gitBranches; track b) {
-                <option [value]="b.name">{{ b.name }} — {{ b.sha | slice:0:7 }}</option>
-              }
-            </select>
+          </div>
+          <div class="form-group">
+            <label for="deploy-commit">Commit</label>
+            @if (gitCommits.length) {
+              <select id="deploy-commit" [(ngModel)]="deployDto.commitSha" (ngModelChange)="onCommitChange()">
+                @for (c of gitCommits; track c.sha) {
+                  <option [value]="c.sha">{{ c.sha | slice:0:7 }} — {{ c.message | slice:0:60 }}</option>
+                }
+              </select>
+            } @else {
+              <input id="deploy-commit" [(ngModel)]="deployDto.commitSha" (change)="onCommitChange()" placeholder="Leave blank for the branch tip">
+            }
+            <span class="form-hint">Leave as is to ship the newest commit on the branch.</span>
+          </div>
+          <details class="advanced">
+            <summary>Advanced</summary>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="deploy-version">Version label</label>
+                <input id="deploy-version" [(ngModel)]="deployDto.version" placeholder="From commit or release tag">
+                <span class="form-hint">Name shown in the history.</span>
+              </div>
+              <div class="form-group">
+                <label for="deploy-path">Folder with deploy files</label>
+                <input id="deploy-path" [(ngModel)]="deployDto.gitPath" placeholder="k8s">
+                <span class="form-hint">Path in the repository.</span>
+              </div>
+              <div class="form-group">
+                <label for="deploy-image">Image tag</label>
+                <input id="deploy-image" [(ngModel)]="deployDto.imageTag" placeholder="latest">
+                <span class="form-hint">Only for apps packaged as a Helm chart.</span>
+              </div>
+            </div>
+          </details>
+          @if (deployOperationId) {
+            <app-operation-progress [operationId]="deployOperationId" title="Deploy"
+              (finished)="loadDeployments()"></app-operation-progress>
           }
-          @if (!gitBranches.length) {
-            <input [(ngModel)]="deployDto.branch" (change)="onBranchChange()" placeholder="HEAD" style="width:100%;">
-          }
         </div>
-        <div class="form-group">
-          <label>Commit (from GitHub)</label>
-          @if (gitCommits.length) {
-            <select [(ngModel)]="deployDto.commitSha" (ngModelChange)="onCommitChange()" style="width:100%;">
-              @for (c of gitCommits; track c) {
-                <option [value]="c.sha">{{ c.sha | slice:0:7 }} — {{ c.message | slice:0:60 }}</option>
-              }
-            </select>
-          }
-          @if (!gitCommits.length) {
-            <input [(ngModel)]="deployDto.commitSha" (change)="onCommitChange()" placeholder="leave blank for branch tip" style="width:100%;">
-          }
+        <div class="panel-footer">
+          <button type="button" class="btn btn-primary" (click)="deploy()"
+            [disabled]="deployInProgress || gitLoading || !deployDto.branch || !deployDto.environmentId || (!project?.repositoryUrl && !projectSettings.repositoryUrl)">
+            {{ deployInProgress ? 'Deploying…' : 'Deploy' }}
+          </button>
         </div>
-        <div class="form-group">
-          <label>Version label</label>
-          <input [(ngModel)]="deployDto.version" placeholder="auto from commit / release tag" style="width:100%;">
+      </section>
+
+      <section class="card card-flush" aria-labelledby="history-title">
+        <div class="card-header">
+          <h2 id="history-title">History</h2>
+          <button type="button" class="btn btn-sm btn-ghost" (click)="loadDeployments()">Refresh</button>
         </div>
-        <div class="form-group">
-          <label>Manifests Path in Repo</label>
-          <input [(ngModel)]="deployDto.gitPath" placeholder="k8s" style="width:100%;">
-        </div>
-        <div class="form-group">
-          <label>Docker Image Tag <span style="font-weight:400;color:var(--color-text-secondary);">(Helm apps only)</span></label>
-          <input [(ngModel)]="deployDto.imageTag" placeholder="latest" style="width:100%;">
-        </div>
-        <button class="btn btn-primary" (click)="deploy()"
-          [disabled]="deployInProgress || gitLoading || !deployDto.branch || !deployDto.environmentId || (!project?.repositoryUrl && !projectSettings.repositoryUrl)"
-          style="width:100%;">
-          {{ deployInProgress ? 'Pulling from GitHub…' : 'Pull from GitHub & Deploy' }}
-        </button>
-        @if (deployOperationId) {
-          <app-operation-progress [operationId]="deployOperationId" title="Deploy"
-            (finished)="loadDeployments()"></app-operation-progress>
-        }
-      </div>
-      <div class="card" style="flex:2;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <h2 style="margin:0;">Deployment History</h2>
-          <button class="btn btn-sm" (click)="loadDeployments()">Refresh</button>
-        </div>
-        <div style="overflow-x:auto;">
+        <div class="table-scroll">
           <table>
             <thead>
               <tr>
                 <th>Version</th>
-                <th>Branch / Commit</th>
+                <th>From</th>
                 <th>Status</th>
-                <th>Deployed At</th>
-                <th>Actions</th>
+                <th>When</th>
+                <th><span class="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
-              @for (dep of deployments; track dep) {
+              @for (dep of deployments; track dep.id ?? $index) {
                 <tr>
                   <td>
-                    <div style="font-weight:700;">{{ dep.version }}</div>
-                    <div style="font-size:0.75rem;color:var(--color-text-secondary);">Tag: {{ dep.imageTag }}</div>
+                    {{ dep.version }}
+                    <span class="cell-sub">Image <span class="mono">{{ dep.imageTag }}</span></span>
                   </td>
                   <td>
-                    <div style="font-family:monospace;font-size:0.85rem;">{{ dep.branch }}</div>
-                    <div style="font-size:0.75rem;color:var(--color-text-secondary);font-family:monospace;">SHA: {{ dep.commitSha }}</div>
+                    <span class="mono">{{ dep.branch }}</span>
+                    <span class="cell-sub mono">{{ dep.commitSha }}</span>
                     @if (dep.metadata?.gitPath) {
-                      <div style="font-size:0.7rem;color:var(--color-text-muted);">path: {{ dep.metadata.gitPath }}</div>
+                      <span class="cell-sub">Path {{ dep.metadata.gitPath }}</span>
                     }
                   </td>
                   <td>
-                    <span class="badge"
-                      [class.badge-active]="dep.status === 'deployed' || dep.status === 'active'"
-                      [class.badge-pending]="dep.status === 'pending' || dep.status === 'deploying' || dep.status === 'building'"
-                      [class.badge-failed]="dep.status === 'failed'">
-                      {{ dep.status }}
-                    </span>
+                    <span [class]="statusClass(depStatus(dep.status).tone)">{{ depStatus(dep.status).label }}</span>
                     @for (warning of dep.metadata?.namespaceWarnings; track $index) {
-                      <div style="font-size:0.8rem;color:#fbbf24;">{{ warning }}</div>
+                      <span class="cell-sub warn">{{ warning }}</span>
                     }
                     @if (dep.status === 'failed' && dep.metadata?.error) {
-                      <div style="font-size:0.7rem;color:#ef4444;margin-top:4px;max-width:220px;">
-                        {{ dep.metadata.error }}
-                      </div>
+                      <span class="cell-sub error dep-error">{{ dep.metadata.error }}</span>
                     }
                   </td>
-                  <td>{{ dep.deployedAt || dep.createdAt | date:'short' }}</td>
+                  <td class="secondary">{{ (dep.deployedAt || dep.createdAt) | date:'short' }}</td>
                   <td>
-                    <div style="display:flex;gap:4px;">
+                    <div class="actions">
                       @if (role !== 'developer') {
-                        <button class="btn btn-sm btn-danger" (click)="rollback(dep.id)">Rollback</button>
+                        <button type="button" class="btn btn-sm" (click)="rollback(dep.id)">Rollback</button>
                       }
                       @if (role === 'devops' || role === 'admin') {
-                        <button class="btn btn-sm" (click)="restartDeploy(dep.id)">Restart</button>
+                        <button type="button" class="btn btn-sm" (click)="restartDeploy(dep.id)">Restart</button>
                       }
                     </div>
                   </td>
                 </tr>
               }
               @if (deployments.length === 0) {
-                <tr>
-                  <td colspan="5" style="text-align:center;color:var(--color-text-muted);">No deployment history yet. Pull from Git & Deploy to create the first record.</td>
-                </tr>
+                <tr class="empty-row"><td colspan="5">Nothing deployed yet. Each deployment appears here so you can roll back to it later.</td></tr>
               }
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </div>
-  </div>
-}
 
-<!-- METRICS TAB -->
-@if (activeTab === 'metrics') {
-  <div>
-    <div class="grid-3">
-      <div class="card" style="border-left: 4px solid var(--primary);">
-        <h2>CPU Average</h2>
-        <div class="stat">{{ aggregatedMetrics.cpuAvg | number:'1.1-1' }}%</div>
-        <div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:6px;">Last 100 heartbeats</div>
-      </div>
-      <div class="card" style="border-left: 4px solid var(--success);">
-        <h2>Memory Average</h2>
-        <div class="stat">{{ aggregatedMetrics.memoryAvg | number:'1.1-1' }} MB</div>
-        <div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:6px;">RAM usage overhead</div>
-      </div>
-      <div class="card" style="border-left: 4px solid var(--danger);">
-        <h2>Error Rate (5xx)</h2>
-        <div class="stat">{{ aggregatedMetrics.errorRate | number:'1.2-2' }}%</div>
-        <div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:6px;">Average response status codes</div>
-      </div>
-    </div>
-    <div class="card">
-      <h2>Real-time Heartbeats</h2>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>CPU Usage</th>
-              <th>Memory</th>
-              <th>Uptime</th>
-              <th>Avg Response</th>
-              <th>Error Rates</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (m of metrics; track m) {
-              <tr>
-                <td>{{ m.timestamp | date:'mediumTime' }}</td>
-                <td>{{ m.cpuPct | number:'1.1-1' }}%</td>
-                <td>{{ m.memoryMb | number:'1.0-0' }} MB</td>
-                <td>{{ m.uptimeS }}s</td>
-                <td>{{ m.avgResponseMs }}ms <span style="font-size:0.75rem;color:var(--color-text-muted);">p95: {{ m.p95ResponseMs }}ms</span></td>
-                <td>4xx: {{ m.errors4xx }} | 5xx: {{ m.errors5xx }}</td>
-              </tr>
-            }
-            @if (metrics.length === 0) {
-              <tr>
-                <td colspan="6" style="text-align:center;color:var(--color-text-muted);">No live heartbeat data. Boot up service SDK to stream metrics.</td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-}
-
-<!-- API METRICS / LATENCY TAB -->
-@if (activeTab === 'api-metrics') {
-  <div>
-    <div class="card" style="margin-bottom:20px; padding:20px; background: linear-gradient(135deg, rgba(16,185,129,0.05), rgba(6,182,212,0.05)); border-color:rgba(16,185,129,0.2);">
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:20px;">
-        <div>
-          <h2 style="margin:0; border:0; padding:0; font-size:1.1rem;">⚡ Per-Route API Latency</h2>
-          <p style="color:var(--color-text-secondary); font-size:0.8rem; margin:4px 0 0 0;">Real-time endpoint performance tracked by the Node.js SDK middleware</p>
+    @if (gitReleases.length) {
+      <section class="card card-flush" aria-labelledby="git-releases-title">
+        <div class="card-header">
+          <h2 id="git-releases-title">Releases</h2>
+          <span class="muted text-sm">Tagged releases from your repository</span>
         </div>
-        <button class="btn btn-sm btn-primary" (click)="loadApiMetrics()">Refresh</button>
-      </div>
-      <div class="grid-3" style="margin-bottom:20px;">
-        <div class="card" style="margin:0; padding:16px; border-left:4px solid #10b981; background:rgba(16,185,129,0.05);">
-          <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:700;">Routes Tracked</div>
-          <div style="font-size:2rem; font-weight:800; color:#10b981; margin-top:4px;">{{ apiMetrics.length }}</div>
-        </div>
-        <div class="card" style="margin:0; padding:16px; border-left:4px solid #f59e0b; background:rgba(245,158,11,0.05);">
-          <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:700;">Slowest (p95)</div>
-          <div style="font-size:2rem; font-weight:800; color:#f59e0b; margin-top:4px;">{{ getSlowestEndpoint() }}ms</div>
-        </div>
-        <div class="card" style="margin:0; padding:16px; border-left:4px solid #ef4444; background:rgba(239,68,68,0.05);">
-          <div style="font-size:0.7rem; text-transform:uppercase; color:var(--color-text-secondary); font-weight:700;">Highest Error Route</div>
-          <div style="font-size:2rem; font-weight:800; color:#ef4444; margin-top:4px;">{{ getHighestErrorRate() }}%</div>
-        </div>
-      </div>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead>
-            <tr>
-              <th>Method</th><th>Route</th><th>Requests</th>
-              <th>Avg</th><th>p50</th><th>p95</th><th>p99</th>
-              <th>4xx</th><th>5xx</th><th>Last Hit</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (m of apiMetrics; track m) {
-              <tr>
-                <td><span class="badge"
-                  [style.background-color]="m._id?.method === 'GET' ? 'rgba(16,185,129,0.15)' : m._id?.method === 'POST' ? 'rgba(59,130,246,0.15)' : m._id?.method === 'DELETE' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'"
-                  [style.color]="m._id?.method === 'GET' ? '#10b981' : m._id?.method === 'POST' ? '#60a5fa' : m._id?.method === 'DELETE' ? '#ef4444' : '#f59e0b'"
-                style="font-size:0.7rem;font-weight:800;font-family:monospace;">{{ m._id?.method }}</span></td>
-                <td style="font-family:monospace;font-size:0.82rem;color:#e2e8f0;">{{ m._id?.route }}</td>
-                <td style="font-weight:700;color:#f8fafc;">{{ m.count | number }}</td>
-                <td style="color:#94a3b8;">{{ m.avgDuration | number:'1.0-0' }}ms</td>
-                <td style="color:#34d399;font-weight:600;">{{ (m.p50 || 0) | number:'1.0-0' }}ms</td>
-                <td [style.color]="(m.p95 || 0) > 500 ? '#f59e0b' : '#94a3b8'">{{ (m.p95 || 0) | number:'1.0-0' }}ms</td>
-                <td [style.color]="(m.p99 || 0) > 1000 ? '#ef4444' : '#94a3b8'">{{ (m.p99 || 0) | number:'1.0-0' }}ms</td>
-                <td [style.color]="m.errors4xx > 0 ? '#f59e0b' : '#64748b'">{{ m.errors4xx }}</td>
-                <td [style.color]="m.errors5xx > 0 ? '#ef4444' : '#64748b'">{{ m.errors5xx }}</td>
-                <td style="font-size:0.75rem;color:var(--color-text-muted);">{{ m.lastSeen | date:'shortTime' }}</td>
-              </tr>
-            }
-            @if (apiMetrics.length === 0) {
-              <tr>
-                <td colspan="10" style="text-align:center;color:var(--color-text-muted);padding:40px;">
-                  No API latency history yet. In your service, init the SDK and call
-                  <code style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:4px;">app.use(platform.expressMiddleware())</code>,
-                  then hit a few routes — this table refreshes every few seconds.
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-    <div class="card" style="padding:24px;background:rgba(15,23,42,0.5);border-color:rgba(99,102,241,0.2);">
-      <h2 style="font-size:1rem;margin-bottom:12px;border:0;padding:0;color:#c4b5fd;">🔌 Node.js Integration</h2>
-      <pre style="background:#0b0f19;padding:16px;border-radius:8px;font-size:0.78rem;color:#34d399;overflow-x:auto;margin:0;">const platform = require('&#64;mpratyush54/sdk-node');
-        await platform.init(&#123;
-        projectName: '{{ project?.name }}',
-        platformUrl: 'http://your-platform-server',
-        environmentName: 'production',
-        &#125;);
-        // Attaches to Express — zero-overhead tracking
-        app.use(platform.expressMiddleware());
-      platform.captureConsole(); // forward all console.*</pre>
-    </div>
-  </div>
-}
-
-<!-- LOGS TAB -->
-@if (activeTab === 'logs') {
-  <div>
-    <div class="card" style="margin-bottom:16px;padding:16px;">
-      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-        <div class="form-group" style="margin:0;flex:1;min-width:150px;">
-          <select [(ngModel)]="searchLogQuery.level" (change)="loadLogs()" style="padding:8px 12px;">
-            <option value="">All Log Levels</option>
-            <option value="INFO">INFO</option>
-            <option value="WARN">WARN</option>
-            <option value="ERROR">ERROR</option>
-          </select>
-        </div>
-        <div class="form-group" style="margin:0;flex:3;min-width:250px;">
-          <input [(ngModel)]="searchLogQuery.search" (keyup.enter)="loadLogs()" placeholder="Search logs (press Enter)..." style="padding:8px 12px;width:100%;">
-        </div>
-        <button class="btn btn-primary" (click)="loadLogs()">Filter</button>
-      </div>
-    </div>
-    <div class="card" style="background:#000;border:1px solid #1e293b;padding:16px;border-radius:12px;">
-      <h2 style="border:none;margin-bottom:12px;font-size:1rem;color:var(--color-text-secondary);font-family:monospace;">Loki Live Log Stream</h2>
-      <div style="height:350px;overflow-y:auto;font-family:monospace;font-size:0.85rem;line-height:1.6;color:#38bdf8;padding:8px;background:#05050a;border-radius:6px;display:flex;flex-direction:column;gap:4px;">
-        @for (log of logs; track log) {
-          <div style="display:flex;gap:10px;">
-            <span style="color:#64748b;">[{{ log.timestamp | date:'HH:mm:ss.SSS' }}]</span>
-            <span [style.color]="log.level === 'ERROR' ? '#ef4444' : log.level === 'WARN' ? '#f59e0b' : '#34d399'" style="font-weight:700;">{{ log.level }}</span>
-            <span style="color:#cbd5e1;">{{ log.message }}</span>
-            @if (log.fields && log.fields.error) {
-              <span style="color:#ef4444;font-size:0.8rem;">(Err: {{ log.fields.error }})</span>
-            }
-          </div>
-        }
-        @if (logs.length === 0) {
-          <div style="color:var(--color-text-muted);text-align:center;padding-top:100px;">
-            No logs matches search criteria. Boot up SDK client to log queries.
-          </div>
-        }
-      </div>
-    </div>
-  </div>
-}
-
-<!-- ENVIRONMENT TAB (#29): plain config + encrypted secrets in one list -->
-@if (activeTab === 'privacy' && project) {
-  <app-privacy-tab [projectId]="project.id"></app-privacy-tab>
-}
-
-@if (activeTab === 'environment' && project) {
-  <app-environment-tab [projectId]="project.id" [environments]="project.environments || []"></app-environment-tab>
-}
-
-<!-- STORAGE TAB -->
-@if (activeTab === 'storage') {
-  <div>
-    <div class="card">
-      <h2>Storage Quota Usage</h2>
-      <div style="display:flex;justify-content:space-between;font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:8px;">
-        <span>Total Storage Used: {{ formatBytes(storageAnalytics.totalBytes) }}</span>
-        <span>Quota: 1.00 GB</span>
-      </div>
-      <div style="width:100%;height:10px;background:rgba(255,255,255,0.05);border-radius:99px;overflow:hidden;border:1px solid var(--border-glass);">
-        <div [style.width.%]="(storageAnalytics.totalBytes / (1024 * 1024 * 1024)) * 100" style="height:100%;background:linear-gradient(to right, var(--primary), #3b82f6);border-radius:99px;"></div>
-      </div>
-    </div>
-    <div class="card">
-      <h2>File Attachments</h2>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead>
-            <tr>
-              <th>Filename</th>
-              <th>Category / Type</th>
-              <th>Provider</th>
-              <th>Size</th>
-              <th>Uploaded At</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (file of files; track file) {
-              <tr>
-                <td>
-                  <div style="font-weight:600;">{{ file.originalName }}</div>
-                  <div style="font-size:0.75rem;color:var(--color-text-secondary);font-family:monospace;">ID: {{ file.id }}</div>
-                </td>
-                <td>
-                  <div class="badge badge-active" style="background-color:rgba(255,255,255,0.05);color:#fff;border-color:var(--border-glass);">{{ file.category || 'general' }}</div>
-                  <div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:4px;">{{ file.mimeType }}</div>
-                </td>
-                <td><span class="badge badge-active" style="color:#60a5fa;border-color:rgba(96,165,250,0.25);">{{ file.provider | uppercase }}</span></td>
-                <td>{{ formatBytes(file.size) }}</td>
-                <td>{{ file.createdAt | date:'short' }}</td>
-                <td>
-                  <div style="display:flex;gap:4px;">
-                    <a [href]="file.cdnUrl" target="_blank" class="btn btn-sm btn-primary" style="text-decoration:none;">Download</a>
-                    <button class="btn btn-sm btn-danger" (click)="deleteFile(file.id)">Delete</button>
-                  </div>
-                </td>
-              </tr>
-            }
-            @if (files.length === 0) {
-              <tr>
-                <td colspan="6" style="text-align:center;color:var(--color-text-muted);">No file uploads registered for this project. Utilize `platform.storage.upload` to upload logs, certificates or media.</td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-}
-
-<!-- ENVIRONMENTS TAB -->
-@if (activeTab === 'environments') {
-  <div>
-    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:0 0 16px 0;">
-      Kubernetes namespaces are assigned by the server as <code>{{ '{' }}project{{ '}' }}-{{ '{' }}environment{{ '}' }}</code> and cannot be changed.
-    </p>
-    <div class="grid-3">
-      @for (env of project?.environments; track env) {
-        <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <span class="badge badge-active" style="font-size:0.85rem;background-color:rgba(96,165,250,0.1);color:#60a5fa;border-color:rgba(96,165,250,0.2);">{{ env.name | uppercase }}</span>
-            <span class="badge badge-active">ONLINE</span>
-          </div>
-          <div style="margin-top:16px;">
-            <div style="font-size:0.75rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;letter-spacing:0.05em;">Kubernetes Namespace (read-only)</div>
-            <div style="font-family:monospace;font-size:0.9rem;margin-top:4px;">{{ env.namespace }}</div>
-          </div>
-          <div style="margin-top:14px;">
-            <div style="font-size:0.75rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;letter-spacing:0.05em;">Routing Domain</div>
-            <div style="font-family:monospace;font-size:0.9rem;margin-top:4px;"><a href="https://{{ env.domain }}" target="_blank">{{ env.domain }}</a></div>
-          </div>
-          @if (project?.domain) {
-            <div style="margin-top:10px;font-size:0.75rem;color:var(--color-text-muted);">
-              Project base domain: {{ project.domain }}
-            </div>
-          }
-          @if (env.name === 'preview') {
-            <div style="margin-top:14px;border-top:1px solid var(--border-glass);padding-top:10px;display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:0.8rem;color:var(--danger);font-weight:600;">⌛ Expiry: 71h 59m</span>
-              <button class="btn btn-sm btn-danger" style="padding:4px 8px;font-size:0.75rem;">Terminate Now</button>
-            </div>
-          }
-        </div>
-      }
-      @if (!project?.environments?.length) {
-        <div style="color:var(--color-text-muted);">No environments configured</div>
-      }
-    </div>
-  </div>
-}
-
-<!-- ACCESS TAB -->
-@if (activeTab === 'access') {
-  <div>
-    <div class="card" style="margin-bottom:20px;">
-      <h2 style="margin-top:0;">Project access</h2>
-      <p style="color:var(--color-text-secondary);font-size:0.85rem;">
-        Grant users project-level roles: <strong>owner</strong>, <strong>devops</strong>, <strong>developer</strong>, or <strong>viewer</strong>.
-        Platform admin/devops can always manage all projects.
-      </p>
-      @if (canManageAccess) {
-        <div class="grid-2" style="align-items:end;gap:12px;margin-top:16px;">
-          <div class="form-group" style="margin:0;">
-            <label>User email</label>
-            <input [(ngModel)]="newMember.email" type="email" placeholder="dev@company.com" style="width:100%;">
-          </div>
-          <div class="form-group" style="margin:0;">
-            <label>Role</label>
-            <select [(ngModel)]="newMember.role">
-              <option value="viewer">Viewer</option>
-              <option value="developer">Developer</option>
-              <option value="devops">DevOps</option>
-              <option value="owner">Owner</option>
-            </select>
-          </div>
-        </div>
-      }
-      @if (canManageAccess) {
-        <button class="btn btn-primary" style="margin-top:12px;" (click)="grantMember()" [disabled]="!newMember.email || memberBusy">
-          {{ memberBusy ? 'Saving…' : 'Grant access' }}
-        </button>
-      }
-      @if (memberError) {
-        <p style="color:#fca5a5;font-size:0.85rem;">{{ memberError }}</p>
-      }
-    </div>
-    <div class="card" style="padding:0;overflow:hidden;">
-      <table>
-        <thead>
-          <tr>
-            <th>User</th>
-            <th>Email</th>
-            <th>Project role</th>
-            @if (canManageAccess) {
-              <th style="text-align:right;">Actions</th>
-            }
-          </tr>
-        </thead>
-        <tbody>
-          @for (m of members; track m) {
-            <tr>
-              <td style="font-weight:600;">{{ m.user?.name || '—' }}</td>
-              <td>{{ m.user?.email || m.userId }}</td>
-              <td>
-                @if (canManageAccess) {
-                  <select [ngModel]="m.role" (ngModelChange)="changeMemberRole(m, $event)">
-                    <option value="viewer">viewer</option>
-                    <option value="developer">developer</option>
-                    <option value="devops">devops</option>
-                    <option value="owner">owner</option>
-                  </select>
-                }
-                @if (!canManageAccess) {
-                  <span class="badge">{{ m.role }}</span>
-                }
-              </td>
-              @if (canManageAccess) {
-                <td style="text-align:right;">
-                  <button class="btn btn-danger btn-sm" (click)="revokeMember(m)">Revoke</button>
-                </td>
-              }
-            </tr>
-          }
-          @if (members.length === 0) {
-            <tr>
-              <td colspan="4" style="text-align:center;color:var(--color-text-muted);padding:24px;">
-                No project members yet. Grant access by email above.
-              </td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-  </div>
-}
-
-<!-- SDK TOKENS TAB -->
-@if (activeTab === 'sdk-tokens') {
-  <div>
-    <div [class.grid-2]="canCreateSdkTokens" data-testid="sdk-tokens-layout">
-      <!-- Generate Token Card -->
-      @if (canCreateSdkTokens) {
-        <div class="card">
-          <h2>Generate SDK Token</h2>
-          <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;margin-bottom:20px;">
-            Generate an API key for the Platform SDKs. Pick the kind by where the token will run.
-          </p>
-          <div class="form-group">
-            <label>Token Description / Name</label>
-            <input [(ngModel)]="newKeyName" placeholder="e.g. Production Service Key" style="width:100%;">
-          </div>
-          <div class="form-group">
-            <label for="sdk-token-kind">Token kind</label>
-            <select id="sdk-token-kind" [(ngModel)]="newKeyKind" style="width:100%;">
-              <option value="server">Server: backend SDKs (Node, Python)</option>
-              <option value="browser">Browser: frontend SDKs (React, Angular)</option>
-            </select>
-          </div>
-          @if (newKeyKind === 'server') {
-            <p class="sdk-token-kind-hint" style="font-size:0.8rem;color:var(--color-warning, #f59e0b);margin:8px 0 0;">
-              Server tokens can read this project's config and secrets. Keep them on your backend and
-              never ship them to browsers or mobile apps (frontend env vars such as VITE_* end up in public JavaScript).
-            </p>
-          } @else {
-            <p class="sdk-token-kind-hint" style="font-size:0.8rem;color:var(--color-text-secondary);margin:8px 0 0;">
-              Browser tokens can only send bug reports, logs and API metrics. They cannot read config,
-              secrets or database credentials, so they are safe to embed in frontend code.
-            </p>
-          }
-          <button class="btn btn-primary" (click)="createToken()" [disabled]="!newKeyName.trim()" style="width:100%; margin-top: 10px;">
-            Generate Token
-          </button>
-          <!-- Newly Generated Plaintext Token Alert -->
-          @if (generatedKeyPlaintext) {
-            <div class="card" style="border: 1px solid var(--primary); background: rgba(139, 92, 246, 0.05); padding: 16px; margin-top: 20px;">
-              <h3 style="color: var(--primary); margin-top: 0; font-size: 1rem;">Token Generated Successfully</h3>
-              <p style="font-size: 0.8rem; color: var(--color-text-secondary); margin-bottom: 12px;">
-                ⚠️ Copy this key now! You will not be able to see it again.
-                @if (generatedKeyKind === 'server') {
-                  This is a <strong>server</strong> token: never put it in frontend code.
-                } @else {
-                  This is a <strong>browser</strong> token for the React/Angular SDKs.
-                }
-              </p>
-              <div style="position:relative;background:rgba(0,0,0,0.3);padding:12px;border-radius:6px;border:1px solid var(--border-glass);color:#fff;font-family:monospace;font-size:0.85rem;word-break:break-all;display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                <span>{{ generatedKeyPlaintext }}</span>
-              </div>
-              <button class="btn btn-sm" (click)="clearGeneratedToken()">Dismiss</button>
-            </div>
-          }
-        </div>
-      }
-      <!-- Active Tokens Table -->
-      <div class="card" style="flex:2;">
-        <h2>Active SDK Tokens</h2>
-        <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;margin-bottom:20px;">
-          Authorized keys that are currently active for this project.
-        </p>
-        <div style="overflow-x:auto;">
+        <div class="table-scroll">
           <table>
             <thead>
-              <tr>
-                <th>Name</th>
-                <th>Token Prefix</th>
-                <th>Kind</th>
-                <th>Status</th>
-                <th>Created At</th>
-                @if (canRevokeSdkTokens) {
-                  <th>Actions</th>
-                }
-              </tr>
+              <tr><th>Tag</th><th>Name</th><th>Published</th><th><span class="sr-only">Actions</span></th></tr>
             </thead>
             <tbody>
-              @for (t of tokens; track t) {
+              @for (r of gitReleases; track r.tag) {
                 <tr>
-                  <td style="font-weight:600;color:#fff;">{{ t.name }}</td>
-                  <td style="font-family:monospace;font-size:0.85rem;">{{ t.token }}</td>
-                  <td><span class="badge" [title]="(t.kind || 'server') === 'browser' ? 'Ingest only (bug reports, logs, API metrics)' : 'Config, secrets and service registration'">{{ (t.kind || 'server') | uppercase }}</span></td>
-                  <td><span class="badge badge-active">{{ t.status | uppercase }}</span></td>
-                  <td>{{ t.createdAt | date:'short' }}</td>
-                  @if (canRevokeSdkTokens) {
-                    <td>
-                      <button class="btn btn-sm btn-danger" (click)="revokeToken(t.id)">Revoke</button>
-                    </td>
-                  }
-                </tr>
-              }
-              @if (tokens.length === 0) {
-                <tr>
-                  <td [attr.colspan]="canRevokeSdkTokens ? 6 : 5" style="text-align:center;color:var(--color-text-muted);">
-                    No SDK credentials configured for this project.
+                  <td>
+                    <span class="mono">{{ r.tag }}</span>
+                    @if (r.prerelease) { <span class="badge badge-pending">Pre-release</span> }
+                    @if (latestRelease?.tag === r.tag) { <span class="badge badge-active">Latest</span> }
+                  </td>
+                  <td>{{ r.name }}</td>
+                  <td class="secondary">{{ r.publishedAt | date:'short' }}</td>
+                  <td>
+                    <button type="button" class="btn btn-sm" (click)="deployRelease(r)" [disabled]="deployInProgress || !deployDto.environmentId">
+                      Deploy
+                    </button>
                   </td>
                 </tr>
               }
             </tbody>
           </table>
         </div>
+      </section>
+    }
+
+    @if (project) { <app-builds-panel [projectId]="project.id" [canManage]="role === 'devops' || role === 'admin' || role === 'tech_lead'" /> }
+
+    @if (project) { <div id="releases"><app-releases-panel [projectId]="project.id" /></div> }
+
+    <div id="gitops" class="stack">
+      <app-argocd-panel [project]="project" [status]="argoStatus" (reload)="loadArgoStatus()" />
+      <!-- Live resource topology (#31): lazy chunk, loaded when scrolled into view -->
+      @if (project?.id) {
+        @defer (on viewport) {
+          <app-topology-graph [projectId]="project.id" [environments]="project.environments || []" (podLogs)="openPodLogs($event)" />
+        } @placeholder {
+          <div class="card topology-placeholder"></div>
+        }
+      }
+    </div>
+
+    <section id="environments" class="card card-flush" aria-labelledby="envs-title">
+      <div class="card-header">
+        <h2 id="envs-title">Environments</h2>
+        <span class="muted text-sm">Each one runs separately, with its own address</span>
       </div>
+      @if (project?.environments?.length) {
+        <ul class="env-list">
+          @for (env of project.environments; track env.id) {
+            <li class="env-item">
+              <div class="env-item-head">
+                <h3>{{ env.name }}</h3>
+                @if (envCurrent(env.id); as cur) {
+                  <span [class]="statusClass(depStatus(cur.status).tone)">{{ depStatus(cur.status).label }}</span>
+                } @else {
+                  <span class="status">Not deployed</span>
+                }
+              </div>
+              <dl class="facts">
+                <dt>Address</dt>
+                <dd>@if (env.domain) { <a class="mono" href="https://{{ env.domain }}" target="_blank" rel="noopener">{{ env.domain }}</a> } @else { <span class="muted">None. Set a domain in Configuration.</span> }</dd>
+                <dt title="The isolated space this environment runs in on the server">Namespace</dt>
+                <dd class="mono">{{ env.namespace }}</dd>
+              </dl>
+              <app-autoscaling [projectId]="project.id" [environmentId]="env.id" [preview]="env.name === 'preview'" [canEdit]="role === 'admin' || role === 'devops'" />
+            </li>
+          }
+        </ul>
+      } @else {
+        <div class="empty-state">No environments yet. Environments such as production and staging let you test a change before your users see it.</div>
+      }
+    </section>
+  </div>
+}
+
+<!-- CONFIGURATION: variables and secrets (#29), Git and domain -->
+@if (section === 'configuration') {
+  <div class="stack">
+    @if (project) {
+      <app-environment-tab [projectId]="project.id" [environments]="project.environments || []"></app-environment-tab>
+    }
+    <section id="project-settings" class="card card-flush" aria-labelledby="git-settings-title">
+      <div class="card-header">
+        <h2 id="git-settings-title">Repository and address</h2>
+      </div>
+      <div class="panel-body cfg-body">
+        <div class="cfg-row">
+          <div class="cfg-label">
+            <label for="settings-repo">Repository</label>
+            <p>Where your code lives. Deployments come from here.</p>
+          </div>
+          <div class="cfg-field">
+            <input id="settings-repo" [(ngModel)]="projectSettings.repositoryUrl" placeholder="https://github.com/acme/shop" autocomplete="off">
+            <span class="form-hint">GitHub or GitLab. If you use the SDK, its <span class="mono">repositoryUrl</span> must be this same address.</span>
+          </div>
+        </div>
+        <div class="cfg-row">
+          <div class="cfg-label">
+            <label for="settings-domain">Domain</label>
+            <p>Each environment gets an address under it.</p>
+          </div>
+          <div class="cfg-field">
+            <input id="settings-domain" [(ngModel)]="projectSettings.domain" placeholder="example.com" autocomplete="off">
+            <span class="form-hint">No domain yet? Use <span class="mono">&lt;server-ip&gt;.sslip.io</span>, which works without DNS.</span>
+            @if ((project?.environments || []).length && project?.domain) {
+              <ul class="cfg-hosts" aria-label="Environment addresses">
+                @for (e of project.environments; track e.id || e.name) {
+                  @if (e.domain) {
+                    <li><span class="muted">{{ e.name }}</span> <span class="mono">{{ e.domain }}</span></li>
+                  }
+                }
+              </ul>
+            }
+          </div>
+        </div>
+        <div class="cfg-row">
+          <div class="cfg-label">
+            <label for="settings-revision">Deploy from</label>
+            <p>Branch, tag or commit for the next deployment.</p>
+          </div>
+          <div class="cfg-field">
+            <input id="settings-revision" [(ngModel)]="projectSettings.gitRevision" [placeholder]="project?.defaultBranch || 'main'" autocomplete="off">
+            <span class="form-hint">Leave empty to use the default branch{{ project?.defaultBranch ? ' (' + project.defaultBranch + ')' : '' }}.</span>
+          </div>
+        </div>
+      </div>
+      <div class="cfg-footer">
+        @if (role === 'developer') { <span class="muted">Only owners and DevOps can change these.</span> }
+        <button type="button" class="btn btn-primary" (click)="saveProjectSettings()" [disabled]="savingSettings || role === 'developer'">
+          {{ savingSettings ? 'Saving…' : 'Save changes' }}
+        </button>
+      </div>
+    </section>
+  </div>
+}
+
+<!-- DATA: databases (insights, provisioning, connections, backups) and storage -->
+@if (section === 'data') {
+  <div class="stack">
+    <div id="databases" class="stack">
+      <app-database-insights-panel [project]="project" />
+
+      <div class="db-grid" [class.db-grid-split]="role === 'devops'">
+        @if (role === 'devops') {
+          <div class="stack">
+            @if (provisionedCreds) {
+              <section class="card card-flush creds" aria-labelledby="creds-title" role="status">
+                <div class="card-header">
+                  <h2 id="creds-title">Database created</h2>
+                  <button type="button" class="btn btn-sm" (click)="dismissProvisionedCreds()">Dismiss</button>
+                </div>
+                <div class="panel-body">
+                  <p class="warn">Copy the password now. It will not be shown again.</p>
+                  <dl class="facts">
+                    <dt>Database</dt><dd class="mono">{{ provisionedCreds.dbName }}</dd>
+                    <dt>Username</dt><dd class="mono">{{ provisionedCreds.username }}</dd>
+                    <dt>Password</dt><dd class="mono secret-value">{{ provisionedCreds.password }}</dd>
+                    <dt>Host</dt><dd class="mono">{{ provisionedCreds.host }}:{{ provisionedCreds.port }}</dd>
+                    <dt>Connection string</dt><dd class="mono">{{ provisionedCreds.connectionString }}</dd>
+                  </dl>
+                  <p class="hint">Your app already gets these as encrypted secrets for this environment.</p>
+                </div>
+              </section>
+            }
+            <section class="card card-flush" aria-labelledby="provision-title">
+              <div class="card-header"><h2 id="provision-title">New database</h2></div>
+              <div class="panel-body">
+                <div class="form-group">
+                  <label for="provision-env">Environment</label>
+                  <select id="provision-env" [(ngModel)]="newDb.dbType">
+                    <option value="production">Production</option>
+                    <option value="staging">Staging</option>
+                    <option value="preview">Preview / feature</option>
+                  </select>
+                  <span class="form-hint">Creates a private PostgreSQL database for this environment and gives the password to your app as a secret. <a href="https://platform.pratyushes.dev/docs/guides/databases" target="_blank" rel="noopener">Learn more</a></span>
+                </div>
+              </div>
+              <div class="panel-footer">
+                <button type="button" class="btn" (click)="provisionDb(newDb.dbType)" [disabled]="provisioningDb">
+                  {{ provisioningDb ? 'Creating…' : 'Create database' }}
+                </button>
+              </div>
+            </section>
+          </div>
+        }
+
+        <section class="card card-flush" aria-labelledby="db-conn-title">
+          <div class="card-header">
+            <h2 id="db-conn-title">Connected databases</h2>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Max connections</th>
+                  <th>In use / idle</th>
+                  <th><span class="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (db of dbConnections; track db.id ?? $index) {
+                  <tr>
+                    <td><span class="badge">{{ dbTypeLabel(db.dbType) }}</span></td>
+                    <td><span class="status" [class.status-ok]="db.status === 'connected'" [class.status-down]="db.status !== 'connected'">{{ db.status | titlecase }}</span></td>
+                    <td>{{ db.poolSize }}</td>
+                    <td class="mono">{{ db.activeCount || 0 }} / {{ db.idleCount || 0 }}</td>
+                    <td>
+                      <div class="actions row-actions">
+                        <button type="button" class="btn btn-sm" (click)="testDbConnection(db.id)" [disabled]="testingDbId === db.id">
+                          {{ testingDbId === db.id ? 'Testing…' : 'Test' }}
+                        </button>
+                        @if (role === 'devops') {
+                          <button type="button" class="btn btn-sm btn-danger" (click)="deleteDbConnection(db.id)">Remove</button>
+                        }
+                      </div>
+                    </td>
+                  </tr>
+                }
+                @if (dbConnections.length === 0) {
+                  <tr class="empty-row"><td colspan="5">No databases yet. A database keeps your app's data between deployments.@if (role === 'devops') { Create one above for an environment.} @else { Ask a DevOps member to create one.}</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      @if (role === 'devops') {
+        <section class="card card-flush" aria-labelledby="backups-title">
+          <div class="card-header">
+            <h2 id="backups-title">Backups</h2>
+            <div class="actions">
+              <input class="backup-input" [(ngModel)]="backupDbName" placeholder="Database name" aria-label="Database name to back up">
+              <button type="button" class="btn btn-sm" (click)="triggerBackup()" [disabled]="backupInProgress">
+                {{ backupInProgress ? 'Backing up…' : 'Back up now' }}
+              </button>
+              <button type="button" class="btn btn-sm btn-ghost" (click)="loadBackups()">Refresh</button>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Database</th><th>Environment</th><th>Status</th>
+                  <th>Size</th><th>Stored in</th><th>Created</th><th>Restored</th><th><span class="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (b of dbBackups; track b.id ?? $index) {
+                  <tr>
+                    <td class="mono">{{ b.dbName }}</td>
+                    <td><span class="badge">{{ b.environment }}</span></td>
+                    <td>
+                      <span class="status" [class.status-ok]="b.status === 'completed'" [class.status-down]="b.status === 'failed'"
+                        [class.status-info]="b.status !== 'completed' && b.status !== 'failed'">{{ b.status | titlecase }}</span>
+                    </td>
+                    <td class="secondary">{{ b.fileSizeBytes ? (b.fileSizeBytes / 1024 | number:'1.0-0') + ' KB' : '—' }}</td>
+                    <td class="secondary">{{ b.providerType }}</td>
+                    <td class="secondary">{{ b.createdAt | date:'short' }}</td>
+                    <td class="secondary">{{ b.restoredAt ? (b.restoredAt | date:'short') : '—' }}</td>
+                    <td>
+                      <button type="button" class="btn btn-sm" (click)="restoreBackup(b)" [disabled]="b.status !== 'completed'">Restore</button>
+                    </td>
+                  </tr>
+                }
+                @if (dbBackups.length === 0) {
+                  <tr class="empty-row"><td colspan="8">No backups yet. A backup lets you undo a bad change to a database: type its name above and choose Back up now. <a href="https://platform.pratyushes.dev/docs/operations/backups" target="_blank" rel="noopener">Learn more</a></td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
+    </div>
+
+    <div id="storage" class="stack">
+      <section class="card card-flush" aria-labelledby="quota-title">
+        <div class="card-header">
+          <h2 id="quota-title">Files</h2>
+          <span class="muted text-sm">{{ formatBytes(storageAnalytics.totalBytes) }} of 1.00 GB used</span>
+        </div>
+        <div class="panel-body">
+          <progress class="quota" [value]="storageAnalytics.totalBytes" [max]="storageQuotaBytes" aria-label="Storage quota usage"></progress>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Type</th>
+                <th>Stored in</th>
+                <th>Size</th>
+                <th>Uploaded</th>
+                <th><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (file of files; track file.id ?? $index) {
+                <tr>
+                  <td>
+                    {{ file.originalName }}
+                    <span class="cell-sub mono">{{ file.id }}</span>
+                  </td>
+                  <td>
+                    <span class="badge">{{ file.category || 'general' }}</span>
+                    <span class="cell-sub">{{ file.mimeType }}</span>
+                  </td>
+                  <td>{{ file.provider }}</td>
+                  <td>{{ formatBytes(file.size) }}</td>
+                  <td class="secondary">{{ file.createdAt | date:'short' }}</td>
+                  <td>
+                    <div class="actions">
+                      <a [href]="file.cdnUrl" target="_blank" rel="noopener" class="btn btn-sm">Download</a>
+                      <button type="button" class="btn btn-sm btn-danger" (click)="deleteFile(file.id)">Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              }
+              @if (files.length === 0) {
+                <tr class="empty-row"><td colspan="6">No files yet. Your app can keep uploads, reports or media here with <code>platform.storage.upload</code>. <a href="https://platform.pratyushes.dev/docs/api-reference/sdk-node/storage" target="_blank" rel="noopener">Learn more</a></td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   </div>
 }
 
-<!-- GITOPS / ARGOCD TAB -->
-@if (activeTab === 'gitops') {
-  <div>
-    <app-argocd-panel [project]="project" [status]="argoStatus" (reload)="loadArgoStatus()" />
-  <!-- Live resource topology (#31): lazy chunk, loaded when scrolled into view -->
-  @if (project?.id) {
-    @defer (on viewport) {
-      <app-topology-graph [projectId]="project.id" [environments]="project.environments || []" (podLogs)="openPodLogs($event)" />
-    } @placeholder {
-      <div class="card" style="margin-top:20px; min-height:160px;"></div>
+<!-- MONITORING: one place for health, errors, logs, traces, users, uptime, resources and AI agents (?view=) -->
+@if (section === 'monitoring') {
+  <nav class="mon-views" aria-label="Monitoring views" data-testid="monitoring-views">
+    @for (v of monitoringViews; track v.id) {
+      <button type="button" [class.active]="monitoringView === v.id" [attr.aria-current]="monitoringView === v.id ? 'page' : null"
+        [attr.data-view]="v.id" (click)="switchMonitoringView(v.id)">{{ v.label }}</button>
     }
-  }
-</div>
-}
+  </nav>
 
-<!-- DATABASES TAB -->
-@if (activeTab === 'databases') {
-  <app-database-insights-panel [project]="project" />
-  <div>
-    <div class="grid-2">
-      <!-- Provision New Database (DevOps Only) -->
-      @if (role === 'devops') {
-        <div style="margin-bottom:20px;">
-          <!-- One-time credentials display -->
-          @if (provisionedCreds) {
-            <div class="card" style="background:rgba(16,185,129,0.05); border:2px solid rgba(16,185,129,0.4); padding:24px; margin-bottom:20px;">
-              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
-                <div>
-                  <h2 style="margin:0; border:0; padding:0; color:#10b981; font-size:1rem;">🎉 Database Provisioned Successfully</h2>
-                  <p style="color:#34d399; font-size:0.8rem; margin:4px 0 0 0; font-weight:600;">⚠️ Save these credentials now — the password will NOT be shown again</p>
-                </div>
-                <button class="btn btn-sm" (click)="dismissProvisionedCreds()" style="color:#64748b;">Dismiss</button>
-              </div>
-              <div style="background:#0b0f19; border-radius:8px; padding:20px; font-family:monospace; font-size:0.82rem;">
-                <div style="display:grid; grid-template-columns: 140px 1fr; gap:8px 16px;">
-                  <span style="color:#64748b;">Database Name:</span><span style="color:#34d399; font-weight:700;">{{ provisionedCreds.dbName }}</span>
-                  <span style="color:#64748b;">Username:</span><span style="color:#60a5fa;">{{ provisionedCreds.username }}</span>
-                  <span style="color:#64748b;">Password:</span><span style="color:#f8fafc; background:rgba(255,255,255,0.08); padding:2px 8px; border-radius:4px;">{{ provisionedCreds.password }}</span>
-                  <span style="color:#64748b;">Host:</span><span style="color:#f8fafc;">{{ provisionedCreds.host }}:{{ provisionedCreds.port }}</span>
-                  <span style="color:#64748b; grid-column:1;">Connection String:</span>
-                  <span style="color:#a78bfa; word-break:break-all; grid-column:2;">{{ provisionedCreds.connectionString }}</span>
-                </div>
-              </div>
-              <p style="color:var(--color-text-secondary); font-size:0.78rem; margin:12px 0 0 0;">These credentials have been automatically stored in the platform's encrypted secrets store for this project's environment.</p>
-            </div>
+  @if (project?.id) {
+    <div class="stack" data-testid="monitoring-view" [attr.data-view]="monitoringView">
+      @switch (monitoringView) {
+      @case ('overview') {
+        @if (observabilityChecked && !observabilityEnabled) {
+        <p class="mon-notice" data-testid="needs-full-profile">Request, error and latency charts need the full install profile (<span class="mono">platformctl provision --profile full</span>).</p>
+        }
+        @defer (on immediate) {
+          <app-obs-project [projectId]="project.id" [embedded]="true" [sections]="viewObsTabs.overview" (viewChange)="switchMonitoringView($event, false)" />
+        }
+        @defer (on immediate) {
+          <app-errors [projectId]="project.id" [embedded]="true" [compact]="true" (openIssue)="openErrorIssue($event)" />
+        }
+        <p class="mon-foot">Alert rules and SLOs for this project are in <a routerLink="/alerting" [queryParams]="{ projectId: project.id }">Alerts</a>.</p>
+      }
+      @case ('errors') {
+        @defer (on immediate) {
+          <app-errors [projectId]="project.id" [embedded]="true" [issueId]="monitoringIssue" />
+        }
+      }
+      @case ('logs') {
+        @if (observabilityEnabled) {
+          @defer (on immediate) {
+            <app-obs-project [projectId]="project.id" [embedded]="true" [sections]="viewObsTabs.logs" (viewChange)="switchMonitoringView($event, false)" />
           }
-          <!-- Provision Form -->
-          <div class="card" style="padding:24px; background: linear-gradient(135deg, rgba(99,102,241,0.05), rgba(139,92,246,0.05)); border-color:rgba(99,102,241,0.2);">
-            <h2 style="margin:0 0 4px 0; border:0; padding:0; font-size:1.1rem;">🗄️ Provision New Database</h2>
-            <p style="color:var(--color-text-secondary); font-size:0.82rem; margin:4px 0 20px 0;">Creates an isolated PostgreSQL database with a unique user scoped to this project + environment. Credentials are saved to the platform's encrypted secrets store.</p>
-            <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
-              <div class="form-group" style="margin:0; flex:1; min-width:180px;">
-                <label>Environment</label>
-                <select [(ngModel)]="newDb.dbType" style="width:100%;">
-                  <option value="production">Production</option>
-                  <option value="staging">Staging</option>
-                  <option value="preview">Preview / Feature</option>
+        } @else {
+          @if (observabilityChecked) {
+        <p class="mon-notice" data-testid="needs-full-profile">Log search with filters, LogQL and live tail need the full install profile (<span class="mono">platformctl provision --profile full</span>).</p>
+          }
+        <section id="logs" class="card card-flush" aria-labelledby="logs-title">
+          <div class="card-header"><h2 id="logs-title">Logs</h2></div>
+          <div class="panel-body">
+            <div class="inline-form">
+              <div class="form-group">
+                <label for="log-level">Level</label>
+                <select id="log-level" [(ngModel)]="searchLogQuery.level" (change)="loadLogs()">
+                  <option value="">All levels</option>
+                  <option value="INFO">Info</option>
+                  <option value="WARN">Warn</option>
+                  <option value="ERROR">Error</option>
                 </select>
               </div>
-              <button class="btn btn-primary" (click)="provisionDb(newDb.dbType)" [disabled]="provisioningDb"
-                style="white-space:nowrap; padding:10px 24px;">
-                @if (!provisioningDb) {
-                  <span>⚡ Provision Database</span>
-                }
-                @if (provisioningDb) {
-                  <span>Creating...</span>
-                }
-              </button>
+              <div class="form-group grow">
+                <label for="log-search">Search</label>
+                <input id="log-search" [(ngModel)]="searchLogQuery.search" (keyup.enter)="loadLogs()" placeholder="Search logs (press Enter)">
+              </div>
+              <div class="form-group">
+                <button type="button" class="btn" (click)="loadLogs()">Filter</button>
+              </div>
+            </div>
+            <div class="log-stream" role="log" aria-label="Log stream">
+              @for (log of logs; track $index) {
+                <div class="log-line">
+                  <span class="muted">{{ log.timestamp | date:'HH:mm:ss.SSS' }}</span>
+                  <span class="log-level" [class.text-down]="log.level === 'ERROR'" [class.text-warn]="log.level === 'WARN'">{{ log.level }}</span>
+                  <span class="log-msg">{{ log.message }}</span>
+                  @if (log.fields && log.fields.error) {
+                    <span class="text-down">(error: {{ log.fields.error }})</span>
+                  }
+                </div>
+              }
+              @if (logs.length === 0) {
+                <div class="empty-state">No logs match the filter. Start a service with the SDK to send logs.</div>
+              }
             </div>
           </div>
-        </div>
+        </section>
+        }
       }
-      <!-- Active Connections List -->
-      <div class="card" style="flex:2;">
-        <h2>Project Database Connections</h2>
-        <p style="color:var(--color-text-secondary); font-size:0.85rem; margin-top:0; margin-bottom:20px;">
-          Active database pools allocated to this service's environment.
-        </p>
-        <div style="overflow-x:auto;">
-          <table>
-            <thead>
-              <tr>
-                <th>DB Type</th>
-                <th>Status</th>
-                <th>Pool Size</th>
-                <th>Metrics (Active/Idle)</th>
-                <th>Connection Test</th>
-                @if (role === 'devops') {
-                  <th>Actions</th>
-                }
-              </tr>
-            </thead>
-            <tbody>
-              @for (db of dbConnections; track db) {
+      @case ('traces') {
+        @if (observabilityEnabled) {
+          @defer (on immediate) {
+            <app-obs-project [projectId]="project.id" [embedded]="true" [sections]="viewObsTabs.traces" (viewChange)="switchMonitoringView($event, false)" />
+          }
+        } @else {
+          @if (observabilityChecked) {
+        <p class="mon-notice" data-testid="needs-full-profile">Traces, the service map and per-service endpoints need the full install profile (<span class="mono">platformctl provision --profile full</span>).</p>
+          }
+        <section id="api-latency" class="card card-flush" aria-labelledby="api-title">
+          <div class="card-header">
+            <h2 id="api-title">API latency by route</h2>
+            <button type="button" class="btn btn-sm" (click)="loadApiMetrics()">Refresh</button>
+          </div>
+          <div class="panel-body">
+            <p class="hint">Endpoint performance tracked by the Node.js SDK middleware.</p>
+            <dl class="api-summary">
+              <div><dt>Routes tracked</dt><dd class="stat">{{ apiMetrics.length }}</dd></div>
+              <div><dt>Slowest (p95)</dt><dd class="stat">{{ getSlowestEndpoint() }} ms</dd></div>
+              <div><dt>Highest route error rate</dt><dd class="stat">{{ getHighestErrorRate() }}%</dd></div>
+            </dl>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
                 <tr>
-                  <td>
-                <span class="badge" [ngClass]="{
-                  'badge-active': db.dbType === 'postgres',
-                  'badge-pending': db.dbType === 'mongo',
-                  'badge-failed': db.dbType === 'redis'
-                }" style="border-radius:6px; font-weight:700;">
-                      {{ db.dbType | uppercase }}
-                    </span>
-                  </td>
-                  <td>
-                    <span class="badge" [ngClass]="{'badge-active': db.status === 'connected', 'badge-failed': db.status !== 'connected'}">
-                      {{ db.status | uppercase }}
-                    </span>
-                  </td>
-                  <td style="font-weight:600;">{{ db.poolSize }} connections</td>
-                  <td style="font-family:monospace; font-size:0.85rem;">
-                    <span style="color:#10b981;">Active: {{ db.activeCount || 0 }}</span> /
-                    <span style="color:var(--color-text-secondary);">Idle: {{ db.idleCount || 0 }}</span>
-                  </td>
-                  <td>
-                    <button class="btn btn-sm" (click)="testDbConnection(db.id)" [disabled]="testingDbId === db.id">
-                      {{ testingDbId === db.id ? 'Testing...' : '🧪 Test Ping' }}
-                    </button>
-                  </td>
-                  @if (role === 'devops') {
-                    <td>
-                      <button class="btn btn-sm btn-danger" (click)="deleteDbConnection(db.id)">Remove</button>
+                  <th>Method</th><th>Route</th><th class="num">Requests</th>
+                  <th class="num">Avg</th><th class="num">p50</th><th class="num">p95</th><th class="num">p99</th>
+                  <th class="num">4xx</th><th class="num">5xx</th><th>Last hit</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (m of apiMetrics; track $index) {
+                  <tr>
+                    <td><span class="badge mono">{{ m._id?.method }}</span></td>
+                    <td class="mono">{{ m._id?.route }}</td>
+                    <td class="num">{{ m.count | number }}</td>
+                    <td class="num">{{ m.avgDuration | number:'1.0-0' }} ms</td>
+                    <td class="num">{{ (m.p50 || 0) | number:'1.0-0' }} ms</td>
+                    <td class="num" [class.text-warn]="(m.p95 || 0) > 500">{{ (m.p95 || 0) | number:'1.0-0' }} ms</td>
+                    <td class="num" [class.text-down]="(m.p99 || 0) > 1000">{{ (m.p99 || 0) | number:'1.0-0' }} ms</td>
+                    <td class="num" [class.text-warn]="m.errors4xx > 0">{{ m.errors4xx }}</td>
+                    <td class="num" [class.text-down]="m.errors5xx > 0">{{ m.errors5xx }}</td>
+                    <td class="secondary">{{ m.lastSeen | date:'shortTime' }}</td>
+                  </tr>
+                }
+                @if (apiMetrics.length === 0) {
+                  <tr class="empty-row">
+                    <td colspan="10">
+                      No API latency data yet. In your service, initialise the SDK and add
+                      <code>app.use(platform.expressMiddleware())</code>, then call a few routes.
                     </td>
-                  }
-                </tr>
-              }
-              @if (dbConnections.length === 0) {
-                <tr>
-                  <td [attr.colspan]="role === 'devops' ? 6 : 5" style="text-align:center; color:var(--color-text-muted); padding:24px;">
-                    No active database connection configurations found.
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-    <!-- Database Backups Panel -->
-    @if (role === 'devops') {
-      <div class="card" style="margin-top:20px; padding:24px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-          <div>
-            <h2 style="margin:0; border:0; padding:0; font-size:1.1rem;">💾 Database Backups</h2>
-            <p style="color:var(--color-text-secondary); font-size:0.82rem; margin:4px 0 0 0;">Backup and restore project databases using the configured storage provider.</p>
-          </div>
-          <div style="display:flex; gap:10px; align-items:center;">
-            <input [(ngModel)]="backupDbName" placeholder="database name" style="padding:8px 12px; background:rgba(255,255,255,0.05); border:1px solid var(--border-glass); border-radius:8px; color:#f8fafc; width:200px;">
-            <button class="btn btn-sm btn-primary" (click)="triggerBackup()" [disabled]="backupInProgress">
-              {{ backupInProgress ? 'Backing up...' : '⚡ Backup Now' }}
-            </button>
-            <button class="btn btn-sm" (click)="loadBackups()">Refresh</button>
-          </div>
-        </div>
-        <div style="overflow-x:auto;">
-          <table>
-            <thead>
-              <tr>
-                <th>Database</th><th>Environment</th><th>Status</th>
-                <th>Size</th><th>Provider</th><th>Created</th><th>Restored At</th>@if (role === 'devops') {
-                <th>Actions</th>
-              }
-            </tr>
-          </thead>
-          <tbody>
-            @for (b of dbBackups; track b) {
-              <tr>
-                <td style="font-family:monospace; font-size:0.82rem;">{{ b.dbName }}</td>
-                <td><span class="badge">{{ b.environment }}</span></td>
-                <td>
-                  <span class="badge"
-                    [style.background-color]="b.status === 'completed' ? 'rgba(16,185,129,0.15)' : b.status === 'failed' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'"
-                    [style.color]="b.status === 'completed' ? '#10b981' : b.status === 'failed' ? '#ef4444' : '#f59e0b'">
-                    {{ b.status | uppercase }}
-                  </span>
-                </td>
-                <td style="font-size:0.82rem; color:#94a3b8;">{{ b.fileSizeBytes ? (b.fileSizeBytes / 1024 | number:'1.0-0') + ' KB' : '—' }}</td>
-                <td style="font-size:0.82rem; text-transform:uppercase; color:#94a3b8;">{{ b.providerType }}</td>
-                <td style="font-size:0.75rem; color:var(--color-text-muted);">{{ b.createdAt | date:'short' }}</td>
-                <td style="font-size:0.75rem; color:var(--color-text-muted);">{{ b.restoredAt ? (b.restoredAt | date:'short') : '—' }}</td>
-                @if (role === 'devops') {
-                  <td>
-                    <button class="btn btn-sm" (click)="restoreBackup(b)" [disabled]="b.status !== 'completed'" style="font-size:0.75rem;">
-                      Restore
-                    </button>
-                  </td>
+                  </tr>
                 }
-              </tr>
-            }
-            @if (dbBackups.length === 0) {
-              <tr>
-                <td colspan="8" style="text-align:center; color:var(--color-text-muted); padding:30px;">
-                  No backups yet. Enter a database name above and click "Backup Now".
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-body">
+            <h3 class="sub-title">Node.js integration</h3>
+            <pre class="code-block">const platform = require('&#64;mpratyush54/sdk-node');
+  await platform.init(&#123;
+    projectName: '{{ project?.name }}',
+    platformUrl: 'http://your-platform-server',
+    environmentName: 'production',
+  &#125;);
+  // Attaches to Express: per-route latency tracking
+  app.use(platform.expressMiddleware());
+  platform.captureConsole(); // forward all console.*</pre>
+          </div>
+        </section>
+        }
+      }
+      @case ('users') {
+        @if (observabilityEnabled) {
+          @defer (on immediate) {
+            <app-obs-project [projectId]="project.id" [embedded]="true" [sections]="viewObsTabs.users" (viewChange)="switchMonitoringView($event, false)" />
+          }
+        } @else if (observabilityChecked) {
+        <p class="mon-notice" data-testid="needs-full-profile">Web vitals need the full install profile (<span class="mono">platformctl provision --profile full</span>).</p>
+        }
+        @defer (on immediate) {
+          <app-replays [projectId]="project.id" [embedded]="true" />
+        }
+        @defer (on immediate) {
+          <app-heatmaps [projectId]="project.id" [embedded]="true" />
+        }
+      }
+      @case ('uptime') {
+        @defer (on immediate) {
+          <app-synthetics [projectId]="project.id" [embedded]="true" />
+        }
+        @defer (on immediate) {
+          <app-status-page-editor [projectId]="project.id" [embedded]="true" />
+        }
+      }
+      @case ('resources') {
+        <div id="metrics" class="stack">
+          <div class="grid-3">
+            <section class="card">
+              <h2 class="stat-label">CPU average</h2>
+              <div class="stat">{{ aggregatedMetrics.cpuAvg | number:'1.1-1' }}%</div>
+              <p class="hint">Last 100 heartbeats</p>
+            </section>
+            <section class="card">
+              <h2 class="stat-label">Memory average</h2>
+              <div class="stat">{{ aggregatedMetrics.memoryAvg | number:'1.1-1' }} MB</div>
+              <p class="hint">Resident memory</p>
+            </section>
+            <section class="card">
+              <h2 class="stat-label">Error rate (5xx)</h2>
+              <div class="stat" [class.text-down]="aggregatedMetrics.errorRate > 0">{{ aggregatedMetrics.errorRate | number:'1.2-2' }}%</div>
+              <p class="hint">Share of responses with a 5xx status</p>
+            </section>
+          </div>
+          <section class="card card-flush" aria-labelledby="heartbeats-title">
+            <div class="card-header"><h2 id="heartbeats-title">Heartbeats</h2></div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr><th>Time</th><th>CPU</th><th>Memory</th><th>Uptime</th><th>Avg response</th><th>Errors</th></tr>
+                </thead>
+                <tbody>
+                  @for (m of metrics; track $index) {
+                    <tr>
+                      <td>{{ m.timestamp | date:'mediumTime' }}</td>
+                      <td>{{ m.cpuPct | number:'1.1-1' }}%</td>
+                      <td>{{ m.memoryMb | number:'1.0-0' }} MB</td>
+                      <td>{{ m.uptimeS }}s</td>
+                      <td>{{ m.avgResponseMs }} ms <span class="muted">p95 {{ m.p95ResponseMs }} ms</span></td>
+                      <td>4xx {{ m.errors4xx }} · 5xx {{ m.errors5xx }}</td>
+                    </tr>
+                  }
+                  @if (metrics.length === 0) {
+                    <tr class="empty-row"><td colspan="6">No heartbeat data. Start a service with the SDK to stream metrics.</td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+        @if (observabilityEnabled) {
+          @defer (on immediate) {
+            <app-obs-project [projectId]="project.id" [embedded]="true" [sections]="viewObsTabs.resources" (viewChange)="switchMonitoringView($event, false)" />
+          }
+        } @else if (observabilityChecked) {
+        <p class="mon-notice" data-testid="needs-full-profile">Pod CPU, memory, restarts and profiles need the full install profile (<span class="mono">platformctl provision --profile full</span>).</p>
+        }
+      }
+      @case ('usage') {
+        <app-project-usage [projectId]="project.id" />
+      }
+      @case ('agents') {
+        <app-project-agents [projectId]="project.id" />
+      }
+      }
     </div>
   }
-</div>
 }
 
-<!-- Pod Logs Terminal Modal Overlay -->
+<!-- SETTINGS: access, SDK tokens, privacy, namespace isolation -->
+@if (section === 'settings') {
+  <app-project-settings-section
+    [project]="project"
+    [members]="members"
+    [canManageAccess]="canManageAccess"
+    [newMember]="newMember"
+    [memberBusy]="memberBusy"
+    [memberError]="memberError"
+    (grantMember)="grantMember()"
+    (changeMemberRole)="changeMemberRole($event.member, $event.role)"
+    (revokeMember)="revokeMember($event)"
+    [tokens]="tokens"
+    [canCreateSdkTokens]="canCreateSdkTokens"
+    [canRevokeSdkTokens]="canRevokeSdkTokens"
+    [(newKeyName)]="newKeyName"
+    [(newKeyKind)]="newKeyKind"
+    [generatedKeyPlaintext]="generatedKeyPlaintext"
+    [generatedKeyKind]="generatedKeyKind"
+    (createToken)="createToken()"
+    (revokeToken)="revokeToken($event)"
+    (clearGeneratedToken)="clearGeneratedToken()" />
+}
+
+<!-- Pod logs dialog (opened from the topology graph) -->
 @if (showLogsModal) {
-  <div style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); display:flex; justify-content:center; align-items:center; z-index:1000; padding:20px;">
-    <div class="card" style="width:100%; max-width:900px; height:80vh; max-height:700px; display:flex; flex-direction:column; padding:0; overflow:hidden; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);">
-      <!-- Modal Header -->
-      <div style="padding:16px 24px; border-bottom:1px solid var(--border-glass); display:flex; justify-content:space-between; align-items:center; background:rgba(30,41,59,0.3);">
-        <div>
-          <span style="font-size:0.7rem; color:var(--primary); text-transform:uppercase; font-weight:700; letter-spacing:0.05em;">
-            LOG STREAMER — {{ selectedPodNamespace }}
-          </span>
-          <h3 style="margin:4px 0 0 0; border:0; padding:0; font-size:1.1rem; color:#fff; font-family:monospace;">
-            {{ selectedPodName }}
-          </h3>
-        </div>
-        <button class="btn btn-sm" (click)="closeLogsModal()" style="font-size:1.2rem; line-height:1; padding:4px 8px;">
-          &times;
-        </button>
+  <div class="modal-backdrop" (click)="closeLogsModal()"></div>
+  <div class="modal card card-flush" role="dialog" aria-modal="true" aria-labelledby="pod-logs-title">
+    <div class="card-header">
+      <div class="min-w-0">
+        <span class="cell-sub">Pod logs · <span class="mono">{{ selectedPodNamespace }}</span></span>
+        <h2 id="pod-logs-title" class="mono pod-name">{{ selectedPodName }}</h2>
       </div>
-      <!-- Terminal Output -->
-      <div style="flex-grow:1; background:#0b0f19; padding:20px; overflow-y:auto; font-family:Consolas, Monaco, 'Andale Mono', monospace; font-size:0.82rem; line-height:1.5; color:#34d399; position:relative;">
-        <pre style="margin:0; white-space:pre-wrap; word-break:break-all;">{{ podLogsText }}</pre>
-        @if (loadingLogs) {
-          <div style="position:absolute; bottom:12px; right:20px; background:rgba(11,15,25,0.9); border:1px solid var(--border-glass); border-radius:4px; padding:4px 8px; font-size:0.7rem; color:var(--color-text-secondary);">
-            ● Tailing live logs...
-          </div>
-        }
-      </div>
-      <!-- Modal Footer Actions -->
-      <div style="padding:12px 24px; border-top:1px solid var(--border-glass); display:flex; justify-content:flex-end; gap:8px; background:rgba(15,23,42,0.4);">
-        <button class="btn btn-sm" (click)="fetchPodLogs()">Refresh Logs</button>
-        <button class="btn btn-sm btn-primary" (click)="closeLogsModal()">Close Terminal</button>
-      </div>
+      <button type="button" class="btn btn-sm btn-ghost" (click)="closeLogsModal()" aria-label="Close pod logs">Close</button>
+    </div>
+    <div class="modal-body">
+      <pre class="pod-logs">{{ podLogsText }}</pre>
+      @if (loadingLogs) {
+        <span class="tailing status status-info">Tailing live logs</span>
+      }
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-sm" (click)="fetchPodLogs()">Refresh logs</button>
+      <button type="button" class="btn btn-sm" (click)="closeLogsModal()">Close</button>
     </div>
   </div>
 }

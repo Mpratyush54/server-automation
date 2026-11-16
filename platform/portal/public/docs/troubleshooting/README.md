@@ -1,40 +1,55 @@
-# Troubleshooting
+# Find the fix for an error
 
-Every page here is a real issue that came up during an install. If you hit
-something not covered, open an issue: <https://github.com/Mpratyush54/SERVER-automation/issues>.
+This page helps you find the fix for an error you hit while installing or running Cairn. Most fixes run on the server with `platformctl` or `kubectl`.
 
-## Install & Bootstrap
+## Start here
 
-- [apt-lock.md](apt-lock.md) — `apt` hangs at "Waiting for cache lock"
-- [dns-ipv6-timeout.md](dns-ipv6-timeout.md) — Helm / docker pull `TLS handshake timeout`
-- [general-dns-resolution.md](general-dns-resolution.md) — DNS resolution failures inside the cluster
-- [sslip-io-dns.md](sslip-io-dns.md) — `*.sslip.io` name won't resolve inside the cluster
-- [k3s-port-conflict.md](k3s-port-conflict.md) — k3s fails to start, port 6443/80/443 in use
-- [dockerhub-rate-limit.md](dockerhub-rate-limit.md) — `toomanyrequests` on image pulls
-- [github-releases-outage.md](github-releases-outage.md) — installing while GitHub Releases returns 502/504 (GHCR fallback)
-- [disk-pressure.md](disk-pressure.md) — pods evicted, node `DiskPressure=True`
-- [image-pull-backoff.md](image-pull-backoff.md) — `ImagePullBackOff` on `platform-api` / `platform-portal`
-- [helm-name-reuse.md](helm-name-reuse.md) — `cannot re-use a name that is still in use`
-- [typescript-build-errors.md](typescript-build-errors.md) — TypeScript build errors during API build
+1. Run `sudo platformctl status` on the server. It shows which part is broken.
+2. Broken passwords, certificates or sign-in? Go to [Recover a broken install](../operations/recover.md).
+3. Otherwise, find the message you see below. Each page shows the symptom, the cause and the fix.
 
-## Ingress, TLS & Auth
+Not listed? Read the step logs in `/var/log/platformctl/`, or open an issue at <https://github.com/Mpratyush54/SERVER-automation/issues>.
 
-- [cert-manager-timeout.md](cert-manager-timeout.md) — Let's Encrypt cert never becomes `Ready=True`
-- [ingress-ownership.md](ingress-ownership.md) — nginx-ingress refuses another ingress for the same host
-- [portainer-oidc-ssl.md](portainer-oidc-ssl.md) — Portainer OIDC → `tls: failed to verify certificate`
-- [portainer-setup-token.md](portainer-setup-token.md) — Portainer "Administrator initialization timeout"
-- [argocd-subpath-404.md](argocd-subpath-404.md) — ArgoCD returns 404 when mounted at `/argocd`
-- [argocd-oidc-redirect.md](argocd-oidc-redirect.md) — ArgoCD login → `Invalid redirect URL`
-- [grafana-subpath-redirect.md](grafana-subpath-redirect.md) — Grafana redirect loop at `/grafana`
+## Install
 
-## Databases & Storage
+| You see | Fix |
+|---|---|
+| `apt` hangs at "Waiting for cache lock" | [apt lock](apt-lock.md) |
+| `TLS handshake timeout` when downloading charts or images | [DNS or IPv6 timeout](dns-ipv6-timeout.md) |
+| Names do not resolve inside the cluster | [DNS resolution](general-dns-resolution.md) |
+| A `*.sslip.io` name does not resolve inside the cluster | [sslip.io inside the cluster](sslip-io-dns.md) |
+| k3s does not start; port 6443, 80 or 443 is in use | [k3s port conflict](k3s-port-conflict.md) |
+| `toomanyrequests` when pulling images | [Docker Hub rate limit](dockerhub-rate-limit.md) |
+| Pods are evicted; the node reports `DiskPressure=True` | [Disk pressure](disk-pressure.md) |
+| GitHub Releases answers 502 or 504 during the install | [GitHub Releases is down](github-releases-outage.md) |
+| `ImagePullBackOff` on the API or portal | [ImagePullBackOff](image-pull-backoff.md) |
+| `cannot re-use a name that is still in use` | [Helm name in use](helm-name-reuse.md) |
+| TypeScript errors while building the API | [TypeScript build errors](typescript-build-errors.md) |
 
-- [minio-template-error.md](minio-template-error.md) — MinIO Helm `has no value` error
-- [minio-pvc-not-found.md](minio-pvc-not-found.md) — MinIO PVC stuck in `Pending`
-- [mongodb-validation.md](mongodb-validation.md) — Mongoose validation error on API startup
-- [db-wrongpass-after-rotate.md](db-wrongpass-after-rotate.md) — `WRONGPASS` after rotating a DB password
+## Ingress, HTTPS and sign-in
 
-## API & Seed
+| You see | Fix |
+|---|---|
+| The Let's Encrypt certificate never becomes ready | [cert-manager timeout](cert-manager-timeout.md) |
+| The ingress controller refuses a second ingress for the same host | [Ingress ownership](ingress-ownership.md) |
+| Portainer shows "Administrator initialization timeout" | [Portainer setup token](portainer-setup-token.md) |
+| Portainer sign-in fails with `tls: failed to verify certificate` | [Portainer OIDC certificate](portainer-oidc-ssl.md) |
+| Argo CD returns 404 at `/argocd` | [Argo CD returns 404](argocd-subpath-404.md) |
+| Argo CD sign-in shows `Invalid redirect URL` | [Argo CD sign-in redirect](argocd-oidc-redirect.md) |
+| Grafana redirects in a loop at `/grafana` | [Grafana redirect](grafana-subpath-redirect.md) |
 
-- [api-seed-failure.md](api-seed-failure.md) — Bootstrap seed → `Failed to obtain auth token for seeding`
-- [angular-template-at-symbol.md](angular-template-at-symbol.md) — Angular template `@` symbol parse error
+## Databases and storage
+
+| You see | Fix |
+|---|---|
+| The object storage Helm chart fails with `has no value` | [MinIO template error](minio-template-error.md) |
+| The object storage volume stays `Pending` | [MinIO volume not found](minio-pvc-not-found.md) |
+| A validation error from the document database when the API starts | [MongoDB validation](mongodb-validation.md) |
+| `WRONGPASS` or a wrong password after rotating a database password | [Wrong password after rotate](db-wrongpass-after-rotate.md) |
+
+## API and portal
+
+| You see | Fix |
+|---|---|
+| The install's seed step fails with `Failed to obtain auth token for seeding` | [API seed failure](api-seed-failure.md) |
+| An Angular template fails to compile because of an `@` sign | [Angular @ in templates](angular-template-at-symbol.md) |

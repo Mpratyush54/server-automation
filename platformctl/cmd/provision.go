@@ -15,15 +15,16 @@ import (
 
 	"github.com/fatih/color"
 
-	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/apt"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/bundle"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/helm"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ingressha"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/k3s"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/ocifetch"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/preflight"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/runner"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/shell"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/stack"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
@@ -105,18 +106,20 @@ func provisionGraph(c *config.Config) []stepDef {
 	// Ready steps start in this order, so the critical path comes first:
 	// databases -> platform -> routing, plus Portainer (slowest to become ready).
 	return []stepDef{
-		{name: "postgresql", args: install("postgresql"), fn: components.InstallPostgreSQL},
-		{name: "mongodb", args: install("mongodb"), fn: components.InstallMongoDB},
-		{name: "redis", args: install("redis"), fn: components.InstallRedis},
-		{name: "minio", args: install("minio"), fn: components.InstallMinIO},
+		// k3s is a host step before this graph. Set the default StorageClass before any PVC is created.
+		{name: "longhorn", skip: !c.IsHA(), args: install("longhorn"), fn: components.InstallLonghorn},
+		{name: "postgresql", deps: []string{"longhorn"}, args: install("postgresql"), fn: components.InstallPostgreSQL},
+		{name: "mongodb", deps: []string{"longhorn"}, args: install("mongodb"), fn: components.InstallMongoDB},
+		{name: "redis", deps: []string{"longhorn"}, args: install("redis"), fn: components.InstallRedis},
 		{name: "ingress-nginx", args: install("ingress-nginx"), fn: components.InstallIngressNginx},
 		{name: "cert-manager", skip: !c.InstallCertManager, args: install("cert-manager"), fn: components.InstallCertManager},
-		{name: "portainer", skip: !c.InstallPortainer, args: install("portainer"), fn: components.InstallPortainer},
+		{name: "minio", skip: c.ObjectStorageExternal(), deps: []string{"longhorn", "cert-manager"}, args: install("minio"), fn: components.InstallMinIO},
+		{name: "portainer", deps: []string{"longhorn"}, skip: !c.InstallPortainer, args: install("portainer"), fn: components.InstallPortainer},
 		{name: "argocd", skip: !c.InstallArgoCD, args: install("argocd"), fn: components.InstallArgoCD},
-		{name: "monitoring", skip: !c.InstallMonitoring, args: install("monitoring"), fn: components.InstallMonitoring},
+		{name: "monitoring", deps: []string{"longhorn"}, skip: !c.InstallMonitoring, args: install("monitoring"), fn: components.InstallMonitoring},
 		// Kyverno is opt-in (full + INSTALL_KYVERNO); skipped nodes satisfy deps.
 		{name: "kyverno", skip: !c.InstallKyverno, args: install("kyverno"), fn: components.InstallKyverno},
-		{name: "platform", deps: []string{"postgresql", "mongodb", "redis", "minio", "kyverno"},
+		{name: "platform", deps: []string{"longhorn", "postgresql", "mongodb", "redis", "minio", "kyverno"},
 			args: install("platform"), fn: components.InstallPlatform},
 		// Ingresses (and so the TLS certificate request) right after the ingress
 		// controller and cert-manager: the certificate issues in parallel with
@@ -134,13 +137,21 @@ func provisionGraph(c *config.Config) []stepDef {
 		{name: "oauth2-proxy", deps: []string{"routing"}, args: install("oauth2-proxy"), fn: components.InstallOAuthProxy},
 		{name: "auto-update", deps: []string{"argocd", "platform"}, skip: !c.AutoUpdate,
 			args: install("auto-update"), fn: components.InstallAutoUpdate},
-		{name: "telemetry", deps: []string{"platform", "monitoring", "routing"}, skip: !components.FullTelemetry(c), args: install("telemetry"), fn: components.InstallTelemetry},
+		{name: "telemetry", deps: []string{"longhorn", "platform", "monitoring", "routing"}, skip: !components.FullTelemetry(c), args: install("telemetry"), fn: components.InstallTelemetry},
 		// Synthetic monitoring (#42): namespace, quotas, egress policies, API RBAC (full profile).
 		{name: "synthetics", deps: []string{"telemetry"}, skip: !components.FullTelemetry(c), args: install("synthetics"), fn: components.InstallSynthetics},
+		{name: "keda", deps: []string{"telemetry"}, skip: !components.KEDAEnabled(c), args: install("keda"), fn: components.InstallKEDA},
+		{name: "longhorn-monitoring", deps: []string{"longhorn", "monitoring", "telemetry"}, skip: !c.IsHA() || !c.InstallMonitoring, args: install("longhorn-monitoring"), fn: components.InstallLonghornMonitoring, warnOnly: true},
+		// WAL archiving and base backups to the backup target on every profile
+		// that runs CloudNativePG (#186); installs still on the Bitnami release
+		// skip it until `platformctl postgres migrate`.
+		{name: "postgresql-backup", deps: []string{"postgresql", "minio", "platform", "cert-manager"}, skip: !components.PostgresUsesCNPG(c), args: install("postgresql-backup"), fn: components.InstallPostgresBackup},
+		{name: "postgresql-monitoring", deps: []string{"postgresql", "monitoring", "telemetry"}, skip: !components.PostgresUsesCNPG(c) || !c.InstallMonitoring, args: install("postgresql-monitoring"), fn: components.InstallPostgresMonitoring, warnOnly: true},
 		{name: "seed", deps: []string{"platform"}, args: []string{"seed"}, fn: components.SeedAdmin, warnOnly: true},
 		// MinIO IAM needs the platform API (its OpenID issuer), so the API's scoped
 		// storage user is created after "platform"; the API restarts with it.
-		{name: "storage-scoped", deps: []string{"platform", "minio"}, args: install("storage-scoped"), fn: components.SetupBundledStorage},
+		{name: "storage-scoped", skip: c.ObjectStorageExternal(), deps: []string{"platform", "minio"}, args: install("storage-scoped"), fn: components.SetupBundledStorage},
+		{name: "builds", deps: []string{"storage-scoped", "ingress", "platform"}, skip: !components.BuildsEnabled(c), args: install("builds"), fn: components.InstallBuilds},
 	}
 }
 
@@ -171,6 +182,9 @@ func runProvision() error {
 		color.Cyan("  Profile: %s\n", profileFlag)
 	}
 
+	if err := checkObjectStorageFlags(cfg); err != nil {
+		return err
+	}
 	if !cfg.NonInteractive {
 		if err := cfg.PromptInteractive(); err != nil {
 			return err
@@ -180,11 +194,40 @@ func runProvision() error {
 	}
 
 	confirmHardening(os.Stdin, os.Stdout, !cfg.NonInteractive)
+	if err := checkHAProvision(cfg); err != nil {
+		return err
+	}
+	if err := resolvePostgresReplication(cfg, os.Stdin, os.Stdout); err != nil {
+		return err
+	}
+	if err := resolveObjectStorage(cfg, os.Stdin); err != nil {
+		return err
+	}
+	// The backup target is checked before anything is installed (#186).
+	if err := resolveBackupTarget(cfg); err != nil {
+		return err
+	}
+	cfg.PostgresEngine = components.ResolvePostgresEngine(cfg)
 
 	cfg.GenerateSecrets()
 	if cfg.PasswordGenerated {
 		color.Green("  ✓ Admin password auto-generated (saved to /etc/platform/.env)")
 		fmt.Printf("    ADMIN_PASSWORD=%s\n", cfg.AdminPassword)
+	}
+
+	if err := cfg.ValidateIngressHA(); err != nil {
+		return err
+	}
+
+	// A local bundle carries this release's Cairn images: use their tag before
+	// it is saved (`--bundle auto` fetches the bundle of this release, whose tag
+	// is checked once it is installed).
+	if bundleFlag != "" && bundleFlag != "auto" {
+		if m, err := provisionReadManifest(bundleFlag); err != nil {
+			color.Yellow("  ⚠ could not read the bundle manifest: %v", err)
+		} else {
+			applyBundleImageTag(cfg, m)
+		}
 	}
 
 	// Child steps load their config from this file — it must be written before
@@ -226,13 +269,32 @@ func runProvision() error {
 	// artifact) downloads while the prerequisites install. It must land
 	// before k3s starts, which imports the image tarballs at start-up.
 	stackDone := startStackDownload()
+	// Offline bundle must land before k3s starts: k3s imports airgap image
+	// tarballs from its images dir at start-up, and cached charts make the
+	// prefetch below a no-op. It also carries the node packages, Helm and
+	// k3s, so an offline provision downloads nothing (hostSources).
+	var sources hostSources
+	if bundleFlag != "" {
+		if err := hostStep("bundle", func() error { return installBundle(bundleFlag) }); err != nil {
+			return err
+		}
+		sources = bundleSources(provisionStackPaths, runtime.GOARCH)
+		sources.warnMissing()
+		if bundleFlag == "auto" {
+			if m, ok, err := bundle.ReadStagedManifest(provisionStackPaths.Staging); err != nil {
+				color.Yellow("  ⚠ could not read the bundle manifest: %v", err)
+			} else if ok && applyBundleImageTag(cfg, m) {
+				_ = cfg.SaveEnvFile("/etc/platform/.env")
+			}
+		}
+	}
 	// Prerequisites (apt) are only needed by the cluster steps, not by helm or
 	// k3s: install them in the background too, and wait before the cluster steps.
 	prereqsDone := make(chan error, 1)
 	go func() {
 		_ = state.MarkInProgress("prereqs")
 		track := state.Track("prereqs (background)")
-		err := apt.InstallPrereqs()
+		err := installPrereqs(sources)
 		if err != nil {
 			track("failed")
 		} else {
@@ -240,15 +302,7 @@ func runProvision() error {
 		}
 		prereqsDone <- err
 	}()
-	// Offline bundle must land before k3s starts: k3s imports airgap image
-	// tarballs from its images dir at start-up, and cached charts make the
-	// prefetch below a no-op.
-	if bundleFlag != "" {
-		if err := hostStep("bundle", func() error { return installBundle(bundleFlag) }); err != nil {
-			return err
-		}
-	}
-	if err := hostStep("helm", helm.Install); err != nil {
+	if err := hostStep("helm", func() error { return installHelm(sources) }); err != nil {
 		return err
 	}
 
@@ -269,8 +323,39 @@ func runProvision() error {
 	}()
 
 	if !cfg.SkipK8s {
-		if err := hostStep("k3s", func() error { return k3s.Install(cfg.Domain, cfg.GitHubToken) }); err != nil {
+		// Ingress HA (#54): the k3s config fragment (ServiceLB off, API VIP in
+		// tls-san) and the kube-vip auto-deploy manifest must exist before k3s
+		// starts, so kube-vip already runs when ingress-nginx waits for its
+		// LoadBalancer address.
+		if cfg.IsHA() {
+			if err := hostStep("ingress-ha", func() error {
+				host := ingressha.Default()
+				restart, err := host.Prepare(cfg)
+				if err != nil || !restart {
+					return err
+				}
+				if err := shell.RunBash("systemctl restart k3s"); err != nil {
+					return fmt.Errorf("restart k3s: %w", err)
+				}
+				if err := k3s.WaitReady(); err != nil {
+					return err
+				}
+				host.CleanupServiceLB(cfg)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		k3sOpts := k3sServerOptions(cfg)
+		k3sOpts.Offline = sources.k3s
+		if err := hostStep("k3s", func() error { return k3s.InstallWith(cfg.Domain, cfg.GitHubToken, k3sOpts) }); err != nil {
 			return err
+		}
+		// k3s imported the bundle's archives before it started the kubelet.
+		if bundleFlag != "" {
+			if err := hostStep("bundle-images", provisionNameImages); err != nil {
+				return err
+			}
 		}
 	}
 	// Load the stack's images into containerd in parallel before any workload
@@ -278,7 +363,15 @@ func runProvision() error {
 	importImagesFromStack(stackDone)
 
 	// ── Wave 1: cluster basics.
-	if err := hostStep("namespaces", components.Namespace); err != nil {
+	if err := hostStep("namespaces", func() error { return components.Namespace(cfg) }); err != nil {
+		return err
+	}
+	// Target credentials (held in memory since the prompt) go to Kubernetes
+	// Secrets before any step that archives to the target starts.
+	if err := hostStep("object-storage", func() error { return components.EnsureObjectStorage(cfg, objectCredentials) }); err != nil {
+		return err
+	}
+	if err := hostStep("backup-target", func() error { return components.EnsureBackupTarget(cfg) }); err != nil {
 		return err
 	}
 	if err := <-prereqsDone; err != nil {
@@ -317,6 +410,8 @@ func runProvision() error {
 	}
 	printTimings(started)
 	components.ProvisionComplete(cfg)
+	finishBackupSetup(os.Stdout, cfg)
+	printJoinHint(os.Stdout, cfg)
 	return nil
 }
 
@@ -502,6 +597,10 @@ func runChild(ctx context.Context, exe string, s stepDef) error {
 
 const envFilePath = "/etc/platform/.env"
 
+// childSecretEnv are credentials the parent stores in Kubernetes Secrets;
+// child steps read the Secrets and never inherit them.
+var childSecretEnv = map[string]bool{"BACKUP_S3_ACCESS_KEY": true, "BACKUP_S3_SECRET_KEY": true}
+
 // childEnviron drops variables that the saved .env defines. config.Load never
 // overrides an existing env var with the file's value, so an inherited stale
 // value (e.g. a DOMAIN changed at the interactive prompt, or a secret generated
@@ -510,7 +609,7 @@ func childEnviron(environ []string, fileKeys map[string]bool) []string {
 	out := make([]string, 0, len(environ))
 	for _, kv := range environ {
 		k, _, _ := strings.Cut(kv, "=")
-		if fileKeys[k] || k == childEnv {
+		if fileKeys[k] || k == childEnv || childSecretEnv[k] {
 			continue
 		}
 		out = append(out, kv)

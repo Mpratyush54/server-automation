@@ -26,3 +26,9 @@ it('never claims restoration or emits a marker if the injected rollout fails',as
 it('preserves the durable three-step layout for pre-upgrade resumable deployments',()=>{
  expect(deployOperation.steps.map(s=>s.name)).toEqual(['apply','wait-healthy','finalize']);
 });
+it('does not re-inject release metadata into source-built workloads (set at apply time)',async()=>{
+ const ctx={state:{deploymentId:'rollback',source:true},operationId:'op',emit:jest.fn()} as any;
+ await deployOperation.steps.find(s=>s.name==='finalize')!.run(ctx);
+ expect(injectRelease).not.toHaveBeenCalled();
+ expect(ctx.emit).toHaveBeenCalledWith('deploy.marker',{deploymentId:'rollback'});
+});

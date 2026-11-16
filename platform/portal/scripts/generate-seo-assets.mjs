@@ -6,7 +6,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, '..', 'public');
 const docsRoot = path.join(publicDir, 'docs');
 const base = 'https://platform.pratyushes.dev';
-const today = new Date().toISOString().slice(0, 10);
 
 function walk(dir, acc = []) {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -21,106 +20,19 @@ function toPosix(p) {
   return p.split(path.sep).join('/');
 }
 
-/** SPA HTML twin for a markdown path, or null when the SPA cannot render it. */
+/** HTML page for a Markdown file: every docs file is prerendered at its path. */
 function spaUrlFromMd(mdRelPosix) {
-  let rel = mdRelPosix.replace(/^docs\//, '').replace(/\.md$/, '');
-  if (rel === 'index' || rel === '') return `${base}/docs`;
-  // README indexes are not wired as /docs/:section/:page
-  if (/\/README$/i.test(rel) || rel === 'README') return null;
-  const parts = rel.split('/');
-  // DocsComponent only loads `/docs/${section}/${page}.md` (needs ≥2 segments)
-  // or `/docs/index.md`. Top-level files (faq.md, changelog.md) are Markdown-only.
-  if (parts.length < 2) return null;
-  const page = parts.pop();
-  const section = parts.join('/');
-  return `${base}/docs/${section}/${page}`;
+  const rel = mdRelPosix.replace(/^docs\//, '').replace(/\.md$/, '');
+  return rel === 'index' ? `${base}/docs` : `${base}/docs/${rel}`;
 }
 
 const mdFiles = walk(docsRoot).map((f) =>
   toPosix(path.relative(publicDir, f))
 );
 
-const urls = [
-  { loc: `${base}/`, priority: '1.0', changefreq: 'weekly' },
-  { loc: `${base}/landing`, priority: '1.0', changefreq: 'weekly' },
-  { loc: `${base}/docs`, priority: '0.9', changefreq: 'weekly' },
-  { loc: `${base}/llms.txt`, priority: '0.8', changefreq: 'weekly' },
-  { loc: `${base}/llms-full.txt`, priority: '0.7', changefreq: 'weekly' },
-];
-
-const seen = new Set(urls.map((u) => u.loc));
-
-for (const md of mdFiles) {
-  const spa = spaUrlFromMd(md);
-  if (spa && !seen.has(spa)) {
-    seen.add(spa);
-    urls.push({
-      loc: spa,
-      priority: spa.includes('/mcp/') ? '0.85' : '0.7',
-      changefreq: 'weekly',
-    });
-  }
-  const mdLoc = `${base}/${md}`;
-  if (!seen.has(mdLoc)) {
-    seen.add(mdLoc);
-    urls.push({
-      loc: mdLoc,
-      priority: md.includes('/mcp/')
-        ? '0.8'
-        : /^docs\/[^/]+\.md$/.test(md)
-          ? '0.75'
-          : '0.65',
-      changefreq: 'weekly',
-    });
-  }
-}
-
-urls.sort((a, b) => a.loc.localeCompare(b.loc));
-
-const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls
-  .map(
-    (u) => `  <url>
-    <loc>${u.loc}</loc>
-    <lastmod>${today}</lastmod>
-    <changefreq>${u.changefreq}</changefreq>
-    <priority>${u.priority}</priority>
-  </url>`
-  )
-  .join('\n')}
-</urlset>
-`;
-
-fs.writeFileSync(path.join(publicDir, 'sitemap.xml'), xml);
-
-const robots = `# platform.pratyushes.dev — marketing + docs only
-User-agent: *
-Allow: /
-Allow: /landing
-Allow: /docs
-Allow: /docs/
-Allow: /llms.txt
-Allow: /llms-full.txt
-Allow: /sitemap.xml
-Allow: /logo-
-Allow: /favicon
-Allow: /apple-touch-icon.png
-
-# Prefer canonical marketing/docs surfaces
-Disallow: /api/
-Disallow: /dashboard
-Disallow: /login
-Disallow: /projects
-Disallow: /settings
-Disallow: /oauth/
-
-Sitemap: ${base}/sitemap.xml
-`;
-
-fs.writeFileSync(path.join(publicDir, 'robots.txt'), robots);
-
-const llms = `# Platform
+// sitemap.xml is written by prerender-docs.mjs and robots.txt is a static
+// file; this script only writes the two agent indexes.
+const llms = `# Cairn
 
 > Self-hosted Kubernetes PaaS control plane: deploy, secrets, databases, observability, SDKs, and MCP for AI agents.
 
@@ -129,13 +41,14 @@ Docs (HTML): ${base}/docs
 Docs (Markdown corpus): ${base}/docs/
 Full agent index: ${base}/llms-full.txt
 Sitemap: ${base}/sitemap.xml
-Source: https://github.com/Mpratyush54/SERVER-automation
+Source: https://github.com/Mpratyush54/server-automation
 
 ## Start here
 
-- [Landing](${base}/landing): product overview
+- [Home](${base}/): product overview
 - [Docs home](${base}/docs): documentation index ([Markdown](${base}/docs/index.md))
-- [Installation](${base}/docs/getting-started/installation): install Platform ([Markdown](${base}/docs/getting-started/installation.md))
+- [Installation](${base}/docs/getting-started/installation): install Cairn ([Markdown](${base}/docs/getting-started/installation.md))
+- [Recover](${base}/docs/operations/recover): fix a broken install ([Markdown](${base}/docs/operations/recover.md))
 - [platformctl CLI](${base}/docs/getting-started/platformctl): CLI reference ([Markdown](${base}/docs/getting-started/platformctl.md))
 
 ## For AI agents (MCP)
@@ -145,7 +58,7 @@ Source: https://github.com/Mpratyush54/SERVER-automation
 3. [MCP setup](${base}/docs/mcp/setup) ([Markdown](${base}/docs/mcp/setup.md))
 4. [MCP tools & policy](${base}/docs/mcp/tools) ([Markdown](${base}/docs/mcp/tools.md))
 
-Prefer fetching the **.md** URLs for grounding. HTML routes are the human SPA shell.
+Prefer fetching the **.md** URLs for grounding. HTML pages are prerendered and readable without JavaScript.
 
 ## Product docs
 
@@ -172,19 +85,17 @@ Prefer fetching the **.md** URLs for grounding. HTML routes are the human SPA sh
 ## Crawl notes
 
 - Public host serves marketing + docs only.
-- Cache-friendly: \`/\`, \`/landing\`, \`/docs*\`, \`/docs/**/*.md\`, static logos/favicons.
+- Cache-friendly: \`/\`, \`/docs*\`, \`/docs/**/*.md\`, static logos/favicons.
 - Do not treat authenticated app routes as public content.
 `;
 
 fs.writeFileSync(path.join(publicDir, 'llms.txt'), llms);
 
 const lines = [
-  `# Platform - full documentation index for AI agents`,
-  `# Generated ${today}`,
-  `# Prefer these Markdown URLs for retrieval. HTML twin listed when the SPA can render it.`,
+  `# Cairn - full documentation index for AI agents`,
+  `# Prefer these Markdown URLs for retrieval. Each is followed by its HTML page.`,
   ``,
   `Home: ${base}/`,
-  `Landing: ${base}/landing`,
   `Docs HTML: ${base}/docs`,
   `llms.txt: ${base}/llms.txt`,
   `sitemap.xml: ${base}/sitemap.xml`,
@@ -194,9 +105,9 @@ const lines = [
 for (const md of mdFiles.sort()) {
   const spa = spaUrlFromMd(md);
   lines.push(`- ${base}/${md}`);
-  if (spa) lines.push(`  html: ${spa}`);
+  lines.push(`  html: ${spa}`);
 }
 
 fs.writeFileSync(path.join(publicDir, 'llms-full.txt'), lines.join('\n') + '\n');
 
-console.log(`Wrote robots.txt, sitemap.xml (${urls.length} URLs), llms.txt, llms-full.txt`);
+console.log(`Wrote llms.txt and llms-full.txt (${mdFiles.length} documents)`);

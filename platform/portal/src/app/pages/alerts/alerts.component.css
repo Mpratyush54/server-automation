@@ -1,0 +1,17 @@
+.al-link { color: rgb(var(--accent-text)); }
+.al-section { margin-bottom: 24px; }
+.al-body { padding: 20px; }
+.al-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0 16px;
+}
+.al-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px;
+  border-top: 1px solid rgb(var(--line));
+  background: rgb(var(--raised) / 0.35);
+}
+.al-actions { text-align: right; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }

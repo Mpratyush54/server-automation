@@ -31,7 +31,12 @@ func fakeRestoreEnv(t *testing.T) (src, remote, logf string) {
 		}
 	}
 	fake := map[string]string{
-		"kubectl": `case "$3" in
+		"kubectl": `args=()
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = -c ]; then shift 2; else args+=("$1"); shift; fi
+done
+set -- "${args[@]}"
+case "$3" in
   get) printf db-0 ;;
   cp) cp "$4" "${5#db-0:}" ;;
   exec)
@@ -85,13 +90,20 @@ func TestRestorePostgresBranchRuns(t *testing.T) {
 	_ = f.Close()
 	t.Setenv("POSTGRES_PASSWORD", "current")
 
-	if err := runScript(restoreScript, "postgres", src, ""); err != nil {
+	if err := runScript(restoreScript, "postgres", src); err != nil {
 		t.Fatalf("postgres restore branch failed: %v", err)
 	}
 	log := readLog(t, logf)
 	first := log[strings.Index(log, "psql-stdin-begin"):strings.Index(log, "psql-stdin-end")]
 	if strings.Contains(first, "ROLE postgres") || !strings.Contains(first, "CREATE ROLE platform;") {
 		t.Fatalf("globals must be applied without the bootstrap superuser lines:\n%s", log)
+	}
+	// A fresh CloudNativePG cluster already has some roles (found on the #186
+	// rebuild: role "cnpg_metrics_exporter" already exists), so CREATE ROLE
+	// must tolerate them while ALTER ROLE still applies.
+	if !strings.Contains(first, "DO $restore$ BEGIN CREATE ROLE platform; EXCEPTION WHEN duplicate_object THEN NULL; END $restore$;") ||
+		!strings.Contains(first, "ALTER ROLE platform WITH LOGIN PASSWORD 'p';") {
+		t.Fatalf("CREATE ROLE must skip existing roles and keep ALTER ROLE:\n%s", log)
 	}
 	if !strings.Contains(log, "datname <> 'template1'") {
 		t.Fatalf("session cleanup query lost its quoting:\n%s", log)
@@ -114,7 +126,7 @@ func TestRestoreMongoRestoresUsersLast(t *testing.T) {
 	}
 	t.Setenv("MONGODB_ROOT_PASSWORD", "current")
 
-	if err := runScript(restoreScript, "mongo", src, ""); err != nil {
+	if err := runScript(restoreScript, "mongo", src); err != nil {
 		t.Fatalf("mongo restore branch failed: %v", err)
 	}
 	calls := strings.Split(strings.TrimSpace(readLog(t, logf)), "\n")
@@ -128,7 +140,7 @@ func TestRestoreMongoRestoresUsersLast(t *testing.T) {
 	if !strings.Contains(calls[1], "--drop --nsInclude=admin.system.users --nsInclude=admin.system.roles") || !strings.Contains(calls[1], archive) {
 		t.Fatalf("second pass must restore users and roles:\n%s", calls[1])
 	}
-	if !strings.Contains(calls[0], "--password current") {
+	if !strings.Contains(calls[0], "--password=current") {
 		t.Fatalf("restore must authenticate with the running cluster's root password:\n%s", calls[0])
 	}
 }

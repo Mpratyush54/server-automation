@@ -1,75 +1,49 @@
-# Your First Project
+# Your first project
 
-Get started by creating a project, setting up environments, and triggering your first deployment.
+This page helps you create a project in the portal and get it ready to deploy.
 
-## 1. Log In
+A project is one app. It has its own Git repository, three environments (development, staging and production), its own databases and secrets, and its own monitoring.
 
-Open [http://localhost:4200](http://localhost:4200) and log in with the admin account:
+## Before you start
 
-| Email | Password |
-|---|---|
-| admin@pratyushes.dev | (none required — click Sign In) |
+If your code is in a **private** repository, connect GitHub or GitLab first, so Cairn can read it: open **Settings**, **Git linking** and follow [Connect GitHub or GitLab](../guides/git-providers.md). A public repository works without this. You can also leave the repository out for now and add it later.
 
-## 2. Create a Project
+## Create a project
 
-1. Click **Projects** in the sidebar.
-2. Click **Create Project**.
-3. Fill in the form:
+1. Sign in to the portal, open **Projects** and select **New project**.
+2. Work through the steps. Only the name is required; select **Skip** on any step marked *Optional*.
 
-| Field | Value |
-|---|---|
-| Project Name | `My App` |
-| Git Repository | `https://github.com/your-org/my-app.git` |
+   | Step | What to enter |
+   |---|---|
+   | **App** | A **Name**, for example `shop`: lowercase letters, numbers and dashes. It becomes part of each environment's address. Pick the **Stack** (Node.js, Angular, Python or Static site). |
+   | **Code** (optional) | The **Repository address**, for example `https://github.com/acme/shop`, and the **Branch to deploy**. Leave the branch empty to use the repository's default branch. |
+   | **Environments** | A **Base domain**, for example `example.com`, with a wildcard DNS record `*.example.com` pointing at your server. No domain? Use `<server-ip>.sslip.io`. Leave it empty to use the server's own domain. |
+   | **Data** (optional) | Tick **PostgreSQL** for each environment that needs a database. |
+   | **Settings** (optional) | Environment variables and secrets your app reads, and privacy defaults for browser monitoring. |
+   | **Team** (optional) | People who should work on the app, and their role. You are added as the owner. |
 
-4. Click **Create**.
+3. On **Review**, select **Create project**.
 
-A **SDK Token** is generated automatically for the project. Copy it — you will need it when configuring an SDK.
+Cairn creates the project with its three environments. Each one runs in its own isolated space on the server and gets its own address, such as `shop-development-<code>.example.com`, where `<code>` is a short code that keeps addresses unique. You can see the addresses on the project's **Deployments** page, under **Environments**.
 
-> If you lose the token, go to **Project Settings → SDK Token** to regenerate it.
+If you ticked a database, its password is shown once, right after the project is created. Copy it then.
 
-## 3. Create Environments
+## Add or change the repository later
 
-1. Open your project from the Projects list.
-2. Go to the **Environments** tab.
-3. Create the following environments:
+Open the project, go to **Configuration** and fill in **Repository** under **Repository and address**. Select **Save changes**.
 
-| Name | Branch | Auto-Deploy | Preview |
-|---|---|---|---|
-| `dev` | `main` | Yes | No |
-| `staging` | `main` | Yes | No |
-| `production` | `main` | Yes | No |
+## Get an SDK token (optional)
 
-4. Click **Save**.
+You only need this if your app uses a Cairn SDK for logs, metrics or databases.
 
-Each environment maps to a deployment target. The API creates a dedicated Kubernetes namespace per environment.
+1. Open the project and go to **Settings**.
+2. Under **Generate SDK token**, enter a name and pick the kind:
+   - **Server** for backend code (Node.js, Python). It can read the project's settings and secrets, so keep it on the server.
+   - **Browser** for frontend code (React, Angular). It can only send logs, metrics and bug reports.
+3. Select **Generate token** and copy it. It is shown only once.
 
-## 4. Trigger a Deployment
+Then follow a quickstart: [Node.js](node-sdk-quickstart.md), [Python](python-sdk-quickstart.md), [React](react-sdk-quickstart.md) or [Angular](angular-sdk-quickstart.md).
 
-1. Go to the **Deployments** tab.
-2. Click **New Deployment**.
-3. Select the `dev` environment.
-4. Enter a Git commit SHA (or leave blank to use the latest).
-5. Click **Deploy**.
+## Next
 
-The deployment pipeline:
-
-```
-Commit → API receives request → builds container → pushes to registry → applies k8s manifest → health check → ready
-```
-
-6. Watch the status update in real time: `Queued → Building → Deploying → Healthy`
-
-## 5. View Your Deployed App
-
-Once the deployment is healthy, the portal shows:
-
-- **URL** — the ingress address for the environment
-- **Logs** — real-time container logs via Loki
-- **Metrics** — CPU, memory, request latency (p50/p95/p99)
-- **Secrets** — environment-specific encrypted configuration
-
-## Next Steps
-
-- [Set up the Node.js SDK](node-sdk-quickstart.md) to instrument your app
-- [Learn about the deployment pipeline](deploy-your-app.md)
-- [Configure preview environments](../guides/preview-environments.md)
+[Deploy your app](deploy-your-app.md).

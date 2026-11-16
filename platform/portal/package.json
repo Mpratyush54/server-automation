@@ -10,6 +10,8 @@
     "test": "ng test",
     "test:docs": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.docs-spec.json --include=src/app/guards/docs.matcher.spec.ts --include=src/app/pages/docs/docs.component.spec.ts",
     "test:security": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.security-spec.json --include=src/app/pages/docs/docs-sanitize.spec.ts --include=src/app/services/auth.interceptor.spec.ts --include=src/app/guards/public-domain.guard.spec.ts --include=src/app/pages/iframe-view/iframe-view.component.spec.ts && node --test scripts/nginx-headers.test.mjs scripts/prerender-docs.test.mjs",
+    "test:scripts": "node --test scripts/nginx-headers.test.mjs scripts/prerender-docs.test.mjs scripts/prerender-landing.test.mjs scripts/docs-links.test.mjs scripts/prerender-output.test.mjs",
+    "check:docs-links": "node scripts/check-docs-links.mjs",
     "test:public": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.docs-spec.json --include=src/app/guards/home.guard.spec.ts --include=src/app/guards/docs.matcher.spec.ts --include=src/app/pages/docs/docs.component.spec.ts --include=src/app/pages/docs/docs-sanitize.spec.ts --include=src/app/pages/docs/docs-search.spec.ts --include=src/app/pages/docs/docs-search.component.spec.ts --include=src/app/pages/landing/landing.component.spec.ts"
   },
   "private": true,
@@ -29,7 +31,7 @@
     "rrweb-player": "2.2.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
-    "zone.js": "~0.15.0"
+    "zone.js": "~0.16.3"
   },
   "devDependencies": {
     "@angular-devkit/build-angular": "^21.2.29",
@@ -43,7 +45,7 @@
     "karma-chrome-launcher": "~3.2.0",
     "karma-coverage": "~2.2.0",
     "karma-jasmine": "~5.1.0",
-    "karma-jasmine-html-reporter": "~2.1.0",
+    "karma-jasmine-html-reporter": "~2.3.0",
     "postcss": "^8.5.15",
     "tailwindcss": "^3.4.19",
     "typescript": "~5.9.3"

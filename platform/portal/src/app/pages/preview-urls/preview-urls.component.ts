@@ -1,7 +1,8 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
+import { ToastService, DialogService, errorText } from '../../shared/feedback/feedback.service';
 
 @Component({
   selector: 'app-preview-urls',
@@ -13,6 +14,9 @@ import { ApiService } from '../../services/api.service';
 export class PreviewUrlsComponent implements OnInit, OnDestroy {
   previews: any[] = [];
   timerId: any;
+
+  private toast = inject(ToastService);
+  private dialog = inject(DialogService);
 
   constructor(private api: ApiService) {}
 
@@ -87,12 +91,19 @@ export class PreviewUrlsComponent implements OnInit, OnDestroy {
   }
 
   async terminate(id: string) {
-    if (!confirm('Are you sure you want to terminate this preview environment? This action is immediate.')) return;
+    const ok = await this.dialog.confirm({
+      title: 'Remove this preview?',
+      message: 'The preview deployment and its URL are removed right away. Push to the branch again to get a new one.',
+      confirmLabel: 'Remove preview',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.terminateDeployment(id));
+      this.toast.ok('Preview removed');
       await this.loadPreviews();
     } catch (err: any) {
-      alert('Failed to terminate preview environment: ' + (err.error?.error || err.message));
+      this.toast.error('Preview was not removed: ' + errorText(err));
     }
   }
 }

@@ -52,6 +52,20 @@ function generateAgentSecret(): { raw: string; prefix: string } {
 /** GET /api/agent-tokens/me — identity for the current agent token (or human JWT). */
 router.get('/agent-tokens/me', expressAuthenticate, async (req: Request, res: Response) => {
   const authReq = req as AuthenticatedRequest;
+  if (authReq.agentToken?.kind === 'mcp_grant') {
+    // Connected assistant (remote MCP): who it is, who it acts for, what it may do.
+    const agent = authReq.agentToken;
+    return res.json({
+      type: 'mcp_connection',
+      id: agent.id,
+      name: agent.name,
+      clientId: agent.clientId,
+      scopes: agent.scopes,
+      actingFor: agent.delegatedUser
+        ? { id: agent.delegatedUser.id, name: agent.delegatedUser.name, email: agent.delegatedUser.email, role: agent.delegatedUser.role }
+        : null,
+    });
+  }
   if (authReq.agentToken) {
     try {
       const ds = await getDb();

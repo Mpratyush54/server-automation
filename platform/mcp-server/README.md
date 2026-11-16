@@ -1,6 +1,15 @@
 # Platform MCP server
 
-stdio MCP server for the Platform PaaS API. User docs:
+Local (stdio) MCP server for the Cairn API. Most people do not need it: every Cairn install serves
+the same tools remotely at `https://<your-domain>/mcp` (sign in from the assistant, nothing to install).
+Use this package to run the server on your own computer, for example to use `platform_login` or
+`platform_deploy`.
+
+The tool and resource definitions are shared with the remote endpoint. The single source is
+`platform/api/src/mcp/registry.ts`; `npm run build` copies it into `src/shared/` (generated, not in git)
+before compiling, so build from a full checkout of the repository.
+
+User docs:
 
 - [Overview](../../docs/mcp/overview.md)
 - [Setup](../../docs/mcp/setup.md)

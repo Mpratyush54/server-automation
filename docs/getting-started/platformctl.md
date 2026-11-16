@@ -1,37 +1,51 @@
 # platformctl CLI
 
-`platformctl` is the host tool that installs and manages Platform on an Ubuntu server. It uses pre-built GHCR images — there is no on-server compile.
+`platformctl` installs and manages Cairn on an Ubuntu server. This page lists every command and the main options.
+
+Run it as root or with `sudo`. It uses pre-built images, so nothing is compiled on the server.
 
 ## Install
 
-Copy this on the server (also on the [homepage](/landing)):
+Run this on the server:
 
 ```bash
 curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
 sudo platformctl provision
 ```
 
-Non-interactive (CI / automation):
+Non-interactive (CI / automation). A fresh install needs an off-site backup target (`BACKUP_S3_BUCKET`, with `BACKUP_S3_ACCESS_KEY` and `BACKUP_S3_SECRET_KEY` from the environment) or an explicit `--local-backups`:
 
 ```bash
-sudo DOMAIN=platform.example.com ADMIN_EMAIL=you@example.com platformctl provision --auto
+sudo DOMAIN=platform.example.com ADMIN_EMAIL=you@example.com platformctl provision --auto --local-backups
 ```
+
+To use a bucket instead, see [Install without questions](installation.md#install-without-questions).
 
 `install.sh` puts the `platformctl` binary on `PATH`. Config lives in `/etc/platform/.env` (override with `--config`).
 
-Requirements: Ubuntu 22.04+, sudo, ≥ 8 GB RAM, ≥ 80 GB free on `/var`, ports 80/443 open.
+Requirements: Ubuntu 22.04+, sudo, at least 4 GB RAM and 40 GB free disk (8 GB and 80 GB recommended), ports 80 and 443 open. See [Install](installation.md).
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `platformctl provision` | Full bootstrap: k3s, databases, ArgoCD, monitoring, Platform API + portal |
+| `platformctl provision` | Full bootstrap: k3s, databases, ArgoCD, monitoring, Cairn API + portal |
 | `platformctl install <component>` | Install or re-run one component (see list below) |
-| `platformctl status` | Health check of cluster components |
+| `platformctl status` | Health check of cluster components (HA: nodes, roles, etcd health and quorum) |
 | `platformctl seed` | Seed the admin user from `/etc/platform/.env` |
-| `platformctl update` | Pull newest GHCR images and roll Platform deployments |
+| `platformctl update` | Pull newest GHCR images and roll Cairn deployments; on `ha` servers also refresh the local kube-vip manifest (joined servers: only that) |
 | `platformctl recover` | Backup host files, persist passwords to disk, then restore API/Postgres login after a broken rotate |
-| `platformctl backup` | Copy `/etc/platform/.env` and database secrets to `/var/lib/platform/backups/<timestamp>/` |
+| `platformctl repair` | Fix HTTPS certificates and single sign-on for the bundled tools; safe to run any time |
+| `platformctl upgrade` | Upgrade to a newer release with a backup, health checks and rollback ([Upgrade](../operations/upgrades.md)) |
+| `platformctl backup` | Copy `/etc/platform/.env` and database secrets to `/var/lib/platform/backups/<timestamp>/` (not encrypted) |
+| `platformctl backup init\|list\|schedule\|restore-test` | Encrypted off-site backups ([Backups and restore](../operations/backups.md)); `backup --all` takes one |
+| `platformctl backup target set\|show\|test` | Change, show or test the off-site backup target ([Backups and restore](../operations/backups.md#choose-where-backups-go)) |
+| `platformctl restore` | Restore an encrypted backup; reads the private key from standard input |
+| `platformctl harden` | Apply or re-apply the host security baseline ([Host hardening](../guides/host-hardening.md)) |
+| `platformctl mfa disable --user <email>` | Remove a user's two-factor sign-in when no admin can ([Recover](../operations/recover.md)) |
+| `platformctl join` | Join this node to an HA cluster as a server or agent ([High availability](../operations/ha.md)) |
+| `platformctl token create\|rotate\|install` | Create, rotate and install cluster join tokens (HA) |
+| `platformctl postgres replication [set sync\|async]` | Show or switch synchronous/asynchronous database replication on `ha` ([Database replication](../operations/postgres-replication.md)) |
 | `platformctl version` | Print CLI version and default image tag |
 | `platformctl --help` | List commands |
 
@@ -62,7 +76,7 @@ sudo platformctl install platform
 | `monitoring` | Grafana + Prometheus + Loki |
 | `oauth2-proxy` | OAuth2 proxy |
 | `portainer` | Portainer UI with Platform SSO |
-| `platform` | Platform API + portal |
+| `platform` | Cairn API + portal |
 | `routing` | Ingress routes |
 | `auto-update` | GHCR image updater + CronJob |
 
@@ -75,7 +89,7 @@ sudo platformctl install platform
 
 ## Install speed, logs and timings
 
-`provision` installs cluster components in parallel, respecting dependencies (databases before the Platform API, ingress before routing):
+`provision` installs cluster components in parallel, respecting dependencies (databases before the Cairn API, ingress before routing):
 
 ```bash
 sudo platformctl provision --auto              # default: 4 steps at a time
@@ -92,13 +106,17 @@ Docker is **not** installed on the server; k3s uses its own containerd. For priv
 ## Install profiles
 
 Set `PLATFORM_PROFILE` (or pass `--profile`) to `minimal`, `standard` (default)
-or `full`:
+`full` or `ha`:
 
-- `minimal` ? core only; no monitoring, Portainer or ArgoCD.
-- `standard` ? the existing Grafana/Prometheus/Loki stack, Portainer and ArgoCD.
-- `full` ? standard services plus Alloy, S3-backed Loki, Tempo, Pyroscope and
-  blackbox-exporter. See [Full-profile telemetry](../operations/telemetry.md) for
+- `minimal`: core only; no monitoring, Portainer or ArgoCD.
+- `standard`: the existing Grafana/Prometheus/Loki stack, Portainer and ArgoCD.
+- `full`: standard services plus Alloy, S3-backed Loki, Tempo, Pyroscope and
+  blackbox-exporter. See [Turn on full monitoring](../operations/telemetry.md) for
   memory estimates, token/CORS integration and the required legacy Loki migration.
+
+- `ha`: the full feature set on a multi-node cluster: embedded etcd, ingress HA
+  (kube-vip VIP or external load balancer) and Longhorn replicated storage as the
+  default StorageClass. See [High availability](../operations/ha.md).
 
 Saved explicit profiles remain in effect. Existing `loki-stack` installations
 must follow the telemetry migration procedure before selecting full.
@@ -110,7 +128,16 @@ Explicit `INSTALL_*` variables override the profile. The profile is saved as
 `PLATFORM_PROFILE` in `/etc/platform/.env`; choosing a new profile explicitly ignores the
 `INSTALL_*` values saved by an earlier run.
 
-The profile also sets the Platform API replica count: `1` on `minimal`, `2` otherwise
+The `ha` profile installs everything in `full` on a multi-node cluster: the first
+server starts k3s with embedded etcd (`cluster-init`) and further nodes join with
+`platformctl join`. Set `PLATFORM_CLUSTER_NODES` (all node IPs or a CIDR) so the host
+firewall admits the other nodes. See [High availability](../operations/ha.md).
+It also asks for the PostgreSQL replication mode (`--postgres-replication sync|async`,
+saved as `POSTGRES_REPLICATION`); change it later with
+`sudo platformctl postgres replication set sync|async`. See
+[Synchronous or asynchronous database replication](../operations/postgres-replication.md).
+
+The profile also sets the Cairn API replica count: `1` on `minimal`, `2` otherwise
 (rolling updates with `maxUnavailable: 0` and a PodDisruptionBudget). Override it with
 `API_REPLICAS=<1-10>`; see [Scaling](../deployment/scaling.md#api-replicas-shared-state-and-zero-downtime-deploys).
 
@@ -135,29 +162,60 @@ sudo INGRESS_IP_RATE_LIMIT=5000 INGRESS_IP_BURST=10000 INGRESS_IP_CONNECTIONS=40
 
 Values are saved in `/etc/platform/.env` and re-applied by subsequent
 `platformctl install ingress-nginx` runs. You can also edit the saved file;
-process environment variables take precedence. See [Host hardening](../host-hardening.md#ingress-defaults-and-optional-waf).
+process environment variables take precedence. See [Host hardening](../guides/host-hardening.md#ingress-defaults-and-optional-waf).
 
 ## Offline bundle
 
-Releases include `platform-bundle-<version>-<arch>.tar.zst` and a `.sha256` file:
-k3s airgap images, all pinned Helm charts (`platformctl charts --json`) and the platform
-container images. The bundle is larger than GitHub's 2 GiB per-asset limit, so a release
-carries it as `.tar.zst.part00`, `.part01`, …; `--bundle auto` downloads and reassembles the
-parts and checks the result against the `.sha256`. To fetch it manually, download every part
-and the `.sha256`, then `cat platform-bundle-<version>-<arch>.tar.zst.part* >
-platform-bundle-<version>-<arch>.tar.zst` and `sha256sum -c` before `--bundle <path>`. `--bundle <path|auto>` verifies the checksum and extracts it before k3s is
-installed — images into `/var/lib/rancher/k3s/agent/images/`, charts into
-`/var/lib/platform/charts/` — so provisioning needs little or no network for images and charts.
+Releases include `platform-bundle-<version>-<arch>.tar.zst` and a `.sha256` file. The
+bundle holds the pinned k3s binary, its installer and airgap images, the Helm binary, all
+pinned Helm charts (`platformctl charts --json`), the third-party container images, the
+release's own Cairn images (API, portal, profile ingest and synthetics runner), and the
+Ubuntu 22.04 and 24.04 packages provision and join install (prerequisites, Longhorn
+prerequisites and host hardening packages, with their dependencies). The bundle is larger
+than GitHub's 2 GiB per-asset limit, so a release carries it as `.tar.zst.part00`,
+`.part01`, …; `--bundle auto` downloads and reassembles the parts and checks the result
+against the `.sha256`. To fetch it manually, download every part and the `.sha256`, then
+`cat platform-bundle-<version>-<arch>.tar.zst.part* > platform-bundle-<version>-<arch>.tar.zst`
+and `sha256sum -c` before `--bundle <path>`.
 
 ```bash
-sudo platformctl provision --bundle auto
+sudo platformctl provision --bundle /root/platform-bundle-<version>-amd64.tar.zst
 ```
+
+With `--bundle <path>`, provision downloads none of the components the bundle carries:
+
+- it checks the bundle against its `.sha256` file and every file against the bundle's
+  `SHA256SUMS`, and stops on a mismatch
+- it places the images in `/var/lib/rancher/k3s/agent/images/` and the charts in
+  `/var/lib/platform/charts/` before k3s starts; k3s imports the images at startup
+- it installs the prerequisites from the bundle with apt, using only the bundle as a package
+  source, as [join](../operations/ha.md#join-without-internet-access) does; it stops when the
+  OS is not Ubuntu 22.04 or 24.04 or when a dependency is not in the bundle
+- it installs Helm and k3s from the bundle, with no download fallback for k3s
+- it uses the bundle's Cairn images: when `PLATFORM_IMAGE_TAG` is not set (in the
+  environment or in `/etc/platform/.env` from an earlier provision), provision sets it to the
+  bundle's tag (the release version, such as `1.4.0`); when it is set to another tag, or
+  `PLATFORM_IMAGE_REGISTRY` is not the registry the bundle's images come from, provision
+  prints a warning and those images are pulled from the registry
+- after k3s starts, it adds the digest names of images pinned by digest (the ingress-nginx
+  controller and its admission webhook job, and the Cairn images, whose digests the bundle's
+  manifest records), so they start without a registry
+
+Your applications' images need a registry the server can reach. A bundle from an older
+release that lacks Helm, k3s, the packages or the Cairn images still works; provision
+downloads the missing parts and prints a warning. `--bundle auto` downloads the bundle itself, so it needs internet access. Without
+`--bundle`, provision works as before: packages from the apt mirrors, Helm from
+`get.helm.sh`, and the [platform stack](../operations/platform-stack.md).
 
 To build a bundle locally (needs curl, jq, helm 3, docker, zstd):
 
 ```bash
 scripts/build-bundle.sh v1.0.0 amd64   # writes dist/platform-bundle-v1.0.0-amd64.tar.zst
 ```
+
+The Cairn images are taken from `PLATFORM_IMAGE_REGISTRY` (default `ghcr.io/mpratyush54`)
+with the tag `PLATFORM_IMAGES_TAG` (default: the version without its `v`); they must exist
+for that architecture. The platform stack carries none of them, nor the packages or Helm.
 
 ## Day-2 operations
 

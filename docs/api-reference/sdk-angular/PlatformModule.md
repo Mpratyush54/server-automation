@@ -1,6 +1,6 @@
 # PlatformModule
 
-Angular module that integrates the Platform SDK into your application. Provides HTTP metrics interception, global error handling, and the bug-reporter component.
+Angular module that integrates the Cairn SDK into your application. Provides HTTP metrics interception, global error handling, and the bug-reporter component.
 
 ---
 
@@ -34,9 +34,9 @@ import { PlatformModule } from '@mpratyush54/sdk-angular';
 
 | Property | Type | Description |
 |---|---|---|
-| `apiBase` | `string` | **Required.** Platform API base URL |
+| `apiBase` | `string` | **Required.** Cairn API base URL |
 | `token` | `string` | **Required.** SDK bearer token |
-| `projectId` | `string` | **Required.** Your Platform project ID |
+| `projectId` | `string` | **Required.** Your Cairn project ID |
 | `environment?` | `string` | Environment label (default `'production'` in metrics) |
 | `appName?` | `string` | Optional application name |
 

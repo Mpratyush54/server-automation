@@ -39,21 +39,65 @@ function requireHumanRoleIfHuman(roles: UserRole[]) {
   };
 }
 
-/** An approval may only be used by the same agent token (or human) that requested it. */
+function isConnectedAssistant(authReq: AuthenticatedRequest): boolean {
+  return authReq.agentToken?.kind === 'mcp_grant';
+}
+
+/**
+ * An approval may only be used by the same agent token, connected assistant (remote MCP grant)
+ * or human that requested it.
+ */
 function approvalBelongsTo(approval: AgentCommandApproval, authReq: AuthenticatedRequest): boolean {
+  if (isConnectedAssistant(authReq)) {
+    return !!approval.requestedByMcpGrantId && approval.requestedByMcpGrantId === authReq.agentToken!.id;
+  }
   if (authReq.agentToken) {
     return approval.requestedByAgentTokenId === authReq.agentToken.id;
   }
-  return !approval.requestedByAgentTokenId && !!authReq.user && approval.requestedByUserId === authReq.user.id;
+  return !approval.requestedByAgentTokenId && !approval.requestedByMcpGrantId
+    && !!authReq.user && approval.requestedByUserId === authReq.user.id;
 }
 
 function requesterWhere(authReq: AuthenticatedRequest) {
+  if (isConnectedAssistant(authReq)) return { requestedByMcpGrantId: authReq.agentToken!.id };
   return authReq.agentToken
     ? { requestedByAgentTokenId: authReq.agentToken.id }
     : { requestedByUserId: authReq.user?.id || '' };
 }
 
+/** Requester columns for a new approval row. */
+function requesterColumns(authReq: AuthenticatedRequest) {
+  if (isConnectedAssistant(authReq)) {
+    return { requestedByAgentTokenId: null, requestedByMcpGrantId: authReq.agentToken!.id, requestedByUserId: null };
+  }
+  return {
+    requestedByAgentTokenId: authReq.agentToken?.id || null,
+    requestedByMcpGrantId: null,
+    requestedByUserId: authReq.user?.id || null,
+  };
+}
+
+/**
+ * Connected assistants: who the assistant acts for, kept on the approval so reviewers see the
+ * person behind the request (requested_by_user_id stays empty: the person did not ask directly).
+ */
+function actingForMeta(authReq: AuthenticatedRequest): Record<string, unknown> {
+  const agent = authReq.agentToken;
+  if (agent?.kind !== 'mcp_grant' || !agent.delegatedUser) return {};
+  return {
+    assistantName: agent.name,
+    actingFor: { id: agent.delegatedUser.id, name: agent.delegatedUser.name, email: agent.delegatedUser.email },
+  };
+}
+
 function actorMeta(authReq: AuthenticatedRequest) {
+  if (isConnectedAssistant(authReq)) {
+    return {
+      agentTokenId: null,
+      mcpGrantId: authReq.agentToken!.id,
+      userId: authReq.agentToken!.delegatedUser?.id || null,
+    };
+  }
   return {
     agentTokenId: authReq.agentToken?.id || null,
     userId: authReq.user?.id || null,
@@ -100,14 +144,13 @@ router.post(
               status: 'pending',
               reason: null,
               matchedPolicy: validation.matchedPolicy,
-              requestedByAgentTokenId: authReq.agentToken?.id || null,
-              requestedByUserId: authReq.user?.id || null,
+              ...requesterColumns(authReq),
               approvedByUserId: null,
               rejectedByUserId: null,
               approvalExpiresAt: new Date(Date.now() + APPROVAL_TTL_MS),
               executedAt: null,
               result: null,
-              metadata: { source: 'validate' },
+              metadata: { source: 'validate', ...actingForMeta(authReq) },
             }),
           );
           approvalId = created.id;
@@ -227,20 +270,19 @@ router.post(
             status: 'executed',
             reason: typeof reason === 'string' ? reason : null,
             matchedPolicy: validation.matchedPolicy,
-            requestedByAgentTokenId: authReq.agentToken?.id || null,
-            requestedByUserId: authReq.user?.id || null,
+            ...requesterColumns(authReq),
             approvedByUserId: null,
             rejectedByUserId: null,
             approvalExpiresAt: null,
             executedAt: new Date(),
             result: result as any,
-            metadata: { source: 'execute' },
+            metadata: { source: 'execute', ...actingForMeta(authReq) },
           }),
         );
       }
 
       await logAudit({
-        userId: authReq.user?.id,
+        userId: authReq.user?.id || authReq.agentToken?.delegatedUser?.id,
         action: 'agent_command.execute',
         targetType: 'agent_command',
         targetId: approval?.id,
@@ -248,7 +290,8 @@ router.post(
           command: validation.normalizedCommand,
           riskLevel: validation.riskLevel,
           ok: result.ok,
-          agentTokenId: authReq.agentToken?.id,
+          agentTokenId: authReq.agentToken?.kind === 'mcp_grant' ? undefined : authReq.agentToken?.id,
+          mcpGrantId: authReq.agentToken?.kind === 'mcp_grant' ? authReq.agentToken.id : undefined,
           dryRun: result.dryRun === true,
         },
         ip: req.ip,

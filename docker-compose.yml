@@ -4,10 +4,13 @@
 # Secrets come from a git-ignored `.env` next to this file; compose refuses to
 # start while a required variable is missing. See
 # docs/getting-started/installation.md ("Start the databases with Docker Compose").
+#
+# Image majors track what the platform runs in production
+# (platformctl/internal/versions, platformctl/internal/images/images.txt).
 
 services:
   postgres:
-    image: postgres:16.15-alpine3.24
+    image: postgres:18.4-alpine3.24
     environment:
       POSTGRES_USER: platform
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -15,7 +18,9 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Postgres 18 images keep data in /var/lib/postgresql/<major>/docker and refuse
+      # a mount at .../data; mount the parent so pg_upgrade --link works later.
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U platform"]
       interval: 5s
@@ -33,7 +38,7 @@ services:
       - mongodata:/data/db
 
   redis:
-    image: redis:7.4.12-alpine3.21
+    image: redis:8.0.6-alpine3.21
     # `$$` defers expansion to the container shell, so the value comes from env.
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
@@ -55,7 +60,7 @@ services:
       - miniodata:/bitnami/minio/data
 
   loki:
-    image: grafana/loki:2.9.17
+    image: grafana/loki:3.7.9
     ports:
       - "127.0.0.1:3100:3100"
     command: -config.file=/etc/loki/local-config.yaml
@@ -68,7 +73,7 @@ services:
       - promdata:/prometheus
 
   grafana:
-    image: grafana/grafana:12.4.14
+    image: grafana/grafana:13.3.0
     ports:
       - "127.0.0.1:3001:3000"
     environment:

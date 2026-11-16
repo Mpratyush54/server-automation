@@ -1,0 +1,68 @@
+:host { display: block; }
+
+.er-banner {
+  margin-bottom: 24px;
+  padding: 12px 20px;
+  font-size: 0.875rem;
+  color: rgb(var(--down));
+  border-left: 3px solid rgb(var(--down));
+}
+
+.er-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid rgb(var(--line));
+}
+.er-filters input, .er-filters select { width: auto; flex: 1 1 150px; max-width: 220px; height: 32px; }
+@media (max-width: 640px) { .er-filters input, .er-filters select { max-width: none; } }
+
+.er-section { margin-bottom: 24px; }
+.er-pager { display: flex; gap: 8px; }
+
+.er-issue {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: rgb(var(--fg));
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.er-issue:hover { text-decoration: underline; }
+.er-issue:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 2px; border-radius: 2px; }
+.er-issue-meta { font-size: 0.75rem; color: rgb(var(--fg-3)); margin-top: 2px; }
+.er-regression { color: rgb(var(--down)); font-size: 0.75rem; font-weight: 500; margin-left: 6px; }
+.er-num { text-align: right; font-variant-numeric: tabular-nums; }
+.er-nowrap { white-space: nowrap; }
+
+.er-detail-head { padding: 20px; }
+.er-detail-head h2 { margin: 0 0 6px; overflow-wrap: anywhere; }
+.er-meta { color: rgb(var(--fg-3)); font-size: 0.8125rem; margin: 0 0 4px; overflow-wrap: anywhere; }
+.er-triage { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-top: 16px; }
+.er-triage .form-group { margin: 0; min-width: 200px; }
+.er-no-events { border-top: 1px solid rgb(var(--line)); }
+
+.er-event { border-top: 1px solid rgb(var(--line)); padding: 20px; }
+.er-event h3 { font-size: 0.9375rem; font-weight: 600; margin: 0 0 6px; color: rgb(var(--fg)); }
+.er-event h4 { font-size: 0.8125rem; font-weight: 500; color: rgb(var(--fg-2)); margin: 16px 0 6px; }
+.er-message { margin: 0 0 6px; font-size: 0.875rem; color: rgb(var(--fg)); overflow-wrap: anywhere; }
+.er-links { display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.8125rem; margin-top: 6px; }
+.er-links a { color: rgb(var(--accent-text)); overflow-wrap: anywhere; }
+.er-event pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-code);
+  font-size: 0.8125rem;
+  color: rgb(var(--fg));
+  background: rgb(var(--raised));
+  border: 1px solid rgb(var(--line));
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 4px 0;
+}
+.er-event details summary { cursor: pointer; color: rgb(var(--fg-2)); font-size: 0.8125rem; margin-top: 12px; }
+:host > :last-child { margin-bottom: 0; }

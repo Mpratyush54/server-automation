@@ -1,15 +1,122 @@
-/* Project sections: one scrolling row so the last tab is reachable, never clipped. */
-.pd-tabs {
+/* Project page (#185). Shared helpers live in project-section-shared.css;
+   colours come only from the design tokens in src/styles.css.
+   Rhythm: 24px between panels, 20px horizontal padding inside panels, 16px grid gaps. */
+
+.title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
+.title-row .page-title { overflow-wrap: anywhere; }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; overflow-wrap: anywhere; }
+.meta a { text-decoration: none; }
+.meta a:hover { text-decoration: underline; }
+
+/* Keep the section row scrollable and the active item measurable. */
+.subnav { position: relative; }
+
+.release-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
+
+.deploy-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+@media (min-width: 1100px) {
+  .deploy-grid { grid-template-columns: minmax(20rem, 2fr) minmax(0, 3fr); }
+}
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 1rem; }
+.form-grid .form-group { margin-bottom: 0; }
+.dep-error { max-width: 28rem; }
+
+.link-button {
+  background: none; border: 0; padding: 0; font: inherit; cursor: pointer;
+  color: rgb(var(--accent-text)); text-decoration: underline;
+}
+
+.topology-placeholder { min-height: 10rem; }
+
+.env-list { list-style: none; margin: 0; padding: 1rem 1.25rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; }
+.env-item { padding: 1rem 1.25rem; border: 1px solid rgb(var(--line)); border-radius: 8px; display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+.env-item-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.env-item-head h3 { margin: 0; font-size: 0.875rem; font-weight: 600; text-transform: capitalize; }
+
+.db-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+@media (min-width: 1100px) {
+  .db-grid-split { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
+}
+.secret-value { background: rgb(var(--raised)); border-radius: 4px; padding: 0 0.375rem; user-select: all; }
+.backup-input { width: 12rem; height: 2rem; padding-top: 0; padding-bottom: 0; }
+
+.quota { display: block; width: 100%; height: 0.5rem; appearance: none; border: 0; border-radius: 999px; overflow: hidden; background: rgb(var(--raised)); }
+.quota::-webkit-progress-bar { background: rgb(var(--raised)); border-radius: 999px; }
+.quota::-webkit-progress-value { background: rgb(var(--accent)); border-radius: 999px; }
+.quota::-moz-progress-bar { background: rgb(var(--accent)); border-radius: 999px; }
+
+.stat-label { margin: 0; font-size: 0.8125rem; font-weight: 500; color: rgb(var(--fg-2)); }
+.card .stat-label { margin: 0; }
+
+.api-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 1rem; margin: 0; }
+.api-summary dt { font-size: 0.8125rem; color: rgb(var(--fg-2)); }
+.api-summary dd { margin: 0; }
+.api-summary .stat { font-size: 1.5rem; margin-top: 0.25rem; }
+.num { text-align: right; white-space: nowrap; }
+.sub-title { margin: 0; font-size: 0.875rem; font-weight: 600; }
+.code-block {
+  margin: 0; padding: 1rem 1.25rem; overflow-x: auto; border-radius: 6px;
+  background: rgb(var(--raised)); border: 1px solid rgb(var(--line)); color: rgb(var(--fg)); font-size: 0.8125rem;
+}
+
+.log-stream {
+  height: 22rem; overflow-y: auto; padding: 0.75rem 1rem; border-radius: 6px;
+  background: rgb(var(--canvas)); border: 1px solid rgb(var(--line));
+  font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 0.8125rem; line-height: 1.6;
+}
+.log-line { display: flex; flex-wrap: wrap; gap: 0 0.75rem; }
+.log-level { font-weight: 600; min-width: 3rem; }
+.log-msg { color: rgb(var(--fg)); overflow-wrap: anywhere; min-width: 0; }
+
+/* Monitoring views (?view=): a compact segmented row under the section tabs. */
+.mon-views {
+  display: flex; gap: 2px; width: max-content; max-width: 100%; overflow-x: auto; scrollbar-width: none;
+  margin-bottom: 1.5rem; padding: 2px; border: 1px solid rgb(var(--line)); border-radius: 8px; background: rgb(var(--surface));
+}
+.mon-views button {
+  flex: 0 0 auto; height: 2rem; padding: 0 0.75rem; border: 0; border-radius: 6px; background: transparent;
+  font: inherit; font-size: 0.8125rem; font-weight: 500; color: rgb(var(--fg-2)); white-space: nowrap; cursor: pointer;
+}
+.mon-views button:hover { color: rgb(var(--fg)); }
+.mon-views button.active { background: rgb(var(--raised)); color: rgb(var(--fg)); }
+.mon-views button:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: -2px; }
+.mon-notice { margin: 0; font-size: 0.875rem; color: rgb(var(--fg-2)); }
+.mon-foot { margin: 0; font-size: 0.8125rem; color: rgb(var(--fg-2)); }
+
+/* Pod logs dialog */
+.modal-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgb(var(--canvas) / 0.75); }
+.modal {
+  position: fixed; z-index: 1001; inset: 0; margin: auto; width: min(56rem, calc(100% - 2rem)); height: min(44rem, 85vh);
+  display: flex; flex-direction: column; box-shadow: var(--shadow);
+}
+.pod-name { margin: 0.125rem 0 0; font-size: 1rem; overflow-wrap: anywhere; }
+.modal-body { position: relative; flex: 1 1 auto; overflow-y: auto; background: rgb(var(--canvas)); padding: 1rem 1.25rem; }
+.pod-logs { margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 0.8125rem; line-height: 1.5; color: rgb(var(--fg)); }
+.tailing { position: absolute; right: 1.25rem; bottom: 0.75rem; background: rgb(var(--surface)); border: 1px solid rgb(var(--line)); border-radius: 4px; padding: 0.125rem 0.5rem; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 0.75rem 1.25rem; border-top: 1px solid rgb(var(--line)); }
+
+/* Configuration: label + explanation on the left, field on the right. */
+.cfg-body { padding: 0; }
+.cfg-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: 24px;
+  padding: 20px;
+}
+.cfg-row + .cfg-row { border-top: 1px solid rgb(var(--line)); }
+.cfg-label label { display: block; font-size: 0.9375rem; font-weight: 500; color: rgb(var(--fg)); }
+.cfg-label p { margin: 4px 0 0; font-size: 0.8125rem; color: rgb(var(--fg-3)); }
+.cfg-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cfg-hosts { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.8125rem; }
+.cfg-hosts li { display: flex; gap: 10px; }
+.cfg-hosts .muted { min-width: 88px; }
+.cfg-footer {
   display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
-  margin-bottom: 24px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #333;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  position: relative;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 12px 20px;
+  border-top: 1px solid rgb(var(--line));
+  background: rgb(var(--raised) / 0.35);
 }
-.pd-tabs > .btn {
-  flex: 0 0 auto;
-}
+@media (max-width: 720px) { .cfg-row { grid-template-columns: 1fr; gap: 10px; } }

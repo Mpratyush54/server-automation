@@ -92,4 +92,4 @@ Searches application logs stored in MongoDB. Returns matching logs with paginati
 
 - [Metrics API](metrics.md)
 - [Monitoring Guide](/docs/guides/monitoring)
-- [SDK Logging Guide](/docs/guides/sdk-metrics-and-logging)
+- [Search logs, traces and metrics](../../guides/observability.md)

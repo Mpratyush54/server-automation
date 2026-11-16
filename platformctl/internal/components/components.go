@@ -46,16 +46,23 @@ type Component struct {
 
 func All() []Component {
 	return []Component{
+		{"longhorn", "Longhorn replicated block storage (ha profile; default StorageClass)", InstallLonghorn},
+		{"longhorn-monitoring", "Longhorn ServiceMonitor and volume alerts (ha profile + monitoring)", InstallLonghornMonitoring},
 		{"ingress-nginx", "Kubernetes Ingress Controller", InstallIngressNginx},
 		{"cert-manager", "Let's Encrypt certificate management", InstallCertManager},
-		{"postgresql", "PostgreSQL database", InstallPostgreSQL},
+		{"postgresql", "PostgreSQL database (CloudNativePG cluster; Bitnami release on installs not yet migrated)", InstallPostgreSQL},
+		{"postgresql-backup", "PostgreSQL WAL archiving and daily base backups to the backup target (CloudNativePG)", InstallPostgresBackup},
+		{"postgresql-monitoring", "PostgreSQL PodMonitor and alerts (CloudNativePG + monitoring)", InstallPostgresMonitoring},
 		{"mongodb", "MongoDB database", InstallMongoDB},
 		{"redis", "Redis cache", InstallRedis},
 		{"minio", "S3-compatible object storage", InstallMinIO},
 		{"argocd", "ArgoCD GitOps", InstallArgoCD},
 		{"monitoring", "Grafana + Prometheus + Loki", InstallMonitoring},
 		{"telemetry", "Full profile telemetry backends and collector", InstallTelemetry},
+		{"registry-gc", "Collect unreferenced registry blobs during a maintenance window", InstallRegistryGC},
+		{"builds", "Source builds and authenticated S3 registry (opt-in)", InstallBuilds},
 		{"synthetics", "Synthetic monitoring namespace, egress policies and API RBAC (full profile)", InstallSynthetics},
+		{"keda", "Request autoscaling and preview activation (full profile, opt-in)", InstallKEDA},
 		{"oauth2-proxy", "OAuth2 authentication proxy", InstallOAuthProxy},
 		{"portainer", "Container management UI (subdomain + Platform SSO)", InstallPortainer},
 		{"platform", "Platform API + Portal", InstallPlatform},
@@ -76,18 +83,25 @@ func Find(name string) *Component {
 	return nil
 }
 
-func Namespace() error {
+// platformNamespaces are the namespaces provision creates. The storage
+// namespace only holds the bundled MinIO, so it is left out with
+// OBJECT_STORAGE_MODE=external. Nothing is ever deleted here: an install that
+// switched from bundled to external keeps its storage namespace and data.
+func platformNamespaces(cfg *config.Config) []string {
+	nss := []string{"platform", "databases", "monitoring"}
+	if !cfg.ObjectStorageExternal() {
+		nss = append(nss, "storage")
+	}
+	return append(nss, "argocd", "portainer", "cert-manager", "ingress-nginx", "oauth2-proxy")
+}
+
+func Namespace(cfg *config.Config) error {
 	if state.IsDone("namespaces") {
 		color.Green("  ✓ Namespaces already created")
 		return nil
 	}
 	color.Cyan("\n  ■ Creating namespaces...")
-	nss := []string{
-		"platform", "databases", "monitoring", "storage",
-		"argocd", "portainer", "cert-manager",
-		"ingress-nginx", "oauth2-proxy",
-	}
-	for _, ns := range nss {
+	for _, ns := range platformNamespaces(cfg) {
 		if err := shell.RunBash(fmt.Sprintf(
 			`kubectl create namespace %s --dry-run=client -o yaml | kubectl apply -f -`, ns)); err != nil {
 			return err
@@ -175,34 +189,71 @@ func InstallCertManager(cfg *config.Config) error {
 }
 
 func InstallPostgreSQL(cfg *config.Config) error {
+	if PostgresUsesCNPG(cfg) {
+		// Every fresh install (all profiles) runs CloudNativePG, so WAL
+		// archiving and point-in-time recovery work everywhere (#186).
+		return installPostgresCNPG(cfg)
+	}
 	return postgresqlRelease(cfg).reconcile("--wait", "--timeout", "10m")
 }
 
 func InstallMongoDB(cfg *config.Config) error {
-	return mongodbRelease(cfg).reconcile("--wait", "--timeout", "10m")
+	if err := checkHAMigration(cfg, "mongodb"); err != nil {
+		return err
+	}
+	return installHADatastore(cfg, mongodbRelease(cfg), "mongodb-0")
 }
 
 func InstallRedis(cfg *config.Config) error {
-	return redisRelease(cfg).reconcile("--wait", "--timeout", "10m")
+	if err := checkHAMigration(cfg, "redis"); err != nil {
+		return err
+	}
+	return installHADatastore(cfg, redisRelease(cfg), "redis-node-0")
 }
 
 func InstallMinIO(cfg *config.Config) error {
+	if cfg.ObjectStorageExternal() {
+		return nil
+	}
+	if err := checkHAMigration(cfg, "minio"); err != nil {
+		return err
+	}
 	if doneOrSkip("minio", "MinIO") {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing MinIO...")
+	if cfg.InstallCertManager {
+		// Its OpenID sign-in must trust the internal CA from the first start
+		// (see minio_ca.go); provision runs this step after cert-manager.
+		prepareMinioCA()
+	}
 	tmpFile, err := temporaryManifest("minio-values.yaml", cfg)
 	if err != nil {
 		return err
 	}
 	defer os.Remove(tmpFile)
 
-	err = helmValues("minio", "minio", "storage", minioInstallValues(cfg), "-f", tmpFile, "--set", "persistence.size=50Gi", "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser", "--set", `defaultBuckets=platform-backups\,platform-logs\,platform-uploads`, "--wait", "--timeout", "10m")
+	persistSize := "50Gi"
+	if cfg.IsHA() {
+		persistSize = "25Gi"
+	}
+	err = helmValues("minio", "minio", "storage", minioInstallValues(cfg), minioHelmArgs(cfg, tmpFile, persistSize)...)
 	if err != nil {
 		return err
 	}
 	color.Green("  ✓ MinIO installed")
 	return state.MarkDone("minio")
+}
+
+// minioHelmArgs are the MinIO helm flags besides the values map. The chart only
+// creates defaultBuckets in standalone mode and refuses the value in distributed
+// mode (ha); there the storage-scoped step creates the buckets.
+func minioHelmArgs(cfg *config.Config, valuesFile, persistSize string) []string {
+	args := []string{"-f", valuesFile, "--set", "persistence.size=" + persistSize, "--set", "image.repository=bitnamilegacy/minio", "--set", "console.image.repository=bitnamilegacy/minio-object-browser"}
+	if !cfg.IsHA() {
+		args = append(args, "--set", `defaultBuckets=platform-backups\,platform-logs\,platform-uploads`)
+	}
+	return append(args, "--wait", "--timeout", "10m")
 }
 
 func InstallArgoCD(cfg *config.Config) error {
@@ -682,6 +733,44 @@ func apiReplicas(cfg *config.Config) int {
 	return cfg.APIReplicas
 }
 
+// apiAffinityYAML spreads platform-api replicas across nodes in the ha profile
+// (#53) so losing one node keeps the API serving. It is a preference, not a
+// requirement: a cluster that is still joining nodes schedules both replicas
+// on the first server. Single-node profiles render nothing (manifest unchanged).
+func apiAffinityYAML(cfg *config.Config) string {
+	return spreadAffinityYAML(cfg, "platform-api")
+}
+
+// spreadAffinityYAML spreads the app's pods across nodes on ha. A topology
+// spread constraint with DoNotSchedule never stacks two replicas on one node
+// while another node is schedulable, yet still schedules everything on a
+// single-node cluster that is still growing (skew is 0 there). Soft pod
+// anti-affinity let both API replicas land on one node when CPU was short
+// (3-node test), so one node loss took the whole API down.
+func spreadAffinityYAML(cfg *config.Config, app string) string {
+	if !cfg.IsHA() {
+		return ""
+	}
+	return `      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: ` + app + `
+        matchLabelKeys:
+        - pod-template-hash
+`
+}
+
+// portalReplicas is 2 on ha (the portal survives a node loss), else 1.
+func portalReplicas(cfg *config.Config) int {
+	if cfg.IsHA() {
+		return 2
+	}
+	return 1
+}
+
 // apiPDBScript applies a PodDisruptionBudget (minAvailable: 1) when the API runs
 // more than one replica so node drains keep one pod serving. With a single
 // replica a PDB would block drains forever, so any old one is removed.
@@ -747,6 +836,11 @@ kubectl -n platform rollout status deployment/platform-api --timeout=300s
 }
 
 // deploymentReadyCheck succeeds when every desired replica of the deployment is ready.
+// daemonSetReadyCheck succeeds when every scheduled pod of the DaemonSet is ready.
+func daemonSetReadyCheck(ns, name string) string {
+	return fmt.Sprintf(`k3s kubectl get daemonset -n %s %s -o jsonpath='{.status.numberReady} {.status.desiredNumberScheduled}' 2>/dev/null | awk '$1 != "" && $1 > 0 && $1 == $2 { ok = 1 } END { exit !ok }'`, ns, name)
+}
+
 func deploymentReadyCheck(ns, name string) string {
 	return fmt.Sprintf(`k3s kubectl get deployment -n %s %s -o jsonpath='{.status.readyReplicas} {.spec.replicas}' 2>/dev/null | awk '$1 != "" && $1 == $2 { ok = 1 } END { exit !ok }'`, ns, name)
 }
@@ -759,6 +853,42 @@ var platformImages struct{ api, portal string }
 
 // UsePlatformImages pins the images InstallPlatform deploys in this process.
 func UsePlatformImages(api, portal string) { platformImages.api, platformImages.portal = api, portal }
+
+// platformEnvValues is the platform-env Secret data for InstallPlatform.
+func platformEnvValues(cfg *config.Config) map[string]string {
+	m := map[string]string{
+		"NODE_ENV": "production", "PORT": "3000", "JWT_SECRET": cfg.JWTSecret,
+		"SECRETS_ENCRYPTION_KEY": cfg.SecretsEncryptionKey, "PLATFORM_WEBHOOK_SECRET": cfg.WebhookSecret,
+		"POSTGRES_HOST": "postgresql.databases", "POSTGRES_PORT": "5432", "POSTGRES_DB": "platform", "POSTGRES_USER": "postgres",
+		"REDIS_HOST": "redis-master.databases", "REDIS_PORT": "6379",
+		// Telemetry block in /api/sdk/config (#49): on only when the full-profile backend (#37) is installed.
+		"PLATFORM_OBSERVABILITY": observabilityFlag(cfg),
+		// Global Loki/Tempo/Pyroscope retention: the API reports it as the logs/traces/profiles default.
+		"TELEMETRY_RETENTION_DAYS": cfg.TelemetryRetentionDays,
+		"UPLOADS_BUCKET":           "platform-uploads", "BACKUP_BUCKET": "platform-backups",
+		"PLATFORM_NAME": cfg.PlatformName, "DOMAIN": cfg.Domain, "ADMIN_EMAIL": cfg.AdminEmail,
+		"OIDC_ISSUER": cfg.OIDCIssuer(), "OIDC_CLIENTS": cfg.OIDCClientsJSON(),
+		"CORS_ORIGINS": "https://" + cfg.Domain,
+	}
+	if cfg.ObjectStorageExternal() {
+		for k, v := range objectStorageEnvValues(cfg) {
+			m[k] = v
+		}
+	}
+	if !cfg.ObjectStorageExternal() {
+		m["MINIO_ENDPOINT"] = "http://minio.storage:9000"
+		m["MINIO_API_ACCESS_KEY"] = kubeSecretValue("platform", "platform-storage", "MINIO_API_ACCESS_KEY")
+		m["MINIO_API_SECRET_KEY"] = kubeSecretValue("platform", "platform-storage", "MINIO_API_SECRET_KEY")
+	}
+	for k, v := range buildsEnvValues(cfg) {
+		m[k] = v
+	}
+	if cfg.IsHA() {
+		m["REDIS_SENTINEL_HOSTS"] = RedisSentinelHosts()
+		m["REDIS_SENTINEL_MASTER"] = RedisSentinelMaster
+	}
+	return m
+}
 
 func InstallPlatform(cfg *config.Config) error {
 	// Always reconcile security settings on existing installations as well.
@@ -784,23 +914,7 @@ func InstallPlatform(cfg *config.Config) error {
 	if err := MigrateHostState(cfg); err != nil {
 		return err
 	}
-	if err := applySecret("platform", "platform-env", map[string]string{
-		"NODE_ENV": "production", "PORT": "3000", "JWT_SECRET": cfg.JWTSecret,
-		"SECRETS_ENCRYPTION_KEY": cfg.SecretsEncryptionKey, "PLATFORM_WEBHOOK_SECRET": cfg.WebhookSecret,
-		"POSTGRES_HOST": "postgresql.databases", "POSTGRES_PORT": "5432", "POSTGRES_DB": "platform", "POSTGRES_USER": "postgres",
-		"REDIS_HOST": "redis-master.databases", "REDIS_PORT": "6379",
-		// Telemetry block in /api/sdk/config (#49): on only when the full-profile backend (#37) is installed.
-		"PLATFORM_OBSERVABILITY": observabilityFlag(cfg),
-		// Global Loki/Tempo/Pyroscope retention: the API reports it as the logs/traces/profiles default.
-		"TELEMETRY_RETENTION_DAYS": cfg.TelemetryRetentionDays,
-		"MINIO_ENDPOINT": "http://minio.storage:9000",
-		"MINIO_API_ACCESS_KEY": kubeSecretValue("platform", "platform-storage", "MINIO_API_ACCESS_KEY"),
-		"MINIO_API_SECRET_KEY": kubeSecretValue("platform", "platform-storage", "MINIO_API_SECRET_KEY"),
-		"UPLOADS_BUCKET": "platform-uploads", "BACKUP_BUCKET": "platform-backups",
-		"PLATFORM_NAME": cfg.PlatformName, "DOMAIN": cfg.Domain, "ADMIN_EMAIL": cfg.AdminEmail,
-		"OIDC_ISSUER": cfg.OIDCIssuer(), "OIDC_CLIENTS": cfg.OIDCClientsJSON(),
-		"CORS_ORIGINS": "https://" + cfg.Domain,
-	}); err != nil {
+	if err := applySecret("platform", "platform-env", platformEnvValues(cfg)); err != nil {
 		return err
 	}
 	if err := applyAPIRBAC(); err != nil {
@@ -842,7 +956,7 @@ spec:
       serviceAccountName: platform-api
       # preStop sleep (10s) + in-process drain (SHUTDOWN_TIMEOUT_MS, 25s) + margin.
       terminationGracePeriodSeconds: 45
-      securityContext:
+%[5]s      securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
@@ -865,6 +979,9 @@ spec:
             name: platform-env
         - secretRef:
             name: platform-credentials
+        - secretRef:
+            name: platform-object-storage
+            optional: true
         lifecycle:
           preStop:
             # Keep serving while the endpoint is removed from Services/ingress;
@@ -931,7 +1048,7 @@ metadata:
   labels:
     app: platform-portal
 spec:
-  replicas: 1
+  replicas: %[6]d
   selector:
     matchLabels:
       app: platform-portal
@@ -941,7 +1058,7 @@ spec:
         app: platform-portal
     spec:
       automountServiceAccountToken: false
-      securityContext:
+%[7]s      securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
@@ -982,6 +1099,7 @@ EOF
 kubectl wait --for=condition=Available deployment/platform-api -n platform --timeout=300s
 kubectl wait --for=condition=Available deployment/platform-portal -n platform --timeout=180s
 `, strconv.Quote(apiImg), strconv.Quote(portalImg), apiReplicas(cfg), apiPDBScript(apiReplicas(cfg)),
+		apiAffinityYAML(cfg), portalReplicas(cfg), spreadAffinityYAML(cfg, "platform-portal"),
 	))
 	if err != nil {
 		return err
@@ -1067,7 +1185,11 @@ func ApplyServiceRouting(cfg *config.Config) error {
 	if cfg.Domain == "" {
 		return fmt.Errorf("DOMAIN is empty — set DOMAIN or ensure /etc/platform/.env exists")
 	}
-	return shell.RunBash(serviceRoutingScript(cfg.Domain))
+	script := serviceRoutingScript(cfg.Domain)
+	if cfg.ObjectStorageExternal() {
+		script = externalStorageRoutingScript(script)
+	}
+	return shell.RunBash(script)
 }
 
 // serviceRoutingScript renders the routing script (Services + Ingresses).
@@ -1274,6 +1396,54 @@ spec:
               number: 80
 EOF
 
+# Remote MCP endpoint for AI assistants and its OAuth discovery documents are
+# served by the API at the site root (https://__DOMAIN__/mcp). Tool calls such as
+# guarded commands can run for up to a minute, so this path gets longer proxy
+# timeouts and no response buffering; nothing else changes.
+kubectl apply -n platform -f - <<'EOF'
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: platform-mcp
+  namespace: platform
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - __DOMAIN__
+    secretName: platform-tls
+  rules:
+  - host: __DOMAIN__
+    http:
+      paths:
+      - path: /mcp
+        pathType: Prefix
+        backend:
+          service:
+            name: platform-api
+            port:
+              number: 3000
+      - path: /.well-known/oauth-protected-resource
+        pathType: Prefix
+        backend:
+          service:
+            name: platform-api
+            port:
+              number: 3000
+      - path: /.well-known/oauth-authorization-server
+        pathType: Prefix
+        backend:
+          service:
+            name: platform-api
+            port:
+              number: 3000
+EOF
+
 # Argo CD is full-page at /argocd/. 3.x keeps <base href="/"> even with --basehref;
 # fix assets via sub_filter so the UI loads under the subpath.
 kubectl apply -n platform -f - <<'EOF'
@@ -1424,9 +1594,10 @@ func CheckHealth() error {
 	checks := []check{
 		{"K3s nodes", "k3s kubectl get nodes --no-headers 2>/dev/null | grep -q Ready"},
 		{"Platform API", deploymentReadyCheck("platform", "platform-api")},
-		{"Platform Portal", "k3s kubectl get deployment -n platform platform-portal --no-headers 2>/dev/null | grep -q '1/1'"},
-		{"Ingress NGINX", "k3s kubectl get deployment -n ingress-nginx ingress-nginx-controller --no-headers 2>/dev/null | grep -q '1/1'"},
-		{"ArgoCD", "k3s kubectl get deployment -n argocd argocd-server --no-headers 2>/dev/null | grep -q '1/1'"},
+		{"Platform Portal", deploymentReadyCheck("platform", "platform-portal")},
+		// A DaemonSet on ha (one controller per node), a Deployment otherwise.
+		{"Ingress NGINX", daemonSetReadyCheck("ingress-nginx", "ingress-nginx-controller") + " || " + deploymentReadyCheck("ingress-nginx", "ingress-nginx-controller")},
+		{"ArgoCD", deploymentReadyCheck("argocd", "argocd-server")},
 	}
 
 	var failed []string
@@ -1450,6 +1621,9 @@ func CheckHealth() error {
 var imagePresentLocally = func(image string) bool {
 	return shell.RunSilent("k3s", "crictl", "inspecti", image) == nil
 }
+
+// ImagePresentLocally reports whether containerd on this node has the image.
+func ImagePresentLocally(image string) bool { return imagePresentLocally(image) }
 
 // UpdateImages resolves moving GHCR tags before changing the pod template.
 // Order (after PrepareUpdate moved host state into Secrets, #20): migration Job

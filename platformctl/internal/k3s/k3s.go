@@ -1,6 +1,7 @@
 package k3s
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,7 +41,13 @@ func RegistriesYAML(githubToken string) string {
 // WriteRegistries writes registries.yaml before k3s starts. It reports whether
 // the file changed; a running k3s must be restarted to pick up a change.
 func WriteRegistries(githubToken string) (bool, error) {
-	content := RegistriesYAML(githubToken)
+	var settings BuildRegistrySettings
+	if data, err := os.ReadFile(buildRegistrySettingsPath); err == nil {
+		if err := json.Unmarshal(data, &settings); err != nil {
+			return false, err
+		}
+	}
+	content := BuildRegistriesYAML(githubToken, settings)
 	if content == "" {
 		return false, nil
 	}
@@ -57,7 +64,22 @@ func WriteRegistries(githubToken string) (bool, error) {
 }
 
 func Install(domain, githubToken string) error {
+	return InstallWith(domain, githubToken, ServerOptions{})
+}
+
+func InstallWith(domain, githubToken string, o ServerOptions) error {
+	if o.HA {
+		if err := o.Validate(); err != nil {
+			return err
+		}
+		if _, err := EnsureServerTokens(); err != nil {
+			return err
+		}
+	}
 	color.Cyan("\n  ■ Installing K3s %s...", versions.K3sVersion)
+	if err := TuneHost(); err != nil {
+		color.Yellow("  ⚠ kernel limits not applied: %v", err)
+	}
 
 	changed, err := WriteRegistries(githubToken)
 	if err != nil {
@@ -70,7 +92,7 @@ func Install(domain, githubToken string) error {
 
 	// k3s reads /etc/rancher/k3s/config.yaml on every start, so these settings
 	// apply to fresh installs and are reconciled on existing ones.
-	cfgChanged, err := WriteServerConfig(upstreamDNS())
+	cfgChanged, err := WriteConfig(RenderServerConfig(o), upstreamDNS())
 	if err != nil {
 		return fmt.Errorf("write k3s config: %w", err)
 	}
@@ -91,7 +113,7 @@ func Install(domain, githubToken string) error {
 
 	if !IsInstalled() {
 		// Traefik is disabled and DNS configured via config.yaml (see WriteServerConfig).
-		if err := installK3s(); err != nil {
+		if err := installServerK3s(o.Offline); err != nil {
 			return err
 		}
 	} else {
@@ -118,19 +140,29 @@ var stackPaths = stack.DefaultPaths
 
 // installFromStack installs the k3s binary and install script staged by the
 // platform stack: no download at all. Swapped in tests.
-var installFromStack = func() error {
+var installFromStack = func(exec string) error {
 	if err := shell.RunBash(fmt.Sprintf("install -m 0755 %s /usr/local/bin/k3s", shellQuote(stackPaths.K3sBinary()))); err != nil {
 		return err
 	}
-	return shell.RunBash(fmt.Sprintf("INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION=%s sh %s",
+	return shell.RunBash(installExec(exec) + fmt.Sprintf("INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION=%s sh %s",
 		shellQuote(versions.K3sVersion), shellQuote(stackPaths.K3sScript())))
+}
+
+// installServerK3s installs k3s on the first server. `provision --bundle`
+// (offline) uses only the bundle's staged binary and installer; otherwise the
+// staged platform stack is preferred, with the download as fallback.
+func installServerK3s(offline bool) error {
+	if offline {
+		return installStagedOnly("", "provision")
+	}
+	return installK3s("")
 }
 
 // installUpstream and installFromMirror are swapped in tests.
 var (
-	installUpstream = func() error {
-		return shell.RunBash(fmt.Sprintf(`curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=%s sh -`,
-			shellQuote(versions.K3sVersion)))
+	installUpstream = func(exec string) error {
+		return shell.RunBash(fmt.Sprintf(`curl -sfL https://get.k3s.io | %sINSTALL_K3S_VERSION=%s sh -`,
+			installExec(exec), shellQuote(versions.K3sVersion)))
 	}
 	installFromMirror = installK3sFromMirror
 )
@@ -138,20 +170,20 @@ var (
 // installK3s installs k3s with the official script. The script downloads the
 // binary from GitHub Releases; when that (or get.k3s.io) fails, install the
 // same version from the GHCR mirror (versions.K3sMirror) instead.
-func installK3s() error {
+func installK3s(exec string) error {
 	if stackPaths.Staged() {
-		err := installFromStack()
+		err := installFromStack(exec)
 		if err == nil {
 			return nil
 		}
 		color.Yellow("  ⚠ k3s from the platform stack failed (%v); downloading it instead", err)
 	}
-	upstream := installUpstream()
+	upstream := installUpstream(exec)
 	if upstream == nil {
 		return nil
 	}
 	color.Yellow("  ⚠ k3s download failed (%v); installing %s from the GHCR mirror", upstream, versions.K3sVersion)
-	if err := installFromMirror(); err != nil {
+	if err := installFromMirror(exec); err != nil {
 		return fmt.Errorf("k3s install failed: %v; mirror: %w", upstream, err)
 	}
 	return nil
@@ -165,7 +197,7 @@ func k3sMirrorFile(goarch string) string {
 	return "k3s"
 }
 
-func installK3sFromMirror() error {
+func installK3sFromMirror(exec string) error {
 	host, repo, _ := strings.Cut(versions.K3sMirror, "/")
 	tag := versions.MirrorTag(versions.K3sVersion)
 	client := ocifetch.New(host)
@@ -182,21 +214,34 @@ func installK3sFromMirror() error {
 		return err
 	}
 	// The binary is digest-verified; the script only sets up the service.
-	return shell.RunBash(fmt.Sprintf("INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION=%s sh %s",
+	return shell.RunBash(installExec(exec) + fmt.Sprintf("INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION=%s sh %s",
 		shellQuote(versions.K3sVersion), shellQuote(script)))
 }
 
 func WaitReady() error {
 	color.Cyan("  ■ Waiting for K3s to be ready...")
-	return shell.RunBash(`
-		for i in $(seq 1 60); do
-		  k3s kubectl get node >/dev/null 2>&1 && exit 0
-		  sleep 2
-		done
-		echo "k3s did not become ready in time" >&2
-		exit 1
-	`)
+	return shell.RunBash(waitReadyScript)
 }
+
+// waitReadyScript waits for the API (2 minutes), then for a Ready node. k3s
+// imports every staged image tarball (platform stack or offline bundle,
+// several GiB) before it starts the kubelet, so on a first server the node
+// list stays empty, or shows the node NotReady, for minutes while `kubectl get
+// node` already succeeds; later steps then timed out on unschedulable pods.
+const waitReadyScript = `
+		for i in $(seq 1 60); do
+		  k3s kubectl get node >/dev/null 2>&1 && break
+		  if [ "$i" -eq 60 ]; then echo "k3s did not become ready in time" >&2; exit 1; fi
+		  sleep "${K3S_WAIT_INTERVAL:-2}"
+		done
+		for i in $(seq 1 900); do
+		  k3s kubectl get node --no-headers 2>/dev/null | awk '$2 ~ /^Ready/ {ok=1} END {exit !ok}' && exit 0
+		  [ "$i" -eq 15 ] && echo "  · no node is Ready yet: k3s imports the staged images before it starts the kubelet"
+		  sleep "${K3S_WAIT_INTERVAL:-2}"
+		done
+		echo "no node became Ready within 30 minutes (check: journalctl -u k3s)" >&2
+		exit 1
+	`
 
 func setupKubeconfig() error {
 	color.Cyan("  ■ Setting up kubeconfig...")
@@ -251,8 +296,15 @@ func upstreamDNS() []string {
 // are encrypted as they are next written (platformctl rewrites its own on
 // every provision/update; `k3s secrets-encrypt reencrypt` covers the rest).
 func ServerConfigYAML() string {
-	return "# Managed by platformctl\ndisable:\n  - traefik\nresolv-conf: " + ResolvConfPath + "\nsecrets-encryption: true\n"
+	return "# Managed by platformctl\ndisable:\n  - traefik\nresolv-conf: " + ResolvConfPath + "\nsecrets-encryption: true\n" + KubeletArgsYAML
 }
+
+// PodMaxPIDs caps the processes of each pod (kubelet podPidsLimit), so one
+// workload or build cannot exhaust the node's PID space.
+const PodMaxPIDs = 4096
+
+// KubeletArgsYAML is part of every node's config: servers and agents alike.
+var KubeletArgsYAML = fmt.Sprintf("kubelet-arg:\n  - %q\n", fmt.Sprintf("pod-max-pids=%d", PodMaxPIDs))
 
 // ResolvConf renders the upstream resolver file.
 func ResolvConf(servers []string) string {
@@ -264,24 +316,49 @@ func ResolvConf(servers []string) string {
 	return b.String()
 }
 
-// WriteServerConfig writes the k3s config and resolver files. It reports
-// whether anything changed (a running k3s must then be restarted).
+// Config locations; variables so tests never write to /etc.
+var (
+	configDir        = "/etc/rancher/k3s"
+	serverConfigPath = ServerConfigPath
+	resolvConfPath   = ResolvConfPath
+)
+
+// WriteServerConfig writes the single-node k3s config and resolver files.
 func WriteServerConfig(servers []string) (bool, error) {
-	if err := os.MkdirAll("/etc/rancher/k3s", 0755); err != nil {
+	return WriteConfig(ServerConfigYAML(), servers)
+}
+
+// WriteConfig writes config.yaml (mode 0600: it may hold etcd S3 credentials)
+// and the resolver file. It reports whether any content changed (a running
+// k3s must then be restarted); a permissions repair alone does not.
+func WriteConfig(content string, servers []string) (bool, error) {
+	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return false, err
 	}
 	changed := false
-	for path, content := range map[string]string{
-		ServerConfigPath: ServerConfigYAML(),
-		ResolvConfPath:   ResolvConf(servers),
+	for _, file := range []struct {
+		path, content string
+		mode          os.FileMode
+	}{
+		{serverConfigPath, content, 0600},
+		{resolvConfPath, ResolvConf(servers), 0644},
 	} {
-		if cur, err := os.ReadFile(path); err == nil && string(cur) == content {
-			continue
+		cur, err := os.ReadFile(file.path)
+		if err != nil || string(cur) != file.content {
+			// Restrict an existing config before it receives S3 credentials.
+			if file.path == serverConfigPath {
+				if err := os.Chmod(file.path, file.mode); err != nil && !os.IsNotExist(err) {
+					return false, err
+				}
+			}
+			if err := os.WriteFile(file.path, []byte(file.content), file.mode); err != nil {
+				return false, err
+			}
+			changed = true
 		}
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		if err := os.Chmod(file.path, file.mode); err != nil {
 			return false, err
 		}
-		changed = true
 	}
 	return changed, nil
 }

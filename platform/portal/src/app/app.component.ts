@@ -1,15 +1,16 @@
-import { Component, OnDestroy } from '@angular/core';
+import { Component, HostListener, OnDestroy } from '@angular/core';
 import { RouterOutlet, NavigationEnd, Router } from '@angular/router';
 import { SidebarComponent } from './layout/sidebar/sidebar.component';
 import { HeaderComponent } from './layout/header/header.component';
 import { StepUpModalComponent } from './shared/step-up-modal.component';
+import { FeedbackHostComponent } from './shared/feedback/feedback-host.component';
 
 import { filter } from 'rxjs';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, SidebarComponent, HeaderComponent, StepUpModalComponent],
+  imports: [RouterOutlet, SidebarComponent, HeaderComponent, StepUpModalComponent, FeedbackHostComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css'
 })
@@ -38,7 +39,7 @@ export class AppComponent implements OnDestroy {
     'services': 'Services',
     'metrics': 'Metrics',
     'alerts': 'Alerts',
-    'alerting': 'Alerting',
+    'alerting': 'Alerts',
     'errors': 'Errors',
     'observability': 'Observability',
     'logs': 'Logs',
@@ -51,7 +52,7 @@ export class AppComponent implements OnDestroy {
     'clickup': 'ClickUp Integration',
     'infrastructure': 'Infrastructure',
     'audit-logs': 'Audit Logs',
-    'users': 'User Management',
+    'users': 'Users',
     'playground': 'API Documentation & Playground',
     'settings': 'Settings',
     'profile': 'Profile'
@@ -67,6 +68,15 @@ export class AppComponent implements OnDestroy {
     'replays': 'Session replays',
   };
 
+  /** Clicking anywhere in a date/time field opens its picker, not only the small icon. */
+  @HostListener('document:click', ['$event'])
+  openDatePicker(event: MouseEvent) {
+    const el = event.target as HTMLInputElement | null;
+    if (!el || el.tagName !== 'INPUT' || el.disabled || el.readOnly) return;
+    if (!['date', 'time', 'datetime-local', 'month', 'week'].includes(el.type)) return;
+    try { (el as any).showPicker?.(); } catch { /* not allowed in this context; the icon still works */ }
+  }
+
   constructor(router: Router) {
     if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
       this.mqMobile = window.matchMedia('(max-width: 767.98px)');
@@ -80,11 +90,11 @@ export class AppComponent implements OnDestroy {
       const parts = router.url.split(/[?#]/)[0].split('/');
       const segment = parts[1] || '';
       this.isLoginPage = segment === 'login' || segment === 'oauth' || segment === 'mfa';
-      this.isLandingPage = segment === '' || segment === 'landing';
+      this.isLandingPage = segment === '' || segment === 'landing' || segment === 'about';
       this.isDocsPage = segment === 'docs';
       this.isPublicStatusPage = segment === 'status';
       this.pageTitle = (segment === 'projects' && parts[3] && this.projectPageTitles[parts[3]])
-        || this.titles[segment] || 'Platform';
+        || this.titles[segment] || 'Cairn';
     });
   }
 

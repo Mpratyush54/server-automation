@@ -1,9 +1,7 @@
-# Platform - full documentation index for AI agents
-# Generated 2026-08-26
-# Prefer these Markdown URLs for retrieval. HTML twin listed when the SPA can render it.
+# Cairn - full documentation index for AI agents
+# Prefer these Markdown URLs for retrieval. Each is followed by its HTML page.
 
 Home: https://platform.pratyushes.dev/
-Landing: https://platform.pratyushes.dev/landing
 Docs HTML: https://platform.pratyushes.dev/docs
 llms.txt: https://platform.pratyushes.dev/llms.txt
 sitemap.xml: https://platform.pratyushes.dev/sitemap.xml
@@ -78,6 +76,8 @@ sitemap.xml: https://platform.pratyushes.dev/sitemap.xml
   html: https://platform.pratyushes.dev/docs/api-reference/sdk-react/usePlatform
 - https://platform.pratyushes.dev/docs/architecture/auth-flow.md
   html: https://platform.pratyushes.dev/docs/architecture/auth-flow
+- https://platform.pratyushes.dev/docs/architecture/background-jobs.md
+  html: https://platform.pratyushes.dev/docs/architecture/background-jobs
 - https://platform.pratyushes.dev/docs/architecture/data-flow.md
   html: https://platform.pratyushes.dev/docs/architecture/data-flow
 - https://platform.pratyushes.dev/docs/architecture/database-schema.md
@@ -92,8 +92,12 @@ sitemap.xml: https://platform.pratyushes.dev/sitemap.xml
   html: https://platform.pratyushes.dev/docs/architecture/sdk-lifecycle
 - https://platform.pratyushes.dev/docs/architecture/secrets-architecture.md
   html: https://platform.pratyushes.dev/docs/architecture/secrets-architecture
+- https://platform.pratyushes.dev/docs/architecture/telemetry-ingestion.md
+  html: https://platform.pratyushes.dev/docs/architecture/telemetry-ingestion
 - https://platform.pratyushes.dev/docs/changelog.md
+  html: https://platform.pratyushes.dev/docs/changelog
 - https://platform.pratyushes.dev/docs/contribution-guide.md
+  html: https://platform.pratyushes.dev/docs/contribution-guide
 - https://platform.pratyushes.dev/docs/deployment/backup-and-restore.md
   html: https://platform.pratyushes.dev/docs/deployment/backup-and-restore
 - https://platform.pratyushes.dev/docs/deployment/bootstrap.md
@@ -107,6 +111,7 @@ sitemap.xml: https://platform.pratyushes.dev/sitemap.xml
 - https://platform.pratyushes.dev/docs/deployment/update-secrets.md
   html: https://platform.pratyushes.dev/docs/deployment/update-secrets
 - https://platform.pratyushes.dev/docs/faq.md
+  html: https://platform.pratyushes.dev/docs/faq
 - https://platform.pratyushes.dev/docs/getting-started/angular-sdk-quickstart.md
   html: https://platform.pratyushes.dev/docs/getting-started/angular-sdk-quickstart
 - https://platform.pratyushes.dev/docs/getting-started/deploy-your-app.md
@@ -131,14 +136,36 @@ sitemap.xml: https://platform.pratyushes.dev/sitemap.xml
   html: https://platform.pratyushes.dev/docs/getting-started/upgrade-guide
 - https://platform.pratyushes.dev/docs/guides/authentication.md
   html: https://platform.pratyushes.dev/docs/guides/authentication
+- https://platform.pratyushes.dev/docs/guides/builds.md
+  html: https://platform.pratyushes.dev/docs/guides/builds
+- https://platform.pratyushes.dev/docs/guides/databases.md
+  html: https://platform.pratyushes.dev/docs/guides/databases
+- https://platform.pratyushes.dev/docs/guides/frontend-rum.md
+  html: https://platform.pratyushes.dev/docs/guides/frontend-rum
+- https://platform.pratyushes.dev/docs/guides/git-providers.md
+  html: https://platform.pratyushes.dev/docs/guides/git-providers
+- https://platform.pratyushes.dev/docs/guides/gitops-branches.md
+  html: https://platform.pratyushes.dev/docs/guides/gitops-branches
+- https://platform.pratyushes.dev/docs/guides/heatmaps.md
+  html: https://platform.pratyushes.dev/docs/guides/heatmaps
+- https://platform.pratyushes.dev/docs/guides/host-hardening.md
+  html: https://platform.pratyushes.dev/docs/guides/host-hardening
+- https://platform.pratyushes.dev/docs/guides/mfa.md
+  html: https://platform.pratyushes.dev/docs/guides/mfa
 - https://platform.pratyushes.dev/docs/guides/monitoring.md
   html: https://platform.pratyushes.dev/docs/guides/monitoring
+- https://platform.pratyushes.dev/docs/guides/namespace-isolation.md
+  html: https://platform.pratyushes.dev/docs/guides/namespace-isolation
+- https://platform.pratyushes.dev/docs/guides/observability.md
+  html: https://platform.pratyushes.dev/docs/guides/observability
 - https://platform.pratyushes.dev/docs/guides/preview-environments.md
   html: https://platform.pratyushes.dev/docs/guides/preview-environments
 - https://platform.pratyushes.dev/docs/guides/production-checklist.md
   html: https://platform.pratyushes.dev/docs/guides/production-checklist
 - https://platform.pratyushes.dev/docs/guides/secrets-management.md
   html: https://platform.pratyushes.dev/docs/guides/secrets-management
+- https://platform.pratyushes.dev/docs/guides/status-pages.md
+  html: https://platform.pratyushes.dev/docs/guides/status-pages
 - https://platform.pratyushes.dev/docs/guides/testing.md
   html: https://platform.pratyushes.dev/docs/guides/testing
 - https://platform.pratyushes.dev/docs/index.md
@@ -151,7 +178,38 @@ sitemap.xml: https://platform.pratyushes.dev/sitemap.xml
   html: https://platform.pratyushes.dev/docs/mcp/setup
 - https://platform.pratyushes.dev/docs/mcp/tools.md
   html: https://platform.pratyushes.dev/docs/mcp/tools
+- https://platform.pratyushes.dev/docs/observability/error-tracking.md
+  html: https://platform.pratyushes.dev/docs/observability/error-tracking
+- https://platform.pratyushes.dev/docs/observability/releases.md
+  html: https://platform.pratyushes.dev/docs/observability/releases
+- https://platform.pratyushes.dev/docs/operations/alerting.md
+  html: https://platform.pratyushes.dev/docs/operations/alerting
+- https://platform.pratyushes.dev/docs/operations/backups.md
+  html: https://platform.pratyushes.dev/docs/operations/backups
+- https://platform.pratyushes.dev/docs/operations/database-monitoring.md
+  html: https://platform.pratyushes.dev/docs/operations/database-monitoring
+- https://platform.pratyushes.dev/docs/operations/e2e-ci.md
+  html: https://platform.pratyushes.dev/docs/operations/e2e-ci
+- https://platform.pratyushes.dev/docs/operations/ha.md
+  html: https://platform.pratyushes.dev/docs/operations/ha
+- https://platform.pratyushes.dev/docs/operations/image-signing.md
+  html: https://platform.pratyushes.dev/docs/operations/image-signing
+- https://platform.pratyushes.dev/docs/operations/platform-stack.md
+  html: https://platform.pratyushes.dev/docs/operations/platform-stack
+- https://platform.pratyushes.dev/docs/operations/recover.md
+  html: https://platform.pratyushes.dev/docs/operations/recover
+- https://platform.pratyushes.dev/docs/operations/storage-providers.md
+  html: https://platform.pratyushes.dev/docs/operations/storage-providers
+- https://platform.pratyushes.dev/docs/operations/synthetics.md
+  html: https://platform.pratyushes.dev/docs/operations/synthetics
+- https://platform.pratyushes.dev/docs/operations/telemetry-privacy.md
+  html: https://platform.pratyushes.dev/docs/operations/telemetry-privacy
+- https://platform.pratyushes.dev/docs/operations/telemetry.md
+  html: https://platform.pratyushes.dev/docs/operations/telemetry
+- https://platform.pratyushes.dev/docs/operations/upgrades.md
+  html: https://platform.pratyushes.dev/docs/operations/upgrades
 - https://platform.pratyushes.dev/docs/troubleshooting/README.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/README
 - https://platform.pratyushes.dev/docs/troubleshooting/angular-template-at-symbol.md
   html: https://platform.pratyushes.dev/docs/troubleshooting/angular-template-at-symbol
 - https://platform.pratyushes.dev/docs/troubleshooting/api-seed-failure.md
@@ -174,6 +232,8 @@ sitemap.xml: https://platform.pratyushes.dev/sitemap.xml
   html: https://platform.pratyushes.dev/docs/troubleshooting/dockerhub-rate-limit
 - https://platform.pratyushes.dev/docs/troubleshooting/general-dns-resolution.md
   html: https://platform.pratyushes.dev/docs/troubleshooting/general-dns-resolution
+- https://platform.pratyushes.dev/docs/troubleshooting/github-releases-outage.md
+  html: https://platform.pratyushes.dev/docs/troubleshooting/github-releases-outage
 - https://platform.pratyushes.dev/docs/troubleshooting/grafana-subpath-redirect.md
   html: https://platform.pratyushes.dev/docs/troubleshooting/grafana-subpath-redirect
 - https://platform.pratyushes.dev/docs/troubleshooting/helm-name-reuse.md

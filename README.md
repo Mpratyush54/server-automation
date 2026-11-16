@@ -1,138 +1,117 @@
-# Platform
+# Cairn
 
-Self-hosted internal Platform-as-a-Service — a single control plane for deploying,
-managing and monitoring applications on Kubernetes (k3s). One command turns a fresh
-Ubuntu server into a production-shaped cluster with GitOps, secrets, observability,
-storage and SSO all wired up.
+**Run your apps on your own servers, and keep them running when one fails.**
 
-- **Backend API** — Node.js + TypeScript + Express + TypeORM (Postgres) + Mongoose (Mongo) + ioredis
-- **Portal** — Angular 19 dashboard with a built-in docs site
-- **SDKs** — `@mpratyush54/sdk-node`, `mpratyush54-sdk`, `@mpratyush54/sdk-react`, `@mpratyush54/sdk-angular`
-- **Bootstrap** — a single `bash` script that installs and configures the entire stack
+Cairn turns one Ubuntu server, or a small group of them, into a place where your team
+deploys apps from Git, gets databases, keeps secrets, and sees logs, errors and alerts —
+without stitching the pieces together yourself. It installs and connects proven
+open-source tools (k3s, Argo CD, CloudNativePG, Grafana and others) and gives you one
+portal and one CLI to run them.
 
-The full documentation lives in [`docs/`](docs/) and is also rendered inside the portal
-at `/docs`.
+- Website and docs: <https://platform.pratyushes.dev>
+- Install guide: [docs/getting-started/installation.md](docs/getting-started/installation.md)
 
----
+## What you get
+
+- **Deploy from Git.** Connect a GitHub or GitLab repository and pick a branch per
+  environment. Each project gets development, staging and production, with their own
+  addresses, deployment history and one-click rollback.
+- **Databases and storage.** PostgreSQL per environment, plus MongoDB, Redis and
+  S3-compatible file storage, with backups.
+- **Secrets and settings.** Encrypted variables per environment, with history and
+  rollback.
+- **Monitoring.** Logs, metrics, traces, error tracking, uptime checks, status pages and
+  alerts (email, Slack, Discord, PagerDuty, webhooks) in the same portal.
+- **High availability.** The `ha` profile runs on three servers; tested by switching
+  servers off under load.
+- **Security.** Password sign-in with two-factor, roles and per-project access, GitHub
+  and GitLab sign-in, project isolation, secret rotation and host hardening.
+- **AI agents.** A built-in MCP server lets AI assistants read project state and run
+  approved commands, with risky actions held for a person's approval.
+
+## Install
+
+On a fresh **Ubuntu 22.04 or later** server with `sudo` access (4 GB memory and 40 GB disk
+minimum; 8 GB and 80 GB recommended), and a domain pointing at it — or use
+`<server-ip>.sslip.io` if you don't have one yet:
+
+```bash
+curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
+sudo platformctl provision
+```
+
+`provision` asks for your domain and the first admin account, installs everything, and
+prints the portal address when it is done. Profiles: `minimal`, `standard` (default),
+`full` (complete telemetry) and `ha` (three servers). See the
+[install guide](docs/getting-started/installation.md) for unattended installs and options.
+
+Day-two commands live in the same CLI — `platformctl status`, `upgrade`, `backup`,
+`restore`, `repair`, `harden`. Reference: [docs/getting-started/platformctl.md](docs/getting-started/platformctl.md).
+
+## Documentation
+
+| Start here | |
+|---|---|
+| [Install](docs/getting-started/installation.md) | Put Cairn on a server |
+| [Your first project](docs/getting-started/first-project.md) | Create a project and connect a repository |
+| [Deploy an app](docs/getting-started/deploy-your-app.md) | Ship a branch to an environment |
+| [Backups and restore](docs/operations/backups.md) | Protect and recover your data |
+| [High availability](docs/operations/ha.md) | Run on three servers |
+| [AI agents and MCP](docs/mcp/overview.md) | Connect an AI assistant |
+| [Troubleshooting](docs/troubleshooting/README.md) | Fixes for common errors |
+
+The same docs are published at <https://platform.pratyushes.dev/docs>.
+
+## SDKs
+
+| Language | Package | Docs |
+|---|---|---|
+| Node.js | `@mpratyush54/sdk-node` | [sdk-node](sdk-node/README.md) |
+| Python | `mpratyush54-sdk` | [sdk-python](sdk-python/README.md) |
+| React | `@mpratyush54/sdk-react` | [sdk-react](sdk-react/README.md) |
+| Angular | `@mpratyush54/sdk-angular` | [sdk-angular](sdk-angular/README.md) |
+
+Backend SDKs read project settings and database credentials and send heartbeats, request
+metrics and logs; frontend SDKs add error reporting and browser monitoring.
 
 ## Repository layout
 
 ```
-SERVER-automation/
-├── platform/
-│   ├── api/                 # Express + TypeORM + Mongoose backend
-│   └── portal/              # Angular 19 dashboard + docs
-├── sdk-node/                # @mpratyush54/sdk-node
-├── sdk-python/              # mpratyush54-sdk (PyPI)
-├── sdk-react/               # @mpratyush54/sdk-react
-├── sdk-angular/             # @mpratyush54/sdk-angular
-├── platform-bootstrap/      # Server install script (bootstrap.sh / bootstrap.ps1)
-├── docs/                    # Markdown docs (also served in-portal at /docs)
-├── demo-app/                # A working example app that uses the SDKs
-└── docker-compose.yml       # Local dev — Postgres + Mongo + Redis + MinIO + Loki + Prom + Grafana
+platformctl/          Go CLI that installs, upgrades, backs up and repairs a server
+platform/api/         Node.js + TypeScript API (Express, TypeORM/PostgreSQL, MongoDB, Redis)
+platform/portal/      Angular portal, public site and docs viewer
+platform/mcp-server/  MCP server for AI assistants
+sdk-*/                SDKs for Node.js, Python, React and Angular
+docs/                 Documentation (also served at /docs)
+examples/             Example apps that use the SDKs
 ```
 
----
+## Develop locally
 
-## Install on a server (one command)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Mpratyush54/SERVER-automation/master/platform-bootstrap/bootstrap.sh -o bootstrap.sh
-chmod +x bootstrap.sh
-sudo ./bootstrap.sh
-```
-
-Full details, including Windows/WSL and non-interactive CI mode:
-[`platform-bootstrap/README.md`](platform-bootstrap/README.md).
-
----
-
-## Run locally (development)
-
-You don't need Kubernetes to develop against Platform — `docker-compose.yml` at the
-repo root spins up everything Platform depends on.
+You don't need Kubernetes to work on the API and portal:
 
 ```bash
-# 1. Clone
 git clone https://github.com/Mpratyush54/SERVER-automation.git
 cd SERVER-automation
-
-# 2. Databases (Postgres 16 + Mongo 7 + Redis 7 + MinIO + Loki + Prom + Grafana)
+# 1. Local databases. Put POSTGRES_PASSWORD, MONGO_PASSWORD and REDIS_PASSWORD in ./.env first.
 docker compose up -d postgres mongodb redis
-# Optional extras:
-docker compose up -d minio loki prometheus grafana
 
-# 3. API + Portal in parallel
-npm install
-npm run start        # runs platform/api (:3000) and platform/portal (:4200) together
+# 2. API settings: copy the example and fill in the same database passwords,
+#    plus JWT_SECRET (32+ random characters) and ADMIN_PASSWORD.
+cp platform/api/.env.example platform/api/.env
+
+# 3. Install and run
+npm run install:all
+npm run start        # API on :3000, portal on :4200
 ```
 
-Open `http://localhost:4200` and sign in with **`admin@pratyushes.dev`** (no password —
-Platform uses passwordless JWT). Users are auto-seeded on first API boot; if you ever
-need to re-seed, run:
-
-```bash
-npm --prefix platform/api run seed:db
-```
-
-Full walkthrough with per-OS notes:
-[`docs/getting-started/installation.md`](docs/getting-started/installation.md).
-
----
-
-## SDKs
-
-| Language | Package | Docs | Examples |
-|---|---|---|---|
-| Node.js | `@mpratyush54/sdk-node` | [README](sdk-node/README.md) | [`sdk-node/examples`](sdk-node/examples) |
-| Python  | `mpratyush54-sdk`   | [README](sdk-python/README.md) | [`sdk-python/examples`](sdk-python/examples) |
-| React   | `@mpratyush54/sdk-react`  | [README](sdk-react/README.md) | [`sdk-react/examples`](sdk-react/examples) |
-| Angular | `@mpratyush54/sdk-angular`| [README](sdk-angular/README.md) | [`sdk-angular/examples`](sdk-angular/examples) |
-
-Index: [docs/getting-started/sdk-examples.md](docs/getting-started/sdk-examples.md) · cluster demo: [examples/sdk-apps](examples/sdk-apps)
-
-Each backend SDK can auto-register with the Platform on start, ship request metrics /
-heartbeats, and connect managed Postgres / Mongo / Redis. Frontend SDKs add HTTP
-metrics, error boundaries, and a floating bug reporter.
-
----
-
-## Common issues (fresh install)
-
-Every one of these has bitten a real install. Each has a dedicated page in
-[`docs/troubleshooting/`](docs/troubleshooting/):
-
-- **Pods stuck in `ImagePullBackOff`** — the images live at `ghcr.io/mpratyush54/*`.
-  If you're on a fork, set `PLATFORM_IMAGE_REGISTRY=ghcr.io/your-user` before running
-  the bootstrap.
-- **`sslip.io` name won't resolve inside the cluster** — CoreDNS gets patched by
-  the bootstrap to send `*.$DOMAIN` to the ingress controller. If you skipped that
-  patch, see [`sslip-io-dns.md`](docs/troubleshooting/sslip-io-dns.md).
-- **Portainer "Administrator initialization timeout"** — the bootstrap now runs
-  Portainer with `--no-setup-token` and creates the admin over the API. If you
-  installed manually, see [`portainer-setup-token.md`](docs/troubleshooting/portainer-setup-token.md).
-- **`WRONGPASS` in the API logs** — a database password was rotated but the
-  `platform-env` secret still has the old one. See
-  [`db-wrongpass-after-rotate.md`](docs/troubleshooting/db-wrongpass-after-rotate.md).
-- **ArgoCD "Invalid redirect URL"** — path-based (`/argocd`) vs subdomain
-  (`argocd.$DOMAIN`) mismatch in the OIDC RP config. See
-  [`argocd-oidc-redirect.md`](docs/troubleshooting/argocd-oidc-redirect.md).
-
-Full list: [`docs/troubleshooting/`](docs/troubleshooting/).
-
----
+Sign in at <http://localhost:4200> with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from
+`platform/api/.env`. Tests: `cd platform/api && npm test`, `cd platform/portal && npx ng test`,
+`cd platformctl && go test ./...`.
 
 ## Contributing
 
-Read [`docs/contribution-guide.md`](docs/contribution-guide.md). Short version:
-
-- Fork, branch off `master`
-- Conventional Commits (`feat:`, `fix:`, `docs:` …) — semver is computed from commit
-  messages by [`.github/workflows/publish-packages.yml`](.github/workflows/publish-packages.yml)
-- Run `npm test` before opening a PR
-
----
-
-## License
-
-MIT — see [`LICENSE`](LICENSE).
+Bug reports and ideas are welcome in [Issues](https://github.com/Mpratyush54/SERVER-automation/issues).
+Please report security problems privately through
+[GitHub security advisories](https://github.com/Mpratyush54/SERVER-automation/security/advisories/new),
+not in public issues. Commits follow Conventional Commits (`feat:`, `fix:`, `docs:`).

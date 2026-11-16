@@ -11,16 +11,18 @@ import { buildWaterfall, fmtMs, projectBase, Span, WaterfallRow } from './observ
   imports: [CommonModule],
   styleUrls: ['./obs-theme.css'],
   styles: [`
-    .wf { font-size: 0.8rem; }
-    .wf-row { display: grid; grid-template-columns: minmax(180px, 34%) 1fr 70px; gap: 8px; align-items: center; padding: 3px 4px; cursor: pointer; border-radius: 4px; }
+    .wf { font-size: 0.8125rem; overflow-x: auto; }
+    .wf-row { display: grid; grid-template-columns: minmax(140px, 34%) minmax(80px, 1fr) 70px; gap: 12px; align-items: center; padding: 4px 6px; cursor: pointer; border-radius: 4px; }
     .wf-row:hover, .wf-row.selected { background: var(--obs-hover); }
     .wf-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .wf-svc { color: var(--obs-muted); margin-right: 4px; }
     .wf-track { position: relative; height: 12px; background: var(--obs-elevated); border-radius: 2px; }
     .wf-bar { position: absolute; top: 0; bottom: 0; background: var(--obs-series-1); border-radius: 2px; min-width: 2px; }
     .wf-bar.error { background: var(--obs-bad); }
-    .detail { margin-top: 12px; }
-    .attrs { display: grid; grid-template-columns: minmax(140px, 30%) 1fr; gap: 2px 12px; font-size: 0.8rem; }
+    .tv-head { justify-content: space-between; margin-bottom: 16px; font-size: 0.875rem; }
+    .detail { margin: 16px 0 0; background: var(--obs-elevated); }
+    .detail .tv-events { margin-top: 16px; }
+    .attrs { display: grid; grid-template-columns: minmax(120px, 30%) minmax(0, 1fr); gap: 6px 16px; font-size: 0.8125rem; }
     .attrs div:nth-child(odd) { color: var(--obs-muted); overflow-wrap: anywhere; }
     .attrs div:nth-child(even) { overflow-wrap: anywhere; font-family: var(--font-code, monospace); }
   `],
@@ -28,14 +30,14 @@ import { buildWaterfall, fmtMs, projectBase, Span, WaterfallRow } from './observ
     @if (loading) { <div class="obs-empty">Loading trace…</div> }
     @if (error) { <div class="obs-banner error" role="alert">{{ error }}</div> }
     @if (!loading && rows.length) {
-      <div class="obs-row" style="justify-content:space-between;margin-bottom:8px">
+      <div class="obs-row tv-head">
         <div><strong>Trace</strong> <span class="obs-code">{{ traceId }}</span> · {{ ms(durationMs) }} · {{ rows.length }} spans
           @if (hiddenSpans) { <span class="obs-faint"> · {{ hiddenSpans }} spans from other projects hidden</span> }
           @if (truncated) { <span class="obs-warn"> · truncated</span> }
         </div>
         <div class="obs-links">
-          <button class="obs-btn" (click)="logsForTrace.emit(traceId)">Logs for this trace</button>
-          <button class="obs-btn" (click)="closed.emit()">Close</button>
+          <button type="button" class="obs-btn sm" (click)="logsForTrace.emit(traceId)">Logs for this trace</button>
+          <button type="button" class="obs-btn sm" (click)="closed.emit()">Close</button>
         </div>
       </div>
       <div class="wf" role="list" aria-label="Trace waterfall">
@@ -60,7 +62,7 @@ import { buildWaterfall, fmtMs, projectBase, Span, WaterfallRow } from './observ
             @for (a of entries(selected.attributes); track a[0]) { <div>{{ a[0] }}</div><div>{{ a[1] }}</div> }
           </div>
           @if (selected.events?.length) {
-            <h3 style="margin-top:12px">Events</h3>
+            <h3 class="tv-events">Events</h3>
             @for (e of selected.events; track $index) { <div><strong>{{ e.name }}</strong> <span class="obs-faint">{{ entries(e.attributes).length }} attributes</span></div> }
           }
         </div>

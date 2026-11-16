@@ -16,6 +16,7 @@ jest.mock('@kubernetes/client-node', () => ({
 jest.mock('../../src/lib/k8s', () => ({
   checkK8sConnection: jest.fn().mockResolvedValue(true),
   getK8sNodes:        jest.fn().mockResolvedValue([{ metadata: { name: 'node-1' } }]),
+  getK8sNodeMetrics: jest.fn().mockResolvedValue({ metricsAvailable: false, nodes: [] }),
   getK8sNamespaces:   jest.fn().mockResolvedValue([{ metadata: { name: 'platform' } }]),
   getK8sPods:         jest.fn().mockResolvedValue([{ metadata: { name: 'api-pod-1', namespace: 'platform' }, status: { phase: 'Running' } }]),
   getPodLogs:         jest.fn().mockResolvedValue('LOG LINE 1\nLOG LINE 2'),
@@ -841,11 +842,61 @@ describe('Bootstrap API', () => {
     expect(r.status).toBe(403);
   });
 
-  it('GET /api/bootstrap/pods — 200 for devops', async () => {
+  it('GET /api/bootstrap/node-metrics — 200 for devops', async () => {
+    const r = await request(app)
+      .get('/api/bootstrap/node-metrics')
+      .set('Authorization', `Bearer ${T.devops}`);
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ k8sConnected: expect.any(Boolean), metricsAvailable: expect.any(Boolean), nodes: expect.any(Array) });
+  });
+
+  it('GET /api/bootstrap/node-metrics — 403 for developer', async () => {
+    const r = await request(app)
+      .get('/api/bootstrap/node-metrics')
+      .set('Authorization', `Bearer ${T.developer}`);
+    expect(r.status).toBe(403);
+  });
+
+  it('GET /api/bootstrap/history returns an empty list without persisted records', async () => {
+    const r = await request(app)
+      .get('/api/bootstrap/history')
+      .set('Authorization', `Bearer ${T.devops}`);
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual([]);
+  });
+
+  it('GET /api/bootstrap/pods returns no pods when Kubernetes is disconnected', async () => {
+    const { checkK8sConnection, getK8sPods } = require('../../src/lib/k8s');
+    checkK8sConnection.mockResolvedValueOnce(false);
+    getK8sPods.mockClear();
+    const r = await request(app)
+      .get('/api/bootstrap/pods?namespace=platform')
+      .set('Authorization', `Bearer ${T.devops}`);
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ k8sConnected: false, pods: [] });
+    expect(getK8sPods).not.toHaveBeenCalled();
+  });
+
+  it('GET /api/bootstrap/pods includes an empty list when listing fails', async () => {
+    const { getK8sPods } = require('../../src/lib/k8s');
+    getK8sPods.mockRejectedValueOnce(new Error('Cluster unavailable'));
     const r = await request(app)
       .get('/api/bootstrap/pods')
       .set('Authorization', `Bearer ${T.devops}`);
-    expect([200, 400]).toContain(r.status);
+    expect(r.status).toBe(400);
+    expect(r.body).toEqual({ error: 'Cluster unavailable', k8sConnected: false, pods: [] });
+  });
+
+  it('GET /api/bootstrap/pods returns real pods and forwards the namespace', async () => {
+    const { getK8sPods } = require('../../src/lib/k8s');
+    const pods = [{ name: 'api-pod-1', namespace: 'platform', status: 'Running' }];
+    getK8sPods.mockResolvedValueOnce(pods);
+    const r = await request(app)
+      .get('/api/bootstrap/pods?namespace=platform')
+      .set('Authorization', `Bearer ${T.devops}`);
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ k8sConnected: true, pods });
+    expect(getK8sPods).toHaveBeenLastCalledWith('platform');
   });
 
   it('GET /api/bootstrap/pods — 403 for tech_lead', async () => {

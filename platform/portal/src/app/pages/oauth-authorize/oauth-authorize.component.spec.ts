@@ -4,6 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { OauthAuthorizeComponent } from './oauth-authorize.component';
 import { AuthService } from '../../services/auth.service';
+import { StepUpService } from '../../services/step-up.service';
 
 describe('OauthAuthorizeComponent', () => {
   let router: jasmine.SpyObj<Router>;
@@ -119,5 +120,120 @@ describe('OauthAuthorizeComponent', () => {
 
     cmp.deny();
     expect(nav).toHaveBeenCalledWith(`${REDIRECT}?error=access_denied&state=state123`);
+  });
+  it('shows a rejected assistant request from the API on our own page without calling anything', async () => {
+    route.snapshot.queryParams = { error: 'invalid_request', error_description: 'PKCE with code_challenge_method=S256 is required' };
+    auth.isAuthenticated.and.returnValue(false);
+    const fixture = TestBed.createComponent(OauthAuthorizeComponent);
+    const cmp = fixture.componentInstance;
+    const nav = spyOn(cmp, 'navigateExternal');
+    await cmp.ngOnInit();
+    expect(cmp.status).toBe('error');
+    expect(cmp.errorMessage).toContain('PKCE');
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(nav).not.toHaveBeenCalled();
+    http.expectNone(() => true);
+  });
+
+  describe('AI assistant (remote MCP client)', () => {
+    const MCP_ID = 'mcp_0123456789abcdef0123456789abcdef';
+    const MCP_REDIRECT = 'https://claude.ai/api/mcp/auth_callback';
+    const RESOURCE = 'https://cairn.example.test/mcp';
+    const SCOPES = [
+      { id: 'projects:read', label: 'See your projects', description: 'd', readOnly: true, allowed: true, requested: true, checked: true },
+      { id: 'logs:read', label: 'Read logs', description: 'd', readOnly: true, allowed: true, requested: true, checked: true },
+      { id: 'commands:execute', label: 'Run allowed commands', description: 'd', readOnly: false, allowed: false, requested: true, checked: false },
+    ];
+
+    beforeEach(() => {
+      route.snapshot.queryParams = {
+        client_id: MCP_ID,
+        redirect_uri: MCP_REDIRECT,
+        response_type: 'code',
+        state: 'st',
+        code_challenge: 'c'.repeat(43),
+        code_challenge_method: 'S256',
+        resource: RESOURCE,
+        scope: 'projects:read logs:read commands:execute',
+      };
+      auth.isAuthenticated.and.returnValue(true);
+    });
+
+    async function open() {
+      const fixture = TestBed.createComponent(OauthAuthorizeComponent);
+      const cmp = fixture.componentInstance;
+      const nav = spyOn(cmp, 'navigateExternal');
+      fixture.detectChanges(); // runs ngOnInit
+      http.expectOne((r) => r.url === `/api/oauth/clients/${MCP_ID}`).flush({ client_id: MCP_ID, name: 'Claude', kind: 'mcp', redirect_uri_valid: true });
+      await new Promise((r) => setTimeout(r));
+      const consent = http.expectOne((r) => r.url === '/api/oauth/consent');
+      expect(consent.request.params.get('resource')).toBe(RESOURCE);
+      expect(consent.request.params.get('code_challenge')).toBe('c'.repeat(43));
+      consent.flush({ name: 'Claude', kind: 'mcp', redirect_host: 'https://claude.ai', scopes: SCOPES.map((s) => ({ ...s })) });
+      await fixture.whenStable();
+      await new Promise((r) => setTimeout(r));
+      expect(cmp.status).toBe('consent');
+      fixture.detectChanges();
+      return { fixture, cmp, nav };
+    }
+
+    it('shows the assistant name, redirect host and permission checkboxes', async () => {
+      const { fixture, cmp } = await open();
+      expect(cmp.kind).toBe('mcp');
+      const el: HTMLElement = fixture.nativeElement;
+      expect(el.querySelector('[data-testid="client-name"]')?.textContent).toContain('Claude');
+      expect(el.querySelector('[data-testid="redirect-host"]')?.textContent).toContain('https://claude.ai');
+      const exec = el.querySelector('[data-testid="scope-commands:execute"]') as HTMLInputElement;
+      expect(exec.disabled).toBeTrue();
+      expect((el.querySelector('[data-testid="scope-projects:read"]') as HTMLInputElement).checked).toBeTrue();
+      expect(el.textContent).toContain('Your role cannot grant this.');
+    });
+
+    it('posts only the ticked, allowed scopes and follows the redirect', async () => {
+      const { cmp, nav } = await open();
+      cmp.toggle(cmp.scopes[1], false);
+      cmp.toggle(cmp.scopes[2], true); // not allowed: ignored
+      const allow = cmp.allow();
+      const post = http.expectOne('/api/oauth/authorize');
+      expect(post.request.body.scopes).toEqual(['projects:read']);
+      expect(post.request.body.resource).toBe(RESOURCE);
+      expect(post.request.body.client_id).toBe(MCP_ID);
+      post.flush({ redirect: `${MCP_REDIRECT}?code=abc&state=st` });
+      await allow;
+      expect(nav).toHaveBeenCalledWith(`${MCP_REDIRECT}?code=abc&state=st`);
+    });
+
+    it('asks for a two-factor code when the API requires step-up, then retries', async () => {
+      const stepUp = TestBed.inject(StepUpService);
+      spyOn(stepUp, 'request').and.returnValue(Promise.resolve(true));
+      const { cmp, nav } = await open();
+      const allow = cmp.allow();
+      http.expectOne('/api/oauth/authorize').flush({ error: 'step_up_required' }, { status: 401, statusText: 'Unauthorized' });
+      await new Promise((r) => setTimeout(r));
+      expect(stepUp.request).toHaveBeenCalled();
+      http.expectOne('/api/oauth/authorize').flush({ redirect: `${MCP_REDIRECT}?code=xyz&state=st` });
+      await allow;
+      expect(nav).toHaveBeenCalledWith(`${MCP_REDIRECT}?code=xyz&state=st`);
+    });
+
+    it('keeps the screen open with a message when step-up is cancelled', async () => {
+      const stepUp = TestBed.inject(StepUpService);
+      spyOn(stepUp, 'request').and.returnValue(Promise.resolve(false));
+      const { cmp, nav } = await open();
+      const allow = cmp.allow();
+      http.expectOne('/api/oauth/authorize').flush({ error: 'step_up_required' }, { status: 401, statusText: 'Unauthorized' });
+      await allow;
+      expect(nav).not.toHaveBeenCalled();
+      expect(cmp.status).toBe('consent');
+      expect(cmp.formError).toContain('authenticator');
+    });
+
+    it('refuses to approve with no permission ticked', async () => {
+      const { cmp } = await open();
+      cmp.scopes.forEach((s) => cmp.toggle(s, false));
+      await cmp.allow();
+      http.expectNone('/api/oauth/authorize');
+      expect(cmp.formError).toContain('at least one');
+    });
   });
 });

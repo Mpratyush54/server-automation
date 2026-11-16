@@ -4,6 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { ServicesComponent } from './services.component';
 import { ApiService } from '../../services/api.service';
 import { of } from 'rxjs';
+import { ToastService } from '../../shared/feedback/feedback.service';
 
 describe('ServicesComponent', () => {
   let apiService: jasmine.SpyObj<ApiService>;
@@ -44,7 +45,7 @@ describe('ServicesComponent', () => {
 
   it('should register a service', async () => {
     apiService.registerService.and.returnValue(of({}));
-    spyOn(window, 'alert');
+    const ok = spyOn(TestBed.inject(ToastService), 'ok');
 
     const fixture = TestBed.createComponent(ServicesComponent);
     fixture.componentInstance.reg = {
@@ -62,6 +63,6 @@ describe('ServicesComponent', () => {
       serviceName: 'my-svc',
       dbTypes: ['postgres', 'redis'],
     }));
-    expect(window.alert).toHaveBeenCalledWith('Service registered successfully');
+    expect(ok).toHaveBeenCalledWith('Service registered');
   });
 });

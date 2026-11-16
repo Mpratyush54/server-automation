@@ -6,10 +6,13 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import { validateSecurityEnv, resolveCorsOrigins } from './config/security-env';
-import { getDb } from './config/database';
+import { armPostgresSocketTimeouts, getDb } from './config/database';
 import { connectMongo } from './config/mongoose';
 import { User } from './entities/User';
 import apiRouter from './routes/api';
+import { buildMcpRouter } from './routes/mcp';
+import { stripInternalMcpHeader } from './lib/mcp-internal';
+import { isMcpClientId } from './lib/mcp-oauth';
 import { buildSyntheticsRunnerApp, syntheticsRunnerPort } from './synthetics-runner-app';
 import { startBackgroundWork, stopBackgroundWork } from './lib/background';
 import { configuredAdminEmail, ensureAdminUser } from './lib/seed-admin';
@@ -20,6 +23,12 @@ import { flushHeatmapBuffer } from './lib/heatmap-buffer';
 
 /** Paths called cross-origin by browser SDKs (bearer SDK token, no cookies). */
 const SDK_PUBLIC_PATH = /^\/api\/(sdk\/|errors\/rum$|logs\/ingest$)/;
+
+/**
+ * Remote MCP endpoint and the OAuth endpoints MCP clients call (#193). Browser-based MCP clients
+ * call them cross-origin; they use bearer tokens or PKCE, never cookies.
+ */
+export const MCP_PUBLIC_PATH = /^\/(mcp\/?$|\.well-known\/oauth-|api\/oauth\/(register|token|revoke)$|api\/oauth\/\.well-known\/)/;
 
 /** JSON body parser that keeps the raw bytes on req.rawBody (webhook signature verification). */
 export const jsonBodyParser = express.json({
@@ -46,9 +55,28 @@ export function redactUrlForLog(url: string | undefined): string {
 
 morgan.token('redacted-url', (req: express.Request) => redactUrlForLog(req.originalUrl || req.url));
 
+/** Liveness/readiness paths polled by kubelet probes and load balancers. */
+const HEALTH_PATHS = new Set(['/api/health', '/api/health/ready']);
+
+/**
+ * Successful health checks are not logged: probes and load-balancer checks
+ * poll them every few seconds per node, which flooded the logs (and Loki)
+ * without information. Failures (status >= 400) are still logged.
+ */
+export function skipHealthLog(req: express.Request, res: express.Response): boolean {
+  const path = (req.originalUrl || req.url || '').split('?')[0];
+  return HEALTH_PATHS.has(path) && res.statusCode < 400;
+}
+
 /** Access logger (morgan) that never logs query-string values. */
 export function requestLogger(options: morgan.Options<express.Request, express.Response> = {}) {
-  return morgan(':method :redacted-url :status :response-time ms - :res[content-length]', options);
+  return morgan(':method :redacted-url :status :response-time ms - :res[content-length]', { skip: skipHealthLog, ...options });
+}
+
+/** Token request from a public remote MCP client (same test as routes/oidc.ts uses). */
+export function isMcpPublicTokenRequest(req: express.Request): boolean {
+  const body = (req.body || {}) as Record<string, unknown>;
+  return isMcpClientId(body.client_id) && !req.headers.authorization && !body.client_secret;
 }
 
 export function buildApp(): express.Express {
@@ -61,6 +89,14 @@ export function buildApp(): express.Express {
       // Browser SDKs run on customer origins; auth is a bearer SDK token, never cookies.
       return cb(null, { origin: true, credentials: false });
     }
+    if (MCP_PUBLIC_PATH.test(req.path)) {
+      return cb(null, {
+        origin: true,
+        credentials: false,
+        exposedHeaders: ['WWW-Authenticate', 'Mcp-Session-Id', 'Mcp-Protocol-Version'],
+        allowedHeaders: ['Authorization', 'Content-Type', 'Accept', 'Mcp-Session-Id', 'Mcp-Protocol-Version', 'Last-Event-ID'],
+      });
+    }
     const origin = req.header('Origin');
     cb(null, { origin: !!origin && allowedOrigins.has(origin.replace(/\/+$/, '')), credentials: false });
   };
@@ -68,6 +104,8 @@ export function buildApp(): express.Express {
   // Middleware
   // Portal and API share a site behind the ingress; 'same-site' keeps sibling subdomains working.
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'same-site' } }));
+  // The loopback MCP app's internal header never comes from outside (lib/mcp-internal.ts).
+  app.use(stripInternalMcpHeader);
   app.use(drainingConnectionClose);
   app.use(cors(corsDelegate));
 
@@ -84,7 +122,6 @@ export function buildApp(): express.Express {
     [
       '/api/auth/login',
       '/api/auth/set-password',
-      '/api/oauth/token',
       '/api/auth/github/callback',
       '/api/auth/gitlab/callback',
       '/api/auth/mfa/challenge', // also limited per account in routes/mfa.ts (#24)
@@ -101,14 +138,51 @@ export function buildApp(): express.Express {
     store: createLimiterStore('issue'),
   });
   app.post(['/api/projects/:projectId/tokens', '/api/agent-tokens'], issueLimiter);
+  // Dynamic client registration for AI assistants (#193): anonymous, so tightly limited per IP.
+  const registerLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: Number(process.env.MCP_REGISTER_RATE_LIMIT_MAX) || 20,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'too_many_requests', error_description: 'Too many registrations. Try again later.' },
+    store: createLimiterStore('oauth-register'),
+  });
+  app.post('/api/oauth/register', registerLimiter);
+  // Remote MCP endpoint: generous, but bounded per client address.
+  const mcpLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: Number(process.env.MCP_RATE_LIMIT_MAX) || 600,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { jsonrpc: '2.0', error: { code: -32000, message: 'Too many requests' }, id: null },
+    store: createLimiterStore('mcp'),
+  });
+  app.use('/mcp', mcpLimiter);
 
   // Keep the raw body for webhook signature verification (req.rawBody).
   app.use(jsonBodyParser);
   app.use(express.urlencoded({ extended: true }));
+
+  // Token endpoint (needs the parsed body to tell clients apart): static OIDC clients keep the
+  // credential limiter; public remote MCP clients refresh every hour, so they get their own,
+  // higher limit per client_id + address.
+  const mcpTokenLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: Number(process.env.MCP_TOKEN_RATE_LIMIT_MAX) || 120,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => `${String((req.body || {}).client_id).slice(0, 64)}|${req.ip}`,
+    message: { error: 'too_many_requests', error_description: 'Too many token requests. Try again later.' },
+    store: createLimiterStore('oauth-token-mcp'),
+  });
+  app.use('/api/oauth/token', (req, res, next) =>
+    (isMcpPublicTokenRequest(req) ? mcpTokenLimiter : credentialLimiter)(req, res, next));
   app.use(requestLogger());
 
   // Main API routing
   app.use('/api', apiRouter);
+  // Remote MCP endpoint + OAuth discovery at the site root (/mcp, /.well-known/oauth-*) (#193).
+  app.use(buildMcpRouter());
 
   // Fallback route handler
   app.use((req, res) => {
@@ -130,6 +204,7 @@ async function bootstrap() {
     // Initialize PostgreSQL
     const ds = await getDb();
     console.log(`[server] PostgreSQL connected to database: ${ds.options.database}`);
+    armPostgresSocketTimeouts(ds);
     // The schema is owned by versioned migrations (node dist/migrate.js, run as
     // a Job before rollout). Never serve against a schema this build does not
     // know: the rollout then fails readiness and the old ReplicaSet keeps serving.

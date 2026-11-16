@@ -1,0 +1,209 @@
+<div class="stack">
+  <!-- Access -->
+  <section id="access" class="card card-flush" aria-labelledby="set-access-title">
+    <div class="card-header">
+      <h2 id="set-access-title">Who has access</h2>
+    </div>
+    <div class="panel-body">
+      <p class="hint">Each person's role decides what they can change here. Admins can always manage every project. <a href="https://platform.pratyushes.dev/docs/api-reference/configuration/permissions" target="_blank" rel="noopener">Learn more</a></p>
+      @if (canManageAccess) {
+        <div class="inline-form">
+          <div class="form-group grow">
+            <label for="member-email">Email</label>
+            <input id="member-email" [(ngModel)]="newMember.email" type="email" placeholder="dev@company.com">
+          </div>
+          <div class="form-group">
+            <label for="member-role">Role</label>
+            <select id="member-role" [(ngModel)]="newMember.role">
+              <option value="viewer">Viewer</option>
+              <option value="developer">Developer</option>
+              <option value="devops">DevOps</option>
+              <option value="owner">Owner</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <button type="button" class="btn" (click)="grantMember.emit()" [disabled]="!newMember.email || memberBusy">
+              {{ memberBusy ? 'Adding…' : 'Add person' }}
+            </button>
+          </div>
+        </div>
+      }
+      @if (memberError) { <p class="error" role="alert">{{ memberError }}</p> }
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            @if (canManageAccess) { <th class="text-right"><span class="sr-only">Actions</span></th> }
+          </tr>
+        </thead>
+        <tbody>
+          @for (m of members; track m.id ?? $index) {
+            <tr>
+              <td>{{ m.user?.name || '—' }}</td>
+              <td>{{ m.user?.email || m.userId }}</td>
+              <td>
+                @if (canManageAccess) {
+                  <select class="role-select" [ngModel]="m.role" (ngModelChange)="changeMemberRole.emit({ member: m, role: $event })"
+                    [attr.aria-label]="'Role for ' + (m.user?.email || m.userId)">
+                    <option value="viewer">viewer</option>
+                    <option value="developer">developer</option>
+                    <option value="devops">devops</option>
+                    <option value="owner">owner</option>
+                  </select>
+                } @else {
+                  <span class="badge">{{ m.role }}</span>
+                }
+              </td>
+              @if (canManageAccess) {
+                <td class="text-right">
+                  <button type="button" class="btn btn-danger btn-sm" (click)="revokeMember.emit(m)">Remove</button>
+                </td>
+              }
+            </tr>
+          }
+          @if (members.length === 0) {
+            <tr class="empty-row"><td [attr.colspan]="canManageAccess ? 4 : 3">Only admins can open this project so far.@if (canManageAccess) { Add teammates by email above.}</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- SDK tokens -->
+  <div id="sdk-tokens" [class.grid-2]="canCreateSdkTokens" data-testid="sdk-tokens-layout">
+    @if (canCreateSdkTokens) {
+      <section class="card card-flush" aria-labelledby="set-token-new-title">
+        <div class="card-header"><h2 id="set-token-new-title">Generate SDK token</h2></div>
+        <div class="panel-body">
+          <p class="hint">A token lets your app talk to Cairn through the SDK. <a href="https://platform.pratyushes.dev/docs/getting-started/sdk-examples" target="_blank" rel="noopener">Learn more</a></p>
+          <div class="form-group">
+            <label for="sdk-token-name">Name</label>
+            <input id="sdk-token-name" [ngModel]="newKeyName" (ngModelChange)="setKeyName($event)" placeholder="e.g. Production service key">
+            <span class="form-hint">So you can tell tokens apart later.</span>
+          </div>
+          <div class="form-group">
+            <label for="sdk-token-kind">Where it runs</label>
+            <select id="sdk-token-kind" [ngModel]="newKeyKind" (ngModelChange)="setKeyKind($event)">
+              <option value="server">Server: backend SDKs (Node, Python)</option>
+              <option value="browser">Browser: frontend SDKs (React, Angular)</option>
+            </select>
+            @if (newKeyKind === 'server') {
+              <span class="sdk-token-kind-hint warn">Can read this project's settings and secrets. Keep it on your backend, never in frontend code.</span>
+            } @else {
+              <span class="sdk-token-kind-hint hint">Can only send errors, logs and metrics, so it is safe in frontend code.</span>
+            }
+          </div>
+          @if (generatedKeyPlaintext) {
+            <div class="token-reveal" role="status">
+              <strong>Copy this {{ generatedKeyKind === 'server' ? 'server' : 'browser' }} token now. It will not be shown again.</strong>
+              <code class="mono token-value">{{ generatedKeyPlaintext }}</code>
+              <div><button type="button" class="btn btn-sm" (click)="clearGeneratedToken.emit()">Dismiss</button></div>
+            </div>
+          }
+        </div>
+        <div class="panel-footer">
+          <button type="button" class="btn btn-primary" (click)="createToken.emit()" [disabled]="!newKeyName.trim()">Generate token</button>
+        </div>
+      </section>
+    }
+    <section class="card card-flush" aria-labelledby="set-tokens-title">
+      <div class="card-header">
+        <h2 id="set-tokens-title">SDK tokens</h2>
+
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Starts with</th>
+              <th>Runs in</th>
+              <th>Status</th>
+              <th>Created</th>
+              @if (canRevokeSdkTokens) { <th><span class="sr-only">Actions</span></th> }
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of tokens; track t.id ?? $index) {
+              <tr>
+                <td>{{ t.name }}</td>
+                <td class="mono">{{ t.token }}</td>
+                <td><span class="badge" [title]="(t.kind || 'server') === 'browser' ? 'Ingest only (bug reports, logs, API metrics)' : 'Config, secrets and service registration'">{{ (t.kind || 'server') === 'browser' ? 'Browser' : 'Server' }}</span></td>
+                <td><span class="status" [class.status-ok]="(t.status || '').toLowerCase() === 'active'">{{ t.status | titlecase }}</span></td>
+                <td class="secondary">{{ t.createdAt | date:'short' }}</td>
+                @if (canRevokeSdkTokens) {
+                  <td><button type="button" class="btn btn-sm btn-danger" (click)="revokeToken.emit(t.id)">Revoke</button></td>
+                }
+              </tr>
+            }
+            @if (tokens.length === 0) {
+              <tr class="empty-row"><td [attr.colspan]="canRevokeSdkTokens ? 6 : 5">No tokens yet.@if (canCreateSdkTokens) { Generate one so your app can send errors and logs and read its settings.}</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- Privacy -->
+  @if (project?.id) {
+    <div id="privacy" class="stack">
+      <h2 class="group-title">Privacy</h2>
+      <app-privacy-tab [projectId]="project.id"></app-privacy-tab>
+    </div>
+  }
+
+  <!-- Namespace isolation (moved from the top of the page) -->
+  @if (project?.namespaceBaselines?.length) {
+    <section id="namespace-isolation" class="card card-flush" aria-label="Namespace isolation">
+      <div class="card-header">
+        <h2>Isolation</h2>
+        <span class="muted text-sm">Keeps each environment walled off from other projects. <a href="https://platform.pratyushes.dev/docs/guides/namespace-isolation" target="_blank" rel="noopener">Learn more</a></span>
+      </div>
+      @for (baseline of project.namespaceBaselines; track baseline.namespace) {
+        <div class="ns-block">
+          <div class="ns-head">
+            <span class="mono ns-name">{{ baseline.namespace }}</span>
+            <span class="status" [class.status-ok]="baseline.policyApplied" [class.status-warn]="!baseline.policyApplied">
+              Network rules: {{ baseline.policyApplied ? 'Applied' : 'Missing or changed' }}
+            </span>
+            <span class="status" [class.status-ok]="baseline.psa === 'restricted'" [class.status-warn]="baseline.psa && baseline.psa !== 'restricted'">
+              Security level: {{ baseline.psa || 'Unknown' }}
+            </span>
+          </div>
+          @if (baseline.ownerMatches === false) {
+            <p class="warn">This space's ownership labels do not match this project.</p>
+          }
+          @if (baseline.additionalPolicies?.length) {
+            <p class="warn">Extra network rules need a review: <span class="mono">{{ baseline.additionalPolicies.join(', ') }}</span></p>
+          }
+          @if (baseline.quota && (!baseline.quotaApplied || !baseline.limitsApplied)) {
+            <p class="warn">Resource limits differ from the expected defaults.</p>
+          }
+          @if (baseline.error) {
+            <p class="error">{{ baseline.error }}</p>
+          }
+          @if (baseline.psa && baseline.psa !== 'restricted') {
+            <p class="hint">The restricted level is in warn/audit mode: apps still run, but check deployment warnings before turning it on.</p>
+          }
+          @if (baseline.quota) {
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>Resource</th><th>Used</th><th>Limit</th></tr></thead>
+                <tbody>
+                  @for (resource of baseline.quota.hard | keyvalue; track resource.key) {
+                    <tr><td>{{ resource.key }}</td><td>{{ baseline.quota.used[$any(resource.key)] || '0' }}</td><td>{{ resource.value }}</td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </div>
+      }
+    </section>
+  }
+</div>

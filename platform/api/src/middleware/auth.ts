@@ -11,6 +11,8 @@ import { Project } from '../entities/Project';
 import { Permission, ROLE_PRESETS } from '../config/permissions';
 import { getJwtSecret } from '../config/security-env';
 import { PermissionInvalidationBus, permissionPubSubEnabled } from '../lib/perm-invalidation';
+import { ACCESS_TOKEN_PREFIX, verifyAccessToken } from '../lib/mcp-oauth';
+import { isInternalMcpRequest } from '../lib/mcp-internal';
 
 /** Only stored, revocable SDK credentials are accepted (see POST /projects/:id/tokens). */
 export const SDK_TOKEN_PREFIXES = ['sdk_live_', 'sdk_test_'];
@@ -18,6 +20,25 @@ const PERMISSION_CACHE_TTL_MS = 60_000;
 export const AGENT_TOKEN_PREFIX = 'plat_agent_';
 /** Characters of the raw token used for DB lookup (includes plat_agent_). */
 export const AGENT_TOKEN_LOOKUP_LEN = 20;
+
+/**
+ * A non-human caller: a stored agent token (`plat_agent_*`), or an AI assistant connected through
+ * the remote MCP endpoint (`kind: 'mcp_grant'`). A connected assistant acts for the person who
+ * approved it (`delegatedUser`): its scopes are capped by that person's role and it only sees
+ * projects that person can see. It never gets `req.user`, so human-only checks stay closed.
+ */
+export interface AgentPrincipal {
+  /** agent_tokens.id, or mcp_grants.id for a connected assistant. */
+  id: string;
+  name: string;
+  scopes: string[];
+  tokenPrefix: string;
+  kind?: 'agent_token' | 'mcp_grant';
+  /** Connected assistants only: public OAuth client_id. */
+  clientId?: string;
+  /** Connected assistants only: the approving person (current role). */
+  delegatedUser?: { id: string; role: UserRole; roleId: string | null; name: string; email: string };
+}
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -37,12 +58,7 @@ export interface AuthenticatedRequest extends Request {
   sdkTokenKind?: SdkTokenKind;
   /** Set by allowBrowserSdkToken: this route accepts browser SDK tokens. */
   browserSdkTokenAllowed?: boolean;
-  agentToken?: {
-    id: string;
-    name: string;
-    scopes: string[];
-    tokenPrefix: string;
-  };
+  agentToken?: AgentPrincipal;
   /** True when authenticated via human JWT (not agent token / SDK). */
   humanJwt?: boolean;
   /** Session JWT authentication context (#24): methods, auth time, enrolment-only restriction. */
@@ -125,40 +141,80 @@ export function clearPermissionCache(userId?: string) {
   if (permissionPubSubEnabled()) void permissionInvalidationBus.publish(userId);
 }
 
-async function authenticateAgentToken(rawToken: string, req: AuthenticatedRequest, res: Response, next: NextFunction) {
+/**
+ * Validate a raw `plat_agent_*` token (prefix lookup + bcrypt) and record its use.
+ * Shared by the API's bearer auth and the remote MCP endpoint's bearer fallback.
+ */
+export async function verifyAgentToken(rawToken: string): Promise<{ ok: true; agent: AgentPrincipal } | { ok: false; error: string }> {
   const prefix = rawToken.slice(0, AGENT_TOKEN_LOOKUP_LEN);
   if (prefix.length < AGENT_TOKEN_LOOKUP_LEN) {
-    return res.status(401).json({ error: 'Unauthorized: Invalid agent token' });
+    return { ok: false, error: 'Unauthorized: Invalid agent token' };
   }
-
   try {
     const ds = await getDb();
     const repo = ds.getRepository(AgentToken);
     const record = await repo.findOne({ where: { tokenPrefix: prefix } });
     if (!record || !record.isActive || record.revokedAt) {
-      return res.status(401).json({ error: 'Unauthorized: Invalid or revoked agent token' });
+      return { ok: false, error: 'Unauthorized: Invalid or revoked agent token' };
     }
     if (record.expiresAt && record.expiresAt.getTime() < Date.now()) {
-      return res.status(401).json({ error: 'Unauthorized: Agent token expired' });
+      return { ok: false, error: 'Unauthorized: Agent token expired' };
     }
-
     const valid = await bcrypt.compare(rawToken, record.tokenHash);
     if (!valid) {
-      return res.status(401).json({ error: 'Unauthorized: Invalid agent token' });
+      return { ok: false, error: 'Unauthorized: Invalid agent token' };
     }
-
     record.lastUsedAt = new Date();
     await repo.save(record).catch(() => {});
+    return {
+      ok: true,
+      agent: {
+        id: record.id,
+        name: record.name,
+        scopes: Array.isArray(record.scopes) ? record.scopes : [],
+        tokenPrefix: record.tokenPrefix,
+        kind: 'agent_token',
+      },
+    };
+  } catch {
+    return { ok: false, error: 'Unauthorized: Could not validate agent token' };
+  }
+}
 
+async function authenticateAgentToken(rawToken: string, req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  const result = await verifyAgentToken(rawToken);
+  if (result.ok === false) {
+    return res.status(401).json({ error: result.error });
+  }
+  req.agentToken = result.agent;
+  return next();
+}
+
+/**
+ * Remote MCP access tokens (`cairn_at_*`) are audience-bound to /mcp. The API accepts them only
+ * on the loopback calls routes/mcp.ts makes while running a tool for that assistant.
+ */
+async function authenticateMcpAccessToken(rawToken: string, req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (!isInternalMcpRequest(req)) {
+    return res.status(401).json({ error: 'Unauthorized: This token is only valid on the MCP endpoint' });
+  }
+  try {
+    const principal = await verifyAccessToken(rawToken);
+    if (!principal) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid, expired or revoked connection' });
+    }
     req.agentToken = {
-      id: record.id,
-      name: record.name,
-      scopes: Array.isArray(record.scopes) ? record.scopes : [],
-      tokenPrefix: record.tokenPrefix,
+      id: principal.grantId,
+      name: principal.clientName,
+      scopes: principal.scopes,
+      tokenPrefix: 'mcp',
+      kind: 'mcp_grant',
+      clientId: principal.clientId,
+      delegatedUser: principal.user,
     };
     return next();
   } catch {
-    return res.status(401).json({ error: 'Unauthorized: Could not validate agent token' });
+    return res.status(401).json({ error: 'Unauthorized: Could not validate connection' });
   }
 }
 
@@ -171,6 +227,9 @@ export async function expressAuthenticate(req: Request, res: Response, next: Nex
 
   if (token.startsWith(AGENT_TOKEN_PREFIX)) {
     return authenticateAgentToken(token, req as AuthenticatedRequest, res, next);
+  }
+  if (token.startsWith(ACCESS_TOKEN_PREFIX)) {
+    return authenticateMcpAccessToken(token, req as AuthenticatedRequest, res, next);
   }
 
   // SDK credentials are NOT accepted on human endpoints — they are only valid on
@@ -248,6 +307,11 @@ export function requireAgentScopeOrRole(scopes: string[], roles: UserRole[]) {
           error: 'Forbidden: Agent token missing required scopes',
           requiredAnyOf: scopes,
         });
+      }
+      // A connected assistant never exceeds the role of the person it acts for.
+      const delegated = agent.delegatedUser;
+      if (delegated && delegated.role !== UserRole.ADMIN && !roles.includes(delegated.role)) {
+        return res.status(403).json({ error: 'Forbidden: The person this assistant acts for lacks the required role' });
       }
       return next();
     }

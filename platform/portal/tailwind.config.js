@@ -1,46 +1,40 @@
 /** @type {import('tailwindcss').Config} */
+// Signal design system: every colour is a CSS variable defined in
+// src/styles.css (light and dark), exposed here under semantic names so
+// templates never hard-code a colour that only works in one theme.
+const token = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+
 module.exports = {
-  content: [
-    "./src/**/*.{html,ts}",
-  ],
-  darkMode: 'class',
+  content: ['./src/**/*.{html,ts}'],
+  darkMode: ['selector', '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {
-        vercel: {
-          100: '#FAFAFA',
-          200: '#EAEAEA',
-          300: '#999999',
-          400: '#888888',
-          500: '#666666',
-          600: '#444444',
-          700: '#333333',
-          800: '#111111',
-          900: '#000000',
-        },
-        primary: '#0070F3',
-        success: '#0070F3',
-        warning: '#F5A623',
-        danger: '#E00',
+        canvas: token('canvas'),
+        surface: token('surface'),
+        raised: token('raised'),
+        line: token('line'),
+        'line-strong': token('line-strong'),
+        fg: token('fg'),
+        'fg-2': token('fg-2'),
+        'fg-3': token('fg-3'),
+        accent: token('accent'),
+        'accent-ink': token('accent-ink'),
+        'accent-text': token('accent-text'),
+        ok: token('ok'),
+        warn: token('warn'),
+        down: token('down'),
+        info: token('info'),
       },
       fontFamily: {
-        sans: ['Geist', 'Inter', 'sans-serif'],
-        mono: ['"Geist Mono"', 'monospace'],
+        sans: ['"IBM Plex Sans"', 'system-ui', '-apple-system', '"Segoe UI"', 'sans-serif'],
+        mono: ['"IBM Plex Mono"', 'ui-monospace', 'SFMono-Regular', 'Consolas', 'monospace'],
       },
-      backgroundImage: {
-        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-        'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
+      borderRadius: {
+        control: '6px',
+        panel: '10px',
       },
-      animation: {
-        'glow': 'glow 2s ease-in-out infinite alternate',
-      },
-      keyframes: {
-        glow: {
-          '0%': { opacity: 0.5 },
-          '100%': { opacity: 1 },
-        }
-      }
     },
   },
   plugins: [],
-}
+};

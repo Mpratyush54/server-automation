@@ -23,11 +23,16 @@ type Driver interface {
 }
 
 func (c Config) Validate() error {
+	// minioAlias names an mc alias for a non-bundled MinIO source; it is read
+	// from mc's config file without the mc binary (see mc_compat.go).
 	if c.MinioAlias != "" && !safeName.MatchString(c.MinioAlias) {
 		return fmt.Errorf("invalid MinIO alias")
 	}
-	if _, e := ParseTarget(c.Target); e != nil {
-		return e
+	// "external" resolves to the external backup target at run time (#186).
+	if c.Target != ExternalTargetKeyword {
+		if _, e := ParseTarget(c.Target); e != nil {
+			return e
+		}
 	}
 	if _, e := Prune(nil, c.Retention); e != nil {
 		return e
@@ -64,8 +69,7 @@ func ReadConfig(file string) (Config, error) {
 	}
 	return c, c.Validate()
 }
-func Create(c Config, version string, d Driver) (Manifest, error) {
-	var m Manifest
+func Create(c Config, version string, d Driver) (m Manifest, err error) {
 	if e := c.Validate(); e != nil {
 		return m, e
 	}
@@ -84,6 +88,15 @@ func Create(c Config, version string, d Driver) (Manifest, error) {
 	}
 	defer os.RemoveAll(tmp)
 	m = Manifest{Version: FormatVersion, ID: time.Now().UTC().Format("20060102T150405.000000000Z"), CreatedAt: time.Now().UTC(), PlatformVersion: version}
+	// A failure before backup.json is published removes what was already
+	// uploaded for this ID, so no partial folder is left in the target.
+	var uploaded []string
+	attempted, published := "", false
+	defer func() {
+		if err != nil && !published {
+			s.discard(m.ID, uploaded, attempted)
+		}
+	}()
 	for _, component := range c.Components {
 		dir := filepath.Join(tmp, component)
 		if e = os.Mkdir(dir, 0700); e != nil {
@@ -101,9 +114,11 @@ func Create(c Config, version string, d Driver) (Manifest, error) {
 		if e != nil {
 			return m, e
 		}
+		attempted = file
 		if e = s.Put(m.ID, file, dest); e != nil {
 			return m, e
 		}
+		uploaded, attempted = append(uploaded, file), ""
 		m.Artifacts = append(m.Artifacts, Artifact{component, file, hash, n})
 		if e = os.RemoveAll(dir); e != nil {
 			return m, e
@@ -117,9 +132,11 @@ func Create(c Config, version string, d Driver) (Manifest, error) {
 	if e = os.WriteFile(f, b, 0600); e != nil {
 		return m, e
 	}
+	attempted = "backup.json"
 	if e = s.Put(m.ID, "backup.json", f); e != nil {
 		return m, e
 	}
+	published = true
 	return m, s.Retain(c.Retention)
 }
 

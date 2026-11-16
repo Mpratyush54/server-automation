@@ -5,7 +5,7 @@ import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 
 /** SDK token form visibility mirrors the API: create = admin/devops/tech_lead, revoke = admin/devops. */
-describe('Project detail SDK tokens tab', () => {
+describe('Project detail SDK tokens (Settings section)', () => {
   function create(role: string) {
     TestBed.configureTestingModule({
       imports: [ProjectDetailComponent],
@@ -24,7 +24,7 @@ describe('Project detail SDK tokens tab', () => {
   async function render(role: string) {
     const fixture = create(role);
     await fixture.componentInstance.ngOnInit();
-    fixture.componentInstance.activeTab = 'sdk-tokens';
+    fixture.componentInstance.section = 'settings';
     fixture.componentInstance.tokens = [];
     fixture.detectChanges();
     return fixture;
@@ -43,7 +43,7 @@ describe('Project detail SDK tokens tab', () => {
       expect(c.canCreateSdkTokens).toBe(canCreate);
       expect(c.canRevokeSdkTokens).toBe(canRevoke);
       const el = fixture.nativeElement as HTMLElement;
-      expect(el.textContent?.includes('Generate SDK Token')).toBe(canCreate);
+      expect(el.textContent?.includes('Generate SDK token')).toBe(canCreate);
       // Without the form the token table spans the full width.
       expect(el.querySelector('[data-testid="sdk-tokens-layout"]')?.classList.contains('grid-2')).toBe(canCreate);
       c.ngOnDestroy();

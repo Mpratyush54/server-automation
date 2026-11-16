@@ -1,136 +1,128 @@
-# Telemetry privacy, retention and GDPR delete
+# Privacy and data retention
 
-Issue #47. Server-side scrubbing is authoritative; SDK client masking is defence-in-depth.
-Session replay (#40) stores chunks in MinIO with metadata in Postgres and honours the
-consent hooks, object-key layout and retention described here.
+Choose how long each project keeps logs, errors, replays and heatmaps, remove personal data before it is stored, set consent defaults, and delete everything stored about one person. All of this is in the project's **Settings** section, **Privacy** panel.
 
-## Data inventory
+Personal data is removed on the server, which is the safety net. The browser SDKs also mask data before sending it, as an extra layer.
 
-| Store | What | Identifiers | Default retention | Delete path |
-|-------|------|-------------|-------------------|-------------|
-| Grafana Alloy → Loki | OTLP/Faro logs, pod logs, API-forwarded SDK logs | `platform_project_id` (Alloy) / `project_id` (API) labels, optional `user.id` / session in body | 30d (`TELEMETRY_RETENTION_DAYS`); per-project logs override via Loki runtime overrides | Loki delete API (`POST /loki/api/v1/delete`) |
-| Tempo | Traces / span attributes | `platform.project_id` | 30d (global; single-tenant) | Compactor retention only |
-| Pyroscope | Profiles | project labels when present | 30d | Compactor retention only |
-| Prometheus | Metrics | project/env dimensions from Tempo generators | 30d | Prometheus retention |
-| MongoDB `logs` | API-path SDK logs | `projectId`, optional `userId` / `sessionId` | TTL index 30d | GDPR delete + TTL |
-| MongoDB `errors` | Aggregated error docs | `projectId`, optional `userId` / `sessionId` | Not pruned automatically | GDPR delete |
-| Postgres `error_events` / `error_issues` | Error tracking (#41) events and issues | `project_id`, event payload | Project `errors` setting, default 90d (`error-retention` job) | Retention job; GDPR delete (events); project delete |
-| MinIO `replays` + Postgres `replay_sessions` / `replay_chunks` | Session replay chunks (#40) | `replays/{projectId}/{sessionId}/{seq}.json.gz`; `user_id` / `subject_id` on `replay_sessions` | Project `replays` setting, default 7d (`replay-retention` job) + 365d bucket lifecycle backstop | GDPR delete; retention job; lifecycle |
-| Postgres `heatmap_*` | Click / scroll-depth aggregates per page, viewport and day | `project_id` only (anonymous: no user, session or IP) | Project `heatmaps` setting, default 90d (`heatmaps-retention` job) | Retention job; project delete (nothing to remove for GDPR) |
-| Postgres `telemetry_consents` | Subject consent | `project_id`, `subject_id`, `session_id` | Until withdrawn / GDPR delete | GDPR delete |
-| Postgres `telemetry_privacy_settings` | Per-project rules | `project_id` | N/A (config) | Project delete (manual) |
-| Postgres `audit_logs` | `privacy.*` actions | actor user id; email only as SHA-256 | Platform audit retention | Not purged by GDPR delete |
+## Change how long data is kept
 
-Emails supplied to GDPR delete are never stored in clear text — only `sha256(lower(email))`
-appears in audit metadata.
+1. Open the project, go to **Settings**, then **Privacy**.
+2. Under **Retention**, type a number of days (1–365) next to a data type. Leave a field empty to use the default.
+3. Click **Save retention**.
 
-## PII scrubbing
+| Data | Default | Per project |
+|---|---|---|
+| Logs | 30 days (the server-wide setting) | Yes |
+| Errors | 90 days | Yes |
+| Session replays | 7 days | Yes |
+| Heatmaps | 90 days | Yes |
+| Traces | 30 days (server-wide) | No |
+| Profiles | 30 days (server-wide) | No |
 
-### Collector (Alloy, full profile)
+Traces and profiles are shown as "Set for the whole platform". To change them, an administrator sets `TELEMETRY_RETENTION_DAYS` and re-runs provision (see [Full monitoring](telemetry.md)). Expired data is removed within about an hour; log deletion can take longer.
 
-`otelcol.processor.transform "pii_scrub"` runs after identity attribution and before
-batching on **traces and logs** (not metrics, not `/pyroscope`). Patterns:
+## Remove personal data from logs and traces
 
-- Email → `[EMAIL]`
-- Authorization / Bearer / Basic, SDK (`sdk_live_` / `sdk_test_` / `plat_agent_` / `plat_ingest_`), JWT → `[REDACTED]` / `[REDACTED_JWT]`
-- 13–19 digit card-like runs → `[CARD]`
-- IPv4 → `[IP]`
+Built-in rules always replace these before data is stored:
 
-Kubernetes pod logs go through `loki.process "pii_scrub"` with the same replacements.
+- e-mail addresses become `[EMAIL]`
+- authorization headers, SDK and agent tokens, cookies and password-like values become `[REDACTED]`; JWTs become `[REDACTED_JWT]`
+- card numbers (13–19 digits) become `[CARD]`
+- IPv4 addresses become `[IP]` in the collector (full profile); on the API path only when the IP option below is on
 
-### API path
+To add your own rule, for example for order numbers:
 
-`processLogs` applies `lib/pii-scrub.ts` (built-ins + per-project rules, optional IP
-toggle) before Mongo insert and Loki push. Card matches require a Luhn check.
+1. Under **PII scrubbing**, **Custom rules**, click **Add rule**.
+2. Enter a **Name** (`order-id`), a **Pattern** (a regular expression, `ORD-[0-9]+`) and a **Replacement** (`[REDACTED]`).
+3. Click **Save scrubbing**.
 
-### Portal
+Turn on **Redact IP addresses on the API path** to also remove IPv4 and IPv6 addresses from data sent through the API.
 
-Project → **Privacy** tab edits custom regex rules, IP toggle, retention and consent
-defaults, and runs GDPR delete.
+## Set consent defaults
 
-## Consent hooks for session replay (#40)
+Consent defaults decide what happens before a visitor has made a choice. A visitor's own choice always wins.
 
-| Endpoint | Who | Purpose |
-|----------|-----|---------|
-| `GET /api/sdk/privacy/replay-allowed?subjectId=&sessionId=` | Browser/server SDK token | Gate rrweb start |
-| `GET\|PUT /api/sdk/privacy/consent` | Browser/server SDK token | Read / record consent |
-| `GET\|PUT /api/projects/:id/privacy/consent` | Human JWT | Portal inspection / override |
-| `PUT /api/projects/:id/privacy/consent-defaults` | Project devops | Default when no row exists |
+- **Record session replays by default**: off. Keep it off so recording starts only after the visitor agrees.
+- **Allow analytics by default**: on. Analytics (such as heatmaps) are collected unless the visitor opts out.
 
-Helpers: `isReplayAllowed`, `resolveConsent`, `upsertConsent` in
-`platform/api/src/lib/privacy-consent.ts`. Replay chunks are stored under
-`replays/{projectId}/{sessionId}/`; the session's `user_id` / `subject_id` are kept in
-`replay_sessions`, so GDPR delete and retention can find and remove every session of a subject.
+Click **Save consent defaults** after a change.
 
-Default consent: **replay off**, analytics on.
+## Delete a person's data
 
-## Retention: what actually applies
+Use this for a data deletion request, for example under GDPR. Only project owners can do it. It cannot be undone.
 
-| Type | Default | Per-project override | Enforced by |
-|------|---------|----------------------|-------------|
-| errors | 90 days | yes | API leader job `error-retention` (hourly) on Postgres `error_events` |
-| logs | `TELEMETRY_RETENTION_DAYS` (30) | yes | Loki compactor; the API writes the override into Loki's runtime overrides (full profile) |
-| replays | 7 days | yes | API leader job `replay-retention` (hourly): sessions that ended before the cutoff (objects + `replay_sessions` rows); a 365-day bucket lifecycle rule on `replays/` removes orphaned objects |
-| heatmaps | 90 days | yes | API leader job `heatmaps-retention` (hourly) on the Postgres `heatmap_*` aggregates |
-| traces | `TELEMETRY_RETENTION_DAYS` (30) | **no** | Tempo compactor, cluster-wide |
-| profiles | `TELEMETRY_RETENTION_DAYS` (30) | **no** | Pyroscope, cluster-wide |
+1. Under **Delete a person's data**, enter a **User id** (the id your app sends as `user.id`), a **Session id**, or both.
+2. Optionally enter their **Email**. Only a hash of it is kept, in the audit log, as a record of the request.
+3. Click **Delete this data**.
 
-`PUT /api/projects/:id/privacy/retention` takes integers 1..365 for `logs`, `replays`,
-`errors` and `heatmaps`; `null` clears an override (back to the default); omitted keys are unchanged. Tempo and
-Pyroscope run single-tenant, so a per-project period cannot be enforced: `traces` / `profiles`
-values are rejected with `400` (send `null` or omit them) and older stored values are ignored.
-`GET /api/projects/:id/privacy` returns the effective `retentionDays`, the stored
-`retentionOverrides` and `retentionScope` (`project` / `cluster`). The API learns the cluster
-period from `TELEMETRY_RETENTION_DAYS` (set by platformctl on the API Deployment).
+This removes the person's log entries and error events, their consent records, their session replays, and matching log lines in the log store. The result shows what was removed and any warnings. A step that fails does not stop the others.
 
-**Errors**: every hour the leader deletes `error_events` older than the project's errors retention
-in bounded batches (`ERROR_RETENTION_BATCH`, default 5000 rows, at most
-`ERROR_RETENTION_MAX_BATCHES`, default 20, per project per run; a backlog is cleared over the next
-runs). Issues that have no events left and were last seen before the cutoff are deleted, so they
-disappear from the issue list. Issues that still have events keep their lifetime `count`,
-`first_seen` and per-release counts; the event samples are the retained ones. An error that returns
-after its issue was removed opens a new issue ("New issue" alert, not "Regression").
+Matching log lines disappear from search after about 5 minutes. They are removed from storage after about 24 hours.
 
-**Logs**: Loki's global `retention_period` is `TELEMETRY_RETENTION_DAYS`. For each project with a
-logs override the API keeps two `retention_stream` rules under the `fake` tenant in the
-`loki-runtime` ConfigMap (`monitoring` namespace): `{platform_project_id="<id>"}` (Alloy) and
-`{project_id="<id>"}` (API-forwarded SDK logs), period = days × 24h. Loki re-reads the file within
-seconds; the compactor deletes expired chunks (after its delete delay). The leader re-applies the
-rules every 10 minutes (`LOKI_RETENTION_RECONCILE_MS`) because a `helm upgrade` of Loki resets the
-ConfigMap, and immediately after a project's logs setting changes. Other keys in the runtime config
-are kept. RBAC: `get`/`update` on that one ConfigMap (Role `platform-alerting`, full profile only).
-Set `LOKI_RETENTION_OVERRIDES=disabled` to stop managing it. Without the full profile there is no
-Loki and only the stored value changes. Earlier versions shipped static `retention_stream` rules on a
-`telemetry_type` label; Alloy streams do not carry it, error events live in Postgres and replays in
-MinIO, so those rules were removed. (API-forwarded SDK lines at level `ERROR` still carry
-`telemetry_type="errors"`; they are log lines and follow the logs retention.)
+Heatmaps are anonymous counts, so there is nothing to delete there.
 
-## GDPR delete
+## How it works
 
-`POST /api/projects/:projectId/privacy/gdpr-delete` (project **owner**):
+### Where data is stored
 
-1. Mongo `logs` / `errors` matching `userId` / `sessionId` (fields or message)
-2. Postgres `error_events` (error tracking) whose payload carries the `userId` / `sessionId`
-3. `telemetry_consents` rows + Redis consent cache
-4. Session replays of the subject (sessions found through `replay_sessions` by user / subject id,
-   or the given session): MinIO objects under `replays/{projectId}/{sessionId}/` and the rows
-   (when `REPLAYS_*` / MinIO env is set)
-5. One Loki delete request per identifier: `{platform_project_id="<project>"} |= "<userId>"`
-   (and the same for `sessionId`), from the start of the data
-6. Audit `privacy.gdpr_delete` with counts, warnings and optional `emailHash`
+| Store | What | Identifiers | Default retention | How it is deleted |
+|---|---|---|---|---|
+| Grafana Alloy, then Loki | OTLP and Faro logs, pod logs, SDK logs forwarded by the API | `platform_project_id` (Alloy) or `project_id` (API) labels; optional `user.id` or session in the body | 30 days (`TELEMETRY_RETENTION_DAYS`); per-project logs override through Loki runtime overrides | Loki delete API (`POST /loki/api/v1/delete`) |
+| Tempo | Traces and span attributes | `platform.project_id` | 30 days (global, single-tenant) | Compactor retention only |
+| Pyroscope | Profiles | project labels | 30 days | Compactor retention only |
+| Prometheus | Metrics | project and environment dimensions from Tempo generators | 30 days | Prometheus retention |
+| MongoDB `logs` | SDK logs sent through the API | `projectId`, optional `userId` or `sessionId` | 30-day TTL index | GDPR delete and TTL |
+| MongoDB `errors` | Aggregated error documents | `projectId`, optional `userId` or `sessionId` | Not pruned automatically | GDPR delete |
+| Postgres `error_events` and `error_issues` | Error tracking events and issues | `project_id`, event payload | Project `errors` setting, default 90 days (`error-retention` job) | Retention job; GDPR delete (events); project delete |
+| MinIO `replays` and Postgres `replay_sessions` / `replay_chunks` | Session replay chunks | `replays/{projectId}/{sessionId}/{seq}.json.gz`; `user_id` and `subject_id` on `replay_sessions` | Project `replays` setting, default 7 days (`replay-retention` job), plus a 365-day bucket lifecycle backstop | GDPR delete; retention job; lifecycle |
+| Postgres `heatmap_*` | Click and scroll aggregates per page, viewport and day | `project_id` only (no user, session or IP) | Project `heatmaps` setting, default 90 days (`heatmaps-retention` job) | Retention job; project delete |
+| Postgres `telemetry_consents` | Consent per subject | `project_id`, `subject_id`, `session_id` | Until withdrawn or GDPR delete | GDPR delete |
+| Postgres `telemetry_privacy_settings` | Per-project rules | `project_id` | Configuration | Project delete (manual) |
+| Postgres `audit_logs` | `privacy.*` actions | actor user id; e-mail only as SHA-256 | Cairn audit retention | Not purged by GDPR delete |
 
-The response reports what was removed (`deleted.logs`, `errors`, `consents`,
-`replayObjects`, `lokiRequests`) and any `warnings` (for example an unreachable backend);
-a step that fails does not stop the others.
+E-mails given to GDPR delete are never stored in clear text. Only `sha256(lower(email))` appears in audit metadata.
 
-**Loki timing.** Loki accepts the delete request immediately (status `received`) and
-filters the matching lines out of query results once its queriers refresh their delete
-requests, about 5 minutes later. The compactor removes the data from storage after
-`delete_request_cancel_period` (24 h by default); until then the request can still be
-cancelled through Loki's delete API. Other lines in the same streams are kept.
+### Scrubbing
 
-## Profiles / install weight
+- In the collector (full profile), `otelcol.processor.transform "pii_scrub"` runs after identity is set and before batching, on traces and logs (not metrics, not `/pyroscope`). Token patterns include `sdk_live_`, `sdk_test_`, `plat_agent_` and `plat_ingest_`, plus Authorization, Bearer and Basic values. Kubernetes pod logs go through `loki.process "pii_scrub"` with the same replacements.
+- On the API path, `processLogs` applies `lib/pii-scrub.ts` (built-in rules, project rules, optional IP rule) before the MongoDB insert and the Loki push. Card matches there must pass a Luhn check.
+- Standard and minimal installs have no collector. They keep API scrubbing and the privacy settings. The collector processors and the `replays` bucket exist only with the full profile (`PLATFORM_OBSERVABILITY=enabled`).
 
-Heavy collector processors and the `replays` MinIO bucket are created only with the
-**full** profile (`PLATFORM_OBSERVABILITY=enabled`). Standard/minimal installs keep
-API scrubbing + privacy settings without Alloy.
+### Consent for session replay
+
+Helpers `isReplayAllowed`, `resolveConsent` and `upsertConsent` are in `platform/api/src/lib/privacy-consent.ts`. A session's `user_id` and `subject_id` are kept in `replay_sessions`, so GDPR delete and retention can find every session of a subject.
+
+### Retention: what actually applies
+
+- Retention values are integers 1–365. Tempo and Pyroscope run single-tenant, so a per-project period cannot be enforced: `traces` and `profiles` values are rejected with 400, and older stored values are ignored. The API learns the cluster period from `TELEMETRY_RETENTION_DAYS`, set by platformctl on the API Deployment.
+- **Errors:** every hour the leader deletes `error_events` older than the project's setting in bounded batches (`ERROR_RETENTION_BATCH`, default 5000 rows, at most `ERROR_RETENTION_MAX_BATCHES`, default 20, per project per run; a backlog is cleared over the next runs). Issues with no events left that were last seen before the cutoff are deleted. Issues that still have events keep their lifetime `count`, `first_seen` and per-release counts. An error that returns after its issue was removed opens a new issue ("New issue" alert, not "Regression").
+- **Logs:** Loki's global `retention_period` is `TELEMETRY_RETENTION_DAYS`. For each project with a logs override, the API keeps two `retention_stream` rules under the `fake` tenant in the `loki-runtime` ConfigMap (`monitoring` namespace): `{platform_project_id="<id>"}` (Alloy) and `{project_id="<id>"}` (API-forwarded SDK logs), with period = days × 24h. Loki re-reads the file within seconds; the compactor deletes expired chunks after its delete delay. The leader re-applies the rules every 10 minutes (`LOKI_RETENTION_RECONCILE_MS`), because a `helm upgrade` of Loki resets the ConfigMap, and right after a project's logs setting changes. Other keys are kept. RBAC: `get` and `update` on that one ConfigMap (Role `platform-alerting`, full profile only). Set `LOKI_RETENTION_OVERRIDES=disabled` to stop managing it. Without the full profile there is no Loki and only the stored value changes. API-forwarded SDK lines at level `ERROR` carry `telemetry_type="errors"`; they are log lines and follow the logs retention.
+- **Replays:** the hourly `replay-retention` job deletes sessions that ended before the cutoff (objects and `replay_sessions` rows). The 365-day lifecycle rule on `replays/` removes orphaned objects.
+- **Heatmaps:** the hourly `heatmaps-retention` job prunes the `heatmap_*` aggregates.
+
+### What GDPR delete does
+
+1. Deletes MongoDB `logs` and `errors` documents matching `userId` or `sessionId` (fields or message).
+2. Deletes Postgres `error_events` whose payload carries the `userId` or `sessionId`.
+3. Deletes `telemetry_consents` rows and clears the Redis consent cache.
+4. Deletes the subject's session replays (found through `replay_sessions` by user or subject id, or the given session): MinIO objects under `replays/{projectId}/{sessionId}/` and the rows, when replay storage is configured.
+5. Sends one Loki delete request per identifier: `{platform_project_id="<project>"} |= "<userId>"` (and the same for `sessionId`), from the start of the data.
+6. Writes the audit entry `privacy.gdpr_delete` with counts, warnings and the optional `emailHash`.
+
+Loki accepts a delete request at once (status `received`) and hides the matching lines from queries once its queriers refresh, about 5 minutes later. The compactor removes the data after `delete_request_cancel_period` (24 hours by default); until then the request can be cancelled through Loki's delete API. Other lines in the same streams are kept.
+
+## For developers / API
+
+| Method and path | Who | Purpose |
+|---|---|---|
+| `GET /api/projects/:id/privacy` | Project viewer | Settings, effective `retentionDays`, stored `retentionOverrides`, `retentionScope` (`project` or `cluster`) |
+| `PUT /api/projects/:id/privacy/scrubbing` | Project devops | Custom rules and IP toggle |
+| `PUT /api/projects/:id/privacy/retention` | Project devops | Integers 1–365 for `logs`, `replays`, `errors`, `heatmaps`; `null` clears an override; omitted keys are unchanged |
+| `PUT /api/projects/:id/privacy/consent-defaults` | Project devops | Defaults when a subject has no consent record |
+| `GET /api/projects/:id/privacy/consent?subjectId=` | Project viewer | Inspect a subject's consent |
+| `PUT /api/projects/:id/privacy/consent` | Project devops | Override a subject's consent |
+| `POST /api/projects/:projectId/privacy/gdpr-delete` | Project owner | Delete a subject's data |
+| `GET /api/sdk/privacy/replay-allowed?subjectId=&sessionId=` | SDK token (browser or server) | Whether replay may start |
+| `GET` and `PUT /api/sdk/privacy/consent` | SDK token (browser or server) or signed-in user | Read or record consent from your app |
+
+The GDPR delete response reports `deleted.logs`, `errors`, `consents`, `replayObjects` and `lokiRequests`, plus any `warnings` (for example an unreachable backend).

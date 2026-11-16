@@ -30,7 +30,12 @@ esac
 `
 
 func checkActiveOperations() error {
-	pod, err := uk("-n", "databases", "get", "pods", "-l", "app.kubernetes.io/name=postgresql", "-o", "jsonpath={.items[0].metadata.name}")
+	pod, err := uk("-n", "databases", "get", "pods", "-l", "cnpg.io/cluster=postgresql,cnpg.io/instanceRole=primary", "-o", "jsonpath={.items[0].metadata.name}")
+	container := "postgres"
+	if err != nil || strings.TrimSpace(pod) == "" {
+		pod, err = uk("-n", "databases", "get", "pods", "-l", "app.kubernetes.io/name=postgresql", "-o", "jsonpath={.items[0].metadata.name}")
+		container = "postgresql"
+	}
 	if err != nil {
 		return fmt.Errorf("find PostgreSQL for active-operation check: %w", err)
 	}
@@ -39,7 +44,7 @@ func checkActiveOperations() error {
 	}
 	// -c: the full profile adds a metrics sidecar, and kubectl then prints
 	// "Defaulted container ..." into the combined output this parses.
-	raw, err := uk("-n", "databases", "exec", pod, "-c", "postgresql", "--", "bash", "-ec", operationsShell, "--", operationsSQL)
+	raw, err := uk("-n", "databases", "exec", pod, "-c", container, "--", "bash", "-ec", operationsShell, "--", operationsSQL)
 	if err != nil {
 		return fmt.Errorf("query active operations: %w", err)
 	}
@@ -60,5 +65,5 @@ func checkActiveOperations() error {
 	for _, op := range result.Recent {
 		recent = append(recent, fmt.Sprintf("type=%s status=%s updatedAt=%s", op.Type, op.Status, op.UpdatedAt))
 	}
-	return fmt.Errorf("%d active operations; wait for completion before upgrading; newest: %s", *result.Count, strings.Join(recent, "; "))
+	return fmt.Errorf("%d active operation(s); wait for completion before upgrading; newest: %s", *result.Count, strings.Join(recent, "; "))
 }

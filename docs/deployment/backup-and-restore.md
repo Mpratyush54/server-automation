@@ -1,395 +1,118 @@
-# Backup & Restore Procedures
+# Back up a database by hand
 
-Platform uses three data stores (PostgreSQL, MongoDB, Redis) and MinIO for object storage. This document covers backup and restore for each.
+Copy one database or bucket with standard tools, for example before a risky change or to move data elsewhere. Everything here runs in a shell on the server; there is nothing to click in the portal.
 
----
+For regular, encrypted, off-site backups of the whole server, use `platformctl backup --all` instead. See [Back up and restore your server](../operations/backups.md). It captures every component, checks its work and restores in the right order.
 
-## Backup Strategy Overview
+## Before you start
 
-| Component | Tool | Schedule | Retention |
-|---|---|---|---|
-| PostgreSQL | `pg_dump` | Daily (cron) | 7 days local + 30 days MinIO |
-| MongoDB | `mongodump` | Daily (cron) | 7 days local + 30 days MinIO |
-| Redis | `redis-cli SAVE` / `redis-dump-go` | On-demand only | N/A |
-| MinIO | `mc mirror` or API | Weekly cross-bucket | 90 days |
-| Kubernetes resources | `kubectl get all --all-namespaces` | On-demand | N/A |
+Run these as root on a single-server install:
 
----
+```bash
+sudo -i
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+mkdir -p /root/manual-backups && cd /root/manual-backups
+```
+
+The commands run the database tools that already exist inside the database containers, and read each password inside the container. You do not need to install database clients or type passwords.
+
+## Quick copy of settings and passwords
+
+```bash
+sudo platformctl backup
+```
+
+This copies `/etc/platform/.env` and the platform and database Secrets to `/var/lib/platform/backups/<timestamp>/`. It is not encrypted and stays on the same disk. Do this before rotating secrets or editing settings.
 
 ## PostgreSQL
 
-### Connection Details
-
-- **Host:** `postgresql.databases` (in-cluster) or `localhost` (port-forwarded)
-- **Port:** 5432
-- **Database:** `platform`
-- **User:** `postgres`
-- **Password:** stored in `/etc/platform/.env` as `POSTGRES_PASSWORD`
-
-### Backup (pg_dump)
+Back up the platform's own database (`platform`). Use a project database name, such as `plat_<project>_production`, to back up a project instead:
 
 ```bash
-# Dump the platform database
-pg_dump -h localhost -U postgres -d platform \
-  --no-owner --no-acl \
-  -F c -f /tmp/backups/platform_$(date +%Y%m%d_%H%M%S).dump
-
-# Plain SQL format (easier to grep, larger)
-pg_dump -h localhost -U postgres -d platform \
-  --no-owner --no-acl \
-  -f /tmp/backups/platform_$(date +%Y%m%d_%H%M%S).sql
+PG=$(kubectl -n databases get pods -l app.kubernetes.io/instance=postgresql -o jsonpath='{.items[0].metadata.name}')
+kubectl -n databases exec "$PG" -c postgresql -- bash -c \
+  'PGPASSWORD="${POSTGRES_PASSWORD:-$(cat "$POSTGRES_PASSWORD_FILE")}" pg_dump -U postgres -Fc platform' \
+  > platform-$(date +%Y%m%d-%H%M%S).dump
 ```
 
-### Port-Forward for Remote Backup
+Check the file lists database objects:
 
 ```bash
-# From a remote machine with kubectl access
-kubectl port-forward -n databases svc/postgresql 5432:5432 &
-sleep 2
-pg_dump -h localhost -U postgres -d platform -F c -f backup.dump
-kill %1
+kubectl -n databases exec -i "$PG" -c postgresql -- pg_restore -l < platform-20260101-120000.dump | head
 ```
 
-### Automated Daily Backup (cron)
+Restore it. This replaces the objects in the dump:
 
 ```bash
-# Add to crontab
-0 2 * * * /usr/local/bin/backup-postgres.sh
-
-# Script: /usr/local/bin/backup-postgres.sh
-#!/bin/bash
-source /etc/platform/.env
-BACKUP_DIR="/tmp/backups/postgres"
-mkdir -p "$BACKUP_DIR"
-DATE=$(date +%Y%m%d_%H%M%S)
-pg_dump -h postgresql.databases -U postgres -d platform \
-  --no-owner --no-acl \
-  -F c -f "$BACKUP_DIR/platform_$DATE.dump"
-# Upload to MinIO
-kubectl exec -n storage deploy/minio -- mc alias set local \
-  http://localhost:9000 "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
-kubectl cp "$BACKUP_DIR/platform_$DATE.dump" \
-  storage/minio-0:/tmp/
-kubectl exec -n storage deploy/minio -- mc cp \
-  /tmp/platform_$DATE.dump local/platform-backups/postgres/
-# Cleanup old files (older than 7 days)
-find "$BACKUP_DIR" -name "*.dump" -mtime +7 -delete
+kubectl -n databases exec -i "$PG" -c postgresql -- bash -c \
+  'PGPASSWORD="${POSTGRES_PASSWORD:-$(cat "$POSTGRES_PASSWORD_FILE")}" pg_restore -U postgres -d platform --clean --if-exists' \
+  < platform-20260101-120000.dump
 ```
 
-### Restore
-
-```bash
-# Restore from custom format dump
-pg_restore -h localhost -U postgres -d platform \
-  --clean --if-exists --no-owner --no-acl \
-  -v /tmp/backups/platform_20260101_120000.dump
-
-# Restore from SQL dump
-psql -h localhost -U postgres -d platform \
-  -f /tmp/backups/platform_20260101_120000.sql
-```
-
-### Verify Backup Integrity
-
-```bash
-pg_restore -l /tmp/backups/platform_20260101_120000.dump | head -20
-# If this lists the database objects, the dump is valid.
-```
-
----
+Scale the API down first when restoring the platform database: `kubectl -n platform scale deploy/platform-api --replicas=0`. Scale it back up afterwards.
 
 ## MongoDB
 
-### Connection Details
-
-- **Host:** `mongodb.databases` (in-cluster) or `localhost` (port-forwarded)
-- **Port:** 27017
-- **Database:** `platform`
-- **Auth DB:** `admin`
-- **User:** `root`
-- **Password:** stored in `/etc/platform/.env` as `MONGO_PASSWORD`
-
-### Backup (mongodump)
-
 ```bash
-# Full backup of platform database
-mongodump --uri="mongodb://root:$MONGO_PASSWORD@localhost:27017/platform?authSource=admin" \
-  --out=/tmp/backups/mongo_$(date +%Y%m%d_%H%M%S)
-
-# Archive format (single file, more portable)
-mongodump --uri="mongodb://root:$MONGO_PASSWORD@localhost:27017/platform?authSource=admin" \
-  --archive=/tmp/backups/mongo_$(date +%Y%m%d_%H%M%S).archive
-
-# Gzip compression
-mongodump --uri="mongodb://root:$MONGO_PASSWORD@localhost:27017/platform?authSource=admin" \
-  --gzip --archive=/tmp/backups/mongo_$(date +%Y%m%d_%H%M%S).archive.gz
+MG=$(kubectl -n databases get pods -l app.kubernetes.io/instance=mongodb --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')
+kubectl -n databases exec "$MG" -- bash -c \
+  'mongodump --username root --password "${MONGODB_ROOT_PASSWORD:-$(cat "$MONGODB_ROOT_PASSWORD_FILE")}" --authenticationDatabase admin --archive --gzip' \
+  > mongo-$(date +%Y%m%d-%H%M%S).archive.gz
 ```
 
-### Backup Specific Collections
+Add `--db <name>` inside the quotes to dump one database. Restore, replacing the collections in the archive:
 
 ```bash
-mongodump --uri="mongodb://root:$MONGO_PASSWORD@localhost:27017/platform?authSource=admin" \
-  --collection=deployments \
-  --out=/tmp/backups/mongo_deployments
+kubectl -n databases exec -i "$MG" -- bash -c \
+  'mongorestore --username root --password "${MONGODB_ROOT_PASSWORD:-$(cat "$MONGODB_ROOT_PASSWORD_FILE")}" --authenticationDatabase admin --archive --gzip --drop' \
+  < mongo-20260101-120000.archive.gz
 ```
-
-### Port-Forward for Remote Backup
-
-```bash
-kubectl port-forward -n databases svc/mongodb 27017:27017 &
-mongodump --uri="mongodb://root:$MONGO_PASSWORD@localhost:27017/platform?authSource=admin" \
-  --out=./mongo-backup
-kill %1
-```
-
-### Restore
-
-```bash
-# Restore from directory
-mongorestore --uri="mongodb://root:$MONGO_PASSWORD@localhost:27017/platform?authSource=admin" \
-  /tmp/backups/mongo_20260101_120000/platform/
-
-# Restore from archive
-mongorestore --uri="mongodb://root:$MONGO_PASSWORD@localhost:27017/platform?authSource=admin" \
-  --archive=/tmp/backups/mongo_20260101_120000.archive
-
-# Restore from gzipped archive
-mongorestore --uri="mongodb://root:$MONGO_PASSWORD@localhost:27017/platform?authSource=admin" \
-  --gzip --archive=/tmp/backups/mongo_20260101_120000.archive.gz
-```
-
-### Drop Database Before Restore
-
-```bash
-mongosh "mongodb://root:$MONGO_PASSWORD@localhost:27017/platform?authSource=admin" \
-  --eval "db.dropDatabase()"
-mongorestore --uri="mongodb://root:$MONGO_PASSWORD@localhost:27017/platform?authSource=admin" \
-  --drop /tmp/backups/mongo_20260101_120000/platform/
-```
-
----
 
 ## Redis
 
-### Connection Details
-
-- **Host:** `redis-master.databases` (in-cluster) or `localhost` (port-forwarded)
-- **Port:** 6379
-- **Password:** stored in `/etc/platform/.env` as `REDIS_PASSWORD`
-
-### Backup (RDB Snapshot)
+Redis holds project data as well as caches. Save a snapshot and copy it out:
 
 ```bash
-# Trigger a BGSAVE inside the pod
-kubectl exec -n databases redis-master-0 -- redis-cli -a "$REDIS_PASSWORD" BGSAVE
-
-# The dump.rdb file is at /data/dump.rdb inside the pod
-kubectl cp databases/redis-master-0:/data/dump.rdb /tmp/backups/redis_$(date +%Y%m%d_%H%M%S).rdb
+RD=$(kubectl -n databases get pods -l app.kubernetes.io/instance=redis,app.kubernetes.io/component=master -o jsonpath='{.items[0].metadata.name}')
+kubectl -n databases exec "$RD" -c redis -- bash -c \
+  'REDISCLI_AUTH="${REDIS_PASSWORD:-$(cat "$REDIS_PASSWORD_FILE")}" redis-cli BGSAVE'
+# wait until this shows rdb_bgsave_in_progress:0 and rdb_last_bgsave_status:ok
+kubectl -n databases exec "$RD" -c redis -- bash -c \
+  'REDISCLI_AUTH="${REDIS_PASSWORD:-$(cat "$REDIS_PASSWORD_FILE")}" redis-cli INFO persistence' | grep rdb_
+kubectl -n databases exec "$RD" -c redis -- cat /data/dump.rdb > redis-$(date +%Y%m%d-%H%M%S).rdb
 ```
 
-### CLI-Based Backup
+Restoring a snapshot by hand needs Redis stopped and its append-only file rebuilt. Use `platformctl restore --component redis` from a full backup instead.
+
+## Uploaded files
+
+Files live in the bundled file storage, in the `platform-uploads` bucket. Copy them with the AWS command-line tool, which works with any S3-compatible storage. Install it with `sudo snap install aws-cli --classic`, then, as root on the server:
 
 ```bash
-# Export all keys via redis-cli
-kubectl exec -n databases redis-master-0 -- sh -c '
-  redis-cli -a "$REDIS_PASSWORD" --scan | \
-  while read key; do
-    redis-cli -a "$REDIS_PASSWORD" dump "$key"
-  done
-' > /tmp/backups/redis_$(date +%Y%m%d_%H%M%S).json
+IP=$(kubectl -n storage get svc minio -o jsonpath='{.spec.clusterIP}')
+export AWS_ACCESS_KEY_ID=$(kubectl -n storage get secret minio -o jsonpath='{.data.root-user}' | base64 -d)
+export AWS_SECRET_ACCESS_KEY=$(kubectl -n storage get secret minio -o jsonpath='{.data.root-password}' | base64 -d)
+export AWS_DEFAULT_REGION=us-east-1
+aws s3 sync s3://platform-uploads ./files/platform-uploads --endpoint-url "http://$IP:9000"
 ```
 
-### Restore
-
-```bash
-# Copy the backup into the pod
-kubectl cp /tmp/backups/redis_20260101_120000.rdb \
-  databases/redis-master-0:/data/dump.rdb
-
-# Restart Redis to load the dump
-kubectl rollout restart statefulset redis-master -n databases
-kubectl rollout status statefulset redis-master -n databases
-
-# Or use the CLI to manually set keys (for JSON backup)
-kubectl exec -n databases redis-master-0 -- redis-cli -a "$REDIS_PASSWORD" FLUSHALL
-kubectl exec -n databases redis-master-0 -- sh -c '
-  while read -r line; do
-    echo "$line" | redis-cli -a "$REDIS_PASSWORD" -x restore key 0
-  done
-' < /tmp/backups/redis_export.json
-```
-
-> **Note:** Redis data is ephemeral for session caching. If Redis is lost, the application will recreate sessions. Prioritize PostgreSQL and MongoDB backups.
-
----
-
-## MinIO (Object Storage)
-
-### Backup via `mc` Client
-
-```bash
-# Configure mc client inside the pod
-kubectl exec -n storage deploy/minio -- mc alias set local \
-  http://localhost:9000 "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
-
-# List buckets
-kubectl exec -n storage deploy/minio -- mc ls local/
-
-# Mirror a bucket to another location
-kubectl exec -n storage deploy/minio -- mc mirror \
-  local/platform-backups local/backup-archive/
-
-# Backup to local filesystem
-kubectl exec -n storage deploy/minio -- mc cp \
-  --recursive local/platform-backups/ /tmp/minio-backup/
-kubectl cp storage/minio-0:/tmp/minio-backup /tmp/backups/minio_$(date +%Y%m%d)
-```
-
-### Backup via MinIO API (S3-Compatible)
-
-```bash
-# Using AWS CLI (MinIO is S3-compatible)
-aws --endpoint-url http://localhost:9000 \
-  s3 sync s3://platform-backups \
-  /tmp/backups/minio_$(date +%Y%m%d) \
-  --access-key "$MINIO_ACCESS_KEY" \
-  --secret-key "$MINIO_SECRET_KEY"
-```
-
-### Restore
-
-```bash
-# From mc
-kubectl exec -n storage deploy/minio -- mc cp \
-  --recursive /tmp/minio-backup/ local/platform-backups/
-
-# From AWS CLI
-aws --endpoint-url http://localhost:9000 \
-  s3 sync /tmp/backups/minio_20260101 s3://platform-backups \
-  --access-key "$MINIO_ACCESS_KEY" \
-  --secret-key "$MINIO_SECRET_KEY"
-```
-
----
-
-## Kubernetes Resources
-
-### Backup All Resources (YAML)
-
-```bash
-# Backup all resources to YAML files
-NAMESPACES="platform databases monitoring storage argocd portainer"
-for ns in $NAMESPACES; do
-  kubectl get all,configmap,secret,ingress,pvc -n "$ns" \
-    -o yaml > "/tmp/backups/k8s_${ns}_$(date +%Y%m%d).yaml"
-done
-```
-
-### Restore
-
-```bash
-kubectl apply -f /tmp/backups/k8s_platform_20260101.yaml
-```
-
----
-
-## Full Backup Script
-
-Save as `/usr/local/bin/backup-all.sh`:
-
-```bash
-#!/bin/bash
-source /etc/platform/.env
-DATE=$(date +%Y%m%d_%H%M%S)
-BACKUP_DIR="/tmp/backups/full_$DATE"
-mkdir -p "$BACKUP_DIR"
-
-echo "[$DATE] Starting full backup..."
-
-# PostgreSQL
-echo "  Backing up PostgreSQL..."
-pg_dump -h postgresql.databases -U postgres -d platform \
-  -F c -f "$BACKUP_DIR/postgres.dump"
-
-# MongoDB
-echo "  Backing up MongoDB..."
-mongodump --uri="mongodb://root:$MONGO_PASSWORD@mongodb.databases:27017/platform?authSource=admin" \
-  --gzip --archive="$BACKUP_DIR/mongo.archive.gz"
-
-# Kubernetes
-echo "  Backing up Kubernetes resources..."
-for ns in platform databases monitoring storage argocd portainer; do
-  kubectl get all,configmap,secret,ingress,pvc -n "$ns" -o yaml > "$BACKUP_DIR/k8s_$ns.yaml" 2>/dev/null
-done
-
-# MinIO
-echo "  Backing up MinIO..."
-kubectl exec -n storage deploy/minio -- mc alias set local \
-  http://localhost:9000 "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" 2>/dev/null
-kubectl exec -n storage deploy/minio -- mc mirror \
-  local/platform-backups local/backup-archive/ 2>/dev/null
-
-# Compress
-echo "  Compressing backup..."
-tar -czf "$BACKUP_DIR.tar.gz" -C /tmp/backups "full_$DATE"
-rm -rf "$BACKUP_DIR"
-
-echo "[$(date +%Y%m%d_%H%M%S)] Backup complete: $BACKUP_DIR.tar.gz"
-```
-
-Make it executable and schedule:
-
-```bash
-chmod +x /usr/local/bin/backup-all.sh
-echo "0 3 * * * /usr/local/bin/backup-all.sh" | crontab -
-```
-
----
-
-## Restore Procedures Summary
-
-### Full Disaster Recovery
-
-```bash
-# 1. Ensure k3s is running and namespaces exist
-kubectl get nodes
-
-# 2. Restore Kubernetes resources (ingress, services, deployments)
-kubectl apply -f k8s_platform.yaml
-kubectl apply -f k8s_databases.yaml
-kubectl apply -f k8s_monitoring.yaml
-kubectl apply -f k8s_storage.yaml
-
-# 3. Wait for databases to be ready
-kubectl wait --for=condition=Available deployment/postgresql -n databases --timeout=300s
-
-# 4. Restore PostgreSQL
-pg_restore -h postgresql.databases -U postgres -d platform \
-  --clean --if-exists postgres.dump
-
-# 5. Restore MongoDB
-mongorestore --uri="mongodb://root:$MONGO_PASSWORD@mongodb.databases:27017/platform?authSource=admin" \
-  --gzip --archive=mongo.archive.gz --drop
-
-# 6. Restart Platform pods
-kubectl rollout restart deployment -n platform
-```
-
-### Point-in-Time Recovery Guidelines
-
-- **PostgreSQL:** Use WAL archiving for PITR (see `postgresql` Helm chart values)
-- **MongoDB:** Use oplog replay (`mongorestore --oplogReplay`)
-- **MinIO:** Maintain versioning enabled on buckets for object-level recovery
-
----
+To restore, sync the other way: `aws s3 sync ./files/platform-uploads s3://platform-uploads --endpoint-url "http://$IP:9000"`. The keys stay in the shell's environment only; run `unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY` when you are done.
 
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
-|---|---|---|
-| `pg_dump: error: connection refused` | PostgreSQL pod not ready or port not forwarded | `kubectl wait --for=condition=Available deployment/postgresql -n databases` |
-| `mongodump: error: Authentication failed` | Wrong password or auth source | Use `?authSource=admin` in URI; verify password in `/etc/platform/.env` |
-| `mc: <ERROR> Unable to initialize` | MinIO pod not ready | `kubectl wait --for=condition=Available deployment/minio -n storage` |
-| Backup file is 0 bytes | Storage full or write permission denied | `df -h /tmp/backups`; ensure directory exists |
-| Restore fails with duplicate key | Existing data conflicts with restore | Use `--drop` (MongoDB) or `--clean --if-exists` (PostgreSQL) |
-| `kubectl cp` fails on large files | k3s exec limitation | Use `kubectl exec -- tar cf - /path` piped to local tar |
+| Symptom | Fix |
+|---|---|
+| `error: you must specify at least one pod` or an empty `$PG` | The pod is not running. Check `kubectl -n databases get pods`. |
+| `container postgresql is not valid` | You are on the `ha` profile. See How it works. |
+| `Authentication failed` from MongoDB | Keep `--authenticationDatabase admin`. Check the pod with `kubectl -n databases get pods -l app.kubernetes.io/instance=mongodb`. |
+| Backup file is 0 bytes | Check free space with `df -h` and read the command's error output. |
+| Restore fails with duplicate keys | Use `--clean --if-exists` (PostgreSQL) or `--drop` (MongoDB). |
+
+## How it works
+
+- The databases run in the `databases` namespace: PostgreSQL (service `postgresql.databases`, port 5432, superuser `postgres`), MongoDB (port 27017, user `root`, auth database `admin`) and Redis (port 6379). Uploaded files are in MinIO in the `storage` namespace.
+- The installer's passwords are also in `/etc/platform/.env` as `POSTGRES_PASSWORD`, `MONGO_PASSWORD` and `REDIS_PASSWORD`. Reading them inside the container, as above, keeps them out of shell history and process lists.
+- The database charts provide passwords either as environment variables or as `*_FILE` paths; the commands above handle both, the same way `platformctl backup --all` does.
+- On the `ha` profile, PostgreSQL runs as a CloudNativePG cluster. Find the primary with `-l cnpg.io/cluster=postgresql,cnpg.io/instanceRole=primary` and use container `postgres`. MongoDB is a replica set: dump from the primary. Redis uses Sentinel: the `component=master` label finds the current primary. HA also has continuous PostgreSQL backups with point-in-time recovery; see [High availability](../operations/ha.md).
+- Plain `platformctl backup` saves `env`, a README, and the `platform-env`, `platform-credentials`, `platform-oidc-signing-key`, `postgresql`, `redis` and (if present) `platform-rotate-pending` Secrets as YAML.
+- Earlier versions of this page described a daily cron job with fixed retention. No such job is installed; the only scheduled backup is the one `platformctl backup schedule` creates.

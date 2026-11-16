@@ -43,6 +43,12 @@ export interface StepContext<S extends Record<string, unknown> = Record<string, 
   setOutput(output: Record<string, unknown>): void;
   /** Queue a side effect; it is committed together with this step and dispatched afterwards. */
   emit(kind: string, payload: Record<string, unknown>): void;
+  /**
+   * Stop this run and retry the current step at or after `untilMs` (epoch ms). The operation
+   * stays non-terminal in the store; the leader's resume job picks it up once the time has
+   * passed (also after an API restart). A deferral does not count as an attempt.
+   */
+  defer(untilMs: number, note?: string): never;
 }
 
 export interface StepDefinition<S extends Record<string, unknown> = Record<string, unknown>> {
@@ -212,6 +218,19 @@ async function persist(store: OperationStore, rec: OperationRecord, fence: strin
 
 class OperationAbort extends Error {}
 
+class StepDeferred extends Error {
+  constructor(readonly until: number, readonly note?: string) {
+    super('step deferred');
+  }
+}
+
+/** Time a deferred operation's current step waits for (epoch ms), or null. */
+function waitingUntil(rec: OperationRecord): number | null {
+  const raw = rec.steps[rec.currentStep]?.output?.waitingUntil;
+  const at = raw instanceof Date ? raw.getTime() : typeof raw === 'string' ? Date.parse(raw) : NaN;
+  return Number.isFinite(at) ? at : null;
+}
+
 /**
  * Run (or resume) an operation to a terminal state. Acquires the operation's lock unless one
  * is passed in; throws LockBusyError when another runner holds it.
@@ -268,6 +287,7 @@ async function runOperationInner(id: string, opts: RunOptions): Promise<RunResul
       resumed,
       setOutput(output) { step.output = { ...(step.output || {}), ...output }; },
       emit(kind, payload) { outbox.push({ kind, payload }); },
+      defer(untilMs, note) { throw new StepDeferred(untilMs, note); },
     });
 
     const finish = async (status: OperationRecord['status'], error: string | null) => {
@@ -327,6 +347,7 @@ async function runOperationInner(id: string, opts: RunOptions): Promise<RunResul
       rec.status = 'running';
       await persist(store, rec, fence);
       let failed: string | null = null;
+      let deferred = false;
       for (let i = rec.currentStep; i < def.steps.length; i++) {
         const step = def.steps[i];
         const sr = rec.steps[i];
@@ -362,6 +383,19 @@ async function runOperationInner(id: string, opts: RunOptions): Promise<RunResul
           await step.run(makeCtx(sr, outbox));
         } catch (err) {
           if (err instanceof FencedError) throw err;
+          if (err instanceof StepDeferred) {
+            // Not an attempt: the step waits; the resume job re-runs it once the time has passed.
+            sr.status = 'pending';
+            sr.attempts = Math.max(0, sr.attempts - 1);
+            sr.startedAt = null;
+            const { waitingUntil: _w, waitingReason: _r, ...rest } = sr.output || {};
+            sr.output = { ...rest, waitingUntil: new Date(err.until).toISOString(), ...(err.note ? { waitingReason: err.note } : {}) };
+            rec.status = 'pending';
+            rec.state = state;
+            await persist(store, rec, fence, outbox);
+            deferred = true;
+            break;
+          }
           failed = `${step.name}: ${errMessage(err)}`;
           sr.status = 'failed';
           sr.error = errMessage(err);
@@ -372,12 +406,16 @@ async function runOperationInner(id: string, opts: RunOptions): Promise<RunResul
         }
         sr.status = 'succeeded';
         sr.finishedAt = new Date();
+        if (sr.output && 'waitingUntil' in sr.output) {
+          const { waitingUntil: _w, waitingReason: _r, ...rest } = sr.output;
+          sr.output = rest;
+        }
         rec.currentStep = i + 1;
         rec.state = state;
         await persist(store, rec, fence, outbox);
       }
       if (failed) await compensate(failed);
-      else await finish('succeeded', null);
+      else if (!deferred) await finish('succeeded', null);
     }
 
     // Deliver this operation's side effects now (best effort; the leader retries leftovers).
@@ -466,6 +504,9 @@ export async function resumeOperations(): Promise<{ resumed: string[]; busy: str
   }
   for (const op of pending) {
     if (activeRuns.has(op.id) || !registry.has(op.type)) continue;
+    // A deferred step is not due yet; check again on a later sweep.
+    const until = waitingUntil(op);
+    if (until !== null && until > Date.now()) continue;
     // A held lock means a live runner (here or on another replica) still owns the operation.
     const lock = await acquireLock(op.lockKey || `lock:operation:${op.id}`, { holder: op.id });
     if (!lock) {

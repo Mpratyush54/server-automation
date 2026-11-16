@@ -42,31 +42,18 @@ trap 'rm -rf "$WORK"' EXIT
 # build-bundle enumerates versions.All: includes full-profile Alloy/Tempo/Loki/
 # Pyroscope/blackbox charts as well as legacy standard-profile loki-stack.
 # gen-images.sh includes the scoped MinIO IAM bootstrap Job image too.
-ALLOW_MISSING_ARCH=1 STAGE_ONLY="$WORK/stage" IMAGE_GROUPS="${IMAGE_GROUPS:-8}" "$ROOT/scripts/build-bundle.sh" "stack-$STACK_VERSION" "$ARCH"
+ALLOW_MISSING_ARCH=1 SKIP_PACKAGES=1 STAGE_ONLY="$WORK/stage" IMAGE_GROUPS="${IMAGE_GROUPS:-8}" "$ROOT/scripts/build-bundle.sh" "stack-$STACK_VERSION" "$ARCH"
 manifest="$WORK/stage/manifest.json"
-k3s_version="$(jq -er .k3s "$manifest")"
 
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 cp "$WORK/stage/k3s/"*.tar.zst "$WORK/stage/images/"*.tar.zst "$OUT_DIR/"
 for f in "$WORK/stage/charts/"*.tgz; do cp "$f" "$OUT_DIR/chart-${f##*/}"; done
 
-# 2. The k3s binary and the install script of that exact release.
-fetch() { # fetch <url> <file>
-  local auth=()
-  if [[ -n "${GITHUB_TOKEN:-}" && "$1" == https://github.com/* ]]; then
-    auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
-  fi
-  curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors "${auth[@]}" -o "$2" "$1"
-}
-tag_enc="${k3s_version//+/%2B}"
-bin="k3s"; [[ "$ARCH" == arm64 ]] && bin="k3s-arm64"
-fetch "https://github.com/k3s-io/k3s/releases/download/$tag_enc/$bin" "$OUT_DIR/k3s"
-fetch "https://github.com/k3s-io/k3s/releases/download/$tag_enc/sha256sum-$ARCH.txt" "$WORK/k3s.sums"
-want="$(awk -v f="$bin" '$2 == f {print $1}' "$WORK/k3s.sums")"
-[[ "$(sha256sum "$OUT_DIR/k3s" | cut -d' ' -f1)" == "$want" ]] || die "k3s binary checksum mismatch"
-fetch "https://raw.githubusercontent.com/k3s-io/k3s/$tag_enc/install.sh" "$OUT_DIR/k3s-install.sh"
-head -1 "$OUT_DIR/k3s-install.sh" | grep -q '^#!/bin/sh' || die "k3s install.sh does not look like a shell script"
+# 2. The k3s binary and install script of that exact release (fetched and
+#    checksum-verified by build-bundle.sh). Node packages are for offline
+#    joins from the bundle only: the stack is downloaded on every provision.
+cp "$WORK/stage/k3s/k3s" "$WORK/stage/k3s/k3s-install.sh" "$OUT_DIR/"
 
 # 3. stack.json: what is in this stack.
 jq --arg stack "$STACK_VERSION" '{stackVersion: $stack, arch, k3s, created, charts, images}' "$manifest" >"$OUT_DIR/stack.json"

@@ -17,7 +17,7 @@ func TestTelemetryProfiles(t *testing.T) {
 	for _, profile := range []string{"", "minimal", "standard", "full", "ha"} {
 		for _, monitoring := range []bool{false, true} {
 			c := &config.Config{Profile: profile, InstallMonitoring: monitoring}
-			want := profile == "full" && monitoring
+			want := (profile == "full" || profile == "ha") && monitoring
 			if FullTelemetry(c) != want {
 				t.Fatalf("profile=%q monitoring=%v", profile, monitoring)
 			}
@@ -327,5 +327,15 @@ sleep() { :; }
 	out, err = runJobShell(t, fake("")+telemetryJobWaitScript("telemetry-storage-loki", 3))
 	if err == nil || !strings.Contains(out, "did not finish") {
 		t.Fatalf("timeout: err=%v out=%s", err, out)
+	}
+}
+
+func TestPrometheusHAArgsOnlyOnHA(t *testing.T) {
+	if got := prometheusHAArgs(&config.Config{Profile: config.ProfileFull}); got != nil {
+		t.Fatalf("full keeps the values-file sizing: %v", got)
+	}
+	got := strings.Join(prometheusHAArgs(&config.Config{Profile: config.ProfileHA}), " ")
+	if !strings.Contains(got, "prometheus.prometheusSpec.resources.limits.memory=2Gi") {
+		t.Fatalf("ha must raise the Prometheus memory limit: %s", got)
 	}
 }

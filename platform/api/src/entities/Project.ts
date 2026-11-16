@@ -1,5 +1,5 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn
+  Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn, Index
 } from 'typeorm';
 import { Environment } from './Environment';
 import { Deployment } from './Deployment';
@@ -12,6 +12,7 @@ export enum StackType {
 }
 
 @Entity('projects')
+@Index('projects_repository_key_active', ['repositoryKey'], { unique: true, where: 'is_active AND repository_key IS NOT NULL' })
 export class Project {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -27,6 +28,21 @@ export class Project {
 
   @Column({ type: 'text', nullable: true, name: 'repository_url' })
   repositoryUrl: string | null;
+
+  /** Normalised repositoryUrl (lib/repository-binding): unique across active projects. */
+  @Column({ type: 'text', nullable: true, name: 'repository_key' })
+  repositoryKey: string | null;
+
+  /** Platform administrator approval of the repository for source builds. */
+  @Column({ type: 'uuid', nullable: true, name: 'repository_approved_by' })
+  repositoryApprovedBy: string | null;
+
+  @Column({ type: 'timestamp', nullable: true, name: 'repository_approved_at' })
+  repositoryApprovedAt: Date | null;
+
+  /** The repository key the approval was given for; any other repository is unapproved. */
+  @Column({ type: 'text', nullable: true, name: 'repository_approved_key' })
+  repositoryApprovedKey: string | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true, name: 'default_branch' })
   defaultBranch: string | null;

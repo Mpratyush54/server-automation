@@ -1,11 +1,11 @@
-# Platform Documentation — LLM-Friendly Index
+# Cairn Documentation — LLM-Friendly Index
 
 This file provides a machine-readable index of all documentation pages for LLM context ingestion.
 
 ## File Index
 
-- `docs/index.md` — Main overview, architecture diagram, quick start, demo accounts
-- `docs/getting-started/installation.md` — Full local development setup
+- `docs/index.md` — What Cairn is, how to start, where to find things
+- `docs/getting-started/installation.md` — Install on a server (and local development at the end)
 - `docs/getting-started/project-structure.md` — Monorepo directory map
 - `docs/getting-started/first-project.md` — Create a project, get an SDK token
 - `docs/getting-started/node-sdk-quickstart.md` — Node.js SDK quickstart
@@ -13,18 +13,39 @@ This file provides a machine-readable index of all documentation pages for LLM c
 - `docs/getting-started/angular-sdk-quickstart.md` — Angular SDK quickstart
 - `docs/getting-started/python-sdk-quickstart.md` — Python SDK quickstart
 - `docs/getting-started/deploy-your-app.md` — Git push to preview URL pipeline
-- `docs/getting-started/upgrade-guide.md` — caps→platform migration guide
-- `docs/guides/authentication.md` — JWT flow, RBAC roles, OIDC/SSO
-- `docs/guides/mfa.md` — TOTP MFA, recovery codes, step-up, mfa.requiredRoles, break-glass
-- `docs/guides/secrets-management.md` — Secrets encryption, versioning, env scoping
+- `docs/getting-started/upgrade-guide.md` — Move an app from Caps to Cairn: SDK packages, settings and code changes
+- `docs/guides/databases.md` — Add a database to your app: PostgreSQL, MongoDB or Redis per environment; where credentials live
+- `docs/operations/recover.md` — Fix a broken install: status, recover, repair, mfa disable, restore
+- `docs/guides/authentication.md` — Control who can sign in: roles, permissions, built-in OIDC/SSO for bundled tools
+- `docs/guides/mfa.md` — Two-factor sign-in: TOTP, recovery codes, step-up, required roles, break-glass
+- `docs/guides/secrets-management.md` — Store secrets and settings for your app: Configuration > Variables, encryption, history, SDK config
 - `docs/guides/preview-environments.md` — Preview environment pipeline
-- `docs/guides/clickup-integration.md` — ClickUp webhook setup
-- `docs/guides/monitoring.md` — Grafana, Loki, Prometheus
-- `docs/guides/observability.md` — Portal fleet and project observability views: RED/APM, traces (TraceQL, waterfall), logs (LogQL, live tail), RUM, infra, profiles; project scoping, limits, API
-- `docs/guides/frontend-rum.md` — React/Angular SDK RUM (Faro): web vitals, errors, routes, traceparent, privacy, bundle size
-- `docs/guides/status-pages.md` — Public project status pages: components from synthetic checks, incidents/maintenance, branding, JSON/Atom/RSS feeds
-- `docs/guides/database-backups.md` — Automated pg_dump, restore workflow
-- `docs/guides/local-development.md` — Running everything locally
+- `docs/guides/monitoring.md` — See what your apps are doing: project Monitoring views, fleet Monitoring, Grafana
+- `docs/guides/observability.md` — Search logs, traces and metrics: Monitoring views (Overview, Logs, Traces, Users, Resources), limits, API
+- `docs/guides/frontend-rum.md` — Monitor real users in the browser: React/Angular SDK web vitals, errors, routes, session replay, privacy
+- `docs/guides/status-pages.md` — Publish a public status page: components from uptime checks, incidents, maintenance, feeds
+- `docs/guides/heatmaps.md` — See where visitors click and scroll: heatmaps in Monitoring > Users
+- `docs/observability/error-tracking.md` — Track and fix errors: grouping, assign/resolve, source maps, alerts
+- `docs/operations/alerting.md` — Get alerts when something breaks: channels, monitors, SLOs, silences, on-call
+- `docs/operations/synthetics.md` — Check that your site is up: HTTP, multistep and browser uptime checks
+- `docs/observability/releases.md` — Compare releases and roll back: release markers, before/after comparison
+- `docs/operations/telemetry.md` — Turn on full monitoring: the full install profile for traces, logs and profiles
+- `docs/operations/telemetry-privacy.md` — Privacy and data retention: scrubbing, consent, retention, GDPR delete
+- `docs/operations/database-monitoring.md` — See slow queries and database health per project
+- `docs/operations/storage-providers.md` — Store files in S3, R2 or another bucket: Settings > Storage
+- `docs/operations/backups.md` — Back up and restore your server: platformctl backup, schedule, restore, restore tests
+- `docs/operations/ha.md` — Run Cairn on several servers: ha profile, join, failover, datastores
+- `docs/operations/postgres-replication.md` — Synchronous or asynchronous database replication on three servers: what each risks, which to choose, how to switch
+- `docs/guides/host-hardening.md` — Secure the server: firewall, SSH, ingress defaults, optional WAF
+- `docs/guides/namespace-isolation.md` — How projects are kept apart: namespaces, network policies, quotas
+- `docs/operations/image-signing.md` — Check that Cairn images are genuine: scanning, signing, admission
+- `docs/mcp/overview.md` — Let an AI assistant work with your server: MCP overview
+- `docs/mcp/setup.md` — Connect Cursor or Claude to Cairn: agent tokens, MCP server setup
+- `docs/mcp/tools.md` — What an AI assistant can do: MCP tools, scopes, command policy and approvals
+- `docs/mcp/for-agents.md` — Rules for AI agents: protocol for agents using the Cairn MCP server
+- `docs/operations/upgrades.md` — Upgrade Cairn to a new release: platformctl upgrade, auto-upgrade, rollback
+- `docs/operations/platform-stack.md` — What the installer downloads: pinned component versions and channels
+- `docs/troubleshooting/README.md` — Find the fix for an error: index of troubleshooting pages
 - `docs/guides/testing.md` — Unit, integration, deployment tests
 - `docs/guides/production-checklist.md` — Pre-launch verification
 - `docs/api-reference/platform-api/auth.md` — Auth endpoints
@@ -59,11 +80,11 @@ This file provides a machine-readable index of all documentation pages for LLM c
 - `docs/architecture/database-schema.md` — Entity relationships
 - `docs/architecture/network-topology.md` — Ingress, DNS, subpath routing
 - `docs/deployment/bootstrap.md` — Full bootstrap walkthrough
-- `docs/deployment/rebuild-and-deploy.md` — Build → import → restart
-- `docs/deployment/update-secrets.md` — Update K8s secrets
+- `docs/deployment/rebuild-and-deploy.md` — Ship a change to the Cairn API or portal: image tags, platformctl update, migrations
+- `docs/deployment/update-secrets.md` — Rotate Cairn's own passwords: Settings > Rotate secrets, what is rotated, recovery
 - `docs/deployment/ssl-certificates.md` — Let's Encrypt + cert-manager
-- `docs/deployment/backup-and-restore.md` — Database dumps, MinIO backup
-- `docs/deployment/scaling.md` — Resource limits, HPA
+- `docs/deployment/backup-and-restore.md` — Back up a database by hand: pg_dump, mongodump, Redis, uploaded files
+- `docs/deployment/scaling.md` — Scale Cairn and your apps: API_REPLICAS, app replicas, adding servers, disk sizes
 - `docs/troubleshooting/dns-ipv6-timeout.md` — IPv6 DNS timeout fix
 - `docs/troubleshooting/portainer-setup-token.md` — Portainer init timeout
 - `docs/troubleshooting/portainer-oidc-ssl.md` — Portainer cert verify

@@ -1,9 +1,11 @@
 import Redis from 'ioredis';
+import { redisEndpointOptions, redisSentinelConfig } from './redis-endpoint';
 
 /**
  * Shared Redis connection for coordination (locks, idempotency). Uses the platform Redis
- * (REDIS_HOST / REDIS_PORT / REDIS_PASSWORD, same variables platformctl injects), falling back
- * to PLATFORM_REDIS_*. Disabled when neither host is set or COORDINATION_BACKEND=memory|postgres.
+ * (REDIS_HOST / REDIS_PORT / REDIS_PASSWORD / REDIS_SENTINEL_*, same variables platformctl injects),
+ * falling back to PLATFORM_REDIS_* for single-host. Disabled when neither host nor Sentinel is set
+ * or COORDINATION_BACKEND=memory|postgres.
  *
  * Commands fail fast (no offline queue) so callers can fall back to Postgres when Redis is down.
  */
@@ -15,7 +17,7 @@ export function coordinationRedisConfigured(): boolean {
   if (override !== undefined) return override !== null;
   const backend = (process.env.COORDINATION_BACKEND || '').toLowerCase();
   if (backend === 'memory' || backend === 'postgres') return false;
-  return !!(process.env.REDIS_HOST || process.env.PLATFORM_REDIS_HOST);
+  return !!(process.env.REDIS_HOST || process.env.PLATFORM_REDIS_HOST || process.env.REDIS_SENTINEL_HOSTS);
 }
 
 function currentPassword(): string | undefined {
@@ -23,9 +25,20 @@ function currentPassword(): string | undefined {
 }
 
 function createClient(): Redis {
+  const sentinel = redisSentinelConfig();
+  let endpoint = sentinel
+    ? redisEndpointOptions()
+    : redisEndpointOptions({ defaultHost: process.env.PLATFORM_REDIS_HOST });
+  // Single-host: keep PLATFORM_REDIS_* port fallback when REDIS_PORT is unset.
+  if (!sentinel) {
+    endpoint = {
+      ...endpoint,
+      host: process.env.REDIS_HOST || process.env.PLATFORM_REDIS_HOST || endpoint.host,
+      port: parseInt(process.env.REDIS_PORT || process.env.PLATFORM_REDIS_PORT || String(endpoint.port || 6379), 10),
+    };
+  }
   const c = new Redis({
-    host: process.env.REDIS_HOST || process.env.PLATFORM_REDIS_HOST,
-    port: parseInt(process.env.REDIS_PORT || process.env.PLATFORM_REDIS_PORT || '6379', 10),
+    ...endpoint,
     password: currentPassword(),
     db: parseInt(process.env.PLATFORM_REDIS_DB || '0', 10),
     connectTimeout: 3000,

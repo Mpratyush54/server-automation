@@ -13,8 +13,14 @@ import (
 func TestPostgres(target, id string, key []byte) error {
 	return WithRestore(target, id, "postgres", key, func(m Manifest, dirs map[string]string) error {
 		name := fmt.Sprintf("platform_restore_test_%d", time.Now().UnixNano())
-		cmd := exec.Command("kubectl", "-n", "databases", "get", "pods", "-l", "app.kubernetes.io/instance=postgresql", "-o", "jsonpath={.items[0].metadata.name}")
+		cmd := exec.Command("kubectl", "-n", "databases", "get", "pods", "-l", "cnpg.io/cluster=postgresql,cnpg.io/instanceRole=primary", "-o", "jsonpath={.items[0].metadata.name}")
 		b, e := cmd.Output()
+		container := "postgres"
+		if e != nil || strings.TrimSpace(string(b)) == "" {
+			container = "postgresql"
+			cmd = exec.Command("kubectl", "-n", "databases", "get", "pods", "-l", "app.kubernetes.io/instance=postgresql", "-o", "jsonpath={.items[0].metadata.name}")
+			b, e = cmd.Output()
+		}
 		if e != nil {
 			return e
 		}
@@ -23,15 +29,19 @@ func TestPostgres(target, id string, key []byte) error {
 			return fmt.Errorf("Postgres pod absent")
 		}
 		// Copy to a unique container directory, cleaned on both failure and success.
-		remote := "/tmp/" + name
-		run := func(args ...string) error {
-			return exec.Command("kubectl", append([]string{"-n", "databases", "exec", pod, "--"}, args...)...).Run()
-		}
-		if e = run("mkdir", "-m", "700", remote); e != nil {
+		b, e = exec.Command("kubectl", "-n", "databases", "exec", pod, "-c", container, "--", "mktemp", "-d").Output()
+		if e != nil {
 			return e
 		}
+		remote := strings.TrimSpace(string(b))
+		if remote == "" {
+			return fmt.Errorf("Postgres temporary directory absent")
+		}
+		run := func(args ...string) error {
+			return exec.Command("kubectl", append([]string{"-n", "databases", "exec", pod, "-c", container, "--"}, args...)...).Run()
+		}
 		defer run("rm", "-rf", remote)
-		cmd = exec.Command("kubectl", "-n", "databases", "cp", filepath.Join(dirs["postgres"], "databases.tar"), pod+":"+remote+"/databases.tar")
+		cmd = exec.Command("kubectl", "-n", "databases", "cp", "-c", container, filepath.Join(dirs["postgres"], "databases.tar"), pod+":"+remote+"/databases.tar")
 		if e = cmd.Run(); e != nil {
 			return e
 		}

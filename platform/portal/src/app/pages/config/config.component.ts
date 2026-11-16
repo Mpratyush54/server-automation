@@ -1,8 +1,9 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
+import { ToastService, errorText } from '../../shared/feedback/feedback.service';
 
 @Component({
   selector: 'app-config',
@@ -16,6 +17,8 @@ export class ConfigComponent {
   configEntries: { key: string; value: any; isSecret: boolean }[] = [];
   newConfig = { key: '', value: '', isSecret: false };
   loading = false;
+
+  private toast = inject(ToastService);
 
   constructor(private api: ApiService) {}
 
@@ -44,6 +47,7 @@ export class ConfigComponent {
       }));
       await this.load();
       this.newConfig = { key: '', value: '', isSecret: false };
-    } catch (err: any) { alert('Failed to set config: ' + (err.error?.error || err.message)); }
+      this.toast.ok('Config value saved');
+    } catch (err: any) { this.toast.error('Config value was not saved: ' + errorText(err)); }
   }
 }

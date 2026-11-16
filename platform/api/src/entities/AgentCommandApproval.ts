@@ -35,6 +35,10 @@ export class AgentCommandApproval {
   @JoinColumn({ name: 'requested_by_agent_token_id' })
   requestedByAgentToken: AgentToken | null;
 
+  /** Set when a connected assistant (remote MCP grant) asked; mcp_grants.id, no foreign key. */
+  @Column({ type: 'uuid', nullable: true, name: 'requested_by_mcp_grant_id' })
+  requestedByMcpGrantId: string | null;
+
   @Column({ type: 'uuid', nullable: true, name: 'requested_by_user_id' })
   requestedByUserId: string | null;
 

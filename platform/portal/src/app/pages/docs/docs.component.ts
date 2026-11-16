@@ -11,23 +11,18 @@ import { of, Subscription } from 'rxjs';
 import { prepareDocsHtml } from './docs-html.mjs';
 import { DocsSearchComponent } from './docs-search.component';
 import { sanitizeDocsHtml } from './docs-sanitize.mjs';
+import { DOC_ALIASES, DOC_GROUPS, DocGroup, DocPage, docUrl, flattenPages } from './docs-nav';
+import { SiteHeaderComponent } from '../../shared/site/site-header.component';
 
-interface DocPage {
-  label: string;
-  section: string;
-  page: string;
-}
+export type { DocPage, DocGroup } from './docs-nav';
 
-interface DocSection {
-  label: string;
-  id: string;
-  pages: DocPage[];
-}
+const COPY_RESET_MS = 1500;
+const HEADER_OFFSET = 88;
 
 @Component({
   selector: 'app-docs',
   standalone: true,
-  imports: [RouterModule, DocsSearchComponent],
+  imports: [RouterModule, DocsSearchComponent, SiteHeaderComponent],
   encapsulation: ViewEncapsulation.None,
   templateUrl: './docs.component.html',
   styleUrl: './docs.component.css',
@@ -47,203 +42,23 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
   rawMarkdown = '';
   /** Path used to fetch the page, e.g. /docs/mcp/for-agents.md */
   markdownPath = '';
-  agentCopyFeedback: 'page' | 'url' | 'prompt' | null = null;
+  agentCopyFeedback: 'prompt' | null = null;
   private agentCopyTimer: ReturnType<typeof setTimeout> | null = null;
   private rendering = false;
+  private renderedHtml = '';
   private tocObserver: IntersectionObserver | null = null;
+  private themeObserver: MutationObserver | null = null;
+  private schemeQuery: MediaQueryList | null = null;
+  private readonly onSchemeChange = () => this.rerenderForTheme();
   private routeSubscription?: Subscription;
   private loadSubscription?: Subscription;
 
-  docSections: DocSection[] = [
-    {
-      label: 'Getting Started', id: 'getting-started',
-      pages: [
-        { label: 'Installation', section: 'getting-started', page: 'installation' },
-        { label: 'platformctl CLI', section: 'getting-started', page: 'platformctl' },
-        { label: 'Project Structure', section: 'getting-started', page: 'project-structure' },
-        { label: 'First Project', section: 'getting-started', page: 'first-project' },
-        { label: 'Node.js Quickstart', section: 'getting-started', page: 'node-sdk-quickstart' },
-        { label: 'React Quickstart', section: 'getting-started', page: 'react-sdk-quickstart' },
-        { label: 'Angular Quickstart', section: 'getting-started', page: 'angular-sdk-quickstart' },
-        { label: 'Python Quickstart', section: 'getting-started', page: 'python-sdk-quickstart' },
-        { label: 'SDK Examples', section: 'getting-started', page: 'sdk-examples' },
-        { label: 'Deploy Your App', section: 'getting-started', page: 'deploy-your-app' },
-        { label: 'Upgrade Guide', section: 'getting-started', page: 'upgrade-guide' },
-      ],
-    },
-    {
-      label: 'Guides', id: 'guides',
-      pages: [
-        { label: 'Authentication & RBAC', section: 'guides', page: 'authentication' },
-        { label: 'Secrets Management', section: 'guides', page: 'secrets-management' },
-        { label: 'Preview Environments', section: 'guides', page: 'preview-environments' },
-        { label: 'MFA', section: 'guides', page: 'mfa' },
-        { label: 'Git Providers', section: 'guides', page: 'git-providers' },
-        { label: 'Monitoring', section: 'guides', page: 'monitoring' },
-        { label: 'Observability Views', section: 'guides', page: 'observability' },
-        { label: 'Frontend RUM & Session Replay', section: 'guides', page: 'frontend-rum' },
-        { label: 'Heatmaps', section: 'guides', page: 'heatmaps' },
-        { label: 'Status Pages', section: 'guides', page: 'status-pages' },
-        { label: 'Testing', section: 'guides', page: 'testing' },
-        { label: 'Production Checklist', section: 'guides', page: 'production-checklist' },
-      ],
-    },
-    {
-      label: 'Operations', id: 'operations',
-      pages: [
-        { label: 'Upgrades', section: 'operations', page: 'upgrades' },
-        { label: 'Backups', section: 'operations', page: 'backups' },
-        { label: 'Telemetry', section: 'operations', page: 'telemetry' },
-        { label: 'Telemetry Privacy & GDPR', section: 'operations', page: 'telemetry-privacy' },
-        { label: 'Alerting', section: 'operations', page: 'alerting' },
-        { label: 'Synthetic Checks', section: 'operations', page: 'synthetics' },
-        { label: 'Database Monitoring', section: 'operations', page: 'database-monitoring' },
-        { label: 'Error Tracking', section: 'observability', page: 'error-tracking' },
-        { label: 'Releases & Deploy Markers', section: '', page: 'observability-releases' },
-        { label: 'Storage Providers', section: 'operations', page: 'storage-providers' },
-        { label: 'Platform Stack', section: 'operations', page: 'platform-stack' },
-        { label: 'Image Signing', section: 'operations', page: 'image-signing' },
-        { label: 'Host Hardening', section: '', page: 'host-hardening' },
-        { label: 'Namespace Isolation', section: '', page: 'namespace-isolation' },
-        { label: 'GitOps Branches', section: '', page: 'gitops-branches' },
-        { label: 'E2E CI', section: 'operations', page: 'e2e-ci' },
-      ],
-    },
-    {
-      label: 'MCP', id: 'mcp',
-      pages: [
-        { label: 'Overview', section: 'mcp', page: 'overview' },
-        { label: 'Setup', section: 'mcp', page: 'setup' },
-        { label: 'Tools & Policy', section: 'mcp', page: 'tools' },
-        { label: 'For AI agents', section: 'mcp', page: 'for-agents' },
-      ],
-    },
-    {
-      label: 'API Reference', id: 'api-reference',
-      pages: [
-        { label: 'Authentication', section: 'api-reference/platform-api', page: 'auth' },
-        { label: 'Users & Roles', section: 'api-reference/platform-api', page: 'users' },
-        { label: 'Projects', section: 'api-reference/platform-api', page: 'projects' },
-        { label: 'Deployments', section: 'api-reference/platform-api', page: 'deployments' },
-        { label: 'Databases', section: 'api-reference/platform-api', page: 'databases' },
-        { label: 'Secrets', section: 'api-reference/platform-api', page: 'secrets' },
-        { label: 'Files', section: 'api-reference/platform-api', page: 'files' },
-        { label: 'Metrics', section: 'api-reference/platform-api', page: 'metrics' },
-        { label: 'Audit Logs', section: 'api-reference/platform-api', page: 'audit-logs' },
-        { label: 'Webhooks', section: 'api-reference/platform-api', page: 'webhooks' },
-        { label: 'OAuth / OIDC', section: 'api-reference/platform-api', page: 'oauth' },
-      ],
-    },
-    {
-      label: 'Node.js SDK', id: 'sdk-node',
-      pages: [
-        { label: 'PlatformClient', section: 'api-reference/sdk-node', page: 'PlatformClient' },
-        { label: 'Express Middleware', section: 'api-reference/sdk-node', page: 'expressMiddleware' },
-        { label: 'Console Capture', section: 'api-reference/sdk-node', page: 'captureConsole' },
-        { label: 'File Storage', section: 'api-reference/sdk-node', page: 'storage' },
-        { label: 'PostgreSQL', section: 'api-reference/sdk-node', page: 'db-postgres' },
-        { label: 'MongoDB', section: 'api-reference/sdk-node', page: 'db-mongo' },
-        { label: 'Redis', section: 'api-reference/sdk-node', page: 'db-redis' },
-      ],
-    },
-    {
-      label: 'React SDK', id: 'sdk-react',
-      pages: [
-        { label: 'PlatformProvider', section: 'api-reference/sdk-react', page: 'PlatformProvider' },
-        { label: 'usePlatform', section: 'api-reference/sdk-react', page: 'usePlatform' },
-        { label: 'Bug Reporter', section: 'api-reference/sdk-react', page: 'BugReporterWidget' },
-        { label: 'ErrorBoundary', section: 'api-reference/sdk-react', page: 'ErrorBoundary' },
-      ],
-    },
-    {
-      label: 'Angular SDK', id: 'sdk-angular',
-      pages: [
-        { label: 'PlatformModule', section: 'api-reference/sdk-angular', page: 'PlatformModule' },
-        { label: 'HTTP Interceptor', section: 'api-reference/sdk-angular', page: 'PlatformHttpInterceptor' },
-        { label: 'Error Handler', section: 'api-reference/sdk-angular', page: 'PlatformErrorHandler' },
-        { label: 'Bug Reporter', section: 'api-reference/sdk-angular', page: 'BugReporterComponent' },
-      ],
-    },
-    {
-      label: 'Python SDK', id: 'sdk-python',
-      pages: [
-        { label: 'PlatformClient', section: 'api-reference/sdk-python', page: 'PlatformClient' },
-        { label: 'PostgreSQL', section: 'api-reference/sdk-python', page: 'db-postgres' },
-        { label: 'MongoDB', section: 'api-reference/sdk-python', page: 'db-mongo' },
-        { label: 'Redis', section: 'api-reference/sdk-python', page: 'db-redis' },
-      ],
-    },
-    {
-      label: 'Configuration', id: 'configuration',
-      pages: [
-        { label: 'Environment Variables', section: 'api-reference/configuration', page: 'environment-variables' },
-        { label: 'Permissions Matrix', section: 'api-reference/configuration', page: 'permissions' },
-        { label: 'Secrets Encryption', section: 'api-reference/configuration', page: 'secrets-encryption' },
-      ],
-    },
-    {
-      label: 'Architecture', id: 'architecture',
-      pages: [
-        { label: 'Overview', section: 'architecture', page: 'overview' },
-        { label: 'Data Flow', section: 'architecture', page: 'data-flow' },
-        { label: 'Auth Flow', section: 'architecture', page: 'auth-flow' },
-        { label: 'SDK Lifecycle', section: 'architecture', page: 'sdk-lifecycle' },
-        { label: 'Secrets Architecture', section: 'architecture', page: 'secrets-architecture' },
-        { label: 'K8s Infrastructure', section: 'architecture', page: 'k8s-infrastructure' },
-        { label: 'Database Schema', section: 'architecture', page: 'database-schema' },
-        { label: 'Network Topology', section: 'architecture', page: 'network-topology' },
-        { label: 'Background Jobs', section: 'architecture', page: 'background-jobs' },
-        { label: 'Telemetry Ingestion', section: 'architecture', page: 'telemetry-ingestion' },
-      ],
-    },
-    {
-      label: 'Deployment', id: 'deployment',
-      pages: [
-        { label: 'Bootstrap', section: 'deployment', page: 'bootstrap' },
-        { label: 'Rebuild & Deploy', section: 'deployment', page: 'rebuild-and-deploy' },
-        { label: 'Update Secrets', section: 'deployment', page: 'update-secrets' },
-        { label: 'SSL Certificates', section: 'deployment', page: 'ssl-certificates' },
-        { label: 'Backup & Restore', section: 'deployment', page: 'backup-and-restore' },
-        { label: 'Scaling', section: 'deployment', page: 'scaling' },
-      ],
-    },
-    {
-      label: 'Troubleshooting', id: 'troubleshooting',
-      pages: [
-        // Install & bootstrap
-        { label: 'apt lock', section: 'troubleshooting', page: 'apt-lock' },
-        { label: 'DNS / IPv6 Timeout', section: 'troubleshooting', page: 'dns-ipv6-timeout' },
-        { label: 'General DNS Resolution', section: 'troubleshooting', page: 'general-dns-resolution' },
-        { label: 'sslip.io in-cluster DNS', section: 'troubleshooting', page: 'sslip-io-dns' },
-        { label: 'k3s port conflict', section: 'troubleshooting', page: 'k3s-port-conflict' },
-        { label: 'Docker Hub rate limit', section: 'troubleshooting', page: 'dockerhub-rate-limit' },
-        { label: 'Disk pressure', section: 'troubleshooting', page: 'disk-pressure' },
-        { label: 'GitHub Releases outage', section: 'troubleshooting', page: 'github-releases-outage' },
-        { label: 'ImagePullBackOff', section: 'troubleshooting', page: 'image-pull-backoff' },
-        { label: 'Helm name reuse', section: 'troubleshooting', page: 'helm-name-reuse' },
-        { label: 'TypeScript build errors', section: 'troubleshooting', page: 'typescript-build-errors' },
-        // Ingress / TLS / auth
-        { label: 'cert-manager timeout', section: 'troubleshooting', page: 'cert-manager-timeout' },
-        { label: 'Ingress ownership', section: 'troubleshooting', page: 'ingress-ownership' },
-        { label: 'Portainer setup token', section: 'troubleshooting', page: 'portainer-setup-token' },
-        { label: 'Portainer OIDC SSL', section: 'troubleshooting', page: 'portainer-oidc-ssl' },
-        { label: 'ArgoCD subpath 404', section: 'troubleshooting', page: 'argocd-subpath-404' },
-        { label: 'ArgoCD OIDC redirect', section: 'troubleshooting', page: 'argocd-oidc-redirect' },
-        { label: 'Grafana subpath redirect', section: 'troubleshooting', page: 'grafana-subpath-redirect' },
-        // Databases & storage
-        { label: 'MinIO template error', section: 'troubleshooting', page: 'minio-template-error' },
-        { label: 'MinIO PVC not found', section: 'troubleshooting', page: 'minio-pvc-not-found' },
-        { label: 'MongoDB validation', section: 'troubleshooting', page: 'mongodb-validation' },
-        { label: 'DB WRONGPASS after rotate', section: 'troubleshooting', page: 'db-wrongpass-after-rotate' },
-        // API & seed
-        { label: 'API seed failure', section: 'troubleshooting', page: 'api-seed-failure' },
-        { label: 'Angular @ symbol', section: 'troubleshooting', page: 'angular-template-at-symbol' },
-      ],
-    },
-  ];
+  /** Sidebar groups (Get started, Guides, Operations, Reference, More). */
+  readonly docSections: DocGroup[] = DOC_GROUPS;
+  private readonly allPages = flattenPages(DOC_GROUPS);
 
   get flatPages(): DocPage[] {
-    return this.docSections.flatMap(s => s.pages);
+    return this.allPages;
   }
 
   constructor(
@@ -255,64 +70,30 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     private cdr: ChangeDetectorRef
   ) {
     marked.use({ gfm: true, breaks: false });
-    mermaid.initialize({
-      startOnLoad: false,
-      // Explicit: diagram labels must never render HTML/script.
-      securityLevel: 'strict',
-      // Mermaid 12 defaults to the ELK layout and the "neo" look; pin the
-      // previous dagre layout and classic look so existing docs diagrams
-      // render as before.
-      layout: 'dagre',
-      look: 'classic',
-      theme: 'dark',
-      darkMode: true,
-      fontFamily: 'Inter, sans-serif',
-      themeVariables: {
-        background: '#050505',
-        primaryColor: '#111827',
-        primaryTextColor: '#f8fafc',
-        primaryBorderColor: '#3b82f6',
-        lineColor: '#60a5fa',
-        secondaryColor: '#0f766e',
-        tertiaryColor: '#312e81',
-        clusterBkg: '#080808',
-        clusterBorder: '#334155',
-        edgeLabelBackground: '#050505',
-        nodeBorder: '#3b82f6',
-        mainBkg: '#111827',
-        textColor: '#e5e7eb',
-        fontFamily: 'Inter, sans-serif'
-      },
-      flowchart: {
-        curve: 'basis',
-        padding: 16,
-        nodeSpacing: 54,
-        rankSpacing: 72
-      },
-      sequence: {
-        mirrorActors: false,
-        actorMargin: 72,
-        boxMargin: 12,
-        messageMargin: 44
-      }
-    });
   }
 
   ngOnInit() {
+    this.watchTheme();
     this.routeSubscription = this.route.paramMap.subscribe(params => {
       const section = params.get('section');
       const page = params.get('page');
       const requested = [section, page].filter(Boolean).join('/');
 
-      // Reset scroll on every docs navigation. The router-level
-      // scrollPositionRestoration in app.config.ts only fires when the routed
-      // component changes; because /docs/:section/:page is a single component,
-      // switching between docs pages is a same-component nav and Angular
-      // leaves the scroll where it was. Do it by hand.
+      // Reset scroll on every docs navigation. /docs/:section/:page is one
+      // component, so the router's scroll restoration does not fire between pages.
       this.scrollToTop();
+      this.mobileNavOpen = false;
 
+      // Short addresses such as /docs/install.
+      const alias = section && !page ? DOC_ALIASES[section] : undefined;
+      if (alias) {
+        this.router.navigateByUrl(alias, { replaceUrl: true });
+        return;
+      }
+
+      // A folder (e.g. /docs/guides) opens the first page filed in it.
       const category = requested && this.flatPages.find(p =>
-        p.section === requested || p.section.startsWith(requested + '/')
+        p.page && (p.section === requested || p.section.startsWith(requested + '/'))
       );
       if (category) {
         this.router.navigateByUrl(this.docUrl(category), { replaceUrl: true });
@@ -338,22 +119,23 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.routeSubscription?.unsubscribe();
     this.loadSubscription?.unsubscribe();
     this.tocObserver?.disconnect();
+    this.themeObserver?.disconnect();
+    this.schemeQuery?.removeEventListener?.('change', this.onSchemeChange);
     if (this.agentCopyTimer) clearTimeout(this.agentCopyTimer);
     this.updateMetadata(
-      'Platform — Self-hosted Developer Platform for Kubernetes',
+      'Cairn — run your apps on your own servers',
       'Turn your Ubuntu server into a self-hosted developer platform. Deploy with GitOps, connect databases, manage secrets, and inspect logs with scoped MCP tools.',
       'https://platform.pratyushes.dev/'
     );
   }
 
+  @HostListener('document:keydown.escape')
+  closeNavOnEscape() {
+    if (this.mobileNavOpen) this.mobileNavOpen = false;
+  }
+
   private scrollToTop() {
-    // Scroll the window; also reset the docs main scroll container if the
-    // layout uses one (many docs themes overflow inside a wrapper).
     try { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); } catch { window.scrollTo(0, 0); }
-    const scrollables = this.el.nativeElement.querySelectorAll(
-      '.docs-main, .docs-content, .docs-scroll, main'
-    );
-    scrollables.forEach((n: HTMLElement) => { n.scrollTop = 0; });
   }
 
   ngAfterViewChecked() {
@@ -367,123 +149,60 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
   }
 
-  private applySyntaxHighlighting() {
-    const container = this.el.nativeElement.querySelector('.docs-markdown');
-    if (!container) return;
-    container.querySelectorAll('pre code').forEach((block: unknown) => {
-      const el = block as HTMLElement;
-      const lang = (el.className.match(/language-(\w+)/) || [])[1];
-      if (lang && hljs.getLanguage(lang)) {
-        hljs.highlightElement(el);
-      } else {
-        hljs.highlightElement(el);
+  // ── Navigation ────────────────────────────────────────────────────────────
+
+  docUrl(page: Pick<DocPage, 'section' | 'page'>): string {
+    return docUrl(page);
+  }
+
+  isActive(page: DocPage): boolean {
+    return this.currentSection === page.section && this.currentPage === page.page;
+  }
+
+  /** A page's children are listed while it, or one of them, is open. */
+  isExpanded(page: DocPage): boolean {
+    return !!page.children?.length && (this.isActive(page) || page.children.some(c => this.isActive(c)));
+  }
+
+  isSectionActive(section: DocGroup): boolean {
+    return section.pages.some(p => this.isActive(p) || (p.children ?? []).some(c => this.isActive(c)));
+  }
+
+  /** Group, parent (when the open page is a child) and page, for the breadcrumb. */
+  get trail(): { group: DocGroup; parent: DocPage | null; page: DocPage } | null {
+    for (const group of this.docSections) {
+      for (const page of group.pages) {
+        if (this.isActive(page)) return { group, parent: null, page };
+        const child = page.children?.find(c => this.isActive(c));
+        if (child) return { group, parent: page, page: child };
       }
-    });
-    this.enhanceHighlighting(container);
+    }
+    return null;
   }
 
-  private enhanceHighlighting(container: HTMLElement) {
-    // 1. Bash / Shell Enhancements
-    container.querySelectorAll('pre code.language-bash, pre code.language-sh, pre code.language-shell').forEach((block: unknown) => {
-      const el = block as HTMLElement;
-      let html = el.innerHTML;
-
-      // Prompts
-      html = html.replace(
-        /^(\s*)(\$)\s/gm,
-        '$1<span class="terminal-prompt">$2</span> '
-      );
-
-      // Common CLI commands highlight.js misses
-      const cliCommands = ['docker', 'docker-compose', 'npm', 'git', 'kubectl', 'helm', 'ng', 'python', 'node', 'npx', 'sudo', 'apt', 'apt-get'];
-      const cliRegex = new RegExp(`(^|>|\\s)(${cliCommands.join('|')})(?=\\s|$)`, 'gm');
-      html = html.replace(cliRegex, '$1<span class="hljs-built_in">$2</span>');
-
-      el.innerHTML = html;
-    });
-
-    // 2. Python Enhancements
-    container.querySelectorAll('pre code.language-python').forEach((block: unknown) => {
-      const el = block as HTMLElement;
-      let html = el.innerHTML;
-
-      // SDK Classes highlight.js misses when instantiated
-      const pyClasses = ['MongoClient', 'PostgresPool', 'RedisClient', 'PlatformClient', 'MongoManager', 'PostgresManager', 'RedisManager'];
-      const pyRegex = new RegExp(`(^|>|\\s|\\.)(${pyClasses.join('|')})(?=\\s|\\(|$)`, 'g');
-      html = html.replace(pyRegex, '$1<span class="hljs-title class_">$2</span>');
-
-      el.innerHTML = html;
-    });
-
-    // 3. Env file Enhancements
-    container.querySelectorAll('pre code.language-env, pre code.language-dotenv, pre code.language-properties').forEach((block: unknown) => {
-      const el = block as HTMLElement;
-      let html = el.innerHTML;
-
-      // Match KEY=value pattern if it's not already inside a span (basic fallback)
-      html = html.replace(/^([A-Z0-9_]+)=(.+)$/gm, (match, key, value) => {
-        // If hljs already wrapped the whole thing, just replace the inner text
-        const cleanKey = key.replace(/<[^>]*>/g, '');
-        const cleanVal = value.replace(/<[^>]*>/g, '');
-        return `<span class="hljs-attr">${cleanKey}</span>=<span class="hljs-string">${cleanVal}</span>`;
-      });
-
-      el.innerHTML = html;
-    });
-
-    // 4. HTTP request/response blocks
-    container.querySelectorAll('pre code.language-http').forEach((block: unknown) => {
-      const el = block as HTMLElement;
-      let html = el.innerHTML;
-      html = html.replace(
-        /^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)(\s+)([^ \n]+)(\s+HTTP\/[0-9.]+)/gm,
-        '<span class="http-method http-$1">$1</span>$2<span class="http-path">$3</span><span class="http-version">$4</span>'
-      );
-      html = html.replace(
-        /^([A-Za-z0-9-]+):(\s*)(.+)$/gm,
-        '<span class="http-header">$1</span>:$2<span class="http-header-value">$3</span>'
-      );
-      el.innerHTML = html;
-    });
+  get prevPage(): DocPage | null {
+    const all = this.flatPages;
+    const idx = all.findIndex(p => this.isActive(p));
+    return idx > 0 ? all[idx - 1] : null;
   }
 
-  private addCopyButtons() {
-    const container = this.el.nativeElement.querySelector('.docs-markdown');
-    if (!container) return;
-    container.querySelectorAll('pre').forEach((pre: unknown) => {
-      const el = pre as HTMLElement;
-      if (el.querySelector('.docs-copy-btn')) return;
+  get nextPage(): DocPage | null {
+    const all = this.flatPages;
+    const idx = all.findIndex(p => this.isActive(p));
+    return idx >= 0 && idx < all.length - 1 ? all[idx + 1] : null;
+  }
 
-      const lang = (el.querySelector('code')?.className.match(/language-(\w+)/) || [])[1] || 'code';
+  /** Label for a page outside its sidebar context: SDK children read "Node.js quickstart". */
+  pageLabel(page: DocPage): string {
+    if (page.heading && page.label === 'Quickstart') return `${page.heading} quickstart`;
+    return page.label;
+  }
 
-      const header = document.createElement('div');
-      header.className = 'docs-code-header';
-
-      const langLabel = document.createElement('span');
-      langLabel.className = 'docs-code-lang';
-      langLabel.textContent = lang;
-
-      const btn = document.createElement('button');
-      btn.className = 'docs-copy-btn';
-      btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
-      btn.title = 'Copy code';
-
-      btn.addEventListener('click', () => {
-        const code = el.querySelector('code')?.textContent || '';
-        navigator.clipboard.writeText(code).then(() => {
-          btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`;
-          btn.classList.add('copied');
-          setTimeout(() => {
-            btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
-            btn.classList.remove('copied');
-          }, 2000);
-        });
-      });
-
-      header.appendChild(langLabel);
-      header.appendChild(btn);
-      el.insertBefore(header, el.firstChild);
-    });
+  getBreadcrumbTitle(): string {
+    const found = this.trail;
+    if (found) return this.pageLabel(found.page);
+    if (!this.currentPage) return 'Overview';
+    return this.currentPage.replace(/-/g, ' ').replace(/^\w/, c => c.toUpperCase());
   }
 
   @HostListener('click', ['$event'])
@@ -505,11 +224,6 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.router.navigateByUrl(this.docUrl(page));
   }
 
-  docUrl(page: DocPage): string {
-    // Pages at the docs root (e.g. host-hardening.md) have no section.
-    return page.section ? `/docs/${page.section}/${page.page}` : `/docs/${page.page}`;
-  }
-
   private updateMetadata(title: string, description: string, canonical: string) {
     this.title.setTitle(title);
     this.meta.updateTag({ name: 'description', content: description });
@@ -528,33 +242,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     link.href = canonical;
   }
 
-  isActive(page: DocPage): boolean {
-    return this.currentSection === page.section && this.currentPage === page.page;
-  }
-
-  isSectionActive(section: DocSection): boolean {
-    return section.pages.some(p => this.isActive(p));
-  }
-
-  get prevPage(): DocPage | null {
-    const all = this.flatPages;
-    const idx = all.findIndex(p => this.isActive(p));
-    return idx > 0 ? all[idx - 1] : null;
-  }
-
-  get nextPage(): DocPage | null {
-    const all = this.flatPages;
-    const idx = all.findIndex(p => this.isActive(p));
-    return idx >= 0 && idx < all.length - 1 ? all[idx + 1] : null;
-  }
-
-  getBreadcrumbTitle(): string {
-    if (!this.currentSection) return 'Overview';
-    const found = this.flatPages.find(p => this.isActive(p));
-    if (found) return found.label;
-    const parts = this.currentSection.split('/');
-    return parts[parts.length - 1].replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-  }
+  // ── Copy for AI agents ────────────────────────────────────────────────────
 
   /** Absolute URL for the raw .md twin of the current page. */
   get markdownAbsoluteUrl(): string {
@@ -571,17 +259,6 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
   get llmsTxtUrl(): string {
     if (typeof window === 'undefined') return '/llms.txt';
     return `${window.location.origin}/llms.txt`;
-  }
-
-  async copyPageMarkdown(): Promise<void> {
-    if (!this.rawMarkdown) return;
-    const ok = await this.writeClipboard(this.rawMarkdown);
-    if (ok) this.flashAgentCopy('page');
-  }
-
-  async copyMarkdownUrl(): Promise<void> {
-    const ok = await this.writeClipboard(this.markdownAbsoluteUrl);
-    if (ok) this.flashAgentCopy('url');
   }
 
   async copyAgentPrompt(): Promise<void> {
@@ -601,8 +278,14 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.rawMarkdown.trim(),
       '',
     ].join('\n');
-    const ok = await this.writeClipboard(prompt);
-    if (ok) this.flashAgentCopy('prompt');
+    if (await this.writeClipboard(prompt)) {
+      if (this.agentCopyTimer) clearTimeout(this.agentCopyTimer);
+      this.agentCopyFeedback = 'prompt';
+      this.agentCopyTimer = setTimeout(() => {
+        this.agentCopyFeedback = null;
+        this.cdr.detectChanges();
+      }, COPY_RESET_MS);
+    }
   }
 
   private async writeClipboard(text: string): Promise<boolean> {
@@ -618,8 +301,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
       const ta = document.createElement('textarea');
       ta.value = text;
       ta.setAttribute('readonly', '');
-      ta.style.position = 'fixed';
-      ta.style.left = '-9999px';
+      ta.className = 'docs-offscreen';
       document.body.appendChild(ta);
       ta.select();
       const ok = document.execCommand('copy');
@@ -630,14 +312,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
   }
 
-  private flashAgentCopy(kind: 'page' | 'url' | 'prompt') {
-    if (this.agentCopyTimer) clearTimeout(this.agentCopyTimer);
-    this.agentCopyFeedback = kind;
-    this.agentCopyTimer = setTimeout(() => {
-      this.agentCopyFeedback = null;
-      this.cdr.detectChanges();
-    }, 2000);
-  }
+  // ── Loading and rendering ────────────────────────────────────────────────
 
   private async loadMarkdown(path: string) {
     this.loadSubscription?.unsubscribe();
@@ -661,7 +336,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
           try {
             this.rawMarkdown = text;
             const heading = text.match(/^#\s+(.+)$/m)?.[1].replace(/[*`]/g, '').trim() || 'Documentation';
-            const title = `${heading} | Platform Docs`;
+            const title = `${heading} | Cairn Docs`;
             const description = `Read ${heading} in the Platform documentation. Guides and reference for the self-hosted Platform control plane.`;
             const canonical = 'https://platform.pratyushes.dev' + (path === '/docs/index.md' ? '/docs' : path.replace(/\.md$/, ''));
             this.updateMetadata(title, description, canonical);
@@ -669,19 +344,19 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
             html = this.enhanceApiDocs(html);
             html = this.enhanceAuthBadges(html);
             html = this.enhanceResponseSections(html);
-            html = this.enhanceSectionHeadings(html);
             // Sanitize (and build mermaid containers from text) before
             // trusting: Angular's own sanitizer would strip the ids/classes
             // the docs layout relies on, so DOMPurify is the security boundary.
             html = sanitizeDocsHtml(html as string);
+            // Post-sanitize additions only insert fixed markup.
+            html = this.enhanceCallouts(html);
+            this.renderedHtml = html;
             this.content = this.sanitizer.bypassSecurityTrustHtml(html);
             this.isLoading = false;
             this.rendering = true;
             this.cdr.detectChanges();
-            // Re-scroll after content mounts: the initial scrollToTop in
-            // ngOnInit ran when the DOM still had the previous page's
-            // content, so a user who scrolled during the async fetch would
-            // land mid-page on the new doc otherwise.
+            // Re-scroll after content mounts: the initial scrollToTop ran
+            // while the previous page was still on screen.
             queueMicrotask(() => { if (!this.scrollToFragment()) this.scrollToTop(); });
           } catch (e) {
             console.error('Error parsing markdown', e);
@@ -689,6 +364,118 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
         }
         this.isLoading = false;
       });
+  }
+
+  private applySyntaxHighlighting() {
+    const container = this.el.nativeElement.querySelector('.docs-markdown');
+    if (!container) return;
+    container.querySelectorAll('pre code').forEach((block: unknown) => {
+      const el = block as HTMLElement;
+      if (el.dataset['highlighted']) return;
+      hljs.highlightElement(el);
+    });
+    this.enhanceHighlighting(container);
+  }
+
+  private enhanceHighlighting(container: HTMLElement) {
+    // Shell prompts and common CLIs highlight.js misses.
+    container.querySelectorAll('pre code.language-bash, pre code.language-sh, pre code.language-shell').forEach((block: unknown) => {
+      const el = block as HTMLElement;
+      let html = el.innerHTML;
+      html = html.replace(/^(\s*)(\$)\s/gm, '$1<span class="terminal-prompt">$2</span> ');
+      const cliCommands = ['platformctl', 'docker', 'npm', 'git', 'kubectl', 'helm', 'ng', 'python', 'node', 'npx', 'sudo', 'apt', 'apt-get', 'curl'];
+      const cliRegex = new RegExp(`(^|>|\\s)(${cliCommands.join('|')})(?=\\s|$)`, 'gm');
+      html = html.replace(cliRegex, '$1<span class="hljs-built_in">$2</span>');
+      el.innerHTML = html;
+    });
+
+    // Env files: KEY=value.
+    container.querySelectorAll('pre code.language-env, pre code.language-dotenv, pre code.language-properties').forEach((block: unknown) => {
+      const el = block as HTMLElement;
+      el.innerHTML = el.innerHTML.replace(/^([A-Z0-9_]+)=(.+)$/gm, (_m, key, value) => {
+        const cleanKey = key.replace(/<[^>]*>/g, '');
+        const cleanVal = value.replace(/<[^>]*>/g, '');
+        return `<span class="hljs-attr">${cleanKey}</span>=<span class="hljs-string">${cleanVal}</span>`;
+      });
+    });
+
+    // HTTP request/response blocks.
+    container.querySelectorAll('pre code.language-http').forEach((block: unknown) => {
+      const el = block as HTMLElement;
+      let html = el.innerHTML;
+      html = html.replace(
+        /^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)(\s+)([^ \n]+)(\s+HTTP\/[0-9.]+)/gm,
+        '<span class="http-method">$1</span>$2<span class="http-path">$3</span><span class="http-version">$4</span>'
+      );
+      html = html.replace(/^([A-Za-z0-9-]+):(\s*)(.+)$/gm, '<span class="http-header">$1</span>:$2$3');
+      el.innerHTML = html;
+    });
+  }
+
+  /** Code blocks get a header with the language and a Copy button. */
+  private addCopyButtons() {
+    const container = this.el.nativeElement.querySelector('.docs-markdown');
+    if (!container) return;
+    container.querySelectorAll('pre').forEach((pre: unknown) => {
+      const el = pre as HTMLElement;
+      if (el.querySelector('.docs-copy-btn') || el.closest('.mermaid')) return;
+
+      const lang = (el.querySelector('code')?.className.match(/language-([\w+-]+)/) || [])[1] || 'text';
+
+      const header = document.createElement('div');
+      header.className = 'docs-code-header';
+
+      const langLabel = document.createElement('span');
+      langLabel.className = 'docs-code-lang';
+      langLabel.textContent = lang;
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'docs-copy-btn';
+      btn.textContent = 'Copy';
+      btn.setAttribute('aria-label', `Copy ${lang} code`);
+
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      btn.addEventListener('click', async () => {
+        const code = el.querySelector('code')?.textContent || '';
+        if (!(await this.writeClipboard(code))) return;
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, COPY_RESET_MS);
+      });
+
+      header.appendChild(langLabel);
+      header.appendChild(btn);
+      el.insertBefore(header, el.firstChild);
+    });
+  }
+
+  /**
+   * Blockquotes become callouts. `> [!NOTE]`, `> [!TIP]`, `> [!WARNING]`,
+   * `> [!IMPORTANT]`, `> [!CAUTION]` (GitHub syntax) or a leading
+   * `**Note:**` / `**Warning:**` choose the kind; others are plain notes.
+   */
+  private enhanceCallouts(html: string): string {
+    const kinds: Record<string, { cls: string; label: string }> = {
+      note: { cls: 'note', label: 'Note' },
+      tip: { cls: 'tip', label: 'Tip' },
+      important: { cls: 'note', label: 'Important' },
+      warning: { cls: 'warning', label: 'Warning' },
+      caution: { cls: 'warning', label: 'Caution' },
+    };
+    return html.replace(/<blockquote>\s*<p>([\s\S]*?)<\/blockquote>/g, (whole, inner: string) => {
+      const marker = inner.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(?:<br>)?\s*/i)
+        || inner.match(/^<strong>(Note|Tip|Important|Warning|Caution):?<\/strong>:?\s*/i);
+      if (!marker) return whole.replace('<blockquote>', '<blockquote class="docs-callout docs-callout-plain">');
+      const kind = kinds[marker[1].toLowerCase()];
+      let rest = inner.slice(marker[0].length);
+      rest = rest.startsWith('</p>') ? rest.slice(4) : `<p>${rest}`;
+      return `<blockquote class="docs-callout docs-callout-${kind.cls}"><p class="docs-callout-label">${kind.label}</p>${rest}</blockquote>`;
+    });
   }
 
   private enhanceApiDocs(html: string): string {
@@ -701,7 +488,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
       if (m) {
         if (cardOpen) { out.push('</div></div>'); }
         const id = part.match(/<h2\b[^>]*\bid="([^"]+)"/)?.[1];
-        out.push(`<div class="api-card"${id ? ` id="${id}"` : ''}><div class="api-card-header"><span class="api-method method-${m[1].toLowerCase()}">${m[1]}</span><code class="api-path">${m[2].trim()} <span class="api-http-version">HTTP/1.1</span></code></div><div class="api-card-body">`);
+        out.push(`<div class="api-card"${id ? ` id="${id}"` : ''}><div class="api-card-header"><span class="api-method method-${m[1].toLowerCase()}">${m[1]}</span><code class="api-path">${m[2].trim()}</code></div><div class="api-card-body">`);
         cardOpen = true;
       } else {
         out.push(part);
@@ -709,17 +496,13 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
     if (cardOpen) { out.push('</div></div>'); }
 
-    let result = out.join('');
-
-    result = result.replace(
+    return out.join('').replace(
       /<h3([^>]*)>\s*<code>(GET|POST|PUT|PATCH|DELETE)<\/code>\s+(.+?)<\/h3>/gi,
       (_heading, attributes: string, method: string, path: string) => {
         const id = attributes.match(/\bid="([^"]+)"/)?.[1];
-        return `<div class="api-sub-card"${id ? ` id="${id}"` : ''}><div class="api-card-header method-sub"><span class="api-method method-${method.toLowerCase()}">${method}</span><code class="api-path">${path} <span class="api-http-version">HTTP/1.1</span></code></div></div>`;
+        return `<div class="api-sub-card"${id ? ` id="${id}"` : ''}><div class="api-card-header"><span class="api-method method-${method.toLowerCase()}">${method}</span><code class="api-path">${path}</code></div></div>`;
       }
     );
-
-    return result;
   }
 
   private enhanceAuthBadges(html: string): string {
@@ -727,35 +510,25 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
       /<p><strong>Auth:<\/strong>\s*(.*?)<\/p>/gi,
       (_m, text: string) => {
         const isNone = /none/i.test(text);
-        const cls = isNone ? 'auth-none' : 'auth-required';
-        return `<p class="auth-row"><span class="api-auth-badge ${cls}">${isNone ? '🔓 No Auth Required' : `🔑 ${text.trim()}`}</span></p>`;
+        return `<p class="auth-row"><span class="api-auth-label">Auth</span><span class="api-auth-value">${isNone ? 'Not required' : text.trim()}</span></p>`;
       }
     );
   }
 
   private enhanceResponseSections(html: string): string {
     return html
-      .replace(
-        /<p><strong>Response\s+`(\d+)`:<\/strong><\/p>/gi,
-        '<div class="api-sub-header"><span class="response-badge">$1</span><span>Response</span></div>'
-      )
-      .replace(
-        /<p><strong>Request Body:<\/strong><\/p>/gi,
-        '<div class="api-sub-header"><span class="request-icon">📦</span><span>Request Body</span></div>'
-      )
-      .replace(
-        /<p><strong>Query Parameters:<\/strong><\/p>/gi,
-        '<div class="api-sub-header"><span class="request-icon">🔍</span><span>Query Parameters</span></div>'
-      )
-      .replace(
-        /<p><strong>Error\s+`(\d+)`:<\/strong><\/p>/gi,
-        '<div class="api-sub-header"><span class="response-badge error-badge">$1</span><span>Error Response</span></div>'
-      );
+      .replace(/<p><strong>Response\s+`(\d+)`:<\/strong><\/p>/gi, '<p class="api-sub-header"><span class="response-code">$1</span>Response</p>')
+      .replace(/<p><strong>Request Body:<\/strong><\/p>/gi, '<p class="api-sub-header">Request body</p>')
+      .replace(/<p><strong>Query Parameters:<\/strong><\/p>/gi, '<p class="api-sub-header">Query parameters</p>')
+      .replace(/<p><strong>Error\s+`(\d+)`:<\/strong><\/p>/gi, '<p class="api-sub-header"><span class="response-code response-code-error">$1</span>Error response</p>');
   }
+
+  // ── Table of contents ────────────────────────────────────────────────────
 
   scrollToHeading(event: Event, id: string) {
     if (event instanceof MouseEvent && (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)) return;
     event.preventDefault();
+    this.activeTocId = id;
     this.router.navigateByUrl(this.headingUrl(id)).then(() => this.scrollToFragment());
   }
 
@@ -769,8 +542,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (!id) return false;
     const el = this.el.nativeElement.querySelector(`[id="${CSS.escape(id)}"]`) as HTMLElement | null;
     if (el) {
-      const offset = 100;
-      const top = el.getBoundingClientRect().top + window.scrollY - offset;
+      const top = el.getBoundingClientRect().top + window.scrollY - HEADER_OFFSET;
       window.scrollTo({ top, behavior: 'auto' });
     }
     return !!el;
@@ -779,57 +551,116 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
   private buildToc() {
     this.tocItems = [];
     this.activeTocId = '';
-    this.disconnectTocObserver();
+    this.tocObserver?.disconnect();
+    this.tocObserver = null;
     const container = this.el.nativeElement.querySelector('.docs-markdown');
     if (!container) return;
-    const headings = container.querySelectorAll('h2, h3');
+    const headings: HTMLElement[] = Array.from(container.querySelectorAll('h2, h3'));
     if (headings.length === 0) return;
 
-    headings.forEach((h: Element) => {
-      const el = h as HTMLElement;
-      const id = el.id;
-      this.tocItems.push({ id, text: el.textContent || '', level: el.tagName.toLowerCase() });
-    });
+    for (const el of headings) {
+      this.tocItems.push({ id: el.id, text: el.textContent || '', level: el.tagName.toLowerCase() });
+    }
+    this.activeTocId = headings[0].id;
+    if (typeof IntersectionObserver === 'undefined') return;
 
     this.tocObserver = new IntersectionObserver(
       (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            this.activeTocId = entry.target.id;
-            this.cdr.detectChanges();
-          }
+        const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        // At the top of the page the first heading is current, even before it reaches the band.
+        const next = window.scrollY < 40 ? headings[0].id : visible[0]?.target.id;
+        if (next && next !== this.activeTocId) {
+          this.activeTocId = next;
+          this.cdr.detectChanges();
         }
       },
-      { rootMargin: '-80px 0px -70% 0px', threshold: 0 }
+      { rootMargin: `-${HEADER_OFFSET}px 0px -65% 0px`, threshold: 0 }
     );
-
-    setTimeout(() => {
-      headings.forEach((h: Element) => {
-        const el = h as HTMLElement;
-        if (el.id) this.tocObserver?.observe(el);
-      });
-    }, 100);
+    for (const el of headings) if (el.id) this.tocObserver.observe(el);
   }
 
-  private disconnectTocObserver() {
-    if (this.tocObserver) {
-      this.tocObserver.disconnect();
-      this.tocObserver = null;
+  // ── Diagrams ─────────────────────────────────────────────────────────────
+
+  /** Re-render diagrams when the theme changes so their colours follow it. */
+  private watchTheme() {
+    if (typeof MutationObserver !== 'undefined') {
+      this.themeObserver = new MutationObserver(() => this.rerenderForTheme());
+      this.themeObserver.observe(this.document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     }
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      this.schemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      this.schemeQuery.addEventListener?.('change', this.onSchemeChange);
+    }
+  }
+
+  private rerenderForTheme() {
+    if (!this.renderedHtml || !this.el.nativeElement.querySelector('.docs-markdown .mermaid')) return;
+    this.content = this.sanitizer.bypassSecurityTrustHtml(this.renderedHtml);
+    this.rendering = true;
+    this.cdr.detectChanges();
+  }
+
+  /** Mermaid colours from the Signal tokens of the active theme. */
+  private mermaidTheme() {
+    const css = getComputedStyle(this.document.documentElement);
+    const hex = (name: string, fallback: string) => {
+      const parts = css.getPropertyValue(name).trim().split(/[\s,]+/).map(Number);
+      if (parts.length < 3 || parts.some(n => Number.isNaN(n))) return fallback;
+      return '#' + parts.slice(0, 3).map(n => n.toString(16).padStart(2, '0')).join('');
+    };
+    const dark = css.getPropertyValue('color-scheme').includes('dark');
+    const surface = hex('--surface', '#ffffff');
+    const raised = hex('--raised', '#eceef1');
+    const fg = hex('--fg', '#191c20');
+    const lineStrong = hex('--line-strong', '#c0c5cc');
+    const canvas = hex('--canvas', '#f3f4f6');
+    return {
+      theme: 'base' as const,
+      darkMode: dark,
+      themeVariables: {
+        darkMode: dark,
+        background: surface,
+        primaryColor: raised,
+        primaryTextColor: fg,
+        primaryBorderColor: lineStrong,
+        secondaryColor: surface,
+        tertiaryColor: canvas,
+        lineColor: hex('--fg-3', '#707780'),
+        textColor: fg,
+        mainBkg: raised,
+        nodeBorder: lineStrong,
+        clusterBkg: surface,
+        clusterBorder: lineStrong,
+        edgeLabelBackground: surface,
+        actorBkg: raised,
+        actorBorder: lineStrong,
+        signalColor: fg,
+        noteBkgColor: surface,
+        noteBorderColor: hex('--accent', '#f2b53a'),
+        fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
+        fontSize: '14px',
+      },
+    };
   }
 
   private async renderMermaidDiagrams() {
     const container = this.el.nativeElement.querySelector('.docs-markdown');
     if (!container) return;
     const mermaidNodes = container.querySelectorAll('.mermaid:not([data-processed])') as NodeListOf<HTMLElement>;
-    if (mermaidNodes.length === 0) {
-      this.enhanceDiagramViewers();
-      return;
-    }
-    // Render each block one at a time so a single broken diagram doesn't
-    // silently kill every diagram after it. On failure, replace the block
-    // with a visible error message + the original source so the user (and
-    // future us) can see what went wrong instead of staring at a blank spot.
+    if (mermaidNodes.length === 0) return;
+    mermaid.initialize({
+      startOnLoad: false,
+      // Diagram labels must never render HTML/script.
+      securityLevel: 'strict',
+      // Mermaid 12 defaults to ELK and the "neo" look; keep dagre/classic.
+      layout: 'dagre',
+      look: 'classic',
+      ...this.mermaidTheme(),
+      flowchart: { curve: 'basis', padding: 16, nodeSpacing: 48, rankSpacing: 64 },
+      sequence: { mirrorActors: false, actorMargin: 64, boxMargin: 12, messageMargin: 40 },
+    });
+    // One diagram at a time so a broken one does not stop the rest; show its
+    // error and source instead of a blank space.
     for (const node of Array.from(mermaidNodes)) {
       const original = node.textContent || '';
       try {
@@ -838,150 +669,118 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
         console.error('Mermaid render error:', e);
         node.setAttribute('data-processed', 'true');
         node.classList.add('mermaid-error');
-        node.innerHTML = `
-          <div style="padding:14px 16px;border:1px solid #b91c1c;background:#1f0a0a;border-radius:8px;color:#fecaca;font-size:0.85rem;">
-            <div style="font-weight:600;color:#fca5a5;margin-bottom:6px;">Diagram failed to render</div>
-            <div style="font-size:0.78rem;opacity:0.9;margin-bottom:8px;">${(e?.message || e || 'Mermaid parse error').toString().replace(/</g,'&lt;')}</div>
-            <pre style="margin:0;padding:10px 12px;background:#0b0f19;border-radius:6px;color:#f1f5f9;font-size:0.78rem;overflow-x:auto;">${original.replace(/</g,'&lt;')}</pre>
-          </div>`;
+        node.textContent = '';
+        const title = document.createElement('p');
+        title.className = 'mermaid-error-title';
+        title.textContent = 'This diagram could not be drawn';
+        const message = document.createElement('p');
+        message.className = 'mermaid-error-message';
+        message.textContent = String(e?.message || e || 'Mermaid parse error');
+        const source = document.createElement('pre');
+        source.className = 'mermaid-error-source';
+        source.textContent = original;
+        node.append(title, message, source);
       }
     }
     this.enhanceDiagramViewers();
   }
 
+  /** Full-size diagram overlay: scrollable, closes on Esc, backdrop or Close. */
+  private openDiagram(svg: SVGSVGElement, naturalWidth: number, returnFocus: HTMLElement) {
+    const doc = this.document;
+    const overlay = doc.createElement('div');
+    overlay.className = 'docs-diagram-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', 'Diagram, full size');
+    const panel = doc.createElement('div');
+    panel.className = 'docs-diagram-overlay-panel';
+    const head = doc.createElement('div');
+    head.className = 'docs-diagram-overlay-head';
+    const label = doc.createElement('span');
+    label.textContent = 'Diagram';
+    const close = doc.createElement('button');
+    close.type = 'button';
+    close.className = 'docs-diagram-btn';
+    close.textContent = 'Close';
+    head.append(label, close);
+    const body = doc.createElement('div');
+    body.className = 'docs-diagram-overlay-body';
+    const copy = svg.cloneNode(true) as SVGSVGElement;
+    copy.style.width = Math.round(naturalWidth) + 'px';
+    copy.style.height = 'auto';
+    body.appendChild(copy);
+    panel.append(head, body);
+    overlay.appendChild(panel);
+    const prevOverflow = doc.body.style.overflow;
+    doc.body.style.overflow = 'hidden';
+    const done = () => {
+      overlay.remove();
+      doc.body.style.overflow = prevOverflow;
+      doc.removeEventListener('keydown', onKey, true);
+      returnFocus.focus();
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); done(); } };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(); });
+    close.addEventListener('click', done);
+    doc.addEventListener('keydown', onKey, true);
+    doc.body.appendChild(overlay);
+    close.focus();
+  }
+
   private enhanceDiagramViewers() {
     const container = this.el.nativeElement.querySelector('.docs-markdown') as HTMLElement | null;
     if (!container) return;
-
-    const diagramNodes = Array.from(container.querySelectorAll<HTMLElement>('.mermaid, pre')).filter((node) => {
-      if (node.closest('.docs-diagram-viewer')) return false;
-      if (node.classList.contains('mermaid')) return true;
-      const text = node.textContent || '';
-      return /[┌┐└┘├┤┬┴│─→←↔▼▲►]/.test(text);
-    });
+    const diagramNodes = Array.from(container.querySelectorAll<HTMLElement>('.mermaid')).filter(
+      (node) => !node.closest('.docs-diagram-viewer') && !node.classList.contains('mermaid-error')
+    );
 
     diagramNodes.forEach((node) => {
-      const isMermaid = node.classList.contains('mermaid');
-      const viewer = document.createElement('div');
-      viewer.className = `docs-diagram-viewer ${isMermaid ? 'docs-mermaid-viewer' : 'docs-ascii-viewer'}`;
+      const svg = node.querySelector('svg') as SVGSVGElement | null;
+      if (!svg) return;
+      // Natural size from the viewBox; Mermaid's own width/max-width are dropped
+      // so the diagram is drawn at a readable size instead of being shrunk.
+      const vb = svg.viewBox?.baseVal;
+      const naturalWidth = vb && vb.width ? vb.width : svg.getBoundingClientRect().width;
+      svg.removeAttribute('width');
+      svg.removeAttribute('height');
+      svg.style.removeProperty('max-width');
 
-      const toolbar = document.createElement('div');
-      toolbar.className = 'docs-diagram-toolbar';
-
-      const title = document.createElement('span');
-      title.className = 'docs-diagram-title';
-      title.textContent = isMermaid ? 'Interactive diagram' : 'Interactive legacy diagram';
-
-      const controls = document.createElement('div');
-      controls.className = 'docs-diagram-controls';
-
+      const viewer = document.createElement('figure');
+      viewer.className = 'docs-diagram-viewer';
       const canvas = document.createElement('div');
       canvas.className = 'docs-diagram-canvas';
-
-      const viewport = document.createElement('div');
-      viewport.className = 'docs-diagram-viewport';
-
+      canvas.tabIndex = 0;
+      canvas.setAttribute('role', 'group');
+      canvas.setAttribute('aria-label', 'Diagram');
       node.parentNode?.insertBefore(viewer, node);
-      viewport.appendChild(node);
-      canvas.appendChild(viewport);
-
-      let scale = 1;
-      let translateX = 0;
-      let translateY = 0;
-      let isDragging = false;
-      let dragStartX = 0;
-      let dragStartY = 0;
-
-      const applyTransform = () => {
-        viewport.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
-      };
-
-      const fitToCanvas = () => {
-        const content = (node.querySelector('svg') || node.querySelector('code') || node) as HTMLElement;
-        const contentWidth = content.getBoundingClientRect().width || content.scrollWidth || 1;
-        const availableWidth = Math.max(canvas.clientWidth - 12, 320);
-        scale = Math.min(1, Math.max(0.54, Number((availableWidth / contentWidth).toFixed(2))));
-        translateX = 0;
-        translateY = 0;
-        applyTransform();
-      };
-
-      const makeButton = (label: string, action: () => void) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'docs-diagram-btn';
-        btn.textContent = label;
-        btn.addEventListener('click', action);
-        return btn;
-      };
-
-      controls.appendChild(makeButton('-', () => {
-        scale = Math.max(0.5, Number((scale - 0.1).toFixed(2)));
-        applyTransform();
-      }));
-      controls.appendChild(makeButton('+', () => {
-        scale = Math.min(1.8, Number((scale + 0.1).toFixed(2)));
-        applyTransform();
-      }));
-      controls.appendChild(makeButton('Reset', () => {
-        fitToCanvas();
-      }));
-
-      canvas.addEventListener('pointerdown', (event) => {
-        isDragging = true;
-        dragStartX = event.clientX - translateX;
-        dragStartY = event.clientY - translateY;
-        canvas.setPointerCapture(event.pointerId);
-        canvas.classList.add('is-panning');
-      });
-
-      canvas.addEventListener('pointermove', (event) => {
-        if (!isDragging) return;
-        translateX = event.clientX - dragStartX;
-        translateY = event.clientY - dragStartY;
-        applyTransform();
-      });
-
-      const stopDragging = (event: PointerEvent) => {
-        isDragging = false;
-        canvas.releasePointerCapture(event.pointerId);
-        canvas.classList.remove('is-panning');
-      };
-
-      canvas.addEventListener('pointerup', stopDragging);
-      canvas.addEventListener('pointercancel', stopDragging);
-      canvas.addEventListener('wheel', (event) => {
-        event.preventDefault();
-        if (event.ctrlKey) {
-          scale = Math.min(1.8, Math.max(0.5, Number((scale + (event.deltaY > 0 ? -0.08 : 0.08)).toFixed(2))));
-        } else {
-          translateX -= event.deltaX;
-          translateY -= event.deltaY;
-        }
-        applyTransform();
-      }, { passive: false });
-
-      toolbar.appendChild(title);
-      toolbar.appendChild(controls);
-      viewer.appendChild(toolbar);
+      canvas.appendChild(node);
       viewer.appendChild(canvas);
-      requestAnimationFrame(fitToCanvas);
-    });
-  }
 
-  private enhanceSectionHeadings(html: string): string {
-    return html
-      .replace(
-        /<h2([^>]*)>Roles CRUD<\/h2>/gi,
-        '<h2$1 class="api-section-title">Roles CRUD</h2>'
-      )
-      .replace(
-        /<h2([^>]*)>Permission Validation<\/h2>/gi,
-        '<h2$1 class="api-section-title">Permission Validation</h2>'
-      )
-      .replace(
-        /<h2([^>]*)>Error Codes<\/h2>/gi,
-        '<h2$1 class="api-section-title">Error Codes</h2>'
-      );
+      // On the page the whole diagram fits the column; "View full size" opens it
+      // at its natural size in an overlay where it can be read and scrolled.
+      const layout = () => {
+        const available = Math.max(canvas.clientWidth - 32, 240);
+        const width = Math.min(naturalWidth, available);
+        svg.style.width = Math.round(width) + 'px';
+        svg.style.height = 'auto';
+        bar.hidden = naturalWidth <= available * 1.15;
+      };
+
+      const bar = document.createElement('figcaption');
+      bar.className = 'docs-diagram-bar';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'docs-diagram-btn';
+      btn.textContent = 'View full size';
+      btn.addEventListener('click', () => this.openDiagram(svg, naturalWidth, btn));
+      bar.appendChild(btn);
+      viewer.appendChild(bar);
+      canvas.addEventListener('click', () => { if (!bar.hidden) this.openDiagram(svg, naturalWidth, btn); });
+      canvas.classList.add('is-zoomable');
+
+      requestAnimationFrame(layout);
+      if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => layout()).observe(canvas);
+    });
   }
 }

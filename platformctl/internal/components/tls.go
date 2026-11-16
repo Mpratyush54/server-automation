@@ -55,9 +55,12 @@ spec:
 ` + contact + `    privateKeySecretRef:
       name: letsencrypt-prod
     solvers:
+    # ClusterIP: project namespaces forbid NodePort Services (quota), and
+    # ingress-nginx reaches the solver through its Service endpoints.
     - http01:
         ingress:
           ingressClassName: nginx
+          serviceType: ClusterIP
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -178,9 +181,9 @@ kubectl -n platform annotate ingress platform cert-manager.io/cluster-issuer=%s 
 //  1. Prefer Let's Encrypt: if it issues within leWait, use it.
 //  2. Otherwise fall back to the in-cluster CA (always issuable) and record it,
 //     so the next run retries Let's Encrypt and switches back automatically.
-//  3. Point ArgoCD (the only client that fetches OIDC discovery over the public
-//     URL) at the matching CA, then restart SSO clients that may have cached a
-//     failure.
+//  3. Point ArgoCD and MinIO (the clients that verify the provider over the
+//     public URL) at the matching CA, then restart SSO clients that may have
+//     cached a failure.
 func EnsureTLS(cfg *config.Config) error {
 	if !cfg.InstallCertManager {
 		color.Yellow("  ○ cert-manager disabled — skipping TLS repair")
@@ -197,7 +200,7 @@ func EnsureTLS(cfg *config.Config) error {
 	if ok, _ := waitCertReady(leWait); ok && servedIssuer() == IssuerLetsEncrypt {
 		_ = state.Clear(tlsFallbackKey)
 		color.Green("  ✓ Let's Encrypt certificate issued")
-		return trustAndRestartSSO(false)
+		return trustSSOClients(cfg, false)
 	}
 
 	color.Yellow("  ⚠ Let's Encrypt has not issued a certificate yet:")
@@ -217,7 +220,18 @@ func EnsureTLS(cfg *config.Config) error {
 	}
 	_ = state.MarkDone(tlsFallbackKey)
 	color.Green("  ✓ Internal CA certificate active")
-	return trustAndRestartSSO(true)
+	return trustSSOClients(cfg, true)
+}
+
+// trustSSOClients gives the SSO clients that verify the provider over the
+// public URL (ArgoCD, MinIO) the CA of the active issuer and restarts them.
+func trustSSOClients(cfg *config.Config, useCA bool) error {
+	if !cfg.ObjectStorageExternal() {
+		if err := trustMinioCA(useCA); err != nil {
+			color.Yellow("  ⚠ %v", err)
+		}
+	}
+	return trustAndRestartSSO(useCA)
 }
 
 // trustAndRestartSSO configures ArgoCD's OIDC rootCA for the active issuer and

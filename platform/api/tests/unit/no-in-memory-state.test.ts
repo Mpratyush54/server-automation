@@ -49,6 +49,15 @@ const ALLOWED: Record<string, string> = {
   // count = count + EXCLUDED.count, so Postgres totals stay exact across replicas; a hard crash
   // loses at most one flush interval of this process's counts (docs/guides/heatmaps.md).
   'lib/heatmap-buffer.ts': 'bounded write-behind aggregation buffer',
+  // Shared MCP registry (#193): tool/resource lookup tables built per MCP server instance.
+  'mcp/registry.ts': 'code registry',
+  // Connected assistants listing (#193): per-response lookup tables (clients/users by id).
+  'routes/mcp-connections.ts': 'request-scoped',
+  'lib/node-metrics.ts': 'function-local lookup while merging node usage and capacity',
+  'lib/usage-collector.ts': 'function-local maps for one collection run',
+  'lib/usage-metrics.ts': 'function-local aggregation of one Prometheus response',
+  'routes/usage.ts': 'request-scoped grouping for one response',
+  'lib/redis-password-rotate.ts': 'function-local set of HA members for one rotation run',
 };
 
 function walk(dir: string): string[] {

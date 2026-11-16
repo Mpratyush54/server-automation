@@ -1,171 +1,169 @@
 <div class="docs-page">
-  <!-- Mobile toggle -->
-  <div class="docs-mobile-bar"><button class="docs-mobile-toggle" (click)="mobileNavOpen = !mobileNavOpen">
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-      <path d="M2.5 5h15M2.5 10h15M2.5 15h15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-    </svg>
-    <span>Documentation</span>
-    </button><button type="button" class="docs-mobile-search" (click)="docsSearch.openSearch()" aria-haspopup="dialog" aria-label="Search documentation">Search <span aria-hidden="true">⌕</span></button></div>
-    <app-docs-search #docsSearch (resultSelected)="mobileNavOpen = false" />
+  <app-site-header />
+  <app-docs-search #docsSearch (resultSelected)="mobileNavOpen = false" />
 
-    <div class="docs-layout">
-      <!-- Sidebar -->
-      <aside class="docs-sidebar" [class.open]="mobileNavOpen">
-        <div class="docs-sidebar-header">
-          <a routerLink="/docs" class="docs-logo" (click)="mobileNavOpen = false">
-            <img src="logo-dark-icon.png" alt="" width="28" height="28" class="docs-logo-img" />
-            Platform Docs
-          </a>
-          <button class="docs-close-sidebar" (click)="mobileNavOpen = false">&times;</button>
-        </div>
-
-        <!-- Search -->
-        <button type="button" class="docs-search docs-search-trigger" (click)="docsSearch.openSearch()" aria-haspopup="dialog" aria-label="Search documentation">
-          <svg class="docs-search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.5"/>
-            <path d="M9.5 9.5L13 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-          <span>Search documentation</span><kbd>Ctrl K</kbd>
-        </button>
-
-        <!-- Navigation -->
-        <nav class="docs-nav">
-          @for (section of docSections; track section) {
-            <div class="docs-nav-group">
-              <div class="docs-nav-group-label">
-                {{ section.label }}
-                <span class="docs-page-count">({{ section.pages.length }})</span>
-              </div>
-              @for (page of section.pages; track page) {
-                <a
-                  class="docs-nav-link"
-                  [class.active]="isActive(page)"
-                  [routerLink]="docUrl(page)" (click)="mobileNavOpen = false"
-                >{{ page.label }}</a>
-              }
-            </div>
-          }
-        </nav>
-      </aside>
-
-      <!-- Content + TOC -->
-      <main class="docs-content">
-        <div class="docs-content-inner">
-          <!-- Breadcrumb + mobile agent actions -->
-          @if (currentSection || !isLoading) {
-            <div class="docs-breadcrumb-row">
-              <div class="docs-breadcrumb">
-                <a routerLink="/docs">Docs</a>
-                <span class="docs-breadcrumb-sep">/</span>
-                <span class="docs-breadcrumb-current">
-                  {{ getBreadcrumbTitle() }}
-                </span>
-              </div>
-              @if (!isLoading && content && rawMarkdown) {
-                <div class="docs-agent-mobile">
-                  <button type="button" class="docs-agent-btn docs-agent-btn-primary" (click)="copyAgentPrompt()">
-                    {{ agentCopyFeedback === 'prompt' ? 'Copied' : 'Copy for agent' }}
-                  </button>
-                </div>
-              }
-            </div>
-          }
-
-          <!-- Loading -->
-          @if (isLoading) {
-            <div class="docs-loading">
-              <div class="docs-loading-spinner"></div>
-              <span>Loading documentation...</span>
-            </div>
-          }
-
-          <!-- Markdown content -->
-          @if (!isLoading && content) {
-            <div class="docs-markdown" [innerHTML]="content"></div>
-          }
-
-          <!-- 404 -->
-          @if (!isLoading && !content) {
-            <div class="docs-not-found">
-              <div class="docs-not-found-icon">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
-                  <path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                </svg>
-              </div>
-              <h3>Page Not Found</h3>
-              <p>The documentation page you're looking for doesn't exist or hasn't been written yet.</p>
-              <a routerLink="/docs" class="docs-back-link">&larr; Back to Docs Home</a>
-            </div>
-          }
-
-          <!-- Footer nav -->
-          @if (!isLoading && content) {
-            <div class="docs-page-nav">
-              <div class="docs-page-nav-row">
-                @if (prevPage) {
-                  <a class="docs-nav-item docs-nav-prev" [routerLink]="docUrl(prevPage)">
-                    <span class="docs-nav-arrow">&larr;</span>
-                    <span class="docs-nav-text">
-                      <span class="docs-nav-label">Previous</span>
-                      <span class="docs-nav-title">{{ prevPage.label }}</span>
-                    </span>
-                  </a>
-                }
-                @if (nextPage) {
-                  <a class="docs-nav-item docs-nav-next" [routerLink]="docUrl(nextPage)">
-                    <span class="docs-nav-text">
-                      <span class="docs-nav-label">Next</span>
-                      <span class="docs-nav-title">{{ nextPage.label }}</span>
-                    </span>
-                    <span class="docs-nav-arrow">&rarr;</span>
-                  </a>
-                }
-              </div>
-            </div>
-          }
-        </div>
-
-        <!-- Right rail: agent actions + TOC -->
-        @if (!isLoading && content) {
-          <aside class="docs-toc">
-            @if (rawMarkdown) {
-              <div class="docs-agent-card">
-                <div class="docs-toc-header">For AI agents</div>
-                <p class="docs-agent-blurb">Copy this page into Cursor, Claude, ChatGPT, or any agent — no need to scrape the HTML.</p>
-                <button type="button" class="docs-agent-btn docs-agent-btn-primary" (click)="copyAgentPrompt()">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
-                  {{ agentCopyFeedback === 'prompt' ? 'Copied for agent' : 'Copy page for agent' }}
-                </button>
-                <button type="button" class="docs-agent-btn" (click)="copyPageMarkdown()">
-                  {{ agentCopyFeedback === 'page' ? 'Copied Markdown' : 'Copy Markdown' }}
-                </button>
-                <button type="button" class="docs-agent-btn" (click)="copyMarkdownUrl()">
-                  {{ agentCopyFeedback === 'url' ? 'URL copied' : 'Copy Markdown URL' }}
-                </button>
-                <div class="docs-agent-links">
-                  <a [href]="markdownAbsoluteUrl" target="_blank" rel="noopener">View as Markdown</a>
-                  <a [href]="llmsTxtUrl" target="_blank" rel="noopener">llms.txt</a>
-                </div>
-              </div>
-            }
-            @if (tocItems.length > 0) {
-              <div class="docs-toc-header" [class.docs-toc-header-spaced]="!!rawMarkdown">On this page</div>
-              <nav class="docs-toc-nav">
-                @for (item of tocItems; track item) {
-                  <a
-                    class="docs-toc-link"
-                    [class.toc-h2]="item.level === 'h2'"
-                    [class.toc-h3]="item.level === 'h3'"
-                    [class.toc-active]="item.id === activeTocId"
-                    [attr.href]="headingUrl(item.id)"
-                    (click)="scrollToHeading($event, item.id)"
-                  >{{ item.text }}</a>
-                }
-              </nav>
-            }
-          </aside>
-        }
-      </main>
-    </div>
+  <!-- Small screens: open the page list or search -->
+  <div class="docs-bar">
+    <button type="button" class="docs-bar-menu" (click)="mobileNavOpen = true"
+      [attr.aria-expanded]="mobileNavOpen" aria-controls="docs-sidebar">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14" /></svg>
+      <span class="docs-bar-label">{{ trail ? trail.group.label : 'Docs' }}</span>
+      @if (trail) {
+        <span class="docs-bar-sep" aria-hidden="true">/</span>
+        <span class="docs-bar-page">{{ getBreadcrumbTitle() }}</span>
+      }
+    </button>
+    <button type="button" class="docs-bar-search" (click)="docsSearch.openSearch()" aria-haspopup="dialog" aria-label="Search documentation">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4 4" /></svg>
+    </button>
   </div>
+
+  @if (mobileNavOpen) {
+    <div class="docs-backdrop" (click)="mobileNavOpen = false" aria-hidden="true"></div>
+  }
+
+  <div class="docs-layout">
+    <!-- Page list, grouped by task -->
+    <aside id="docs-sidebar" class="docs-sidebar" [class.open]="mobileNavOpen" aria-label="Documentation">
+      <div class="docs-sidebar-head">
+        <span class="docs-sidebar-title">Documentation</span>
+        <button type="button" class="docs-sidebar-close" (click)="mobileNavOpen = false" aria-label="Close page list">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" /></svg>
+        </button>
+      </div>
+
+      <button type="button" class="docs-search-trigger" (click)="docsSearch.openSearch()" aria-haspopup="dialog" aria-label="Search documentation">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4 4" /></svg>
+        <span>Search</span>
+        <kbd>Ctrl K</kbd>
+      </button>
+
+      <nav class="docs-nav">
+        @for (section of docSections; track section.id) {
+          <div class="docs-nav-group" [class.has-active]="isSectionActive(section)">
+            <h2 class="docs-nav-group-label">{{ section.label }}</h2>
+            <ul>
+              @for (page of section.pages; track docUrl(page)) {
+                <li>
+                  <a class="docs-nav-link"
+                    [class.active]="isActive(page)"
+                    [class.parent-active]="isExpanded(page) && !isActive(page)"
+                    [attr.aria-current]="isActive(page) ? 'page' : null"
+                    [routerLink]="docUrl(page)" (click)="mobileNavOpen = false">{{ page.label }}</a>
+                  @if (isExpanded(page)) {
+                    <ul class="docs-nav-children">
+                      @for (child of page.children; track docUrl(child)) {
+                        @if (child.heading) {
+                          <li class="docs-nav-subhead">{{ child.heading }}</li>
+                        }
+                        <li>
+                          <a class="docs-nav-link docs-nav-child"
+                            [class.active]="isActive(child)"
+                            [attr.aria-current]="isActive(child) ? 'page' : null"
+                            [routerLink]="docUrl(child)" (click)="mobileNavOpen = false">{{ child.label }}</a>
+                        </li>
+                      }
+                    </ul>
+                  }
+                </li>
+              }
+            </ul>
+          </div>
+        }
+      </nav>
+    </aside>
+
+    <!-- Reading column -->
+    <main class="docs-content">
+      <div class="docs-article-wrap">
+        <div class="docs-breadcrumb-row">
+          <nav class="docs-breadcrumb" aria-label="Breadcrumb">
+            <a routerLink="/docs">Docs</a>
+            @if (trail) {
+              @if (trail.page.page) {
+                <span class="docs-breadcrumb-sep" aria-hidden="true">/</span>
+                <span>{{ trail.group.label }}</span>
+              }
+              @if (trail.parent) {
+                <span class="docs-breadcrumb-sep" aria-hidden="true">/</span>
+                <a [routerLink]="docUrl(trail.parent)">{{ trail.parent.label }}</a>
+              }
+            }
+            @if (currentPage) {
+              <span class="docs-breadcrumb-sep" aria-hidden="true">/</span>
+              <span class="docs-breadcrumb-current" aria-current="page">{{ getBreadcrumbTitle() }}</span>
+            }
+          </nav>
+          @if (!isLoading && content && rawMarkdown) {
+            <div class="docs-page-actions">
+              <button type="button" class="docs-action" (click)="copyAgentPrompt()"
+                title="Copy this page as Markdown, with links, to paste into an AI assistant">
+                {{ agentCopyFeedback === 'prompt' ? 'Copied' : 'Copy for AI' }}
+              </button>
+              <a class="docs-action" [href]="markdownAbsoluteUrl" target="_blank" rel="noopener">Markdown</a>
+            </div>
+          }
+        </div>
+
+        @if (isLoading) {
+          <div class="docs-loading" role="status">
+            <span class="docs-loading-bar"></span>
+            <span class="docs-loading-bar docs-loading-bar-short"></span>
+            <span class="docs-loading-bar"></span>
+            <span class="sr-only">Loading page</span>
+          </div>
+        }
+
+        @if (!isLoading && content) {
+          <article class="docs-markdown" [innerHTML]="content"></article>
+        }
+
+        @if (!isLoading && !content) {
+          <div class="docs-not-found">
+            <h1>Page not found</h1>
+            <p>This page does not exist or has moved. Search the docs, or start from the overview.</p>
+            <div class="docs-not-found-actions">
+              <button type="button" class="btn btn-primary" (click)="docsSearch.openSearch()">Search docs</button>
+              <a routerLink="/docs" class="btn">Docs overview</a>
+            </div>
+          </div>
+        }
+
+        @if (!isLoading && content && (prevPage || nextPage)) {
+          <nav class="docs-pager" aria-label="Previous and next page">
+            @if (prevPage) {
+              <a class="docs-pager-link docs-pager-prev" [routerLink]="docUrl(prevPage)">
+                <span class="docs-pager-dir">Previous</span>
+                <span class="docs-pager-title">{{ pageLabel(prevPage) }}</span>
+              </a>
+            }
+            @if (nextPage) {
+              <a class="docs-pager-link docs-pager-next" [routerLink]="docUrl(nextPage)">
+                <span class="docs-pager-dir">Next</span>
+                <span class="docs-pager-title">{{ pageLabel(nextPage) }}</span>
+              </a>
+            }
+          </nav>
+        }
+      </div>
+
+      <!-- On this page -->
+      @if (!isLoading && content && tocItems.length > 1) {
+        <aside class="docs-toc" aria-labelledby="docs-toc-title">
+          <h2 id="docs-toc-title" class="docs-toc-title">On this page</h2>
+          <nav class="docs-toc-nav">
+            @for (item of tocItems; track item.id) {
+              <a class="docs-toc-link"
+                [class.toc-h2]="item.level === 'h2'"
+                [class.toc-h3]="item.level === 'h3'"
+                [class.toc-active]="item.id === activeTocId"
+                [attr.aria-current]="item.id === activeTocId ? 'location' : null"
+                [attr.href]="headingUrl(item.id)"
+                (click)="scrollToHeading($event, item.id)">{{ item.text }}</a>
+            }
+          </nav>
+        </aside>
+      }
+    </main>
+  </div>
+</div>

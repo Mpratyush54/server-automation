@@ -1,70 +1,77 @@
-<header class="h-16 border-b border-[#333] bg-black/80 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between gap-3 px-4 md:px-6 transition-all duration-300">
-  <div class="flex items-center gap-3 min-w-0">
+<header class="top">
+  <div class="top-left">
     @if (isMobile) {
-      <button type="button" class="p-2 -ml-2 text-[#a1a1aa] hover:text-white rounded-md hover:bg-[#111] transition-colors flex-shrink-0"
-        data-testid="nav-menu-button" aria-label="Open navigation" [attr.aria-expanded]="mobileNavOpen" (click)="toggleSidebar.emit()">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+      <button type="button" class="top-icon" data-testid="nav-menu-button" aria-label="Open navigation"
+        [attr.aria-expanded]="mobileNavOpen" (click)="toggleSidebar.emit()">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"></path></svg>
       </button>
     }
-    <div class="flex items-center gap-2 text-sm text-[#a1a1aa] min-w-0">
-      <span class="hidden sm:inline hover:text-white cursor-pointer transition-colors truncate max-w-[10rem]">{{ currentUser?.name || 'Platform' }}</span>
-      <svg class="hidden sm:block flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
-      <span class="text-white bg-[#111] border border-[#333] px-2 py-0.5 rounded-full text-xs font-medium truncate">{{ title }}</span>
-    </div>
+    <span class="top-title">{{ title }}</span>
   </div>
 
-  <div class="flex items-center gap-2 md:gap-4 flex-shrink-0">
-    <div class="hidden lg:flex items-center gap-4 mr-2 text-sm font-medium">
-      <a href="https://github.com/Mpratyush54/server-automation/issues" target="_blank" class="text-[#a1a1aa] hover:text-white transition-colors">Feedback</a>
-      <a href="https://github.com/Mpratyush54/server-automation/releases" target="_blank" class="text-[#a1a1aa] hover:text-white transition-colors">Changelog</a>
-      <a routerLink="/settings" class="text-[#a1a1aa] hover:text-white transition-colors">Settings</a>
-      <a href="https://platform.pratyushes.dev/docs" target="_blank" rel="noopener" class="text-[#a1a1aa] hover:text-white transition-colors">Docs</a>
-    </div>
+  @if (!isMobile) {
+    <button type="button" class="top-search" data-testid="search-field" aria-haspopup="dialog"
+      [attr.aria-keyshortcuts]="shortcutHint === 'Ctrl K' ? 'Control+K /' : 'Meta+K /'" (click)="openSearch()">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      <span class="top-search-text">Search</span>
+      <kbd class="top-search-kbd">{{ shortcutHint }}</kbd>
+    </button>
+  }
 
-    <div class="w-px h-6 bg-[#333] hidden lg:block"></div>
+  <div class="top-right">
+    @if (isMobile) {
+      <button type="button" class="top-icon" data-testid="search-button" aria-label="Search" aria-haspopup="dialog" (click)="openSearch()">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      </button>
+    }
+    <nav class="top-links" aria-label="Help">
+      <a href="https://github.com/Mpratyush54/server-automation/releases" target="_blank" rel="noopener">What's new</a>
+      <a href="https://github.com/Mpratyush54/server-automation/issues" target="_blank" rel="noopener">Feedback</a>
+    </nav>
 
-    <div class="relative" (click)="$event.stopPropagation()">
-      <button class="relative p-2 text-[#a1a1aa] hover:text-white transition-colors rounded-full hover:bg-[#111]" (click)="toggleInbox($event)" aria-label="Notifications">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+    <div class="top-inbox" (click)="$event.stopPropagation()">
+      <button type="button" class="top-icon" (click)="toggleInbox($event)"
+        [attr.aria-label]="unreadCount > 0 ? 'Notifications, ' + unreadCount + ' unread' : 'Notifications'"
+        [attr.aria-expanded]="inboxOpen">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
         @if (unreadCount > 0) {
-          <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-500 rounded-full border-2 border-black"></span>
+          <span class="top-dot" aria-hidden="true"></span>
         }
       </button>
       @if (inboxOpen) {
-        <div class="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] max-h-96 overflow-y-auto rounded-xl border border-[#333] bg-[#0a0a0a] shadow-2xl z-50">
-          <div class="flex items-center justify-between px-3 py-2 border-b border-[#222]">
-            <span class="text-xs font-medium text-white">Notifications</span>
+        <div class="inbox" role="dialog" aria-label="Notifications">
+          <div class="inbox-head">
+            <span>Notifications</span>
             @if (unreadCount > 0) {
-              <button class="text-[11px] text-blue-400 hover:text-blue-300" (click)="markAllRead($event)">Mark all read</button>
+              <button type="button" class="inbox-mark" (click)="markAllRead($event)">Mark all as read</button>
             }
           </div>
           @if (notifications.length === 0) {
-            <div class="px-3 py-8 text-center text-xs text-[#71717a]">No notifications yet.</div>
+            <p class="inbox-empty">No notifications. Deploys, alerts and invitations show up here.</p>
           }
           @for (n of notifications; track n) {
-            <button class="w-full text-left px-3 py-2.5 border-b border-[#1a1a1a] hover:bg-[#111] transition-colors"
-              [class.bg-[#111]]="!n.readAt"
-              (click)="openNotification(n, $event)">
-              <div class="text-xs text-white font-medium">{{ n.title }}</div>
+            <button type="button" class="inbox-item" [class.inbox-unread]="!n.readAt" (click)="openNotification(n, $event)">
+              <span class="inbox-title">{{ n.title }}</span>
               @if (n.body) {
-                <div class="text-[11px] text-[#a1a1aa] mt-0.5 line-clamp-2">{{ n.body }}</div>
+                <span class="inbox-body">{{ n.body }}</span>
               }
-              <div class="text-[10px] text-[#52525b] mt-1">{{ n.createdAt | date:'short' }}</div>
+              <span class="inbox-time">{{ n.createdAt | date: 'short' }}</span>
             </button>
           }
         </div>
       }
     </div>
 
-    <a routerLink="/profile" class="w-8 h-8 flex-shrink-0 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 p-[1px] cursor-pointer" title="Profile">
-      <div class="w-full h-full rounded-full bg-black border border-black overflow-hidden flex items-center justify-center">
-        @if (currentUser?.avatarUrl) {
-          <img [src]="currentUser.avatarUrl" alt="" class="w-full h-full object-cover">
-        }
-        @if (!currentUser?.avatarUrl) {
-          <span class="text-xs text-white font-medium">{{ initials }}</span>
-        }
-      </div>
+    <a routerLink="/profile" class="top-avatar" title="Profile">
+      @if (currentUser?.avatarUrl) {
+        <img [src]="currentUser.avatarUrl" alt="">
+      } @else {
+        <span>{{ initials }}</span>
+      }
     </a>
   </div>
 </header>
+
+@if (search.isOpen()) {
+  <app-search-palette></app-search-palette>
+}

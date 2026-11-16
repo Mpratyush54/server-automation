@@ -1,25 +1,28 @@
-# Image scanning, signing, and admission
+# Check that Cairn images are genuine
 
-Platform release images (`ghcr.io/mpratyush54/platform-api` and
-`platform-portal`) are scanned with Trivy, signed keyless with cosign
-(GitHub Actions OIDC), and can be verified both by `platformctl` and by
-Kyverno admission policies.
+Every Cairn release image is scanned for known vulnerabilities and signed, so you can prove it was built by the project's own release pipeline. `platformctl` checks the signature for you on every install and update. Nothing needs to be set in the portal.
 
-## What CI does
+## What happens by default
 
-| Workflow | Action |
-|---|---|
-| `docker-build.yml` | Build → Trivy (fail on CRITICAL with a fix; `.trivyignore`) → SARIF upload → CycloneDX SBOM → cosign sign + attest |
-| `publish-stack.yml` | cosign sign `platform-stack:<version>-<arch>` |
-| `release-platformctl.yml` | cosign sign the GHCR `platformctl` OCI artifact |
-| `scan-third-party-images.yml` | Weekly Trivy of `platformctl/internal/images/images.txt` (private artifact + job summary only) |
+When you run `sudo platformctl provision` or `sudo platformctl update`, platformctl checks the signatures of the API and portal images before it installs them.
 
-Pull requests build and scan locally; they never push or sign.
+| Situation | Default | With `PLATFORM_VERIFY_IMAGES=strict` |
+|---|---|---|
+| The signature is valid | continue | continue |
+| The image has no signature | warning, continue | **stop** |
+| The signature could not be checked | warning, continue | **stop** |
+| The signature is invalid | **stop** | **stop** |
+| The `cosign` tool is not installed | warning, continue | warning, continue |
 
-Allowlist entries live in [`.trivyignore`](../../.trivyignore). Every CVE
-line must include an **expiry date** and a short reason in a comment.
+To require a signature on every install:
 
-## Verify a release image by hand
+```bash
+sudo PLATFORM_VERIFY_IMAGES=strict platformctl update
+```
+
+## Check an image yourself
+
+Install [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) (the signing tool), then:
 
 ```bash
 cosign verify \
@@ -28,10 +31,9 @@ cosign verify \
   ghcr.io/mpratyush54/platform-api:<tag>
 ```
 
-The same identity is used for `platform-portal`, `platform-stack`, and the
-`platformctl` GHCR mirror.
+The same command works for `platform-portal`, `platform-stack` and the `platformctl` copy on GHCR.
 
-To inspect the CycloneDX SBOM attestation:
+To see the list of components inside an image (its SBOM, a software bill of materials):
 
 ```bash
 cosign verify-attestation \
@@ -41,57 +43,63 @@ cosign verify-attestation \
   ghcr.io/mpratyush54/platform-api:<tag>
 ```
 
-## platformctl verification (all profiles)
+## Block unsigned images in the cluster (optional)
 
-Before installing or updating API/portal images, `platformctl` runs
-`cosign verify` with the identity above.
+You can also make the cluster itself refuse unsigned Cairn images. This uses Kyverno, a policy engine for Kubernetes. It is not installed by default because it needs about 200 MB and suits larger installs.
 
-| Situation | Default (`PLATFORM_VERIFY_IMAGES` unset/warn) | `PLATFORM_VERIFY_IMAGES=strict` |
-|---|---|---|
-| cosign not installed | warn, continue | warn, continue |
-| no signature | warn, continue | **fail** |
-| invalid signature | **fail** | **fail** |
+1. Install it with the full profile:
 
-## Enable Kyverno admission (full profile, opt-in)
+   ```bash
+   export PLATFORM_PROFILE=full
+   export INSTALL_KYVERNO=true
+   sudo -E platformctl provision --auto
+   ```
 
-Kyverno is **not** installed by default (it is ~200 MB and only makes sense
-on fuller installs). Enable it explicitly:
+   On a running server you can use `sudo -E platformctl install kyverno` instead.
 
-```bash
-export PLATFORM_PROFILE=full
-export INSTALL_KYVERNO=true
-# Optional: switch from Audit (default) to Enforce
-export KYVERNO_POLICY_MODE=Enforce
-sudo platformctl provision --auto
-# or: sudo platformctl install kyverno
-```
+2. It starts in **Audit** mode: unsigned pods are reported, not blocked. Review the Kyverno policy reports.
+3. When the reports are clean, switch to blocking:
 
-The ClusterPolicy `verify-platform-images` requires keyless cosign signatures
-on `ghcr.io/mpratyush54/*` Pods in the `platform` namespace. Start in
-**Audit**, review Kyverno policy reports, then set
-`KYVERNO_POLICY_MODE=Enforce` and re-run `platformctl install kyverno`.
+   ```bash
+   export KYVERNO_POLICY_MODE=Enforce
+   sudo -E platformctl install kyverno
+   ```
 
-### Optional CVE policy (Trivy Operator)
+## How it works
 
-`INSTALL_KYVERNO_CVE_POLICY=true` applies a ClusterPolicy that expects
-Trivy Operator `VulnerabilityReport` objects in the `platform` namespace
-with `spec.summary.critical: 0`.
+### Release pipeline
 
-platformctl does **not** install Trivy Operator. If you want that feed:
+| Workflow | What it does |
+|---|---|
+| `docker-build.yml` | Build, then Trivy scan (fails on a CRITICAL finding that has a fix; exceptions in `.trivyignore`), SARIF upload, CycloneDX SBOM, then cosign sign and attest |
+| `publish-stack.yml` | cosign sign `platform-stack:<version>-<arch>` |
+| `release-platformctl.yml` | cosign sign the `platformctl` OCI artifact on GHCR |
+| `scan-third-party-images.yml` | Weekly Trivy scan of the images in `platformctl/internal/images/images.txt` (results as a private artifact and job summary only) |
 
-1. Install [Trivy Operator](https://aquasecurity.github.io/trivy-operator/)
-   yourself (Helm chart) with resource limits appropriate for the node.
-2. Set `INSTALL_KYVERNO_CVE_POLICY=true` and re-apply Kyverno policies.
-3. Keep CI `.trivyignore` as the allowlist with expiries; do not silence
-   CRITICAL findings in Enforce mode without a dated reason.
+Signing is keyless: cosign uses the GitHub Actions OIDC identity of the workflow instead of a stored key. Pull requests build and scan the images but never push or sign them.
 
-## Tenant opt-in: sign and enforce your own images
+Exceptions live in [`.trivyignore`](https://github.com/Mpratyush54/SERVER-automation/blob/master/.trivyignore). Every CVE line must have an expiry date and a short reason in a comment.
 
-Tenants can reuse the same pattern in their project namespaces without
-changing the platform ClusterPolicy.
+### platformctl check
 
-1. Sign images in the tenant CI (keyless cosign + their workflow identity).
-2. Apply a **namespaced** Kyverno `Policy` (not ClusterPolicy), for example:
+platformctl runs `cosign verify` with the identity above (`platformctl/internal/verify/verify.go`) on the API and portal images, with a 2-minute time limit. A missing `cosign` binary is always only a warning, so offline installs still work.
+
+### Kyverno policy
+
+The ClusterPolicy `verify-platform-images` requires keyless cosign signatures on `ghcr.io/mpratyush54/*` images for pods in the `platform` namespace. `KYVERNO_POLICY_MODE` picks `Audit` (default) or `Enforce`.
+
+**Optional CVE policy.** `INSTALL_KYVERNO_CVE_POLICY=true` adds a ClusterPolicy that expects Trivy Operator `VulnerabilityReport` objects in the `platform` namespace with `spec.summary.critical: 0`. platformctl does not install Trivy Operator. To use this:
+
+1. Install [Trivy Operator](https://aquasecurity.github.io/trivy-operator/) yourself (Helm chart), with resource limits that fit the node.
+2. Set `INSTALL_KYVERNO_CVE_POLICY=true` and run `platformctl install kyverno` again.
+3. Keep `.trivyignore` as the allowlist with expiry dates. Do not silence CRITICAL findings in Enforce mode without a dated reason.
+
+### Sign and enforce your own app images
+
+You can use the same approach for your own apps in their project namespaces, without changing Cairn's own policy.
+
+1. Sign your images in your own CI (keyless cosign with your workflow identity).
+2. Apply a **namespaced** Kyverno `Policy` (not a ClusterPolicy), for example:
 
 ```yaml
 apiVersion: kyverno.io/v1
@@ -121,9 +129,9 @@ spec:
           required: true
 ```
 
-3. Move `validationFailureAction` to `Enforce` after Audit looks clean.
+3. Change `validationFailureAction` to `Enforce` once Audit looks clean.
 
-## Policy tests
+## For developers: policy tests
 
 ```bash
 kyverno test platformctl/internal/manifests/data/kyverno-tests

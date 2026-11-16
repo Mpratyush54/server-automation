@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/backup"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/upgrade"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
 	"os"
@@ -95,6 +96,26 @@ func TestUpgradePlanAndPreflightUseInjectedCommands(t *testing.T) {
 	}
 }
 
+func TestUpgradeBackupToolsRefusesMissingSqlite(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	e := upgradeBackupTools(backup.Config{Target: "external", Components: []string{"k3s"}})
+	if e == nil || !strings.Contains(e.Error(), "sqlite3") || !strings.Contains(e.Error(), "before the upgrade") {
+		t.Fatal(e)
+	}
+}
+
+func TestHeadroomErrorNamesTheShortResource(t *testing.T) {
+	if e := headroomError(1994744, 8<<20); e == nil || !strings.Contains(e.Error(), "only 1947 MiB free under /var/lib") || strings.Contains(e.Error(), "RAM") {
+		t.Fatal(e)
+	}
+	if e := headroomError(50<<20, 300*1024); e == nil || !strings.Contains(e.Error(), "only 300 MiB of RAM available") {
+		t.Fatal(e)
+	}
+	if e := headroomError(2<<20, 512*1024); e != nil {
+		t.Fatal(e)
+	}
+}
+
 // Regression (v1.2.0 -> Phase 4 upgrade): release "loki" running chart
 // loki-stack-2.10.3 was planned as an upgrade to the loki 6.x chart because
 // "loki-" prefixes "loki-stack-". Charts must match by exact name.
@@ -150,23 +171,61 @@ func TestPersistUpgradedTagRewritesEnvAtomically(t *testing.T) {
 }
 
 func TestUpgradePlanMutableTagOnlyForUnreleasedTarget(t *testing.T) {
-	old := upgradeRun
-	defer func() { upgradeRun, upgrade.AllowUnreleased = old, false }()
-	target := "ghcr.io/test/platform-api:1.3.0"
+	old, oldOnNode := upgradeRun, upgradeImageOnNode
+	defer func() { upgradeRun, upgradeImageOnNode, upgrade.AllowUnreleased = old, oldOnNode, false }()
+	deployed := "ghcr.io/test/platform-api:1.3.0"
 	upgradeRun = func(name string, args ...string) (string, error) {
 		if name == "helm" {
 			return "[]", nil
 		}
-		return target, nil
+		return deployed, nil
 	}
-	if _, e := upgradePlan(target, target); e == nil {
+	onNode := map[string]bool{deployed: true}
+	upgradeImageOnNode = func(image string) bool { return onNode[image] }
+	next := "ghcr.io/test/platform-api:1.3.1"
+	if _, e := upgradePlan(deployed, deployed); e == nil {
 		t.Fatal("mutable tag accepted without --allow-unreleased")
 	}
+	if _, e := upgradePlan(next, next); e == nil || !strings.Contains(e.Error(), "platformctl update") {
+		t.Fatalf("local-build upgrade accepted without --allow-unreleased: %v", e)
+	}
 	upgrade.AllowUnreleased = true
-	if _, e := upgradePlan(target, target); e != nil {
+	if _, e := upgradePlan(deployed, deployed); e != nil {
 		t.Fatal(e)
 	}
-	if _, e := upgradePlan("ghcr.io/test/platform-api:1.3.1", target); e == nil {
-		t.Fatal("a different mutable tag accepted")
+	// Local build -> next local build: the deployed tag is the rollback target.
+	p, e := upgradePlan(next, next)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(p.Images) != 2 || p.Images[0].Before != deployed || p.Images[0].After != next {
+		t.Fatalf("plan images = %+v", p.Images)
+	}
+	if _, e := upgradePlan("ghcr.io/other/platform-api:1.3.1", next); e == nil {
+		t.Fatal("a mutable tag from another repository accepted")
+	}
+	onNode[deployed] = false
+	if _, e := upgradePlan(next, next); e == nil || !strings.Contains(e.Error(), "present on this node") {
+		t.Fatalf("a rollback image missing from the node accepted: %v", e)
+	}
+}
+
+func TestUnreleasedRollbackImageRepository(t *testing.T) {
+	oldOnNode := upgradeImageOnNode
+	defer func() { upgradeImageOnNode, upgrade.AllowUnreleased = oldOnNode, false }()
+	upgradeImageOnNode = func(string) bool { return true }
+	upgrade.AllowUnreleased = true
+	for _, tt := range []struct {
+		old, target string
+		ok          bool
+	}{
+		{"localhost:5000/platform-api:1", "localhost:5000/platform-api:2", true},
+		{"localhost:5000/platform-api:1", "localhost:5001/platform-api:2", false},
+		{"ghcr.io/a/platform-api:1", "ghcr.io/a/platform-portal:2", false},
+		{"ghcr.io/a/platform-api", "ghcr.io/a/platform-api:2", true},
+	} {
+		if got := unreleasedRollbackImage(tt.old, tt.target); got != tt.ok {
+			t.Errorf("%s -> %s = %v", tt.old, tt.target, got)
+		}
 	}
 }

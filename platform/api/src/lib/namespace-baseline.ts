@@ -11,7 +11,7 @@ export interface BaselineSettings {
 }
 const managed = { 'app.kubernetes.io/managed-by': 'platform-namespace-baseline' };
 /** Platform/system namespaces that must never be adopted as a project namespace (mirrored in the RBAC admission policy). */
-export const reservedNamespaces = ['default', 'platform', 'databases', 'preview', 'ingress-nginx', 'argocd', 'cert-manager', 'monitoring', 'oauth2-proxy', 'portainer', 'storage'];
+export const reservedNamespaces = ['default', 'platform', 'databases', 'preview', 'ingress-nginx', 'argocd', 'cert-manager', 'monitoring', 'oauth2-proxy', 'portainer', 'storage', 'keda', 'builds', 'registry'];
 export const isReservedNamespace = (name: string) => reservedNamespaces.includes(name) || name.startsWith('kube-');
 // Public egress must never turn into an allow to another tenant or host network.
 export const privateNetworks = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', '169.254.0.0/16', '100.64.0.0/10', '0.0.0.0/8', '224.0.0.0/4', '240.0.0.0/4'];
@@ -52,11 +52,19 @@ export function namespaceBaselineManifests(projectId: string, env: NamespaceEnvi
       { to: [nsPeer('monitoring', { 'app.kubernetes.io/name': 'alloy' })], ports: [{ protocol: 'TCP', port: 4317 }, { protocol: 'TCP', port: 4318 }] },
     ] }),
   ];
-  const databases = { postgres: { name: 'postgresql', port: 5432 }, mongo: { name: 'mongodb', port: 27017 }, redis: { name: 'redis', port: 6379 } };
+  const databases: Record<string, { name: string; ports: number[] }> = {
+    postgres: { name: 'postgresql', ports: [5432] },
+    mongo: { name: 'mongodb', ports: [27017] },
+    // 6379 data + 26379 Sentinel (HA profile); single-host Redis ignores 26379.
+    redis: { name: 'redis', ports: [6379, 26379] },
+  };
   policies.push(policy('allow-databases', { policyTypes: ['Egress'], egress: (settings.databases || ['postgres', 'mongo', 'redis']).map(type => {
     const db = databases[type];
     if (!db) throw new Error('Unknown database type');
-    return { to: [nsPeer('databases', { 'app.kubernetes.io/instance': db.name, 'app.kubernetes.io/name': db.name })], ports: [{ protocol: 'TCP', port: db.port }] };
+    return {
+      to: [nsPeer('databases', { 'app.kubernetes.io/instance': db.name, 'app.kubernetes.io/name': db.name })],
+      ports: db.ports.map((port) => ({ protocol: 'TCP', port })),
+    };
   }) }));
   // Keep an empty policy when disabled: updating settings must revoke old rules.
   const cidrs = settings.internetCidrs || ['0.0.0.0/0'];
@@ -78,6 +86,9 @@ export function namespaceBaselineManifests(projectId: string, env: NamespaceEnvi
   });
   policies.push(policy('allow-internet', { policyTypes: ['Egress'], egress: settings.internetEgress === false || !publicPeers.length ? [] : [{ to: publicPeers, ports: [{ protocol: 'TCP', port: 80 }, { protocol: 'TCP', port: 443 }] }] }));
   const production = env.name === 'production';
+  if (env.name === 'preview') policies.push(policy('allow-preview-activator', { policyTypes: ['Ingress'],
+    ingress: [{ from: [nsPeer('keda', { 'app.kubernetes.io/component': 'interceptor' })] }],
+  }));
   const hard = {
     'requests.cpu': production ? '2' : '1', 'requests.memory': production ? '2Gi' : '1Gi',
     'limits.cpu': production ? '4' : '2', 'limits.memory': production ? '4Gi' : '2Gi',

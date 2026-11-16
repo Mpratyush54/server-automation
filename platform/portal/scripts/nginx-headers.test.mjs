@@ -79,8 +79,10 @@ for (const [file, frameAncestors] of [['nginx.conf', "'self'"], ['nginx.public.c
     for (const location of locations) {
       if (!location.body.some((d) => d.startsWith('add_header'))) continue;
       checked += 1;
-      // /api/ deliberately uses a stricter API policy, still framed by 'self' only.
-      const expected = location.head.startsWith('location /api/') ? "'self'" : frameAncestors;
+      // /api/ deliberately uses a stricter API policy, still framed by 'self' only. The remote MCP
+      // endpoint and the OAuth consent screen are never framed at all.
+      const neverFramed = location.head.startsWith('location = /oauth/authorize') || location.head.includes('mcp|');
+      const expected = neverFramed ? "'none'" : location.head.startsWith('location /api/') ? "'self'" : frameAncestors;
       assertSecurityHeaders(location.body, `${file} ${location.head}`, expected);
     }
     assert.ok(checked > 0 || file === 'nginx.conf', `${file}: expected locations with add_header`);
@@ -102,4 +104,24 @@ test('nginx.conf: form-action allows self and github.com only', async () => {
   const csp = conf.split('\n').find((l) => l.includes('add_header Content-Security-Policy') && l.includes('default-src'));
   const formAction = /form-action ([^;]+);/.exec(csp)[1].trim().split(/\s+/);
   assert.deepEqual(formAction, ["'self'", 'https://github.com']);
+});
+
+// The consent screen approves assistants and SSO apps: it must not be framed (clickjacking).
+test('nginx.conf: the OAuth consent route is never framed', async () => {
+  const { locations } = blocks(await readFile(portal + 'nginx.conf', 'utf8'));
+  const consent = locations.find((l) => l.head.startsWith('location = /oauth/authorize'));
+  assert.ok(consent, 'location = /oauth/authorize missing');
+  const found = headers(consent.body);
+  assert.equal(found.get('X-Frame-Options').value, 'DENY');
+  assert.match(found.get('Content-Security-Policy').value, /frame-ancestors 'none'/);
+});
+
+// Per-IP rate limits in the API need the client address, not the portal container's.
+test('nginx.conf: every API proxy passes X-Forwarded-For', async () => {
+  const { locations } = blocks(await readFile(portal + 'nginx.conf', 'utf8'));
+  const proxies = locations.filter((l) => l.body.some((d) => d.startsWith('proxy_pass')));
+  assert.ok(proxies.length >= 2);
+  for (const l of proxies) {
+    assert.ok(l.body.includes('proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;'), `${l.head}: X-Forwarded-For`);
+  }
 });

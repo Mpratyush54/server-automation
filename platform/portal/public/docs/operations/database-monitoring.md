@@ -1,128 +1,62 @@
-# Project database monitoring
+# See slow queries and database health
 
-The full install profile enables the bundled PostgreSQL, MongoDB and Redis chart
-exporters, with requests of 10m CPU / 32Mi memory and limits of 100m CPU / 96Mi
-memory per exporter. Minimal and standard profiles keep these sidecars disabled.
-The repository currently supports minimal, standard and full profiles; `ha` is
-not a separate supported installer profile. PostgreSQL retains pgaudit and adds
-pg_stat_statements to shared_preload_libraries. The ServiceMonitor is installed
-after Prometheus CRDs, in the full telemetry reconciliation step.
+Find the queries that make your app slow and check the size of each project database. Open the project, go to **Data**, and look at the **Database insights** panel.
 
-The Database tab calls
-`GET /api/projects/:projectId/databases/insights?environment=<name>`. It opens on the
-project's `production` environment when one exists, otherwise on the first environment,
-and has an environment selector.
-Authentication and viewer-level project access are checked before reading any
-statistics. Unknown environments are rejected. Database names and usernames are
-resolved on the server, never from request parameters. The API uses the existing
-`PLATFORM_OBSERVABILITY=enabled` flag, which the installer sets for the full
-backend. Each engine has an independent ready/unavailable/not-provisioned status;
-errors never include driver messages, credentials or raw queries.
+This needs the `full` (or `ha`) install profile. On `minimal` and `standard`, the panel says database monitoring requires the full profile.
 
-PostgreSQL shows the top 20 statements by cumulative total execution time, calls,
-rows and mean latency, plus database size and connections for the project's role.
-Both database OID and role OID constrain the statistics query. The extension is
-created idempotently on the first insights read, including for older project DBs.
-Query shapes retain SQL keywords and operators; identifiers and literal tokens
-are replaced, and utility statements are suppressed. This deliberately favors
-privacy over displaying table names. PostgreSQL counters reset on server stats
-reset; they are not time-window deltas.
+## Read the panel
 
-MongoDB profiling level 1 is enabled on each newly provisioned project DB in the
-full profile, and reconciled for existing project users on insights reads. It is
-never enabled globally. `DATABASE_SLOW_MS` sets the threshold (default 100ms,
-clamped to 10–60000ms). The API reads at most 20 slow operations from the last hour
-in that database's system.profile collection, validates the namespace again, and
-returns only operation kind, timestamp, duration and rows. Filters, commands,
-collection names and error messages are never returned. The database's capped
-profiler collection stores its own raw documents; it is not copied into the
-platform telemetry store or covered by that store's GDPR deletion/retention jobs.
-Operators should restrict administrative database access accordingly.
+1. Open **Projects**, pick the project and go to **Data**.
+2. Pick the environment in the panel's selector. It opens on `production` when the project has one.
+3. Read the three engine blocks:
+   - **PostgreSQL:** the 20 statements that used the most total time, with calls, rows, mean and total milliseconds. Also the database size and current connections.
+   - **MongoDB:** operations slower than 100 ms in the last hour, with time, latency and rows. Also the database size.
+   - **Redis:** about how many keys the project has. "(partial scan)" means the count stopped early and is a lower bound.
 
-Redis uses a bounded SCAN with the deterministic project/environment key prefix;
-no key names or values are returned. The scan stops after 25 pages or roughly one
-second between commands. A command has a three-second timeout. Partial results
-are explicitly marked `complete=false`. A complete scan is still an instantaneous
-estimate during concurrent writes. Redis connections and MongoDB connections
-cannot be reliably attributed to a project database and are not exposed as
-project metrics. Redis ACL-user connection counts are not implemented.
+The panel refreshes every 30 seconds. **Refresh** loads it now. The small chart at the bottom shows PostgreSQL connections, sampled every 30 seconds, for up to 30 minutes of your current visit. It is not saved.
 
-Reads are coalesced in a bounded 200-entry, 30-second process-local response
-cache; engines remain authoritative. Each API replica can independently collect.
-The panel refreshes every 30 seconds and keeps up to 60 connection samples for
-the current visit/environment; these are not persisted historical trends.
-Collection publishes generic `database` alert events through the shared #43
-contract when slow queries are present. Events are produced on insights reads,
-not by an unattended scheduled database sampler. Source failures do not resolve
-an existing slow-query alert.
+Example: a page in your shop is slow. Open **Data**, pick `production`, and look for a statement with a high **Mean ms** and many **Calls**. That query is the first candidate for an index.
 
-## Upgrade and remaining integration
+Anyone with viewer access to the project can see the panel.
 
-No platform database schema migration or lockfile change is required. Fresh
-full-profile installs get the exporters and the ServiceMonitor automatically.
+## What you will not see
 
-Existing installations get them from the normal upgrade, with no manual steps.
-PostgreSQL, MongoDB and Redis record a fingerprint of their rendered Helm values
-next to their done marker. When a release changes those values (here: enabling
-the metrics exporters on the full profile), `platformctl upgrade` reconciles the
-three releases with `helm upgrade` after the release itself is healthy. It also
-installs or re-applies the telemetry step, which applies the
-`platform-databases` ServiceMonitor. Installs from before fingerprints existed
-reconcile once. Preview the changes and the restarts first, then apply:
+- **Literal values.** Query text keeps SQL keywords and operators. Table names, column names and values are replaced with `?`. This protects data at the cost of some detail.
+- **History.** PostgreSQL numbers are totals since the database statistics were last reset, not per time window.
+- **Redis and MongoDB connections.** They are shared across projects and cannot be counted per project.
+- **Links to traces.** The panel does not link to the **Traces** view yet.
+
+## Turn it on for an existing server
+
+Fresh `full` installs get database monitoring automatically. On an existing server, switch to the `full` profile and run the normal upgrade. Preview it first:
 
 ```bash
-sudo platformctl upgrade --to vX.Y.Z --dry-run   # lists e.g. "postgresql  reconcile (Helm values changed); restarts: postgresql-0 ..."
+sudo platformctl upgrade --to vX.Y.Z --dry-run
 sudo platformctl upgrade --to vX.Y.Z
 ```
 
-If the install is already at the target release (for example after switching
-the profile to `full`), run the same command again: at the installed release it
-only reconciles components. `sudo platformctl provision --profile full --auto`
-reconciles the same way. Do not edit `/etc/platform/.bootstrap_state`.
+The dry run lists which databases restart. If the server is already at that release, run the same command again: at the installed release it only reconciles components. `sudo platformctl provision --profile full --auto` does the same.
 
-Then check `pg_up`, `mongodb_up` and `redis_up` in Prometheus (each should be 1).
-Changing PostgreSQL preload libraries restarts PostgreSQL. The standalone MongoDB
-Deployment uses the `Recreate` update strategy (one pod on a ReadWriteOnce volume:
-a rolling update would start the new pod while the old one still holds
-`mongod.lock`), so every MongoDB upgrade briefly stops MongoDB before the new pod
-starts. Redis restarts its master and replica; the platform API re-creates project
-Redis ACL users within about 15 seconds. Disabling monitoring does not erase
-engine statistics or automatically disable an already enabled Mongo profiler;
-operators can run `db.setProfilingLevel(0)` in the relevant project databases.
+> [!WARNING]
+> Turning this on restarts PostgreSQL, MongoDB and Redis. MongoDB stops briefly before its new pod starts. Plan a short maintenance window.
 
-The exporter chart values follow the [PostgreSQL chart](https://github.com/bitnami/charts/tree/main/bitnami/postgresql),
-[MongoDB chart](https://github.com/bitnami/charts/tree/main/bitnami/mongodb), and
-[Redis chart](https://github.com/bitnami/charts/tree/main/bitnami/redis).
-`scripts/gen-images.sh` now includes metrics sidecars when rendering these
-charts. Regenerate and validate `platformctl/internal/images/images.txt` with
-Helm before publishing the next offline stack; regeneration was unavailable in
-the Windows implementation sandbox. Online Helm can pull the exporter images,
-but an offline stack containing them has not been built or verified here.
+## How it works
 
-Trace navigation is pending the #48 project-scoped trace viewer and its filter
-contract. The current base branch has no traces tab, so the panel deliberately
-does not display nonfunctional links. The integration should pass project ID,
-environment, db.system.name and the server-resolved db.namespace; never use raw
-statement text or an unrestricted client label selector. Historical persisted
-query/connection trends and autonomous periodic database alert sampling are
-follow-ups.
+- On the `full` and `ha` profiles, the installer enables a metrics exporter next to PostgreSQL, MongoDB and Redis. Each exporter requests 10m CPU and 32Mi memory, with limits of 100m CPU and 96Mi memory. Lighter profiles keep them off.
+- PostgreSQL loads `pgaudit` and `pg_stat_statements`. Changing these preload libraries restarts PostgreSQL. The extension is created on the first insights read, including for older project databases. Statistics are filtered by both the project's database and its user.
+- MongoDB profiling (level 1) is turned on only in project databases, never globally: for new databases on the full profile, and for existing ones on the first insights read. `DATABASE_SLOW_MS` sets the threshold (default 100 ms, allowed range 10 to 60000 ms). The API reads at most 20 slow operations from the last hour and returns only the operation kind, time, duration and rows. Filters, commands, collection names and error messages are never returned. The profiler's own collection keeps raw documents inside that database; it is not copied into Cairn's telemetry store and is not covered by its retention or delete jobs. Restrict admin database access accordingly.
+- Redis is counted with a bounded scan of the project's key prefix: at most 25 pages or about one second, with a three-second timeout per command. No key names or values are returned.
+- Each engine reports its own status: ready, unavailable or not provisioned. Errors never include driver messages, credentials or raw queries. Database and user names are resolved on the server, never taken from the request.
+- Results are cached per API replica for 30 seconds (up to 200 entries).
+- When slow queries are present, an insights read publishes a `database` alert event that alert rules can use. Events come from reads of the panel, not from a background sampler. A failed read does not resolve an existing slow-query alert.
+- The installer applies a `platform-databases` ServiceMonitor so Prometheus scrapes the exporters. In Prometheus, `pg_up`, `mongodb_up` and `redis_up` should each be 1. PostgreSQL also exports per-database `project_database_connections` and `project_database_size_bytes` for databases named `plat_*`.
+- Upgrades notice the change because PostgreSQL, MongoDB and Redis store a fingerprint of their rendered Helm values. When the values change, `platformctl upgrade` runs `helm upgrade` for them after the release is healthy. Do not edit `/etc/platform/.bootstrap_state`.
+- Single-server MongoDB uses the `Recreate` update strategy because its one volume can be mounted by one pod at a time. That is why it stops briefly on every upgrade.
+- Redis restarts its primary and replica. The API re-creates project Redis users within about 15 seconds.
+- Switching monitoring off does not erase statistics or turn off an already enabled MongoDB profiler. Run `db.setProfilingLevel(0)` in each project database if you need to.
+- Offline bundles: the image list is generated by `scripts/gen-images.sh`, which includes the exporter images. An offline bundle containing them has not been verified.
+- Verified on a fresh full-profile server on 2026-11-11: all three exporters scraped, per-project metrics present, PostgreSQL queries shown without literals, and MongoDB and Redis figures shown per project.
 
-## Full-profile VM verification
+## For developers / API
 
-On a fresh Ubuntu 24.04 VM with 4 vCPU / 8GB, provision with
-`sudo platformctl provision --profile full`. Verify all three exporter pods'
-requests/limits and the platform-databases ServiceMonitor targets in Prometheus.
-Create two projects with production environments and provision their databases.
-Run distinct PostgreSQL and MongoDB workloads using each project's own SDK
-credentials, including operations above DATABASE_SLOW_MS, and populate each
-Redis prefix. Open each project's Database tab as its viewer. Confirm that calls,
-latency, rows, sizes, connections and slow operations correspond only to that
-project, and that literal payloads and the other project's identities are absent.
-Check unauthorized API requests, failed engines and a partial Redis scan. Verify
-database alert events reach #43 rules. Repeat on a standard profile and confirm
-the panel reports monitoring disabled and no exporter sidecars are installed.
-Verified on 2026-11-11 on a fresh full-profile EC2 VM (4 vCPU / 16 GB): all
-three exporters scraped (`pg_up`, `mongodb_up`, `redis_up` = 1), project
-`project_database_*` metrics present, PostgreSQL top queries normalised without
-literals, MongoDB slow operations and Redis key estimates shown per project, and
-the reconcile steps above on an existing install.
+`GET /api/projects/<projectId>/databases/insights?environment=<name>` returns the panel's data. It checks sign-in and viewer access to the project and rejects unknown environments. When the server is not on the full profile (`PLATFORM_OBSERVABILITY` is not `enabled`), it returns `{ "enabled": false, "reason": "..." }`.

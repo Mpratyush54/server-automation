@@ -1,3 +1,10 @@
 # Shell scripts must keep LF endings (they run on Linux, also when fed
 # over SSH from a Windows checkout).
 *.sh text eol=lf
+
+# Files embedded into platformctl (go:embed) must keep LF endings: they are
+# applied on Linux and the Go tests compare them byte-for-byte, which fails on
+# a Windows checkout with core.autocrlf=true.
+platformctl/internal/manifests/data/** text eol=lf
+platformctl/internal/backup/*.yaml text eol=lf
+platformctl/internal/images/images.txt text eol=lf

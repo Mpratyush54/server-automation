@@ -7,35 +7,36 @@ import { firstValueFrom } from 'rxjs';
 @Component({
   selector: 'app-database-insights-panel', standalone: true,
   imports: [CommonModule, FormsModule],
-  template: `<section class="card dbi" aria-label="Database insights">
-    <div class="dbi-head">
-      <h2>Database insights</h2>
+  template: `<section class="card card-flush" aria-label="Database insights">
+    <div class="card-header">
+      <h2>Database health</h2>
       <div class="dbi-controls">
-        <label class="dbi-env">Environment
-          <select [(ngModel)]="environment" (change)="reset()">
+        <label class="dbi-env">
+          <select [(ngModel)]="environment" (change)="reset()" aria-label="Database insights environment">
             @for (e of project?.environments || []; track e.name) { <option [value]="e.name">{{e.name}}</option> }
           </select>
         </label>
         <button class="btn btn-sm" type="button" (click)="load()" [disabled]="busy">{{ busy ? 'Loading…' : 'Refresh' }}</button>
       </div>
     </div>
+    <div class="dbi-body">
     @if (message) { <p class="dbi-msg" role="status">{{message}}</p> }
     @if (data?.enabled) {
-      <p class="dbi-muted">Collected {{data.collectedAt | date:'medium'}} · {{environment}}</p>
+      <p class="dbi-muted">Updated {{data.collectedAt | date:'medium'}} · <a href="https://platform.pratyushes.dev/docs/operations/database-monitoring" target="_blank" rel="noopener">Learn more</a></p>
 
       <div class="dbi-engine">
         <div class="dbi-engine-head">
           <h3>PostgreSQL</h3>
           <span class="badge" [class.badge-active]="data.postgres.status === 'ready'" [class.badge-pending]="data.postgres.status !== 'ready'">{{data.postgres.status}}</span>
-          <span class="dbi-stat">Connections <b>{{data.postgres.connections ?? '—'}}</b></span>
+          <span class="dbi-stat">Open connections <b>{{data.postgres.connections ?? '—'}}</b></span>
           <span class="dbi-stat">Size <b>{{bytes(data.postgres.sizeBytes)}}</b></span>
         </div>
-        <p class="dbi-muted">Top 20 statements by total execution time, cumulative since statistics reset. Literals are never shown.</p>
+        <p class="dbi-muted">The 20 queries that took the most time. Values are hidden.</p>
         @if ((data.postgres.topQueries || []).length) {
-          <div class="dbi-scroll"><table class="dbi-table"><thead><tr><th>Query shape</th><th class="num">Calls</th><th class="num">Rows</th><th class="num">Mean ms</th><th class="num">Total ms</th></tr></thead><tbody>
+          <div class="dbi-scroll"><table class="dbi-table"><thead><tr><th>Query</th><th class="num">Calls</th><th class="num">Rows</th><th class="num">Average ms</th><th class="num">Total ms</th></tr></thead><tbody>
           @for (q of data.postgres.topQueries; track $index) { <tr><td><code>{{q.query}}</code></td><td class="num">{{q.calls}}</td><td class="num">{{q.rows}}</td><td class="num">{{q.latencyMs | number:'1.1-2'}}</td><td class="num">{{q.totalMs | number:'1.1-2'}}</td></tr> }
           </tbody></table></div>
-        } @else { <p class="dbi-empty">No statements recorded for this environment yet.</p> }
+        } @else { <p class="dbi-empty">No queries recorded yet.</p> }
       </div>
 
       <div class="dbi-engine">
@@ -44,9 +45,9 @@ import { firstValueFrom } from 'rxjs';
           <span class="badge" [class.badge-active]="data.mongo.status === 'ready'" [class.badge-pending]="data.mongo.status !== 'ready'">{{data.mongo.status}}</span>
           <span class="dbi-stat">Size <b>{{bytes(data.mongo.sizeBytes)}}</b></span>
         </div>
-        <p class="dbi-muted">Slow operations ≥ {{data.slowMs}} ms in the last hour.</p>
+        <p class="dbi-muted">Operations slower than {{data.slowMs}} ms in the last hour.</p>
         @if ((data.mongo.slowQueries || []).length) {
-          <div class="dbi-scroll"><table class="dbi-table"><thead><tr><th>Operation shape</th><th>Time</th><th class="num">Latency ms</th><th class="num">Rows</th></tr></thead><tbody>
+          <div class="dbi-scroll"><table class="dbi-table"><thead><tr><th>Operation</th><th>Time</th><th class="num">Latency ms</th><th class="num">Rows</th></tr></thead><tbody>
           @for (q of data.mongo.slowQueries; track $index) { <tr><td><code>{{q.query}}</code></td><td>{{q.at | date:'medium'}}</td><td class="num">{{q.latencyMs}}</td><td class="num">{{q.rows}}</td></tr> }
           </tbody></table></div>
         } @else { <p class="dbi-empty">No slow operations in the last hour.</p> }
@@ -58,12 +59,12 @@ import { firstValueFrom } from 'rxjs';
           <span class="badge" [class.badge-active]="data.redis.status === 'ready'" [class.badge-pending]="data.redis.status !== 'ready'">{{data.redis.status}}</span>
           <span class="dbi-stat">Keys <b>{{data.redis.keyCount ?? '—'}}</b>{{data.redis.complete === false ? ' (partial scan)' : ''}}</span>
         </div>
-        <p class="dbi-muted">Connections are shared across projects and cannot be attributed reliably.</p>
+        <p class="dbi-muted">Connections are shared with other projects, so they are not shown here.</p>
       </div>
 
       <div class="dbi-engine">
-        <h3>PostgreSQL connections during this visit</h3>
-        <p class="dbi-muted">30-second samples, up to 30 minutes. Switching environments clears samples.</p>
+        <h3>PostgreSQL connections while this page is open</h3>
+        <p class="dbi-muted">Sampled every 30 seconds for up to 30 minutes.</p>
         @if (samples.length >= 2) {
           <svg viewBox="0 0 600 100" role="img" aria-label="PostgreSQL connection trend" class="dbi-trend">
             <polyline [attr.points]="points" fill="none" stroke="currentColor" stroke-width="2" />
@@ -74,32 +75,33 @@ import { firstValueFrom } from 'rxjs';
           </p>
         }
       </div>
+    } @else if (!message) {
+      <p class="dbi-empty">No database activity yet. Slow queries and size show here once your app uses its database.</p>
     }
+    </div>
   </section>`,
   styles: [`
-    .dbi { padding: 24px; }
-    .dbi-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; margin-bottom: 8px; }
-    .dbi-head h2 { margin: 0; font-size: 1.1rem; }
-    .dbi-controls { display: flex; align-items: flex-end; gap: 8px; }
-    .dbi-env { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: var(--text-secondary); }
-    .dbi-env select { min-width: 160px; }
-    .dbi-msg { color: var(--text-secondary); }
-    .dbi-muted { color: var(--text-muted); font-size: 0.82rem; margin: 4px 0 8px; }
-    .dbi-trend-empty { color: var(--text-muted); font-size: 0.82rem; border: 1px dashed #333; border-radius: 6px; padding: 20px; text-align: center; margin: 0; }
-    .dbi-engine { border-top: 1px solid #222; padding-top: 16px; margin-top: 16px; }
-    .dbi-engine-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-    .dbi-engine h3 { margin: 0; font-size: 0.95rem; }
-    .dbi-stat { font-size: 0.82rem; color: var(--text-secondary); }
-    .dbi-stat b { color: var(--text-primary); font-weight: 600; }
+    :host { display: block; }
+    .dbi-body { padding: 1rem 1.25rem; }
+    .dbi-controls { display: flex; align-items: center; gap: 0.5rem; }
+    .dbi-env select { min-width: 10rem; height: 2rem; padding-top: 0; padding-bottom: 0; }
+    .dbi-msg { color: rgb(var(--fg-2)); font-size: 0.8125rem; margin: 0 0 0.75rem; }
+    .dbi-muted { color: rgb(var(--fg-3)); font-size: 0.8125rem; margin: 0.25rem 0 0.5rem; }
+    .dbi-trend-empty { color: rgb(var(--fg-3)); font-size: 0.8125rem; border: 1px dashed rgb(var(--line-strong)); border-radius: 6px; padding: 1.25rem; text-align: center; margin: 0; }
+    .dbi-engine { border-top: 1px solid rgb(var(--line)); padding-top: 1rem; margin-top: 1rem; }
+    .dbi-engine-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+    .dbi-engine h3 { margin: 0; font-size: 0.875rem; font-weight: 600; }
+    .dbi-stat { font-size: 0.8125rem; color: rgb(var(--fg-2)); }
+    .dbi-stat b { color: rgb(var(--fg)); font-weight: 600; }
     .dbi-scroll { overflow-x: auto; }
-    .dbi-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-    .dbi-table th { text-align: left; color: var(--text-muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid #222; }
-    .dbi-table td { padding: 6px 8px; border-bottom: 1px solid #1a1a1a; vertical-align: top; }
-    .dbi-table code { font-family: var(--font-code); font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; }
+    .dbi-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+    .dbi-table th { text-align: left; color: rgb(var(--fg-3)); font-weight: 500; padding: 0.375rem 0.5rem; border-bottom: 1px solid rgb(var(--line)); }
+    .dbi-table td { padding: 0.375rem 0.5rem; border-bottom: 1px solid rgb(var(--line)); vertical-align: top; }
+    .dbi-table code { font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; }
     .dbi-table .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-    .dbi-empty { color: var(--text-muted); font-size: 0.85rem; padding: 8px 0; }
-    .dbi-trend { max-width: 600px; width: 100%; color: var(--accent-success); }
-  `],
+    .dbi-empty { color: rgb(var(--fg-3)); font-size: 0.8125rem; padding: 0.5rem 0; margin: 0; }
+    .dbi-trend { max-width: 600px; width: 100%; color: rgb(var(--accent)); }
+  `]
 })
 export class DatabaseInsightsPanelComponent implements OnChanges, OnDestroy {
   @Input() project: any;

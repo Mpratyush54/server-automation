@@ -302,9 +302,21 @@ export function buildRedisAclSetUserArgs(username: string, password: string, key
   return ['SETUSER', username, 'reset', 'on', `>${password}`, `~${keyPrefix}*`, `&${keyPrefix}*`, '+@all', '-@admin', '-@dangerous'];
 }
 
+export type ProjectRedisCreds = {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  keyPrefix: string;
+  sentinels?: Array<{ host: string; port: number }>;
+  masterName?: string;
+  sentinelUsername?: string;
+  sentinelPassword?: string;
+};
+
 export async function ensureRedisForProject(
   projectId: string, projectName: string, environment: string,
-): Promise<{ status: 'ready' | 'error'; creds?: { host: string; port: number; username: string; password: string; keyPrefix: string }; error?: string }> {
+): Promise<{ status: 'ready' | 'error'; creds?: ProjectRedisCreds; error?: string }> {
   try {
     const host = process.env.REDIS_HOST || 'localhost';
     const port = parseInt(process.env.REDIS_PORT || '6379', 10);
@@ -318,26 +330,31 @@ export async function ensureRedisForProject(
       ? existing.REDIS_PASSWORD
       : generateSecurePassword(32);
 
-    const { default: Redis } = await import('ioredis');
-    const admin = new Redis({
-      host,
-      port,
-      username: process.env.REDIS_USERNAME || undefined,
-      password: platformPassword || undefined,
-      lazyConnect: true,
-      connectTimeout: 5000,
-      maxRetriesPerRequest: 1,
-      retryStrategy: () => null,
+    const {
+      forEachRedisDataNode,
+      redisDataNodes,
+      redisSentinelConfig,
+      ensureSentinelUser,
+      deriveSentinelPassword,
+      SENTINEL_ACL_USER,
+      parseSentinelHosts,
+    } = await import('./redis-endpoint');
+
+    const nodes = await redisDataNodes(platformPassword);
+    const master = nodes.find((n) => n.role === 'master') ?? nodes[0];
+    const masterLabel = `${master.host}:${master.port}`;
+    const aclArgs = buildRedisAclSetUserArgs(username, password, keyPrefix);
+    const result = await forEachRedisDataNode(platformPassword, async (client) => {
+      await client.call('ACL', ...aclArgs);
+      // Persist when Redis runs with an aclfile. Without one ACL SAVE errors; the reconcile job retries.
+      await Promise.resolve(client.call('ACL', 'SAVE')).catch(() => {});
     });
-    admin.on('error', () => {});
-    try {
-      await admin.connect();
-      await admin.call('ACL', ...buildRedisAclSetUserArgs(username, password, keyPrefix));
-      // Persist when Redis runs with an aclfile. Without one ACL SAVE errors; the user is then
-      // re-created by the next ensure call (every /sdk/db-credentials request).
-      await Promise.resolve(admin.call('ACL', 'SAVE')).catch(() => {});
-    } finally {
-      admin.disconnect();
+    if (!result.ok.includes(masterLabel)) {
+      const fail = result.failed.find((f) => f.node === masterLabel) || result.failed[0];
+      throw new Error(fail?.error || 'Redis ACL SETUSER failed on master');
+    }
+    if (result.failed.length > 0) {
+      console.warn(`[redis] ACL SETUSER ok on master; replica failures (reconcile will retry): ${result.failed.map((f) => `${f.node}: ${f.error}`).join('; ')}`);
     }
 
     await upsertSecret(projectId, environment, 'REDIS_HOST', host);
@@ -345,7 +362,24 @@ export async function ensureRedisForProject(
     await upsertSecret(projectId, environment, 'REDIS_USERNAME', username);
     await upsertSecret(projectId, environment, 'REDIS_PASSWORD', password);
     await upsertSecret(projectId, environment, 'REDIS_KEY_PREFIX', keyPrefix);
-    return { status: 'ready', creds: { host, port, username, password, keyPrefix } };
+
+    const creds: ProjectRedisCreds = { host, port, username, password, keyPrefix };
+    const sentinel = redisSentinelConfig();
+    if (sentinel) {
+      await ensureSentinelUser(platformPassword);
+      const sentinelPassword = deriveSentinelPassword(platformPassword);
+      const sentinelsStr = process.env.REDIS_SENTINEL_HOSTS || sentinel.sentinels.map((s) => `${s.host}:${s.port}`).join(',');
+      await upsertSecret(projectId, environment, 'REDIS_SENTINELS', sentinelsStr);
+      await upsertSecret(projectId, environment, 'REDIS_SENTINEL_MASTER', sentinel.name);
+      await upsertSecret(projectId, environment, 'REDIS_SENTINEL_USERNAME', SENTINEL_ACL_USER);
+      await upsertSecret(projectId, environment, 'REDIS_SENTINEL_PASSWORD', sentinelPassword);
+      creds.sentinels = parseSentinelHosts(sentinelsStr);
+      creds.masterName = sentinel.name;
+      creds.sentinelUsername = SENTINEL_ACL_USER;
+      creds.sentinelPassword = sentinelPassword;
+    }
+
+    return { status: 'ready', creds };
   } catch (e: any) {
     return { status: 'error', error: e.message || 'Redis provisioning failed' };
   }
@@ -423,10 +457,26 @@ export async function resolveProjectDbCredentials(
   }
   if (types.includes('redis')) {
     const r = await ensureRedisForProject(projectId, projectName, environment);
-    result.redis = r.status === 'ready' && r.creds
-      ? { host: r.creds.host, port: r.creds.port, username: r.creds.username,
-        password: r.creds.password, keyPrefix: r.creds.keyPrefix, db: 0 }
-      : failed('Redis', r.error);
+    if (r.status === 'ready' && r.creds) {
+      const redis: Record<string, unknown> = {
+        host: r.creds.host,
+        port: r.creds.port,
+        username: r.creds.username,
+        password: r.creds.password,
+        keyPrefix: r.creds.keyPrefix,
+        db: 0,
+      };
+      // Sentinel fields only when HA is configured (keep single-host response shape unchanged).
+      if (r.creds.sentinels?.length) {
+        redis.sentinels = r.creds.sentinels;
+        redis.masterName = r.creds.masterName;
+        redis.sentinelUsername = r.creds.sentinelUsername;
+        redis.sentinelPassword = r.creds.sentinelPassword;
+      }
+      result.redis = redis;
+    } else {
+      result.redis = failed('Redis', r.error);
+    }
   }
   if (errors.length === types.length) throw new Error(errors[0]);
   return result;

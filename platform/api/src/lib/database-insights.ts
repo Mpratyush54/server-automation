@@ -47,6 +47,8 @@ export async function postgresInsights(dbName: string, username: string) {
 }
 
 async function mongoInsights(dbName: string) {
+  // Replica-set URI → driver talks to the primary. `profile` is per member and is re-applied
+  // on the current primary on each collection, so per-project profiling survives failover.
   const conn = mongoose.createConnection(process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/plat_platform', { serverSelectionTimeoutMS: 3000 });
   conn.on('error', () => {});
   try {
@@ -63,9 +65,14 @@ async function mongoInsights(dbName: string) {
 }
 
 async function redisInsights(prefix: string) {
-  const client = new Redis({ host: process.env.REDIS_HOST || 'localhost', port: Number(process.env.REDIS_PORT || 6379),
-    username: process.env.REDIS_USERNAME || undefined, password: process.env.REDIS_PASSWORD || undefined,
-    lazyConnect: true, connectTimeout: 3000, commandTimeout: 3000, maxRetriesPerRequest: 0, retryStrategy: () => null });
+  const { redisEndpointOptions } = await import('./redis-endpoint');
+  // SCAN runs on the master (Sentinel role: 'master' or single host).
+  const client = new Redis({
+    ...redisEndpointOptions({ defaultHost: 'localhost' }),
+    username: process.env.REDIS_USERNAME || undefined,
+    password: process.env.REDIS_PASSWORD || undefined,
+    lazyConnect: true, connectTimeout: 3000, commandTimeout: 3000, maxRetriesPerRequest: 0, retryStrategy: () => null,
+  });
   client.on('error', () => {});
   try {
     await client.connect();

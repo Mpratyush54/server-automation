@@ -28,6 +28,12 @@ export class ApiService {
   }
 
   // Deployments
+  getEnvironmentAutoscaling(projectId: string, environmentId: string): Observable<any> {
+    return this.http.get(`${this.base}/projects/${projectId}/environments/${environmentId}/autoscaling`);
+  }
+  putEnvironmentAutoscaling(projectId: string, environmentId: string, settings: any): Observable<any> {
+    return this.http.put(`${this.base}/projects/${projectId}/environments/${environmentId}/autoscaling`, settings);
+  }
   deploy(data: any): Observable<any> { return this.http.post(`${this.base}/deploy`, data); }
   rollback(data: any): Observable<any> { return this.http.post(`${this.base}/rollback`, { reason: 'Manual rollback from deployment view', ...data }, { headers: { 'Idempotency-Key': crypto.randomUUID() } }); }
   restartDeployment(id: string): Observable<any> { return this.http.post(`${this.base}/deployments/${id}/restart`, {}); }
@@ -77,11 +83,45 @@ export class ApiService {
   getProjectFiles(projectId: string): Observable<any> { return this.http.get(`${this.base}/storage/project/${projectId}`); }
   getStorageAnalytics(projectId: string): Observable<any> { return this.http.get(`${this.base}/storage/analytics/${projectId}`); }
 
+  // Usage metering (#57)
+  getProjectUsage(projectId: string, from?: string, to?: string): Observable<any> {
+    const params: Record<string, string> = {};
+    if (from) params['from'] = from;
+    if (to) params['to'] = to;
+    return this.http.get(`${this.base}/projects/${projectId}/usage`, { params });
+  }
+  exportProjectUsageCsv(projectId: string, from?: string, to?: string): Observable<Blob> {
+    const params: Record<string, string> = {};
+    if (from) params['from'] = from;
+    if (to) params['to'] = to;
+    return this.http.get(`${this.base}/projects/${projectId}/usage/export.csv`, { params, responseType: 'blob' });
+  }
+  getProjectUsageQuota(projectId: string): Observable<any> {
+    return this.http.get(`${this.base}/projects/${projectId}/usage/quota`);
+  }
+  updateProjectUsageQuota(projectId: string, data: any): Observable<any> {
+    return this.http.put(`${this.base}/projects/${projectId}/usage/quota`, data);
+  }
+  getFleetUsage(from?: string, to?: string): Observable<any> {
+    const params: Record<string, string> = {};
+    if (from) params['from'] = from;
+    if (to) params['to'] = to;
+    return this.http.get(`${this.base}/usage`, { params });
+  }
+  exportFleetUsageCsv(from?: string, to?: string): Observable<Blob> {
+    const params: Record<string, string> = {};
+    if (from) params['from'] = from;
+    if (to) params['to'] = to;
+    return this.http.get(`${this.base}/usage/export.csv`, { params, responseType: 'blob' });
+  }
+  getUsageSettings(): Observable<any> { return this.http.get(`${this.base}/usage/settings`); }
+  updateUsageSettings(data: any): Observable<any> { return this.http.put(`${this.base}/usage/settings`, data); }
+
   // Bootstrap & Kubernetes
   bootstrapInit(data: any): Observable<any> { return this.http.post(`${this.base}/bootstrap/init`, data); }
   getBootstrapStatus(): Observable<any> { return this.http.get(`${this.base}/bootstrap/status`); }
-  getBootstrapToken(): Observable<any> { return this.http.get(`${this.base}/bootstrap/token`); }
   getNodes(): Observable<any> { return this.http.get(`${this.base}/bootstrap/nodes`); }
+  getNodeMetrics(): Observable<any> { return this.http.get(`${this.base}/bootstrap/node-metrics`); }
   getBootstrapHistory(): Observable<any> { return this.http.get(`${this.base}/bootstrap/history`); }
   getNamespaces(): Observable<any> { return this.http.get(`${this.base}/bootstrap/namespaces`); }
   getPods(namespace?: string): Observable<any> { return this.http.get(`${this.base}/bootstrap/pods`, { params: namespace ? { namespace } : {} }); }
@@ -171,6 +211,21 @@ export class ApiService {
   gdprDelete(projectId: string, data: { userId?: string; sessionId?: string; email?: string }): Observable<any> {
     return this.http.post(`${this.base}/projects/${projectId}/privacy/gdpr-delete`, data);
   }
+
+  // AI agents (MCP). Tokens and commands are platform-wide, not per project.
+  getAgentTokens(): Observable<any> { return this.http.get(`${this.base}/agent-tokens`); }
+  createAgentToken(data: { name: string; scopes?: string[]; expiresAt?: string | null }): Observable<any> {
+    return this.http.post(`${this.base}/agent-tokens`, data);
+  }
+  revokeAgentToken(id: string): Observable<any> { return this.http.delete(`${this.base}/agent-tokens/${id}`); }
+  getPendingAgentCommands(): Observable<any> { return this.http.get(`${this.base}/agent/commands/pending`); }
+  approveAgentCommand(id: string): Observable<any> { return this.http.post(`${this.base}/agent/commands/${id}/approve`, {}); }
+  rejectAgentCommand(id: string, reason?: string): Observable<any> {
+    return this.http.post(`${this.base}/agent/commands/${id}/reject`, reason ? { reason } : {});
+  }
+  // Connected AI assistants (remote MCP, #193): own connections; admins and devops see all.
+  getMcpConnections(): Observable<any> { return this.http.get(`${this.base}/mcp/connections`); }
+  disconnectMcpConnection(id: string): Observable<any> { return this.http.delete(`${this.base}/mcp/connections/${id}`); }
 
   // Bug Reporting
   submitBugReport(data: any): Observable<any> { return this.http.post(`${this.base}/sdk/bug-report`, data); }

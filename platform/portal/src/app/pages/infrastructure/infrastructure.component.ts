@@ -1,26 +1,36 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
+import { ToastService, DialogService, errorText } from '../../shared/feedback/feedback.service';
+
+export interface NodeMetricRow {
+  name: string;
+  cpuUsedCores: number;
+  cpuCapacityCores: number;
+  memoryUsedBytes: number;
+  memoryCapacityBytes: number;
+}
 
 @Component({
   selector: 'app-infrastructure',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './infrastructure.component.html',
   styleUrl: './infrastructure.component.css'
 })
 export class InfrastructureComponent implements OnInit, OnDestroy {
   activeTab = 'nodes'; // nodes, namespaces, pods, bootstrap, metrics
-  
+
   // Real cluster state
   k8sConnected = false;
   nodes: any[] = [];
   namespaces: any[] = [];
   pods: any[] = [];
   bootstrapHistory: any[] = [];
-  
+
   // System Health state
   systemStatus = {
     postgres: 'disconnected',
@@ -37,11 +47,6 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
   // Namespace filtering
   selectedNamespace = 'all';
 
-  // Join token variables
-  joinToken = '';
-  joinCommand = '';
-  loadingToken = false;
-
   // Logs terminal modal state
   showLogsModal = false;
   selectedPodName = '';
@@ -49,43 +54,32 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
   podLogsText = '';
   loadingLogs = false;
 
-  // Real-time metric series (wiggling SVG chart inputs)
-  cpuHistory: number[] = Array.from({ length: 24 }, () => 10 + Math.random() * 12);
-  memoryHistory: number[] = Array.from({ length: 24 }, () => 32 + Math.random() * 6);
-  networkHistory: number[] = Array.from({ length: 24 }, () => 200 + Math.random() * 150);
-  chartLabels: string[] = Array.from({ length: 24 }, (_, i) => `${24 - i}m ago`);
-
-  // SVG Paths
-  cpuPath = '';
-  cpuAreaPath = '';
-  memoryPath = '';
-  memoryAreaPath = '';
-  networkPath = '';
-  networkAreaPath = '';
+  // Live node metrics from metrics-server (never simulated)
+  metricsAvailable = false;
+  metricsFetched = false;
+  nodeMetrics: NodeMetricRow[] = [];
+  metricsLoading = false;
 
   // Background polling timers
-  private pollInterval?: any;
-  private metricsInterval?: any;
-  private logPollInterval?: any;
+  private pollInterval?: ReturnType<typeof setInterval>;
+  private metricsInterval?: ReturnType<typeof setInterval>;
+  private logPollInterval?: ReturnType<typeof setInterval>;
+
+  private toast = inject(ToastService);
+  private dialog = inject(DialogService);
 
   constructor(private api: ApiService) {}
 
   async ngOnInit() {
     await this.refreshAllData();
-    this.generateSvgPaths();
 
     // Start background poll every 8 seconds
     this.pollInterval = setInterval(() => this.refreshAllData(), 8000);
-
-    // Wiggle metrics dashboard every 3 seconds
-    this.metricsInterval = setInterval(() => {
-      this.wiggleMetrics();
-    }, 3000);
   }
 
   ngOnDestroy() {
     if (this.pollInterval) clearInterval(this.pollInterval);
-    if (this.metricsInterval) clearInterval(this.metricsInterval);
+    this.stopMetricsPolling();
     if (this.logPollInterval) clearInterval(this.logPollInterval);
   }
 
@@ -93,6 +87,11 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
     this.activeTab = tab;
     if (tab === 'pods') {
       this.loadPods();
+    }
+    if (tab === 'metrics') {
+      this.startMetricsPolling();
+    } else {
+      this.stopMetricsPolling();
     }
   }
 
@@ -118,7 +117,7 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
   async loadNodes() {
     try {
       const res = await firstValueFrom(this.api.getNodes());
-      this.nodes = res.nodes || [];
+      this.nodes = res.k8sConnected ? res.nodes || [] : [];
       this.k8sConnected = res.k8sConnected;
     } catch {
       this.nodes = [];
@@ -139,10 +138,11 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
     try {
       const ns = this.selectedNamespace === 'all' ? undefined : this.selectedNamespace;
       const res = await firstValueFrom(this.api.getPods(ns));
-      this.pods = res.pods || [];
+      this.pods = res.k8sConnected ? res.pods || [] : [];
       this.k8sConnected = res.k8sConnected;
     } catch {
       this.pods = [];
+      this.k8sConnected = false;
     }
   }
 
@@ -152,6 +152,62 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
     } catch {
       this.bootstrapHistory = [];
     }
+  }
+
+  async loadNodeMetrics() {
+    this.metricsLoading = true;
+    try {
+      const res = await firstValueFrom(this.api.getNodeMetrics());
+      this.k8sConnected = !!res.k8sConnected;
+      this.metricsAvailable = !!res.metricsAvailable;
+      this.nodeMetrics = Array.isArray(res.nodes) ? res.nodes : [];
+    } catch {
+      this.metricsAvailable = false;
+      this.nodeMetrics = [];
+    } finally {
+      this.metricsLoading = false;
+      this.metricsFetched = true;
+    }
+  }
+
+  startMetricsPolling() {
+    this.stopMetricsPolling();
+    void this.loadNodeMetrics();
+    this.metricsInterval = setInterval(() => this.loadNodeMetrics(), 15000);
+  }
+
+  stopMetricsPolling() {
+    if (this.metricsInterval) {
+      clearInterval(this.metricsInterval);
+      this.metricsInterval = undefined;
+    }
+  }
+
+  cpuPct(n: NodeMetricRow): number {
+    if (!n.cpuCapacityCores) return 0;
+    return Math.min(100, Math.max(0, (n.cpuUsedCores / n.cpuCapacityCores) * 100));
+  }
+
+  memoryPct(n: NodeMetricRow): number {
+    if (!n.memoryCapacityBytes) return 0;
+    return Math.min(100, Math.max(0, (n.memoryUsedBytes / n.memoryCapacityBytes) * 100));
+  }
+
+  formatCores(v: number): string {
+    if (!Number.isFinite(v)) return '—';
+    return v < 1 ? `${(v * 1000).toFixed(0)}m` : `${v.toFixed(2)}`;
+  }
+
+  formatBytes(v: number): string {
+    if (!Number.isFinite(v) || v < 0) return '—';
+    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    let n = v;
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) {
+      n /= 1024;
+      i++;
+    }
+    return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
   }
 
   // Pod actions
@@ -188,86 +244,19 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
   }
 
   async restartPod(pod: any) {
-    if (!confirm(`Are you sure you want to terminate and restart pod "${pod.name}" in namespace "${pod.namespace}"?`)) {
-      return;
-    }
+    const ok = await this.dialog.confirm({
+      title: `Restart pod ${pod.name}?`,
+      message: `The pod is deleted in namespace ${pod.namespace} and its controller starts a new one. Requests to it fail until the new pod is ready.`,
+      confirmLabel: 'Restart pod',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.deletePod(pod.namespace, pod.name));
-      alert(`Pod deletion command sent. Pod will be restarted by the deployment controller.`);
+      this.toast.ok('Pod restarted. Its controller is starting a new one.');
       await this.loadPods();
     } catch (err: any) {
-      alert(`Failed to restart pod: ${err.error?.error || err.message}`);
+      this.toast.error('Pod was not restarted: ' + errorText(err));
     }
-  }
-
-  // Join command for nodes
-  async generateJoinToken() {
-    this.loadingToken = true;
-    try {
-      const res: any = await firstValueFrom(this.api.getBootstrapToken());
-      this.joinToken = res.token;
-      this.joinCommand = `curl ${window.location.origin}/bootstrap/get | bash -s -- --token ${this.joinToken} --master <server-ip>`;
-    } catch (err: any) {
-      alert('Failed to generate join token: ' + (err.error?.error || err.message));
-    } finally {
-      this.loadingToken = false;
-    }
-  }
-
-  // Wiggle / Update metrics history
-  wiggleMetrics() {
-    // Add real-time wiggling values
-    const lastCpu = this.cpuHistory[this.cpuHistory.length - 1];
-    const lastMem = this.memoryHistory[this.memoryHistory.length - 1];
-    const lastNet = this.networkHistory[this.networkHistory.length - 1];
-
-    const newCpu = Math.max(5, Math.min(95, lastCpu + (Math.random() * 8 - 4)));
-    const newMem = Math.max(5, Math.min(95, lastMem + (Math.random() * 2 - 1)));
-    const newNet = Math.max(50, Math.min(800, lastNet + (Math.random() * 100 - 50)));
-
-    this.cpuHistory.push(newCpu);
-    this.cpuHistory.shift();
-    this.memoryHistory.push(newMem);
-    this.memoryHistory.shift();
-    this.networkHistory.push(newNet);
-    this.networkHistory.shift();
-
-    this.generateSvgPaths();
-  }
-
-  generateSvgPaths() {
-    const width = 600;
-    const height = 200;
-    const padding = 15;
-    const pointsCount = this.cpuHistory.length;
-    const step = (width - padding * 2) / (pointsCount - 1);
-
-    const makePaths = (data: number[], maxVal: number) => {
-      const linePoints = [];
-      for (let i = 0; i < data.length; i++) {
-        const x = padding + i * step;
-        const valPct = data[i] / maxVal;
-        const y = height - padding - valPct * (height - padding * 2);
-        linePoints.push(`${x.toFixed(1)},${y.toFixed(1)}`);
-      }
-      const linePath = 'M ' + linePoints.join(' L ');
-      const areaPath = `${linePath} L ${(padding + (data.length - 1) * step).toFixed(1)},${(height - padding).toFixed(1)} L ${padding.toFixed(1)},${(height - padding).toFixed(1)} Z`;
-      return { linePath, areaPath };
-    };
-
-    // Max CPU is 100%
-    const cpuPaths = makePaths(this.cpuHistory, 100);
-    this.cpuPath = cpuPaths.linePath;
-    this.cpuAreaPath = cpuPaths.areaPath;
-
-    // Max Memory is 100%
-    const memPaths = makePaths(this.memoryHistory, 100);
-    this.memoryPath = memPaths.linePath;
-    this.memoryAreaPath = memPaths.areaPath;
-
-    // Max Network is 1000 Mbps
-    const netPaths = makePaths(this.networkHistory, 1000);
-    this.networkPath = netPaths.linePath;
-    this.networkAreaPath = netPaths.areaPath;
   }
 }

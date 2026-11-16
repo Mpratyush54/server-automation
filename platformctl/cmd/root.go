@@ -60,6 +60,29 @@ var statusCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		color.Cyan("\n  ■ Platform Health Check\n")
 		printHardeningStatus()
+		if joinedRole() == "agent" {
+			return agentStatus(os.Stdout)
+		}
+		if cfg.IsHA() {
+			if err := printClusterStatus(os.Stdout); err != nil {
+				color.Red("  ✗ cluster status: %v", err)
+			}
+			// Also on joined servers: when the first server is down they are
+			// where an operator checks the datastores and the volumes.
+			statusHADatastores(os.Stdout)
+		}
+		if components.PostgresUsesCNPG(cfg) {
+			components.PrintCNPGOperatorStatus(os.Stdout, cfg)
+			components.PrintPostgresHAStatus(os.Stdout)
+		} else {
+			color.Yellow("  PostgreSQL: Bitnami release (no point-in-time recovery); move it to CloudNativePG: sudo platformctl postgres migrate --confirm")
+		}
+		if joinedRole() == "server" {
+			// Joined servers run k3s only; the platform is checked on the first server.
+			return nil
+		}
+		// Persistent while backups stay on the server (#186).
+		components.PrintBackupTargetStatus(os.Stdout, cfg)
 		if meta, err := state.LockInfo(); err == nil && meta != "" {
 			color.Yellow("  · provision lock present (%s) — status does not wait on it", meta)
 		}
@@ -95,14 +118,14 @@ func Execute() {
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Pull newest Platform images from GHCR and roll deployments",
+	Short: "Pull newest Platform images from GHCR and roll deployments; refresh this server's kube-vip manifest",
+	Long: `Refreshes this server's kube-vip manifest (ha, vip mode) to the installed
+platformctl release, then pulls the newest Platform images and rolls the
+deployments. After an upgrade, run it on every server: k3s applies each
+server's own kube-vip manifest when it starts there. On a node that joined
+the cluster it only refreshes the local files.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
-		// Move host state into Secrets and drop the hostPath before rolling (#20).
-		if err := components.PrepareUpdate(cfg); err != nil {
-			return err
-		}
-		return components.UpdateImages(cfg)
+		return runUpdate(cmd.OutOrStdout())
 	},
 }
 
@@ -132,9 +155,9 @@ var repairCmd = &cobra.Command{
 
   1. Ensures per-client OIDC secrets exist (saved to /etc/platform/.env).
   2. Re-applies the API's OIDC issuer and client registry, and the SSO
-     settings of Grafana, ArgoCD, oauth2-proxy and Portainer.
+     settings of Grafana, ArgoCD, MinIO, oauth2-proxy and Portainer.
   3. Ensures a valid TLS certificate: Let's Encrypt when possible, otherwise
-     the platform's internal CA, and makes ArgoCD trust it.`,
+     the platform's internal CA, and makes ArgoCD and MinIO trust it.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		unlock, err := state.AcquireLock("repair")
 		if err != nil {
@@ -191,11 +214,12 @@ var chartsCmd = &cobra.Command{
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(map[string]any{
-				"k3s":         versions.K3sVersion,
-				"helm":        versions.HelmVersion,
-				"charts":      versions.All(),
-				"chartMirror": versions.ChartMirror,
-				"k3sMirror":   versions.K3sMirror,
+				"k3s":          versions.K3sVersion,
+				"helm":         versions.HelmVersion,
+				"charts":       versions.All(),
+				"chartMirror":  versions.ChartMirror,
+				"k3sMirror":    versions.K3sMirror,
+				"staticImages": versions.StaticImages(),
 			})
 		}
 		fmt.Printf("k3s  %s\nhelm %s\n", versions.K3sVersion, versions.HelmVersion)
@@ -226,7 +250,7 @@ func init() {
 	provisionCmd.Flags().IntVar(&parallelFlag, "parallel", 0,
 		"cluster steps to run at once (default 4, env PLATFORMCTL_PARALLEL; 1 = serial with live output)")
 	provisionCmd.Flags().StringVar(&profileFlag, "profile", "",
-		"component set: minimal | standard | full (default standard, env PLATFORM_PROFILE)")
+		"component set: minimal | standard | full | ha (default standard, env PLATFORM_PROFILE)")
 	provisionCmd.Flags().StringVar(&bundleFlag, "bundle", "",
 		"offline bundle: path to platform-bundle-*.tar.zst, or 'auto' to download the matching release")
 }
@@ -248,7 +272,7 @@ func runInstall(name string) error {
 	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
 	comp := components.Find(name)
 	if comp == nil {
-		return fmt.Errorf("unknown component: %s\nAvailable: ingress-nginx, cert-manager, postgresql, mongodb, redis, minio, argocd, monitoring, oauth2-proxy, portainer, platform, ingress, routing, auto-update, kyverno", name)
+		return fmt.Errorf("unknown component: %s\nAvailable: longhorn, longhorn-monitoring, ingress-nginx, cert-manager, postgresql, postgresql-backup, postgresql-monitoring, mongodb, redis, minio, argocd, monitoring, oauth2-proxy, portainer, platform, ingress, routing, auto-update, kyverno", name)
 	}
 	cfg.GenerateSecrets()
 	if !isChild() {

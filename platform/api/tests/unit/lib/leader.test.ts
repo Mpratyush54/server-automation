@@ -197,4 +197,17 @@ describe('LeaderElector (coordination.k8s.io Lease)', () => {
     }
     expect(a.isLeader() || b.isLeader()).toBe(true);
   });
+
+  it('times out a hung Lease call so a follower can still take over', async () => {
+    const api = new FakeLeaseApi();
+    const clock = { t: 1_000_000 };
+    const hung = { ...api, readNamespacedLease: () => new Promise<any>(() => {}) } as unknown as LeaseApi;
+    const a = new LeaderElector({ api: hung, namespace: 'platform', identity: 'pod-a', leaseDurationMs: 10_000, retryPeriodMs: 2_000, requestTimeoutMs: 50, now: () => clock.t, log: () => {} });
+    const started = Date.now();
+    expect(await a.tick()).toBe(false); // fails fast instead of hanging
+    expect(Date.now() - started).toBeLessThan(2_000);
+    // The next attempt on a healthy connection acquires normally.
+    const b = makeElector(api, 'pod-b', clock);
+    expect(await b.tick()).toBe(true);
+  });
 });

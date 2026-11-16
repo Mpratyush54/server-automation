@@ -1,0 +1,362 @@
+<div class="stack">
+  <!-- Connect an AI assistant (remote MCP, #193) -->
+  <section class="card card-flush" aria-labelledby="pa-assistant-title" data-testid="agents-assistant">
+    <div class="card-header">
+      <div class="pa-head">
+        <h2 id="pa-assistant-title">Connect an AI assistant</h2>
+        <p class="pa-sub">Paste this address into Claude, ChatGPT, Cursor, VS Code or Claude Code, sign in to Cairn and approve. Nothing to install.</p>
+      </div>
+      <a class="btn btn-sm" [href]="docsUrl" target="_blank" rel="noopener" data-testid="agents-docs-link">Setup guide</a>
+    </div>
+    <div class="pa-body">
+      <div class="pa-connector">
+        <label class="pa-label" for="pa-connector-url">Connector URL</label>
+        <div class="pa-inline">
+          <input id="pa-connector-url" class="mono pa-connector-input" type="text" readonly [value]="connectorUrl" data-testid="agents-connector-url">
+          <button type="button" class="btn btn-sm btn-primary" (click)="copyText(connectorUrl, 'Connector URL')" data-testid="agents-copy-connector">Copy</button>
+        </div>
+      </div>
+      @if (!remoteConfigured) {
+        <p class="notice notice-warn" role="status" data-testid="agents-remote-off">
+          This server has no public address configured, so assistants cannot connect yet. Ask an administrator to set the platform domain.
+        </p>
+      }
+
+      <div class="pa-tabs" role="tablist" aria-label="Assistant" (keydown)="onAssistantKey($event)" data-testid="agents-assistant-tabs">
+        @for (a of assistants; track a.id) {
+          <button type="button" role="tab" class="pa-tab" [id]="'pa-tab-' + a.id"
+            [attr.aria-selected]="activeAssistant === a.id" [attr.aria-controls]="'pa-panel-' + a.id"
+            [attr.tabindex]="activeAssistant === a.id ? 0 : -1" [class.pa-tab-active]="activeAssistant === a.id"
+            (click)="selectAssistant(a.id)" [attr.data-testid]="'agents-tab-' + a.id">{{ a.label }}</button>
+        }
+      </div>
+      <div class="pa-tabpanel" role="tabpanel" [id]="'pa-panel-' + assistantGuide.id" [attr.aria-labelledby]="'pa-tab-' + assistantGuide.id" data-testid="agents-assistant-panel">
+        <ol class="pa-steps">
+          @for (step of assistantGuide.steps; track $index) { <li>{{ step }}</li> }
+        </ol>
+        @if (assistantGuide.snippet) {
+          <div class="pa-snippet">
+            <div class="pa-snippet-head">
+              <span class="pa-label">{{ assistantGuide.id === 'claude-code' ? 'Command' : 'Config' }}</span>
+              <button type="button" class="btn btn-sm" (click)="copyText(assistantSnippet(assistantGuide), assistantGuide.id === 'claude-code' ? 'Command' : 'Config')" data-testid="agents-copy-snippet">Copy</button>
+            </div>
+            <pre class="pa-code mono" data-testid="agents-assistant-snippet">{{ assistantSnippet(assistantGuide) }}</pre>
+          </div>
+        }
+      </div>
+      <p class="form-hint">
+        The assistant acts as you, with only the permissions you tick and never more than your role allows. Destructive commands still wait for a person to approve them below.
+      </p>
+    </div>
+  </section>
+
+  <!-- Connected assistants -->
+  <section class="card card-flush" aria-labelledby="pa-connections-title" data-testid="agents-connections">
+    <div class="card-header">
+      <div class="pa-head">
+        <h2 id="pa-connections-title">Connected assistants</h2>
+        <p class="pa-sub">{{ canManage ? 'Every assistant connected to this platform.' : 'Assistants you connected.' }} Disconnect one to cut it off at once.</p>
+      </div>
+      <button type="button" class="btn btn-sm btn-ghost" [disabled]="connectionsLoading" (click)="loadConnections()">Refresh</button>
+    </div>
+    @if (connectionsLoading && !connections.length) {
+      <div class="pa-body"><p class="secondary">Loading…</p></div>
+    } @else {
+      @if (connectionsError) { <div class="pa-body"><p class="error" role="alert">{{ connectionsError }}</p></div> }
+      @if (!connections.length && !connectionsError) {
+        <div class="empty-state" data-testid="agents-connections-empty">
+          <strong>No assistants connected</strong>
+          Paste the connector URL above into your assistant to connect one.
+        </div>
+      } @else if (connections.length) {
+        <div class="table-scroll">
+          <table data-testid="agents-connections-table">
+            <thead>
+              <tr>
+                <th>Assistant</th>
+                <th>Permissions</th>
+                <th>Approved by</th>
+                <th>Last used</th>
+                <th class="text-right"><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (c of connections; track c.id) {
+                <tr>
+                  <td>
+                    {{ c.name }}
+                    @if (c.redirectHosts?.length) { <span class="cell-sub mono">{{ c.redirectHosts![0] }}</span> }
+                  </td>
+                  <td>
+                    <span class="pa-scope-list">
+                      @for (s of c.scopes; track s) { <span class="badge mono">{{ s }}</span> }
+                    </span>
+                  </td>
+                  <td>
+                    @if (c.mine) { You } @else { {{ c.approvedBy?.name || 'Unknown' }} }
+                    @if (c.createdAt) { <span class="cell-sub">{{ c.createdAt | date:'mediumDate' }}</span> }
+                  </td>
+                  <td class="pa-nowrap">{{ c.lastUsedAt ? (c.lastUsedAt | date:'medium') : 'Never' }}</td>
+                  <td class="text-right">
+                    <button type="button" class="btn btn-sm btn-danger" [disabled]="disconnectingId === c.id" (click)="disconnect(c)" [attr.data-testid]="'agents-disconnect-' + c.id">
+                      {{ disconnectingId === c.id ? 'Disconnecting…' : 'Disconnect' }}
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    }
+  </section>
+
+  <!-- Local MCP server (agent token) -->
+  <section class="card card-flush" aria-labelledby="pa-connect-title" data-testid="agents-connect">
+    <div class="card-header">
+      <div class="pa-head">
+        <h2 id="pa-connect-title">Use an agent token instead</h2>
+        <p class="pa-sub">For scripts and clients that cannot sign in: send an agent token as <span class="mono">Authorization: Bearer plat_agent_…</span> to the connector URL, or run the local MCP server.</p>
+      </div>
+    </div>
+    <div class="pa-body">
+      <dl class="facts">
+        <dt>API base URL</dt>
+        <dd class="pa-inline">
+          <span class="mono" data-testid="agents-api-url">{{ apiBaseUrl }}</span>
+          <button type="button" class="btn btn-ghost btn-sm" (click)="copy(apiBaseUrl, 'url')">{{ copied === 'url' ? 'Copied' : 'Copy' }}</button>
+        </dd>
+        <dt>Local MCP server</dt>
+        <dd><span class="mono">platform/mcp-server</span> in the Cairn repository. Build it once with <span class="mono">npm run build</span> (Node 18 or later).</dd>
+      </dl>
+
+      <div class="pa-snippet">
+        <div class="pa-snippet-head">
+          <span class="pa-label">Local client config</span>
+          <button type="button" class="btn btn-sm" (click)="copy(mcpConfig, 'config')" data-testid="agents-copy-config">
+            {{ copied === 'config' ? 'Copied' : 'Copy config' }}
+          </button>
+        </div>
+        <pre class="pa-code mono" data-testid="agents-config">{{ mcpConfig }}</pre>
+        <p class="form-hint">
+          Replace the path with where you built the server.
+          @if (createdToken) { The token you just created is filled in. } @else { Put an agent token in <span class="mono">PLATFORM_AGENT_TOKEN</span>. }
+        </p>
+      </div>
+
+      <p class="notice" data-testid="agents-scope-note">
+        Agent tokens are not tied to this project. They belong to the platform, and a token that can read projects sees every project.
+      </p>
+    </div>
+  </section>
+
+  <!-- Tokens -->
+  <section class="card card-flush" aria-labelledby="pa-tokens-title" data-testid="agents-tokens">
+    <div class="card-header">
+      <div class="pa-head">
+        <h2 id="pa-tokens-title">Agent tokens</h2>
+        <p class="pa-sub">Each agent signs in with its own token. Revoke a token to cut off that agent.</p>
+      </div>
+      @if (canManage && !showCreate) {
+        <button type="button" class="btn btn-sm btn-primary" (click)="openCreate()" data-testid="agents-create-open">Create token</button>
+      }
+    </div>
+
+    @if (createdToken) {
+      <div class="pa-body pa-created" role="status" data-testid="agents-created-token">
+        <p class="notice notice-warn">
+          <strong>Copy this token now.</strong> It is shown only once. If you lose it, revoke it and create a new one.
+        </p>
+        <div class="pa-inline">
+          <span class="mono pa-secret">{{ createdToken.token }}</span>
+          <button type="button" class="btn btn-sm" (click)="copy(createdToken.token, 'token')">{{ copied === 'token' ? 'Copied' : 'Copy token' }}</button>
+          <button type="button" class="btn btn-ghost btn-sm" (click)="dismissCreatedToken()">Done</button>
+        </div>
+      </div>
+    }
+
+    @if (showCreate) {
+      <form class="pa-body pa-form" (ngSubmit)="createToken()" data-testid="agents-create-form">
+        <div class="pa-fields">
+          <div class="form-group">
+            <label for="pa-token-name">Name</label>
+            <input id="pa-token-name" name="name" [(ngModel)]="newToken.name" placeholder="laptop-cursor" maxlength="120" required>
+            <span class="form-hint">Say who or what uses it, so you know what to revoke later.</span>
+          </div>
+          <div class="form-group">
+            <label for="pa-token-expiry">Expires</label>
+            <input id="pa-token-expiry" name="expiresAt" type="date" [(ngModel)]="newToken.expiresAt">
+            <span class="form-hint">Optional. Leave empty for no expiry.</span>
+          </div>
+        </div>
+        <fieldset class="pa-scopes">
+          <legend>Permissions</legend>
+          @for (s of scopeOptions; track s.id) {
+            <label>
+              <input type="checkbox" [name]="'scope-' + s.id" [(ngModel)]="s.checked">
+              <span>{{ s.label }} <span class="mono muted pa-scope-id">{{ s.id }}</span></span>
+            </label>
+          }
+        </fieldset>
+        @if (createError) { <p class="error" role="alert">{{ createError }}</p> }
+        <div class="pa-footer-row">
+          <button type="button" class="btn btn-sm btn-ghost" (click)="cancelCreate()">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-primary" [disabled]="creating || !newToken.name.trim()">
+            {{ creating ? 'Creating…' : 'Create token' }}
+          </button>
+        </div>
+      </form>
+    }
+
+    @if (!canManage) {
+      <div class="pa-body">
+        <p class="secondary" data-testid="agents-tokens-no-access">
+          Only platform admins and devops can see and create agent tokens. Ask one of them if you need one.
+        </p>
+      </div>
+    } @else if (tokensLoading && !tokens.length) {
+      <div class="pa-body"><p class="secondary">Loading tokens…</p></div>
+    } @else {
+      @if (tokensError) { <div class="pa-body"><p class="error" role="alert">{{ tokensError }}</p></div> }
+      @if (!tokens.length && !tokensError) {
+        <div class="empty-state" data-testid="agents-tokens-empty">
+          <strong>No agent tokens yet</strong>
+          Create one to let Cursor, Claude or another MCP client work with this platform.
+        </div>
+      } @else if (tokens.length) {
+        <div class="table-scroll">
+          <table data-testid="agents-tokens-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Permissions</th>
+                <th>Status</th>
+                <th>Last used</th>
+                <th>Created</th>
+                <th>Expires</th>
+                <th class="text-right"><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (t of tokens; track t.id) {
+                <tr>
+                  <td>
+                    {{ t.name }}
+                    @if (t.tokenPrefix) { <span class="cell-sub mono">{{ t.tokenPrefix }}…</span> }
+                  </td>
+                  <td>
+                    <span class="pa-scope-list">
+                      @for (s of t.scopes; track s) { <span class="badge mono">{{ s }}</span> }
+                    </span>
+                  </td>
+                  <td>
+                    @switch (tokenState(t)) {
+                      @case ('active') { <span class="status status-ok">Active</span> }
+                      @case ('expired') { <span class="status status-warn">Expired</span> }
+                      @default { <span class="status">Revoked</span> }
+                    }
+                  </td>
+                  <td class="pa-nowrap">{{ t.lastUsedAt ? (t.lastUsedAt | date:'medium') : 'Never' }}</td>
+                  <td class="pa-nowrap">{{ t.createdAt ? (t.createdAt | date:'mediumDate') : '—' }}</td>
+                  <td class="pa-nowrap">{{ t.expiresAt ? (t.expiresAt | date:'mediumDate') : 'No expiry' }}</td>
+                  <td class="text-right">
+                    @if (tokenState(t) === 'active') {
+                      <button type="button" class="btn btn-sm btn-danger" [disabled]="revokingId === t.id" (click)="revoke(t)">
+                        {{ revokingId === t.id ? 'Revoking…' : 'Revoke' }}
+                      </button>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    }
+  </section>
+
+  <!-- Approvals -->
+  <section class="card card-flush" aria-labelledby="pa-pending-title" data-testid="agents-pending">
+    <div class="card-header">
+      <div class="pa-head">
+        <h2 id="pa-pending-title">Waiting for approval</h2>
+        <p class="pa-sub">Destructive commands an agent asked to run. Nothing runs until a person approves it.</p>
+      </div>
+      @if (canViewPending) {
+        <button type="button" class="btn btn-sm btn-ghost" [disabled]="pendingLoading" (click)="loadPending()">Refresh</button>
+      }
+    </div>
+
+    @if (!canViewPending) {
+      <div class="pa-body">
+        <p class="secondary" data-testid="agents-pending-no-access">Only platform admins, devops and tech leads can see this queue.</p>
+      </div>
+    } @else if (pendingLoading && !pending.length) {
+      <div class="pa-body"><p class="secondary">Loading…</p></div>
+    } @else {
+      @if (pendingError) { <div class="pa-body"><p class="error" role="alert">{{ pendingError }}</p></div> }
+      @if (!pending.length && !pendingError) {
+        <div class="empty-state" data-testid="agents-pending-empty">
+          <strong>Nothing is waiting</strong>
+          When an agent asks to run a destructive command, it shows up here.
+        </div>
+      } @else if (pending.length) {
+        <div class="table-scroll">
+          <table data-testid="agents-pending-table">
+            <thead>
+              <tr>
+                <th>Command</th>
+                <th>Risk</th>
+                <th>Requested by</th>
+                <th>Requested</th>
+                <th>Expires</th>
+                @if (canManage) { <th class="text-right"><span class="sr-only">Actions</span></th> }
+              </tr>
+            </thead>
+            <tbody>
+              @for (a of pending; track a.id) {
+                <tr>
+                  <td>
+                    <span class="mono pa-command">{{ a.command }}</span>
+                    @if (a.reason) { <span class="cell-sub">{{ a.reason }}</span> }
+                  </td>
+                  <td><span class="status status-down">{{ a.riskLevel || 'destructive' }}</span></td>
+                  <td>
+                    @if (a.requestedByMcpGrantId) {
+                      {{ connectionName(a.requestedByMcpGrantId) || a.metadata?.assistantName || 'Connected assistant' }}
+                      @if (a.metadata?.actingFor?.name) { <span class="cell-sub" data-testid="agents-acting-for">for {{ a.metadata?.actingFor?.name }}</span> }
+                    } @else if (a.requestedByAgentTokenId) {
+                      {{ tokenName(a.requestedByAgentTokenId) || 'Agent token' }}
+                    } @else {
+                      A person
+                    }
+                  </td>
+                  <td class="pa-nowrap">{{ a.createdAt ? (a.createdAt | date:'medium') : '—' }}</td>
+                  <td class="pa-nowrap">{{ a.approvalExpiresAt ? (a.approvalExpiresAt | date:'shortTime') : '—' }}</td>
+                  @if (canManage) {
+                    <td class="text-right">
+                      <span class="actions pa-row-actions">
+                        <button type="button" class="btn btn-sm btn-ghost" [disabled]="decidingId === a.id" (click)="reject(a)" data-testid="agents-reject">Reject</button>
+                        <button type="button" class="btn btn-sm btn-primary" [disabled]="decidingId === a.id" (click)="approve(a)" data-testid="agents-approve">Approve</button>
+                      </span>
+                    </td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (!canManage) {
+          <div class="pa-body"><p class="form-hint">Only platform admins and devops can approve or reject.</p></div>
+        }
+      }
+    }
+
+    <div class="pa-foot">
+      <p class="form-hint" data-testid="agents-commands-note">
+        Agent commands run against the cluster, not a single project, so this list covers the whole platform.
+        Commands that already ran are not listed here; they are recorded in the <a routerLink="/audit-logs">audit log</a>.
+      </p>
+    </div>
+  </section>
+</div>

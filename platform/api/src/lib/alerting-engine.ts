@@ -32,7 +32,7 @@ import { AlertMessage, axiosHttpPost, ChannelDeps, DeliveryError, sendToChannel,
 import { alertingSettings, alertingUrls } from './alerting-config';
 import { notifyUser } from './notify';
 
-const SOURCES = ['error-tracking', 'synthetics', 'deploy', 'database', 'slo', 'monitor', 'status-page'];
+const SOURCES = ['error-tracking', 'synthetics', 'deploy', 'database', 'slo', 'monitor', 'status-page', 'usage'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TIMELINE_MAX = 50;
 

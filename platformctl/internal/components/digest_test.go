@@ -75,6 +75,7 @@ func TestDigestUpdateRejectsInvalidDigestAndRolloutFailure(t *testing.T) {
 		}
 	}
 }
+
 // Offline/bundle installs: no registry digest, but the images are already on
 // the node. With ALLOW_LOCAL_IMAGES the tag is used as-is (migrations still run
 // first); without it the update must refuse, so online auto-update stays pinned.
@@ -112,7 +113,7 @@ grep -qx 'portal=ghcr.io/test/platform-portal:offline' "$SET_FILE" || exit 81
 }
 
 func TestRecoveryAdminSQLAlwaysAuthenticatesAndPropagatesFailure(t *testing.T) {
-	start := strings.Index(recoverScript, "kubectl -n databases exec -i \"$PG_POD\" -- bash -lc 'cat > /tmp/platformctl-recover-admin.sql'")
+	start := strings.Index(recoverScript, "kubectl -n databases exec -i \"$PG_POD\" -c \"$PG_CONTAINER\" -- bash -lc 'cat > \"${TMPDIR:-/tmp}/platformctl-recover-admin.sql\"'")
 	if start < 0 {
 		t.Fatal("admin recovery step missing")
 	}
@@ -127,7 +128,7 @@ func TestRecoveryAdminSQLAlwaysAuthenticatesAndPropagatesFailure(t *testing.T) {
 			if fail {
 				status = "12"
 			}
-			prefix := "set -euo pipefail\nWORKING=known-working\nPG_POD=postgresql-0\nSQL_FILE=/dev/null\nUSED_TRUST=" + trust + "\nkubectl() { return 0; }\npsql_with_pw() { [[ $1 == known-working && $2 == platform ]] || return 99; return " + status + "; }\n"
+			prefix := "set -euo pipefail\nWORKING=known-working\nPG_POD=postgresql-0\nPG_CONTAINER=postgresql\nSQL_FILE=/dev/null\nUSED_TRUST=" + trust + "\nkubectl() { return 0; }\npsql_with_pw() { [[ $1 == known-working && $2 == platform ]] || return 99; return " + status + "; }\n"
 			out, err := runJobShell(t, prefix+segment)
 			if fail && err == nil {
 				t.Fatal("SQL failure was discarded")

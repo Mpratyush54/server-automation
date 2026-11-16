@@ -11,14 +11,15 @@ import { Flamebearer, FlameRect, flameRects } from './observability-api';
   styleUrls: ['./obs-theme.css'],
   styles: [`
     .fg { position: relative; width: 100%; overflow: hidden; font-size: 11px; }
-    .fr { position: absolute; height: 18px; box-sizing: border-box; border: 1px solid var(--obs-bg); border-radius: 2px; padding: 0 4px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; color: #111; line-height: 16px; }
-    .fr:hover { filter: brightness(1.1); outline: 1px solid var(--obs-text); }
+    .fr { position: absolute; height: 18px; box-sizing: border-box; border: 1px solid var(--obs-bg); border-radius: 2px; padding: 0 4px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; color: rgb(var(--accent-ink)); line-height: 16px; }
+    .fr:hover { outline: 1px solid var(--obs-text); }
+    .fg-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; font-size: 0.8125rem; }
   `],
   template: `
     @if (!rects.length) {
       <div class="obs-empty"><strong>No profile data</strong>Enable profiling in the platform SDK (Node / Python) and pick a service.</div>
     } @else {
-      <div class="obs-faint" style="margin-bottom:6px">{{ total }} {{ unit || 'samples' }} total @if (zoom) { · zoomed into <strong>{{ zoom.name }}</strong> <button class="obs-btn" style="padding:0 6px" (click)="reset()">Reset</button> }</div>
+      <div class="obs-faint fg-meta">{{ total }} {{ unit || 'samples' }} total @if (zoom) { · zoomed into <strong>{{ zoom.name }}</strong> <button type="button" class="obs-btn sm" (click)="reset()">Reset</button> }</div>
       <div class="fg" [style.height.px]="height" role="img" aria-label="Flame graph">
         @for (r of view; track $index) {
           <div class="fr" [style.left.%]="r.left" [style.width.%]="r.width" [style.top.px]="r.level * 18" [style.background]="r.color" (click)="zoomTo(r.rect)" [title]="r.rect.name + ' — ' + r.share + '% (self ' + r.rect.self + ')'">{{ r.rect.name }}</div>

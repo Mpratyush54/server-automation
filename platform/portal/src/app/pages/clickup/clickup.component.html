@@ -1,102 +1,102 @@
-<div style="margin-bottom:24px;">
-  <h2 style="margin:0;font-size:1.5rem;font-weight:700;">ClickUp Integration</h2>
-  <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:4px 0 0 0;">Automatic task comments and preview environment synchronization</p>
+<div class="page-header">
+  <div>
+    <h1 class="page-title">ClickUp</h1>
+    <p class="page-subtitle">Post preview links to ClickUp tasks and build when a task moves to review.</p>
+  </div>
 </div>
 
-<div class="grid-2">
-  <div class="card">
-    <h2>Connection & Configuration</h2>
+<div class="cu-grid">
+  <section class="card card-flush" aria-labelledby="cu-conn-title">
+    <div class="card-header">
+      <h2 id="cu-conn-title">Connection</h2>
+      <span class="status status-ok">Active</span>
+    </div>
+    <div class="cu-body">
+      <div class="cu-field">
+        <span class="cu-label">Webhook URL</span>
+        <code class="cu-url">{{ webhookUrl || fallbackWebhookUrl }}</code>
+        <span class="form-hint">Add this address as a webhook in ClickUp.</span>
+      </div>
 
-    <div style="margin-bottom:20px;">
-      <div style="font-size:0.8rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;margin-bottom:6px;">Webhook Receiver Endpoint</div>
-      <div style="font-family:monospace;background:rgba(0,0,0,0.3);padding:12px;border-radius:10px;border:1px solid var(--border-glass);color:var(--primary);font-size:0.9rem;">
-        {{ webhookUrl || fallbackWebhookUrl }}
+      <div class="cu-field">
+        <span class="cu-label">What happens</span>
+        <ul class="cu-list">
+          <li>Push <code class="mono">feature/CU-&#123;id&#125;</code>: the preview link is posted on that task.</li>
+          <li>Move the task to “In Review”: its branch is built.</li>
+          <li>Remove the preview: the task gets a note.</li>
+        </ul>
       </div>
     </div>
+  </section>
 
-    <div style="margin-bottom:20px;">
-      <div style="font-size:0.8rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;margin-bottom:6px;">Webhook Status</div>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span class="badge badge-active">Active</span>
-        <span style="font-size:0.85rem;color:var(--color-text-secondary);">Webhook triggers on status change to "In Review"</span>
-      </div>
-    </div>
-
-    <hr style="border:0;border-top:1px solid var(--border-glass);margin:20px 0;">
-
-    <h3 style="font-family:var(--font-heading);font-size:1rem;color:#fff;margin-top:0;margin-bottom:12px;">Trigger Actions</h3>
-    <ul style="padding-left:20px;margin:0;color:var(--color-text-secondary);font-size:0.85rem;line-height:1.6;">
-      <li>Branch push matching <code style="color:var(--primary);">feature/CU-&#123;id&#125;</code> posts URL comments to ClickUp task automatically.</li>
-      <li>Moving a task to <strong>"In Review"</strong> triggers a GitLab build pipeline for the matching branch.</li>
-      <li>Terminating a preview deployment posts a follow-up comment noting environment teardown.</li>
-    </ul>
-  </div>
-
-  <!-- Simulated Webhook Trigger for DevOps -->
   @if (isDevOps) {
-    <div class="card">
-      <h2>Webhook Tester</h2>
-      <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-top:0;margin-bottom:20px;">Simulate outgoing ClickUp webhook events locally to verify triggers</p>
-      <div class="form-group">
-        <label>ClickUp Task ID</label>
-        <input [(ngModel)]="simulatedTask.task_id" placeholder="CU-842">
+    <section class="card card-flush" aria-labelledby="cu-test-title">
+      <div class="card-header">
+        <h2 id="cu-test-title">Test the webhook</h2>
       </div>
-      <div class="form-group">
-        <label>New Status</label>
-        <select [(ngModel)]="simulatedTask.status">
-          <option value="In Review">In Review (Triggers Pipeline)</option>
-          <option value="Open">Open</option>
-          <option value="Closed">Closed</option>
-        </select>
+      <div class="cu-body">
+        <p class="cu-intro">Send a sample status change to check the connection.</p>
+        <div class="form-group">
+          <label for="cu-task">Task ID</label>
+          <input id="cu-task" [(ngModel)]="simulatedTask.task_id" placeholder="CU-842">
+        </div>
+        <div class="form-group">
+          <label for="cu-status">New status</label>
+          <select id="cu-status" [(ngModel)]="simulatedTask.status">
+            <option value="In Review">In Review (starts the pipeline)</option>
+            <option value="Open">Open</option>
+            <option value="Closed">Closed</option>
+          </select>
+          <span class="form-hint">Unsigned tests are refused with “Invalid signature”; that still means the address works.</span>
+        </div>
+        <button type="button" class="btn btn-primary cu-send" (click)="triggerWebhook()">Send test event</button>
       </div>
-      <button class="btn btn-primary w-full" (click)="triggerWebhook()" style="display:flex;width:100%;justify-content:center;box-sizing:border-box;margin-top:12px;">
-        Send Simulated Webhook
-      </button>
-    </div>
+    </section>
   }
 </div>
 
-<div class="card" style="padding:0;overflow:hidden;">
-  <h2 style="padding:24px 24px 0 24px;border:0;margin:0;">Active Task Links</h2>
-  <table style="margin-top:12px;">
-    <thead>
-      <tr>
-        <th>Task ID</th>
-        <th>Project Name</th>
-        <th>Branch</th>
-        <th>Deployment Status</th>
-        <th>Last Synced</th>
-      </tr>
-    </thead>
-    <tbody>
-      @for (link of linkedTasks; track link) {
-        <tr>
-          <td>
-            <span class="badge badge-pending" style="font-size:0.75rem;">
-              CU-{{ link.taskId }}
-            </span>
-          </td>
-          <td style="font-weight:600;color:#fff;">{{ link.projectName }}</td>
-          <td><span style="font-family:monospace;font-size:0.85rem;">{{ link.branch }}</span></td>
-          <td>
-          <span class="badge" [ngClass]="{
-            'badge-active': link.status === 'deployed',
-            'badge-pending': link.status === 'pending' || link.status === 'building',
-            'badge-failed': link.status === 'failed' || link.status === 'terminated'
-          }" style="font-size:0.7rem;">
-              {{ link.status | uppercase }}
-            </span>
-          </td>
-          <td>{{ link.deployedAt | date:'medium' }}</td>
-        </tr>
-      }
-      @if (linkedTasks.length === 0) {
-        <tr>
-          <td colspan="5" style="text-align:center;color:var(--color-text-muted);padding:32px;">
-            No ClickUp task associations found. Try pushing a branch with a task prefix (e.g. feature/CU-842-auth-fix).
-          </td>
-        </tr>
-      }
-    </tbody>
-  </table>
-</div>
+<section class="card card-flush" aria-labelledby="cu-links-title">
+  <div class="card-header">
+    <h2 id="cu-links-title">Linked tasks</h2>
+    @if (linkedTasks.length > 0) {
+      <span class="badge">{{ linkedTasks.length }}</span>
+    }
+  </div>
+  @if (linkedTasks.length === 0) {
+    <div class="empty-state">
+      <strong>No linked tasks yet</strong>
+      Push a branch that includes a task ID, for example <span class="mono">feature/CU-842-auth-fix</span>, and its preview shows here.
+    </div>
+  } @else {
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Project</th>
+            <th>Branch</th>
+            <th>Deployment</th>
+            <th>Last synced</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (link of linkedTasks; track link) {
+            <tr>
+              <td class="mono">CU-{{ link.taskId }}</td>
+              <td class="cu-strong">{{ link.projectName }}</td>
+              <td class="mono cu-branch">{{ link.branch }}</td>
+              <td>
+                <span class="status" [ngClass]="{
+                  'status-ok': link.status === 'deployed',
+                  'status-warn': link.status === 'pending' || link.status === 'building',
+                  'status-down': link.status === 'failed' || link.status === 'terminated'
+                }">{{ link.status | titlecase }}</span>
+              </td>
+              <td class="muted cu-nowrap">{{ link.deployedAt | date:'medium' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>

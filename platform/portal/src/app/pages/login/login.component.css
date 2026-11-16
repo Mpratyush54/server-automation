@@ -1,1 +1,105 @@
-/* Login page styles */
+.lg-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  background: rgb(var(--canvas));
+}
+.lg-panel {
+  width: 100%;
+  max-width: 380px;
+}
+
+.lg-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 32px;
+  color: rgb(var(--fg));
+  font-weight: 600;
+  font-size: 1.0625rem;
+  text-decoration: none;
+}
+.lg-brand svg { width: 24px; height: 24px; fill: rgb(var(--fg-2)); }
+.lg-brand .lg-led { fill: rgb(var(--accent)); }
+
+.lg-form {
+  padding: 28px;
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--line));
+  border-radius: 10px;
+}
+.lg-title { margin: 0; font-size: 1.375rem; font-weight: 600; color: rgb(var(--fg)); }
+.lg-sub { margin: 6px 0 24px; font-size: 0.875rem; color: rgb(var(--fg-2)); }
+
+.lg-form input { width: 100%; box-sizing: border-box; }
+.mfa-code { font-size: 1.125rem; letter-spacing: 0.2em; text-align: center; font-variant-numeric: tabular-nums; }
+
+.lg-pass { position: relative; }
+.lg-pass input { padding-right: 44px; }
+.lg-eye {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgb(var(--fg-3));
+  cursor: pointer;
+}
+.lg-eye:hover { color: rgb(var(--fg)); }
+.lg-eye:focus-visible { outline: 2px solid rgb(var(--accent)); }
+.lg-eye svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; }
+
+.lg-error {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  font-size: 0.875rem;
+  color: rgb(var(--down));
+  background: rgb(var(--down) / 0.08);
+  border: 1px solid rgb(var(--down) / 0.3);
+  border-radius: 6px;
+}
+
+.lg-submit { width: 100%; justify-content: center; margin-top: 4px; }
+
+.lg-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+.lg-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 0.8125rem;
+  color: rgb(var(--accent-text));
+  cursor: pointer;
+}
+.lg-link:hover { text-decoration: underline; }
+
+.lg-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+  font-size: 0.8125rem;
+  color: rgb(var(--fg-3));
+}
+.lg-divider::before, .lg-divider::after { content: ''; flex: 1; height: 1px; background: rgb(var(--line)); }
+.lg-sso { display: flex; flex-direction: column; gap: 10px; }
+
+.lg-note {
+  margin: 16px 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: rgb(var(--fg-3));
+  text-align: center;
+}

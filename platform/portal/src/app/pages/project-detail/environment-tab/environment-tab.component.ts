@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../../services/api.service';
 import { StepUpService } from '../../../services/step-up.service';
+import { ToastService, DialogService, errorText } from '../../../shared/feedback/feedback.service';
 
 /** One merged row from GET /projects/:id/environment (#29). */
 export interface EnvVarRow {
@@ -69,42 +70,6 @@ export function parseDotEnv(text: string): BulkLine[] {
   imports: [CommonModule, FormsModule],
   template: `
 <div class="env-tab">
-  <div class="card env-toolbar">
-    <div class="env-toolbar-row">
-      <div class="form-group env-field">
-        <label for="envScope">Environment</label>
-        <select id="envScope" [(ngModel)]="selectedEnv" (ngModelChange)="load()">
-          <option value="__all">All scopes</option>
-          <option value="global">Global only</option>
-          @for (env of environments; track env.id) {
-            <option [value]="env.id">{{ env.name | uppercase }} (incl. global)</option>
-          }
-        </select>
-      </div>
-      <div class="form-group env-field env-grow">
-        <label for="envSearch">Search</label>
-        <input id="envSearch" [(ngModel)]="search" placeholder="Filter by key…" autocomplete="off">
-      </div>
-      <div class="env-actions">
-        @if (canWriteAny) {
-          <button class="btn btn-sm btn-primary" (click)="openForm()">+ Add variable</button>
-          <button class="btn btn-sm" (click)="openBulk()">Paste .env</button>
-        }
-        @if (caps.canExport && selectedEnvId) {
-          <button class="btn btn-sm" (click)="exportSecrets()">Export secrets</button>
-        }
-      </div>
-    </div>
-    @if (conflicts > 0) {
-      <p class="env-warn" role="alert">
-        {{ conflicts / 2 }} key(s) are stored as both plain and secret in the same scope. Resolve each conflict by keeping one.
-      </p>
-    }
-    @if (!caps.canReadValues) {
-      <p class="env-muted">You can see keys and types only.</p>
-    }
-  </div>
-
   @if (showForm) {
     <div class="card env-form" aria-label="Add or edit variable">
       <h2>{{ editing ? 'Edit' : 'Add' }} variable</h2>
@@ -117,11 +82,11 @@ export function parseDotEnv(text: string): BulkLine[] {
           }
         </div>
         <div class="form-group">
-          <label for="envFormScope">Scope</label>
+          <label for="envFormScope">Environment</label>
           <select id="envFormScope" [(ngModel)]="form.environmentId" [disabled]="!!editing">
-            <option value="">Global (all environments)</option>
+            <option value="">Shared (all environments)</option>
             @for (env of environments; track env.id) {
-              <option [value]="env.id">{{ env.name | uppercase }}</option>
+              <option [value]="env.id">{{ env.name }}</option>
             }
           </select>
         </div>
@@ -133,7 +98,7 @@ export function parseDotEnv(text: string): BulkLine[] {
       </div>
       <label class="env-toggle">
         <input type="checkbox" [(ngModel)]="form.secret" [disabled]="!caps.canWriteSecret || !caps.canWritePlain">
-        <span>Encrypt as secret</span>
+        <span>Secret (stored encrypted, hidden in the portal)</span>
       </label>
       @if (editing && editing.type === 'plain' && form.secret) {
         <p class="env-muted">The plain value will be moved into the encrypted store and removed from config storage.</p>
@@ -152,11 +117,11 @@ export function parseDotEnv(text: string): BulkLine[] {
     <div class="card env-form" aria-label="Bulk paste">
       <h2>Paste .env</h2>
       <div class="form-group">
-        <label for="bulkScope">Scope</label>
+        <label for="bulkScope">Environment</label>
         <select id="bulkScope" [(ngModel)]="bulkEnvId">
-          <option value="">Global (all environments)</option>
+          <option value="">Shared (all environments)</option>
           @for (env of environments; track env.id) {
-            <option [value]="env.id">{{ env.name | uppercase }}</option>
+            <option [value]="env.id">{{ env.name }}</option>
           }
         </select>
       </div>
@@ -199,13 +164,42 @@ export function parseDotEnv(text: string): BulkLine[] {
     </div>
   }
 
-  <div class="card">
-    <h2>Variables</h2>
-    @if (error) { <p class="env-error">{{ error }}</p> }
+  <section class="card card-flush env-panel" aria-labelledby="env-title">
+    <div class="card-header">
+      <h2 id="env-title">Variables and secrets</h2>
+      <div class="env-actions">
+        @if (caps.canExport && selectedEnvId) {
+          <button type="button" class="btn btn-sm btn-ghost" (click)="exportSecrets()">Export secrets</button>
+        }
+        @if (canWriteAny) {
+          <button type="button" class="btn btn-sm" (click)="openBulk()">Paste .env</button>
+          <button type="button" class="btn btn-sm" (click)="openForm()">Add variable</button>
+        }
+      </div>
+    </div>
+    <div class="env-bar">
+      <div class="env-seg" role="group" aria-label="Environment">
+        <button type="button" [class.on]="selectedEnv === '__all'" [attr.aria-pressed]="selectedEnv === '__all'" (click)="selectedEnv = '__all'; load()">All</button>
+        <button type="button" [class.on]="selectedEnv === 'global'" [attr.aria-pressed]="selectedEnv === 'global'" (click)="selectedEnv = 'global'; load()" title="Variables shared by every environment">Shared</button>
+        @for (env of environments; track env.id) {
+          <button type="button" [class.on]="selectedEnv === env.id" [attr.aria-pressed]="selectedEnv === env.id" (click)="selectedEnv = env.id; load()" [title]="env.name + ' (includes shared)'">{{ env.name }}</button>
+        }
+      </div>
+      <input type="search" class="env-search" [(ngModel)]="search" placeholder="Search keys" aria-label="Search keys" autocomplete="off">
+    </div>
+    @if (conflicts > 0) {
+      <p class="env-note env-warn" role="alert">
+        {{ conflicts / 2 }} {{ conflicts / 2 === 1 ? 'key is' : 'keys are' }} stored both as plain and as secret in the same place. Keep one of each pair.
+      </p>
+    }
+    @if (!caps.canReadValues) {
+      <p class="env-note env-muted">You can see keys and types only.</p>
+    }
+    @if (error) { <p class="env-note env-error">{{ error }}</p> }
     <div class="env-scroll">
       <table class="env-table">
         <thead>
-          <tr><th>Key</th><th>Type</th><th>Scope</th><th>Value</th><th>Last changed</th><th>Actions</th></tr>
+          <tr><th>Key</th><th>Type</th><th>Environment</th><th>Value</th><th>Changed</th><th><span class="sr-only">Actions</span></th></tr>
         </thead>
         <tbody>
           @for (row of filtered(); track rowId(row)) {
@@ -215,7 +209,7 @@ export function parseDotEnv(text: string): BulkLine[] {
                 @if (row.conflict) { <span class="badge badge-failed" title="Stored as both plain and secret">conflict</span> }
               </td>
               <td>
-                <span class="badge" [class.env-badge-secret]="row.type === 'secret'" [class.badge-active]="row.type === 'plain'">{{ row.type }}</span>
+                <span class="badge" [class.env-badge-secret]="row.type === 'secret'">{{ row.type === 'secret' ? 'Secret' : 'Plain' }}</span>
                 @if (row.legacyMasked) { <span class="badge badge-pending" title="Legacy masked config value stored in plaintext">legacy</span> }
               </td>
               <td><span class="env-muted">{{ envName(row.environmentId) }}</span></td>
@@ -253,7 +247,7 @@ export function parseDotEnv(text: string): BulkLine[] {
                   }
                   @if (row.conflict) {
                     @if (row.type === 'secret' && caps.canDeletePlain) {
-                      <button class="btn btn-sm btn-primary" (click)="remove(row, 'plain')">Keep secret</button>
+                      <button class="btn btn-sm" (click)="remove(row, 'plain')">Keep secret</button>
                     }
                     @if (row.type === 'plain' && caps.canDeleteSecret) {
                       <button class="btn btn-sm" (click)="remove(row, 'secret')">Keep plain</button>
@@ -266,19 +260,26 @@ export function parseDotEnv(text: string): BulkLine[] {
             </tr>
           }
           @if (!loading && filtered().length === 0) {
-            <tr><td colspan="6" class="env-empty">No variables{{ search ? ' match "' + search + '"' : '' }}</td></tr>
+            <tr><td colspan="6" class="env-empty">
+              @if (search) {
+                No variables match "{{ search }}".
+              } @else {
+                <strong>No variables yet</strong>
+                <span>Add the settings your app reads when it runs, such as <span class="env-mono">API_URL</span>. Mark passwords and keys as secret; they are stored encrypted.</span>
+              }
+            </td></tr>
           }
         </tbody>
       </table>
     </div>
-  </div>
+  </section>
 
   @if (history) {
     <div class="env-drawer-backdrop" (click)="history = null"></div>
     <aside class="env-drawer" role="dialog" aria-label="Version history">
       <div class="env-drawer-head">
         <h2>History: <span class="env-mono">{{ history.row.key }}</span></h2>
-        <button class="btn btn-sm" (click)="history = null" aria-label="Close">✕</button>
+        <button class="btn btn-sm btn-ghost" (click)="history = null" aria-label="Close history">Close</button>
       </div>
       <p class="env-muted">Current version v{{ history.currentVersion }} · {{ envName(history.row.environmentId) }}</p>
       <table class="env-table">
@@ -301,6 +302,21 @@ export function parseDotEnv(text: string): BulkLine[] {
 </div>
 `,
   styles: [`
+    .env-panel .env-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .env-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 20px; border-bottom: 1px solid rgb(var(--line)); }
+    .env-seg { display: inline-flex; flex-wrap: wrap; border: 1px solid rgb(var(--line)); border-radius: 6px; overflow: hidden; }
+    .env-seg button { padding: 5px 12px; border: 0; background: transparent; color: rgb(var(--fg-2)); font: inherit; font-size: 0.8125rem; cursor: pointer; }
+    .env-seg button + button { border-left: 1px solid rgb(var(--line)); }
+    .env-seg button:hover { color: rgb(var(--fg)); }
+    .env-seg button.on { background: rgb(var(--raised)); color: rgb(var(--fg)); }
+    .env-seg button:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: -2px; }
+    .env-search { width: 220px; margin-left: auto; height: 32px; }
+    .env-note { margin: 0; padding: 10px 20px; font-size: 0.8125rem; border-bottom: 1px solid rgb(var(--line)); }
+    .env-empty strong { display: block; color: rgb(var(--fg)); font-weight: 500; margin-bottom: 4px; }
+    .env-empty span { color: rgb(var(--fg-2)); }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+    @media (max-width: 640px) { .env-search { width: 100%; margin-left: 0; } }
+
 .env-tab { display: flex; flex-direction: column; gap: 20px; }
 .env-toolbar-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
 .env-field { margin-bottom: 0; min-width: 200px; }
@@ -308,28 +324,31 @@ export function parseDotEnv(text: string): BulkLine[] {
 .env-actions, .env-row-actions, .env-form-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .env-form-actions { margin-top: 12px; }
 .env-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-.env-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-primary, #ededed); font-size: 0.875rem; }
+.env-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; color: rgb(var(--fg)); font-size: 0.875rem; }
 .env-toggle input, .env-check { width: auto; }
-.env-mono { font-family: var(--font-code, monospace); }
+.env-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
 .env-key { font-weight: 600; word-break: break-all; }
 .env-value { max-width: 360px; word-break: break-all; }
-.env-revealed { color: var(--accent-success, #0070F3); font-weight: 600; }
-.env-muted { color: var(--text-muted, #71717a); font-size: 0.8rem; margin: 8px 0 0; }
+.env-revealed { color: rgb(var(--fg)); font-weight: 600; }
+.env-muted { color: rgb(var(--fg-3)); font-size: 0.8rem; margin: 8px 0 0; }
 .env-small { font-size: 0.75rem; line-height: 1.3; }
-.env-warn { color: var(--accent-warning, #F5A623); font-size: 0.8rem; margin: 10px 0 0; }
-.env-error { color: var(--accent-danger, #E00000); font-size: 0.8rem; }
-.env-empty { text-align: center; color: var(--text-muted, #71717a); }
+.env-warn { color: rgb(var(--warn)); font-size: 0.8rem; margin: 10px 0 0; }
+.env-error { color: rgb(var(--down)); font-size: 0.8rem; }
+.env-empty { text-align: center; color: rgb(var(--fg-3)); }
 .env-scroll { overflow-x: auto; }
-.env-conflict-row td { background: color-mix(in srgb, var(--accent-danger, #E00000) 6%, transparent); }
-.env-badge-secret { background: color-mix(in srgb, #a855f7 12%, transparent); color: #c084fc; border-color: color-mix(in srgb, #a855f7 30%, transparent); }
-.env-drawer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 998; }
+.env-conflict-row td { background: rgb(var(--down) / 0.06); }
+.env-badge-secret { background: rgb(var(--accent) / 0.12); color: rgb(var(--accent-text)); border-color: rgb(var(--accent) / 0.35); }
+.env-drawer-backdrop { position: fixed; inset: 0; background: rgb(var(--canvas) / 0.75); z-index: 998; }
 .env-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100%); z-index: 999; overflow-y: auto;
-  background: var(--bg-surface, #0a0a0a); border-left: 1px solid var(--border-subtle, #333); padding: 20px; color: var(--text-primary, #ededed); }
+  background: rgb(var(--surface)); border-left: 1px solid rgb(var(--line)); padding: 20px; color: rgb(var(--fg)); box-shadow: var(--shadow); }
 .env-drawer-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .env-drawer-head h2 { margin: 0; border: 0; padding: 0; font-size: 1rem; }
 `],
 })
 export class EnvironmentTabComponent implements OnChanges {
+  private toast = inject(ToastService);
+  private dialog = inject(DialogService);
+
   @Input({ required: true }) projectId!: string;
   @Input() environments: { id: string; name: string }[] = [];
 
@@ -424,7 +443,7 @@ export class EnvironmentTabComponent implements OnChanges {
       );
       row.revealed = res?.value ?? '';
     } catch (err: any) {
-      alert('Failed to reveal: ' + (err?.error?.error || err?.message));
+      this.toast.error(`${row.key} was not revealed: ` + errorText(err));
     }
   }
 
@@ -460,10 +479,11 @@ export class EnvironmentTabComponent implements OnChanges {
       // secret → plain answers 401 step_up_required: confirm with a code and retry once.
       await this.stepUp.run(() => firstValueFrom(this.api.setEnvironmentVar(this.projectId, this.form.key, body)),
         `Store ${this.form.key} as plain text`);
+      this.toast.ok(`${this.form.key} saved`);
       this.closeForm();
       await this.load();
     } catch (err: any) {
-      alert('Failed to save: ' + (err?.error?.error || err?.message));
+      this.toast.error(`${this.form.key} was not saved: ` + errorText(err));
     } finally {
       this.busy = false;
     }
@@ -471,12 +491,19 @@ export class EnvironmentTabComponent implements OnChanges {
 
   async remove(row: EnvVarRow, type: 'plain' | 'secret') {
     const what = row.conflict ? `the ${type} copy of "${row.key}"` : `"${row.key}"`;
-    if (!confirm(`Delete ${what} (${this.envName(row.environmentId)})?`)) return;
+    const ok = await this.dialog.confirm({
+      title: `Delete ${what} from ${this.envName(row.environmentId)}?`,
+      message: 'Apps get the change on their next deploy or restart. This cannot be undone.',
+      confirmLabel: 'Delete variable',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.deleteEnvironmentVar(this.projectId, row.key, type, row.environmentId));
+      this.toast.ok(`${row.key} deleted`);
       await this.load();
     } catch (err: any) {
-      alert('Failed to delete: ' + (err?.error?.error || err?.message));
+      this.toast.error(`${row.key} was not deleted: ` + errorText(err));
     }
   }
 
@@ -525,9 +552,10 @@ export class EnvironmentTabComponent implements OnChanges {
       this.showBulk = false;
       this.bulkText = '';
       this.bulkLines = [];
+      this.toast.ok(`Imported ${lines.length} variable${lines.length === 1 ? '' : 's'}`);
       await this.load();
     } catch (err: any) {
-      alert('Import failed: ' + (err?.error?.error || err?.message));
+      this.toast.error('Import did not finish: ' + errorText(err) + '. Check the list for what was saved.');
       await this.load();
     } finally {
       this.busy = false;
@@ -541,7 +569,7 @@ export class EnvironmentTabComponent implements OnChanges {
       const res: any = await this.stepUp.run(() => firstValueFrom(this.api.exportSecrets(this.projectId, envId)), 'Export secrets');
       this.exportText = res?.secrets ?? '';
     } catch (err: any) {
-      alert('Failed to export: ' + (err?.error?.error || err?.message));
+      this.toast.error('Secrets were not exported: ' + errorText(err));
     }
   }
 
@@ -551,20 +579,26 @@ export class EnvironmentTabComponent implements OnChanges {
       const res: any = await firstValueFrom(this.api.getSecretVersions(this.projectId, row.secretId));
       this.history = { row, currentVersion: res?.currentVersion ?? row.version ?? 1, versions: res?.history || [] };
     } catch (err: any) {
-      alert('Failed to load history: ' + (err?.error?.error || err?.message));
+      this.toast.error('Version history did not load: ' + errorText(err));
     }
   }
 
   async rollback(version: number) {
     const h = this.history;
     if (!h?.row.secretId) return;
-    if (!confirm(`Roll back "${h.row.key}" to version ${version}?`)) return;
+    const ok = await this.dialog.confirm({
+      title: `Roll back ${h.row.key} to version ${version}?`,
+      message: 'The value from that version becomes current as a new version. Apps get it on their next deploy or restart.',
+      confirmLabel: 'Roll back',
+    });
+    if (!ok) return;
     try {
       await firstValueFrom(this.api.rollbackSecret(this.projectId, h.row.secretId, version));
       this.history = null;
+      this.toast.ok(`${h.row.key} rolled back to version ${version}`);
       await this.load();
     } catch (err: any) {
-      alert('Rollback failed: ' + (err?.error?.error || err?.message));
+      this.toast.error('Rollback did not finish: ' + errorText(err));
     }
   }
 }

@@ -1,0 +1,35 @@
+crds:
+  create: true
+config:
+  clusterWide: true
+monitoring:
+  podMonitorEnabled: false
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+# Two operator replicas (leader election), one per node. With a single
+# replica on the node that died, nothing promoted a standby until Kubernetes
+# evicted the operator pod 5 minutes later: Postgres was down ~7 minutes on
+# the 3-node power-off test.
+replicaCount: 2
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: cloudnative-pg
+# Replace an operator pod on a dead node after 30 s instead of 5 minutes.
+tolerations:
+  - key: node.kubernetes.io/not-ready
+    operator: Exists
+    effect: NoExecute
+    tolerationSeconds: 30
+  - key: node.kubernetes.io/unreachable
+    operator: Exists
+    effect: NoExecute
+    tolerationSeconds: 30

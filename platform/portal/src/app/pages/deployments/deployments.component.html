@@ -1,34 +1,90 @@
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-  <h2>Deployments</h2>
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Deployments</h1>
+    <p class="page-subtitle">Every deployment across your projects. Start one or roll back here.</p>
+  </div>
 </div>
 
-<div class="card">
-  <h2>New Deployment</h2>
-  <div class="form-group"><label>Project ID</label><input [(ngModel)]="deployDto.projectId"></div>
-  <div class="form-group"><label>Version</label><input [(ngModel)]="deployDto.version" placeholder="1.0.0"></div>
-  <div class="form-group"><label>Branch</label><input [(ngModel)]="deployDto.branch" value="main"></div>
-  <button class="btn btn-primary" (click)="deploy()" [disabled]="!deployDto.projectId || !deployDto.version">Deploy</button>
+<section class="card card-flush dp-panel" aria-labelledby="dp-new-title">
+  <div class="card-header">
+    <h2 id="dp-new-title">New deployment</h2>
+  </div>
+  <div class="dp-rows">
+    <div class="dp-cfg">
+      <div class="dp-label">
+        <label for="dp-project">Project ID</label>
+        <p>The project to deploy.</p>
+      </div>
+      <div class="dp-field">
+        <input id="dp-project" class="mono" [(ngModel)]="deployDto.projectId" autocomplete="off">
+        <span class="form-hint">Shown on the project's page.</span>
+      </div>
+    </div>
+    <div class="dp-cfg">
+      <div class="dp-label">
+        <label for="dp-version">Version and branch</label>
+        <p>What to deploy, and from which branch.</p>
+      </div>
+      <div class="dp-field dp-pair">
+        <input id="dp-version" [(ngModel)]="deployDto.version" placeholder="1.0.0" aria-label="Version" autocomplete="off">
+        <input id="dp-branch" [(ngModel)]="deployDto.branch" value="main" aria-label="Branch" autocomplete="off">
+      </div>
+    </div>
+  </div>
   @if (lastOperationId) {
-    <app-operation-progress [operationId]="lastOperationId" title="Deploy"></app-operation-progress>
+    <div class="dp-progress">
+      <app-operation-progress [operationId]="lastOperationId" title="Deploy"></app-operation-progress>
+    </div>
   }
-</div>
+  <details class="dp-advanced">
+    <summary>Roll back a deployment</summary>
+    <div class="dp-cfg">
+      <div class="dp-label">
+        <label for="dp-rb-id">Deployment ID</label>
+        <p>The environment returns to the release before this one.</p>
+      </div>
+      <div class="dp-field dp-inline">
+        <input id="dp-rb-id" class="mono" [(ngModel)]="rollbackDto.deploymentId" autocomplete="off">
+        <button type="button" class="btn btn-danger" (click)="rollback()" [disabled]="!rollbackDto.deploymentId">Roll back</button>
+      </div>
+    </div>
+  </details>
+  <div class="dp-footer">
+    <button type="button" class="btn btn-primary" (click)="deploy()" [disabled]="!deployDto.projectId || !deployDto.version">Deploy</button>
+  </div>
+</section>
 
-<div class="card">
-  <h2>Rollback</h2>
-  <div class="form-group"><label>Deployment ID</label><input [(ngModel)]="rollbackDto.deploymentId"></div>
-  <button class="btn btn-danger" (click)="rollback()" [disabled]="!rollbackDto.deploymentId">Rollback</button>
-</div>
-
-<table>
-  <thead><tr><th>Project</th><th>Version</th><th>Branch</th><th>Status</th><th>Date</th><th></th></tr></thead>
-  <tbody>
-    @for (d of deployments; track d) {
-      <tr>
-        <td>{{ d.projectId }}</td><td>{{ d.version }}</td><td>{{ d.branch }}</td>
-        <td><span class="badge" [class.badge-active]="d.status==='active'" [class.badge-pending]="d.status==='pending'" [class.badge-failed]="d.status==='failed'">{{ d.status }}</span></td>
-        <td>{{ d.createdAt | date:'short' }}</td>
-        <td><button class="btn btn-sm btn-success" (click)="restart(d.id)">Restart</button></td>
-      </tr>
+<section class="card card-flush" aria-labelledby="dp-list-title">
+  <div class="card-header">
+    <h2 id="dp-list-title">All deployments</h2>
+    @if (deployments.length > 0) {
+      <span class="badge">{{ deployments.length }}</span>
     }
-  </tbody>
-</table>
+  </div>
+  @if (deployments.length === 0) {
+    <p class="empty-state">No deployments yet. Start one above, or push to a project's branch, and it shows here.</p>
+  } @else {
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Project</th><th>Version</th><th>Branch</th><th>Status</th><th>Date</th><th class="dp-right"><span class="dp-sr">Actions</span></th></tr></thead>
+        <tbody>
+          @for (d of deployments; track d) {
+            <tr>
+              <td class="dp-strong">{{ d.projectName || d.projectId }}</td>
+              <td class="mono">{{ d.version }}</td>
+              <td class="mono dp-branch">{{ d.branch }}</td>
+              <td>
+                <span class="status"
+                  [class.status-ok]="d.status === 'active' || d.status === 'deployed'"
+                  [class.status-warn]="d.status === 'pending' || d.status === 'building'"
+                  [class.status-down]="d.status === 'failed'">{{ d.status | titlecase }}</span>
+              </td>
+              <td class="muted dp-nowrap">{{ d.createdAt | date:'short' }}</td>
+              <td class="dp-right"><button type="button" class="btn btn-sm btn-ghost" (click)="restart(d.id)">Restart</button></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>

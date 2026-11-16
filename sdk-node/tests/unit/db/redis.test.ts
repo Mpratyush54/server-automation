@@ -37,6 +37,63 @@ describe('RedisManager', () => {
     await m.connect();
     await m.disconnect();
     expect(mockInstances[0].opts).toMatchObject({ host: 'redis', port: 6380, username: 'plat_a_b', password: 'pw', keyPrefix: 'plat:a:b:', db: 0, lazyConnect: true });
+    expect(m.mode).toBe('standalone');
+    expect(m.health).toEqual({ connected: false, mode: 'standalone' });
+  });
+
+  it('builds Sentinel options from credentials without host/port', async () => {
+    const { redisReadonlyReconnect } = require('../../../src/db/redis');
+    const m = new RedisManager({
+      username: 'plat_a_b', password: 'pw', keyPrefix: 'plat:a:b:', db: 0,
+      sentinels: [{ host: 's0', port: 26379 }, { host: 's1', port: 26379 }],
+      masterName: 'mymaster',
+      sentinelUsername: 'plat-sentinel',
+      sentinelPassword: 'sent-pw',
+    });
+    await m.connect();
+    expect(m.mode).toBe('sentinel');
+    expect(mockInstances[0].opts).toMatchObject({
+      sentinels: [{ host: 's0', port: 26379 }, { host: 's1', port: 26379 }],
+      name: 'mymaster',
+      sentinelUsername: 'plat-sentinel',
+      sentinelPassword: 'sent-pw',
+      username: 'plat_a_b',
+      password: 'pw',
+      keyPrefix: 'plat:a:b:',
+      db: 0,
+      role: 'master',
+      lazyConnect: true,
+    });
+    expect(mockInstances[0].opts.host).toBeUndefined();
+    expect(mockInstances[0].opts.reconnectOnError).toBe(redisReadonlyReconnect);
+    expect(redisReadonlyReconnect(new Error('READONLY You can\'t write against a read only replica'))).toBe(2);
+    expect(redisReadonlyReconnect(new Error('NOAUTH'))).toBe(false);
+    await m.disconnect();
+  });
+
+  it('builds Sentinel options from PLATFORM_REDIS_SENTINEL* env', async () => {
+    process.env.PLATFORM_REDIS_SENTINELS = 's0:26379,s1:26379';
+    process.env.PLATFORM_REDIS_SENTINEL_MASTER = 'mymaster';
+    process.env.PLATFORM_REDIS_SENTINEL_USERNAME = 'plat-sentinel';
+    process.env.PLATFORM_REDIS_SENTINEL_PASSWORD = 'sent-pw';
+    try {
+      const m = new RedisManager({ username: 'u', password: 'p' });
+      await m.connect();
+      expect(m.mode).toBe('sentinel');
+      expect(mockInstances[0].opts).toMatchObject({
+        sentinels: [{ host: 's0', port: 26379 }, { host: 's1', port: 26379 }],
+        name: 'mymaster',
+        sentinelUsername: 'plat-sentinel',
+        sentinelPassword: 'sent-pw',
+      });
+      expect(mockInstances[0].opts.host).toBeUndefined();
+      await m.disconnect();
+    } finally {
+      delete process.env.PLATFORM_REDIS_SENTINELS;
+      delete process.env.PLATFORM_REDIS_SENTINEL_MASTER;
+      delete process.env.PLATFORM_REDIS_SENTINEL_USERNAME;
+      delete process.env.PLATFORM_REDIS_SENTINEL_PASSWORD;
+    }
   });
 
   it('attaches an error listener so connection failures are not unhandled error events', async () => {

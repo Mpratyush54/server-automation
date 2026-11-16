@@ -1,0 +1,12 @@
+/* Database connections (dc-) */
+
+.dc-list { margin-bottom: 24px; }
+.dc-footer { display: flex; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid rgb(var(--line)); background: rgb(var(--raised) / 0.35); }
+.dc-body { padding: 20px 20px 4px; }
+.dc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 16px; }
+@media (max-width: 760px) { .dc-grid { grid-template-columns: 1fr; } }
+
+.dc-id { font-size: 0.8125rem; overflow-wrap: anywhere; }
+.dc-right { text-align: right; }
+.dc-nowrap { white-space: nowrap; }
+.dc-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

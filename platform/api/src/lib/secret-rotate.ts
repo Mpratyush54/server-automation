@@ -4,7 +4,7 @@ import { Client } from 'pg';
 import Redis from 'ioredis';
 import { getDb, reconnectPostgres } from '../config/database';
 import { User, UserRole } from '../entities/User';
-import { patchSecretData, restartNamedDeployment } from './k8s';
+import { patchSecretData, readSecretData, restartNamedDeployment } from './k8s';
 import {
   canConnectPostgres,
   clearRotatePending,
@@ -13,9 +13,10 @@ import {
   writeRotatePending,
 } from './credential-recover';
 import { persistPlatformEnv } from './host-env';
-import { PLATFORM_CREDENTIALS_SECRET } from './config-store';
+import { k8sStatusCode, PLATFORM_CREDENTIALS_SECRET } from './config-store';
 import { acquireLockOrThrow, LockHandle, platformLockKey } from './locks';
 import { defineOperation, executeOperation, newOperationId, StepContext } from './operations';
+import { scheduleRedisPasswordDrop } from './redis-password-drop';
 
 function randomSecret(bytes = 18): string {
   return crypto.randomBytes(bytes).toString('base64url');
@@ -68,12 +69,18 @@ async function alterPostgresPassword(newPassword: string, currentPassword?: stri
 }
 
 async function alterRedisPassword(newPassword: string, currentPassword?: string): Promise<RotateResult> {
-  const host = process.env.REDIS_HOST || 'redis-master.databases.svc.cluster.local';
-  const port = parseInt(process.env.REDIS_PORT || '6379', 10);
+  const { redisEndpointOptions, redisSentinelConfig } = await import('./redis-endpoint');
+  if (redisSentinelConfig()) {
+    const { rotateSentinelPassword } = await import('./redis-password-rotate');
+    await rotateSentinelPassword(currentPassword ?? (process.env.REDIS_PASSWORD || ''), newPassword);
+    // Persist the chart's restart source before publishing current credentials.
+    // A patch failure leaves the durable pending pair available for the next run.
+    await patchSecretData('databases', 'redis', { 'redis-password': newPassword });
+    return { key: 'REDIS_PASSWORD', ok: true, detail: 'rotated every Redis data node and Sentinel' };
+  }
   const current = currentPassword ?? (process.env.REDIS_PASSWORD || '');
   const client = new Redis({
-    host,
-    port,
+    ...redisEndpointOptions({ defaultHost: 'redis-master.databases.svc.cluster.local' }),
     password: current || undefined,
     connectTimeout: 5000,
     lazyConnect: true,
@@ -144,9 +151,9 @@ async function healRedis(results: RotateResult[]): Promise<void> {
 
 /** True when Redis accepts `password` (used only when resuming an interrupted rotation). */
 async function redisAcceptsPassword(password: string): Promise<boolean> {
+  const { redisEndpointOptions } = await import('./redis-endpoint');
   const client = new Redis({
-    host: process.env.REDIS_HOST || 'redis-master.databases.svc.cluster.local',
-    port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    ...redisEndpointOptions({ defaultHost: 'redis-master.databases.svc.cluster.local' }),
     password: password || undefined,
     connectTimeout: 5000,
     lazyConnect: true,
@@ -204,7 +211,11 @@ function push(ctx: StepContext<RotationState>, ...items: RotateResult[]) {
  *  2. write-ahead         previous+next passwords to platform-credentials (ConfigStore) and
  *                         platform-rotate-pending;
  *                         refuses to continue (fails the operation) when neither is durable
- *  3. redis-password      CONFIG SET requirepass (on resume: skipped if the new one already works)
+ *  3. redis-password      CONFIG SET requirepass; HA probes every member and completes all phases,
+ *                         leaving the previous password valid too
+ *  3b. schedule-redis-drop HA only: durable follow-up operation that removes the previous
+ *                         password once the new Secret has reached the Redis pods (their
+ *                         liveness probes read it from the mount)
  *  4. postgres-password   ALTER USER + TypeORM reconnect (on resume: same check)
  *  5. patch-secrets       platform-env (webhook secret only), databases/postgresql, databases/redis
  *  6. argocd-password     argocd-secret + argocd-initial-admin-secret
@@ -285,6 +296,10 @@ export const secretRotationOperation = defineOperation<RotationState>({
           });
         }
 
+        const { redisSentinelConfig } = await import('./redis-endpoint');
+        if (redisSentinelConfig() && !pendingOk) {
+          throw new Error('Redis Sentinel rotation requires durable pending credentials before changing any member');
+        }
         if (!hostAhead.ok && !pendingOk) {
           push(
             ctx,
@@ -309,10 +324,11 @@ export const secretRotationOperation = defineOperation<RotationState>({
         const s = ctx.state;
         const retry = ctx.resumed || ctx.attempt > 1;
         let redisResult: RotateResult;
-        if (retry && (await redisAcceptsPassword(s.redisPassword))) {
+        const { redisSentinelConfig } = await import('./redis-endpoint');
+        if (retry && !redisSentinelConfig() && (await redisAcceptsPassword(s.redisPassword))) {
           redisResult = { key: 'REDIS_PASSWORD', ok: true, detail: 'already rotated before the interruption' };
         } else {
-          redisResult = await alterRedisPassword(s.redisPassword, retry ? s.previousRedis : undefined);
+          redisResult = await alterRedisPassword(s.redisPassword, retry || redisSentinelConfig() ? s.previousRedis : undefined);
         }
         push(ctx, redisResult);
         s.redisOk = redisResult.ok;
@@ -321,8 +337,37 @@ export const secretRotationOperation = defineOperation<RotationState>({
           process.env.REDIS_PASSWORD = s.redisPassword;
           const saved = await persistPlatformEnv({ REDIS_PASSWORD: s.redisPassword });
           push(ctx, { key: `${PLATFORM_CREDENTIALS_SECRET}:REDIS_PASSWORD`, ok: saved.ok, detail: saved.detail });
+          if (redisSentinelConfig() && !saved.ok) throw new Error('Redis credentials could not be persisted; retain pending credentials and retry');
         } else {
           await healRedis(s.results);
+        }
+      },
+    },
+    {
+      name: 'schedule-redis-drop',
+      async run(ctx) {
+        const s = ctx.state;
+        const { redisSentinelConfig } = await import('./redis-endpoint');
+        if (!s.redisOk || !redisSentinelConfig()) return;
+        try {
+          const { notBefore } = await scheduleRedisPasswordDrop({
+            rotationOperationId: ctx.operationId,
+            next: s.redisPassword,
+            previous: s.previousRedis,
+            actorUserId: s.actorUserId || null,
+          });
+          push(ctx, {
+            key: 'REDIS_PREVIOUS_PASSWORD',
+            ok: true,
+            detail: `previous password stays valid until the new one reaches every Redis pod; removed after ${notBefore.toISOString()}`,
+          });
+        } catch (err: any) {
+          // Not fatal: Redis works with both passwords; the next rotation removes the old one.
+          push(ctx, {
+            key: 'REDIS_PREVIOUS_PASSWORD',
+            ok: false,
+            detail: `could not schedule removal of the previous password (${err?.message || 'unknown error'}); it stays valid until the next rotation`,
+          });
         }
       },
     },
@@ -377,7 +422,10 @@ export const secretRotationOperation = defineOperation<RotationState>({
         }
 
         if (s.redisOk) {
-          push(ctx, await tryPatchSecret('databases', 'redis', { 'redis-password': s.redisPassword }));
+          const { redisSentinelConfig } = await import('./redis-endpoint');
+          push(ctx, redisSentinelConfig()
+            ? { key: 'databases/redis', ok: true, detail: 'secret updated after all Sentinel members rotated' }
+            : await tryPatchSecret('databases', 'redis', { 'redis-password': s.redisPassword }));
         } else {
           push(ctx, { key: 'databases/redis', ok: false, detail: 'skipped: redis CONFIG SET did not succeed' });
         }
@@ -475,15 +523,29 @@ export async function rotatePlatformSecrets(opts: {
 }): Promise<RotatePlatformSecretsResult> {
   const id = opts.operationId || newOperationId();
   const lock = opts.lock || await acquireLockOrThrow(SECRET_ROTATION_LOCK_KEY, { holder: id, ttlMs: 60_000 });
+  const { redisSentinelConfig } = await import('./redis-endpoint');
+  // A failed multi-node rotation must retry the same pair, including after a new
+  // portal request. Generating another password could strand partially changed nodes.
+  let pending: Record<string, string> = {};
+  if (redisSentinelConfig()) {
+    try {
+      pending = await readSecretData('platform', 'platform-rotate-pending');
+    } catch (err) {
+      if (k8sStatusCode(err) !== 404) {
+        await lock.release();
+        throw new Error('Cannot read pending Redis rotation credentials; retry when the Secret is accessible');
+      }
+    }
+  }
   const state: RotationState = {
     actorUserId: opts.actorUserId || '',
     admin: randomSecret(12),
     webhook: randomSecret(),
     postgres: randomSecret(),
-    redisPassword: randomSecret(),
+    redisPassword: pending.REDIS_PASSWORD_NEW || randomSecret(),
     argocd: randomSecret(12),
     previousPostgres: process.env.POSTGRES_PASSWORD || '',
-    previousRedis: process.env.REDIS_PASSWORD || '',
+    previousRedis: pending.REDIS_PASSWORD_OLD || process.env.REDIS_PASSWORD || '',
     adminOk: false,
     redisOk: false,
     pgOk: false,

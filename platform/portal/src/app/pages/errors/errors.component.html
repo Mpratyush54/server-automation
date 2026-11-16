@@ -1,0 +1,108 @@
+<div *ngIf="!embedded" class="page-header">
+  <div>
+    <h1 class="page-title">Errors</h1>
+    <p class="page-subtitle">Errors from your apps, grouped into issues you can assign and resolve.</p>
+  </div>
+</div>
+<div *ngIf="error" class="card er-banner" role="alert">{{error}}</div>
+
+<div *ngIf="!project && compact" class="card er-section empty-state" data-testid="errors-choose-project">
+  <strong>Choose a project</strong>
+  Errors are grouped per project.
+</div>
+
+<section *ngIf="project && compact" class="card card-flush er-section" aria-labelledby="er-recent" data-testid="errors-compact">
+  <div class="card-header">
+    <h2 id="er-recent">Recent errors</h2>
+    <button type="button" class="btn btn-sm" (click)="openIssue.emit(null)">All errors</button>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Issue</th><th class="er-num">Events</th><th>Last seen</th></tr></thead>
+      <tbody>
+        <tr *ngFor="let i of issues.slice(0, 5)">
+          <td><button type="button" class="er-issue" (click)="openIssue.emit(i.id)">{{i.title}}</button><span class="er-regression" *ngIf="i.regression">Regression</span>
+            <div class="er-issue-meta">{{i.environment}} · {{i.latest_release}}</div></td>
+          <td class="er-num">{{i.count}}</td>
+          <td class="er-nowrap">{{i.last_seen | date:'medium'}}</td>
+        </tr>
+        <tr *ngIf="busy" class="empty-row"><td colspan="3">Loading…</td></tr>
+        <tr *ngIf="!busy && !issues.length" class="empty-row" data-testid="errors-empty"><td colspan="3">No open errors.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section *ngIf="!compact" class="card card-flush er-section" aria-labelledby="er-issues">
+  <div class="card-header">
+    <h2 id="er-issues">Issues</h2>
+    <div *ngIf="project" class="er-pager">
+      <button type="button" class="btn btn-sm" (click)="page(-1)" [disabled]="offset === 0">Previous</button>
+      <button type="button" class="btn btn-sm" (click)="page(1)" [disabled]="issues.length < 50">Next</button>
+    </div>
+  </div>
+  <div class="er-filters" role="group" aria-label="Filters">
+    <select *ngIf="!embedded" id="err-project" aria-label="Project" [(ngModel)]="project" (change)="offset=0; load()" data-testid="errors-project"><option value="">Choose project</option><option *ngFor="let p of projects" [value]="p.id">{{p.name}}</option></select>
+    <input id="err-release" aria-label="Release" [(ngModel)]="release" placeholder="All releases" [disabled]="!project">
+    <input id="err-env" aria-label="Environment" [(ngModel)]="environment" placeholder="All environments" [disabled]="!project">
+    <select id="err-status" aria-label="Status" [(ngModel)]="status" [disabled]="!project"><option value="">Any status</option><option value="open">Open</option><option value="resolved">Resolved</option><option value="ignored">Ignored</option></select>
+    <button type="button" class="btn btn-sm" (click)="offset=0; load()" [disabled]="busy || !project">Apply</button>
+  </div>
+  <div *ngIf="!project" class="empty-state" data-testid="errors-choose-project">
+    <strong>Choose a project</strong>
+    Errors from your app are grouped into issues per project. Pick one to see what needs fixing.
+  </div>
+  <div *ngIf="project" class="table-scroll">
+    <table>
+      <thead><tr><th>Issue</th><th>Status</th><th class="er-num">Events</th><th>Last seen</th></tr></thead>
+      <tbody>
+        <tr *ngFor="let i of issues">
+          <td><button type="button" class="er-issue" (click)="open(i.id)">{{i.title}}</button><span class="er-regression" *ngIf="i.regression">Regression</span>
+            <div class="er-issue-meta">{{i.environment}} · {{i.latest_release}}</div></td>
+          <td><span class="status" [class.status-down]="i.status === 'open'" [class.status-ok]="i.status === 'resolved'">{{i.status}}</span></td>
+          <td class="er-num">{{i.count}}</td>
+          <td class="er-nowrap">{{i.last_seen | date:'medium'}}</td>
+        </tr>
+        <tr *ngIf="busy" class="empty-row"><td colspan="4">Loading…</td></tr>
+        <tr *ngIf="!busy && !issues.length" class="empty-row" data-testid="errors-empty"><td colspan="4">No issues for these filters.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section *ngIf="detail && !compact" class="card card-flush er-section" data-testid="error-detail" aria-labelledby="er-detail-title">
+  <div class="er-detail-head">
+    <h2 id="er-detail-title">{{detail.issue.title}}</h2>
+    <p class="er-meta">First seen {{detail.issue.first_seen | date:'medium'}} · Last seen {{detail.issue.last_seen | date:'medium'}}</p>
+    <p class="er-meta">Counts per release:
+      <ng-container *ngFor="let rc of (detail.issue.release_counts || {}) | keyvalue; let last = last">{{rc.key}}: {{rc.value}}<ng-container *ngIf="!last">, </ng-container></ng-container>
+      <ng-container *ngIf="!(detail.issue.release_counts | keyvalue)?.length">—</ng-container>
+    </p>
+    <div class="er-triage">
+      <div class="form-group"><label for="err-assignee">Assignee</label>
+        <select id="err-assignee" [(ngModel)]="assignee"><option value="">Unassigned</option><option *ngFor="let m of members" [value]="m.userId || m.user_id">{{m.user?.name || m.user?.email || m.userId || m.user_id}}</option></select></div>
+      <button type="button" class="btn" (click)="triage(undefined)">Assign</button>
+      <button type="button" class="btn btn-primary" (click)="triage('resolved')">Resolve</button>
+      <button type="button" class="btn btn-ghost" (click)="triage('open')">Reopen</button>
+      <button type="button" class="btn btn-ghost" (click)="triage('ignored')">Ignore</button>
+    </div>
+  </div>
+
+  <div *ngIf="!detail.events?.length" class="empty-state er-no-events" data-testid="error-detail-no-events">
+    <strong>No stored events for this issue</strong>
+    Older events are removed under the retention policy.
+  </div>
+
+  <article class="er-event" *ngFor="let e of detail.events">
+    <h3>{{e.payload.type}} · {{e.payload.release}}</h3>
+    <p class="er-message">{{e.payload.message}}</p>
+    <p class="er-meta">{{e.received_at | date:'medium'}} · Session {{e.payload.sessionId || '—'}} · User {{e.payload.userId || '—'}}</p>
+    <div class="er-links" *ngIf="e.payload.traceId || e.payload.replayId">
+      <a *ngIf="e.payload.traceId" [href]="traceUrl(e.payload.traceId)">Trace {{e.payload.traceId}}</a>
+      <a *ngIf="e.payload.replayId" [routerLink]="['/projects', project, 'replays', e.payload.replayId]">Replay {{e.payload.replayId}}</a>
+    </div>
+    <h4>Original stack</h4><pre *ngFor="let f of e.symbolicated">{{f.function || '(anonymous)'}} at {{f.file}}:{{f.line}}:{{f.column}}</pre>
+    <details><summary>Raw stack</summary><pre>{{e.payload.frames | json}}</pre></details>
+    <h4>Breadcrumbs</h4><pre>{{e.payload.breadcrumbs || [] | json}}</pre>
+  </article>
+</section>

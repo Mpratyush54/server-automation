@@ -131,10 +131,11 @@ const migrateJobScript = `run_api_migrations() {
 // $DUMP. The password travels on stdin, never in argv.
 const pgDumpScript = `set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-PG_POD="$(kubectl -n databases get pod -l app.kubernetes.io/name=postgresql -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+` + pgPrimaryPodShell + `
+pg_primary_pod
 [[ -n "$PG_POD" ]] || PG_POD=postgresql-0
 umask 077
-printf '%s\n' "$PGPW" | kubectl -n databases exec -i "$PG_POD" -- bash -c 'read -r PGPASSWORD; export PGPASSWORD; exec pg_dump -w -U postgres -d platform -Fc' > "$DUMP.partial"
+printf '%s\n' "$PGPW" | kubectl -n databases exec -i "$PG_POD" -c "$PG_CONTAINER" -- bash -c 'read -r PGPASSWORD; export PGPASSWORD; exec pg_dump -w -U postgres -d platform -Fc' > "$DUMP.partial"
 [[ -s "$DUMP.partial" ]] || { echo "pg_dump produced no output" >&2; exit 1; }
 mv "$DUMP.partial" "$DUMP"
 `

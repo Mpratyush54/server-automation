@@ -16,7 +16,7 @@ Registered automatically by `PlatformModule.forRoot()` — you typically do not 
 
 ## How It Works
 
-1. Skips the SDK's own Platform calls (`{apiBase}/api/sdk/*`) so telemetry is never metered.
+1. Skips the SDK's own Cairn calls (`{apiBase}/api/sdk/*`) so telemetry is never metered.
 2. Records `Date.now()` at request start.
 3. Wraps the `next.handle()` observable.
 4. On **successful completion**: sends a metric with `statusCode: 200` and the measured duration.

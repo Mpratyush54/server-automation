@@ -5,6 +5,7 @@ import { provideRouter } from '@angular/router';
 import { AlertsComponent } from './alerts.component';
 import { ApiService } from '../../services/api.service';
 import { of } from 'rxjs';
+import { DialogService } from '../../shared/feedback/feedback.service';
 
 describe('AlertsComponent', () => {
   let apiService: jasmine.SpyObj<ApiService>;
@@ -58,7 +59,7 @@ describe('AlertsComponent', () => {
   });
 
   it('should delete an alert', async () => {
-    spyOn(window, 'confirm').and.returnValue(true);
+    const confirm = spyOn(TestBed.inject(DialogService), 'confirm').and.resolveTo(true);
     apiService.deleteAlert.and.returnValue(of({}));
 
     const fixture = TestBed.createComponent(AlertsComponent);
@@ -66,11 +67,12 @@ describe('AlertsComponent', () => {
 
     await fixture.componentInstance.deleteAlert('a1');
 
+    expect(confirm).toHaveBeenCalledWith(jasmine.objectContaining({ danger: true, confirmLabel: 'Delete rule' }));
     expect(fixture.componentInstance.alerts.length).toBe(0);
   });
 
   it('should not delete when confirmation cancelled', async () => {
-    spyOn(window, 'confirm').and.returnValue(false);
+    spyOn(TestBed.inject(DialogService), 'confirm').and.resolveTo(false);
 
     const fixture = TestBed.createComponent(AlertsComponent);
     fixture.componentInstance.alerts = [{ id: 'a1' }];

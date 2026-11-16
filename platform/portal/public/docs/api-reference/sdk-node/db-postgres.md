@@ -42,7 +42,7 @@ const pg = new PostgresManager(config?: PostgresConfig);
 await pg.connect(): Promise<void>
 ```
 
-Throws immediately if no password was provided by the Platform (`db-credentials`) or `PLATFORM_PG_PASSWORD` — there is no default password.
+Throws immediately if no password was provided by Cairn (`db-credentials`) or `PLATFORM_PG_PASSWORD` — there is no default password.
 
 Creates the `pg.Pool` and runs `SELECT 1` to verify the connection. A pool from a previous failed attempt is closed first, and `disconnect()` cancels any pending retry. On failure, schedules automatic reconnection with exponential backoff (1 s, 2 s, 4 s, 8 s, 16 s — up to 5 retries).
 
@@ -83,7 +83,7 @@ Closes all pool connections.
 
 ## Auto-connect via `PlatformClient`
 
-When `databases: ['postgres']` is passed to `init()`, credentials are fetched automatically from the Platform API (`GET /api/sdk/db-credentials`), and the manager is available at `client.db.postgres` immediately after `init()` resolves.
+When `databases: ['postgres']` is passed to `init()`, credentials are fetched automatically from the Cairn API (`GET /api/sdk/db-credentials`), and the manager is available at `client.db.postgres` immediately after `init()` resolves.
 
 ---
 

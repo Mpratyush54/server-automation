@@ -27,10 +27,12 @@ describe('BootstrapComponent', () => {
     expect(fixture.componentInstance).toBeTruthy();
   });
 
-  it('should number install phases sequentially', () => {
+  it('shows the platformctl install, not the removed bash installer', () => {
     const fixture = TestBed.createComponent(BootstrapComponent);
-    const phases = fixture.componentInstance.phases.map(p => p.phase);
-    expect(phases).toEqual(phases.map((_, i) => i));
+    const cmd = fixture.componentInstance.installCmd;
+    expect(cmd).toContain('releases/latest/download/install.sh');
+    expect(cmd).toContain('sudo platformctl provision');
+    expect(cmd).not.toContain('bootstrap.sh');
   });
 
   it('should map service status from the bootstrap status endpoint', async () => {

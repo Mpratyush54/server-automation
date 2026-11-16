@@ -1,5 +1,5 @@
-import { inject } from '@angular/core';
-import { Router, CanActivateFn } from '@angular/router';
+import { inject, isDevMode } from '@angular/core';
+import { Router, CanActivateFn, RouterStateSnapshot, ActivatedRouteSnapshot } from '@angular/router';
 
 /**
  * Exact hostnames that serve the public marketing site (landing + docs).
@@ -15,6 +15,8 @@ export function isPublicMarketingHost(
   marketingHosts: readonly string[] = MARKETING_HOSTS,
 ): boolean {
   const normalized = host.toLowerCase().replace(/\.$/, '');
+  // Local preview of the public site in development builds only.
+  if (isDevMode() && normalized === 'platform.localhost') return true;
   return marketingHosts.includes(normalized);
 }
 
@@ -28,6 +30,25 @@ export const marketingOnlyGuard: CanActivateFn = () => {
   }
   const router = inject(Router);
   router.navigate(['/login']);
+  return false;
+};
+
+/** Where the public docs live. App hosts send /docs links here. */
+export const PUBLIC_DOCS_ORIGIN = 'https://platform.pratyushes.dev';
+
+/** Same docs page on the public site, keeping path, query and fragment. */
+export function publicDocsUrl(appUrl: string, origin = PUBLIC_DOCS_ORIGIN): string {
+  const path = appUrl.startsWith('/') ? appUrl : '/' + appUrl;
+  return origin + (path.startsWith('/docs') ? path : '/docs');
+}
+
+/**
+ * Docs: shown on the public marketing host; on app hosts the browser goes to
+ * the same page on the public site instead of the sign-in page.
+ */
+export const docsGuard: CanActivateFn = (_route: ActivatedRouteSnapshot, state: RouterStateSnapshot) => {
+  if (isPublicMarketingHost()) return true;
+  window.location.replace(publicDocsUrl(state.url));
   return false;
 };
 

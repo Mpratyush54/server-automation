@@ -3,5 +3,20 @@
     "target": "http://localhost:3000",
     "secure": false,
     "logLevel": "debug"
+  },
+  "/mcp": {
+    "target": "http://localhost:3000",
+    "secure": false,
+    "logLevel": "debug"
+  },
+  "/.well-known/oauth-protected-resource": {
+    "target": "http://localhost:3000",
+    "secure": false,
+    "logLevel": "debug"
+  },
+  "/.well-known/oauth-authorization-server": {
+    "target": "http://localhost:3000",
+    "secure": false,
+    "logLevel": "debug"
   }
 }

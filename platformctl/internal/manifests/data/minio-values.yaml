@@ -13,6 +13,21 @@ extraEnvVars:
     value: "{{OIDC_SECRET_MINIO}}"
   - name: MINIO_IDENTITY_OPENID_DISPLAY_NAME
     value: Platform
+  # The OpenID discovery document names the public issuer, so MinIO fetches
+  # the signing keys over https://{{DOMAIN}}. Trust the platform's internal CA
+  # (used when Let's Encrypt cannot issue) next to the system roots; platformctl
+  # publishes its certificate in the optional platform-ca ConfigMap.
+  - name: SSL_CERT_DIR
+    value: /etc/ssl/certs:/etc/platform-ca
+extraVolumes:
+  - name: platform-ca
+    configMap:
+      name: platform-ca
+      optional: true
+extraVolumeMounts:
+  - name: platform-ca
+    mountPath: /etc/platform-ca
+    readOnly: true
 
 console:
   extraEnvVars:
@@ -28,3 +43,14 @@ console:
       value: Platform
     - name: MINIO_IDENTITY_OPENID_REDIRECT_URI
       value: https://minio.{{DOMAIN}}/oauth_callback
+    - name: SSL_CERT_DIR
+      value: /etc/ssl/certs:/etc/platform-ca
+  extraVolumes:
+    - name: platform-ca
+      configMap:
+        name: platform-ca
+        optional: true
+  extraVolumeMounts:
+    - name: platform-ca
+      mountPath: /etc/platform-ca
+      readOnly: true

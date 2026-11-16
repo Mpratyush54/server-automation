@@ -10,6 +10,7 @@ import oidcRoutes from './oidc';
 import projectRoutes from './projects';
 import projectArgoRoutes from './project-argocd';
 import deploymentRoutes from './deployments';
+import autoscalingRoutes from './autoscaling';
 import configRoutes from './config';
 import secretRoutes from './secrets';
 import environmentRoutes from './environment';
@@ -29,9 +30,12 @@ import dbProvisionRoutes from './db-provision';
 import versionRoutes from './version';
 import agentTokenRoutes from './agent-tokens';
 import agentCommandRoutes from './agent-commands';
+import mcpConnectionRoutes from './mcp-connections';
 import notificationRoutes from './notifications';
 import { loadOpenApiJson, OpenApiUnavailableError } from '../lib/openapi-spec';
 import healthRoutes from './health';
+import buildRoutes from './builds';
+import registryTokenRoutes from './registry-token';
 import operationRoutes from './operations';
 import backupRoutes from './backups';
 import telemetryRoutes from './telemetry';
@@ -43,8 +47,10 @@ import syntheticRoutes from './synthetics';
 import observabilityRoutes from './observability';
 import statusPageRoutes from './status-pages';
 import heatmapRoutes from './heatmaps';
+import usageRoutes from './usage';
 
 router.use('/', errorTrackingRoutes);
+router.use('/', registryTokenRoutes); // build registry realm: per-project pull credentials only (#55)
 router.use('/', healthRoutes); // GET /api/health/ready (readiness: DB only; Redis reported, not gating)
 router.use('/', telemetryRoutes); // ingress-nginx external auth for the collector (#49); token-authenticated itself
 router.use('/', privacyRoutes); // PII scrubbing, retention, consent hooks, GDPR delete (#47)
@@ -56,6 +62,8 @@ router.use('/', versionRoutes);
 router.use('/', projectRoutes);
 router.use('/', projectArgoRoutes);
 router.use('/', deploymentRoutes);
+router.use('/', autoscalingRoutes);
+router.use('/', buildRoutes);
 router.use('/', releaseRoutes);
 router.use('/', configRoutes);
 router.use('/', secretRoutes);
@@ -77,6 +85,7 @@ router.use('/', dbProvisionRoutes);
 router.use('/', databaseInsightsRoutes);
 router.use('/', agentTokenRoutes);
 router.use('/', agentCommandRoutes);
+router.use('/', mcpConnectionRoutes); // connected AI assistants (remote MCP grants, #193)
 router.use('/', notificationRoutes);
 router.use('/', operationRoutes);
 router.use('/', backupRoutes);
@@ -84,6 +93,7 @@ router.use('/', syntheticRoutes); // synthetic checks, results, status feed, bro
 router.use('/', observabilityRoutes); // project-scoped Prometheus/Loki/Tempo/Pyroscope query proxies, fleet view (#48)
 router.use('/', statusPageRoutes); // public status pages + incidents (#46)
 router.use('/', heatmapRoutes); // click/scroll heatmaps: SDK ingest + project queries (Phase 4 B2)
+router.use('/', usageRoutes); // per-project usage metering, quotas, cost reports (#57)
 router.use('/', topologyRoutes); // GET /projects/:projectId/environments/:envId/topology (#31)
 
 /** GET /api/openapi.json — OpenAPI 3 spec derived from openapi.yaml (parsed once, cached). */

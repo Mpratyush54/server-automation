@@ -20,9 +20,10 @@ export interface ChartMarker { t: number; label: string }
     .line { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
     .marker { stroke: var(--obs-marker); stroke-dasharray: 3 3; stroke-width: 1; }
     .legend { display: flex; gap: 12px; font-size: 0.75rem; color: var(--obs-muted); margin-top: 4px; flex-wrap: wrap; }
-    .swatch { display: inline-block; width: 10px; height: 3px; vertical-align: middle; margin-right: 4px; }
-    .title { font-size: 0.8rem; color: var(--obs-muted); margin-bottom: 4px; }
-    .nodata { font-size: 0.8rem; color: var(--obs-faint); padding: 24px 0; text-align: center; }
+    .swatch { display: inline-block; width: 10px; height: 3px; vertical-align: middle; margin-right: 6px; }
+    .swatch.deploys { background: var(--obs-marker); }
+    .title { font-size: 0.875rem; font-weight: 500; color: var(--obs-text); margin-bottom: 12px; }
+    .nodata { font-size: 0.8125rem; color: var(--obs-faint); padding: 32px 0; text-align: center; }
   `],
   template: `
     @if (title) { <div class="title">{{ title }}</div> }
@@ -46,7 +47,7 @@ export interface ChartMarker { t: number; label: string }
       @if (series.length > 1 || visibleMarkers.length) {
         <div class="legend">
           @for (s of series; track s.name) { <span><span class="swatch" [style.background]="colorOf($index)"></span>{{ s.name }}</span> }
-          @if (visibleMarkers.length) { <span><span class="swatch" style="background: var(--obs-marker)"></span>Deploys</span> }
+          @if (visibleMarkers.length) { <span><span class="swatch deploys"></span>Deploys</span> }
         </div>
       }
     } @else {

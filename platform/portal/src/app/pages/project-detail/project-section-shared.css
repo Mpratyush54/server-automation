@@ -1,0 +1,49 @@
+/* Layout helpers shared by the project page and its section components (#185).
+   Colours come only from the design tokens in src/styles.css. */
+:host { display: block; }
+
+.stack { display: flex; flex-direction: column; gap: 1.5rem; min-width: 0; }
+.panel-body { padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+.panel-body > .form-group { margin-bottom: 0; }
+.panel-body > p, .panel-body > .hint { margin: 0; }
+
+.hint { font-size: 0.8125rem; color: rgb(var(--fg-2)); margin: 0; }
+.warn { font-size: 0.8125rem; color: rgb(var(--warn)); margin: 0; }
+.error { font-size: 0.8125rem; color: rgb(var(--down)); margin: 0; overflow-wrap: anywhere; }
+
+/* A row of fields that wraps on narrow screens. */
+.inline-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; }
+.inline-form .form-group { margin-bottom: 0; min-width: 10rem; }
+.inline-form .grow { flex: 1 1 14rem; }
+
+.group-title { margin: 0; font-size: 1rem; font-weight: 600; }
+.text-right { text-align: right; }
+
+/* Notice inside a panel (callouts that are not alerts). */
+.notice {
+  border: 1px solid rgb(var(--line)); background: rgb(var(--raised));
+  border-radius: 6px; padding: 0.75rem 1rem; font-size: 0.8125rem; color: rgb(var(--fg-2));
+}
+.notice-warn { border-color: rgb(var(--warn) / 0.4); background: rgb(var(--warn) / 0.08); color: rgb(var(--fg)); }
+.notice-down { border-color: rgb(var(--down) / 0.4); background: rgb(var(--down) / 0.08); color: rgb(var(--fg)); }
+.notice-ok { border-color: rgb(var(--ok) / 0.4); background: rgb(var(--ok) / 0.08); color: rgb(var(--fg)); }
+
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.cell-sub { display: block; font-size: 0.75rem; color: rgb(var(--fg-3)); overflow-wrap: anywhere; }
+
+/* Screen-reader-only text (e.g. the Actions column heading). */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+
+/* Rarely used options, collapsed by default. */
+.advanced { border-top: 1px solid rgb(var(--line)); padding-top: 0.75rem; }
+.advanced > summary { cursor: pointer; font-size: 0.8125rem; color: rgb(var(--fg-2)); width: fit-content; }
+.advanced > summary:hover { color: rgb(var(--fg)); }
+.advanced[open] > summary { margin-bottom: 0.75rem; }
+
+/* Panel footer that holds the panel's one action, aligned right. */
+.panel-footer {
+  display: flex; align-items: center; justify-content: flex-end; gap: 1rem;
+  padding: 0.75rem 1.25rem; border-top: 1px solid rgb(var(--line)); background: rgb(var(--raised) / 0.35);
+}
+.row-actions { justify-content: flex-end; flex-wrap: nowrap; }
+.learn { white-space: nowrap; }

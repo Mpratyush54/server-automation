@@ -1,40 +1,82 @@
-# Release upgrades
+# Upgrade Cairn to a new release
 
-Run on the Linux control-plane host as root. Use the release's `platformctl`
-binary, or let `upgrade` download it and run the target binary. Downloads are
-checked against `checksums.txt`; GitHub asset failures fall back to the GHCR
-platformctl artifact, with layer digests verified as well.
+This page helps you move your server to a newer Cairn release. Upgrades run on the server with the `platformctl` command line tool; there is no upgrade button in the portal.
 
-```sh
-sudo platformctl upgrade --to vX.Y.Z --dry-run
-sudo platformctl upgrade --to vX.Y.Z
-sudo platformctl upgrade --history
-```
+`platformctl upgrade` backs up first, checks that everything is healthy, and rolls back on its own if the new release fails its checks.
 
-`--to` defaults to the latest stable GitHub release and must name a published
-release: a tag that GitHub reports as missing (404) is refused, and during a
-GitHub outage the release must exist in the GHCR mirror. `--allow-unreleased`
-skips that check for testing a local build whose binary and images are already
-on the host. `--yes` confirms the displayed plan for automation. A saved successful upgrade takes precedence over
-the saved image tag when determining the source version. For an installation
-without upgrade history, ensure its saved `PLATFORM_IMAGE_TAG` reflects its
-installed release. Unstamped development builds must be replaced with a release binary.
-Downgrades and skipping majors are refused. Without `upgrade.json`, only
-same-major upgrades are allowed. Release maintainers edit
-`platformctl/upgrade-policy.json` to set `minimumSource`, `breakingNotes`, and
-`irreversibleMigrations`; the release workflow attaches `upgrade.json` containing
-these rules and the target binary's chart pins and mirrors it to GHCR.
+## Upgrade
 
-## First upgradable release
+Run these on the server (the Linux host that runs the cluster):
 
-Release upgrades work from the first published release containing `platformctl
-upgrade` onwards. Releases published before #27 do not contain that command;
-a target without it cannot perform the target-binary handoff. No published
-release contained it when #115 was opened. Confirm the release contents rather
-than assuming a particular rc number is the first upgradable release.
+1. See what would change, without changing anything:
 
-For an older installation, install the **target** release's platformctl using
-`install.sh`, then upgrade the existing cluster (do not provision it again):
+   ```sh
+   sudo platformctl upgrade --to v1.4.0 --dry-run
+   ```
+
+2. Run the upgrade. It shows the plan and asks you to confirm:
+
+   ```sh
+   sudo platformctl upgrade --to v1.4.0
+   ```
+
+3. Check the result:
+
+   ```sh
+   sudo platformctl status
+   sudo platformctl upgrade --history
+   ```
+
+Leave out `--to` to upgrade to the latest stable release. Replace `v1.4.0` with a published release tag.
+
+Pick a quiet time. Databases restart for about 30 seconds during some upgrades, and project connections drop briefly. Ask your team not to make changes in the portal while it runs.
+
+## Before you start
+
+The upgrade refuses to start until all of these are true:
+
+- At least 2 GiB free under `/var/lib` and 512 MiB of free memory.
+- All pods in the `platform`, `databases` and `storage` namespaces are ready.
+- No deployment or other long task is running in Cairn.
+- Your configured backup destination can be read.
+
+It also refuses to go down a version or skip a major version.
+
+> [!WARNING]
+> If no encrypted backup is configured, the upgrade only keeps a copy of the database on the same disk. Set up encrypted off-site backups first: see [Backups and restore](backups.md).
+
+## Options
+
+| Option | What it does |
+|---|---|
+| `--to <tag>` | Target release. Default: the latest stable release. |
+| `--dry-run` | Show the plan and change nothing. |
+| `--yes` | Accept the plan without a prompt (for scripts). |
+| `--patch-only` | Only take a newer patch in the installed minor version (for example 1.4.0 to 1.4.2). |
+| `--history` | Print the local upgrade history. |
+| `--allow-unreleased` | Accept a `--to` tag that is not published. Only for testing a local build whose binary and images are already on the server. The running images may then use a tag without a digest (for example from an install with local images), as long as they come from the same repository as the target and are on the server, so a rollback can restore them. |
+| `--restore-failed-migration` | Allow restoring the database if a migration the release marks as irreversible fails. Reads the backup's private key on standard input. `--yes` never grants this. |
+
+## If something goes wrong
+
+- **A check fails during the upgrade:** it rolls back on its own to the previous images and Helm releases, then checks health again. Read the error. It says if the rollback itself needs your attention.
+- **A component fails after the release succeeded:** fix the cause and run the same `upgrade` command again. At the installed release it only repeats the component step.
+- **The server lost power or the process was killed:** rollback could not run. See [Interrupted upgrades](#interrupted-upgrades) below.
+
+For other problems, see [Recover a broken install](recover.md).
+
+## Turn on automatic upgrades
+
+Automatic patch upgrades are off by default.
+
+1. Set `AUTO_UPGRADE=true` in `/etc/platform/.env`.
+2. Run `sudo platformctl install auto-update`.
+
+Every day at 04:20 UTC the server runs `platformctl upgrade --patch-only --yes`. Minor and major upgrades stay manual. To stop it later, suspend or delete the `platform-auto-upgrade` CronJob; setting the flag back to `false` does not remove an installed schedule.
+
+## Upgrade from an older release
+
+Upgrades work from **v1.3.0-rc.3**, the first release that contains `platformctl upgrade`, onwards. Releases from before the `upgrade` command existed (v1.3.0-rc.2, v1.2.0 and earlier) cannot upgrade themselves. Install the **target** release's `platformctl` with its installer, then upgrade the existing cluster. Do not run `provision` again.
 
 ```sh
 curl -fsSL https://github.com/Mpratyush54/server-automation/releases/download/<target>/install.sh -o install.sh
@@ -42,142 +84,90 @@ sudo env PLATFORMCTL_VERSION=<target> bash install.sh
 sudo platformctl upgrade --to <target> --yes
 ```
 
-Replace `<target>` with a published release tag containing `upgrade`. The
-installer changes the CLI; `upgrade` changes the cluster. Older mutable images
-must first be digest-pinned with `platformctl update`, as described below.
-Unstamped builds (`dev`, empty, or other non-release versions) must also be
-replaced with a release binary before using upgrade.
+Replace `<target>` with a published release tag that has the `upgrade` command. The installer replaces the command line tool; `upgrade` changes the cluster.
 
-The `upgrade` job in `e2e-vm.yml` tests a minimal-profile VM on release tag
-pushes and manual dispatches targeting a release. `upgrade_from` selects the
-source tag; empty selects the highest published version below the target from
-the paginated GitHub releases API, including pre-releases. The source binary
-is checksum-verified, provisions its own image tag, and performs the upgrade
-to the target. A source without the command emits an explicit skip notice;
-download, checksum, provisioning, upgrade and verification failures fail the job.
-It seeds an admin session, project, project secret and MinIO object through the
-API, runs the standard checks after upgrade, then verifies the project, secret
-record, object bytes, fresh login and original session. This does not verify
-secret decryption or MFA. Logs are redacted, artifacts uploaded and VM teardown
-always attempted. Promotion requires fresh-install tests and a successful or
-skipped upgrade job. See [e2e CI](e2e-ci.md) for inputs and remaining VM tests.
+On these older installs, also run `sudo platformctl update` once first, so images are pinned to exact versions and a rollback can restore them. Development builds (version `dev` or empty) must be replaced with a release binary.
 
-## Preflight
+## Backup settings that name an mc alias
 
-Preflight requires 2 GiB free under `/var/lib`, 512 MiB available memory,
-Ready pods in `platform`, `databases`, and `storage` (completed Jobs are allowed),
-no active operations, and a readable configured backup destination. Repair the
-reported resource or target before retrying. Root queries the `platform`
-database directly using `kubectl -n databases exec` and `psql` in the PostgreSQL
-pod. The password is resolved inside that container from `POSTGRES_PASSWORD`
-or `POSTGRES_PASSWORD_FILE`, using the same helper as backups. No API token is
-needed. The query counts all `pending`, `running`, and `compensating` operations;
-a refusal includes the count and five newest operations' type, status, and
-`updatedAt`. Older installations without the operations table count as zero;
-connection, permission, and other query errors stop the upgrade.
-Arrange a maintenance window and prevent new administrative mutations during
-the upgrade; the installer lock excludes other installer/backup processes,
-but does not lock new API operations.
+Older releases copied encrypted archives with the MinIO `mc` program, and `/etc/platform/backup.json` could name an `mc` alias: `"target": "s3://<alias>/<bucket>/<prefix>"`, or `"minioAlias": "<alias>"` for a MinIO that Cairn did not install. platformctl no longer needs `mc`. It reads the alias's address and keys from root's `~/.mc/config.json` (or `$MC_CONFIG_DIR/config.json`, or an `MC_HOST_<alias>` variable), so these settings keep working after the upgrade, and archives made by older releases restore as before.
 
-Existing images must already use digests so rollback can restore exact images.
-Use the existing `platformctl update` once to adopt digest pins on an older
-installation. Confirm backup recovery before upgrading that installation.
+If the alias is gone (for example, `mc` was removed together with its settings), `backup`, `backup list` and `restore` stop with an error that names the alias. Switch to the off-site backup target instead:
 
-## Transaction and recovery
+```sh
+sudo platformctl backup target set --endpoint https://<s3 endpoint> --bucket <bucket> --region <region> --prefix <prefix>
+```
 
-The plan lists changed installed chart releases and platform images. Releases
-are matched to pinned charts by exact chart name (`loki-stack-2.10.3` is the
-`loki-stack` chart, never `loki`). Components missing from the cluster are
-handled after the transaction (see below); k3s/Helm themselves are not upgraded.
-Charts use provision's local chart cache and upstream/GHCR fallback, preserve
-existing values, and upgrade with `--atomic`. Review chart major-version
-migration requirements in the changelog before confirming.
+Then set `"target": "external"` in `/etc/platform/backup.json`. The off-site target keeps archives under `<prefix>/archives/`, so archives already stored at the old alias path are not listed there. To restore one of them, recreate the alias in `~/.mc/config.json` and pass `--target s3://<alias>/<bucket>/<prefix>` to `restore`, or copy the archive folders into `<prefix>/archives/` with any S3 tool.
 
-Upgrade uses the same encrypted `backup --all` engine when backup configuration
-exists and records its backup ID. Otherwise it warns and records a **local-only**
-database dump/credential snapshot. The existing migration Job path also takes
-its own local pre-migration dump and waits for the target API migrations.
-Readiness gates wait for API/portal rollouts, API readiness, the API schema
-check (`/api/health/schema`: every table, column, index and constraint the API
-needs exists), portal HTTP 200, OIDC discovery HTTP 200, and Argo CD HTTP 200
-when its Service exists. All gates have finite command/request timeouts. When
-the gate runs against an older API (after a rollback), a missing
-`/api/health/ready` falls back to `/api/health` and a missing schema check is
-skipped, so a rollback to a release such as v1.2.0 can pass its gate.
+Remove `minioAlias` from `backup.json` when the files are in the bundled MinIO; it is only for a MinIO outside the cluster.
 
-The migration Job runs on every upgrade, provision and `platformctl update`
-(it is idempotent), not only when the API image changed. After applying
-pending migrations it compares the schema with the API's entities. Missing
-objects are repaired by re-running the idempotent migrations; if anything is
-still missing the Job fails, the upgrade stops and is not reported as
-succeeded. Other differences (types, defaults) are logged, never applied.
+## Uploaded files on v1.2.0 and earlier
 
-On success, `PLATFORM_IMAGE_TAG` in `/etc/platform/.env` is rewritten
-atomically to the new release after the health gate passes, so later
-`platformctl install ...` or `provision` runs use the upgraded images. A failed
-or rolled-back upgrade leaves the file at the previous release. Re-running
-`upgrade` at the installed release repairs a tag left behind by an older
-platformctl.
+Up to v1.2.0, files uploaded through the API were stored inside the API container, with no volume. Every API restart loses them, including `platformctl update` and the upgrade's own rollout. Files already lost cannot be recovered.
 
-Any chart, image or health failure restores previous image digests and Helm
-revisions in reverse order, then repeats health gates. Errors include rollback
-failures requiring operator attention. Forward-compatible schema migrations
-remain in place when images roll back.
+The upgrade saves a copy from every API pod before it changes anything, to `/var/lib/platform/backups/uploads-<timestamp>/<pod>.tar`. To take your own copy before anything restarts the API:
 
-**Rolling back to v1.2.0 (or any release that synchronizes its schema on
-boot)**: when that API starts, it drops columns, indexes and constraints it does
-not know, while the migrations table still lists them as applied. The next
-`platformctl upgrade` re-runs the migration Job, which detects the missing
-objects and re-creates them (log lines `schema drift: ... missing` and
-`schema repaired`). Data that lived in the dropped columns is gone; restore
-the pre-upgrade backup if it matters.
+```sh
+for p in $(sudo kubectl -n platform get pods -l app=platform-api -o name); do
+  sudo kubectl -n platform exec "$p" -c api -- tar -C /app -cf - uploads > "upload-${p#pod/}.tar"
+done
+```
 
-Database restore is considered only when a migration **failed** and the release
-declares it irreversible. Interactive runs ask separately. `--yes` never grants
-restore permission: use `--restore-failed-migration` explicitly and supply the
-backup's age identity on stdin. This uses the existing PostgreSQL restore engine
-and checks recovery health. With encrypted backups, PostgreSQL recovery restores
-the configured PostgreSQL component, including project databases; stop project
-writers beforehand. With only a local dump, the same separate consent permits
-stopping API writers and restoring the recorded platform database dump; no age
-identity is needed. The password and archive are streamed through stdin to
-`pg_restore`, and the API resumes afterward. Test recovery before unattended
-use, and prefer encrypted off-site backups for protection against disk loss.
+Each API pod has its own folder; a file exists only on the pod that received it. The file records stay in the database, but the files are not moved to the new storage. Upload again what you need.
 
-An interruption (power loss/process kill) cannot execute rollback. Inspect the
-last `started` record, its plan and backup, then restore the recorded Helm
-revisions/images manually before retrying. Do not delete evidence of a partial
-upgrade. History is an append-only event log in
-`/var/lib/platformctl/state/upgrade-history.json`, mirrored to
-`platform/platform-upgrade-history` (`history.json`). The ConfigMap retains
-recent events below Kubernetes size limits; the local file keeps all events.
-History write failures are reported, rather than claiming an unaudited success.
+## How it works
 
-Digest-refresh schedules are suspended before the backup; a running digest-refresh
-Job must finish first. Failed upgrades restore the previous suspension setting.
-After a successful transaction the target executable is installed atomically
-at `/usr/local/bin/platformctl`, then the auto-update schedule is reconciled.
-Failure of this final host/schedule maintenance is reported separately from the
-successful release upgrade and needs operator repair.
+### Finding and checking the release
 
-## Components after the release
+- Run as root on the control-plane host. Use the release's `platformctl`, or let `upgrade` download the target release's binary and hand over to it.
+- Downloads are checked against `checksums.txt`. If GitHub release assets fail, it falls back to the copy on GHCR (GitHub's container registry) and verifies layer digests too.
+- `--to` must name a published release: a tag GitHub reports as missing (404) is refused. During a GitHub outage the release must exist in the GHCR mirror.
+- The source version comes from the last successful upgrade in the history; without history, from `PLATFORM_IMAGE_TAG` in `/etc/platform/.env`. Make sure that value matches the installed release on servers without history.
+- Each release includes `upgrade.json`, built from `platformctl/upgrade-policy.json` (`minimumSource`, `breakingNotes`, `irreversibleMigrations`) plus the target's chart versions. Without `upgrade.json`, only upgrades within the same major version are allowed.
 
-The release transaction only changes what is installed. After it is healthy,
-`upgrade` brings the installation to the component set of its configured
-profile (`PLATFORM_PROFILE` in `/etc/platform/.env`), using the same steps as
-`provision`:
+### Preflight details
 
-- installs components the profile now includes but the host lacks (for
-  example full-profile telemetry and synthetics on an install from v1.2.0);
-- reconciles PostgreSQL, MongoDB and Redis when their rendered Helm values
-  changed (each records a values fingerprint next to its done marker; installs
-  from before fingerprints reconcile once), e.g. to add metrics exporters;
-- re-applies the platform step (secrets, RBAC and Deployment spec of the new
-  release, with the same digest-pinned images) and the idempotent ingress,
-  telemetry, synthetics and Kyverno steps.
+- Active operations are counted by querying the `platform` database directly in the PostgreSQL pod (`kubectl -n databases exec` and `psql`). The password is read inside the container from `POSTGRES_PASSWORD` or `POSTGRES_PASSWORD_FILE`. No API token is needed.
+- It counts `pending`, `running` and `compensating` operations. A refusal shows the count and the five newest operations. Older installs without the operations table count as zero. Connection, permission and other query errors stop the upgrade.
+- The installer lock keeps other installer and backup runs out, but it does not block new API operations. That is why you should pause portal changes.
+- Existing images must already be pinned by digest, so rollback can restore the exact images.
 
-`--dry-run` and the confirmation prompt print this list with the workloads each
-change restarts, for example:
+### The upgrade itself
+
+- The plan lists changed chart releases and platform images. Releases are matched to pinned charts by exact chart name (`loki-stack-2.10.3` is the `loki-stack` chart, never `loki`). k3s and Helm themselves are not upgraded.
+- Charts come from the local chart cache, with upstream and GHCR as fallback. Existing values are kept and each chart is upgraded with `--atomic`. Check the changelog for chart major-version notes before you confirm.
+- With backups configured, it runs the encrypted `backup --all` and records the backup ID. Otherwise it warns and keeps a **local-only** database dump and credential snapshot.
+- The migration Job takes its own local pre-migration dump, applies pending migrations, then compares the schema with what the API needs. Missing objects are re-created by re-running the idempotent migrations. If anything is still missing, the Job fails and the upgrade stops. Other differences (types, defaults) are logged, never applied. This Job runs on every `upgrade`, `provision` and `platformctl update`.
+- Health gates wait for the API and portal rollouts, API readiness, the API schema check (`/api/health/schema`), portal HTTP 200, sign-in (OIDC discovery) HTTP 200, and Argo CD HTTP 200 when it is installed. All gates have time limits. Against an older API after a rollback, a missing `/api/health/ready` falls back to `/api/health`, and a missing schema check is skipped.
+- On success, `PLATFORM_IMAGE_TAG` in `/etc/platform/.env` is rewritten to the new release, so later `install` or `provision` runs use the new images. A failed or rolled-back upgrade leaves it at the old release. Running `upgrade` again at the installed release fixes a tag an older `platformctl` left behind.
+- On any chart, image or health failure, previous image digests and Helm revisions are restored in reverse order and the gates run again. Schema migrations stay in place when images roll back.
+- The digest-refresh schedule (`platform-auto-update`) is paused before the backup; a running refresh Job must finish first. A failed upgrade restores the previous setting.
+- After success the new binary is installed at `/usr/local/bin/platformctl` and schedules are reconciled. A failure here is reported separately from the release upgrade and needs a manual fix.
+
+### Rolling back to v1.2.0
+
+Releases such as v1.2.0 adjust the schema when the API starts. They drop columns, indexes and constraints they do not know, while the migrations table still lists them as applied. The next `platformctl upgrade` re-runs the migration Job, which finds the missing objects and re-creates them (log lines `schema drift: ... missing` and `schema repaired`). Data in the dropped columns is gone; restore the pre-upgrade backup if you need it.
+
+### Database restore after a failed migration
+
+Restore is considered only when a migration **failed** and the release marks it irreversible. Interactive runs ask separately. `--yes` never grants it; pass `--restore-failed-migration` and supply the backup's age private key on standard input. With encrypted backups, the PostgreSQL restore covers the whole PostgreSQL component, including project databases, so stop project writers first. With only a local dump, the same consent allows stopping the API and restoring the recorded platform database dump; no key is needed. Test recovery before relying on unattended upgrades.
+
+### Interrupted upgrades
+
+A power loss or killed process cannot run rollback. Find the last `started` record, its plan and backup, then restore the recorded Helm revisions and images by hand before retrying. Do not delete evidence of a partial upgrade.
+
+History is an append-only log in `/var/lib/platformctl/state/upgrade-history.json`, copied to the `platform-upgrade-history` ConfigMap (`history.json`) in the `platform` namespace. The ConfigMap keeps recent events under the Kubernetes size limit; the local file keeps everything. A failure to write history is reported instead of claiming success.
+
+### Components after the release
+
+Once the release is healthy, `upgrade` brings the install up to the component set of its profile (`PLATFORM_PROFILE` in `/etc/platform/.env`), using the same steps as `provision`:
+
+- installs components the profile now includes but the server lacks (for example full-profile telemetry and synthetics on an install from v1.2.0);
+- reconciles PostgreSQL, MongoDB and Redis when their Helm values changed (each records a values fingerprint; older installs reconcile once), for example to add metrics exporters;
+- re-applies the platform step (secrets, RBAC and the new Deployment spec, with the same pinned images) and the ingress, telemetry, synthetics and Kyverno steps.
+
+`--dry-run` and the prompt list these changes and what each restarts, for example:
 
 ```text
 Components (profile full) reconciled after the release is healthy:
@@ -187,80 +177,26 @@ Components (profile full) reconciled after the release is healthy:
   - telemetry      install; restarts: Grafana and Prometheus (kube-prometheus values change); legacy loki-stack without a volume is replaced
 ```
 
-Database restarts interrupt project connections briefly; schedule the upgrade
-in a maintenance window. A component failure is reported after the release
-succeeded; fix the cause and run the same `upgrade` command again (at the
-installed release it only runs the component reconcile). No manual editing of
-`/etc/platform/.bootstrap_state` is needed.
+- The alerting and synthetics permissions the new API needs are applied before the API rollout.
+- A legacy `loki-stack` release is replaced by the telemetry step only when it has no persistent volume; see [Turn on full monitoring](telemetry.md#upgrade-from-loki-stack).
+- Project Redis users are re-created by the API within about 15 seconds of a Redis restart (Redis keeps them in memory only).
+- No manual editing of `/etc/platform/.bootstrap_state` is needed.
+- Running `provision` again on an existing server re-applies the host security baseline; it prints a notice first, and interactive runs ask. Set `SKIP_HARDENING=true` (or `PLATFORM_HARDEN=false`) to leave host security as it is.
 
-The alerting and synthetics RBAC the new API uses is applied before the API
-rollout, so it does not answer 403 until the telemetry step runs. A legacy
-`loki-stack` release (default monitoring before the full profile) is replaced
-by the telemetry step only when it has no persistent volume; see
-[telemetry](telemetry.md#upgrade-from-loki-stack).
+### Uploads storage today
 
-Project Redis users are re-created by the API within about 15 seconds of a
-Redis restart (Redis keeps ACL users in memory only).
+Current releases store uploads in the bundled object storage (`platform-uploads` bucket in MinIO) or the default storage provider. On v1.2.0 and earlier they lived in `/app/uploads` in the API container.
 
-Re-running `provision` on an existing server re-applies the host security
-baseline; it prints a notice first (interactive runs ask). Set
-`SKIP_HARDENING=true` (or `PLATFORM_HARDEN=false`) to leave host security as is.
+### Automatic schedules
 
-## Uploads stored in the API container (v1.2.0 and earlier)
+- `platform-auto-update` is the digest-refresh CronJob: it pulls newer images for the same tag. `AUTO_UPDATE=true` (the default) installs it. It keeps the `ALLOW_LOCAL_IMAGES` local-image fallback.
+- `platform-auto-upgrade` is the release CronJob, installed only with `AUTO_UPGRADE=true`. It picks the newest stable patch in the installed minor from the latest 100 GitHub releases. If it cannot reach GitHub, it keeps the installed release. No change means no backup and no migrations. It needs no token.
+- Provision and successful upgrades reconcile both schedules independently.
+- The release Job uses the same root host access (`hostPID`, `nsenter`) as the backup CronJob, has resource limits, runs on a control-plane node, uses `concurrencyPolicy: Forbid`, and takes the shared provision and upgrade lock.
 
-Releases up to v1.2.0 store uploaded files in `/app/uploads` inside the API
-container, without a volume. Every API pod replacement loses them, including
-`platformctl update` and the upgrade's own rollout. Files already lost cannot be
-recovered. Current releases store uploads in the bundled MinIO
-(`platform-uploads` bucket) or the default storage provider.
+### Release testing (maintainers)
 
-`upgrade` archives `/app/uploads` of every API pod to
-`/var/lib/platform/backups/uploads-<timestamp>/<pod>.tar` before changing
-anything. To keep a copy yourself before running anything that restarts the
-API (including `platformctl update`):
-
-```sh
-for p in $(sudo kubectl -n platform get pods -l app=platform-api -o name); do
-  sudo kubectl -n platform exec "$p" -c api -- tar -C /app -cf - uploads > "upload-${p#pod/}.tar"
-done
-```
-
-Each API replica has its own directory; a file exists only on the pod that
-received it. The file records stay in the database, but their content is not
-moved to MinIO; re-upload what you need through the API or portal.
-
-## Automatic upgrades
-
-The existing `platform-auto-update` CronJob remains the digest-refresh path,
-including `ALLOW_LOCAL_IMAGES` and its local-image fallback. `AUTO_UPDATE=true`
-(the default) installs it with its existing manifest and schedule.
-
-Release upgrades use a separate, opt-in `platform-auto-upgrade` CronJob.
-Set `AUTO_UPGRADE=true` (default **false**) in the host's platform configuration
-and run `platformctl install auto-update` to install it. Provision
-and successful upgrades reconcile enabled schedules independently: either flag
-can be enabled without the other. Setting a flag false skips installation; to
-stop an already installed schedule, suspend or delete its CronJob explicitly.
-
-The release job runs `platformctl upgrade --patch-only --yes` daily at 04:20 UTC,
-selecting the newest stable patch in the installed minor from the latest 100
-GitHub releases. Minor/major changes remain manual. An offline lookup retains
-the installed release and preserves the resolver's local-image fallback. No
-changes means no backup or migrations. It needs no token. Its root host boundary
-(`hostPID`/`nsenter`) matches the backup CronJob, with explicit resource limits
-and control-plane node selection. `concurrencyPolicy: Forbid` prevents overlapping
-scheduled Jobs, and upgrades retain the shared provision/upgrade lock. The
-digest-refresh schedule is suspended during a release transaction, and a running
-digest-refresh Job must finish before it can proceed.
-
-## VM release validation
-
-On Ubuntu 24.04 (4 vCPU/8 GiB), provision the previous minor, configure and test
-encrypted backups, seed platform/project data, and run a candidate upgrade.
-Verify data, chart revisions, digests, readiness, and both history copies.
-Repeat with a deliberately failing target health endpoint; verify previous
-digests/revisions become healthy and seeded data survives. Exercise insufficient
-disk/RAM, an unhealthy pod, an active operation, an unreachable backup target,
-offline cached images/charts, and a failed irreversible migration with denied
-and explicitly approved restore. These require a real k3s VM and release assets;
-local fake-runner tests do not establish the zero-data-loss acceptance criterion.
+- The `upgrade` job in `e2e-vm.yml` tests a minimal-profile VM on release tag pushes and on manual runs that target a release. `upgrade_from` picks the source tag; empty picks the highest published version below the target, including pre-releases.
+- The source binary is checksum-verified, provisions its own image tag, then upgrades to the target. A source without the command reports an explicit skip. Download, checksum, provisioning, upgrade and verification failures fail the job.
+- It seeds an admin session, a project, a project secret and a stored object through the API, runs the standard checks after the upgrade, then verifies the project, the secret record, the object bytes, a fresh login and the original session. It does not verify secret decryption or two-factor sign-in. See [End-to-end CI](e2e-ci.md).
+- Manual release validation on Ubuntu 24.04 (4 vCPU, 8 GiB): provision the previous minor, configure and test encrypted backups, seed data, upgrade, and verify data, chart revisions, digests, readiness and both history copies. Repeat with a failing target health endpoint and check that rollback restores health and data. Also test low disk or memory, an unhealthy pod, an active operation, an unreachable backup target, offline cached images and charts, and a failed irreversible migration with restore denied and approved. Local fake-runner tests do not prove zero data loss.

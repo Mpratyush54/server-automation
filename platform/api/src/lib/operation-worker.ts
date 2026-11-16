@@ -28,6 +28,12 @@ export function isOperationLeader(): boolean {
 }
 
 export async function runOperationResume(): Promise<void> {
+  if (process.env.BUILDS_ENABLED === 'true') {
+    const { recoverBuildQueue } = await import('./build-op');
+    await recoverBuildQueue();
+    const { syncSourcePullSecrets } = await import('./source-pull-sync');
+    await syncSourcePullSecrets().catch(() => console.warn('[build] could not refresh source registry pull Secrets; retrying'));
+  }
   await resumeOperations();
 }
 

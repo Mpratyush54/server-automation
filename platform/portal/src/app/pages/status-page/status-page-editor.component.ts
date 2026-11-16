@@ -1,9 +1,10 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, Input, OnInit, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+import { DialogService } from '../../shared/feedback/feedback.service';
 
 export interface StatusPageSettings {
   /** null until the first save creates the page. */
@@ -83,11 +84,16 @@ export function isOpenIncident(inc: Pick<StatusIncidentView, 'status'>): boolean
   styleUrl: './status-page-editor.component.css',
 })
 export class StatusPageEditorComponent implements OnInit {
+  private dialog = inject(DialogService);
+
   private http = inject(HttpClient);
   private route = inject(ActivatedRoute);
   private cdr = inject(ChangeDetectorRef);
 
-  projectId = '';
+  /** Project id; falls back to the `:id` route param when routed standalone. */
+  @Input() projectId = '';
+  /** Inside the project page's Monitoring section (Uptime view): no page header or back link. */
+  @Input() embedded = false;
   page: StatusPageSettings | null = null;
   checks: SyntheticCheckOption[] = [];
   incidents: StatusIncidentView[] = [];
@@ -117,7 +123,7 @@ export class StatusPageEditorComponent implements OnInit {
   readonly updateStatuses = UPDATE_STATUSES;
 
   async ngOnInit(): Promise<void> {
-    this.projectId = this.route.snapshot.paramMap.get('id') || '';
+    this.projectId = this.projectId || this.route.snapshot.paramMap.get('id') || '';
     await this.reload();
   }
 
@@ -277,7 +283,13 @@ export class StatusPageEditorComponent implements OnInit {
   }
 
   async deleteIncident(inc: StatusIncidentView): Promise<void> {
-    if (!confirm(`Delete incident "${inc.title}"?`)) return;
+    const ok = await this.dialog.confirm({
+      title: `Delete incident "${inc.title}"?`,
+      message: 'The incident and its updates are removed from the status page. This cannot be undone.',
+      confirmLabel: 'Delete incident',
+      danger: true,
+    });
+    if (!ok) return;
     this.busy = true;
     try {
       await firstValueFrom(

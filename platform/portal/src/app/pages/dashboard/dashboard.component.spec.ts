@@ -5,150 +5,123 @@ import { provideRouter } from '@angular/router';
 import { DashboardComponent } from './dashboard.component';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
+import { AlertingApiService } from '../alerting/alerting-api.service';
 import { of, throwError } from 'rxjs';
 
 describe('DashboardComponent', () => {
-  let component: DashboardComponent;
-  let apiService: jasmine.SpyObj<ApiService>;
+  let api: jasmine.SpyObj<ApiService>;
+  let alerting: jasmine.SpyObj<AlertingApiService>;
+  let role = { devops: true, admin: false, users: false };
+
+  const recent = (min: number) => new Date(Date.now() - min * 60000).toISOString();
 
   beforeEach(async () => {
-    const spy = jasmine.createSpyObj('ApiService', ['getProjects', 'getBootstrapStatus', 'getPlatformVersion', 'getPods', 'getMetrics', 'getAggregatedMetrics']);
-
+    role = { devops: true, admin: false, users: false };
+    api = jasmine.createSpyObj('ApiService', ['getProjects', 'getBootstrapStatus', 'getPlatformVersion', 'getNodes', 'getBackupStatus', 'getMe', 'getUsers']);
+    alerting = jasmine.createSpyObj('AlertingApiService', ['allIncidents']);
     await TestBed.configureTestingModule({
       imports: [DashboardComponent],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
-        { provide: ApiService, useValue: spy },
-        { provide: AuthService, useValue: { isDevOps: () => true, isAdmin: () => false } },
+        { provide: ApiService, useValue: api },
+        { provide: AlertingApiService, useValue: alerting },
+        {
+          provide: AuthService,
+          useValue: {
+            getUser: () => ({ name: 'Asha Rao' }),
+            isDevOps: () => role.devops,
+            isAdmin: () => role.admin,
+            canManageUsers: () => role.users,
+          },
+        },
       ],
     }).compileComponents();
-
-    apiService = TestBed.inject(ApiService) as jasmine.SpyObj<ApiService>;
-    apiService.getProjects.and.returnValue(of([]));
-    apiService.getBootstrapStatus.and.returnValue(of({ services: {} }));
-    apiService.getPlatformVersion.and.returnValue(of({}));
-    apiService.getPods.and.returnValue(of({ k8sConnected: true, pods: [] }));
-    apiService.getMetrics.and.returnValue(of([]));
-    apiService.getAggregatedMetrics.and.returnValue(of({}));
+    api.getProjects.and.returnValue(of([]));
+    api.getBootstrapStatus.and.returnValue(of({ services: {} }));
+    api.getPlatformVersion.and.returnValue(of({}));
+    api.getNodes.and.returnValue(of({ k8sConnected: true, nodes: [{ name: 'node-1', status: 'Ready' }] }));
+    api.getBackupStatus.and.returnValue(of({ items: [{ operation: 'backup', status: { success: true, finishedAt: recent(60) } }] }));
+    api.getMe.and.returnValue(of({}));
+    api.getUsers.and.returnValue(of([]));
+    alerting.allIncidents.and.returnValue(of([]));
   });
 
-  it('should create', () => {
+  async function render() {
     const fixture = TestBed.createComponent(DashboardComponent);
-    component = fixture.componentInstance;
-    expect(component).toBeTruthy();
-  });
-
-  it('should load projects on init', async () => {
-    apiService.getProjects.and.returnValue(of([
-      { id: 'p1', name: 'Project 1', deployments: [] },
-      { id: 'p2', name: 'Project 2', deployments: [] },
-    ]));
-
-    const fixture = TestBed.createComponent(DashboardComponent);
-    component = fixture.componentInstance;
-    // ngOnInit starts a telemetry setInterval, so the zone never becomes stable;
-    // await init directly and destroy the fixture to clear the timer.
-    await component.ngOnInit();
-    fixture.destroy();
-
-    expect(component.stats.projects).toBe(2);
-  });
-
-  it('should compute recent deployments from projects', async () => {
-    apiService.getProjects.and.returnValue(of([
-      {
-        id: 'p1', name: 'Project 1',
-        deployments: [
-          { id: 'd1', status: 'active', createdAt: '2024-01-01' },
-          { id: 'd2', status: 'deployed', createdAt: '2024-01-02' },
-        ],
-      },
-    ]));
-
-    const fixture = TestBed.createComponent(DashboardComponent);
-    component = fixture.componentInstance;
-    // ngOnInit starts a telemetry setInterval, so the zone never becomes stable;
-    // await init directly and destroy the fixture to clear the timer.
-    await component.ngOnInit();
-    fixture.destroy();
-
-    expect(component.recentDeployments.length).toBe(2);
-  });
-
-  it('should handle API errors gracefully', async () => {
-    apiService.getProjects.and.returnValue(throwError(() => new Error('unavailable')));
-    apiService.getBootstrapStatus.and.returnValue(of({ services: {} }));
-
-    const fixture = TestBed.createComponent(DashboardComponent);
-    component = fixture.componentInstance;
-    // ngOnInit starts a telemetry setInterval, so the zone never becomes stable;
-    // await init directly and destroy the fixture to clear the timer.
-    await component.ngOnInit();
-    fixture.destroy();
-
-    expect(component.stats.projects).toBeNull();
-    expect(component.stats.deployments).toBeNull();
-    expect(component.projectTrend).toBeNull();
-    expect(component.avgDeployTime).toBe('—');
-  });
-
-  it('should load system health from bootstrap status', async () => {
-    apiService.getBootstrapStatus.and.returnValue(of({
-      services: { postgres: 'running', mongo: 'running', redis: 'stopped' },
-    }));
-
-    const fixture = TestBed.createComponent(DashboardComponent);
-    component = fixture.componentInstance;
-    // ngOnInit starts a telemetry setInterval, so the zone never becomes stable;
-    // await init directly and destroy the fixture to clear the timer.
-    await component.ngOnInit();
-    fixture.destroy();
-
-    expect(component.systemHealth.length).toBe(3);
-    expect(component.stats.services).toBe(2);
-  });
-
-  it('renders the install identity and honest empty state', async () => {
-    apiService.getBootstrapStatus.and.returnValue(of({ platformName: 'install.example.test', services: {} }));
-    const fixture = TestBed.createComponent(DashboardComponent);
-    component = fixture.componentInstance;
-    await component.ngOnInit();
-    spyOn(component, 'ngOnInit').and.stub();
+    // ngOnInit starts a refresh interval; run init directly, render, then destroy.
+    await fixture.componentInstance.ngOnInit();
+    spyOn(fixture.componentInstance, 'ngOnInit').and.stub();
     fixture.detectChanges();
-    const text = fixture.nativeElement.textContent;
-    expect(text).toContain('install.example.test');
-    expect(text).not.toContain('vs last week');
-    expect(text).toContain('— avg deploy time');
-    expect(text).not.toContain('Prod-Kengeri');
-    expect(component.stats.namespaces).toBe(0);
-    fixture.destroy();
+    return fixture;
+  }
+
+  it('greets the user and says when everything is running', async () => {
+    api.getProjects.and.returnValue(of([{ id: 'p1', name: 'shop', environments: [{ id: 'e1', name: 'production' }],
+      deployments: [{ id: 'd1', status: 'deployed', environmentId: 'e1', createdAt: recent(5), version: 'v1' }] }]));
+    const f = await render();
+    const text = f.nativeElement.textContent;
+    expect(text).toContain('Asha');
+    expect(text).toContain('Everything is running');
+    expect(text).toContain('1 of 1 server ready');
+    f.destroy();
   });
 
-  it('uses all deployments for totals and average, independently of the ten recent rows', async () => {
-    const deployments = Array.from({ length: 12 }, (_, i) => ({
-      id: `d${i}`, status: 'deployed', createdAt: '2026-11-01T00:00:00Z',
-      deployedAt: i === 11 ? '2026-11-01T00:03:00Z' : '2026-11-01T00:01:00Z',
-    }));
-    apiService.getProjects.and.returnValue(of([{ id: 'p1', name: 'app', deployments }]));
-    const fixture = TestBed.createComponent(DashboardComponent);
-    component = fixture.componentInstance;
-    await component.ngOnInit();
-    expect(component.recentDeployments.length).toBe(10);
-    expect(component.stats.deployments).toBe(12);
-    expect(component.avgDeployTime).toBe('1m 10s');
-    fixture.destroy();
+  it('lists what needs attention, most serious first', async () => {
+    api.getProjects.and.returnValue(of([{ id: 'p1', name: 'billing', environments: [{ id: 'e1', name: 'production' }],
+      deployments: [{ id: 'd1', status: 'failed', environmentId: 'e1', createdAt: recent(5) }] }]));
+    alerting.allIncidents.and.returnValue(of([{ id: 'i1', projectId: 'p1', status: 'firing', severity: 'warning', title: 'Slow checkout', firstSeenAt: recent(3) }]));
+    const f = await render();
+    const items = Array.from(f.nativeElement.querySelectorAll('.db-attention li')).map((li: any) => li.textContent);
+    expect(items.length).toBe(2);
+    expect(items[0]).toContain('billing: the last production deployment failed');
+    expect(items[1]).toContain('Slow checkout');
+    f.destroy();
   });
 
-  it('does not count fallback pods when Kubernetes is disconnected', async () => {
-    apiService.getProjects.and.returnValue(of([{ id: 'p1', name: 'app', environments: [{ namespace: 'app' }] }]));
-    apiService.getPods.and.returnValue(of({ k8sConnected: false, pods: [{ namespace: 'app', name: 'app', status: 'Running' }] }));
-    const fixture = TestBed.createComponent(DashboardComponent);
-    component = fixture.componentInstance;
-    await component.ngOnInit();
-    expect(component.stats.podsText).toBe('—');
-    expect(component.platformName).toBe('');
-    fixture.destroy();
+  it('shows the platform name when the install has one', async () => {
+    api.getBootstrapStatus.and.returnValue(of({ platformName: 'install.example.test', services: {} }));
+    const f = await render();
+    expect(f.nativeElement.textContent).toContain('install.example.test');
+    f.destroy();
+  });
+
+  it('does not show servers when the cluster is unreachable, and says so', async () => {
+    api.getNodes.and.returnValue(of({ k8sConnected: false, nodes: [{ name: 'fake', status: 'Ready' }] }));
+    const f = await render();
+    expect(f.componentInstance.nodes.length).toBe(0);
+    expect(f.nativeElement.textContent).toContain('cannot reach the cluster');
+    f.destroy();
+  });
+
+  it('skips server and backup data for roles that cannot read them', async () => {
+    role = { devops: false, admin: false, users: false };
+    const f = await render();
+    expect(api.getNodes).not.toHaveBeenCalled();
+    expect(api.getBackupStatus).not.toHaveBeenCalled();
+    expect(f.nativeElement.querySelector('#db-platform')).toBeNull();
+    f.destroy();
+  });
+
+  it('keeps working when sources fail', async () => {
+    api.getProjects.and.returnValue(throwError(() => new Error('down')));
+    alerting.allIncidents.and.returnValue(throwError(() => new Error('down')));
+    api.getNodes.and.returnValue(throwError(() => new Error('down')));
+    const f = await render();
+    expect(f.componentInstance.loaded).toBeTrue();
+    expect(f.nativeElement.textContent).toContain('No apps yet');
+    f.destroy();
+  });
+
+  it('shows the setup checklist on a new install and can hide it', async () => {
+    try { localStorage.removeItem('platform.dashboard.setupHidden'); } catch {}
+    const f = await render();
+    expect(f.nativeElement.textContent).toContain('Get set up');
+    f.componentInstance.hideChecklist();
+    f.detectChanges();
+    expect(f.nativeElement.textContent).not.toContain('Get set up');
+    try { localStorage.removeItem('platform.dashboard.setupHidden'); } catch {}
+    f.destroy();
   });
 });

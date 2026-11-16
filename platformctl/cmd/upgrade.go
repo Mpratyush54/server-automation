@@ -227,7 +227,7 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 					return e
 				}
 			}
-			bc, ce := backup.ReadConfig("/etc/platform/backup.json")
+			bc, ce := readResolvedBackupConfig("/etc/platform/backup.json")
 			if ce != nil {
 				if os.IsNotExist(ce) {
 					resume, re := (backup.HostDriver{}).Quiesce()
@@ -339,6 +339,8 @@ func finishUpgradeInstallation() error {
 	if e = components.InstallAutoUpdate(cfg); e != nil {
 		return fmt.Errorf("release is healthy; auto-update schedule needs repair: %w", e)
 	}
+	// This server only; the others refresh theirs with `platformctl update`.
+	refreshLocalKubeVIP(os.Stdout)
 	return nil
 }
 
@@ -433,15 +435,43 @@ func upgradePlan(api, portal string) (upgrade.Plan, error) {
 		if old == "" {
 			return upgrade.Plan{}, fmt.Errorf("missing %s image", x.d)
 		}
-		// Local test builds (--allow-unreleased) have no registry digest: the
-		// deployed target tag itself is accepted, nothing else.
-		if !strings.Contains(old, "@sha256:") && !(upgrade.AllowUnreleased && old == x.target) {
+		if !strings.Contains(old, "@sha256:") && !unreleasedRollbackImage(old, x.target) {
+			if upgrade.AllowUnreleased {
+				return upgrade.Plan{}, fmt.Errorf("%s uses the mutable tag %s; with --allow-unreleased it must be in the same repository as %s and present on this node so a rollback can restore it", x.d, old, x.target)
+			}
 			return upgrade.Plan{}, fmt.Errorf("%s uses a mutable tag; run platformctl update to pin images before a release upgrade", x.d)
 		}
 		images = append(images, upgrade.Image{Deployment: x.d, Container: x.c, Before: old, After: x.target})
 	}
 	return upgrade.Compute(installed, pins, images), nil
 }
+
+// upgradeImageOnNode is swapped in tests.
+var upgradeImageOnNode = components.ImagePresentLocally
+
+// unreleasedRollbackImage accepts a deployed image without a registry digest
+// only when testing a local build (--allow-unreleased): an install from local
+// images runs a mutable tag such as platform-api:1.99.0-test.1, and the next
+// local build has another tag. Rollback restores that tag, so it must name the
+// same repository as the target and already be in containerd on this node
+// (nothing is pulled). Release upgrades still require digest-pinned images.
+func unreleasedRollbackImage(old, target string) bool {
+	if !upgrade.AllowUnreleased {
+		return false
+	}
+	if old == target {
+		return true
+	}
+	repo := func(image string) string {
+		image, _, _ = strings.Cut(image, "@")
+		if i := strings.LastIndex(image, ":"); i > strings.LastIndex(image, "/") {
+			image = image[:i]
+		}
+		return image
+	}
+	return repo(old) == repo(target) && upgradeImageOnNode(old)
+}
+
 func upgradePreflight() error {
 	out, e := upgradeRun("sh", "-c", `df -Pk /var/lib | awk 'NR==2 {print $4}'; awk '/MemAvailable:/ {print $2}' /proc/meminfo`)
 	if e != nil {
@@ -453,8 +483,11 @@ func upgradePreflight() error {
 	}
 	disk, de := strconv.ParseInt(f[0], 10, 64)
 	ram, re := strconv.ParseInt(f[1], 10, 64)
-	if de != nil || re != nil || disk < 2*1024*1024 || ram < 512*1024 {
-		return fmt.Errorf("free at least 2 GiB under /var/lib and 512 MiB available RAM")
+	if de != nil || re != nil {
+		return fmt.Errorf("cannot determine disk/RAM headroom")
+	}
+	if e = headroomError(disk, ram); e != nil {
+		return e
 	}
 	for _, ns := range []string{"platform", "databases", "storage"} {
 		raw, e := uk("-n", ns, "get", "pods", "-o", "json")
@@ -469,11 +502,14 @@ func upgradePreflight() error {
 		return e
 	}
 	if _, e = os.Stat("/etc/platform/backup.json"); e == nil {
-		bc, e := backup.ReadConfig("/etc/platform/backup.json")
+		bc, e := readResolvedBackupConfig("/etc/platform/backup.json")
 		if e != nil {
 			return e
 		}
 		if e = bc.Validate(); e != nil {
+			return e
+		}
+		if e = upgradeBackupTools(bc); e != nil {
 			return e
 		}
 		t, e := backup.ParseTarget(bc.Target)
@@ -489,6 +525,30 @@ func upgradePreflight() error {
 	}
 	return nil
 }
+
+// upgradeBackupTools refuses before anything changes (and in --dry-run) when
+// the encrypted pre-upgrade backup would fail for a missing host tool, e.g.
+// sqlite3 for the k3s SQLite datastore, which provision does not install.
+func upgradeBackupTools(bc backup.Config) error {
+	if e := backup.CheckTools(captureTools(bc)); e != nil {
+		return fmt.Errorf("the encrypted backup taken before the upgrade cannot run: %w; install them (for example: sudo apt-get install -y sqlite3 jq) and retry", e)
+	}
+	return nil
+}
+
+// headroomError names the resource that is short and how much is there
+// (sizes in KiB, as df -k and /proc/meminfo report them).
+func headroomError(diskKiB, ramKiB int64) error {
+	const minDisk, minRAM = 2 * 1024 * 1024, 512 * 1024
+	if diskKiB < minDisk {
+		return fmt.Errorf("only %d MiB free under /var/lib; the backup and new images need at least 2 GiB: free space there (for example old local backups in /var/lib/platform/backups) and retry", diskKiB/1024)
+	}
+	if ramKiB < minRAM {
+		return fmt.Errorf("only %d MiB of RAM available; the upgrade needs at least 512 MiB: stop other workloads on this server and retry", ramKiB/1024)
+	}
+	return nil
+}
+
 func healthyPods(raw []byte) error {
 	var list struct {
 		Items []struct {
@@ -521,7 +581,7 @@ func healthyPods(raw []byte) error {
 
 func upgradeBackup(source string) (string, error) {
 	if _, e := os.Stat("/etc/platform/backup.json"); e == nil {
-		c, e := backup.ReadConfig("/etc/platform/backup.json")
+		c, e := readResolvedBackupConfig("/etc/platform/backup.json")
 		if e != nil {
 			return "", e
 		}

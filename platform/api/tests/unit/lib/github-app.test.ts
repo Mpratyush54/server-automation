@@ -39,6 +39,8 @@ import {
   MANIFEST_STATE_TTL_MS,
   TOKEN_REFRESH_MARGIN_MS,
   authenticatedCloneUrl,
+  mintScopedInstallationToken,
+  revokeInstallationToken,
 } from '../../../src/lib/github-app';
 import { publicAppView, loadProviderApp } from '../../../src/lib/git-app-store';
 
@@ -323,5 +325,27 @@ describe('installation webhooks and repository mapping', () => {
     expect(await githubAuthorizationFor('acme', 'private-elsewhere')).toBeNull();
     process.env.GITHUB_TOKEN = 'legacy-token';
     expect(await githubAuthorizationFor('acme', 'private-elsewhere')).toBe('Bearer legacy-token');
+  });
+  it('mints an uncached, single-repository, contents:read token for builds without any PAT fallback', async () => {
+    await connectApp();
+    await handleInstallationWebhook('installation', { action: 'created', installation: installation(), repositories: [{ full_name: 'acme/web' }] });
+    global.fetch = jest.fn().mockResolvedValue(jsonResponse(201, { token: 'ghs_scoped', expires_at: new Date(Date.now() + 3600_000).toISOString() })) as any;
+    expect((await mintScopedInstallationToken('acme', 'web')).token).toBe('ghs_scoped');
+    await mintScopedInstallationToken('acme', 'web');
+    expect(global.fetch).toHaveBeenCalledTimes(2); // never served from the token cache
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toMatch(/\/app\/installations\/\d+\/access_tokens$/);
+    expect(JSON.parse(init.body)).toEqual({ repositories: ['web'], permissions: { contents: 'read' } });
+    process.env.GITHUB_TOKEN = 'legacy-token';
+    await expect(mintScopedInstallationToken('acme', 'private-elsewhere')).rejects.toThrow('Install the GitHub App');
+  });
+
+  it('revokes a build token with the token itself', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 204, text: async () => '' }) as any;
+    await revokeInstallationToken('ghs_scoped');
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe('https://api.github.com/installation/token');
+    expect(init.method).toBe('DELETE');
+    expect(init.headers.Authorization).toBe('token ghs_scoped');
   });
 });
