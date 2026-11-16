@@ -60,6 +60,9 @@ var statusCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		color.Cyan("\n  ■ Platform Health Check\n")
 		printHardeningStatus()
+		if joinedRole() == "" {
+			printLicenseStatus(os.Stdout)
+		}
 		if joinedRole() == "agent" {
 			return agentStatus(os.Stdout)
 		}
@@ -220,6 +223,11 @@ var chartsCmd = &cobra.Command{
 				"chartMirror":  versions.ChartMirror,
 				"k3sMirror":    versions.K3sMirror,
 				"staticImages": versions.StaticImages(),
+				"licenseClient": map[string]any{
+					"version": versions.LicenseClientVersion,
+					"baseUrl": versions.LicenseClientBaseURL,
+					"sha256":  versions.LicenseClientSHA256,
+				},
 			})
 		}
 		fmt.Printf("k3s  %s\nhelm %s\n", versions.K3sVersion, versions.HelmVersion)

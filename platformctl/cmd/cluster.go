@@ -39,6 +39,7 @@ var (
 	joinIngressHAMode, joinIngressVIP, joinIngressVIPIface, joinAPIVIP string
 	joinSettingsFile                                                   string
 	joinBundle                                                         string
+	joinRegistryAuth, tokenRegistryAuthOutput                          string
 )
 
 var joinCmd = &cobra.Command{
@@ -105,6 +106,8 @@ func init() {
 	joinCmd.Flags().StringVar(&joinIngressVIPIface, "ingress-vip-interface", "", "servers: the cluster's kube-vip interface name; empty = default-route autodetect (default INGRESS_VIP_INTERFACE)")
 	joinCmd.Flags().StringVar(&joinAPIVIP, "api-vip", "", "the cluster's API VIP (default API_VIP)")
 	joinCmd.Flags().StringVar(&joinSettingsFile, "join-settings", "", "servers: settings file from 'token create --role server --settings-output'; join refuses when this node's ingress HA settings differ")
+	joinCmd.Flags().StringVar(&joinRegistryAuth, "registry-auth", "", "image registry credentials file from 'token create --registry-auth-output'")
+	tokenCreateCmd.Flags().StringVar(&tokenRegistryAuthOutput, "registry-auth-output", "", "write this server's image registry credentials to this file (mode 0600) for 'join --registry-auth'")
 	_ = joinCmd.MarkFlagRequired("server")
 	_ = joinCmd.MarkFlagRequired("token-file")
 
@@ -360,6 +363,10 @@ func runJoin(stdin io.Reader) error {
 		return err
 	}
 
+	if err := readRegistryAuth(joinRegistryAuth); err != nil {
+		return fmt.Errorf("--registry-auth: %w", err)
+	}
+
 	color.Cyan("\n  ■ Joining %s as %s...", serverURL, role)
 	if err := k3sJoin(role, serverURL, token, cfg.GitHubToken, opts); err != nil {
 		return err
@@ -545,6 +552,13 @@ func runTokenCreate(stdout io.Writer) error {
 	}
 	if tokenSettingsOutput != "" && role != k3s.RoleServer {
 		return fmt.Errorf("--settings-output applies to server tokens only; agents need no join settings")
+	}
+	os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
+	if err := licenseNodeCheck(os.Stderr, licenseNodeCount()+1); err != nil {
+		return err
+	}
+	if err := writeRegistryAuth(os.Stderr, tokenRegistryAuthOutput); err != nil {
+		return err
 	}
 	var token string
 	switch {

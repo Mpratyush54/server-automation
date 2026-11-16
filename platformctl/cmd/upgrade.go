@@ -50,6 +50,7 @@ func init() {
 	c.Flags().BoolVar(&upgradePatch, "patch-only", false, "allow stable patches in the installed minor only")
 	c.Flags().BoolVar(&upgradeHistory, "history", false, "print local upgrade history")
 	c.Flags().BoolVar(&upgradeUnreleased, "allow-unreleased", false, "accept a --to release that is not published (testing a local build whose binary and images are on this host)")
+	c.Flags().StringVar(&licenseKeyFile, "license-key-file", "", "file holding the Cairn license key (or set CAIRN_LICENSE_KEY)")
 	c.Flags().BoolVar(&upgradeRestore, "restore-failed-migration", false, "explicitly permit restoring configured PostgreSQL backup after an irreversible migration fails; age identity on stdin")
 	rootCmd.AddCommand(c)
 }
@@ -123,6 +124,9 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		if upgradeUnreleased {
 			args = append(args, "--allow-unreleased")
 		}
+		if licenseKeyFile != "" {
+			args = append(args, "--license-key-file", licenseKeyFile)
+		}
 		child := exec.Command(binary, args...)
 		child.Stdin = cmd.InOrStdin()
 		child.Stdout = cmd.OutOrStdout()
@@ -139,6 +143,11 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	defer unlock()
 	if e = upgradePreflight(); e != nil {
 		return fmt.Errorf("preflight refused upgrade: %w", e)
+	}
+	if !upgradeDry {
+		if e = licenseGate(cmd.OutOrStdout()); e != nil {
+			return e
+		}
 	}
 	if e = components.SyncCredentialsFromCluster(cfg); e != nil {
 		return fmt.Errorf("read current cluster credentials before taking database backup: %w", e)

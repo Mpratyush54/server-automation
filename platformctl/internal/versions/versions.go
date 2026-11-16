@@ -208,3 +208,24 @@ func SplitChartRef(ref string) (name, version string, ok bool) {
 	}
 	return "", "", false
 }
+
+// License client release. LicenseClientVersion is empty until the first
+// release is pinned; until then PLATFORM_LICENSE_CLIENT must name a local binary.
+const (
+	LicenseClientVersion              = "" // PLACEHOLDER: set with LicenseClientSHA256
+	LicenseClientBaseURL              = "https://dl.cairnpaas.dev/cairn-license"
+	LicenseClientSumsFile             = "SHA256SUMS"
+	LicenseClientSigFile              = "SHA256SUMS.sig"
+	LicenseClientCertFile             = "SHA256SUMS.pem"
+	LicenseClientCosignIdentityRegexp = `^https://github\.com/Mpratyush54/cairn-licensing/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$`
+	LicenseClientCosignIssuer         = "https://token.actions.githubusercontent.com"
+)
+
+// LicenseClientSHA256 is the pinned checksum per architecture (PLACEHOLDER).
+var LicenseClientSHA256 = map[string]string{"amd64": "", "arm64": ""}
+
+// LicenseClientFile is the release file name for an architecture.
+func LicenseClientFile(arch string) string { return "cairn-license-linux-" + arch }
+
+// LicenseClientPinned reports whether a client release is pinned.
+func LicenseClientPinned() bool { return LicenseClientVersion != "" }

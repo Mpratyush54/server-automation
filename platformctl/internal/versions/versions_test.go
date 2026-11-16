@@ -2,6 +2,7 @@ package versions
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -106,5 +107,24 @@ func TestCNPGInTreeBarmanVersionGate(t *testing.T) {
 	}
 	if major > 0 || minor >= 30 {
 		t.Fatal("CNPG chart >= 0.30.0 uses operator >= 1.31, which removes in-tree barmanObjectStore; migrate to the Barman Cloud plugin first")
+	}
+}
+
+func TestLicenseClientPin(t *testing.T) {
+	hex64 := regexp.MustCompile(`^[a-f0-9]{64}$`)
+	for _, arch := range []string{"amd64", "arm64"} {
+		sum := LicenseClientSHA256[arch]
+		if LicenseClientPinned() != (sum != "") {
+			t.Fatalf("%s: version %q and checksum %q must be set together", arch, LicenseClientVersion, sum)
+		}
+		if sum != "" && !hex64.MatchString(sum) {
+			t.Fatalf("%s: invalid checksum %q", arch, sum)
+		}
+	}
+	if LicenseClientPinned() && !regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`).MatchString(LicenseClientVersion) {
+		t.Fatalf("invalid version %q", LicenseClientVersion)
+	}
+	if !strings.HasPrefix(LicenseClientBaseURL, "https://") {
+		t.Fatal("base URL must be https")
 	}
 }

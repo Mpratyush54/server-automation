@@ -41,6 +41,8 @@ type Config struct {
 
 	ImageRegistry string
 	ImageTag      string
+	// LicenseEnforce is PLATFORM_LICENSE_ENFORCE.
+	LicenseEnforce bool
 
 	// ImageTagSource is where ImageTag came from: ImageTagFromEnv (the
 	// process environment), ImageTagSaved (/etc/platform/.env) or "" (the
@@ -167,6 +169,12 @@ const (
 	IngressHAModeExternal = "external"
 )
 
+// Image registries.
+const (
+	DefaultImageRegistry  = "ghcr.io/mpratyush54"
+	LicensedImageRegistry = "registry.cairnpaas.dev/cairn"
+)
+
 func Load() *Config {
 	tagDefault := DefaultImageTag
 	if tagDefault == "" {
@@ -184,7 +192,8 @@ func Load() *Config {
 		TelemetryLokiDatasourceUID:  getEnv("TELEMETRY_LOKI_DATASOURCE_UID", "loki"),
 		TelemetryRetentionDays:      getEnv("TELEMETRY_RETENTION_DAYS", "30"),
 		PlatformName:                getEnv("PLATFORM_NAME", "Platform"),
-		ImageRegistry:               getEnv("PLATFORM_IMAGE_REGISTRY", "ghcr.io/mpratyush54"),
+		ImageRegistry:               getEnv("PLATFORM_IMAGE_REGISTRY", DefaultImageRegistry),
+		LicenseEnforce:              getEnvBool("PLATFORM_LICENSE_ENFORCE", false),
 		ImageTag:                    getEnv("PLATFORM_IMAGE_TAG", tagDefault),
 		RepoURL:                     getEnv("PLATFORM_REPO_URL", "https://github.com/Mpratyush54/SERVER-automation"),
 		GitHubToken:                 getEnv("GITHUB_TOKEN", ""),

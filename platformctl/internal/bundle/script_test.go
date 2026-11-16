@@ -36,6 +36,7 @@ case "$url" in
   */k3s|*/k3s-arm64) printf k3sbin > "$out" ;;
   https://get.helm.sh/*.tar.gz) cp "$FIXTURES/helm.tgz" "$out" ;;
   https://get.helm.sh/*.sha256sum) cp "$FIXTURES/helm.sha256sum" "$out" ;;
+  https://dl.example.test/*/cairn-license-linux-amd64) printf license-client > "$out" ;;
   *) echo "unexpected download $url" >&2; exit 22 ;;
 esac
 `,
@@ -121,7 +122,8 @@ func runBuildBundle(t *testing.T, helmSum string, env ...string) bundleScriptRun
 		t.Fatal(err)
 	}
 	charts := `{"k3s":"v1.33.1+k3s1","helm":"` + testHelmVersion + `","chartMirror":"oci://ghcr.io/example/charts",` +
-		`"charts":[{"name":"ingress-nginx","repo":"ingress-nginx","repoUrl":"https://kubernetes.github.io/ingress-nginx","chart":"ingress-nginx","version":"4.13.0"}]}`
+		`"charts":[{"name":"ingress-nginx","repo":"ingress-nginx","repoUrl":"https://kubernetes.github.io/ingress-nginx","chart":"ingress-nginx","version":"4.13.0"}]` +
+		testLicenseClient + `}`
 	chartsFile := filepath.Join(fixtures, "charts.json")
 	imagesFile := filepath.Join(fixtures, "images.txt")
 	images := "# test\nregistry.k8s.io/ingress-nginx/controller:v1.15.1@sha256:" + strings.Repeat("a", 64) + "\nregistry.k8s.io/pause:3.10\n"
@@ -274,5 +276,36 @@ func TestBuildBundleScriptStackSkipsHelm(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(r.stage, "images", "cairn-images-amd64.tar.zst")); !os.IsNotExist(err) {
 		t.Fatal("stack build staged the Cairn images")
+	}
+}
+
+// testLicenseClient is appended to the charts JSON fixture.
+var testLicenseClient = ""
+
+func TestBuildBundleScriptLicenseClient(t *testing.T) {
+	r := runBuildBundle(t, "")
+	if r.err != nil {
+		t.Fatalf("build-bundle.sh: %v\n%s", r.err, r.out)
+	}
+	if _, err := os.Stat(filepath.Join(r.stage, "license", "cairn-license")); err == nil {
+		t.Fatal("license client bundled without a pin")
+	}
+	testLicenseClient = `,"licenseClient":{"version":"v1.0.0","baseUrl":"https://dl.example.test/cairn-license","sha256":{"amd64":"` + sha("license-client") + `"}}`
+	t.Cleanup(func() { testLicenseClient = "" })
+	r = runBuildBundle(t, "")
+	if r.err != nil {
+		t.Fatalf("build-bundle.sh: %v\n%s", r.err, r.out)
+	}
+	got, err := os.ReadFile(filepath.Join(r.stage, "license", "cairn-license"))
+	if err != nil || string(got) != "license-client" {
+		t.Fatalf("staged client = %q, %v", got, err)
+	}
+	sums, _ := os.ReadFile(filepath.Join(r.stage, "SHA256SUMS"))
+	if !strings.Contains(string(sums), "license/cairn-license") {
+		t.Fatalf("SHA256SUMS does not cover the client:\n%s", sums)
+	}
+	testLicenseClient = `,"licenseClient":{"version":"v1.0.0","baseUrl":"https://dl.example.test/cairn-license","sha256":{"amd64":"` + sha("other") + `"}}`
+	if r = runBuildBundle(t, ""); r.err == nil || !strings.Contains(r.out, "checksum mismatch") {
+		t.Fatalf("mismatch not refused: %v\n%s", r.err, r.out)
 	}
 }
