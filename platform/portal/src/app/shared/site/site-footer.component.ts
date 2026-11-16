@@ -19,6 +19,7 @@ import { RouterModule } from '@angular/router';
             <a routerLink="/" fragment="product">Features</a>
             <a routerLink="/" fragment="high-availability">High availability</a>
             <a routerLink="/docs/getting-started/installation">Install</a>
+            <a routerLink="/pricing">Pricing</a>
           </div>
           <div>
             <span>Learn</span>

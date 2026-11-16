@@ -8,6 +8,7 @@
     "src/app/pages/docs/docs-search.spec.ts",
     "src/app/pages/docs/docs-search.component.spec.ts",
     "src/app/pages/landing/landing.component.spec.ts",
+    "src/app/pages/account/account-pages.spec.ts",
     "src/**/*.d.ts"
   ]
 }

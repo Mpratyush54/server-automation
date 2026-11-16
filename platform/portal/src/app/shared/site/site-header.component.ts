@@ -22,6 +22,7 @@ import { ThemeService } from '../../services/theme.service';
         <nav class="sh-nav" aria-label="Site">
           <a routerLink="/" fragment="product" [class.on]="current === 'home'">Product</a>
           <a routerLink="/docs">Docs</a>
+          <a routerLink="/pricing" [class.on]="current === 'pricing'">Pricing</a>
           <a routerLink="/about" [class.on]="current === 'about'">About</a>
         </nav>
         <div class="sh-actions">
@@ -32,6 +33,7 @@ import { ThemeService } from '../../services/theme.service';
               @default { <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg> }
             }
           </button>
+          <a class="sh-account" routerLink="/account">Account</a>
           <a class="btn btn-primary btn-sm" routerLink="/docs/getting-started/installation">Install</a>
           <button type="button" class="sh-menu" (click)="menuOpen = !menuOpen" [attr.aria-expanded]="menuOpen" aria-controls="sh-mobile" aria-label="Menu">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path [attr.d]="menuOpen ? 'M6 6l12 12M18 6L6 18' : 'M4 7h16M4 12h16M4 17h16'"></path></svg>
@@ -42,7 +44,9 @@ import { ThemeService } from '../../services/theme.service';
         <nav id="sh-mobile" class="sh-mobile" aria-label="Site" (click)="menuOpen = false">
           <a routerLink="/" fragment="product">Product</a>
           <a routerLink="/docs">Docs</a>
+          <a routerLink="/pricing">Pricing</a>
           <a routerLink="/about">About</a>
+          <a routerLink="/account">Account</a>
         </nav>
       }
     </header>
@@ -60,6 +64,9 @@ import { ThemeService } from '../../services/theme.service';
     .sh-nav a { padding: 0.35rem 0.7rem; border-radius: 999px; font-size: 0.875rem; color: rgb(var(--fg-2)); text-decoration: none; }
     .sh-nav a:hover, .sh-nav a.on { color: rgb(var(--fg)); background: rgb(var(--raised)); }
     .sh-actions { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; }
+    .sh-account { display: none; font-size: 0.875rem; color: rgb(var(--fg-2)); text-decoration: none; padding: 0.35rem 0.5rem; }
+    .sh-account:hover { color: rgb(var(--fg)); }
+    @media (min-width: 720px) { .sh-account { display: inline-flex; } }
     .sh-theme { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border: 0; border-radius: 6px; background: transparent; color: rgb(var(--fg-2)); cursor: pointer; }
     .sh-theme:hover { background: rgb(var(--raised)); color: rgb(var(--fg)); }
     .sh-menu { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border: 0; border-radius: 6px; background: transparent; color: rgb(var(--fg)); cursor: pointer; }
@@ -73,7 +80,7 @@ import { ThemeService } from '../../services/theme.service';
 })
 export class SiteHeaderComponent {
   /** Which nav entry to mark as current. */
-  @Input() current: 'home' | 'about' | '' = '';
+  @Input() current: 'home' | 'about' | 'pricing' | '' = '';
   readonly theme = inject(ThemeService);
   menuOpen = false;
 }

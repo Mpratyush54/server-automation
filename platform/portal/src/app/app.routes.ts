@@ -26,6 +26,7 @@ import { PlaygroundComponent } from './pages/playground/playground.component';
 import { SettingsComponent } from './pages/settings/settings.component';
 import { LandingComponent } from './pages/landing/landing.component';
 import { AboutComponent } from './pages/about/about.component';
+import { PricingComponent } from './pages/account/pricing.component';
 import { OauthAuthorizeComponent } from './pages/oauth-authorize/oauth-authorize.component';
 import { IframeViewComponent } from './pages/iframe-view/iframe-view.component';
 import { DocsComponent } from './pages/docs/docs.component';
@@ -56,9 +57,14 @@ export function toMonitoring(view: MonitoringView | ((qp: Params) => MonitoringV
 export const routes: Routes = [
   { path: '', pathMatch: 'full', component: LandingComponent, canActivate: [homeGuard] },
 
-  // Marketing site only (platform.pratyushes.dev)
+  // Marketing site only (cairnpaas.dev)
   { path: 'landing', canActivate: [marketingOnlyGuard, legacyLandingGuard], children: [] },
   { path: 'about', component: AboutComponent, canActivate: [marketingOnlyGuard], title: 'About Cairn' },
+  { path: 'pricing', component: PricingComponent, canActivate: [marketingOnlyGuard], title: 'Pricing · Cairn' },
+  { path: 'signup', loadComponent: () => import('./pages/account/signup.component').then(m => m.SignupComponent), canActivate: [marketingOnlyGuard], title: 'Get a free key · Cairn' },
+  { path: 'signin', loadComponent: () => import('./pages/account/signin.component').then(m => m.SigninComponent), canActivate: [marketingOnlyGuard], title: 'Sign in · Cairn' },
+  { path: 'verify-email', loadComponent: () => import('./pages/account/verify-email.component').then(m => m.VerifyEmailComponent), canActivate: [marketingOnlyGuard], title: 'Confirm your email · Cairn' },
+  { path: 'account', loadComponent: () => import('./pages/account/account.component').then(m => m.AccountComponent), canActivate: [marketingOnlyGuard], title: 'Account · Cairn' },
   { matcher: docsMatcher, component: DocsComponent, canActivate: [docsGuard] },
 
   // App / server hosts only
