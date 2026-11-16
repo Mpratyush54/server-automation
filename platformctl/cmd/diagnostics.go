@@ -25,9 +25,9 @@ var (
 	diagComponents           = func() []diagnostics.Component {
 		var out []diagnostics.Component
 		for _, c := range components.HealthStatus() {
-			status := "ok"
+			status := diagnostics.ComponentHealthy
 			if !c.Healthy {
-				status = "down"
+				status = diagnostics.ComponentDown
 			}
 			out = append(out, diagnostics.Component{Name: c.Name, Status: status})
 		}
@@ -40,19 +40,26 @@ var (
 		}
 		return versions.K3sVersion
 	}
+	diagVersion   = func() string { return Version }
+	diagArch      = func() string { return runtime.GOARCH }
+	diagNow       = time.Now
 	diagOSRelease = func() string { return diagnostics.OSRelease("/etc/os-release") }
 	diagUptime    = func() int64 { return diagnostics.Uptime("/proc/uptime") }
 )
 
 func buildDiagnostics(operation string, err error) diagnostics.Payload {
 	p := diagnostics.Payload{
-		Kind:          operation,
-		Version:       Version,
-		Profile:       cfg.Profile,
-		Nodes:         licenseNodeCount(),
-		Arch:          runtime.GOARCH,
-		OS:            diagOSRelease(),
-		Kubernetes:    diagKubernetes(),
+		Schema:      diagnostics.Schema,
+		Kind:        operation,
+		GeneratedAt: diagNow().UTC().Format(time.RFC3339),
+		Platform: diagnostics.Platform{
+			Version:    diagVersion(),
+			Profile:    cfg.Profile,
+			NodeCount:  licenseNodeCount(),
+			Arch:       diagArch(),
+			OSRelease:  diagOSRelease(),
+			K8sVersion: diagKubernetes(),
+		},
 		UptimeSeconds: diagUptime(),
 		Steps:         diagnostics.StepsFrom(state.Timings()),
 		Failures:      diagnostics.FailuresFrom(state.Timings(), operation, err),
@@ -71,7 +78,10 @@ func buildDiagnostics(operation string, err error) diagnostics.Payload {
 
 // sendDiagnostics never fails or blocks the command for long.
 func sendDiagnostics(operation string, cmdErr error) {
-	if !cfg.Diagnostics || isChild() {
+	if !cfg.Diagnostics || isChild() || !diagnostics.IsSemver(diagVersion()) {
+		return
+	}
+	if a := diagArch(); a != "amd64" && a != "arm64" {
 		return
 	}
 	in := licenseInstaller()
@@ -88,7 +98,9 @@ func sendDiagnostics(operation string, cmdErr error) {
 		defer close(done)
 		defer func() { _ = recover() }()
 		c := &license.Client{Path: path, Run: licenseRunner}
-		_ = diagnostics.Send(context.Background(), buildDiagnostics(operation, cmdErr), c.SendReport)
+		if err := diagnostics.Send(context.Background(), buildDiagnostics(operation, cmdErr), c.SendReport); err != nil && os.Getenv("PLATFORMCTL_DEBUG") == "1" {
+			fmt.Fprintf(os.Stderr, "debug: diagnostics not sent: %v\n", err)
+		}
 	}()
 	select {
 	case <-done:

@@ -281,8 +281,14 @@ func (c *Client) SendReport(ctx context.Context, file string) error {
 	if err != nil {
 		return fmt.Errorf("run license client: %w", err)
 	}
+	if code == ExitUsage {
+		return ErrReportRejected
+	}
 	if code != 0 {
 		return fmt.Errorf("report exited %d", code)
 	}
 	return nil
 }
+
+// ErrReportRejected means the client rejected the payload.
+var ErrReportRejected = errors.New("report payload rejected")

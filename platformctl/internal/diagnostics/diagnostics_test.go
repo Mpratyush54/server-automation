@@ -14,77 +14,146 @@ import (
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 )
 
-func TestRedactRemoves(t *testing.T) {
-	for name, tc := range map[string]struct{ in, leak string }{
-		"domain":          {"dial tcp: lookup api.acme-corp.io: no such host", "acme-corp.io"},
-		"subdomain":       {"certificate for portainer.my-server.example.org expired", "my-server"},
-		"ipv4":            {"connect to 203.0.113.45:6443 refused", "203.0.113.45"},
-		"ipv4 cidr":       {"PLATFORM_CLUSTER_NODES=10.0.0.0/24 invalid", "10.0.0.0"},
-		"ipv6":            {"listen on [2001:db8::1]:443 failed", "2001:db8"},
-		"ipv6 full":       {"node fe80:0:0:0:204:61ff:fe9d:f156 unreachable", "fe9d"},
-		"email":           {"ACME account admin@acme-corp.io rejected", "admin@"},
-		"url":             {"GET https://registry.acme.io/v2/x?token=abc failed", "registry.acme.io"},
-		"url with creds":  {"remote s3://AKIDEXAMPLE:verysecret@bucket/x", "verysecret"},
-		"jwt":             {"Authorization header eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U", "eyJhbGci"},
-		"bearer":          {"sent Bearer abcdefghijklmnop123 to server", "abcdefghijklmnop123"},
-		"auth header":     {"authorization: basic dXNlcjpwYXNz", "dXNlcjpwYXNz"},
-		"agent token":     {"token plat_agent_0123456789abcdef rejected", "0123456789abcdef"},
-		"sdk key":         {"key sdk_live_AbCdEfGh12345678 invalid", "AbCdEfGh12345678"},
-		"license key":     {"activate cairn_0123456789abcdef_SECRETpart failed", "SECRETpart"},
-		"github token":    {"ghp_1234567890abcdefghijklmnopqrstuvwxyz used", "ghp_1234567890"},
-		"aws key":         {"AKIAIOSFODNN7EXAMPLE denied", "AKIAIOSFODNN7EXAMPLE"},
-		"age key":         {"AGE-SECRET-KEY-1QYQSZQGPQYQSZQGPQYQSZQGPQYQSZQGPQYQSZQGPQYQSZQGPQYQS", "QYQSZQGP"},
-		"password env":    {"ADMIN_PASSWORD=hunter2hunter2 not accepted", "hunter2"},
-		"password json":   {`{"password": "s3cr3t-value"}`, "s3cr3t-value"},
-		"secret yaml":     {"minio_secret_key: Zx9-supersecret", "Zx9-supersecret"},
-		"quoted token":    {`GITHUB_TOKEN='abc def ghi'`, "abc def ghi"},
-		"private key":     {"-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----", "MIIEowIBAAKCAQEA"},
-		"random token":    {"value 9f8e7d6c5b4a39281706f5e4d3c2b1a0Zq9x stored", "9f8e7d6c5b4a39281706"},
-		"base64 blob":     {"data QWxhZGRpbjpvcGVuIHNlc2FtZTEyMzQ1Njc4OTA= end", "QWxhZGRpbjpvcGVu"},
-		"uppercase email": {"User JOHN.DOE@EXAMPLE.COM blocked", "JOHN.DOE"},
-	} {
-		got := Redact(tc.in)
-		if strings.Contains(got, tc.leak) {
-			t.Errorf("%s: %q leaks %q -> %q", name, tc.in, tc.leak, got)
+func fullPayload() Payload {
+	return Payload{
+		Kind:          KindError,
+		Operation:     KindUpgrade,
+		GeneratedAt:   "2026-11-17T10:00:00Z",
+		Platform:      Platform{Version: "v1.2.0", Profile: " HA ", NodeCount: 3, Arch: "amd64", OSRelease: `Ubuntu 24.04.1 LTS "Noble"`, K8sVersion: "v1.37.2+k3s1"},
+		UptimeSeconds: 3600,
+		Steps: []Step{
+			{Step: "k3s", Seconds: 12.3, Status: "ok"},
+			{Step: "chart-prefetch (background)", Seconds: 1, Status: "2 failed, using remote"},
+			{Step: "image download", Seconds: 4, Status: "partial"},
+			{Step: "longhorn", Seconds: 0, Status: "skipped"},
+			{Step: "bundle", Seconds: 2, Status: "cached"},
+		},
+		Failures: []Failure{
+			{Step: "routing", Error: "step failed"},
+			{Step: "upgrade", Error: "lookup portal.acme.io on 10.0.0.2:53:\n  no such host\tADMIN_PASSWORD=hunter2"},
+		},
+		Components: []Component{{Name: "Platform API", Status: ComponentHealthy}, {Name: "ArgoCD", Status: "broken"}},
+	}
+}
+
+const golden = `{"schema":1,"kind":"error","operation":"upgrade","generated_at":"2026-11-17T10:00:00Z",` +
+	`"platform":{"version":"v1.2.0","profile":"ha","node_count":3,"arch":"amd64","os_release":"Ubuntu 24.04.1 LTS Noble","k8s_version":"v1.37.2+k3s1"},` +
+	`"uptime_seconds":3600,` +
+	`"steps":[{"step":"k3s","seconds":12.3,"status":"ok"},{"step":"chart-prefetch (background)","seconds":1,"status":"failed"},` +
+	`{"step":"image download","seconds":4,"status":"failed"},{"step":"longhorn","seconds":0,"status":"skipped"},{"step":"bundle","seconds":2,"status":"ok"}],` +
+	`"failures":[{"step":"routing","error":"step failed"},{"step":"upgrade","error":"lookup [host] on [ip]: no such host ADMIN_PASSWORD=[secret]"}],` +
+	`"components":[{"name":"Platform API","status":"healthy"},{"name":"ArgoCD","status":"unknown"}]}`
+
+func onlyKeys(t *testing.T, where string, v any, allowed ...string) {
+	t.Helper()
+	m, ok := v.(map[string]any)
+	if !ok {
+		t.Fatalf("%s is not an object", where)
+	}
+	set := map[string]bool{}
+	for _, k := range allowed {
+		set[k] = true
+	}
+	for k := range m {
+		if !set[k] {
+			t.Errorf("%s: unknown field %q", where, k)
 		}
 	}
 }
 
-func TestRedactKeepsUsefulText(t *testing.T) {
-	for _, in := range []string{
-		"helm upgrade postgresql failed: context deadline exceeded",
-		"install oauth2-proxy timed out after 5m0s",
-		"read /etc/platform/.env: permission denied",
-		"apply values.yaml and k3s.yaml",
-		"exec.Command returned exit status 1",
-		"ingress-nginx-controller-admission webhook not ready",
-		"k3s v1.37.2+k3s1 on Ubuntu 24.04.1 LTS",
-		"step took 12:30:45",
-		"2 tokens remaining",
+func TestGoldenPayloadMatchesSchema(t *testing.T) {
+	p := fullPayload().Sanitized()
+	if err := p.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	b, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != golden {
+		t.Fatalf("payload:\n%s\nwant:\n%s", b, golden)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	onlyKeys(t, "root", m, "schema", "kind", "operation", "generated_at", "platform", "uptime_seconds", "steps", "failures", "components")
+	if _, ok := m["counts"]; ok {
+		t.Error("counts must be omitted")
+	}
+	onlyKeys(t, "platform", m["platform"], "version", "profile", "node_count", "arch", "os_release", "k8s_version")
+	for _, s := range m["steps"].([]any) {
+		onlyKeys(t, "steps[]", s, "step", "seconds", "status")
+	}
+	for _, f := range m["failures"].([]any) {
+		onlyKeys(t, "failures[]", f, "step", "error")
+	}
+	for _, c := range m["components"].([]any) {
+		onlyKeys(t, "components[]", c, "name", "status")
+	}
+}
+
+func TestOperationOnlyWithErrorKind(t *testing.T) {
+	p := fullPayload()
+	p.Kind = KindPeriodic
+	s := p.Sanitized()
+	b, _ := json.Marshal(s)
+	if s.Validate() != nil || strings.Contains(string(b), `"operation"`) {
+		t.Fatalf("operation kept for kind periodic: %s", b)
+	}
+}
+
+func TestValidateRejects(t *testing.T) {
+	for name, mutate := range map[string]func(*Payload){
+		"schema":       func(p *Payload) { p.Schema = 2 },
+		"kind":         func(p *Payload) { p.Kind = "boot" },
+		"operation":    func(p *Payload) { p.Operation = "periodic" },
+		"time":         func(p *Payload) { p.GeneratedAt = "yesterday" },
+		"dev version":  func(p *Payload) { p.Platform.Version = "dev" },
+		"profile":      func(p *Payload) { p.Platform.Profile = "HA!" },
+		"nodes":        func(p *Payload) { p.Platform.NodeCount = 0 },
+		"arch":         func(p *Payload) { p.Platform.Arch = "386" },
+		"os":           func(p *Payload) { p.Platform.OSRelease = "<b>" },
+		"k8s":          func(p *Payload) { p.Platform.K8sVersion = "latest" },
+		"step status":  func(p *Payload) { p.Steps[0].Status = "cached" },
+		"error lines":  func(p *Payload) { p.Failures[0].Error = "a\nb" },
+		"error empty":  func(p *Payload) { p.Failures[0].Error = "" },
+		"error long":   func(p *Payload) { p.Failures[0].Error = strings.Repeat("x", 301) },
+		"comp status":  func(p *Payload) { p.Components[0].Status = "ok" },
+		"steps nil":    func(p *Payload) { p.Steps = nil },
+		"too many":     func(p *Payload) { p.Failures = make([]Failure, MaxFailures+1) },
+		"negative sec": func(p *Payload) { p.Steps[0].Seconds = -1 },
 	} {
-		if got := Redact(in); got != in {
-			t.Errorf("Redact(%q) = %q", in, got)
+		p := fullPayload().Sanitized()
+		mutate(&p)
+		if p.Validate() == nil {
+			t.Errorf("%s: accepted", name)
 		}
 	}
 }
 
-func TestRedactedPayloadCapsErrors(t *testing.T) {
-	long := strings.Repeat("e", 1000) + " admin@acme.io"
-	p := Payload{
-		Kind: KindError, OS: "Ubuntu 24.04 LTS", Kubernetes: "v1.37.2+k3s1",
-		Steps:      []Step{{Step: "k3s", Seconds: 1, Status: "ok"}},
-		Failures:   []Failure{{Step: "routing", Error: "lookup portal.acme.io: " + long}},
-		Components: []Component{{Name: "Platform API", Status: "ok"}},
+func TestSanitizeLimitsAndFallbacks(t *testing.T) {
+	p := fullPayload()
+	p.Platform.Profile = "!!"
+	p.Platform.OSRelease = "@@@"
+	p.Platform.K8sVersion = "unknown build"
+	p.Platform.NodeCount = 50000
+	p.Steps = make([]Step, 300)
+	p.Failures = make([]Failure, 80)
+	p.Components = make([]Component, 150)
+	p.Failures[0].Error = strings.Repeat("é", 1000)
+	s := p.Sanitized()
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
 	}
-	r := p.Redacted()
-	if n := len([]rune(r.Failures[0].Error)); n != MaxErrorLen {
-		t.Fatalf("error length %d", n)
+	if s.Platform.Profile != "unknown" || s.Platform.OSRelease != "unknown" || s.Platform.K8sVersion != "" || s.Platform.NodeCount != MaxNodes {
+		t.Fatalf("platform %+v", s.Platform)
 	}
-	if strings.Contains(r.Failures[0].Error, "acme") {
-		t.Fatalf("leak: %s", r.Failures[0].Error)
+	if len(s.Steps) != MaxSteps || len(s.Failures) != MaxFailures || len(s.Components) != MaxComponents {
+		t.Fatal("limits")
 	}
-	if p.Failures[0].Error == r.Failures[0].Error {
-		t.Fatal("input mutated or not redacted")
+	if len([]rune(s.Failures[0].Error)) != MaxErrorLen || s.Failures[1].Error != "failed" {
+		t.Fatalf("errors %q", s.Failures[1].Error)
 	}
 	if Truncate("héllo", 2) != "hé" {
 		t.Fatal("truncate is not rune-safe")
@@ -109,7 +178,7 @@ func TestStepsAndFailures(t *testing.T) {
 		t.Fatalf("steps %+v", steps)
 	}
 	f := FailuresFrom(ts, "provision", errors.New("routing failed"))
-	if len(f) != 2 || f[0].Step != "routing" || f[1].Error != "routing failed" {
+	if len(f) != 2 || f[0].Step != "routing" || f[0].Error == "" || f[1].Error != "routing failed" {
 		t.Fatalf("failures %+v", f)
 	}
 	if got := FailuresFrom(nil, "update", nil); got == nil || len(got) != 0 {
@@ -131,34 +200,37 @@ func TestHostFiles(t *testing.T) {
 	}
 }
 
-func TestSendWritesRedactedPrivateFileAndRemovesIt(t *testing.T) {
+func TestSendWritesPrivateFileAndRemovesIt(t *testing.T) {
 	var path string
 	var body []byte
-	err := Send(context.Background(), Payload{Kind: KindProvision, Failures: []Failure{{Step: "x", Error: "token=abc123secret"}}},
-		func(ctx context.Context, file string) error {
-			if _, ok := ctx.Deadline(); !ok {
-				t.Error("no timeout")
-			}
-			path = file
-			if fi, err := os.Stat(file); err == nil && runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
-				t.Errorf("mode %v", fi.Mode())
-			}
-			body, _ = os.ReadFile(file)
-			return nil
-		})
+	err := Send(context.Background(), fullPayload(), func(ctx context.Context, file string) error {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Error("no timeout")
+		}
+		path = file
+		if fi, err := os.Stat(file); err == nil && runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
+			t.Errorf("mode %v", fi.Mode())
+		}
+		body, _ = os.ReadFile(file)
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("temp file not removed")
 	}
-	var p Payload
-	if err := json.Unmarshal(body, &p); err != nil || p.Kind != KindProvision || strings.Contains(string(body), "abc123secret") {
-		t.Fatalf("payload %s %v", body, err)
+	if string(body) != golden {
+		t.Fatalf("sent %s", body)
 	}
-	for _, key := range []string{`"kind"`, `"version"`, `"profile"`, `"nodes"`, `"arch"`, `"os"`, `"kubernetes"`, `"uptime_seconds"`, `"steps"`, `"failures"`, `"components"`} {
-		if !strings.Contains(string(body), key) {
-			t.Errorf("missing %s", key)
-		}
+}
+
+func TestSendRefusesInvalidPayload(t *testing.T) {
+	p := fullPayload()
+	p.Platform.Version = "dev"
+	called := false
+	err := Send(context.Background(), p, func(context.Context, string) error { called = true; return nil })
+	if !errors.Is(err, ErrInvalid) || called {
+		t.Fatalf("err=%v called=%v", err, called)
 	}
 }

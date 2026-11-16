@@ -20,14 +20,22 @@ func stubDiagnostics(t *testing.T, codes map[string]int) (*licenseFake, *bytes.B
 	var out bytes.Buffer
 	oldOut, oldPinned, oldComp, oldK8s, oldOS, oldUp, oldDiag, oldRole, oldDeadline :=
 		diagOut, diagPinned, diagComponents, diagKubernetes, diagOSRelease, diagUptime, cfg.Diagnostics, joinedRole, diagDeadline
+	oldVersion, oldArch, oldNow, oldProfile := diagVersion, diagArch, diagNow, cfg.Profile
 	t.Cleanup(func() {
 		diagOut, diagPinned, diagComponents, diagKubernetes, diagOSRelease, diagUptime, cfg.Diagnostics, joinedRole, diagDeadline =
 			oldOut, oldPinned, oldComp, oldK8s, oldOS, oldUp, oldDiag, oldRole, oldDeadline
+		diagVersion, diagArch, diagNow, cfg.Profile = oldVersion, oldArch, oldNow, oldProfile
 		state.ResetTimings()
 	})
 	diagOut = &out
 	diagPinned = func() bool { return false }
-	diagComponents = func() []diagnostics.Component { return []diagnostics.Component{{Name: "Platform API", Status: "ok"}} }
+	diagComponents = func() []diagnostics.Component {
+		return []diagnostics.Component{{Name: "Platform API", Status: diagnostics.ComponentHealthy}}
+	}
+	diagVersion = func() string { return "1.2.0" }
+	diagArch = func() string { return "amd64" }
+	diagNow = func() time.Time { return time.Date(2026, 11, 17, 10, 0, 0, 0, time.UTC) }
+	cfg.Profile = "standard"
 	diagKubernetes = func() string { return "v1.37.2+k3s1" }
 	diagOSRelease = func() string { return "Ubuntu 24.04.1 LTS" }
 	diagUptime = func() int64 { return 42 }
@@ -59,7 +67,8 @@ func TestDiagnosticsSentAfterSuccess(t *testing.T) {
 	state.RecordTiming(state.StepTiming{Step: "k3s", Start: time.Now(), Duration: 3 * time.Second, Status: "ok"})
 	sendDiagnostics(diagnostics.KindProvision, nil)
 	p, _ := readReport(t, f)
-	if p.Kind != diagnostics.KindProvision || p.Nodes != 2 || p.OS != "Ubuntu 24.04.1 LTS" || p.Kubernetes != "v1.37.2+k3s1" || p.UptimeSeconds != 42 {
+	want := diagnostics.Platform{Version: "1.2.0", Profile: "standard", NodeCount: 2, Arch: "amd64", OSRelease: "Ubuntu 24.04.1 LTS", K8sVersion: "v1.37.2+k3s1"}
+	if p.Schema != 1 || p.Kind != diagnostics.KindProvision || p.Platform != want || p.UptimeSeconds != 42 || p.GeneratedAt != "2026-11-17T10:00:00Z" || p.Validate() != nil {
 		t.Fatalf("payload %+v", p)
 	}
 	if len(p.Steps) != 1 || p.Steps[0].Seconds != 3 || len(p.Components) != 1 || len(p.Failures) != 0 {
@@ -132,5 +141,23 @@ func TestPeriodicDiagnosticsOnRefresh(t *testing.T) {
 	}
 	if p, _ := readReport(t, f); p.Kind != diagnostics.KindPeriodic {
 		t.Fatalf("kind %s", p.Kind)
+	}
+}
+
+func TestDiagnosticsSkippedForDevBuilds(t *testing.T) {
+	f, out := stubDiagnostics(t, nil)
+	diagVersion = func() string { return "dev" }
+	sendDiagnostics(diagnostics.KindProvision, nil)
+	if _, err := os.Stat(f.report); err == nil || out.Len() != 0 {
+		t.Fatal("sent from a dev build")
+	}
+}
+
+func TestDiagnosticsRejectedPayloadIsDebugOnly(t *testing.T) {
+	_, out := stubDiagnostics(t, map[string]int{"report": 2})
+	t.Setenv("PLATFORMCTL_DEBUG", "")
+	sendDiagnostics(diagnostics.KindProvision, nil)
+	if strings.Contains(out.String(), "rejected") {
+		t.Fatalf("rejection shown outside debug: %q", out.String())
 	}
 }

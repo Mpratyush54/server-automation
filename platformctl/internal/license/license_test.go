@@ -289,3 +289,14 @@ func TestRegistryCredentials(t *testing.T) {
 		t.Fatal("empty credentials accepted")
 	}
 }
+
+func TestSendReport(t *testing.T) {
+	c, logf := fakeClient(t, ``, 0)
+	if err := c.SendReport(context.Background(), "/tmp/p.json"); err != nil || !strings.Contains(readLog(t, logf), "report --file /tmp/p.json") {
+		t.Fatalf("err=%v calls=%s", err, readLog(t, logf))
+	}
+	bad, _ := fakeClient(t, ``, 2)
+	if err := bad.SendReport(context.Background(), "/tmp/p.json"); !errors.Is(err, ErrReportRejected) {
+		t.Fatalf("err = %v", err)
+	}
+}
