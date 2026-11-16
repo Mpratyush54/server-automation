@@ -13,7 +13,7 @@
     "@angular/core": "^21.2.26",
     "@angular/forms": "^21.2.26",
     "@angular/platform-browser": "^21.2.26",
-    "@angular/router": "^21.2.26",
+    "@angular/router": "^22.2.5",
     "@mpratyush54/sdk-angular": "file:../../../sdk-angular",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
