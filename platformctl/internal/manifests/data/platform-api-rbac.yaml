@@ -168,7 +168,7 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["configmaps"]
-  resourceNames: ["platform-backup-backup", "platform-backup-restore-test", "platform-backup-target"]
+  resourceNames: ["platform-backup-backup", "platform-backup-restore-test", "platform-backup-target", "platform-license-status"]
   verbs: ["get"]
 - apiGroups: [""]
   resources: ["secrets"]
