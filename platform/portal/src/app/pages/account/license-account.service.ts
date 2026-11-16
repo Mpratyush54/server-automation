@@ -25,8 +25,18 @@ export interface AccountInstall {
   active?: boolean;
 }
 
+export interface QuoteRequest {
+  company: string;
+  name: string;
+  email: string;
+  servers: number;
+  message: string;
+  /** Honeypot: always empty for people. */
+  website: string;
+}
+
 export class LicenseApiError extends Error {
-  constructor(public status: number, public code: string, message: string) { super(message); }
+  constructor(public status: number, public code: string, message: string, public fields: Record<string, string> = {}) { super(message); }
 }
 
 /** Account API of the license server (cookie session). */
@@ -35,8 +45,8 @@ export class LicenseAccountService {
   base = LICENSE_SERVER;
   fetchFn: typeof fetch = (input, init) => fetch(input, init);
 
-  async request<T = any>(method: string, path: string, body?: unknown): Promise<T> {
-    const init: RequestInit = { method, credentials: 'include', headers: { Accept: 'application/json' } };
+  async request<T = any>(method: string, path: string, body?: unknown, credentials: RequestCredentials = 'include'): Promise<T> {
+    const init: RequestInit = { method, credentials, headers: { Accept: 'application/json' } };
     if (body !== undefined) {
       init.headers = { ...init.headers, 'Content-Type': 'application/json' };
       init.body = JSON.stringify(body);
@@ -52,11 +62,14 @@ export class LicenseAccountService {
     try { data = text ? JSON.parse(text) : null; } catch { data = null; }
     if (!res.ok) {
       const code = data?.error?.code || 'error';
-      throw new LicenseApiError(res.status, code, data?.error?.message || `Request failed (${res.status}).`);
+      const fields = data?.error?.fields && typeof data.error.fields === 'object' ? data.error.fields : {};
+      throw new LicenseApiError(res.status, code, data?.error?.message || `Request failed (${res.status}).`, fields);
     }
     return data as T;
   }
 
+  /** Public sales form; sends no cookies. */
+  requestQuote(q: QuoteRequest) { return this.request('POST', '/v1/quotes/request', q, 'omit'); }
   signup(email: string, password: string) { return this.request('POST', '/v1/auth/signup', { email, password }); }
   verify(token: string) { return this.request<{ verified: boolean; license_key?: string; key?: AccountKey }>('POST', '/v1/auth/verify', { token }); }
   resend(email: string) { return this.request('POST', '/v1/auth/resend', { email }); }

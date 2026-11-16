@@ -38,3 +38,4 @@
 .sp-subnav button { border: 0; background: transparent; padding: 8px 12px; color: rgb(var(--fg-2)); cursor: pointer; border-bottom: 2px solid transparent; font: inherit; font-size: 0.875rem; }
 .sp-subnav button.active { color: rgb(var(--fg)); border-bottom-color: rgb(var(--accent)); }
 .sp-danger { border-color: rgb(var(--down) / 0.4); }
+.sp-hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }

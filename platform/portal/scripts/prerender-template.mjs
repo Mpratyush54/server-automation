@@ -40,6 +40,9 @@ const escapeAttribute = value => value.replaceAll('&', '&amp;').replaceAll('"', 
  */
 const SERVICE_STUBS = {
   ThemeService: () => ({ choice: () => 'system', cycle() {} }),
+  // The pricing form only calls these after a submit in the browser.
+  LicenseAccountService: () => ({}),
+  ToastService: () => ({}),
 };
 
 const coreStubs = {

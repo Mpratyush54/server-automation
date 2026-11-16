@@ -1,12 +1,12 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router, ActivatedRoute, convertToParamMap } from '@angular/router';
 import { LicenseAccountService, LicenseApiError, LICENSE_SERVER } from './license-account.service';
-import { PricingComponent, quoteMailto } from './pricing.component';
+import { PricingComponent, readQuote } from './pricing.component';
 import { SignupComponent } from './signup.component';
 import { SigninComponent } from './signin.component';
 import { VerifyEmailComponent } from './verify-email.component';
 import { AccountComponent } from './account.component';
-import { DialogService } from '../../shared/feedback/feedback.service';
+import { DialogService, ToastService } from '../../shared/feedback/feedback.service';
 
 function response(status: number, body: unknown): Response {
   return new Response(body === undefined ? '' : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -38,6 +38,15 @@ describe('LicenseAccountService', () => {
     await expectAsync(svc.account()).toBeRejectedWith(jasmine.objectContaining({ code: 'network' }));
   });
 
+  it('sends the public quote form without cookies', async () => {
+    const svc = new LicenseAccountService();
+    const calls: [string, RequestInit][] = [];
+    svc.fetchFn = (async (url: string, init: RequestInit) => { calls.push([url, init]); return response(202, null); }) as any;
+    await svc.requestQuote({ company: 'Acme', name: 'Ada', email: 'ada@acme.test', servers: 3, message: '', website: '' });
+    expect(calls[0][0]).toBe(LICENSE_SERVER + '/v1/quotes/request');
+    expect(calls[0][1].credentials).toBe('omit');
+  });
+
   it('encodes ids in paths', async () => {
     const svc = new LicenseAccountService();
     let seen = '';
@@ -54,7 +63,7 @@ describe('public account pages', () => {
   beforeEach(async () => {
     api = jasmine.createSpyObj<LicenseAccountService>('LicenseAccountService', [
       'signup', 'resend', 'signin', 'signout', 'verify', 'account', 'keys', 'installs', 'createKey', 'rotateKey', 'revokeKey',
-      'deactivateInstall', 'offline', 'deleteAccount',
+      'deactivateInstall', 'offline', 'deleteAccount', 'requestQuote',
     ]);
     dialog = jasmine.createSpyObj<DialogService>('DialogService', ['confirm', 'prompt']);
     dialog.confirm.and.resolveTo(true);
@@ -67,24 +76,83 @@ describe('public account pages', () => {
     }).compileComponents();
   });
 
-  it('builds a mailto for an Enterprise quote', () => {
-    const url = quoteMailto({ name: 'Ada', company: 'Acme & Co', email: 'ada@acme.test', nodes: '12', message: 'Hi' });
-    expect(url.startsWith('mailto:sales@cairnpaas.dev?subject=')).toBeTrue();
-    expect(decodeURIComponent(url)).toContain('Company: Acme & Co');
-    const c = TestBed.createComponent(PricingComponent).componentInstance;
-    let opened = '';
-    c.open = (u) => { opened = u; };
-    c.quote = { name: 'Ada', company: 'Acme', email: 'ada@acme.test', nodes: '', message: '' };
-    c.sendQuote();
-    expect(opened).toContain('mailto:sales@cairnpaas.dev');
-  });
-
-  it('pricing links to sign-up and has the enterprise anchor', () => {
+  function renderPricing() {
     const f = TestBed.createComponent(PricingComponent);
     f.detectChanges();
-    const el = f.nativeElement as HTMLElement;
+    return f;
+  }
+
+  function fillQuote(el: HTMLElement, values: Record<string, string>) {
+    for (const [name, value] of Object.entries(values)) {
+      (el.querySelector(`[name="${name}"]`) as HTMLInputElement).value = value;
+    }
+  }
+
+  const valid = { company: 'Acme', name: 'Ada', email: 'ada@acme.test', servers: '12', message: 'Hi' };
+
+  it('pricing shows the plans, the enterprise anchor and the starting price', () => {
+    const el = renderPricing().nativeElement as HTMLElement;
     expect(el.querySelector('#enterprise')).not.toBeNull();
     expect(el.querySelector('a[href="/signup"]')).not.toBeNull();
+    expect(el.textContent).toContain('From $9');
+    expect(el.textContent).toContain('per server per month, billed annually');
+    expect(el.querySelector('input[name="website"]')?.getAttribute('tabindex')).toBe('-1');
+  });
+
+  it('reads and checks the quote form', () => {
+    const form = new FormData();
+    for (const [k, v] of Object.entries({ ...valid, website: '' })) form.set(k, v);
+    const ok = readQuote(form);
+    expect(ok.quote).toEqual({ company: 'Acme', name: 'Ada', email: 'ada@acme.test', servers: 12, message: 'Hi', website: '' });
+    expect(Object.values(ok.errors).every(v => !v)).toBeTrue();
+    form.set('email', 'nope');
+    form.set('servers', '0');
+    form.set('company', ' ');
+    const bad = readQuote(form);
+    expect(bad.errors.email).toBeTruthy();
+    expect(bad.errors.servers).toBeTruthy();
+    expect(bad.errors.company).toBeTruthy();
+  });
+
+  function submit(f: ReturnType<typeof renderPricing>) {
+    const form = (f.nativeElement as HTMLElement).querySelector('form')!;
+    return f.componentInstance.send({ preventDefault() {}, target: form } as unknown as Event);
+  }
+
+  it('posts the quote and shows the thank-you state', async () => {
+    api.requestQuote.and.resolveTo(null);
+    const f = renderPricing();
+    fillQuote(f.nativeElement, valid);
+    await submit(f);
+    f.detectChanges();
+    expect(api.requestQuote).toHaveBeenCalledWith({ company: 'Acme', name: 'Ada', email: 'ada@acme.test', servers: 12, message: 'Hi', website: '' });
+    expect((f.nativeElement as HTMLElement).querySelector('[data-testid="quote-sent"]')?.textContent).toContain('one business day');
+  });
+
+  it('shows inline errors without posting an invalid form', async () => {
+    const f = renderPricing();
+    fillQuote(f.nativeElement, { ...valid, email: 'x' });
+    await submit(f);
+    f.detectChanges();
+    expect(api.requestQuote).not.toHaveBeenCalled();
+    expect((f.nativeElement as HTMLElement).querySelector('#q-email')?.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('maps server validation, rate limits and network failures', async () => {
+    const toast = TestBed.inject(ToastService);
+    spyOn(toast, 'error');
+    const f = renderPricing();
+    fillQuote(f.nativeElement, valid);
+    api.requestQuote.and.rejectWith(new LicenseApiError(400, 'invalid', 'bad', { email: 'Use a work email.' }));
+    await submit(f);
+    expect(f.componentInstance.errors.email).toBe('Use a work email.');
+    api.requestQuote.and.rejectWith(new LicenseApiError(429, 'rate_limited', 'slow down'));
+    await submit(f);
+    expect(f.componentInstance.formError).toContain('Too many requests');
+    api.requestQuote.and.rejectWith(new LicenseApiError(0, 'network', 'offline'));
+    await submit(f);
+    expect(toast.error).toHaveBeenCalled();
+    expect(f.componentInstance.sent).toBeFalse();
   });
 
   it('sign-up shows the check-your-inbox step and clears the password', async () => {
