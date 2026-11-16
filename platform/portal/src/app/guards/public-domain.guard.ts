@@ -3,11 +3,11 @@ import { Router, CanActivateFn, RouterStateSnapshot, ActivatedRouteSnapshot } fr
 
 /**
  * Exact hostnames that serve the public marketing site (landing + docs).
- * Any other host — including other *.pratyushes.dev names such as an app or
+ * Any other host — including other subdomains such as an app or
  * portal subdomain — is an app host. Add hosts here to serve marketing pages
  * from additional domains.
  */
-export const MARKETING_HOSTS: readonly string[] = ['platform.pratyushes.dev'];
+export const MARKETING_HOSTS: readonly string[] = ['cairnpaas.dev', 'platform.pratyushes.dev'];
 
 /** True only on the public marketing site (landing + docs). */
 export function isPublicMarketingHost(
@@ -34,7 +34,7 @@ export const marketingOnlyGuard: CanActivateFn = () => {
 };
 
 /** Where the public docs live. App hosts send /docs links here. */
-export const PUBLIC_DOCS_ORIGIN = 'https://platform.pratyushes.dev';
+export const PUBLIC_DOCS_ORIGIN = 'https://cairnpaas.dev';
 
 /** Same docs page on the public site, keeping path, query and fragment. */
 export function publicDocsUrl(appUrl: string, origin = PUBLIC_DOCS_ORIGIN): string {
