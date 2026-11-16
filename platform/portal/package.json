@@ -26,9 +26,9 @@
     "@angular/router": "^21.2.26",
     "dompurify": "^3.4.17",
     "highlight.js": "^11.11.1",
-    "marked": "^18.0.5",
+    "marked": "^18.2.0",
     "mermaid": "^12.3.0",
-    "rrweb-player": "2.2.0",
+    "rrweb-player": "2.2.2",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "zone.js": "~0.16.3"
