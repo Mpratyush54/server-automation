@@ -40,6 +40,8 @@ const escapeAttribute = value => value.replaceAll('&', '&amp;').replaceAll('"', 
  */
 const SERVICE_STUBS = {
   ThemeService: () => ({ choice: () => 'system', cycle() {} }),
+  // Change detection only runs in the browser.
+  ChangeDetectorRef: () => ({ detectChanges() {}, markForCheck() {} }),
 };
 
 const coreStubs = {
@@ -54,6 +56,7 @@ const coreStubs = {
     cls[INPUTS].add(key);
   },
   ViewChild: () => () => {},
+  ViewChildren: () => () => {},
   inject: token => {
     const stub = SERVICE_STUBS[token?.name];
     if (!stub) fail(`Prerender cannot inject ${token?.name ?? token}; add a static stub to SERVICE_STUBS`);
@@ -66,6 +69,7 @@ const coreStubs = {
   },
   DOCUMENT: Symbol('DOCUMENT'),
   ElementRef: class ElementRef {},
+  ChangeDetectorRef: class ChangeDetectorRef {},
 };
 const strictModule = (name, stubs) => new Proxy(stubs, {
   get(target, key) {
@@ -285,6 +289,15 @@ function renderElement(node, scope, context) {
   for (const input of node.inputs) {
     const source = expressionSource(input.value);
     const value = evaluateBinding(input.value, scope);
+    if (input.type === ng.BindingType.Property && (input.name === 'routerLink' || input.name === 'fragment')) {
+      // Only plain strings: an array or object link needs the router to resolve it.
+      if (typeof value !== 'string' || (input.name === 'routerLink' && !value.startsWith('/'))) {
+        fail(`[${input.name}]="${source}" must be a string${input.name === 'routerLink' ? ' starting with /' : ''} to be prerendered`);
+      }
+      if (input.name === 'routerLink') routerLink = value;
+      else fragment = value;
+      continue;
+    }
     if (input.type === ng.BindingType.Attribute) {
       if (value === null || value === undefined) attributes.delete(input.name);
       else attributes.set(input.name, String(value));

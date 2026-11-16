@@ -1,8 +1,8 @@
 /*
  * Landing page, Signal system. Layout: a centred 72rem frame whose edges are
  * drawn as hairline guides (the "rack"), a faint grid behind the hero, and
- * feature rows with the claim on the left, the explanation on the right and
- * the product underneath. One moving element: the hero topology.
+ * one row per feature with its explanation beside a recording of the real
+ * product. Moving elements: the hero topology and the clips on screen.
  */
 :host { display: block; }
 
@@ -164,9 +164,11 @@
 .lp-log-ok span { color: rgb(var(--ok)); }
 .lp-log-warn span { color: rgb(var(--warn)); }
 .lp-log-down span { color: rgb(var(--down)); }
-.lp-steps { display: flex; gap: 0.4rem; padding: 0 1rem 0.9rem; background: rgb(var(--canvas) / 0.6); }
-.lp-steps button { width: 1.5rem; height: 0.3rem; padding: 0; border: 0; border-radius: 2px; background: rgb(var(--line-strong)); cursor: pointer; }
-.lp-steps button.on { background: rgb(var(--accent)); }
+.lp-steps { display: flex; gap: 0.15rem; padding: 0 1rem 0.5rem; background: rgb(var(--canvas) / 0.6); }
+/* A 24px hit area around a thin indicator bar */
+.lp-steps button { position: relative; width: 1.75rem; height: 1.5rem; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.lp-steps button::after { content: ''; position: absolute; left: 0.125rem; right: 0.125rem; top: 50%; height: 0.3rem; margin-top: -0.15rem; border-radius: 2px; background: rgb(var(--line-strong)); }
+.lp-steps button.on::after { background: rgb(var(--accent)); }
 
 /* Stack chips */
 .lp-stack { border-bottom: 1px solid rgb(var(--line)); }
@@ -175,64 +177,85 @@
 .lp-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .lp-chips li { padding: 0.35rem 0.75rem; border: 1px solid rgb(var(--line)); border-radius: 999px; background: rgb(var(--surface)); font-size: 0.8rem; color: rgb(var(--fg)); }
 
-/* Feature rows */
-.lp-row { border-bottom: 1px solid rgb(var(--line)); }
-.lp-row .lp-frame { padding-block: clamp(3rem, 6vw, 4.5rem); }
-.lp-row-head { display: grid; gap: 1.25rem; margin-bottom: 2rem; }
-@media (min-width: 860px) { .lp-row-head { grid-template-columns: 1fr 1fr; gap: 3rem; align-items: end; } }
-.lp-row-copy p { margin: 0; color: rgb(var(--fg-2)); line-height: 1.6; max-width: 52ch; }
-.lp-row-copy a { display: inline-block; margin-top: 0.75rem; font-size: 0.9rem; font-weight: 500; color: rgb(var(--accent-text)); text-decoration: none; border-bottom: 1px solid rgb(var(--accent) / 0.45); }
-.lp-row-copy a:hover { border-bottom-color: rgb(var(--accent)); }
+/* Section heads shared by the feature and "also included" sections */
+.lp-section-head { display: grid; gap: 1rem; margin-bottom: 2rem; }
+@media (min-width: 860px) { .lp-section-head { grid-template-columns: 1fr 1fr; gap: 3rem; align-items: end; } }
+.lp-section-head p { margin: 0; color: rgb(var(--fg-2)); line-height: 1.6; max-width: 52ch; }
+.lp-h3 { margin: 0; font-size: clamp(1.3rem, 2.1vw, 1.6rem); line-height: 1.2; font-weight: 600; letter-spacing: -0.015em; }
+.lp-h3 span { display: block; }
 
-/* Product panels drawn with the app's own components */
-.lp-shot {
+/* How it works: one recorded clip per feature */
+.lp-features { border-bottom: 1px solid rgb(var(--line)); scroll-margin-top: 3.5rem; }
+.lp-features > .lp-frame { padding-block: clamp(3rem, 6vw, 4.5rem); }
+
+.lp-index { position: sticky; top: calc(3.5rem + env(safe-area-inset-top, 0px)); z-index: 5; margin: 0 0 1rem; padding-block: 0.6rem; background: rgb(var(--canvas)); border-bottom: 1px solid rgb(var(--line)); }
+.lp-index ol { list-style: none; margin: 0; padding: 0; display: flex; gap: 0.25rem; overflow-x: auto; scrollbar-width: none; }
+.lp-index a { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.7rem; border-radius: 6px; white-space: nowrap; font-size: 0.875rem; color: rgb(var(--fg-2)); text-decoration: none; }
+.lp-index a:hover { color: rgb(var(--fg)); background: rgb(var(--raised)); }
+.lp-index-n { display: inline-grid; place-items: center; width: 1.35rem; height: 1.35rem; border-radius: 50%; border: 1px solid rgb(var(--line-strong)); font-size: 0.7rem; font-weight: 600; color: rgb(var(--fg-2)); font-variant-numeric: tabular-nums; }
+
+.lp-feature { position: relative; display: grid; gap: 1.5rem; padding-block: clamp(2rem, 4.5vw, 3.25rem); border-top: 1px solid rgb(var(--line)); }
+.lp-anchor { position: absolute; top: -6.5rem; left: 0; width: 1px; height: 1px; pointer-events: none; }
+.lp-index + .lp-feature { border-top: 0; }
+@media (min-width: 900px) {
+  .lp-feature { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 3rem; align-items: center; }
+  .lp-feature:nth-of-type(even) { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
+  .lp-feature:nth-of-type(even) .lp-feature-copy { order: 2; }
+}
+.lp-feature-copy { min-width: 0; display: flex; flex-direction: column; gap: 0.85rem; }
+.lp-feature-copy > p:not(.lp-eyebrow) { margin: 0; color: rgb(var(--fg-2)); line-height: 1.6; max-width: 46ch; }
+.lp-eyebrow { margin: 0; display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; font-weight: 500; color: rgb(var(--accent-text)); }
+.lp-eyebrow .lp-index-n { border-color: rgb(var(--accent) / 0.6); color: rgb(var(--accent-text)); }
+.lp-guide, .lp-cards a { align-self: flex-start; font-size: 0.9rem; font-weight: 500; color: rgb(var(--accent-text)); text-decoration: none; border-bottom: 1px solid rgb(var(--accent) / 0.45); }
+.lp-guide:hover, .lp-cards a:hover { border-bottom-color: rgb(var(--accent)); }
+.lp-guide-name { color: rgb(var(--fg-2)); font-weight: 400; }
+
+/* The clip frame keeps the recording's 16:10 shape whether or not it has loaded. */
+.lp-clip {
+  position: relative;
+  margin: 0;
+  min-width: 0;
+  aspect-ratio: 16 / 10;
   border: 1px solid rgb(var(--line));
   border-radius: 12px;
   background: rgb(var(--surface));
   box-shadow: var(--shadow);
   overflow: hidden;
-  min-width: 0;
 }
-.lp-shot-split { display: grid; gap: 0; }
-@media (min-width: 860px) { .lp-shot-split { grid-template-columns: 1fr 1fr; } .lp-shot-split > * + * { border-left: 1px solid rgb(var(--line)); } }
-@media (max-width: 859px) { .lp-shot-split > * + * { border-top: 1px solid rgb(var(--line)); } }
-.lp-shot .facts { padding: 1.25rem; }
+.lp-clip video { display: block; width: 100%; height: 100%; object-fit: cover; background: rgb(var(--canvas)); }
+.lp-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: rgb(var(--canvas) / 0.15);
+  cursor: pointer;
+}
+.lp-play:hover { background: rgb(var(--canvas) / 0.05); }
+.lp-play-icon { width: 3.25rem; height: 3.25rem; border-radius: 50%; background: rgb(var(--accent)); position: relative; box-shadow: var(--shadow); }
+.lp-play-icon::after { content: ''; position: absolute; left: 1.3rem; top: 1rem; border-left: 0.85rem solid rgb(var(--accent-ink)); border-top: 0.6rem solid transparent; border-bottom: 0.6rem solid transparent; }
+.lp-play:focus-visible .lp-play-icon { outline: 2px solid rgb(var(--accent)); outline-offset: 3px; }
+.lp-clip-error { position: absolute; left: 0.75rem; right: 0.75rem; bottom: 0.75rem; margin: 0; padding: 0.5rem 0.75rem; border-radius: 6px; background: rgb(var(--surface)); color: rgb(var(--down)); font-size: 0.85rem; }
 
-.mock-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; padding: 0.75rem 1rem; border-bottom: 1px solid rgb(var(--line)); }
-.mock-title { font-weight: 600; }
-.mock-tabs { display: flex; gap: 0.25rem; font-size: 0.8rem; }
-.mock-tabs b, .mock-tabs i { font-style: normal; padding: 0.2rem 0.6rem; border-radius: 999px; color: rgb(var(--fg-2)); }
-.mock-tabs b { color: rgb(var(--fg)); background: rgb(var(--raised)); font-weight: 500; }
-.mock-table { width: 100%; }
-.mock-table td { white-space: nowrap; }
-.lp-shot:has(> .mock-table) { overflow-x: auto; }
-.mock-table tr:hover td { background: transparent; }
-.mock-th td { font-size: 0.75rem; color: rgb(var(--fg-3)); padding-block: 0.6rem; }
+/* Until a clip is recorded: say so, and list what it will show. No drawn UI. */
+.lp-clip-pending { display: flex; aspect-ratio: auto; min-height: 15rem; border-style: dashed; border-color: rgb(var(--line-strong)); box-shadow: none; }
+.lp-pending { margin: auto; width: min(100% - 2.5rem, 28rem); padding: 20px; }
+.lp-pending-label { margin: 0 0 0.75rem; display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; font-weight: 600; color: rgb(var(--fg)); }
+.lp-pending-label::before { content: ''; width: 0.5rem; height: 0.5rem; border-radius: 50%; border: 1.5px solid rgb(var(--fg-3)); }
+.lp-pending-lead { margin: 0 0 0.4rem; font-size: 0.8rem; color: rgb(var(--fg-3)); }
+.lp-pending ol { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; line-height: 1.45; color: rgb(var(--fg-2)); }
+@media (max-width: 480px) {
+  .lp-pending { margin: 0 auto; }
+}
 
-.mock-term { margin: 0; padding: 1.25rem; font-size: 0.78rem; line-height: 1.7; color: rgb(var(--fg)); background: rgb(var(--canvas) / 0.6); overflow-x: auto; white-space: pre-wrap; }
-.lp-warn-text { color: rgb(var(--warn)); }
-
-.mock-chart { padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
-.mock-label { font-size: 0.8rem; color: rgb(var(--fg-2)); }
-.mock-chart svg { width: 100%; height: 120px; }
-.mock-area { fill: rgb(var(--accent) / 0.12); }
-.mock-line { fill: none; stroke: rgb(var(--accent)); stroke-width: 2; vector-effect: non-scaling-stroke; }
-.mock-logs { list-style: none; margin: 0; padding: 1.25rem; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; background: rgb(var(--canvas) / 0.6); }
-.mock-logs li { display: flex; gap: 0.6rem; color: rgb(var(--fg)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mock-logs time { color: rgb(var(--fg-3)); }
-.lv-info { color: rgb(var(--info)); }
-.lv-warn { color: rgb(var(--warn)); }
-
-.mock-timeline { list-style: none; margin: 0; padding: 0.5rem 1.25rem; }
-.mock-timeline li { display: grid; grid-template-columns: 8.5rem 1fr; gap: 0.25rem 1rem; padding: 0.85rem 0; border-bottom: 1px solid rgb(var(--line)); }
-.mock-timeline li:last-child { border-bottom: 0; }
-.mock-timeline b { font-weight: 500; }
-.mock-timeline .muted { grid-column: 2; font-size: 0.8rem; }
-@media (max-width: 540px) { .mock-timeline li { grid-template-columns: 1fr; } .mock-timeline .muted { grid-column: 1; } }
-
-.mock-approve { padding: 1.25rem; display: flex; flex-direction: column; gap: 0.5rem; }
-.mock-approve .muted { font-size: 0.85rem; }
-.mock-approve-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+/* Also included: plain cards, text only */
+.lp-more { border-bottom: 1px solid rgb(var(--line)); }
+.lp-more > .lp-frame { padding-block: clamp(3rem, 6vw, 4.5rem); }
+.lp-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); }
+.lp-cards li { display: flex; flex-direction: column; gap: 0.6rem; padding: 20px; border: 1px solid rgb(var(--line)); border-radius: 12px; background: rgb(var(--surface)); }
+.lp-cards h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+.lp-cards p { margin: 0; flex: 1; color: rgb(var(--fg-2)); font-size: 0.925rem; line-height: 1.55; }
 
 /* Rail: a real five-step sequence */
 .lp-rail-section { border-bottom: 1px solid rgb(var(--line)); }
@@ -261,35 +284,6 @@
 .lp-rail b { font-weight: 600; }
 .lp-rail span { color: rgb(var(--fg-2)); font-size: 0.925rem; }
 .lp-rail code { align-self: flex-start; margin-top: 0.25rem; padding: 0.25rem 0.5rem; border-radius: 6px; background: rgb(var(--surface)); border: 1px solid rgb(var(--line)); font-size: 0.75rem; color: rgb(var(--fg)); }
-
-/* Walkthrough */
-.lp-watch { border-bottom: 1px solid rgb(var(--line)); }
-.lp-watch .lp-frame { padding-block: clamp(3rem, 6vw, 4.5rem); }
-.lp-player { position: relative; border: 1px solid rgb(var(--line)); border-radius: 12px; overflow: hidden; background: #000; }
-.lp-player video { display: block; width: 100%; height: auto; }
-.portrait-player { display: none; max-width: 22rem; margin: 0 auto; }
-@media (max-width: 760px), (orientation: portrait) and (max-width: 1050px) {
-  .landscape-player { display: none; }
-  .portrait-player { display: block; }
-}
-.lp-play {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: flex-end;
-  gap: 0.75rem;
-  padding: 1.25rem;
-  border: 0;
-  background: linear-gradient(to top, rgb(0 0 0 / 0.55), transparent 55%);
-  color: #fff;
-  font: inherit;
-  font-weight: 500;
-  cursor: pointer;
-}
-.lp-play-icon { width: 2.75rem; height: 2.75rem; border-radius: 50%; background: rgb(var(--accent)); position: relative; flex: none; }
-.lp-play-icon::after { content: ''; position: absolute; left: 1.1rem; top: 0.85rem; border-left: 0.75rem solid rgb(var(--accent-ink)); border-top: 0.5rem solid transparent; border-bottom: 0.5rem solid transparent; }
-.lp-play span:last-child { padding-bottom: 0.6rem; }
-.video-error { margin: 0.75rem 0 0; color: rgb(var(--down)); }
 
 /* Closing */
 .lp-end-inner { padding-block: clamp(3.5rem, 8vw, 6rem); }

@@ -146,22 +146,19 @@ for (const path of ['/docs/missing.md', '/assets/missing.js', '/media/missing.mp
   });
 }
 
-httpTest('public video, poster, and captions have browser-compatible media types', async () => {
-  for (const [file, mime] of [
-    ['platform-overview.mp4', 'video/mp4'], ['platform-short.mp4', 'video/mp4'],
-    ['platform-overview-poster.jpg', 'image/jpeg'],
-    ['platform-short-poster.jpg', 'image/jpeg'],
-    ['platform-overview.en.vtt', 'text/vtt'], ['platform-short.en.vtt', 'text/vtt'],
-  ]) {
-    const response = await fetch(`${baseUrl}/media/${file}`);
-    assert.equal(response.status, 200, file);
-    assert.equal(response.headers.get('content-type'), mime, file);
-    assert.match(response.headers.get('cache-control'), /public, max-age=3600/);
-    assert.match(response.headers.get('cloudflare-cdn-cache-control'), /max-age=604800/);
-    const bytes = await response.arrayBuffer();
-    assert.ok(bytes.byteLength > 0, file);
-    if (file.endsWith('.vtt')) assert.match(new TextDecoder().decode(bytes), /^WEBVTT/);
-  }
+httpTest('the link-preview image is served as a cacheable image', async () => {
+  const response = await fetch(`${baseUrl}/media/cairn-social.png`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'image/png');
+  assert.match(response.headers.get('cache-control'), /public, max-age=3600/);
+  assert.match(response.headers.get('cloudflare-cdn-cache-control'), /max-age=604800/);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  assert.deepEqual(bytes.subarray(1, 4).toString(), 'PNG');
+});
+
+httpTest('feature clips may load from the media host and nowhere else off-site', async () => {
+  const csp = (await fetch(baseUrl)).headers.get('content-security-policy');
+  assert.match(csp, /media-src 'self' https:\/\/media\.cairnpaas\.dev;/);
 });
 
 httpTest('content-named bundles are immutable while HTML stays out of browser and CDN caches', async () => {
@@ -200,16 +197,6 @@ httpTest('pages that moved out of the docs root redirect permanently to their ne
     assert.equal(location.pathname + location.search, now, old);
     assert.ok(response.headers.get('content-security-policy'), `${old}: security headers`);
     assert.ok(rendered.has(now.split('?')[0].replace(/\.md$/, '')), `${now} has no generated page`);
-  }
-});
-
-httpTest('both videos support byte-range seeking without authentication', async () => {
-  for (const file of ['platform-overview.mp4', 'platform-short.mp4']) {
-    const response = await fetch(`${baseUrl}/media/${file}`, { headers: { Range: 'bytes=0-1023' } });
-    assert.equal(response.status, 206, file);
-    assert.match(response.headers.get('content-range'), /^bytes 0-1023\/\d+$/);
-    const source = await readFile(join(repo, 'platform/portal/public/media', file));
-    assert.deepEqual(Buffer.from(await response.arrayBuffer()), source.subarray(0, 1024));
   }
 });
 
@@ -299,21 +286,27 @@ test('the homepage explains the product and links to real docs without JavaScrip
   assert.equal([...document.matchAll(/<g class="lp-node" transform="translate\(12 \d+\)">/g)].length, 3);
   assert.equal([...document.matchAll(/class="lp-packet"/g)].length, 3);
   assert.doesNotMatch(bodyOf(document), /class="[^"]*(lp-node-down|lp-link-down)/);
-  assert.match(document, /<p class="video-error" role="alert" hidden><\/p>/);
   // Shared header and footer are rendered too.
   assert.match(document, /<app-site-header current="home">\s*<header class="sh">/);
   assert.match(document, /<a class="on" href="\/#product">Product<\/a>/);
   assert.match(document, /<footer class="sf">/);
   assert.ok(!document.includes('three.min.js'));
-  assert.match(document, /platform-short\.mp4\?v=[a-f0-9]{12}/);
+  // One section per feature; clips not recorded yet say so instead of showing drawn UI.
+  assert.equal([...document.matchAll(/<article class="lp-feature"/g)].length, 6);
+  assert.equal([...document.matchAll(/<span class="lp-anchor" id="[a-z-]+"><\/span>/g)].length, 6);
+  assert.match(document, /<span class="lp-anchor" id="high-availability">/);
+  assert.match(document, /Recording coming soon/);
   for (const link of document.matchAll(/href="(\/docs[^"]*)"/g)) {
     const url = link[1].split('#')[0];
     assert.ok(rendered.has(url), `Landing-page docs link has no generated page: ${url}`);
   }
   assert.match(document, /href="\/about"/);
-  assert.match(document, /<video controls [^>]*preload="none"/);
+  for (const video of document.matchAll(/<video [^>]*>/g)) {
+    assert.match(video[0], /\scontrols[\s>]/);
+    assert.match(video[0], /preload="none"/);
+  }
   assert.ok(!document.includes('autoplay'));
-  assert.match(document, /kind="captions"/);
+  assert.ok(!/src="\/media\/[^"]+\.(mp4|webm|vtt)/.test(document), 'clips are served from the media host, not this server');
   assert.match(document, /<noscript><style>\.lp-play \{ display: none !important; \}<\/style><\/noscript>/);
   const { jsonLd } = head(document);
   assert.equal(jsonLd.length, 1);

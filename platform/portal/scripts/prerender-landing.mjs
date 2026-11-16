@@ -10,15 +10,20 @@ import { assertNoAngularSyntax, loadTypeScriptModule, renderComponent } from './
 const portal = fileURLToPath(new URL('../', import.meta.url));
 const pages = join(portal, 'src/app/pages');
 
-/** The state the static landing HTML shows: the story at its first step, playing, nothing copied, no video started. */
+/**
+ * The state the static landing HTML shows: the story at its first step,
+ * playing, nothing copied, no clip started. Published clips render at once
+ * (with native controls) instead of waiting to scroll into view, so they
+ * work without JavaScript.
+ */
 export const LANDING_INITIAL_STATE = {
   step: 0,
   paused: false,
   visible: true,
   installCopied: false,
-  landscapeStarted: false,
-  portraitStarted: false,
-  videoError: '',
+  lazyClips: false,
+  clipStarted: {},
+  clipError: {},
 };
 
 const PAGES = {
@@ -27,8 +32,8 @@ const PAGES = {
     module: 'landing/landing.component.ts',
     component: 'LandingComponent',
     state: LANDING_INITIAL_STATE,
-    title: 'Cairn — run your apps on your own servers',
-    description: 'Cairn installs Git deployments, databases, backups, monitoring and alerts on Ubuntu servers you control. Start on one server, add more for high availability.',
+    title: 'Cairn — a self-hosted platform for your apps, on your own servers',
+    description: 'Cairn installs Git deployments, databases, logs, metrics and traces, off-site backups and high availability on Ubuntu servers you control.',
     // Without JavaScript the cover button cannot start playback; show the native controls instead.
     extraHead: '<noscript><style>.lp-play { display: none !important; }</style></noscript>',
     jsonLd: [{
