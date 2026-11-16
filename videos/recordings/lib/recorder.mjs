@@ -35,7 +35,7 @@ export class Recording {
       });
       await context.addInitScript({ content: overlay });
       // The portal reads its theme choice from localStorage; follow RECORD_THEME.
-      await context.addInitScript({ content: `try { localStorage.setItem('plat_theme', ${JSON.stringify(theme)}); } catch (e) {}` });
+      await context.addInitScript({ content: `try { localStorage.setItem('platform.theme', ${JSON.stringify(theme)}); } catch (e) {}` });
       if (pane.signedIn) await context.addInitScript(await sessionInitScript());
       const page = await context.newPage();
       recording.panes[pane.name] = { context, page, viewport, startedAt: performance.now() };
