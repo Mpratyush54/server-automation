@@ -156,7 +156,7 @@ async function flow() {
 /** A role that may reveal secrets, signed in with a password only, must step up first. */
 async function stepUp(admin) {
   const s = randomUUID().slice(0, 8);
-  const p = await call('POST', '/projects', admin, { name: `e2e-stepup-${s}`, stack: 'nodejs', domain: domain(), description: 'e2e MFA step-up', repositoryUrl: 'https://github.com/Mpratyush54/server-automation' });
+  const p = await call('POST', '/projects', admin, { name: `e2e-stepup-${s}`, stack: 'nodejs', domain: domain(), description: 'e2e MFA step-up' });
   if (!expect(p.status === 201 && Boolean(p.json?.id), 'admin creates a project for the step-up check', detail(p))) return;
   const pid = p.json.id;
   let userId;
