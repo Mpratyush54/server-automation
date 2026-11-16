@@ -63,7 +63,7 @@ func readLog(t *testing.T, p string) string {
 
 func TestActivateWithKeyValueUsesStdin(t *testing.T) {
 	c, logf := fakeClient(t, `{"command":"activate","status":"valid","exit_code":0,"allow_provision":true,"plan":"personal","max_nodes":3}`, 0)
-	r, err := c.Activate(context.Background(), Fingerprint{Version: "1.2.3", Profile: "ha", Nodes: 2}, Key{Value: " cairn_abc "})
+	r, err := c.Activate(context.Background(), Params{Version: "1.2.3", Profile: "ha", Nodes: 2}, Key{Value: " cairn_abc "})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestActivateWithKeyValueUsesStdin(t *testing.T) {
 
 func TestActivateWithKeyFile(t *testing.T) {
 	c, logf := fakeClient(t, `{"command":"activate","status":"invalid","exit_code":20,"allow_provision":false}`, 20)
-	r, err := c.Activate(context.Background(), Fingerprint{}, Key{File: "/root/key"})
+	r, err := c.Activate(context.Background(), Params{}, Key{File: "/root/key"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestUnparsableOutput(t *testing.T) {
 
 func TestUpgradeFallsBackToVerify(t *testing.T) {
 	c, logf := fakeClient(t, `{"command":"x","status":"unreachable","exit_code":1,"allow_provision":false}`, 1)
-	if _, err := c.Upgrade(context.Background(), Fingerprint{Nodes: 3}, Key{Value: "k"}); err != nil {
+	if _, err := c.Upgrade(context.Background(), Params{Nodes: 3}, Key{Value: "k"}); err != nil {
 		t.Fatal(err)
 	}
 	log := readLog(t, logf)
@@ -125,7 +125,7 @@ func TestUpgradeFallsBackToVerify(t *testing.T) {
 
 func TestUpgradeWithoutKeyOnlyVerifies(t *testing.T) {
 	c, logf := fakeClient(t, `{"command":"verify","status":"valid","exit_code":0,"allow_provision":true}`, 0)
-	if _, err := c.Upgrade(context.Background(), Fingerprint{Nodes: 1}, Key{}); err != nil {
+	if _, err := c.Upgrade(context.Background(), Params{Nodes: 1}, Key{}); err != nil {
 		t.Fatal(err)
 	}
 	if log := readLog(t, logf); strings.Contains(log, "activate") || !strings.Contains(log, "verify --nodes 1") {
@@ -152,7 +152,7 @@ func TestDecide(t *testing.T) {
 func TestStatusFileAndConfigMap(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "status.json")
 	n := 3
-	s := NewStatus(Report{Command: "checkin", Status: "valid", Plan: "personal", InstallID: "ins_1", File: "/f", MaxNodes: &n}, true, time.Unix(0, 0))
+	s := NewStatus(Report{Command: "refresh", Status: "valid", Plan: "personal", InstallID: "ins_1", File: "/f", MaxNodes: &n}, true, time.Unix(0, 0))
 	if err := WriteStatus(p, s); err != nil {
 		t.Fatal(err)
 	}

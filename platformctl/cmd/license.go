@@ -63,7 +63,7 @@ func init() {
 	status.Flags().BoolVar(&licenseStatusJSON, "json", false, "machine-readable output")
 	refresh := &cobra.Command{Use: "refresh", Short: "Refresh the license status", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return runLicenseRefresh(cmd.OutOrStdout()) }}
-	request := &cobra.Command{Use: "request-offline", Short: "Print an offline activation request", Args: cobra.NoArgs,
+	request := &cobra.Command{Use: "request-offline", Short: "Print a request for an air-gapped server", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return runLicenseRequestOffline(cmd.OutOrStdout()) }}
 	installOffline := &cobra.Command{Use: "install-offline", Short: "Install a license file downloaded from your account", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return runLicenseInstallOffline(cmd.OutOrStdout()) }}
@@ -73,8 +73,8 @@ func init() {
 	rootCmd.AddCommand(licenseCmd)
 }
 
-func licenseFingerprint(nodes int) license.Fingerprint {
-	return license.Fingerprint{Version: Version, Profile: cfg.Profile, Nodes: nodes}
+func licenseParams(nodes int) license.Params {
+	return license.Params{Version: Version, Profile: cfg.Profile, Nodes: nodes}
 }
 
 // clusterNodeCount counts Kubernetes nodes (1 when unknown).
@@ -192,7 +192,7 @@ func licenseProvision(out io.Writer, offline bool) error {
 	if key.Empty() {
 		r, err = c.Verify(ctx, 1)
 	} else {
-		r, err = c.Activate(ctx, licenseFingerprint(1), key)
+		r, err = c.Activate(ctx, licenseParams(1), key)
 	}
 	if err != nil {
 		return licenseUnavailable(out, err)
@@ -215,7 +215,7 @@ func licenseUpgrade(out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	r, err := c.Upgrade(ctx, licenseFingerprint(licenseNodeCount()), key)
+	r, err := c.Upgrade(ctx, licenseParams(licenseNodeCount()), key)
 	if err != nil {
 		return licenseUnavailable(out, err)
 	}
@@ -382,7 +382,7 @@ func runLicenseActivate(out io.Writer) error {
 	if key.Empty() {
 		return fmt.Errorf("no license key: pass --license-key-file or set %s (get one at %s)", license.EnvKey, license.SignupURL)
 	}
-	r, err := c.Activate(ctx, licenseFingerprint(licenseNodeCount()), key)
+	r, err := c.Activate(ctx, licenseParams(licenseNodeCount()), key)
 	if err != nil {
 		return err
 	}
@@ -402,7 +402,7 @@ func runLicenseRefresh(out io.Writer) error {
 		fmt.Fprintf(out, "license: %v\n", err)
 		return nil
 	}
-	r, err := c.Checkin(ctx, licenseFingerprint(licenseNodeCount()))
+	r, err := c.Refresh(ctx, licenseParams(licenseNodeCount()))
 	if err != nil {
 		fmt.Fprintf(out, "license: %v\n", err)
 		return nil
@@ -418,7 +418,7 @@ func runLicenseRequestOffline(out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	req, err := c.RequestOffline(ctx, licenseFingerprint(licenseNodeCount()))
+	req, err := c.RequestOffline(ctx, licenseParams(licenseNodeCount()))
 	if err != nil {
 		return err
 	}

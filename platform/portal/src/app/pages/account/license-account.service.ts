@@ -16,7 +16,6 @@ export interface AccountKey {
 
 export interface AccountInstall {
   id: string;
-  key_id?: string;
   version?: string;
   profile?: string;
   node_count?: number;
@@ -24,7 +23,6 @@ export interface AccountInstall {
   activated_at?: string;
   last_seen_at?: string;
   active?: boolean;
-  fingerprint_prefix?: string;
 }
 
 export class LicenseApiError extends Error {

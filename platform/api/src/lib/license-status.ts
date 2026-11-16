@@ -9,8 +9,6 @@ export interface LicenseSummary {
   maxNodes: number | null;
   maxInstalls: number | null;
   expiresAt: string | null;
-  graceUntil: string | null;
-  lastCheckin: string | null;
   updatedAt: string | null;
   enforce: boolean;
 }
@@ -33,7 +31,7 @@ function text(v: unknown, max = 200): string | null {
 
 export const EMPTY_LICENSE: LicenseSummary = {
   available: false, status: null, state: 'unknown', plan: null, org: null, maxNodes: null, maxInstalls: null,
-  expiresAt: null, graceUntil: null, lastCheckin: null, updatedAt: null, enforce: false,
+  expiresAt: null, updatedAt: null, enforce: false,
 };
 
 /** platform/platform-license-status ConfigMap `status.json`; whitelisted fields only. */
@@ -54,8 +52,6 @@ export function parseLicenseStatus(raw: string | null | undefined): LicenseSumma
     maxNodes: count(v.max_nodes),
     maxInstalls: count(v.max_installs),
     expiresAt: time(v.expires_at),
-    graceUntil: time(v.grace_until),
-    lastCheckin: time(v.last_checkin),
     updatedAt: time(v.updated_at),
     enforce: v.enforce === true,
   };

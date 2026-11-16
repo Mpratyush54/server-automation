@@ -568,8 +568,6 @@ paths:
                   maxNodes: { type: integer, nullable: true }
                   maxInstalls: { type: integer, nullable: true }
                   expiresAt: { type: string, format: date-time, nullable: true }
-                  graceUntil: { type: string, format: date-time, nullable: true }
-                  lastCheckin: { type: string, format: date-time, nullable: true }
                   updatedAt: { type: string, format: date-time, nullable: true }
                   enforce: { type: boolean }
         '401':

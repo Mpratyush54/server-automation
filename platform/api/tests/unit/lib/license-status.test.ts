@@ -17,8 +17,8 @@ const app = express();
 app.use(licenseRoutes);
 
 const report = JSON.stringify({
-  command: 'checkin', status: 'valid', exit_code: 0, plan: 'personal', org: 'Acme', max_nodes: 3, max_installs: 2,
-  expires_at: '2027-01-01T00:00:00Z', grace_until: '2027-02-01T00:00:00Z', last_checkin: '2026-11-10T00:00:00Z',
+  command: 'refresh', status: 'valid', exit_code: 0, plan: 'personal', org: 'Acme', max_nodes: 3, max_installs: 2,
+  expires_at: '2027-01-01T00:00:00Z',
   updated_at: '2026-11-10T00:00:01Z', enforce: true, install_id: 'ins_secret', file: '/etc/platform/license.json',
 });
 
@@ -27,7 +27,7 @@ describe('parseLicenseStatus', () => {
     const s = parseLicenseStatus(report);
     expect(s).toEqual({
       available: true, status: 'valid', state: 'valid', plan: 'personal', org: 'Acme', maxNodes: 3, maxInstalls: 2,
-      expiresAt: '2027-01-01T00:00:00.000Z', graceUntil: '2027-02-01T00:00:00.000Z', lastCheckin: '2026-11-10T00:00:00.000Z',
+      expiresAt: '2027-01-01T00:00:00.000Z',
       updatedAt: '2026-11-10T00:00:01.000Z', enforce: true,
     });
     expect(JSON.stringify(s)).not.toContain('ins_secret');

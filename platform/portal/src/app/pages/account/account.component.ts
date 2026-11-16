@@ -31,7 +31,7 @@ export type AccountTab = 'keys' | 'installs' | 'offline' | 'delete';
             <nav class="sp-subnav" aria-label="Account sections">
               <button type="button" [class.active]="tab === 'keys'" [attr.aria-current]="tab === 'keys' ? 'page' : null" (click)="tab = 'keys'">Keys</button>
               <button type="button" [class.active]="tab === 'installs'" [attr.aria-current]="tab === 'installs' ? 'page' : null" (click)="tab = 'installs'">Installs</button>
-              <button type="button" [class.active]="tab === 'offline'" [attr.aria-current]="tab === 'offline' ? 'page' : null" (click)="tab = 'offline'">Offline activation</button>
+              <button type="button" [class.active]="tab === 'offline'" [attr.aria-current]="tab === 'offline' ? 'page' : null" (click)="tab = 'offline'">Air-gapped servers</button>
               <button type="button" [class.active]="tab === 'delete'" [attr.aria-current]="tab === 'delete' ? 'page' : null" (click)="tab = 'delete'">Delete account</button>
             </nav>
             @if (error) { <p class="sp-msg sp-err" role="alert">{{ error }}</p> }
@@ -87,9 +87,9 @@ export type AccountTab = 'keys' | 'installs' | 'offline' | 'delete';
                   @for (i of installs; track i.id) {
                     <li>
                       <div class="sp-row-main">
-                        <strong>{{ i.profile || 'Install' }}@if (i.version) { · {{ i.version }} }</strong>
+                        <strong>{{ i.profile || 'Install' }}@if (i.version) { · {{ i.version }} }@if (i.activated_at) { · added {{ i.activated_at | date:'mediumDate' }} }</strong>
                         <span class="sp-mono">{{ i.id }}</span>
-                        <span class="sp-muted">{{ i.node_count || 1 }} {{ (i.node_count || 1) === 1 ? 'server' : 'servers' }}@if (i.last_seen_at) { · last seen {{ i.last_seen_at | date:'medium' }} }@if (i.offline) { · offline }</span>
+                        <span class="sp-muted">{{ i.node_count || 1 }} {{ (i.node_count || 1) === 1 ? 'server' : 'servers' }}@if (i.last_seen_at) { · last seen {{ i.last_seen_at | date:'medium' }} }@if (i.offline) { · air-gapped }</span>
                       </div>
                       <div class="sp-actions">
                         @if (i.active === false) {
@@ -107,7 +107,7 @@ export type AccountTab = 'keys' | 'installs' | 'offline' | 'delete';
 
             @if (tab === 'offline') {
               <form class="sp-form sp-narrow" (ngSubmit)="offline()" #of="ngForm">
-                <p class="sp-text">For servers without internet access. On the server run <span class="sp-mono">sudo platformctl license request-offline</span>, paste the output here, then copy the downloaded file to the server and run <span class="sp-mono">sudo platformctl license install-offline --file FILE</span>.</p>
+                <p class="sp-text">Run <span class="sp-mono">sudo platformctl license request-offline</span> on the server, paste its output here, then run <span class="sp-mono">sudo platformctl license install-offline --file FILE</span> with the downloaded file.</p>
                 <div class="sp-field">
                   <label for="off-key">Key</label>
                   <select id="off-key" name="key" [(ngModel)]="offlineKey" required>

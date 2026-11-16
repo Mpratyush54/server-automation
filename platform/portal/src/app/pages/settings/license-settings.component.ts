@@ -13,8 +13,6 @@ export interface LicenseView {
   maxNodes: number | null;
   maxInstalls: number | null;
   expiresAt: string | null;
-  graceUntil: string | null;
-  lastCheckin: string | null;
   updatedAt: string | null;
   enforce: boolean;
 }
@@ -59,7 +57,7 @@ export const ENTERPRISE_QUOTE_URL = 'https://cairnpaas.dev/pricing#enterprise';
       </div>
       <div class="st-row">
         <div class="st-label"><span class="st-label-text">Last updated</span></div>
-        <div class="st-field">{{ license.lastCheckin ? (license.lastCheckin | date:'medium') : 'Not yet' }}</div>
+        <div class="st-field">{{ license.updatedAt ? (license.updatedAt | date:'medium') : 'Not yet' }}</div>
       </div>
     </div>
   }

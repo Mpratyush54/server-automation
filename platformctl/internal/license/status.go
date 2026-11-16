@@ -92,8 +92,8 @@ func (s Status) Summary() string {
 	if s.ExpiresAt != "" {
 		parts = append(parts, "expires "+s.ExpiresAt)
 	}
-	if s.LastCheckin != "" {
-		parts = append(parts, "updated "+s.LastCheckin)
+	if s.UpdatedAt != "" {
+		parts = append(parts, "updated "+s.UpdatedAt)
 	}
 	mode := "report only"
 	if s.Enforce {

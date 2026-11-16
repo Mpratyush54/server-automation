@@ -32,7 +32,7 @@ type Installer struct {
 	Override string
 	Staged   string
 	HTTP     *http.Client
-	// Cosign verifies SHA256SUMS; nil disables signature checks.
+	// Cosign verifies the release signature; nil skips it.
 	Cosign func(ctx context.Context, sums, sig, cert string) error
 }
 

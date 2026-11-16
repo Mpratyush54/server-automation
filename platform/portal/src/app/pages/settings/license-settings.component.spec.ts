@@ -25,7 +25,7 @@ describe('LicenseSettingsComponent', () => {
   it('shows plan, limits and a status badge', async () => {
     api.getLicense.and.returnValue(of({
       available: true, status: 'valid', state: 'valid', plan: 'personal', org: null, maxNodes: 3, maxInstalls: 2,
-      expiresAt: '2027-01-01T00:00:00.000Z', graceUntil: null, lastCheckin: '2026-11-10T00:00:00.000Z', updatedAt: null, enforce: false,
+      expiresAt: '2027-01-01T00:00:00.000Z', updatedAt: '2026-11-10T00:00:00.000Z', enforce: false,
     }));
     const el = await render();
     const badge = el.querySelector('[data-testid="license-badge"]')!;

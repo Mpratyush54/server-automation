@@ -29,36 +29,31 @@ const (
 
 // Report is the client's JSON output.
 type Report struct {
-	Command                string `json:"command"`
-	Status                 string `json:"status"`
-	ExitCode               int    `json:"exit_code"`
-	AllowProvision         bool   `json:"allow_provision"`
-	Reason                 string `json:"reason,omitempty"`
-	ErrorCode              string `json:"error_code,omitempty"`
-	File                   string `json:"file,omitempty"`
-	Type                   string `json:"type,omitempty"`
-	InstallID              string `json:"install_id,omitempty"`
-	Plan                   string `json:"plan,omitempty"`
-	Org                    string `json:"org,omitempty"`
-	MaxNodes               *int   `json:"max_nodes,omitempty"`
-	MaxInstalls            *int   `json:"max_installs,omitempty"`
-	IssuedAt               string `json:"issued_at,omitempty"`
-	ExpiresAt              string `json:"expires_at,omitempty"`
-	GraceUntil             string `json:"grace_until,omitempty"`
-	CheckinRequired        *bool  `json:"checkin_required,omitempty"`
-	CheckinIntervalSeconds int    `json:"checkin_interval_seconds,omitempty"`
-	LastCheckin            string `json:"last_checkin,omitempty"`
-	LastCheckinError       string `json:"last_checkin_error,omitempty"`
+	Command        string `json:"command"`
+	Status         string `json:"status"`
+	ExitCode       int    `json:"exit_code"`
+	AllowProvision bool   `json:"allow_provision"`
+	Reason         string `json:"reason,omitempty"`
+	ErrorCode      string `json:"error_code,omitempty"`
+	File           string `json:"file,omitempty"`
+	Type           string `json:"type,omitempty"`
+	InstallID      string `json:"install_id,omitempty"`
+	Plan           string `json:"plan,omitempty"`
+	Org            string `json:"org,omitempty"`
+	MaxNodes       *int   `json:"max_nodes,omitempty"`
+	MaxInstalls    *int   `json:"max_installs,omitempty"`
+	IssuedAt       string `json:"issued_at,omitempty"`
+	ExpiresAt      string `json:"expires_at,omitempty"`
 }
 
-// Fingerprint is passed to activate and checkin.
-type Fingerprint struct {
+// Params are passed to the client.
+type Params struct {
 	Version string
 	Profile string
 	Nodes   int
 }
 
-func (f Fingerprint) args() []string {
+func (f Params) args() []string {
 	n := f.Nodes
 	if n < 1 {
 		n = 1
@@ -128,7 +123,7 @@ func (c *Client) report(ctx context.Context, args []string, stdin string) (Repor
 		r = Report{Command: args[0], Status: "error", Reason: strings.TrimSpace(string(errb))}
 	}
 	r.ExitCode = code
-	r.AllowProvision = code == ExitValid || code == ExitGrace
+	r.AllowProvision = code == ExitValid || code == ExitAttention
 	if r.Command == "" {
 		r.Command = args[0]
 	}
@@ -136,7 +131,7 @@ func (c *Client) report(ctx context.Context, args []string, stdin string) (Repor
 }
 
 // Activate runs `activate`.
-func (c *Client) Activate(ctx context.Context, fp Fingerprint, key Key) (Report, error) {
+func (c *Client) Activate(ctx context.Context, fp Params, key Key) (Report, error) {
 	args := append([]string{"activate"}, fp.args()...)
 	stdin := ""
 	if key.File != "" {
@@ -157,13 +152,13 @@ func (c *Client) Verify(ctx context.Context, nodes int) (Report, error) {
 	return c.report(ctx, args, "")
 }
 
-// Checkin runs `checkin`.
-func (c *Client) Checkin(ctx context.Context, fp Fingerprint) (Report, error) {
+// Refresh runs the client's refresh command.
+func (c *Client) Refresh(ctx context.Context, fp Params) (Report, error) {
 	return c.report(ctx, append([]string{"checkin"}, fp.args()...), "")
 }
 
 // RequestOffline runs `request-offline` and returns its output.
-func (c *Client) RequestOffline(ctx context.Context, fp Fingerprint) (string, error) {
+func (c *Client) RequestOffline(ctx context.Context, fp Params) (string, error) {
 	out, errb, code, err := c.run(ctx, append([]string{"request-offline"}, fp.args()...), "")
 	if err != nil {
 		return "", err
@@ -181,7 +176,7 @@ func (c *Client) InstallOffline(ctx context.Context, file string) (Report, error
 
 // Upgrade activates when a key is given, otherwise (or when the server is
 // unreachable) verifies.
-func (c *Client) Upgrade(ctx context.Context, fp Fingerprint, key Key) (Report, error) {
+func (c *Client) Upgrade(ctx context.Context, fp Params, key Key) (Report, error) {
 	if !key.Empty() {
 		r, err := c.Activate(ctx, fp, key)
 		if err != nil || r.ExitCode != ExitError {
@@ -193,23 +188,23 @@ func (c *Client) Upgrade(ctx context.Context, fp Fingerprint, key Key) (Report, 
 
 // Exit codes.
 const (
-	ExitValid   = 0
-	ExitError   = 1
-	ExitUsage   = 2
-	ExitGrace   = 10
-	ExitInvalid = 20
-	ExitLimit   = 21
-	ExitMissing = 30
+	ExitValid     = 0
+	ExitError     = 1
+	ExitUsage     = 2
+	ExitAttention = 10
+	ExitInvalid   = 20
+	ExitLimit     = 21
+	ExitMissing   = 30
 )
 
 var messages = map[int]string{
-	ExitValid:   "license valid",
-	ExitGrace:   "license needs attention (until %s); see " + AccountURL,
-	ExitInvalid: "license not valid%s; see " + AccountURL,
-	ExitLimit:   "license node limit reached%s; see " + PricingURL,
-	ExitMissing: "no license key; get one at " + SignupURL + " and pass --license-key-file or " + EnvKey,
-	ExitError:   "license server unreachable%s; retry later",
-	ExitUsage:   "license client usage error%s",
+	ExitValid:     "license valid",
+	ExitAttention: "license needs attention; see " + AccountURL,
+	ExitInvalid:   "license not valid%s; see " + AccountURL,
+	ExitLimit:     "license node limit reached%s; see " + PricingURL,
+	ExitMissing:   "no license key; get one at " + SignupURL + " and pass --license-key-file or " + EnvKey,
+	ExitError:     "license server unreachable%s; retry later",
+	ExitUsage:     "license client usage error%s",
 }
 
 // Decision says whether an operation may continue.
@@ -231,9 +226,7 @@ func Decide(r Report, enforce bool) Decision {
 	}
 	switch r.ExitCode {
 	case ExitValid:
-	case ExitGrace:
-		msg = fmt.Sprintf(msg, orDash(r.GraceUntil))
-	case ExitMissing:
+	case ExitAttention, ExitMissing:
 	default:
 		msg = fmt.Sprintf(msg, detail)
 	}
