@@ -8,6 +8,19 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
+  # Main public site. www and the old platform.pratyushes.dev host are
+  # redirected to it at Cloudflare's edge (301); the old host keeps serving
+  # here as a fallback while DNS and redirects move.
+  - host: cairnpaas.dev
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: public-portal
+            port:
+              number: 80
   - host: platform.pratyushes.dev
     http:
       paths:
