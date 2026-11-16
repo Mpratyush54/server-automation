@@ -1570,7 +1570,7 @@ func ProvisionComplete(cfg *config.Config) {
 	fmt.Printf("    Password: %s\n", cfg.AdminPassword)
 	fmt.Printf("    (also stored in /etc/platform/.env as ADMIN_PASSWORD)\n")
 	color.Cyan("\n  Docs / landing site:")
-	fmt.Printf("    https://platform.pratyushes.dev\n")
+	fmt.Printf("    https://cairnpaas.dev\n")
 	color.Cyan("\n  Auto-update:")
 	if cfg.AutoUpdate {
 		fmt.Printf("    Enabled (CronJob every 15m + Argo Image Updater). Manual: platformctl update\n")

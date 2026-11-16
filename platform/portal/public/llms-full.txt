@@ -1,260 +1,260 @@
 # Cairn - full documentation index for AI agents
 # Prefer these Markdown URLs for retrieval. Each is followed by its HTML page.
 
-Home: https://platform.pratyushes.dev/
-Docs HTML: https://platform.pratyushes.dev/docs
-llms.txt: https://platform.pratyushes.dev/llms.txt
-sitemap.xml: https://platform.pratyushes.dev/sitemap.xml
+Home: https://cairnpaas.dev/
+Docs HTML: https://cairnpaas.dev/docs
+llms.txt: https://cairnpaas.dev/llms.txt
+sitemap.xml: https://cairnpaas.dev/sitemap.xml
 
-- https://platform.pratyushes.dev/docs/api-reference/configuration/environment-variables.md
-  html: https://platform.pratyushes.dev/docs/api-reference/configuration/environment-variables
-- https://platform.pratyushes.dev/docs/api-reference/configuration/permissions.md
-  html: https://platform.pratyushes.dev/docs/api-reference/configuration/permissions
-- https://platform.pratyushes.dev/docs/api-reference/configuration/secrets-encryption.md
-  html: https://platform.pratyushes.dev/docs/api-reference/configuration/secrets-encryption
-- https://platform.pratyushes.dev/docs/api-reference/platform-api/audit-logs.md
-  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/audit-logs
-- https://platform.pratyushes.dev/docs/api-reference/platform-api/auth.md
-  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/auth
-- https://platform.pratyushes.dev/docs/api-reference/platform-api/databases.md
-  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/databases
-- https://platform.pratyushes.dev/docs/api-reference/platform-api/deployments.md
-  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/deployments
-- https://platform.pratyushes.dev/docs/api-reference/platform-api/files.md
-  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/files
-- https://platform.pratyushes.dev/docs/api-reference/platform-api/metrics.md
-  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/metrics
-- https://platform.pratyushes.dev/docs/api-reference/platform-api/oauth.md
-  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/oauth
-- https://platform.pratyushes.dev/docs/api-reference/platform-api/projects.md
-  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/projects
-- https://platform.pratyushes.dev/docs/api-reference/platform-api/secrets.md
-  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/secrets
-- https://platform.pratyushes.dev/docs/api-reference/platform-api/users.md
-  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/users
-- https://platform.pratyushes.dev/docs/api-reference/platform-api/webhooks.md
-  html: https://platform.pratyushes.dev/docs/api-reference/platform-api/webhooks
-- https://platform.pratyushes.dev/docs/api-reference/sdk-angular/BugReporterComponent.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-angular/BugReporterComponent
-- https://platform.pratyushes.dev/docs/api-reference/sdk-angular/PlatformErrorHandler.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-angular/PlatformErrorHandler
-- https://platform.pratyushes.dev/docs/api-reference/sdk-angular/PlatformHttpInterceptor.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-angular/PlatformHttpInterceptor
-- https://platform.pratyushes.dev/docs/api-reference/sdk-angular/PlatformModule.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-angular/PlatformModule
-- https://platform.pratyushes.dev/docs/api-reference/sdk-node/PlatformClient.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-node/PlatformClient
-- https://platform.pratyushes.dev/docs/api-reference/sdk-node/captureConsole.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-node/captureConsole
-- https://platform.pratyushes.dev/docs/api-reference/sdk-node/db-mongo.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-node/db-mongo
-- https://platform.pratyushes.dev/docs/api-reference/sdk-node/db-postgres.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-node/db-postgres
-- https://platform.pratyushes.dev/docs/api-reference/sdk-node/db-redis.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-node/db-redis
-- https://platform.pratyushes.dev/docs/api-reference/sdk-node/expressMiddleware.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-node/expressMiddleware
-- https://platform.pratyushes.dev/docs/api-reference/sdk-node/storage.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-node/storage
-- https://platform.pratyushes.dev/docs/api-reference/sdk-python/PlatformClient.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-python/PlatformClient
-- https://platform.pratyushes.dev/docs/api-reference/sdk-python/db-mongo.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-python/db-mongo
-- https://platform.pratyushes.dev/docs/api-reference/sdk-python/db-postgres.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-python/db-postgres
-- https://platform.pratyushes.dev/docs/api-reference/sdk-python/db-redis.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-python/db-redis
-- https://platform.pratyushes.dev/docs/api-reference/sdk-react/BugReporterWidget.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-react/BugReporterWidget
-- https://platform.pratyushes.dev/docs/api-reference/sdk-react/ErrorBoundary.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-react/ErrorBoundary
-- https://platform.pratyushes.dev/docs/api-reference/sdk-react/PlatformProvider.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-react/PlatformProvider
-- https://platform.pratyushes.dev/docs/api-reference/sdk-react/useBugReporter.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-react/useBugReporter
-- https://platform.pratyushes.dev/docs/api-reference/sdk-react/usePlatform.md
-  html: https://platform.pratyushes.dev/docs/api-reference/sdk-react/usePlatform
-- https://platform.pratyushes.dev/docs/architecture/auth-flow.md
-  html: https://platform.pratyushes.dev/docs/architecture/auth-flow
-- https://platform.pratyushes.dev/docs/architecture/background-jobs.md
-  html: https://platform.pratyushes.dev/docs/architecture/background-jobs
-- https://platform.pratyushes.dev/docs/architecture/data-flow.md
-  html: https://platform.pratyushes.dev/docs/architecture/data-flow
-- https://platform.pratyushes.dev/docs/architecture/database-schema.md
-  html: https://platform.pratyushes.dev/docs/architecture/database-schema
-- https://platform.pratyushes.dev/docs/architecture/k8s-infrastructure.md
-  html: https://platform.pratyushes.dev/docs/architecture/k8s-infrastructure
-- https://platform.pratyushes.dev/docs/architecture/network-topology.md
-  html: https://platform.pratyushes.dev/docs/architecture/network-topology
-- https://platform.pratyushes.dev/docs/architecture/overview.md
-  html: https://platform.pratyushes.dev/docs/architecture/overview
-- https://platform.pratyushes.dev/docs/architecture/sdk-lifecycle.md
-  html: https://platform.pratyushes.dev/docs/architecture/sdk-lifecycle
-- https://platform.pratyushes.dev/docs/architecture/secrets-architecture.md
-  html: https://platform.pratyushes.dev/docs/architecture/secrets-architecture
-- https://platform.pratyushes.dev/docs/architecture/telemetry-ingestion.md
-  html: https://platform.pratyushes.dev/docs/architecture/telemetry-ingestion
-- https://platform.pratyushes.dev/docs/changelog.md
-  html: https://platform.pratyushes.dev/docs/changelog
-- https://platform.pratyushes.dev/docs/contribution-guide.md
-  html: https://platform.pratyushes.dev/docs/contribution-guide
-- https://platform.pratyushes.dev/docs/deployment/backup-and-restore.md
-  html: https://platform.pratyushes.dev/docs/deployment/backup-and-restore
-- https://platform.pratyushes.dev/docs/deployment/bootstrap.md
-  html: https://platform.pratyushes.dev/docs/deployment/bootstrap
-- https://platform.pratyushes.dev/docs/deployment/rebuild-and-deploy.md
-  html: https://platform.pratyushes.dev/docs/deployment/rebuild-and-deploy
-- https://platform.pratyushes.dev/docs/deployment/scaling.md
-  html: https://platform.pratyushes.dev/docs/deployment/scaling
-- https://platform.pratyushes.dev/docs/deployment/ssl-certificates.md
-  html: https://platform.pratyushes.dev/docs/deployment/ssl-certificates
-- https://platform.pratyushes.dev/docs/deployment/update-secrets.md
-  html: https://platform.pratyushes.dev/docs/deployment/update-secrets
-- https://platform.pratyushes.dev/docs/faq.md
-  html: https://platform.pratyushes.dev/docs/faq
-- https://platform.pratyushes.dev/docs/getting-started/angular-sdk-quickstart.md
-  html: https://platform.pratyushes.dev/docs/getting-started/angular-sdk-quickstart
-- https://platform.pratyushes.dev/docs/getting-started/deploy-your-app.md
-  html: https://platform.pratyushes.dev/docs/getting-started/deploy-your-app
-- https://platform.pratyushes.dev/docs/getting-started/first-project.md
-  html: https://platform.pratyushes.dev/docs/getting-started/first-project
-- https://platform.pratyushes.dev/docs/getting-started/installation.md
-  html: https://platform.pratyushes.dev/docs/getting-started/installation
-- https://platform.pratyushes.dev/docs/getting-started/node-sdk-quickstart.md
-  html: https://platform.pratyushes.dev/docs/getting-started/node-sdk-quickstart
-- https://platform.pratyushes.dev/docs/getting-started/platformctl.md
-  html: https://platform.pratyushes.dev/docs/getting-started/platformctl
-- https://platform.pratyushes.dev/docs/getting-started/project-structure.md
-  html: https://platform.pratyushes.dev/docs/getting-started/project-structure
-- https://platform.pratyushes.dev/docs/getting-started/python-sdk-quickstart.md
-  html: https://platform.pratyushes.dev/docs/getting-started/python-sdk-quickstart
-- https://platform.pratyushes.dev/docs/getting-started/react-sdk-quickstart.md
-  html: https://platform.pratyushes.dev/docs/getting-started/react-sdk-quickstart
-- https://platform.pratyushes.dev/docs/getting-started/sdk-examples.md
-  html: https://platform.pratyushes.dev/docs/getting-started/sdk-examples
-- https://platform.pratyushes.dev/docs/getting-started/upgrade-guide.md
-  html: https://platform.pratyushes.dev/docs/getting-started/upgrade-guide
-- https://platform.pratyushes.dev/docs/guides/authentication.md
-  html: https://platform.pratyushes.dev/docs/guides/authentication
-- https://platform.pratyushes.dev/docs/guides/builds.md
-  html: https://platform.pratyushes.dev/docs/guides/builds
-- https://platform.pratyushes.dev/docs/guides/databases.md
-  html: https://platform.pratyushes.dev/docs/guides/databases
-- https://platform.pratyushes.dev/docs/guides/frontend-rum.md
-  html: https://platform.pratyushes.dev/docs/guides/frontend-rum
-- https://platform.pratyushes.dev/docs/guides/git-providers.md
-  html: https://platform.pratyushes.dev/docs/guides/git-providers
-- https://platform.pratyushes.dev/docs/guides/gitops-branches.md
-  html: https://platform.pratyushes.dev/docs/guides/gitops-branches
-- https://platform.pratyushes.dev/docs/guides/heatmaps.md
-  html: https://platform.pratyushes.dev/docs/guides/heatmaps
-- https://platform.pratyushes.dev/docs/guides/host-hardening.md
-  html: https://platform.pratyushes.dev/docs/guides/host-hardening
-- https://platform.pratyushes.dev/docs/guides/mfa.md
-  html: https://platform.pratyushes.dev/docs/guides/mfa
-- https://platform.pratyushes.dev/docs/guides/monitoring.md
-  html: https://platform.pratyushes.dev/docs/guides/monitoring
-- https://platform.pratyushes.dev/docs/guides/namespace-isolation.md
-  html: https://platform.pratyushes.dev/docs/guides/namespace-isolation
-- https://platform.pratyushes.dev/docs/guides/observability.md
-  html: https://platform.pratyushes.dev/docs/guides/observability
-- https://platform.pratyushes.dev/docs/guides/preview-environments.md
-  html: https://platform.pratyushes.dev/docs/guides/preview-environments
-- https://platform.pratyushes.dev/docs/guides/production-checklist.md
-  html: https://platform.pratyushes.dev/docs/guides/production-checklist
-- https://platform.pratyushes.dev/docs/guides/secrets-management.md
-  html: https://platform.pratyushes.dev/docs/guides/secrets-management
-- https://platform.pratyushes.dev/docs/guides/status-pages.md
-  html: https://platform.pratyushes.dev/docs/guides/status-pages
-- https://platform.pratyushes.dev/docs/guides/testing.md
-  html: https://platform.pratyushes.dev/docs/guides/testing
-- https://platform.pratyushes.dev/docs/index.md
-  html: https://platform.pratyushes.dev/docs
-- https://platform.pratyushes.dev/docs/mcp/for-agents.md
-  html: https://platform.pratyushes.dev/docs/mcp/for-agents
-- https://platform.pratyushes.dev/docs/mcp/overview.md
-  html: https://platform.pratyushes.dev/docs/mcp/overview
-- https://platform.pratyushes.dev/docs/mcp/setup.md
-  html: https://platform.pratyushes.dev/docs/mcp/setup
-- https://platform.pratyushes.dev/docs/mcp/tools.md
-  html: https://platform.pratyushes.dev/docs/mcp/tools
-- https://platform.pratyushes.dev/docs/observability/error-tracking.md
-  html: https://platform.pratyushes.dev/docs/observability/error-tracking
-- https://platform.pratyushes.dev/docs/observability/releases.md
-  html: https://platform.pratyushes.dev/docs/observability/releases
-- https://platform.pratyushes.dev/docs/operations/alerting.md
-  html: https://platform.pratyushes.dev/docs/operations/alerting
-- https://platform.pratyushes.dev/docs/operations/backups.md
-  html: https://platform.pratyushes.dev/docs/operations/backups
-- https://platform.pratyushes.dev/docs/operations/database-monitoring.md
-  html: https://platform.pratyushes.dev/docs/operations/database-monitoring
-- https://platform.pratyushes.dev/docs/operations/e2e-ci.md
-  html: https://platform.pratyushes.dev/docs/operations/e2e-ci
-- https://platform.pratyushes.dev/docs/operations/ha.md
-  html: https://platform.pratyushes.dev/docs/operations/ha
-- https://platform.pratyushes.dev/docs/operations/image-signing.md
-  html: https://platform.pratyushes.dev/docs/operations/image-signing
-- https://platform.pratyushes.dev/docs/operations/platform-stack.md
-  html: https://platform.pratyushes.dev/docs/operations/platform-stack
-- https://platform.pratyushes.dev/docs/operations/recover.md
-  html: https://platform.pratyushes.dev/docs/operations/recover
-- https://platform.pratyushes.dev/docs/operations/storage-providers.md
-  html: https://platform.pratyushes.dev/docs/operations/storage-providers
-- https://platform.pratyushes.dev/docs/operations/synthetics.md
-  html: https://platform.pratyushes.dev/docs/operations/synthetics
-- https://platform.pratyushes.dev/docs/operations/telemetry-privacy.md
-  html: https://platform.pratyushes.dev/docs/operations/telemetry-privacy
-- https://platform.pratyushes.dev/docs/operations/telemetry.md
-  html: https://platform.pratyushes.dev/docs/operations/telemetry
-- https://platform.pratyushes.dev/docs/operations/upgrades.md
-  html: https://platform.pratyushes.dev/docs/operations/upgrades
-- https://platform.pratyushes.dev/docs/troubleshooting/README.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/README
-- https://platform.pratyushes.dev/docs/troubleshooting/angular-template-at-symbol.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/angular-template-at-symbol
-- https://platform.pratyushes.dev/docs/troubleshooting/api-seed-failure.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/api-seed-failure
-- https://platform.pratyushes.dev/docs/troubleshooting/apt-lock.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/apt-lock
-- https://platform.pratyushes.dev/docs/troubleshooting/argocd-oidc-redirect.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/argocd-oidc-redirect
-- https://platform.pratyushes.dev/docs/troubleshooting/argocd-subpath-404.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/argocd-subpath-404
-- https://platform.pratyushes.dev/docs/troubleshooting/cert-manager-timeout.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/cert-manager-timeout
-- https://platform.pratyushes.dev/docs/troubleshooting/db-wrongpass-after-rotate.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/db-wrongpass-after-rotate
-- https://platform.pratyushes.dev/docs/troubleshooting/disk-pressure.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/disk-pressure
-- https://platform.pratyushes.dev/docs/troubleshooting/dns-ipv6-timeout.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/dns-ipv6-timeout
-- https://platform.pratyushes.dev/docs/troubleshooting/dockerhub-rate-limit.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/dockerhub-rate-limit
-- https://platform.pratyushes.dev/docs/troubleshooting/general-dns-resolution.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/general-dns-resolution
-- https://platform.pratyushes.dev/docs/troubleshooting/github-releases-outage.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/github-releases-outage
-- https://platform.pratyushes.dev/docs/troubleshooting/grafana-subpath-redirect.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/grafana-subpath-redirect
-- https://platform.pratyushes.dev/docs/troubleshooting/helm-name-reuse.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/helm-name-reuse
-- https://platform.pratyushes.dev/docs/troubleshooting/image-pull-backoff.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/image-pull-backoff
-- https://platform.pratyushes.dev/docs/troubleshooting/ingress-ownership.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/ingress-ownership
-- https://platform.pratyushes.dev/docs/troubleshooting/k3s-port-conflict.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/k3s-port-conflict
-- https://platform.pratyushes.dev/docs/troubleshooting/minio-pvc-not-found.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/minio-pvc-not-found
-- https://platform.pratyushes.dev/docs/troubleshooting/minio-template-error.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/minio-template-error
-- https://platform.pratyushes.dev/docs/troubleshooting/mongodb-validation.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/mongodb-validation
-- https://platform.pratyushes.dev/docs/troubleshooting/portainer-oidc-ssl.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/portainer-oidc-ssl
-- https://platform.pratyushes.dev/docs/troubleshooting/portainer-setup-token.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/portainer-setup-token
-- https://platform.pratyushes.dev/docs/troubleshooting/sslip-io-dns.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/sslip-io-dns
-- https://platform.pratyushes.dev/docs/troubleshooting/typescript-build-errors.md
-  html: https://platform.pratyushes.dev/docs/troubleshooting/typescript-build-errors
+- https://cairnpaas.dev/docs/api-reference/configuration/environment-variables.md
+  html: https://cairnpaas.dev/docs/api-reference/configuration/environment-variables
+- https://cairnpaas.dev/docs/api-reference/configuration/permissions.md
+  html: https://cairnpaas.dev/docs/api-reference/configuration/permissions
+- https://cairnpaas.dev/docs/api-reference/configuration/secrets-encryption.md
+  html: https://cairnpaas.dev/docs/api-reference/configuration/secrets-encryption
+- https://cairnpaas.dev/docs/api-reference/platform-api/audit-logs.md
+  html: https://cairnpaas.dev/docs/api-reference/platform-api/audit-logs
+- https://cairnpaas.dev/docs/api-reference/platform-api/auth.md
+  html: https://cairnpaas.dev/docs/api-reference/platform-api/auth
+- https://cairnpaas.dev/docs/api-reference/platform-api/databases.md
+  html: https://cairnpaas.dev/docs/api-reference/platform-api/databases
+- https://cairnpaas.dev/docs/api-reference/platform-api/deployments.md
+  html: https://cairnpaas.dev/docs/api-reference/platform-api/deployments
+- https://cairnpaas.dev/docs/api-reference/platform-api/files.md
+  html: https://cairnpaas.dev/docs/api-reference/platform-api/files
+- https://cairnpaas.dev/docs/api-reference/platform-api/metrics.md
+  html: https://cairnpaas.dev/docs/api-reference/platform-api/metrics
+- https://cairnpaas.dev/docs/api-reference/platform-api/oauth.md
+  html: https://cairnpaas.dev/docs/api-reference/platform-api/oauth
+- https://cairnpaas.dev/docs/api-reference/platform-api/projects.md
+  html: https://cairnpaas.dev/docs/api-reference/platform-api/projects
+- https://cairnpaas.dev/docs/api-reference/platform-api/secrets.md
+  html: https://cairnpaas.dev/docs/api-reference/platform-api/secrets
+- https://cairnpaas.dev/docs/api-reference/platform-api/users.md
+  html: https://cairnpaas.dev/docs/api-reference/platform-api/users
+- https://cairnpaas.dev/docs/api-reference/platform-api/webhooks.md
+  html: https://cairnpaas.dev/docs/api-reference/platform-api/webhooks
+- https://cairnpaas.dev/docs/api-reference/sdk-angular/BugReporterComponent.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-angular/BugReporterComponent
+- https://cairnpaas.dev/docs/api-reference/sdk-angular/PlatformErrorHandler.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-angular/PlatformErrorHandler
+- https://cairnpaas.dev/docs/api-reference/sdk-angular/PlatformHttpInterceptor.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-angular/PlatformHttpInterceptor
+- https://cairnpaas.dev/docs/api-reference/sdk-angular/PlatformModule.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-angular/PlatformModule
+- https://cairnpaas.dev/docs/api-reference/sdk-node/PlatformClient.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-node/PlatformClient
+- https://cairnpaas.dev/docs/api-reference/sdk-node/captureConsole.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-node/captureConsole
+- https://cairnpaas.dev/docs/api-reference/sdk-node/db-mongo.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-node/db-mongo
+- https://cairnpaas.dev/docs/api-reference/sdk-node/db-postgres.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-node/db-postgres
+- https://cairnpaas.dev/docs/api-reference/sdk-node/db-redis.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-node/db-redis
+- https://cairnpaas.dev/docs/api-reference/sdk-node/expressMiddleware.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-node/expressMiddleware
+- https://cairnpaas.dev/docs/api-reference/sdk-node/storage.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-node/storage
+- https://cairnpaas.dev/docs/api-reference/sdk-python/PlatformClient.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-python/PlatformClient
+- https://cairnpaas.dev/docs/api-reference/sdk-python/db-mongo.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-python/db-mongo
+- https://cairnpaas.dev/docs/api-reference/sdk-python/db-postgres.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-python/db-postgres
+- https://cairnpaas.dev/docs/api-reference/sdk-python/db-redis.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-python/db-redis
+- https://cairnpaas.dev/docs/api-reference/sdk-react/BugReporterWidget.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-react/BugReporterWidget
+- https://cairnpaas.dev/docs/api-reference/sdk-react/ErrorBoundary.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-react/ErrorBoundary
+- https://cairnpaas.dev/docs/api-reference/sdk-react/PlatformProvider.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-react/PlatformProvider
+- https://cairnpaas.dev/docs/api-reference/sdk-react/useBugReporter.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-react/useBugReporter
+- https://cairnpaas.dev/docs/api-reference/sdk-react/usePlatform.md
+  html: https://cairnpaas.dev/docs/api-reference/sdk-react/usePlatform
+- https://cairnpaas.dev/docs/architecture/auth-flow.md
+  html: https://cairnpaas.dev/docs/architecture/auth-flow
+- https://cairnpaas.dev/docs/architecture/background-jobs.md
+  html: https://cairnpaas.dev/docs/architecture/background-jobs
+- https://cairnpaas.dev/docs/architecture/data-flow.md
+  html: https://cairnpaas.dev/docs/architecture/data-flow
+- https://cairnpaas.dev/docs/architecture/database-schema.md
+  html: https://cairnpaas.dev/docs/architecture/database-schema
+- https://cairnpaas.dev/docs/architecture/k8s-infrastructure.md
+  html: https://cairnpaas.dev/docs/architecture/k8s-infrastructure
+- https://cairnpaas.dev/docs/architecture/network-topology.md
+  html: https://cairnpaas.dev/docs/architecture/network-topology
+- https://cairnpaas.dev/docs/architecture/overview.md
+  html: https://cairnpaas.dev/docs/architecture/overview
+- https://cairnpaas.dev/docs/architecture/sdk-lifecycle.md
+  html: https://cairnpaas.dev/docs/architecture/sdk-lifecycle
+- https://cairnpaas.dev/docs/architecture/secrets-architecture.md
+  html: https://cairnpaas.dev/docs/architecture/secrets-architecture
+- https://cairnpaas.dev/docs/architecture/telemetry-ingestion.md
+  html: https://cairnpaas.dev/docs/architecture/telemetry-ingestion
+- https://cairnpaas.dev/docs/changelog.md
+  html: https://cairnpaas.dev/docs/changelog
+- https://cairnpaas.dev/docs/contribution-guide.md
+  html: https://cairnpaas.dev/docs/contribution-guide
+- https://cairnpaas.dev/docs/deployment/backup-and-restore.md
+  html: https://cairnpaas.dev/docs/deployment/backup-and-restore
+- https://cairnpaas.dev/docs/deployment/bootstrap.md
+  html: https://cairnpaas.dev/docs/deployment/bootstrap
+- https://cairnpaas.dev/docs/deployment/rebuild-and-deploy.md
+  html: https://cairnpaas.dev/docs/deployment/rebuild-and-deploy
+- https://cairnpaas.dev/docs/deployment/scaling.md
+  html: https://cairnpaas.dev/docs/deployment/scaling
+- https://cairnpaas.dev/docs/deployment/ssl-certificates.md
+  html: https://cairnpaas.dev/docs/deployment/ssl-certificates
+- https://cairnpaas.dev/docs/deployment/update-secrets.md
+  html: https://cairnpaas.dev/docs/deployment/update-secrets
+- https://cairnpaas.dev/docs/faq.md
+  html: https://cairnpaas.dev/docs/faq
+- https://cairnpaas.dev/docs/getting-started/angular-sdk-quickstart.md
+  html: https://cairnpaas.dev/docs/getting-started/angular-sdk-quickstart
+- https://cairnpaas.dev/docs/getting-started/deploy-your-app.md
+  html: https://cairnpaas.dev/docs/getting-started/deploy-your-app
+- https://cairnpaas.dev/docs/getting-started/first-project.md
+  html: https://cairnpaas.dev/docs/getting-started/first-project
+- https://cairnpaas.dev/docs/getting-started/installation.md
+  html: https://cairnpaas.dev/docs/getting-started/installation
+- https://cairnpaas.dev/docs/getting-started/node-sdk-quickstart.md
+  html: https://cairnpaas.dev/docs/getting-started/node-sdk-quickstart
+- https://cairnpaas.dev/docs/getting-started/platformctl.md
+  html: https://cairnpaas.dev/docs/getting-started/platformctl
+- https://cairnpaas.dev/docs/getting-started/project-structure.md
+  html: https://cairnpaas.dev/docs/getting-started/project-structure
+- https://cairnpaas.dev/docs/getting-started/python-sdk-quickstart.md
+  html: https://cairnpaas.dev/docs/getting-started/python-sdk-quickstart
+- https://cairnpaas.dev/docs/getting-started/react-sdk-quickstart.md
+  html: https://cairnpaas.dev/docs/getting-started/react-sdk-quickstart
+- https://cairnpaas.dev/docs/getting-started/sdk-examples.md
+  html: https://cairnpaas.dev/docs/getting-started/sdk-examples
+- https://cairnpaas.dev/docs/getting-started/upgrade-guide.md
+  html: https://cairnpaas.dev/docs/getting-started/upgrade-guide
+- https://cairnpaas.dev/docs/guides/authentication.md
+  html: https://cairnpaas.dev/docs/guides/authentication
+- https://cairnpaas.dev/docs/guides/builds.md
+  html: https://cairnpaas.dev/docs/guides/builds
+- https://cairnpaas.dev/docs/guides/databases.md
+  html: https://cairnpaas.dev/docs/guides/databases
+- https://cairnpaas.dev/docs/guides/frontend-rum.md
+  html: https://cairnpaas.dev/docs/guides/frontend-rum
+- https://cairnpaas.dev/docs/guides/git-providers.md
+  html: https://cairnpaas.dev/docs/guides/git-providers
+- https://cairnpaas.dev/docs/guides/gitops-branches.md
+  html: https://cairnpaas.dev/docs/guides/gitops-branches
+- https://cairnpaas.dev/docs/guides/heatmaps.md
+  html: https://cairnpaas.dev/docs/guides/heatmaps
+- https://cairnpaas.dev/docs/guides/host-hardening.md
+  html: https://cairnpaas.dev/docs/guides/host-hardening
+- https://cairnpaas.dev/docs/guides/mfa.md
+  html: https://cairnpaas.dev/docs/guides/mfa
+- https://cairnpaas.dev/docs/guides/monitoring.md
+  html: https://cairnpaas.dev/docs/guides/monitoring
+- https://cairnpaas.dev/docs/guides/namespace-isolation.md
+  html: https://cairnpaas.dev/docs/guides/namespace-isolation
+- https://cairnpaas.dev/docs/guides/observability.md
+  html: https://cairnpaas.dev/docs/guides/observability
+- https://cairnpaas.dev/docs/guides/preview-environments.md
+  html: https://cairnpaas.dev/docs/guides/preview-environments
+- https://cairnpaas.dev/docs/guides/production-checklist.md
+  html: https://cairnpaas.dev/docs/guides/production-checklist
+- https://cairnpaas.dev/docs/guides/secrets-management.md
+  html: https://cairnpaas.dev/docs/guides/secrets-management
+- https://cairnpaas.dev/docs/guides/status-pages.md
+  html: https://cairnpaas.dev/docs/guides/status-pages
+- https://cairnpaas.dev/docs/guides/testing.md
+  html: https://cairnpaas.dev/docs/guides/testing
+- https://cairnpaas.dev/docs/index.md
+  html: https://cairnpaas.dev/docs
+- https://cairnpaas.dev/docs/mcp/for-agents.md
+  html: https://cairnpaas.dev/docs/mcp/for-agents
+- https://cairnpaas.dev/docs/mcp/overview.md
+  html: https://cairnpaas.dev/docs/mcp/overview
+- https://cairnpaas.dev/docs/mcp/setup.md
+  html: https://cairnpaas.dev/docs/mcp/setup
+- https://cairnpaas.dev/docs/mcp/tools.md
+  html: https://cairnpaas.dev/docs/mcp/tools
+- https://cairnpaas.dev/docs/observability/error-tracking.md
+  html: https://cairnpaas.dev/docs/observability/error-tracking
+- https://cairnpaas.dev/docs/observability/releases.md
+  html: https://cairnpaas.dev/docs/observability/releases
+- https://cairnpaas.dev/docs/operations/alerting.md
+  html: https://cairnpaas.dev/docs/operations/alerting
+- https://cairnpaas.dev/docs/operations/backups.md
+  html: https://cairnpaas.dev/docs/operations/backups
+- https://cairnpaas.dev/docs/operations/database-monitoring.md
+  html: https://cairnpaas.dev/docs/operations/database-monitoring
+- https://cairnpaas.dev/docs/operations/e2e-ci.md
+  html: https://cairnpaas.dev/docs/operations/e2e-ci
+- https://cairnpaas.dev/docs/operations/ha.md
+  html: https://cairnpaas.dev/docs/operations/ha
+- https://cairnpaas.dev/docs/operations/image-signing.md
+  html: https://cairnpaas.dev/docs/operations/image-signing
+- https://cairnpaas.dev/docs/operations/platform-stack.md
+  html: https://cairnpaas.dev/docs/operations/platform-stack
+- https://cairnpaas.dev/docs/operations/recover.md
+  html: https://cairnpaas.dev/docs/operations/recover
+- https://cairnpaas.dev/docs/operations/storage-providers.md
+  html: https://cairnpaas.dev/docs/operations/storage-providers
+- https://cairnpaas.dev/docs/operations/synthetics.md
+  html: https://cairnpaas.dev/docs/operations/synthetics
+- https://cairnpaas.dev/docs/operations/telemetry-privacy.md
+  html: https://cairnpaas.dev/docs/operations/telemetry-privacy
+- https://cairnpaas.dev/docs/operations/telemetry.md
+  html: https://cairnpaas.dev/docs/operations/telemetry
+- https://cairnpaas.dev/docs/operations/upgrades.md
+  html: https://cairnpaas.dev/docs/operations/upgrades
+- https://cairnpaas.dev/docs/troubleshooting/README.md
+  html: https://cairnpaas.dev/docs/troubleshooting/README
+- https://cairnpaas.dev/docs/troubleshooting/angular-template-at-symbol.md
+  html: https://cairnpaas.dev/docs/troubleshooting/angular-template-at-symbol
+- https://cairnpaas.dev/docs/troubleshooting/api-seed-failure.md
+  html: https://cairnpaas.dev/docs/troubleshooting/api-seed-failure
+- https://cairnpaas.dev/docs/troubleshooting/apt-lock.md
+  html: https://cairnpaas.dev/docs/troubleshooting/apt-lock
+- https://cairnpaas.dev/docs/troubleshooting/argocd-oidc-redirect.md
+  html: https://cairnpaas.dev/docs/troubleshooting/argocd-oidc-redirect
+- https://cairnpaas.dev/docs/troubleshooting/argocd-subpath-404.md
+  html: https://cairnpaas.dev/docs/troubleshooting/argocd-subpath-404
+- https://cairnpaas.dev/docs/troubleshooting/cert-manager-timeout.md
+  html: https://cairnpaas.dev/docs/troubleshooting/cert-manager-timeout
+- https://cairnpaas.dev/docs/troubleshooting/db-wrongpass-after-rotate.md
+  html: https://cairnpaas.dev/docs/troubleshooting/db-wrongpass-after-rotate
+- https://cairnpaas.dev/docs/troubleshooting/disk-pressure.md
+  html: https://cairnpaas.dev/docs/troubleshooting/disk-pressure
+- https://cairnpaas.dev/docs/troubleshooting/dns-ipv6-timeout.md
+  html: https://cairnpaas.dev/docs/troubleshooting/dns-ipv6-timeout
+- https://cairnpaas.dev/docs/troubleshooting/dockerhub-rate-limit.md
+  html: https://cairnpaas.dev/docs/troubleshooting/dockerhub-rate-limit
+- https://cairnpaas.dev/docs/troubleshooting/general-dns-resolution.md
+  html: https://cairnpaas.dev/docs/troubleshooting/general-dns-resolution
+- https://cairnpaas.dev/docs/troubleshooting/github-releases-outage.md
+  html: https://cairnpaas.dev/docs/troubleshooting/github-releases-outage
+- https://cairnpaas.dev/docs/troubleshooting/grafana-subpath-redirect.md
+  html: https://cairnpaas.dev/docs/troubleshooting/grafana-subpath-redirect
+- https://cairnpaas.dev/docs/troubleshooting/helm-name-reuse.md
+  html: https://cairnpaas.dev/docs/troubleshooting/helm-name-reuse
+- https://cairnpaas.dev/docs/troubleshooting/image-pull-backoff.md
+  html: https://cairnpaas.dev/docs/troubleshooting/image-pull-backoff
+- https://cairnpaas.dev/docs/troubleshooting/ingress-ownership.md
+  html: https://cairnpaas.dev/docs/troubleshooting/ingress-ownership
+- https://cairnpaas.dev/docs/troubleshooting/k3s-port-conflict.md
+  html: https://cairnpaas.dev/docs/troubleshooting/k3s-port-conflict
+- https://cairnpaas.dev/docs/troubleshooting/minio-pvc-not-found.md
+  html: https://cairnpaas.dev/docs/troubleshooting/minio-pvc-not-found
+- https://cairnpaas.dev/docs/troubleshooting/minio-template-error.md
+  html: https://cairnpaas.dev/docs/troubleshooting/minio-template-error
+- https://cairnpaas.dev/docs/troubleshooting/mongodb-validation.md
+  html: https://cairnpaas.dev/docs/troubleshooting/mongodb-validation
+- https://cairnpaas.dev/docs/troubleshooting/portainer-oidc-ssl.md
+  html: https://cairnpaas.dev/docs/troubleshooting/portainer-oidc-ssl
+- https://cairnpaas.dev/docs/troubleshooting/portainer-setup-token.md
+  html: https://cairnpaas.dev/docs/troubleshooting/portainer-setup-token
+- https://cairnpaas.dev/docs/troubleshooting/sslip-io-dns.md
+  html: https://cairnpaas.dev/docs/troubleshooting/sslip-io-dns
+- https://cairnpaas.dev/docs/troubleshooting/typescript-build-errors.md
+  html: https://cairnpaas.dev/docs/troubleshooting/typescript-build-errors

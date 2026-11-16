@@ -134,7 +134,7 @@ for (const path of ['/robots.txt', '/llms.txt', '/llms-full.txt', '/docs/index.m
     if (path.endsWith('.md')) assert.match(response.headers.get('content-type'), /^text\/markdown/);
     if (path.endsWith('.md')) {
       const canonical = path === '/docs/index.md' ? '/docs' : path.slice(0, -3);
-      assert.equal(response.headers.get('link'), `<https://platform.pratyushes.dev${canonical}>; rel="canonical"`);
+      assert.equal(response.headers.get('link'), `<https://cairnpaas.dev${canonical}>; rel="canonical"`);
     }
   });
 }
@@ -331,8 +331,8 @@ test('the About page is prerendered with its own content and metadata', async ()
   assert.doesNotMatch(bodyOf(about), angularSyntax);
   const meta = head(about);
   assert.equal(meta.title, 'About Cairn');
-  assert.deepEqual(meta.canonical, ['https://platform.pratyushes.dev/about']);
-  assert.equal(meta.ogUrl, 'https://platform.pratyushes.dev/about');
+  assert.deepEqual(meta.canonical, ['https://cairnpaas.dev/about']);
+  assert.equal(meta.ogUrl, 'https://cairnpaas.dev/about');
   assert.equal(meta.jsonLd.length, 0);
 });
 
@@ -342,7 +342,7 @@ test('every public page has its own title, description, canonical and social tag
   const descriptions = new Map();
   for (const [path, document] of documents) {
     const meta = head(document);
-    const url = `https://platform.pratyushes.dev${path}`;
+    const url = `https://cairnpaas.dev${path}`;
     assert.deepEqual(meta.canonical, [url], path);
     assert.equal(meta.ogUrl, url, path);
     assert.ok(meta.title && meta.description, path);
@@ -369,10 +369,10 @@ test('every public page has its own title, description, canonical and social tag
 test('robots.txt and the sitemap list the About page', async () => {
   const robots = await readFile(join(root, 'robots.txt'), 'utf8');
   assert.match(robots, /^Allow: \/about$/m);
-  assert.match(robots, /^Sitemap: https:\/\/platform\.pratyushes\.dev\/sitemap\.xml$/m);
+  assert.match(robots, /^Sitemap: https:\/\/cairnpaas.dev\/sitemap\.xml$/m);
   for (const sitemap of [await readFile(join(root, 'sitemap.xml'), 'utf8'), await readFile(join(repo, 'platform/portal/public/sitemap.xml'), 'utf8')]) {
     const urls = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1]);
-    assert.deepEqual(urls.slice(0, 2), ['https://platform.pratyushes.dev/', 'https://platform.pratyushes.dev/about']);
+    assert.deepEqual(urls.slice(0, 2), ['https://cairnpaas.dev/', 'https://cairnpaas.dev/about']);
     assert.deepEqual(urls.slice(2), pages, 'Regenerate public/sitemap.xml: node platform/portal/scripts/prerender-docs.mjs --sitemap-only');
   }
 });

@@ -44,7 +44,7 @@ export async function buildDocsSearch({
     const html = prepareDocsHtml(
       await marked.parse(await readFile(join(docsDir, file), "utf8")),
       "/docs/" + file,
-      "https://platform.pratyushes.dev",
+      "https://cairnpaas.dev",
     );
     const headings = [
       ...html.matchAll(/<h([1-6])\b[^>]*id="([^"]+)"[^>]*>([\s\S]*?)<\/h\1>/g),

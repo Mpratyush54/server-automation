@@ -22,7 +22,7 @@ import { DialogService } from '../../shared/feedback/feedback.service';
   <h2 id="st-connect-title" class="st-advanced">Connect your Git provider</h2>
   <p class="st-intro">
     Connect once and people can sign in with GitHub or GitLab, and Cairn can read repositories and deploy on push.
-    <a class="st-learn" href="https://platform.pratyushes.dev/docs/guides/git-providers" target="_blank" rel="noopener">Learn more</a>
+    <a class="st-learn" href="https://cairnpaas.dev/docs/guides/git-providers" target="_blank" rel="noopener">Learn more</a>
   </p>
   @for (w of status?.warnings || []; track w) {
     <p class="st-msg st-warn-text">{{ w }}</p>

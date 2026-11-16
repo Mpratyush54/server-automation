@@ -423,7 +423,7 @@ func WriteLocalStorageSkip(root string) error {
 }
 
 // LonghornFaultedVolumeDocsURL explains how to recover a faulted volume.
-const LonghornFaultedVolumeDocsURL = "https://platform.pratyushes.dev/docs/operations/ha#recover-a-faulted-volume"
+const LonghornFaultedVolumeDocsURL = "https://cairnpaas.dev/docs/operations/ha#recover-a-faulted-volume"
 
 // longhornVolumeSummary counts Longhorn volumes by robustness and describes
 // each faulted one (volume, PVC and namespace).
