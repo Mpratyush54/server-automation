@@ -10,7 +10,7 @@ await main(async () => {
     const headers = { authorization: `Bearer ${token}` };
     const name = `e2e-upgrade-${Date.now().toString(36)}`;
     const p = await request(`${apiUrl()}/api/projects`, { method: 'POST', headers,
-      body: { name, stack: 'nodejs', domain: domain(), description: 'upgrade persistence seed', repositoryUrl: 'https://github.com/Mpratyush54/server-automation' } });
+      body: { name, stack: 'nodejs', domain: domain(), description: 'upgrade persistence seed' } });
     if (!expect(p.status === 201 && p.json?.id, 'create seed project')) return;
     const projectId = p.json.id;
     const s = await request(`${apiUrl()}/api/projects/${projectId}/secrets`, { method: 'POST', headers,

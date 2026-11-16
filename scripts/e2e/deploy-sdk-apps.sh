@@ -32,7 +32,7 @@ TOKEN=$(E2E_ADMIN_PASSWORD_FILE="${E2E_ADMIN_PASSWORD_FILE:-$E2E_WORK/admin-pass
 auth=(-H "Authorization: Bearer $TOKEN")
 PROJECT_ID=$(c "${auth[@]}" "$API/api/projects" | jq -r '[.[] | select(.name=="sdk-demo-apps")][0].id // empty')
 if [[ -z "$PROJECT_ID" ]]; then
-  PROJECT_ID=$(jq -n --arg d "$DOMAIN" '{name:"sdk-demo-apps",stack:"nodejs",repositoryUrl:"https://github.com/Mpratyush54/server-automation.git",domain:$d}' \
+  PROJECT_ID=$(jq -n --arg d "$DOMAIN" '{name:"sdk-demo-apps",stack:"nodejs",domain:$d}' \
     | c -X POST "${auth[@]}" -H 'Content-Type: application/json' --data @- "$API/api/projects" | jq -r .id)
 fi
 [[ "$PROJECT_ID" =~ ^[A-Za-z0-9-]+$ ]] || die "could not create the sdk-demo-apps project"
