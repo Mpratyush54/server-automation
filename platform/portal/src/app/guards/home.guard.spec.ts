@@ -18,7 +18,7 @@ describe('canonical public homepage', () => {
   let createUrlTree: jasmine.Spy;
 
   beforeEach(() => {
-    host = { location: { hostname: 'cairnpaas.dev' } };
+    host = { location: { hostname: 'platform.pratyushes.dev' } };
     authenticated = jasmine.createSpy().and.returnValue(false);
     createUrlTree = jasmine
       .createSpy()
