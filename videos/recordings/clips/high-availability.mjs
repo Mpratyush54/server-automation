@@ -74,8 +74,12 @@ export async function record() {
     if (powerOn) {
       rec.mark('poweron');
       await term.write(`\x1b[38;2;242;181;58m# ${new Date().toTimeString().slice(0, 8)} powering ${node} back on\x1b[0m\r\n`);
-      await shell(powerOn);
-      await rec.cut('rejoin', () => status.getByText('Ready', { exact: true }).waitFor({ timeout: 900_000 }));
+      await beat(1500);
+      // A cloud start can wait minutes for the forced stop to finish: cut it with the rejoin.
+      await rec.cut('rejoin', async () => {
+        await shell(powerOn);
+        await status.getByText('Ready', { exact: true }).waitFor({ timeout: 900_000 });
+      });
       rec.mark('rejoined');
       await beat(4000);
     }
