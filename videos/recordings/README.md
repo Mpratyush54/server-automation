@@ -13,7 +13,7 @@ The landing page shows one short clip per feature, 20 to 40 seconds each. Every 
 
 The pipeline has three stages:
 
-1. `record.mjs` drives the portal (and terminal panes) at 1280x800 CSS pixels and 2x device scale, with `recordVideo`. It writes the raw video and named marks to `out/<clip>/`.
+1. `record.mjs` drives the portal (and terminal panes) at 1280x800 CSS pixels with `recordVideo` (Playwright captures video at CSS size, whatever the device scale; the edit scales it to 1920x1200). It writes the raw video and named marks to `out/<clip>/`.
 2. `post/process.mjs` cuts and labels the video, joins side-by-side panes, and encodes it. It writes H.264 MP4, VP9 WebM, a poster JPEG and WebVTT captions to `out/publish/`.
 3. `publish.mjs` uploads the files to Cloudflare R2, checks them on `https://media.cairnpaas.dev/v1/`, and writes `landing-clip-versions.ts`. Once that file is committed, the landing page shows the clip instead of "Recording coming soon".
 

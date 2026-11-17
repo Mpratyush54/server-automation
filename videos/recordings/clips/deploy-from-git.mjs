@@ -68,10 +68,17 @@ export async function record() {
     await form.waitFor();
     await page.locator('#deploy-env').selectOption({ label: 'production' });
     const branchField = page.locator('#deploy-branch');
+    // The field is a text input until the repository's branches load, then a list.
+    await page.waitForFunction(() => document.querySelector('#deploy-branch')?.tagName === 'SELECT', null, { timeout: 20_000 }).catch(() => {});
     if ((await branchField.evaluate((el) => el.tagName)) === 'SELECT') await branchField.selectOption(branch);
     else await type(page, branchField, branch);
     // The form defaults to "k8s"; a repository that keeps its files elsewhere names the folder.
-    if (appPath) await type(page, page.locator('#deploy-path'), appPath);
+    // It sits under the form's "Advanced" disclosure.
+    if (appPath) {
+      const advanced = form.locator('details.advanced');
+      if (!(await advanced.evaluate((el) => el.open))) await click(page, advanced.locator('summary'));
+      await type(page, page.locator('#deploy-path'), appPath);
+    }
     const deployButton = form.getByRole('button', { name: 'Deploy', exact: true });
     await page.waitForFunction((el) => !el.disabled, await deployButton.elementHandle(), { timeout: 60_000 });
     rec.mark('deploy-form');

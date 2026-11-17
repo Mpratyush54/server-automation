@@ -1,6 +1,8 @@
 // One recording session: a Chromium browser with one or more panes (browser
-// contexts), each recording its own video at 1280x800 CSS pixels and 2x device
-// scale (2560x1600 frames). Clip scripts drive the panes with the helpers
+// contexts), each recording its own video at 1280x800 CSS pixels. Playwright
+// captures video frames at CSS size whatever the device scale (a larger
+// `size` only pads them with grey), so frames are 1280x800 and the edit
+// scales them to 1920x1200. Clip scripts drive the panes with the helpers
 // below and record named marks at real UI states; post/process.mjs turns the
 // raw videos and marks into the published clip.
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
@@ -31,7 +33,7 @@ export class Recording {
         deviceScaleFactor: SCALE,
         colorScheme: theme,
         reducedMotion: 'no-preference',
-        recordVideo: { dir: join(recording.dir, 'raw', pane.name), size: { width: viewport.width * SCALE, height: viewport.height * SCALE } },
+        recordVideo: { dir: join(recording.dir, 'raw', pane.name), size: { width: viewport.width, height: viewport.height } },
       });
       await context.addInitScript({ content: overlay });
       // The portal reads its theme choice from localStorage; follow RECORD_THEME.
@@ -103,6 +105,10 @@ export class Recording {
 
   /** Close the browser without saving, after a failure. */
   async abort() {
+    // What the screen showed when the run failed: out/<clip>/failure-<pane>.png (never published).
+    for (const [name, pane] of Object.entries(this.panes)) {
+      await pane.page.screenshot({ path: join(this.dir, `failure-${name}.png`) }).catch(() => {});
+    }
     await this.browser?.close().catch(() => {});
   }
 }
