@@ -25,6 +25,7 @@ export async function session() {
   }
   const email = env('CAIRN_EMAIL', { required: true });
   const password = env('CAIRN_PASSWORD', { required: true });
+  let totpStep = -1;
   const login = await fetch(`${base}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -35,7 +36,8 @@ export async function session() {
   let body = await login.json();
   if (body.mfa_required) {
     const secret = env('CAIRN_TOTP_SECRET', { required: true });
-    const { code } = await freshTotp(secret, Number(env('CAIRN_TOTP_LAST_STEP', { fallback: '-1' })));
+    const { code, step } = await freshTotp(secret, Number(env('CAIRN_TOTP_LAST_STEP', { fallback: '-1' })));
+    totpStep = step;
     const challenge = await fetch(`${base}/api/auth/mfa/challenge`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -45,7 +47,8 @@ export async function session() {
     body = await challenge.json();
   }
   if (!body.token) throw new Error('Sign-in returned no session token');
-  cached = { token: body.token, user: body.user ?? {} };
+  // totpStep: the code's time step, so a later step-up in this run waits for the next one.
+  cached = { token: body.token, user: body.user ?? {}, totpStep };
   return cached;
 }
 

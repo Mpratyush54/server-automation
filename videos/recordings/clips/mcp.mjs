@@ -18,7 +18,7 @@
 import { fileURLToPath } from 'node:url';
 import { cairnUrl, env } from '../lib/config.mjs';
 import { Recording, beat, click, response, type } from '../lib/recorder.mjs';
-import { api } from '../lib/session.mjs';
+import { api, session } from '../lib/session.mjs';
 import { Terminal } from '../lib/terminal.mjs';
 import { freshTotp } from '../lib/totp.mjs';
 
@@ -44,6 +44,8 @@ export async function record() {
   const namespace = env('MCP_NAMESPACE', { required: true });
   const deployment = env('MCP_DEPLOYMENT', { required: true });
   const tokenName = `recording-${new Date().toISOString().slice(0, 10)}`;
+  // The API takes each code once: never reuse the sign-in's time step for a step-up.
+  lastStep = (await session()).totpStep ?? -1;
 
   const rec = await Recording.open('mcp', [
     { name: 'main', viewport: { width: 820, height: 800 }, signedIn: true },

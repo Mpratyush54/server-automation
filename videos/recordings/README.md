@@ -47,7 +47,7 @@ Everything comes from the environment. Put it in `recording.env` (git-ignored) a
 | `CAIRN_TOTP_SECRET` | if the account has two-factor sign-in; `mcp` always | Base32 authenticator secret, used for sign-in and step-up codes |
 | `CAIRN_TOKEN` | optional | A JWT to reuse instead of signing in (saves a login: the API allows 20 per 15 minutes per address) |
 | `INSTALL_CAST`, `REDACT_VALUES`, `INSTALL_MAX_IDLE` | install | Cast file; newline-separated values to mask; longest pause kept |
-| `APP_REPO_URL`, `APP_BRANCH`, `APP_NAME`, `APP_EXPECT_TEXT` | deploy-from-git | Repository with a `k8s/` folder; branch; unique project name; text the running app shows |
+| `APP_REPO_URL`, `APP_BRANCH`, `APP_NAME`, `APP_EXPECT_TEXT`, `APP_PATH` | deploy-from-git | Repository with a `k8s/` folder; branch; unique project name; text the running app shows; folder with the deploy files when it is not `k8s/` |
 | `OBS_PROJECT_ID`, `OBS_LOG_TEXT` | observability | Instrumented project; text in recent log lines that carry a trace ID |
 | `BACKUP_SSH`, `BACKUP_IDENTITY_FILE`, `BACKUP_SKIP_ARCHIVE` | backups | `user@host` (key in ssh-agent); age `identity.txt`; `1` to skip taking an archive |
 | `APP_URL`, `HA_NODE`, `HA_POWEROFF_CMD`, `HA_POWERON_CMD` | high-availability | The app's public address; the server to stop as shown on the Servers tab; shell commands to stop it and start it again |

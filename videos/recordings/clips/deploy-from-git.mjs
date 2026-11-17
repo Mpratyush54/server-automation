@@ -7,7 +7,8 @@
 // Env: CAIRN_URL + sign-in (see README), APP_REPO_URL (a repository with a
 // k8s/ folder: a Deployment and a Service on port 80, image already built),
 // optional APP_BRANCH (main), APP_NAME (unique, default cairn-demo-<time>),
-// APP_EXPECT_TEXT (text the app's page shows, to prove it is live).
+// APP_EXPECT_TEXT (text the app's page shows, to prove it is live),
+// APP_PATH (folder with the deploy files when it is not k8s/).
 import { cairnUrl, env } from '../lib/config.mjs';
 import { Recording, beat, click, response, type } from '../lib/recorder.mjs';
 
@@ -16,6 +17,7 @@ export async function record() {
   const branch = env('APP_BRANCH', { fallback: 'main' });
   const name = env('APP_NAME', { fallback: `cairn-demo-${Date.now().toString(36).slice(-5)}` });
   const expect = env('APP_EXPECT_TEXT');
+  const appPath = env('APP_PATH');
 
   const rec = await Recording.open('deploy-from-git');
   try {
@@ -68,6 +70,8 @@ export async function record() {
     const branchField = page.locator('#deploy-branch');
     if ((await branchField.evaluate((el) => el.tagName)) === 'SELECT') await branchField.selectOption(branch);
     else await type(page, branchField, branch);
+    // The form defaults to "k8s"; a repository that keeps its files elsewhere names the folder.
+    if (appPath) await type(page, page.locator('#deploy-path'), appPath);
     const deployButton = form.getByRole('button', { name: 'Deploy', exact: true });
     await page.waitForFunction((el) => !el.disabled, await deployButton.elementHandle(), { timeout: 60_000 });
     rec.mark('deploy-form');
