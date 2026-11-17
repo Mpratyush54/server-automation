@@ -43,7 +43,11 @@ export class Terminal {
       term.open(host);
       // Fit to the pane: measure one cell, then size the grid.
       const cell = term._core._renderService.dimensions.css.cell;
-      term.resize(cols ?? Math.floor(host.clientWidth / cell.width), rows ?? Math.floor(host.clientHeight / cell.height));
+      // clientWidth/Height include the host's padding; size the grid to the content box.
+      const style = getComputedStyle(host);
+      const width = host.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const height = host.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+      term.resize(cols ?? Math.floor(width / cell.width), rows ?? Math.floor(height / cell.height));
       window.__term = term;
     }, { theme: THEME, fontSize, cols, rows });
     return new Terminal(page);

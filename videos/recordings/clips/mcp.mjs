@@ -68,9 +68,14 @@ export async function record() {
     await click(page, page.getByTestId('agents-create-open'));
     const form = page.getByTestId('agents-create-form');
     await type(page, form.getByLabel('Name', { exact: true }), tokenName);
-    for (const box of await form.locator('input[type="checkbox"]').all()) {
-      const name = await box.getAttribute('name');
-      const wanted = name === 'scope-commands:validate' || name === 'scope-commands:execute';
+    // Each permission is a label with its scope id in .pa-scope-id. (The
+    // inputs carry no name attribute: Angular passes [name] to ngModel.)
+    const scopes = form.locator('fieldset.pa-scopes label');
+    await scopes.filter({ hasText: 'commands:execute' }).waitFor();
+    for (const label of await scopes.all()) {
+      const id = (await label.locator('.pa-scope-id').textContent())?.trim();
+      const wanted = id === 'commands:validate' || id === 'commands:execute';
+      const box = label.locator('input[type="checkbox"]');
       if ((await box.isChecked()) !== wanted) await click(page, box);
     }
     rec.mark('scopes');

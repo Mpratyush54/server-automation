@@ -12,6 +12,19 @@
 import { cairnUrl, env } from '../lib/config.mjs';
 import { Recording, beat, click, response, type } from '../lib/recorder.mjs';
 
+/** Resolve once `url` answers over HTTPS with a certificate Node trusts (up to 5 minutes). */
+async function trusted(url, timeoutMs = 300_000) {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+      if (response.status < 500) return;
+    } catch { /* not trusted or not answering yet */ }
+    if (Date.now() > until) throw new Error(`${url} has no trusted certificate after ${timeoutMs / 1000} s`);
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+}
+
 export async function record() {
   const repo = env('APP_REPO_URL', { required: true });
   const branch = env('APP_BRANCH', { fallback: 'main' });
@@ -97,6 +110,9 @@ export async function record() {
     // The heading says "production" in the DOM and is capitalised by CSS: match either.
     const envItem = page.locator('#environments .env-item').filter({ has: page.getByRole('heading', { name: /^production$/i }) });
     const address = await envItem.locator('dd a.mono').first().getAttribute('href');
+    // A new address gets its Let's Encrypt certificate a little after the
+    // deploy; until then the browser refuses it. Wait (cut) for a trusted answer.
+    await rec.cut('certificate', () => trusted(address));
     await click(page, envItem.locator('dd a.mono').first());
     // The link opens a new tab; show the app in this recorded page instead.
     for (const other of page.context().pages()) if (other !== page) await other.close();

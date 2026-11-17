@@ -16,7 +16,8 @@ import { cairnUrl, env } from '../lib/config.mjs';
 import { Recording, beat, click, response } from '../lib/recorder.mjs';
 import { Terminal } from '../lib/terminal.mjs';
 
-const ssh = (host, command) => ['ssh', '-o', 'BatchMode=yes', '-tt', host, command];
+// -q: no "Connection to ... closed." line after each command.
+const ssh = (host, command) => ['ssh', '-q', '-o', 'BatchMode=yes', '-tt', host, command];
 
 export async function record() {
   const host = env('BACKUP_SSH', { required: true });
@@ -50,7 +51,7 @@ export async function record() {
     // 3. Restore the latest archive into a scratch database and check it.
     rec.mark('restore-test');
     // -T: no remote tty, so the identity on stdin reaches platformctl and is never echoed.
-    run = await term.run(['ssh', '-o', 'BatchMode=yes', '-T', host, 'sudo -n platformctl backup restore-test'], {
+    run = await term.run(['ssh', '-q', '-o', 'BatchMode=yes', '-T', host, 'sudo -n platformctl backup restore-test'], {
       shown: "cat identity.txt | ssh server 'sudo platformctl backup restore-test'",
       input: identity,
     });
