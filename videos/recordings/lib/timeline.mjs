@@ -91,20 +91,30 @@ export function formatSkipped(seconds) {
 /** On-screen labels for the edited video: where time was skipped or sped up. */
 export function timeLabels(segments, offset = 0) {
   const labels = [];
+  const skips = [];
   let edited = offset;
   for (const segment of segments) {
     if (segment.label) continue;
     if (segment.cut) {
-      labels.push({ from: edited, to: edited + 2, text: formatSkipped(segment.cut.to - segment.cut.from) });
+      skips.push({ from: edited, skipped: segment.cut.to - segment.cut.from });
     } else {
-      if (segment.speed !== 1) labels.push({ from: edited, to: edited + played(segment), text: `${segment.speed}x speed` });
+      if (segment.speed !== 1) labels.push({ from: edited, to: edited + played(segment), text: `${segment.speed}x speed`, kind: 'speed' });
       edited += played(segment);
     }
   }
   for (const segment of segments.filter((s) => s.label)) {
-    const at = editedTime(segment.label.at, segments, offset);
-    labels.push({ from: at, to: at + 2, text: formatSkipped(segment.label.skipped) });
+    skips.push({ from: editedTime(segment.label.at, segments, offset), skipped: segment.label.skipped });
   }
+  // Skips closer together than one label's time on screen share a label with
+  // their total, so labels never cover each other (a sped-up terminal replay
+  // can shorten many pauses within a few seconds).
+  const merged = [];
+  for (const skip of skips.sort((a, b) => a.from - b.from)) {
+    const last = merged.at(-1);
+    if (last && skip.from < last.from + 2) last.skipped += skip.skipped;
+    else merged.push({ ...skip });
+  }
+  for (const skip of merged) labels.push({ from: skip.from, to: skip.from + 2, text: formatSkipped(skip.skipped), kind: 'skip' });
   return labels.sort((a, b) => a.from - b.from);
 }
 

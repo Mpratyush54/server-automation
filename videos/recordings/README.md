@@ -32,7 +32,7 @@ Run all of this on a disposable VM, never on a laptop. The VM needs the browser,
 A full install takes about five minutes, mostly waiting, and it prints the admin password. The clip is captured as text, with real timings, and rendered afterwards:
 
 1. On the fresh server: `asciinema rec --cols 110 --rows 32 --command 'sudo -E platformctl provision --auto --profile full' install.cast`. This records every byte of output with its real timestamp.
-2. `clips/install.mjs` masks secrets in the cast (labelled passwords, `plat_` tokens, AWS keys, age keys, plus the exact values in `REDACT_VALUES`) and shortens every pause longer than `INSTALL_MAX_IDLE` seconds (default 2). It then replays the cast at its own speed into xterm.js in the recorded browser, in the Signal palette, and labels each shortened pause in the video.
+2. `clips/install.mjs` masks secrets in the cast (labelled passwords, `plat_` tokens, AWS keys, age keys, plus the exact values in `REDACT_VALUES`) and shortens every pause longer than `INSTALL_MAX_IDLE` seconds (default 2). It then replays the cast into xterm.js in the recorded browser, in the Signal palette, and labels each shortened pause in the video. The edit plays the install itself at `INSTALL_SPEED` (default 3x) with a speed label; shortened pauses that land within two seconds of each other share one label with their total.
 
 Other options were considered. Filming a real terminal cannot mask the password after the fact. `agg` renders a GIF, whose quality and size do not suit text. A `script(1)` typescript needs its own timing replay layer, which asciinema already provides. Because the replay renders in the same browser pipeline, the install clip has the same resolution, font and cursor as the others.
 
@@ -46,7 +46,7 @@ Everything comes from the environment. Put it in `recording.env` (git-ignored) a
 | `CAIRN_EMAIL`, `CAIRN_PASSWORD` | all but install | An Admin or DevOps account made for the recording |
 | `CAIRN_TOTP_SECRET` | if the account has two-factor sign-in; `mcp` always | Base32 authenticator secret, used for sign-in and step-up codes |
 | `CAIRN_TOKEN` | optional | A JWT to reuse instead of signing in (saves a login: the API allows 20 per 15 minutes per address) |
-| `INSTALL_CAST`, `REDACT_VALUES`, `INSTALL_MAX_IDLE` | install | Cast file; newline-separated values to mask; longest pause kept |
+| `INSTALL_CAST`, `REDACT_VALUES`, `INSTALL_MAX_IDLE`, `INSTALL_SPEED` | install | Cast file; newline-separated values to mask; longest pause kept; speed-up from the banner to "provisioned successfully" (default 3, labelled; 1 for real time) |
 | `APP_REPO_URL`, `APP_BRANCH`, `APP_NAME`, `APP_EXPECT_TEXT`, `APP_PATH` | deploy-from-git | Repository with a `k8s/` folder; branch; unique project name; text the running app shows; folder with the deploy files when it is not `k8s/` |
 | `OBS_PROJECT_ID`, `OBS_LOG_TEXT` | observability | Instrumented project; text in recent log lines that carry a trace ID |
 | `BACKUP_SSH`, `BACKUP_IDENTITY_FILE`, `BACKUP_SKIP_ARCHIVE` | backups | `user@host` (key in ssh-agent); age `identity.txt`; `1` to skip taking an archive |

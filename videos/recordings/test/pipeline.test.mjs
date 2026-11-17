@@ -134,3 +134,14 @@ test('every caption starts at a mark its clip script really sets', async () => {
     }
   }
 });
+
+test('skips within one label of each other share a label, and speed labels sit above', () => {
+  const marks = { start: 0, 'replay:fast-start': 2, 'replay:fast-end': 32, end: 40 };
+  const replaySkips = [{ at: 5, skipped: 30 }, { at: 7, skipped: 40 }, { at: 20, skipped: 10 }];
+  const segments = keepSegments(marks, { speeds: { replay: 3 }, replaySkips });
+  const labels = timeLabels(segments);
+  assert.deepEqual(labels.map((l) => l.text), ['3x speed', '1 min 10 s skipped', '10 s skipped']);
+  const graph = buildFilter({ panes: [{ name: 'main', offset: 0 }], segments, labels, fontFile: '/fonts/Plex.otf' });
+  assert.match(graph, /text='3x speed'[^,]*,?.*y=h-th-128/);
+  assert.match(graph, /text='10 s skipped'.*y=h-th-48/);
+});

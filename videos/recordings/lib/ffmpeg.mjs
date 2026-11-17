@@ -46,7 +46,9 @@ export function buildFilter({ panes, segments, labels, fontFile, title }) {
     current = '[card][body]concat=n=2:v=1:a=0';
   }
   for (const label of labels) {
-    current += `,drawtext=${font}:expansion=none:text='${drawtextEscape(label.text)}':fontsize=34:fontcolor=0xE6E7E9:box=1:boxcolor=${BG}@0.88:boxborderw=16:x=w-tw-48:y=h-th-48:enable='between(t,${label.from.toFixed(3)},${label.to.toFixed(3)})'`;
+    // A speed label can last a while: it sits one row above the skip labels so both stay readable.
+    const y = label.kind === 'speed' ? 'h-th-128' : 'h-th-48';
+    current += `,drawtext=${font}:expansion=none:text='${drawtextEscape(label.text)}':fontsize=34:fontcolor=0xE6E7E9:box=1:boxcolor=${BG}@0.88:boxborderw=16:x=w-tw-48:y=${y}:enable='between(t,${label.from.toFixed(3)},${label.to.toFixed(3)})'`;
   }
   parts.push(`${current},format=yuv420p[out]`);
   return parts.join(';');

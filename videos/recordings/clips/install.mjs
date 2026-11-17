@@ -12,6 +12,7 @@
 // becomes a labelled cut. It ends on the portal's real sign-in page.
 //
 // Env: INSTALL_CAST (path), CAIRN_URL, optional INSTALL_MAX_IDLE (default 2),
+// INSTALL_SPEED (default 3: banner to done plays this much faster, labelled),
 // REDACT_VALUES (newline-separated exact values to mask, e.g. the admin password).
 import { readFile } from 'node:fs/promises';
 import { cairnUrl, env } from '../lib/config.mjs';
@@ -54,13 +55,22 @@ export async function record() {
     await term.typeCommand('sudo platformctl provision --auto --profile full');
     const replayStart = rec.now();
     const seen = new Set();
+    // Even with long pauses shortened, a full install prints for over a
+    // minute. The edit plays banner..done at INSTALL_SPEED (labelled).
+    const speed = Number(env('INSTALL_SPEED', { fallback: '3' }));
     await term.replay(cast, {
       onTime: (t) => {
         for (const [name, at] of Object.entries(markers)) {
-          if (!seen.has(name) && t >= at) { seen.add(name); rec.mark(name); }
+          if (!seen.has(name) && t >= at) {
+            seen.add(name);
+            if (name === 'done' && speed > 1) rec.mark('replay:fast-end');
+            rec.mark(name);
+            if (name === 'banner' && speed > 1) rec.mark('replay:fast-start');
+          }
         }
       },
     });
+    if (speed > 1) rec.speeds.replay = speed;
     await beat(2500);
     // Shortened pauses, in raw-video time, so the edit labels them.
     const shortened = skips.map((s) => ({ at: Number((replayStart + s.at).toFixed(3)), skipped: Number(s.skipped.toFixed(1)) }));
