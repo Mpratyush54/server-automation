@@ -44,7 +44,7 @@
   "files": [
     "dist"
   ],
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "module": "dist/esm/index.js",
   "sideEffects": false,
   "overrides": {

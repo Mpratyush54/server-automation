@@ -38,6 +38,7 @@ import buildRoutes from './builds';
 import registryTokenRoutes from './registry-token';
 import operationRoutes from './operations';
 import backupRoutes from './backups';
+import licenseRoutes from './license';
 import telemetryRoutes from './telemetry';
 import privacyRoutes from './privacy';
 import replayRoutes from './replays';
@@ -89,6 +90,7 @@ router.use('/', mcpConnectionRoutes); // connected AI assistants (remote MCP gra
 router.use('/', notificationRoutes);
 router.use('/', operationRoutes);
 router.use('/', backupRoutes);
+router.use('/', licenseRoutes);
 router.use('/', syntheticRoutes); // synthetic checks, results, status feed, browser runner (#42)
 router.use('/', observabilityRoutes); // project-scoped Prometheus/Loki/Tempo/Pyroscope query proxies, fleet view (#48)
 router.use('/', statusPageRoutes); // public status pages + incidents (#46)

@@ -13,7 +13,7 @@ const shell = (await readFile(fileURLToPath(new URL('../src/index.html', import.
 // If this test fails, the landing or About template gained a binding, block or
 // expression the prerender does not understand. Teach scripts/prerender-template.mjs
 // to render it (or change the template); never let it through unrendered.
-for (const page of ['landing', 'about']) {
+for (const page of ['landing', 'about', 'pricing']) {
   test(`the current ${page} template prerenders completely`, () => {
     const html = renderPublicPage(page, shell);
     const body = html.slice(html.indexOf('<app-root>'));

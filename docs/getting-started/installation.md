@@ -126,6 +126,7 @@ Set these as environment variables before `provision`:
 | `AUTO_UPDATE` | `true` | Keeps images on the newest release tag |
 | `GITHUB_TOKEN` | Not set | Lets the server pull private images from GHCR |
 | `SKIP_PREFLIGHT` | `false` | Skips the memory, disk and port checks |
+| `PLATFORM_DIAGNOSTICS` | `on` | Send anonymous install diagnostics to Cairn |
 
 More options, such as install speed and offline installs, are on the [CLI](platformctl.md) page.
 

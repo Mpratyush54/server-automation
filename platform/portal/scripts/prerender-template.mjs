@@ -42,6 +42,9 @@ const SERVICE_STUBS = {
   ThemeService: () => ({ choice: () => 'system', cycle() {} }),
   // Change detection only runs in the browser.
   ChangeDetectorRef: () => ({ detectChanges() {}, markForCheck() {} }),
+  // The pricing form only calls these after a submit in the browser.
+  LicenseAccountService: () => ({}),
+  ToastService: () => ({}),
 };
 
 const coreStubs = {

@@ -60,7 +60,7 @@ For **local development on Windows**, use `docker compose` at the repo root — 
 2. Open `https://YOUR_DOMAIN` (login page — no landing/docs on the server portal)
 3. Sign in with `admin@pratyushes.dev` and the generated `ADMIN_PASSWORD` from `/etc/platform/.env`
 4. Back up `/etc/platform/.env` (mode 600)
-5. Docs / marketing: https://platform.pratyushes.dev only
+5. Docs / marketing: https://cairnpaas.dev only
 
 ---
 

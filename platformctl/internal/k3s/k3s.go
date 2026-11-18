@@ -32,11 +32,29 @@ const RegistriesPath = "/etc/rancher/k3s/registries.yaml"
 // RegistriesYAML renders registries.yaml for an authenticated GHCR pull.
 // Returns "" when no token is configured.
 func RegistriesYAML(githubToken string) string {
-	if githubToken == "" {
-		return ""
-	}
-	return fmt.Sprintf("configs:\n  \"ghcr.io\":\n    auth:\n      username: oauth2\n      password: %q\n", githubToken)
+	return renderRegistries(githubToken, BuildRegistrySettings{}, nil)
 }
+
+func renderRegistries(githubToken string, build BuildRegistrySettings, auth *ImageRegistryAuth) string {
+	var configs strings.Builder
+	if githubToken != "" {
+		fmt.Fprintf(&configs, "  \"ghcr.io\":\n    auth:\n      username: oauth2\n      password: %q\n", githubToken)
+	}
+	if auth != nil {
+		fmt.Fprintf(&configs, "  %q:\n    auth:\n      username: %q\n      password: %q\n", auth.Registry, auth.Username, auth.Password)
+	}
+	out := ""
+	if configs.Len() > 0 {
+		out = "configs:\n" + configs.String()
+	}
+	if build.Host != "" && build.Endpoint != "" {
+		out += fmt.Sprintf("mirrors:\n  %q:\n    endpoint: [%q]\n", build.Host, build.Endpoint)
+	}
+	return out
+}
+
+// registriesPath is a variable for tests.
+var registriesPath = RegistriesPath
 
 // WriteRegistries writes registries.yaml before k3s starts. It reports whether
 // the file changed; a running k3s must be restarted to pick up a change.
@@ -47,17 +65,17 @@ func WriteRegistries(githubToken string) (bool, error) {
 			return false, err
 		}
 	}
-	content := BuildRegistriesYAML(githubToken, settings)
+	content := renderRegistries(githubToken, settings, readImageRegistryAuth())
 	if content == "" {
 		return false, nil
 	}
-	if cur, err := os.ReadFile(RegistriesPath); err == nil && string(cur) == content {
+	if cur, err := os.ReadFile(registriesPath); err == nil && string(cur) == content {
 		return false, nil
 	}
-	if err := os.MkdirAll("/etc/rancher/k3s", 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(registriesPath), 0755); err != nil {
 		return false, err
 	}
-	if err := os.WriteFile(RegistriesPath, []byte(content), 0600); err != nil {
+	if err := os.WriteFile(registriesPath, []byte(content), 0600); err != nil {
 		return false, err
 	}
 	return true, nil

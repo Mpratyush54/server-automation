@@ -8,6 +8,7 @@
 # Contents (installed by platformctl/internal/bundle):
 #   k3s/k3s, k3s/k3s-install.sh               pinned binary and installer
 #   helm/helm                                pinned Helm binary (checksum-verified) for offline provision
+#   license/cairn-license                    license client, when pinned (release bundle only)
 #   packages/ubuntu-<release>/<arch>/         flat apt repository (*.deb + Packages) for offline provision and join
 #   SHA256SUMS                               checksums of every file below and of manifest.json
 #   manifest.json                            versions, file list, Cairn image tag and digests
@@ -65,7 +66,7 @@ done
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 STAGE="$WORK/bundle"
-mkdir -p "$STAGE/k3s" "$STAGE/images" "$STAGE/charts" "$STAGE/packages" "$STAGE/helm" "$OUT_DIR"
+mkdir -p "$STAGE/k3s" "$STAGE/images" "$STAGE/charts" "$STAGE/packages" "$STAGE/helm" "$STAGE/license" "$OUT_DIR"
 
 # --- pinned versions -------------------------------------------------------
 if [[ -n "${CHARTS_JSON:-}" ]]; then
@@ -122,6 +123,21 @@ if [[ "${SKIP_PACKAGES:-}" != 1 ]]; then
   tar -xzf "$WORK/$HELM_TGZ" -C "$WORK/helm-x" "linux-$ARCH/helm"
   cp "$WORK/helm-x/linux-$ARCH/helm" "$STAGE/helm/helm"
   chmod 0755 "$STAGE/helm/helm"
+
+  # License client, when this release pins one.
+  LC_VERSION="$(jq -r '.licenseClient.version // empty' "$WORK/charts.json")"
+  if [[ -n "$LC_VERSION" ]]; then
+    [[ "$LC_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid license client version '$LC_VERSION'"
+    LC_BASE="$(jq -er '.licenseClient.baseUrl' "$WORK/charts.json")"
+    LC_SUM="$(jq -er --arg a "$ARCH" '.licenseClient.sha256[$a]' "$WORK/charts.json")"
+    [[ "$LC_BASE" == https://* && "$LC_SUM" =~ ^[a-f0-9]{64}$ ]] || die "invalid license client pin"
+    mkdir -p "$STAGE/license"
+    fetch "$LC_BASE/$LC_VERSION/cairn-license-linux-$ARCH" "$STAGE/license/cairn-license"
+    [[ "$(sha256sum "$STAGE/license/cairn-license" | cut -d' ' -f1)" == "$LC_SUM" ]] || die "license client checksum mismatch"
+    chmod 0755 "$STAGE/license/cairn-license"
+  else
+    log "no license client pinned; not bundled"
+  fi
 fi
 
 # --- Ubuntu node packages --------------------------------------------------
@@ -311,7 +327,7 @@ if [[ "${SKIP_PACKAGES:-}" != 1 ]]; then
 fi
 
 # --- manifest + checksums --------------------------------------------------
-(cd "$STAGE" && find k3s images charts packages helm -type f | LC_ALL=C sort) >"$WORK/files.txt"
+(cd "$STAGE" && find k3s images charts packages helm license -type f | LC_ALL=C sort) >"$WORK/files.txt"
 printf '%s\n' "${IMAGES[@]}" >"$WORK/images.txt"
 printf '%s\n' "${platform_pinned[@]}" >"$WORK/platform-images.txt"
 jq -n \
@@ -343,7 +359,7 @@ fi
 # --- package ---------------------------------------------------------------
 # Contents are already compressed; a low level keeps packaging fast.
 log "packaging $OUT_DIR/$BUNDLE"
-tar -C "$STAGE" -cf - SHA256SUMS manifest.json k3s images charts packages helm | zstd -q -T0 -3 -o "$OUT_DIR/$BUNDLE" -f
+tar -C "$STAGE" -cf - SHA256SUMS manifest.json k3s images charts packages helm license | zstd -q -T0 -3 -o "$OUT_DIR/$BUNDLE" -f
 (cd "$OUT_DIR" && sha256sum "$BUNDLE" >"$BUNDLE.sha256")
 # GitHub release assets must be smaller than 2 GiB; the bundle is larger.
 # Releases publish .part00, .part01, ... (the .sha256 covers the whole

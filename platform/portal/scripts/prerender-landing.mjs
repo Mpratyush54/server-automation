@@ -1,4 +1,4 @@
-// Prerenders the public landing page (/) and About page (/about) from their
+// Prerenders the public landing page (/), About (/about) and Pricing (/pricing) from their
 // Angular components, so crawlers, link previews and visitors without
 // JavaScript get the real content. Angular replaces it when it boots.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -71,6 +71,16 @@ const PAGES = {
     extraHead: '',
     jsonLd: [],
   },
+  pricing: {
+    path: '/pricing',
+    module: 'account/pricing.component.ts',
+    component: 'PricingComponent',
+    state: {},
+    title: 'Pricing · Cairn',
+    description: 'Cairn is free for personal use. Enterprise starts at $9 per server per month, billed annually, with monitoring, logs, traces and support.',
+    extraHead: '',
+    jsonLd: [],
+  },
 };
 
 /** Render one public page into a full HTML document based on the built shell. */
@@ -90,15 +100,18 @@ export async function prerenderPublicPages({ outputDir = join(portal, 'dist/port
   if (!shell.includes('<app-root></app-root>')) throw new Error('Build the portal before prerendering the public pages');
   const home = renderPublicPage('landing', shell);
   const about = renderPublicPage('about', shell);
-  // nginx serves /about from /prerender/about/index.html, like docs pages.
-  const aboutFile = join(outputDir, 'prerender', 'about', 'index.html');
-  await mkdir(dirname(aboutFile), { recursive: true });
-  await writeFile(aboutFile, about);
+  const pricing = renderPublicPage('pricing', shell);
+  // nginx serves /about and /pricing from /prerender/<page>/index.html, like docs pages.
+  for (const [name, html] of [['about', about], ['pricing', pricing]]) {
+    const file = join(outputDir, 'prerender', name, 'index.html');
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, html);
+  }
   await writeFile(join(outputDir, 'index.html'), home);
-  return { home, about };
+  return { home, about, pricing };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await prerenderPublicPages();
-  console.log('Prerendered / and /about from their Angular components with per-page metadata.');
+  console.log('Prerendered /, /about and /pricing from their Angular components with per-page metadata.');
 }

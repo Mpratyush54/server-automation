@@ -22,7 +22,7 @@ import { firstValueFrom } from 'rxjs';
     <div class="dbi-body">
     @if (message) { <p class="dbi-msg" role="status">{{message}}</p> }
     @if (data?.enabled) {
-      <p class="dbi-muted">Updated {{data.collectedAt | date:'medium'}} · <a href="https://platform.pratyushes.dev/docs/operations/database-monitoring" target="_blank" rel="noopener">Learn more</a></p>
+      <p class="dbi-muted">Updated {{data.collectedAt | date:'medium'}} · <a href="https://cairnpaas.dev/docs/operations/database-monitoring" target="_blank" rel="noopener">Learn more</a></p>
 
       <div class="dbi-engine">
         <div class="dbi-engine-head">

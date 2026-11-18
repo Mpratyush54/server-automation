@@ -40,7 +40,7 @@ describe('DocsComponent', () => {
     expect(get).toHaveBeenCalledWith('/docs/api-reference/configuration/environment-variables.md', { responseType: 'text' });
     expect(document.title).toBe('Environment Variables Reference | Cairn Docs');
     expect(document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href)
-      .toBe('https://platform.pratyushes.dev/docs/api-reference/configuration/environment-variables');
+      .toBe('https://cairnpaas.dev/docs/api-reference/configuration/environment-variables');
   });
 
   it('lists the operations and Phase 4 guides, with root-level pages at /docs/<page>', () => {

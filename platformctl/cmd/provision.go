@@ -288,6 +288,10 @@ func runProvision() error {
 			}
 		}
 	}
+	if err := hostStep("license", func() error { return licenseProvision(os.Stdout, bundleFlag != "") }); err != nil {
+		return err
+	}
+	_ = cfg.SaveEnvFile(envFilePath)
 	// Prerequisites (apt) are only needed by the cluster steps, not by helm or
 	// k3s: install them in the background too, and wait before the cluster steps.
 	prereqsDone := make(chan error, 1)
@@ -409,6 +413,7 @@ func runProvision() error {
 		}
 	}
 	printTimings(started)
+	finishLicenseSetup(os.Stdout)
 	components.ProvisionComplete(cfg)
 	finishBackupSetup(os.Stdout, cfg)
 	printJoinHint(os.Stdout, cfg)
@@ -599,7 +604,7 @@ const envFilePath = "/etc/platform/.env"
 
 // childSecretEnv are credentials the parent stores in Kubernetes Secrets;
 // child steps read the Secrets and never inherit them.
-var childSecretEnv = map[string]bool{"BACKUP_S3_ACCESS_KEY": true, "BACKUP_S3_SECRET_KEY": true}
+var childSecretEnv = map[string]bool{"BACKUP_S3_ACCESS_KEY": true, "BACKUP_S3_SECRET_KEY": true, "CAIRN_LICENSE_KEY": true}
 
 // childEnviron drops variables that the saved .env defines. config.Load never
 // overrides an existing env var with the file's value, so an inherited stale

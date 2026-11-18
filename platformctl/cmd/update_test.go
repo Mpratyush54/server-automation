@@ -3,14 +3,18 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 )
 
 func stubUpdate(t *testing.T, role string, installed bool, refresh func() (bool, error)) *int {
 	t.Helper()
-	oldRole, oldInstalled, oldRefresh, oldImages := joinedRole, clusterInstalled, refreshKubeVIP, updateImages
-	t.Cleanup(func() { joinedRole, clusterInstalled, refreshKubeVIP, updateImages = oldRole, oldInstalled, oldRefresh, oldImages })
+	oldRole, oldInstalled, oldRefresh, oldImages, oldGate := joinedRole, clusterInstalled, refreshKubeVIP, updateImages, licenseGate
+	t.Cleanup(func() {
+		joinedRole, clusterInstalled, refreshKubeVIP, updateImages, licenseGate = oldRole, oldInstalled, oldRefresh, oldImages, oldGate
+	})
+	licenseGate = func(io.Writer) error { return nil }
 	rolled := 0
 	joinedRole = func() string { return role }
 	clusterInstalled = func() bool { return installed }

@@ -42,7 +42,7 @@
       @if (pages.length) { <span class="badge">{{ pages.length }}</span> }
     </div>
     @if (!pages.length) {
-      <p class="hm-empty">No clicks recorded in this range. To start collecting, set <code>heatmaps: true</code> in the browser SDK's <code>rum</code> options. <a href="https://platform.pratyushes.dev/docs/guides/heatmaps" target="_blank" rel="noopener">Learn more</a></p>
+      <p class="hm-empty">No clicks recorded in this range. To start collecting, set <code>heatmaps: true</code> in the browser SDK's <code>rum</code> options. <a href="https://cairnpaas.dev/docs/guides/heatmaps" target="_blank" rel="noopener">Learn more</a></p>
     }
     <ul>
       @for (p of pages; track p.page) {

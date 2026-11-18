@@ -1,7 +1,7 @@
 // node --test scripts/tests/public-site-links.test.mjs
 //
-// Every link on the public site's own pages (landing, About, and the shared
-// header and footer) must lead somewhere real. Paths are checked against the
+// Every link on the public site's own pages (landing, About, Pricing, and the
+// shared header and footer) must lead somewhere real. Paths are checked against the
 // files in the repository, not against the live site: a server outage must
 // not hide (or fake) a broken link.
 import assert from 'node:assert/strict';
@@ -25,7 +25,15 @@ const shell = (await readFile(join(portal, 'src/index.html'), 'utf8'))
 const pages = {
   '/': new JSDOM(renderPublicPage('landing', shell)).window.document,
   '/about': new JSDOM(renderPublicPage('about', shell)).window.document,
+  '/pricing': new JSDOM(renderPublicPage('pricing', shell)).window.document,
 };
+
+/**
+ * Public-site routes the browser renders instead of the prerender, such as
+ * sign-in: each must be a marketing-only route in app.routes.ts.
+ */
+const routes = await readFile(join(portal, 'src/app/app.routes.ts'), 'utf8');
+const clientPages = new Set([...routes.matchAll(/path: '([\w-]+)'[^\n]*marketingOnlyGuard/g)].map(m => `/${m[1]}`));
 
 /** The Markdown file a /docs URL shows, relative to a docs tree. */
 const docsFile = path => (path === '/docs' ? 'index.md' : `${path.slice('/docs/'.length)}.md`);
@@ -74,6 +82,8 @@ for (const [page, document] of Object.entries(pages)) {
         }
       } else if (PUBLIC_PAGES.includes(path)) {
         if (fragment && !pages[path].getElementById(fragment)) problems.push(`${where}: no element #${fragment} on ${path}`);
+      } else if (clientPages.has(path)) {
+        if (fragment) problems.push(`${where}: fragment on a browser-rendered page`);
       } else {
         problems.push(`${where}: not a page of the public site`);
       }

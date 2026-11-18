@@ -5,6 +5,7 @@
 //
 //	k3s/k3s, k3s/k3s-install.sh                  pinned binary and installer
 //	helm/helm                                    pinned Helm binary (offline provision)
+//	license/cairn-license                        license client (release bundle, when pinned)
 //	packages/ubuntu-<release>/<arch>/*.deb,Packages  node packages + dependencies (flat apt repository)
 //	manifest.json                                versions, file list and the Cairn image references
 //	SHA256SUMS                                   sha256sum output for every other file
@@ -47,7 +48,7 @@ type Options struct {
 	ImagesDir string
 	// ChartsDir receives charts/*.tgz (default versions.ChartCacheDir).
 	ChartsDir string
-	// StagingDir receives k3s/k3s, k3s/k3s-install.sh, helm/helm and packages/ubuntu-<release>/<arch>/{*.deb,Packages}.
+	// StagingDir receives k3s/k3s, k3s/k3s-install.sh, helm/helm, license/cairn-license and packages/ubuntu-<release>/<arch>/{*.deb,Packages}.
 	StagingDir string
 }
 
@@ -213,7 +214,7 @@ func cleanEntryName(raw string) (string, error) {
 func destination(name string, opts Options) string {
 	if opts.StagingDir != "" {
 		switch name {
-		case "k3s/k3s", "k3s/k3s-install.sh", "helm/helm":
+		case "k3s/k3s", "k3s/k3s-install.sh", "helm/helm", "license/cairn-license":
 			return filepath.Join(opts.StagingDir, path.Base(name))
 		}
 		parts := strings.Split(name, "/")

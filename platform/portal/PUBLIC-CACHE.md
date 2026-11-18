@@ -1,6 +1,6 @@
 # Public portal caching
 
-`nginx.public.conf` is the origin configuration for `platform.pratyushes.dev`.
+`nginx.public.conf` is the origin configuration for `cairnpaas.dev`.
 It sends `no-store` for HTML and legacy homepage redirects, gives content-named Angular bundles a one-year
 immutable lifetime, and gives the link-preview images in `/media/` a one-hour
 browser / one-week Cloudflare lifetime. Failed asset requests do not inherit
@@ -28,7 +28,7 @@ clear objects already stored in the Cloudflare zone.
 For this host, add a Cache Rule that bypasses HTML caching:
 
 ```text
-http.host eq "platform.pratyushes.dev" and (
+http.host eq "cairnpaas.dev" and (
   http.request.uri.path in {"/" "/index.html" "/landing" "/landing/"}
   or (
     (http.request.uri.path eq "/docs" or starts_with(http.request.uri.path, "/docs/"))
@@ -46,10 +46,10 @@ After Argo has deployed the new image, purge these exact URLs using Cloudflare's
 Custom Purge:
 
 ```text
-https://platform.pratyushes.dev/
-https://platform.pratyushes.dev/index.html
-https://platform.pratyushes.dev/landing
-https://platform.pratyushes.dev/landing/
+https://cairnpaas.dev/
+https://cairnpaas.dev/index.html
+https://cairnpaas.dev/landing
+https://cairnpaas.dev/landing/
 ```
 
 Reload previously open browser tabs afterward. To distinguish a stale edge
@@ -67,7 +67,7 @@ cacheable file extensions by default. To explicitly enable the public media
 directory, create this Cache Rule:
 
 ```text
-http.host eq "platform.pratyushes.dev"
+http.host eq "cairnpaas.dev"
 and starts_with(http.request.uri.path, "/media/")
 ```
 

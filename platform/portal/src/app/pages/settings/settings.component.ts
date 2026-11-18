@@ -1,5 +1,6 @@
 import { StorageSettingsComponent } from './storage-settings.component';
 import { UsageSettingsComponent } from './usage-settings.component';
+import { LicenseSettingsComponent } from './license-settings.component';
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -16,7 +17,7 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, OperationProgressComponent, GitConnectComponent, StorageSettingsComponent, UsageSettingsComponent],
+  imports: [CommonModule, FormsModule, OperationProgressComponent, GitConnectComponent, StorageSettingsComponent, UsageSettingsComponent, LicenseSettingsComponent],
   styleUrl: './settings.component.css',
   template: `
 <div class="page-header">
@@ -37,6 +38,9 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
     <button type="button" [class.active]="activeTab === 'usage'" [attr.aria-current]="activeTab === 'usage' ? 'page' : null" (click)="activeTab = 'usage'">Usage and costs</button>
     <button type="button" [class.active]="activeTab === 'rotate'" [attr.aria-current]="activeTab === 'rotate' ? 'page' : null" (click)="activeTab = 'rotate'">Rotate passwords</button>
     <button type="button" [class.active]="activeTab === 'security'" [attr.aria-current]="activeTab === 'security' ? 'page' : null" (click)="activeTab = 'security'">Security</button>
+  }
+  @if (isAdmin) {
+    <button type="button" [class.active]="activeTab === 'license'" [attr.aria-current]="activeTab === 'license' ? 'page' : null" (click)="activeTab = 'license'">License</button>
   }
 </nav>
 
@@ -127,7 +131,7 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
       @if (saveMessage) {
         <span class="st-msg st-footer-msg" [class.st-ok]="saveOk" [class.st-err]="!saveOk" role="status">{{ saveMessage }}</span>
       }
-      <a class="st-learn" href="https://platform.pratyushes.dev/docs/guides/git-providers" target="_blank" rel="noopener">Learn more</a>
+      <a class="st-learn" href="https://cairnpaas.dev/docs/guides/git-providers" target="_blank" rel="noopener">Learn more</a>
       <button type="button" class="btn btn-primary" (click)="saveLogin()" [disabled]="savingIntegrations">{{ savingIntegrations ? 'Saving…' : 'Save sign-in settings' }}</button>
     </div>
   </details>
@@ -240,7 +244,7 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
         </div>
       </div>
       <div class="st-footer">
-        <a class="st-learn" href="https://platform.pratyushes.dev/docs/operations/alerting" target="_blank" rel="noopener">Learn more</a>
+        <a class="st-learn" href="https://cairnpaas.dev/docs/operations/alerting" target="_blank" rel="noopener">Learn more</a>
         <button type="button" class="btn btn-ghost" (click)="showSmtpForm = false">Cancel</button>
         <button type="button" class="btn btn-primary" (click)="saveSmtp()">Save mail server</button>
       </div>
@@ -252,6 +256,8 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
 @if (activeTab === 'storage' && isDevOps) { <app-storage-settings /> }
 
 @if (activeTab === 'usage' && isDevOps) { <app-usage-settings /> }
+
+@if (activeTab === 'license' && isAdmin) { <app-license-settings /> }
 
 <!-- Git access -->
 @if (activeTab === 'integrations') {
@@ -292,7 +298,7 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
     </div>
     @if (isDevOps || isTechLeadOrDevOps) {
       <div class="st-footer">
-        <a class="st-learn" href="https://platform.pratyushes.dev/docs/guides/git-providers" target="_blank" rel="noopener">Learn more</a>
+        <a class="st-learn" href="https://cairnpaas.dev/docs/guides/git-providers" target="_blank" rel="noopener">Learn more</a>
         <button type="button" class="btn btn-primary" (click)="saveGitHubToken()" [disabled]="savingIntegrations">Save</button>
       </div>
     }
@@ -400,7 +406,7 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
         <span class="st-msg st-footer-msg" role="status">{{ mfaPolicyMessage }}</span>
       }
       @if (!isAdmin) { <span class="muted">Only admins can change this.</span> }
-      <a class="st-learn" href="https://platform.pratyushes.dev/docs/guides/mfa" target="_blank" rel="noopener">Learn more</a>
+      <a class="st-learn" href="https://cairnpaas.dev/docs/guides/mfa" target="_blank" rel="noopener">Learn more</a>
       @if (isAdmin) {
         <button type="button" class="btn btn-primary" (click)="saveMfaPolicy()" [disabled]="savingMfaPolicy">Save</button>
       }
@@ -517,7 +523,7 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
       </div>
     </div>
     <div class="st-footer">
-      <a class="st-learn" href="https://platform.pratyushes.dev/docs/deployment/update-secrets" target="_blank" rel="noopener">Learn more</a>
+      <a class="st-learn" href="https://cairnpaas.dev/docs/deployment/update-secrets" target="_blank" rel="noopener">Learn more</a>
       <button type="button" class="btn btn-danger" (click)="rotateSecrets()" [disabled]="rotating || rotateConfirm !== 'ROTATE'">{{ rotating ? 'Rotating…' : 'Rotate passwords' }}</button>
     </div>
     @if (rotateError || rotationOperationId || rotateValues || rotateResults.length) {
@@ -659,7 +665,7 @@ export class SettingsComponent implements OnInit {
     // Deep link from global search: /settings?tab=<activeTab>, only tabs this role can see.
     this.route?.queryParamMap.subscribe((q) => {
       const tab = q.get('tab');
-      if (tab && (tab === 'integrations' || (this.isDevOps && ['login', 'smtp', 'storage', 'usage', 'rotate', 'security'].includes(tab)))) {
+      if (tab && (tab === 'integrations' || (this.isDevOps && ['login', 'smtp', 'storage', 'usage', 'rotate', 'security'].includes(tab)) || (this.isAdmin && tab === 'license'))) {
         this.activeTab = tab;
       }
     });
