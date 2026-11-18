@@ -19,7 +19,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var backupAll bool
+var backupAll, backupVerbose bool
 var backupConfigPath, backupTarget, restoreID, restoreComponent string
 var restoreConfirm bool
 var restorePITR, restoreSourceServer string
@@ -96,7 +96,8 @@ func runFullBackup() error {
 	}
 	defer unlock()
 	start := time.Now()
-	m, e := backup.Create(c, Version, backup.HostDriver{MinioAlias: c.MinioAlias})
+	// Progress goes to stderr: stdout carries only the backup ID (scripts read it).
+	m, e := backup.Create(c, Version, backup.HostDriver{MinioAlias: c.MinioAlias, Quiet: !backupVerbose, Progress: os.Stderr})
 	if se := backup.PublishStatus("backup", m.ID, start, m, e); se != nil {
 		fmt.Fprintln(os.Stderr, "backup status publication failed:", se)
 	}
@@ -165,6 +166,7 @@ func init() {
 	backupCmd.PersistentFlags().StringVar(&backupConfigPath, "backup-config", "/etc/platform/backup.json", "backup configuration (contains only the public age recipient)")
 	backupCmd.PersistentFlags().StringVar(&backupTarget, "target", "", "override the configured target: external (the off-site target) or file:///path")
 	backupCmd.Flags().BoolVar(&backupAll, "all", false, "create encrypted component backup and enforce retention")
+	backupCmd.Flags().BoolVar(&backupVerbose, "verbose", false, "with --all, show the raw kubectl, database dump and snapshot output (shown on failure anyway)")
 	backupCmd.AddCommand(&cobra.Command{Use: "list", Short: "List complete backups on the target", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		c, e := backupSettings()
 		if e != nil {

@@ -65,7 +65,7 @@ The database change log and snapshots start by themselves. The nightly archive o
    sudo platformctl backup schedule
    ```
 
-   The archives go to the backup target. Passing `--backup-recipient age1...` to `provision` does this step for you.
+   The archives go to the backup target. Passing `--backup-recipient age1...` to `provision` does this step for you. `backup --all` prints one line per component and then the backup ID; add `--verbose` to see the raw database tool output, which is also shown when a component fails.
 
 4. From your computer, check that the newest archive can be restored. This does not touch live data:
 
