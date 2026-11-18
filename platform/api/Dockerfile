@@ -28,6 +28,29 @@ RUN if [ -f package-lock.json ]; then \
     fi \
     && npm cache clean --force
 
+# ── kubectl: pinned, checksum-verified client for agent/MCP commands ────────
+# platform_run_command shells out to kubectl (argv only, guarded by
+# command-guard.ts). The version tracks the k3s minor the installer pins
+# (platformctl/internal/versions K3sVersion; a Go test keeps them in step).
+# Bump the version and both checksums together, from
+# https://dl.k8s.io/release/<version>/bin/linux/<arch>/kubectl.sha256
+FROM node:22.23.4-alpine3.24 AS kubectl
+ARG TARGETARCH
+ARG KUBECTL_VERSION=v1.37.2
+ARG KUBECTL_SHA256_AMD64=c04487523e7aa7d1493f7808174c899db93d7a9cf57531420cd76b9bd415f8f4
+ARG KUBECTL_SHA256_ARM64=fcc16f63186659d9722014b7e02d5fdd2d4e669cb8c0ab66365d7d3b8ba03509
+RUN set -eu; \
+    arch="${TARGETARCH:-amd64}"; \
+    case "$arch" in \
+      amd64) sum="$KUBECTL_SHA256_AMD64" ;; \
+      arm64) sum="$KUBECTL_SHA256_ARM64" ;; \
+      *) echo "unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac; \
+    wget -q -O /tmp/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${arch}/kubectl"; \
+    echo "${sum}  /tmp/kubectl" | sha256sum -c -; \
+    install -m 0755 /tmp/kubectl /usr/local/bin/kubectl; \
+    /usr/local/bin/kubectl version --client >/dev/null
+
 # ── runtime: non-root, compiled output + prod deps only ─────────────────────
 FROM node:22.23.4-alpine3.24 AS runtime
 ENV NODE_ENV=production
@@ -37,6 +60,7 @@ ENV NODE_ENV=production
 RUN apk upgrade --no-cache \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
             /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+COPY --from=kubectl /usr/local/bin/kubectl /usr/local/bin/kubectl
 WORKDIR /app
 # Application files stay root-owned, i.e. read-only for the app user.
 COPY package.json ./
