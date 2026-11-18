@@ -270,10 +270,28 @@ func InstallArgoCD(cfg *config.Config) error {
 	}
 	defer os.Remove(tmpFile)
 
-	err = shell.RunBash(fmt.Sprintf(`
+	err = shell.RunBash(argocdInstallScript(tmpFile, chart("argo-cd")))
+	if err != nil {
+		return err
+	}
+	_ = patchArgoCDSubpath(cfg)
+	color.Green("  ✓ ArgoCD installed (/argocd subpath)")
+	_ = state.MarkDone("argocd")
+	return nil
+}
+
+// argocdInstallScript installs or repairs the Argo CD release. A provision
+// interrupted during the Helm step (for example when servers join mid-install
+// and the API server briefly resets) can leave the release pending-install or
+// pending-upgrade; the lock is cleared first, as for the other Helm steps, so a
+// re-run continues instead of failing with "another operation is in progress".
+func argocdInstallScript(valuesFile, chartRef string) string {
+	return fmt.Sprintf(`
 		set -euo pipefail
 		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 		ARGO_CHART="%[2]s"
+`+helmLockHelper+`
+		if kubectl get namespace argocd >/dev/null 2>&1; then clear_helm_lock argocd argocd; fi
 
 		reset_argocd() {
 		  echo "Resetting ArgoCD for clean Helm install..."
@@ -354,14 +372,7 @@ json.dump(d,sys.stdout)
 		  helm_install_argocd
 		fi
 		argocd_healthy
-	`, tmpFile, chart("argo-cd")))
-	if err != nil {
-		return err
-	}
-	_ = patchArgoCDSubpath(cfg)
-	color.Green("  ✓ ArgoCD installed (/argocd subpath)")
-	_ = state.MarkDone("argocd")
-	return nil
+	`, valuesFile, chartRef)
 }
 
 func argocdLooksHealthy() bool {
