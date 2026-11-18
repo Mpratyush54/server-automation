@@ -242,33 +242,5 @@
 .lp-cards h3 { margin: 0; font-size: 1rem; font-weight: 600; }
 .lp-cards p { margin: 0; flex: 1; color: rgb(var(--fg-2)); font-size: 0.925rem; line-height: 1.55; }
 
-/* Rail: a real five-step sequence */
-.lp-rail-section { border-bottom: 1px solid rgb(var(--line)); }
-.lp-rail-grid { display: grid; gap: 2rem; padding-block: clamp(3rem, 6vw, 4.5rem); }
-@media (min-width: 860px) { .lp-rail-grid { grid-template-columns: 1fr 1.3fr; gap: 3rem; } }
-.lp-rail { list-style: none; margin: 0; padding: 0; counter-reset: rail; border-left: 1px solid rgb(var(--line-strong)); }
-.lp-rail li { position: relative; counter-increment: rail; padding: 0 0 1.6rem 1.75rem; display: flex; flex-direction: column; gap: 0.3rem; }
-.lp-rail li:last-child { padding-bottom: 0; }
-.lp-rail li::before {
-  content: counter(rail);
-  position: absolute;
-  left: -0.8rem;
-  top: -0.1rem;
-  width: 1.6rem;
-  height: 1.6rem;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 0.75rem;
-  font-weight: 600;
-  background: rgb(var(--canvas));
-  border: 1px solid rgb(var(--line-strong));
-  color: rgb(var(--fg-2));
-}
-.lp-rail li:first-child::before { border-color: rgb(var(--accent)); color: rgb(var(--accent-text)); }
-.lp-rail b { font-weight: 600; }
-.lp-rail span { color: rgb(var(--fg-2)); font-size: 0.925rem; }
-.lp-rail code { align-self: flex-start; margin-top: 0.25rem; padding: 0.25rem 0.5rem; border-radius: 6px; background: rgb(var(--surface)); border: 1px solid rgb(var(--line)); font-size: 0.75rem; color: rgb(var(--fg)); }
-
 /* Closing */
 .lp-end-inner { padding-block: clamp(3.5rem, 8vw, 6rem); }

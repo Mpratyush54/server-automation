@@ -86,7 +86,7 @@
     </div>
   </section>
 
-  <!-- How the pieces connect: deploy flow, servers, backups. -->
+  <!-- From one server to many: the journey, then deploys, servers and backups. -->
   <app-landing-how></app-landing-how>
 
   <!-- How it works: one short recording of the real product per feature. -->
@@ -175,20 +175,6 @@
           <a routerLink="/docs/guides/host-hardening">Security details</a>
         </li>
       </ul>
-    </div>
-  </section>
-
-  <!-- A real sequence, so the rail is numbered. -->
-  <section class="lp-rail-section" aria-labelledby="rail-title">
-    <div class="lp-frame lp-rail-grid">
-      <h2 id="rail-title" class="lp-h2"><span>From one server to many.</span> <span class="lp-quiet">In five steps.</span></h2>
-      <ol class="lp-rail">
-        <li><b>Install on an Ubuntu server</b><span>One command sets up Kubernetes and the services you pick.</span><code>sudo platformctl provision</code></li>
-        <li><b>Connect your repository</b><span>Choose a branch for each environment.</span></li>
-        <li><b>Deploy and watch it run</b><span>Pushes deploy automatically; logs, metrics and errors appear on the project.</span></li>
-        <li><b>Add servers for high availability</b><span>Join two more servers with a server token.</span><code>sudo platformctl --auto join --role server ...</code></li>
-        <li><b>Restore and rebuild</b><span>Restore PostgreSQL to a moment in its recovery window, or rebuild a lost server from the encrypted archive.</span><code>sudo platformctl restore --pitr &lt;time&gt; --confirm</code></li>
-      </ol>
     </div>
   </section>
 
