@@ -3,6 +3,7 @@ import { RouterModule } from '@angular/router';
 
 import { AuthService } from '../../services/auth.service';
 import { ThemeService } from '../../services/theme.service';
+import { CairnMarkComponent } from '../../shared/site/cairn-mark.component';
 
 /** One sidebar entry: an in-app route or an external page (Argo CD, Grafana, Portainer, docs). */
 export interface NavItem {
@@ -40,7 +41,7 @@ const ICONS: Record<string, string> = {
 @Component({
   selector: 'app-sidebar',
   standalone: true,
-  imports: [RouterModule],
+  imports: [RouterModule, CairnMarkComponent],
   templateUrl: './sidebar.component.html',
   styleUrl: './sidebar.component.css',
 })

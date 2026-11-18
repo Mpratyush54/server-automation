@@ -3,7 +3,8 @@ import { Component } from '@angular/core';
 /**
  * The Cairn mark ("Capstone"): three stacked stones, the top one in the
  * accent. The stones use currentColor, so the mark takes the text colour of
- * wherever it sits. This is the one copy of the shape for the public site;
+ * wherever it sits. This is the one copy of the shape for the site and the app
+ * (header, sidebar, sign-in page);
  * size it with font-size or width on the host element.
  */
 @Component({

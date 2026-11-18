@@ -21,8 +21,7 @@
   font-size: 1.0625rem;
   text-decoration: none;
 }
-.lg-brand svg { width: 24px; height: 24px; fill: rgb(var(--fg-2)); }
-.lg-brand .lg-led { fill: rgb(var(--accent)); }
+.lg-mark { width: 26px; height: 26px; color: rgb(var(--fg)); }
 
 .lg-form {
   padding: 28px;

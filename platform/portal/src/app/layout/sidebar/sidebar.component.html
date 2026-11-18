@@ -8,22 +8,12 @@
   <div class="side-head">
     @if (isCollapsed && !isMobile) {
       <button type="button" class="side-expand" (click)="toggleCollapse.emit()" aria-label="Expand sidebar" title="Expand sidebar (Ctrl+B)">
-        <svg class="side-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <rect x="3" y="4" width="18" height="4.5" rx="1.2"></rect>
-          <rect x="3" y="10" width="18" height="4.5" rx="1.2"></rect>
-          <rect x="3" y="16" width="18" height="4.5" rx="1.2"></rect>
-          <circle class="side-mark-led" cx="6.5" cy="12.25" r="1.1"></circle>
-        </svg>
+        <app-cairn-mark class="side-mark"></app-cairn-mark>
         <svg class="side-expand-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"></path></svg>
       </button>
     } @else {
       <a routerLink="/dashboard" class="side-brand" aria-label="Cairn home">
-        <svg class="side-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <rect x="3" y="4" width="18" height="4.5" rx="1.2"></rect>
-          <rect x="3" y="10" width="18" height="4.5" rx="1.2"></rect>
-          <rect x="3" y="16" width="18" height="4.5" rx="1.2"></rect>
-          <circle class="side-mark-led" cx="6.5" cy="12.25" r="1.1"></circle>
-        </svg>
+        <app-cairn-mark class="side-mark"></app-cairn-mark>
         <span class="side-name">Cairn</span>
       </a>
       @if (!isMobile) {

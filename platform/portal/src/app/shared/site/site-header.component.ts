@@ -1,22 +1,18 @@
 import { Component, Input, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { ThemeService } from '../../services/theme.service';
+import { CairnMarkComponent } from './cairn-mark.component';
 
 /** Header for the public site (landing, About, docs links). */
 @Component({
   selector: 'app-site-header',
   standalone: true,
-  imports: [RouterModule],
+  imports: [RouterModule, CairnMarkComponent],
   template: `
     <header class="sh">
       <div class="sh-inner">
         <a routerLink="/" class="sh-brand" aria-label="Cairn home">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="3" y="4" width="18" height="4.5" rx="1.2"></rect>
-            <rect x="3" y="10" width="18" height="4.5" rx="1.2"></rect>
-            <rect x="3" y="16" width="18" height="4.5" rx="1.2"></rect>
-            <circle cx="6.5" cy="12.25" r="1.1"></circle>
-          </svg>
+          <app-cairn-mark class="sh-mark"></app-cairn-mark>
           <span>Cairn</span>
         </a>
         <nav class="sh-nav" aria-label="Site">
@@ -56,9 +52,7 @@ import { ThemeService } from '../../services/theme.service';
     .sh-inner { max-width: 72rem; margin: 0 auto; height: 3.5rem; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1rem;
       padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
     .sh-brand { display: inline-flex; align-items: center; gap: 0.55rem; color: rgb(var(--fg)); text-decoration: none; font-weight: 600; letter-spacing: -0.01em; }
-    .sh-brand svg { width: 22px; height: 22px; }
-    .sh-brand rect { fill: none; stroke: currentColor; stroke-width: 1.6; }
-    .sh-brand circle { fill: rgb(var(--accent)); }
+    .sh-mark { width: 24px; height: 24px; }
     .sh-brand { justify-self: start; }
     .sh-nav { display: none; gap: 0.25rem; justify-self: center; }
     @media (min-width: 720px) {
