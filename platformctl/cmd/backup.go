@@ -355,8 +355,8 @@ var (
 // how long it took.
 func runRestoreTest(w io.Writer, target, id string, key []byte) error {
 	start := time.Now()
-	e := restoreTestPostgres(target, id, key)
-	if se := publishRestoreStatus("restore-test", id, start, backup.Manifest{}, e); se != nil {
+	tested, e := restoreTestPostgres(target, id, key)
+	if se := publishRestoreStatus("restore-test", id, start, tested, e); se != nil {
 		fmt.Fprintln(os.Stderr, "restore-test status publication failed:", se)
 	}
 	if e != nil {
