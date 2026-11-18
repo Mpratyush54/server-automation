@@ -75,8 +75,7 @@ export async function record() {
     // Shortened pauses, in raw-video time, so the edit labels them.
     const shortened = skips.map((s) => ({ at: Number((replayStart + s.at).toFixed(3)), skipped: Number(s.skipped.toFixed(1)) }));
     // The real sign-in page at the address the installer printed.
-    await page.goto(loginUrl);
-    await page.getByLabel('Email or username').waitFor({ state: 'visible' });
+    await rec.navigate('signin', page, loginUrl, () => page.getByLabel('Email or username').waitFor({ state: 'visible' }));
     rec.mark('portal');
     await beat(3000);
     rec.mark('end');

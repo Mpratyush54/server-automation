@@ -13,7 +13,7 @@
 // BACKUP_SKIP_ARCHIVE=1 to use the latest archive instead of taking one.
 import { readFile } from 'node:fs/promises';
 import { cairnUrl, env } from '../lib/config.mjs';
-import { Recording, beat, click, response } from '../lib/recorder.mjs';
+import { Recording, beat, click, moveTo, response } from '../lib/recorder.mjs';
 import { Terminal } from '../lib/terminal.mjs';
 
 // -q: no "Connection to ... closed." line after each command.
@@ -61,7 +61,7 @@ export async function record() {
     await beat(2500);
 
     // 4. The same results in the portal.
-    await page.goto(`${cairnUrl()}/settings`);
+    await rec.navigate('settings', page, `${cairnUrl()}/settings`, () => page.getByRole('button', { name: 'Security', exact: true }).waitFor());
     await click(page, page.getByRole('button', { name: 'Security', exact: true }));
     const panel = page.locator('section[aria-labelledby="st-backups-title"]');
     await panel.waitFor();
@@ -72,7 +72,8 @@ export async function record() {
     const latest = panel.locator('li').filter({ hasText: 'Latest restore test' });
     await latest.getByText('Passed', { exact: true }).waitFor({ timeout: 60_000 });
     rec.mark('portal');
-    await latest.hover();
+    // Point at the result, not the middle of the row (that covers the size).
+    await moveTo(page, latest.getByText('Passed', { exact: true }));
     await beat(3000);
     rec.mark('end');
     await rec.close();

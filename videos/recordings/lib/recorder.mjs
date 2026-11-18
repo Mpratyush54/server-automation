@@ -88,6 +88,21 @@ export class Recording {
     return result;
   }
 
+  /**
+   * Navigate away from a local page (a terminal) without showing the blank
+   * frame the browser paints between documents: a cut that starts a little
+   * before the navigation and ends a little after the page is ready, so the
+   * removed part (the edit keeps 0.6 s at each end) always holds the blank.
+   */
+  async navigate(name, page, url, ready) {
+    await this.cut(name, async () => {
+      await sleep(800);
+      await page.goto(url);
+      await ready();
+      await sleep(800);
+    });
+  }
+
   /** Close every pane, move the raw videos to out/<clip>/raw/<pane>.webm and save the marks. */
   async close(extra = {}) {
     const videos = {};
