@@ -1,4 +1,4 @@
-import { Telemetry, resourceAttributes } from '../../src/telemetry';
+import { Telemetry, resourceAttributes, warnMissingPeer, resetMissingPeerWarning } from '../../src/telemetry';
 import { setTelemetryContext } from '../../src/telemetry-context';
 import { LoggerClient } from '../../src/logger';
 import { createPinoTransport, createWinstonTransport } from '../../src/transports';
@@ -100,6 +100,41 @@ describe('telemetry lifecycle without network', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect((telemetry as any).stopped).toBe(true);
     expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('warns once, without endpoints or tokens, when an OpenTelemetry peer is missing', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const relay = { start: jest.fn().mockResolvedValue('http://127.0.0.1:1234/private'), stop: jest.fn(), port: 1234, dropped: 0 };
+    jest.doMock('../../src/telemetry-relay', () => ({ TelemetryRelay: jest.fn().mockImplementation(() => relay) }));
+    jest.doMock('@opentelemetry/sdk-node', () => {
+      throw Object.assign(new Error("Cannot find module '@opentelemetry/sdk-node' from 'src/telemetry.ts'"), { code: 'MODULE_NOT_FOUND' });
+    }, { virtual: true });
+    try {
+      resetMissingPeerWarning();
+      for (let i = 0; i < 2; i++) {
+        const telemetry = new Telemetry(options, jest.fn());
+        await telemetry.start(config());
+        expect((telemetry as any).sdk).toBeUndefined();
+        expect(relay.stop).toHaveBeenCalled();
+      }
+      expect(warn).toHaveBeenCalledTimes(1);
+      const message = String(warn.mock.calls[0][0]);
+      expect(message).toContain('@opentelemetry/sdk-node');
+      expect(message).toContain('npm install');
+      expect(message).not.toContain('plat_ingest_test');
+      expect(message).not.toContain('otel.example.test');
+    } finally {
+      warn.mockRestore();
+      jest.dontMock('@opentelemetry/sdk-node');
+      jest.dontMock('../../src/telemetry-relay');
+      jest.resetModules();
+    }
+  });
+
+  it('ignores failures that are not a missing OpenTelemetry peer', () => {
+    resetMissingPeerWarning();
+    expect(warnMissingPeer(new Error('Invalid telemetry credentials'))).toBe(false);
+    expect(warnMissingPeer(Object.assign(new Error("Cannot find module './local'"), { code: 'MODULE_NOT_FOUND' }))).toBe(false);
   });
 
   it('rejects expired/insecure configurations without installing anything', async () => {
