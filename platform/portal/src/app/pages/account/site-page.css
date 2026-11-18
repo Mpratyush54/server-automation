@@ -39,3 +39,6 @@
 .sp-subnav button.active { color: rgb(var(--fg)); border-bottom-color: rgb(var(--accent)); }
 .sp-danger { border-color: rgb(var(--down) / 0.4); }
 .sp-hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.sp-price-line { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+/* Short fields in pairs on wider cards; the message and actions span both columns. */
+@media (min-width: 600px) { .sp-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; } .sp-form-grid .sp-wide { grid-column: 1 / -1; } }

@@ -73,13 +73,13 @@ function pickFields(fields: unknown): QuoteErrors {
           <article class="sp-card" id="enterprise" aria-labelledby="plan-enterprise">
             <div class="sp-card-head">
               <h2 id="plan-enterprise">Enterprise</h2>
-              <span><span class="sp-price">From $9</span> <span class="sp-muted">per server per month, billed annually</span></span>
+              <span class="sp-price-line"><span class="sp-price">From $9</span><span class="sp-muted">per server per month, billed annually</span></span>
             </div>
             <p class="sp-text">For companies and organisations, and for anyone offering Cairn to others. Includes monitoring, logs, traces and support. Volume pricing by quote.</p>
             @if (sent) {
               <p class="sp-msg sp-ok" role="status" data-testid="quote-sent">Thanks, we'll reply within one business day.</p>
             } @else {
-              <form class="sp-form" novalidate (submit)="send($event)" data-testid="quote-form">
+              <form class="sp-form sp-form-grid" novalidate (submit)="send($event)" data-testid="quote-form">
                 <div class="sp-field">
                   <label for="q-company">Company</label>
                   <input id="q-company" name="company" required maxlength="200" autocomplete="organization" [attr.aria-invalid]="errors.company ? 'true' : null">
@@ -100,7 +100,7 @@ function pickFields(fields: unknown): QuoteErrors {
                   <input id="q-servers" name="servers" type="number" min="1" step="1" required inputmode="numeric" [attr.aria-invalid]="errors.servers ? 'true' : null">
                   @if (errors.servers) { <span class="sp-msg sp-err">{{ errors.servers }}</span> }
                 </div>
-                <div class="sp-field">
+                <div class="sp-field sp-wide">
                   <label for="q-message">Message</label>
                   <textarea id="q-message" name="message" maxlength="2000" [attr.aria-invalid]="errors.message ? 'true' : null"></textarea>
                   @if (errors.message) { <span class="sp-msg sp-err">{{ errors.message }}</span> }
@@ -109,8 +109,8 @@ function pickFields(fields: unknown): QuoteErrors {
                   <label for="q-website">Website</label>
                   <input id="q-website" name="website" tabindex="-1" autocomplete="off">
                 </div>
-                @if (formError) { <p class="sp-msg sp-err" role="alert" data-testid="quote-error">{{ formError }}</p> }
-                <div class="sp-actions">
+                @if (formError) { <p class="sp-msg sp-err sp-wide" role="alert" data-testid="quote-error">{{ formError }}</p> }
+                <div class="sp-actions sp-wide">
                   <button type="submit" class="btn btn-primary" [disabled]="busy">{{ busy ? 'Sending…' : 'Contact sales' }}</button>
                 </div>
               </form>
