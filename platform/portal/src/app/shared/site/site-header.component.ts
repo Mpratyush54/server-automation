@@ -53,17 +53,21 @@ import { ThemeService } from '../../services/theme.service';
   `,
   styles: [`
     .sh { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: rgb(var(--canvas)); border-bottom: 1px solid rgb(var(--line)); }
-    .sh-inner { max-width: 72rem; margin: 0 auto; height: 3.5rem; display: flex; align-items: center; gap: 1.5rem;
+    .sh-inner { max-width: 72rem; margin: 0 auto; height: 3.5rem; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1rem;
       padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
     .sh-brand { display: inline-flex; align-items: center; gap: 0.55rem; color: rgb(var(--fg)); text-decoration: none; font-weight: 600; letter-spacing: -0.01em; }
     .sh-brand svg { width: 22px; height: 22px; }
     .sh-brand rect { fill: none; stroke: currentColor; stroke-width: 1.6; }
     .sh-brand circle { fill: rgb(var(--accent)); }
-    .sh-nav { display: none; gap: 0.25rem; }
-    @media (min-width: 720px) { .sh-nav { display: flex; } }
+    .sh-brand { justify-self: start; }
+    .sh-nav { display: none; gap: 0.25rem; justify-self: center; }
+    @media (min-width: 720px) {
+      .sh-inner { grid-template-columns: 1fr auto 1fr; }
+      .sh-nav { display: flex; }
+    }
     .sh-nav a { padding: 0.35rem 0.7rem; border-radius: 999px; font-size: 0.875rem; color: rgb(var(--fg-2)); text-decoration: none; }
     .sh-nav a:hover, .sh-nav a.on { color: rgb(var(--fg)); background: rgb(var(--raised)); }
-    .sh-actions { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; }
+    .sh-actions { justify-self: end; display: flex; align-items: center; gap: 0.5rem; }
     .sh-account { display: none; font-size: 0.875rem; color: rgb(var(--fg-2)); text-decoration: none; padding: 0.35rem 0.5rem; }
     .sh-account:hover { color: rgb(var(--fg)); }
     @media (min-width: 720px) { .sh-account { display: inline-flex; } }
