@@ -7,6 +7,9 @@ import { FeedbackHostComponent } from './shared/feedback/feedback-host.component
 
 import { filter } from 'rxjs';
 
+/** Public-site pages, shown with their own header and footer instead of the app shell. */
+const MARKETING_SEGMENTS = new Set(['', 'landing', 'about', 'pricing', 'signup', 'signin', 'verify-email', 'account']);
+
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -85,17 +88,24 @@ export class AppComponent implements OnDestroy {
       this.mqDesktop.addEventListener?.('change', this.onViewportChange);
       this.applyViewport();
     }
+    // Classify the first page before routing finishes, so a public page never
+    // starts the app shell (and its signed-in API calls) on a direct load.
+    if (typeof window !== 'undefined') this.classify(window.location.pathname, false);
     router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(() => {
       this.mobileNavOpen = false;
-      const parts = router.url.split(/[?#]/)[0].split('/');
-      const segment = parts[1] || '';
-      this.isLoginPage = segment === 'login' || segment === 'oauth' || segment === 'mfa';
-      this.isLandingPage = segment === '' || segment === 'landing' || segment === 'about';
-      this.isDocsPage = segment === 'docs';
-      this.isPublicStatusPage = segment === 'status';
-      this.pageTitle = (segment === 'projects' && parts[3] && this.projectPageTitles[parts[3]])
-        || this.titles[segment] || 'Cairn';
+      this.classify(router.url);
     });
+  }
+
+  private classify(url: string, setTitle = true) {
+    const parts = url.split(/[?#]/)[0].split('/');
+    const segment = parts[1] || '';
+    this.isLoginPage = segment === 'login' || segment === 'oauth' || segment === 'mfa';
+    this.isLandingPage = MARKETING_SEGMENTS.has(segment);
+    this.isDocsPage = segment === 'docs';
+    this.isPublicStatusPage = segment === 'status';
+    if (setTitle) this.pageTitle = (segment === 'projects' && parts[3] && this.projectPageTitles[parts[3]])
+      || this.titles[segment] || 'Cairn';
   }
 
   /**
