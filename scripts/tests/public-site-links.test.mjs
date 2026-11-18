@@ -64,6 +64,7 @@ for (const [page, document] of Object.entries(pages)) {
     for (const { href, text } of links) {
       const where = `${page}: "${text}" -> ${href}`;
       if (/^https:\/\//.test(href)) continue;
+      if (/^mailto:[^@\s]+@[^@\s]+\.[a-z]+$/i.test(href)) continue;
       if (/^(http:|javascript:|\/\/)/i.test(href)) { problems.push(`${where}: not an https or site link`); continue; }
       if (href.startsWith('#')) {
         if (!document.getElementById(href.slice(1))) problems.push(`${where}: no element ${href} on this page`);
