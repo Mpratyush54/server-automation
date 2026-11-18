@@ -307,7 +307,8 @@ test('the homepage explains the product and links to real docs without JavaScrip
   }
   assert.ok(!document.includes('autoplay'));
   assert.ok(!/src="\/media\/[^"]+\.(mp4|webm|vtt)/.test(document), 'clips are served from the media host, not this server');
-  assert.match(document, /<noscript><style>\.lp-play \{ display: none !important; \}<\/style><\/noscript>/);
+  // The custom clip player is added by Angular; the static page relies on native controls.
+  assert.doesNotMatch(bodyOf(document), /class="cp[ "-]/);
   const { jsonLd } = head(document);
   assert.equal(jsonLd.length, 1);
   assert.ok(jsonLd[0]['@graph'].some(item => item['@type'] === 'SoftwareApplication'));

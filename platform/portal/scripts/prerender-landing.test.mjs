@@ -56,7 +56,7 @@ test('the landing hero is rendered from TOPOLOGY_STEPS at step 0', () => {
     features.map(feature => `/#${feature.querySelector('.lp-anchor').id}`));
 });
 
-test('a published clip prerenders with its poster, sources, captions and native controls', () => {
+test('a published clip prerenders with its poster, sources, captions and native controls, without the custom player', () => {
   const pages = fileURLToPath(new URL('../src/app/pages/', import.meta.url));
   const { LandingComponent } = loadTypeScriptModule(`${pages}landing/landing.component.ts`);
   const { landingFeatures, MEDIA_BASE } = loadTypeScriptModule(`${pages}landing/landing-clips.ts`);
@@ -76,8 +76,11 @@ test('a published clip prerenders with its poster, sources, captions and native 
   assert.deepEqual([...video.querySelectorAll('source')].map(source => source.getAttribute('src')),
     [`${MEDIA_BASE}/backups.webm?v=0123456789ab`, `${MEDIA_BASE}/backups.mp4?v=0123456789ab`]);
   assert.equal(video.querySelector('track[kind="captions"]').getAttribute('src'), `${MEDIA_BASE}/backups.en.vtt?v=0123456789ab`);
-  assert.ok(!document.querySelector('.lp-play').hasAttribute('hidden'));
-  assert.ok(document.querySelector('.lp-clip-error').hasAttribute('hidden'));
+  // No captions over the poster: the track is there for the native menu, not on by default.
+  assert.ok(!video.querySelector('track').hasAttribute('default'));
+  // The custom player needs JavaScript, so the static page has none of it.
+  assert.equal(document.querySelectorAll('.cp, .cp-bar, .cp-play').length, 0);
+  assert.equal(video.closest('app-clip-player').parentElement.getAttribute('data-clip'), 'backups');
   assert.equal(document.querySelectorAll('.lp-pending').length, 5);
 });
 

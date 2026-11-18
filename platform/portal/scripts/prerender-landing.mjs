@@ -12,9 +12,9 @@ const pages = join(portal, 'src/app/pages');
 
 /**
  * The state the static landing HTML shows: the story at its first step,
- * playing, nothing copied, no clip started. Published clips render at once
- * (with native controls) instead of waiting to scroll into view, so they
- * work without JavaScript.
+ * playing, nothing copied. Published clips render at once with the browser's
+ * own controls instead of the custom player, so they work without
+ * JavaScript; Angular swaps in the player when it starts.
  */
 export const LANDING_INITIAL_STATE = {
   step: 0,
@@ -22,8 +22,6 @@ export const LANDING_INITIAL_STATE = {
   visible: true,
   installCopied: false,
   lazyClips: false,
-  clipStarted: {},
-  clipError: {},
 };
 
 const PAGES = {
@@ -34,8 +32,7 @@ const PAGES = {
     state: LANDING_INITIAL_STATE,
     title: 'Cairn — a self-hosted platform for your apps, on your own servers',
     description: 'Cairn installs Git deployments, databases, logs, metrics and traces, off-site backups and high availability on Ubuntu servers you control.',
-    // Without JavaScript the cover button cannot start playback; show the native controls instead.
-    extraHead: '<noscript><style>.lp-play { display: none !important; }</style></noscript>',
+    extraHead: '',
     jsonLd: [{
       '@context': 'https://schema.org',
       '@graph': [

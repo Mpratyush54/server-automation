@@ -114,21 +114,9 @@
             <p>{{ f.copy }}</p>
             <a class="lp-guide" [routerLink]="f.guide.path">Read the guide<span class="lp-guide-name">: {{ f.guide.label }}</span></a>
           </div>
-          <figure class="lp-clip" #clipFrame [attr.data-clip]="f.id" [class.lp-clip-pending]="!f.media">
-            @if (f.media; as media) {
-              @if (clipReady(f)) {
-                <video #clipVideo controls [controls]="isStarted(f.id)" muted loop playsinline preload="none" crossorigin="anonymous"
-                  width="1280" height="800" [poster]="media.poster" [attr.aria-label]="'Recording: ' + f.title + ' ' + f.subtitle"
-                  (pause)="onClipPause(f.id)" (play)="onClipPlay(f.id)">
-                  <source [src]="media.webm" type="video/webm" />
-                  <source [src]="media.mp4" type="video/mp4" (error)="onClipError(f.id)" />
-                  <track [src]="media.captions" kind="captions" srclang="en" label="English" default />
-                </video>
-                <button type="button" class="lp-play" [hidden]="isStarted(f.id)" (click)="startClip(f.id, clipVideo)" [attr.aria-label]="'Play the recording: ' + f.title">
-                  <span class="lp-play-icon" aria-hidden="true"></span>
-                </button>
-              }
-              <p class="lp-clip-error" role="alert" [hidden]="!errorFor(f.id)">{{ errorFor(f.id) }}</p>
+          <figure class="lp-clip" [attr.data-clip]="f.id" [class.lp-clip-pending]="!f.media">
+            @if (f.media) {
+              <app-clip-player [feature]="f" [staticPage]="!lazyClips"></app-clip-player>
             } @else {
               <div class="lp-pending">
                 <p class="lp-pending-label">Recording coming soon</p>
