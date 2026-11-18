@@ -8,7 +8,7 @@ without stitching the pieces together yourself. It installs and connects proven
 open-source tools (k3s, Argo CD, CloudNativePG, Grafana and others) and gives you one
 portal and one CLI to run them.
 
-- Website and docs: <https://platform.pratyushes.dev>
+- Website and docs: <https://cairnpaas.dev>
 - Install guide: [docs/getting-started/installation.md](docs/getting-started/installation.md)
 
 ## What you get
@@ -60,7 +60,7 @@ Day-two commands live in the same CLI — `platformctl status`, `upgrade`, `back
 | [AI agents and MCP](docs/mcp/overview.md) | Connect an AI assistant |
 | [Troubleshooting](docs/troubleshooting/README.md) | Fixes for common errors |
 
-The same docs are published at <https://platform.pratyushes.dev/docs>.
+The same docs are published at <https://cairnpaas.dev/docs>.
 
 ## SDKs
 

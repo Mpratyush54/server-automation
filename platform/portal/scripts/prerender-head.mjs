@@ -1,5 +1,5 @@
 // Shared <head> handling for prerendered public pages (landing, About, docs).
-export const origin = 'https://platform.pratyushes.dev';
+export const origin = 'https://cairnpaas.dev';
 
 /** Public pages other than docs, in sitemap order. */
 export const PUBLIC_PAGES = ['/', '/about'];

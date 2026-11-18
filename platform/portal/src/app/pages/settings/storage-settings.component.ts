@@ -106,7 +106,7 @@ import { OperationProgressComponent } from '../../shared/operation-progress.comp
           </div>
         </div>
         <div class="st-footer">
-          <a class="st-learn" href="https://platform.pratyushes.dev/docs/operations/storage-providers" target="_blank" rel="noopener">Learn more</a>
+          <a class="st-learn" href="https://cairnpaas.dev/docs/operations/storage-providers" target="_blank" rel="noopener">Learn more</a>
           <button class="btn btn-ghost" type="button" (click)="showForm = false">Cancel</button>
           <button class="btn btn-primary" type="submit" [disabled]="busy">{{ busy ? 'Saving…' : 'Save storage' }}</button>
         </div>

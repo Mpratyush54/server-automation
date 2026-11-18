@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, '..', 'public');
 const docsRoot = path.join(publicDir, 'docs');
-const base = 'https://platform.pratyushes.dev';
+const base = 'https://cairnpaas.dev';
 
 function walk(dir, acc = []) {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {

@@ -56,7 +56,7 @@ export function toMonitoring(view: MonitoringView | ((qp: Params) => MonitoringV
 export const routes: Routes = [
   { path: '', pathMatch: 'full', component: LandingComponent, canActivate: [homeGuard] },
 
-  // Marketing site only (platform.pratyushes.dev)
+  // Marketing site only (cairnpaas.dev)
   { path: 'landing', canActivate: [marketingOnlyGuard, legacyLandingGuard], children: [] },
   { path: 'about', component: AboutComponent, canActivate: [marketingOnlyGuard], title: 'About Cairn' },
   { matcher: docsMatcher, component: DocsComponent, canActivate: [docsGuard] },
