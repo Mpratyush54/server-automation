@@ -198,6 +198,7 @@ it('grants exactly the verbs the baseline uses, namespaced only, with no broad R
     { apiGroups: ['apps'], resources: ['deployments/scale'], verbs: ['patch'] },
     // #55 source deployments: workload reads and one managed pull Secret.
     { apiGroups: ['apps'], resources: ['deployments'], verbs: ['get'] },
+    { apiGroups: ['apps'], resources: ['statefulsets'], verbs: ['get', 'list', 'update'] }, // release finalize (injectRelease)
     { apiGroups: [''], resources: ['services'], verbs: ['get'] },
     { apiGroups: [''], resources: ['secrets'], resourceNames: ['source-registry'], verbs: ['get', 'update'] },
     { apiGroups: [''], resources: ['secrets'], verbs: ['create'] },
