@@ -101,4 +101,69 @@ describe('InfrastructureComponent metrics', () => {
     cmp.selectTab('nodes');
     expect((cmp as any).metricsInterval).toBeUndefined();
   });
+  it("colours the Running dependency cards green, matching the status", async () => {
+    const fixture = TestBed.createComponent(InfrastructureComponent);
+    await fixture.componentInstance.refreshAllData();
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    for (const id of ["status-postgres", "status-mongodb"]) {
+      const dot = el.querySelector(`[data-testid="${id}"]`) as HTMLElement;
+      expect(dot.textContent?.trim()).toBe("Running");
+      expect(dot.classList).toContain("status-ok");
+      expect(dot.classList).not.toContain("status-down");
+    }
+    const cmp = fixture.componentInstance;
+    expect(cmp.serviceStatusClass("degraded")).toBe("status-warn");
+    expect(cmp.serviceStatusClass("offline")).toBe("status-down");
+    expect(cmp.serviceStatusClass("unknown")).toBe("");
+  });
+
+  it("keeps the last servers while one poll fails, then reports the outage after repeated failures", async () => {
+    const nodes = [{ name: "srv-1", ip: "10.0.0.1", role: "master", status: "Ready", cpu: "2 Core", memory: "4Gi" },
+      { name: "srv-2", ip: "10.0.0.2", role: "master", status: "NotReady", cpu: "2 Core", memory: "4Gi" }];
+    api.getNodes.and.returnValue(of({ k8sConnected: true, nodes }));
+    const fixture = TestBed.createComponent(InfrastructureComponent);
+    const cmp = fixture.componentInstance;
+    await cmp.refreshAllData();
+    expect(cmp.k8sConnected).toBe(true);
+
+    // One server died and the API request landed on it.
+    api.getNodes.and.returnValue(of({ k8sConnected: false, nodes: [] }));
+    api.getPods.and.returnValue(throwError(() => new Error("timeout")));
+    await cmp.refreshAllData();
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(cmp.nodes.length).toBe(2);
+    expect(cmp.k8sConnected).toBe(true);
+    expect(cmp.clusterReconnecting).toBe(true);
+    expect(el.querySelector("[data-testid=\"cluster-reconnecting\"]")).toBeTruthy();
+    expect(el.querySelector("[data-testid=\"cluster-down\"]")).toBeNull();
+    expect(el.querySelector("[data-testid=\"status-cluster\"]")?.textContent).toContain("Reconnecting");
+    expect(el.textContent).toContain("srv-1");
+
+    await cmp.refreshAllData();
+    await cmp.refreshAllData();
+    fixture.detectChanges();
+    expect(cmp.k8sConnected).toBe(false);
+    expect(cmp.nodes.length).toBe(2);
+    expect(el.querySelector("[data-testid=\"cluster-down\"]")?.textContent).toContain("Showing the last data");
+
+    api.getNodes.and.returnValue(of({ k8sConnected: true, nodes: nodes.slice(0, 1) }));
+    await cmp.refreshAllData();
+    expect(cmp.k8sConnected).toBe(true);
+    expect(cmp.clusterReconnecting).toBe(false);
+    expect(cmp.nodes.length).toBe(1);
+  });
+
+  it("does not show another namespace's pods after a failed filtered load", async () => {
+    api.getPods.and.returnValue(of({ k8sConnected: true, pods: [{ name: "p", namespace: "a", status: "Running" }] }));
+    const fixture = TestBed.createComponent(InfrastructureComponent);
+    const cmp = fixture.componentInstance;
+    await cmp.loadPods();
+    expect(cmp.pods.length).toBe(1);
+    api.getPods.and.returnValue(throwError(() => new Error("timeout")));
+    cmp.selectedNamespace = "b";
+    await cmp.loadPods();
+    expect(cmp.pods).toEqual([]);
+  });
 });

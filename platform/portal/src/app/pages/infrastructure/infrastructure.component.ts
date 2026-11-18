@@ -24,8 +24,15 @@ export interface NodeMetricRow {
 export class InfrastructureComponent implements OnInit, OnDestroy {
   activeTab = 'nodes'; // nodes, namespaces, pods, bootstrap, metrics
 
-  // Real cluster state
+  // Real cluster state. A single failed poll (for example while one server of an HA cluster
+  // dies and the API's request lands on it) does not blank the page: the last data stays,
+  // marked "Reconnecting", until CLUSTER_FAILURES_BEFORE_DOWN polls in a row fail.
+  static readonly CLUSTER_FAILURES_BEFORE_DOWN = 3;
   k8sConnected = false;
+  clusterReconnecting = false;
+  lastClusterOkAt: Date | null = null;
+  private clusterFailures = 0;
+  private podsLoadedFor: string | null = null;
   nodes: any[] = [];
   namespaces: any[] = [];
   pods: any[] = [];
@@ -96,13 +103,33 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
   }
 
   async refreshAllData() {
-    await Promise.allSettled([
+    const [, nodesOk, , podsOk] = await Promise.all([
       this.loadSystemStatus(),
       this.loadNodes(),
       this.loadNamespaces(),
-      this.loadPods(),
+      this.loadPods(false),
       this.loadBootstrapHistory()
     ]);
+    // One poll = one observation: the cluster answered if either cluster read succeeded.
+    this.noteCluster(nodesOk || podsOk);
+  }
+
+  /** Records one cluster poll result; keeps the last data through short outages. */
+  noteCluster(ok: boolean) {
+    if (ok) {
+      this.clusterFailures = 0;
+      this.k8sConnected = true;
+      this.clusterReconnecting = false;
+      this.lastClusterOkAt = new Date();
+      return;
+    }
+    this.clusterFailures++;
+    if (this.lastClusterOkAt && this.clusterFailures < InfrastructureComponent.CLUSTER_FAILURES_BEFORE_DOWN) {
+      this.clusterReconnecting = true;
+      return;
+    }
+    this.k8sConnected = false;
+    this.clusterReconnecting = false;
   }
 
   async loadSystemStatus() {
@@ -114,36 +141,48 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
     }
   }
 
-  async loadNodes() {
+  /** Returns whether the cluster answered; keeps the last servers list when it did not. */
+  async loadNodes(): Promise<boolean> {
     try {
       const res = await firstValueFrom(this.api.getNodes());
-      this.nodes = res.k8sConnected ? res.nodes || [] : [];
-      this.k8sConnected = res.k8sConnected;
+      if (!res.k8sConnected) return false;
+      this.nodes = res.nodes || [];
+      return true;
     } catch {
-      this.nodes = [];
-      this.k8sConnected = false;
+      return false;
     }
   }
 
   async loadNamespaces() {
     try {
       const res = await firstValueFrom(this.api.getNamespaces());
+      // An empty answer from an unreachable cluster must not wipe the list.
+      if (res.k8sConnected === false && this.namespaces.length) return;
       this.namespaces = res.namespaces || [];
     } catch {
-      this.namespaces = [];
+      // keep the last list
     }
   }
 
-  async loadPods() {
+  /** Returns whether the cluster answered. `report` records the result when called on its own. */
+  async loadPods(report = true): Promise<boolean> {
+    const requested = this.selectedNamespace;
+    let ok = false;
     try {
-      const ns = this.selectedNamespace === 'all' ? undefined : this.selectedNamespace;
+      const ns = requested === 'all' ? undefined : requested;
       const res = await firstValueFrom(this.api.getPods(ns));
-      this.pods = res.k8sConnected ? res.pods || [] : [];
-      this.k8sConnected = res.k8sConnected;
+      if (res.k8sConnected) {
+        this.pods = res.pods || [];
+        this.podsLoadedFor = requested;
+        ok = true;
+      }
     } catch {
-      this.pods = [];
-      this.k8sConnected = false;
+      ok = false;
     }
+    // Last data is only kept for the same filter; never show another namespace's pods.
+    if (!ok && this.podsLoadedFor !== requested) this.pods = [];
+    if (report) this.noteCluster(ok);
+    return ok;
   }
 
   async loadBootstrapHistory() {
@@ -158,7 +197,8 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
     this.metricsLoading = true;
     try {
       const res = await firstValueFrom(this.api.getNodeMetrics());
-      this.k8sConnected = !!res.k8sConnected;
+      // The main poll owns outage detection; a metrics answer only confirms reachability.
+      if (res.k8sConnected) this.noteCluster(true);
       this.metricsAvailable = !!res.metricsAvailable;
       this.nodeMetrics = Array.isArray(res.nodes) ? res.nodes : [];
     } catch {
@@ -180,6 +220,29 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
     if (this.metricsInterval) {
       clearInterval(this.metricsInterval);
       this.metricsInterval = undefined;
+    }
+  }
+
+  /**
+   * Dot colour for a dependency status from GET /bootstrap/status ("running", "degraded",
+   * "offline", "unknown"; older APIs said "connected"/"disconnected").
+   */
+  serviceStatusClass(status: string | null | undefined): string {
+    switch ((status || '').toLowerCase()) {
+      case 'running':
+      case 'connected':
+      case 'healthy':
+        return 'status-ok';
+      case 'degraded':
+      case 'pending':
+        return 'status-warn';
+      case 'offline':
+      case 'disconnected':
+      case 'down':
+      case 'error':
+        return 'status-down';
+      default:
+        return '';
     }
   }
 
