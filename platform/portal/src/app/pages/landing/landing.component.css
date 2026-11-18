@@ -215,14 +215,14 @@
 /* "How it works": a small left-to-right flow under the copy. It turns top to
    bottom when its column is narrow (phones, and the copy column on tablets),
    and never wraps into a zig-zag. */
-.lp-how { container-type: inline-size; padding: 12px 14px 14px; border: 1px solid rgb(var(--line)); border-radius: 10px; background: rgb(var(--surface)); }
+.lp-how { container-type: inline-size; padding: 10px 12px 12px; border: 1px solid rgb(var(--line)); border-radius: 10px; background: rgb(var(--surface)); }
 .lp-how-label { margin: 0 0 10px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: rgb(var(--fg-2)); }
-.lp-flow { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
-.lp-flow li { position: relative; display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; padding: 7px 10px; border: 1px solid rgb(var(--line-strong)); border-radius: 7px; background: rgb(var(--raised)); }
+.lp-flow { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.lp-flow li { position: relative; display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; padding: 5px 10px; border: 1px solid rgb(var(--line-strong)); border-radius: 7px; background: rgb(var(--raised)); }
 .lp-flow li:last-child { border-color: rgb(var(--accent) / 0.75); }
 .lp-flow b { font-size: 0.8125rem; font-weight: 600; color: rgb(var(--fg)); }
 .lp-flow span { font-size: 0.75rem; line-height: 1.35; color: rgb(var(--fg-2)); }
-.lp-flow li:not(:last-child)::after { content: '\2193'; position: absolute; left: 50%; bottom: -17px; translate: -50% 0; font-size: 0.8125rem; line-height: 1; color: rgb(var(--accent-text)); }
+.lp-flow li:not(:last-child)::after { content: '\2193'; position: absolute; left: 50%; bottom: -14px; translate: -50% 0; font-size: 0.8125rem; line-height: 1; color: rgb(var(--accent-text)); }
 @container (min-width: 25rem) {
   .lp-flow { flex-direction: row; gap: 16px; }
   .lp-flow li { flex: 1 1 0; min-width: 0; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 2px; padding: 8px 9px; }
@@ -291,7 +291,7 @@
 .lp-table tbody th, .lp-table thead td { position: sticky; left: 0; z-index: 1; background: rgb(var(--surface)); }
 @media (max-width: 640px) {
   .lp-table { font-size: 0.8125rem; }
-  .lp-table tbody th { min-width: 9rem; font-size: 0.8125rem; box-shadow: 1px 0 0 rgb(var(--line)); }
+  .lp-table tbody th { min-width: 8rem; font-size: 0.8125rem; box-shadow: 1px 0 0 rgb(var(--line)); }
   .lp-install pre { font-size: 0.78rem; }
 }
 .lp-footnote { margin: 0.9rem 0 0; max-width: 72ch; font-size: 0.8125rem; line-height: 1.55; color: rgb(var(--fg-2)); }
