@@ -288,6 +288,10 @@ export class NewProjectComponent implements OnInit {
   private reason(item: RunItem, err: any): string {
     const text = errorText(err, 'The request failed.');
     if (item.kind === 'project' && err?.status === 409) {
+      const code = err?.error?.code;
+      if (code === 'repository_in_use' || (!code && /repository/i.test(text))) {
+        return `${text}. Each repository deploys to one project: go back and choose another repository, or remove it from the other project first.`;
+      }
       return `${text}. A project with this name exists (it may have been deleted earlier). Go back and pick another name.`;
     }
     if (err?.status === 403) return `${text}. Your role is not allowed to do this; ask an admin or DevOps user.`;

@@ -84,7 +84,7 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
 
     const existing = await ds.getRepository(Project).findOne({ where: { name: body.name } });
     if (existing) {
-      return res.status(409).json({ error: 'Project name already exists' });
+      return res.status(409).json({ error: 'Project name already exists', code: 'project_name_taken' });
     }
 
     if (body.repositoryUrl !== undefined && body.repositoryUrl !== null && typeof body.repositoryUrl !== 'string') {
@@ -136,7 +136,7 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
     requestTelemetryOriginsSync(); // environment hosts are browser origins
     return res.status(201).json(withRelations || saved);
   } catch (err: any) {
-    if (err instanceof RepositoryInUseError || isRepositoryConflict(err)) return res.status(409).json({ error: new RepositoryInUseError().message });
+    if (err instanceof RepositoryInUseError || isRepositoryConflict(err)) return res.status(409).json({ error: new RepositoryInUseError().message, code: 'repository_in_use' });
     return res.status(400).json({ error: err.message });
   }
 });
@@ -232,7 +232,7 @@ router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
     const fresh = await repo.findOne({ where: { id: updated.id }, relations: ['environments', 'deployments'] });
     return res.json(fresh || updated);
   } catch (err: any) {
-    if (err instanceof RepositoryInUseError || isRepositoryConflict(err)) return res.status(409).json({ error: new RepositoryInUseError().message });
+    if (err instanceof RepositoryInUseError || isRepositoryConflict(err)) return res.status(409).json({ error: new RepositoryInUseError().message, code: 'repository_in_use' });
     return res.status(400).json({ error: err.message });
   }
 });

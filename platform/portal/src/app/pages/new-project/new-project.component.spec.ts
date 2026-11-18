@@ -150,6 +150,18 @@ describe('NewProjectComponent', () => {
     expect(c.draft.databases.staging).toBeTrue();
   });
 
+  it('explains a repository conflict without blaming the project name', async () => {
+    api.createProject.and.returnValue(throwError(() => ({ status: 409, error: { error: 'This repository is already linked to another project', code: 'repository_in_use' } })));
+    const f = await render();
+    const c = f.componentInstance;
+    c.draft.name = 'shop';
+    await c.create();
+    expect(c.items[0].status).toBe('failed');
+    expect(c.items[0].error).toContain('already linked to another project');
+    expect(c.items[0].error).toContain('choose another repository');
+    expect(c.items[0].error).not.toContain('name');
+  });
+
   it('asks before leaving with unsaved input', async () => {
     const f = await render();
     const c = f.componentInstance;
