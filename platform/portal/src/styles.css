@@ -9,6 +9,8 @@
  * (bg-accent/10); never hard-code a colour in a template.
  */
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+/* Footer wordmark accent only: subset to the letters of "your servers" (site-footer.component.ts). */
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@700&text=yourservs&display=swap');
 
 @tailwind base;
 @tailwind components;
