@@ -271,9 +271,11 @@ const bodyOf = document => document.slice(document.indexOf('<body>'));
 test('the homepage explains the product and links to real docs without JavaScript', () => {
   const document = home;
   assert.equal([...document.matchAll(/<h1[\s>]/g)].length, 1);
-  assert.match(document, /<h1[^>]*>\s*<span>Run your apps on your own servers\.<\/span>/);
-  assert.match(document, /Installs and connects the open-source tools/);
-  assert.match(document, /From one server to many\./);
+  assert.match(document, /<h1[^>]*>Run your apps on your own servers\.<\/h1>/);
+  assert.match(document, /Free for personal use/);
+  assert.match(document, /Built on open-source tools/);
+  assert.match(document, /How Cairn compares\./);
+  assert.match(document, /Based on public docs, November 2026/);
   assert.doesNotMatch(bodyOf(document), angularSyntax);
   // The hero story at its first step, playing, with nothing copied yet.
   assert.match(document, /<figcaption[^>]*>Three servers share the work\. Your app is served from all of them\.<\/figcaption>/);

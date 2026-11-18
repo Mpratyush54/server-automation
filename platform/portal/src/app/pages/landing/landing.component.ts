@@ -3,8 +3,10 @@ import { RouterModule } from '@angular/router';
 import { LandingFeature, landingFeatures } from './landing-clips';
 import { SiteHeaderComponent } from '../../shared/site/site-header.component';
 import { SiteFooterComponent } from '../../shared/site/site-footer.component';
-import { LandingHowComponent } from './landing-how.component';
 import { ClipPlayerComponent } from './clip-player.component';
+import {
+  COMPARISON, FEATURE_EXTRAS, FeatureExtra, INCLUDED, LATEST_RELEASE, PROOF_FACTS, REPO_URL, TOOL_GROUPS,
+} from './landing-content';
 
 /**
  * One step of the hero's failover story. The timings and figures come from
@@ -37,7 +39,7 @@ export const TOPOLOGY_STEPS: TopologyStep[] = [
 @Component({
   selector: 'app-landing',
   standalone: true,
-  imports: [RouterModule, SiteHeaderComponent, SiteFooterComponent, ClipPlayerComponent, LandingHowComponent],
+  imports: [RouterModule, SiteHeaderComponent, SiteFooterComponent, ClipPlayerComponent],
   templateUrl: './landing.component.html',
   styleUrl: './landing.component.css',
 })
@@ -49,6 +51,14 @@ export class LandingComponent implements AfterViewInit, OnDestroy {
     { name: 'node-2', ip: '10.0.0.12' },
     { name: 'node-3', ip: '10.0.0.13' },
   ];
+  readonly release = LATEST_RELEASE;
+  readonly repoUrl = REPO_URL;
+  readonly issuesUrl = `${REPO_URL}/issues`;
+  readonly releaseUrl = `${REPO_URL}/releases/tag/${LATEST_RELEASE.version}`;
+  readonly facts = PROOF_FACTS;
+  readonly included = INCLUDED;
+  readonly toolGroups = TOOL_GROUPS;
+  readonly comparison = COMPARISON;
   /** The feature clips, published or still to be recorded. */
   features: LandingFeature[] = landingFeatures();
   step = 0;
@@ -82,6 +92,11 @@ export class LandingComponent implements AfterViewInit, OnDestroy {
 
   isDown(index: number): boolean {
     return this.current.down === index;
+  }
+
+  /** The guide link wording and "how it works" flow for one feature. */
+  extra(id: string): FeatureExtra {
+    return FEATURE_EXTRAS[id] ?? { more: 'Read the guide', flow: null };
   }
 
   /** How many clips are recorded and published. */

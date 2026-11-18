@@ -1,8 +1,9 @@
 /*
  * Landing page, Signal system. Layout: a centred 72rem frame whose edges are
  * drawn as hairline guides (the "rack"), a faint grid behind the hero, and
- * one row per feature with its explanation beside a recording of the real
- * product. Moving elements: the hero topology and the clips on screen.
+ * one row per feature with its explanation (and, for deploy, failover and
+ * backups, a small flow) beside a recording of the real product. Moving
+ * elements: the hero topology and the clips on screen.
  */
 :host { display: block; }
 
@@ -36,21 +37,25 @@
 /* Type */
 .lp-display {
   margin: 0;
-  font-size: clamp(2.25rem, 5.2vw, 3.6rem);
-  line-height: 1.05;
+  font-size: clamp(2.4rem, 5.6vw, 3.9rem);
+  line-height: 1.04;
   font-weight: 600;
-  letter-spacing: -0.025em;
-  max-width: 16ch;
+  letter-spacing: -0.03em;
+  max-width: 13ch;
+  text-wrap: balance;
 }
 .lp-display span { display: block; }
-.lp-display-sm { font-size: clamp(2rem, 4vw, 2.9rem); max-width: 20ch; }
-.lp-quiet { color: rgb(var(--fg-3)); }
+.lp-display-sm { font-size: clamp(1.9rem, 3.6vw, 2.6rem); max-width: 22ch; letter-spacing: -0.025em; }
+/* Second lines of headings: quieter than the first, still AA (fg-2 is over 6:1 in both themes). */
+.lp-quiet { color: rgb(var(--fg-2)); font-weight: 500; }
 .lp-h2 { margin: 0; font-size: clamp(1.5rem, 2.6vw, 2rem); line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; }
 .lp-h2 span { display: block; }
-.lp-lede { margin: 1.25rem 0 0; max-width: 56ch; font-size: 1.0625rem; line-height: 1.6; color: rgb(var(--fg-2)); }
+.lp-lede { margin: 1.25rem 0 0; max-width: 40ch; font-size: clamp(1.05rem, 1.5vw, 1.2rem); line-height: 1.55; color: rgb(var(--fg-2)); }
 
 .lp-cta { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1.75rem; }
 .lp-cta .btn { height: 2.6rem; padding: 0 1.1rem; font-size: 0.9rem; }
+
+.lp a:not(.btn):focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: 2px; border-radius: 2px; }
 
 /* Hero */
 .lp-hero {
@@ -76,45 +81,15 @@
   z-index: 1;
   display: grid;
   gap: 2.5rem;
-  padding-block: clamp(3rem, 7vw, 6rem) clamp(3rem, 6vw, 5rem);
+  padding-block: clamp(2.75rem, 6vw, 5rem) clamp(2.75rem, 5vw, 4.5rem);
   align-items: center;
 }
-@media (min-width: 1000px) { .lp-hero-inner { grid-template-columns: 1.05fr 1fr; gap: 3.5rem; } }
+@media (min-width: 1000px) { .lp-hero-inner { grid-template-columns: 1fr 1fr; gap: 3.5rem; } }
 .lp-hero-copy { min-width: 0; }
-
-.lp-install {
-  position: relative;
-  margin-top: 1.5rem;
-  max-width: 40rem;
-  border: 1px solid rgb(var(--line));
-  border-radius: 10px;
-  background: rgb(var(--surface));
-}
-.lp-install pre {
-  margin: 0;
-  padding: 0.9rem 4.5rem 0.9rem 1rem;
-  white-space: pre-wrap;
-  word-break: break-all;
-  font-size: 0.8rem;
-  line-height: 1.7;
-  color: rgb(var(--fg));
-}
-.lp-prompt { color: rgb(var(--accent-text)); user-select: none; }
-.lp-copy {
-  position: absolute;
-  top: 0.55rem;
-  right: 0.55rem;
-  height: 1.9rem;
-  padding: 0 0.7rem;
-  border: 1px solid rgb(var(--line-strong));
-  border-radius: 6px;
-  background: rgb(var(--raised));
-  color: rgb(var(--fg));
-  font: inherit;
-  font-size: 0.75rem;
-  cursor: pointer;
-}
-.lp-copy:hover { border-color: rgb(var(--accent)); }
+.lp-price-line { margin: 1rem 0 0; font-size: 0.875rem; line-height: 1.5; }
+.lp-price-line a { color: rgb(var(--fg-2)); text-decoration: none; border-bottom: 1px solid rgb(var(--line-strong)); }
+.lp-price-line span { white-space: nowrap; }
+.lp-price-line a:hover { color: rgb(var(--fg)); border-bottom-color: rgb(var(--accent)); }
 
 /* Topology */
 .lp-topology {
@@ -142,8 +117,17 @@
 .lp-node-down rect { stroke: rgb(var(--down) / 0.7); }
 .lp-node-down .lp-led { fill: rgb(var(--down)); }
 .lp-node-down .lp-node-ip { fill: rgb(var(--down)); }
-.lp-node-name { font: 600 13px 'IBM Plex Sans', system-ui, sans-serif; fill: rgb(var(--fg)); }
-.lp-node-ip { font: 11px 'IBM Plex Mono', ui-monospace, monospace; fill: rgb(var(--fg-3)); }
+/* Sizes are in diagram units. On desktop the diagram is drawn larger than
+   1:1, so the labels render at 13px or more. */
+.lp-node-name { font: 600 14px 'IBM Plex Sans', system-ui, sans-serif; fill: rgb(var(--fg)); }
+.lp-node-ip { font: 12px 'IBM Plex Mono', ui-monospace, monospace; fill: rgb(var(--fg-2)); }
+/* Phones draw it at about 0.75x: drop the addresses and enlarge the names,
+   so they stay 12px or more. The caption and log still say which one failed. */
+@media (max-width: 560px) {
+  .lp-node-ip { display: none; }
+  .lp-node-name { font-size: 18px; transform: translateY(8px); }
+  .lp-app .lp-node-name { transform: translateY(10px); }
+}
 
 .lp-caption { padding: 0.25rem 1rem 0.75rem; min-height: 3.2rem; font-size: 0.9rem; color: rgb(var(--fg)); }
 .lp-log {
@@ -160,7 +144,7 @@
   gap: 0.25rem;
 }
 .lp-log li { display: flex; gap: 0.75rem; color: rgb(var(--fg-2)); }
-.lp-log time { color: rgb(var(--fg-3)); flex: none; }
+.lp-log time { color: rgb(var(--fg-2)); flex: none; }
 .lp-log-ok span { color: rgb(var(--ok)); }
 .lp-log-warn span { color: rgb(var(--warn)); }
 .lp-log-down span { color: rgb(var(--down)); }
@@ -170,45 +154,80 @@
 .lp-steps button::after { content: ''; position: absolute; left: 0.125rem; right: 0.125rem; top: 50%; height: 0.3rem; margin-top: -0.15rem; border-radius: 2px; background: rgb(var(--line-strong)); }
 .lp-steps button.on::after { background: rgb(var(--accent)); }
 
-/* Stack chips */
-.lp-stack { border-bottom: 1px solid rgb(var(--line)); }
-.lp-stack .lp-frame { padding-block: 2.25rem; }
-.lp-stack-title { margin: 0 0 1rem; font-size: 0.95rem; font-weight: 500; color: rgb(var(--fg-2)); max-width: 60ch; }
-.lp-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.lp-chips li { padding: 0.35rem 0.75rem; border: 1px solid rgb(var(--line)); border-radius: 999px; background: rgb(var(--surface)); font-size: 0.8rem; color: rgb(var(--fg)); }
+/* Shared line icon (proof facts and included cards) */
+.lp-icon { flex: none; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
-/* Section heads shared by the feature and "also included" sections */
-.lp-section-head { display: grid; gap: 1rem; margin-bottom: 2rem; }
+/* What you can check: the release, the tracker, tested facts */
+.lp-proof { border-bottom: 1px solid rgb(var(--line)); }
+.lp-proof .lp-frame { padding-block: 1.75rem 2rem; }
+.lp-release { margin: 0 0 1.25rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.9rem; font-size: 0.875rem; color: rgb(var(--fg-2)); }
+.lp-release-tag { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: rgb(var(--fg-2)); }
+.lp-release-version { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 500; color: rgb(var(--accent-text)); text-decoration: none; }
+.lp-release-version:hover { text-decoration: underline; }
+.lp-release-links { display: inline-flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; }
+.lp-release-links a { color: rgb(var(--fg)); text-decoration: none; border-bottom: 1px solid rgb(var(--line-strong)); }
+.lp-release-links a:hover { border-bottom-color: rgb(var(--accent)); }
+@media (min-width: 760px) { .lp-release-links { margin-left: auto; } }
+.lp-facts { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
+.lp-facts li { display: flex; gap: 0.7rem; align-items: flex-start; }
+.lp-facts .lp-icon { margin-top: 0.1rem; color: rgb(var(--accent-text)); }
+.lp-facts p { margin: 0; font-size: 0.875rem; line-height: 1.5; color: rgb(var(--fg)); }
+.lp-facts a, .lp-cards a, .lp-footnote a { color: rgb(var(--accent-text)); text-decoration: none; font-weight: 500; }
+.lp-facts a:hover, .lp-cards a:hover, .lp-footnote a:hover { text-decoration: underline; }
+.lp-facts a, .lp-cards a { white-space: nowrap; }
+.lp-facts a::after, .lp-cards a::after { content: ' \2192'; }
+
+/* Section heads shared by the feature, "also included" and comparison sections */
+.lp-section-head { display: grid; gap: 1rem; margin-bottom: 1.75rem; }
 @media (min-width: 860px) { .lp-section-head { grid-template-columns: 1fr 1fr; gap: 3rem; align-items: end; } }
 .lp-section-head p { margin: 0; color: rgb(var(--fg-2)); line-height: 1.6; max-width: 52ch; }
+.lp-section-head.lp-section-head-tight { grid-template-columns: minmax(0, 1fr); margin-bottom: 1.5rem; }
 .lp-h3 { margin: 0; font-size: clamp(1.3rem, 2.1vw, 1.6rem); line-height: 1.2; font-weight: 600; letter-spacing: -0.015em; }
 .lp-h3 span { display: block; }
 
 /* How it works: one recorded clip per feature */
 .lp-features { border-bottom: 1px solid rgb(var(--line)); scroll-margin-top: 3.5rem; }
-.lp-features > .lp-frame { padding-block: clamp(3rem, 6vw, 4.5rem); }
+.lp-features > .lp-frame { padding-block: clamp(2.75rem, 5.5vw, 4.25rem) clamp(1.5rem, 3vw, 2.5rem); }
 
-.lp-index { position: sticky; top: calc(3.5rem + env(safe-area-inset-top, 0px)); z-index: 5; margin: 0 0 1rem; padding-block: 0.6rem; background: rgb(var(--canvas)); border-bottom: 1px solid rgb(var(--line)); }
-.lp-index ol { list-style: none; margin: 0; padding: 0; display: flex; gap: 0.25rem; overflow-x: auto; scrollbar-width: none; }
+/* The feature index scrolls with the page: the site header is the only sticky bar. */
+.lp-index { margin: 0 0 0.5rem; padding-block: 0.5rem; border-block: 1px solid rgb(var(--line)); }
+.lp-index ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .lp-index a { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.7rem; border-radius: 6px; white-space: nowrap; font-size: 0.875rem; color: rgb(var(--fg-2)); text-decoration: none; }
 .lp-index a:hover { color: rgb(var(--fg)); background: rgb(var(--raised)); }
 .lp-index-n { display: inline-grid; place-items: center; width: 1.35rem; height: 1.35rem; border-radius: 50%; border: 1px solid rgb(var(--line-strong)); font-size: 0.7rem; font-weight: 600; color: rgb(var(--fg-2)); font-variant-numeric: tabular-nums; }
 
-.lp-feature { position: relative; display: grid; gap: 1.5rem; padding-block: clamp(2rem, 4.5vw, 3.25rem); border-top: 1px solid rgb(var(--line)); }
-.lp-anchor { position: absolute; top: -6.5rem; left: 0; width: 1px; height: 1px; pointer-events: none; }
+.lp-feature { position: relative; display: grid; gap: 1.25rem; padding-block: clamp(1.75rem, 3.5vw, 2.75rem); border-top: 1px solid rgb(var(--line)); }
+.lp-anchor { position: absolute; top: -4.5rem; left: 0; width: 1px; height: 1px; pointer-events: none; }
 .lp-index + .lp-feature { border-top: 0; }
 @media (min-width: 900px) {
-  .lp-feature { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 3rem; align-items: center; }
+  .lp-feature { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 2.5rem; align-items: center; }
   .lp-feature:nth-of-type(even) { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
   .lp-feature:nth-of-type(even) .lp-feature-copy { order: 2; }
 }
 .lp-feature-copy { min-width: 0; display: flex; flex-direction: column; gap: 0.85rem; }
-.lp-feature-copy > p:not(.lp-eyebrow) { margin: 0; color: rgb(var(--fg-2)); line-height: 1.6; max-width: 46ch; }
+.lp-feature-copy > p:not(.lp-eyebrow) { margin: 0; color: rgb(var(--fg-2)); line-height: 1.6; }
 .lp-eyebrow { margin: 0; display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; font-weight: 500; color: rgb(var(--accent-text)); }
 .lp-eyebrow .lp-index-n { border-color: rgb(var(--accent) / 0.6); color: rgb(var(--accent-text)); }
-.lp-guide, .lp-cards a { align-self: flex-start; font-size: 0.9rem; font-weight: 500; color: rgb(var(--accent-text)); text-decoration: none; border-bottom: 1px solid rgb(var(--accent) / 0.45); }
-.lp-guide:hover, .lp-cards a:hover { border-bottom-color: rgb(var(--accent)); }
-.lp-guide-name { color: rgb(var(--fg-2)); font-weight: 400; }
+.lp-guide { align-self: flex-start; font-size: 0.9375rem; font-weight: 500; color: rgb(var(--accent-text)); text-decoration: none; }
+.lp-guide::after { content: ' \2192'; }
+.lp-guide:hover { text-decoration: underline; }
+
+/* "How it works": a small left-to-right flow under the copy. It turns top to
+   bottom when its column is narrow (phones, and the copy column on tablets),
+   and never wraps into a zig-zag. */
+.lp-how { container-type: inline-size; padding: 12px 14px 14px; border: 1px solid rgb(var(--line)); border-radius: 10px; background: rgb(var(--surface)); }
+.lp-how-label { margin: 0 0 10px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: rgb(var(--fg-2)); }
+.lp-flow { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
+.lp-flow li { position: relative; display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; padding: 7px 10px; border: 1px solid rgb(var(--line-strong)); border-radius: 7px; background: rgb(var(--raised)); }
+.lp-flow li:last-child { border-color: rgb(var(--accent) / 0.75); }
+.lp-flow b { font-size: 0.8125rem; font-weight: 600; color: rgb(var(--fg)); }
+.lp-flow span { font-size: 0.75rem; line-height: 1.35; color: rgb(var(--fg-2)); }
+.lp-flow li:not(:last-child)::after { content: '\2193'; position: absolute; left: 50%; bottom: -17px; translate: -50% 0; font-size: 0.8125rem; line-height: 1; color: rgb(var(--accent-text)); }
+@container (min-width: 25rem) {
+  .lp-flow { flex-direction: row; gap: 16px; }
+  .lp-flow li { flex: 1 1 0; min-width: 0; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 2px; padding: 8px 9px; }
+  .lp-flow li:not(:last-child)::after { content: '\2192'; left: auto; right: -13px; top: 50%; bottom: auto; translate: 0 -50%; }
+}
 
 /* The clip frame keeps the recording's 16:10 shape whether or not it has loaded. */
 .lp-clip {
@@ -228,19 +247,83 @@
 .lp-pending { margin: auto; width: min(100% - 2.5rem, 28rem); padding: 20px; }
 .lp-pending-label { margin: 0 0 0.75rem; display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; font-weight: 600; color: rgb(var(--fg)); }
 .lp-pending-label::before { content: ''; width: 0.5rem; height: 0.5rem; border-radius: 50%; border: 1.5px solid rgb(var(--fg-3)); }
-.lp-pending-lead { margin: 0 0 0.4rem; font-size: 0.8rem; color: rgb(var(--fg-3)); }
+.lp-pending-lead { margin: 0 0 0.4rem; font-size: 0.8rem; color: rgb(var(--fg-2)); }
 .lp-pending ol { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; line-height: 1.45; color: rgb(var(--fg-2)); }
 @media (max-width: 480px) {
   .lp-pending { margin: 0 auto; }
 }
 
-/* Also included: plain cards, text only */
+/* Also included: a compact grid of small cards, the tools as the last one */
 .lp-more { border-bottom: 1px solid rgb(var(--line)); }
-.lp-more > .lp-frame { padding-block: clamp(3rem, 6vw, 4.5rem); }
-.lp-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); }
-.lp-cards li { display: flex; flex-direction: column; gap: 0.6rem; padding: 20px; border: 1px solid rgb(var(--line)); border-radius: 12px; background: rgb(var(--surface)); }
-.lp-cards h3 { margin: 0; font-size: 1rem; font-weight: 600; }
-.lp-cards p { margin: 0; flex: 1; color: rgb(var(--fg-2)); font-size: 0.925rem; line-height: 1.55; }
+.lp-more > .lp-frame, .lp-compare > .lp-frame { padding-block: clamp(2.5rem, 5vw, 4rem); }
+.lp-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); }
+@media (min-width: 900px) { .lp-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.lp-cards li { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto 1fr auto; align-items: center; gap: 0.45rem 0.6rem; padding: 18px 20px; border: 1px solid rgb(var(--line)); border-radius: 12px; background: rgb(var(--surface)); }
+.lp-cards li > .lp-icon { color: rgb(var(--accent-text)); }
+.lp-cards li > p, .lp-cards li > a, .lp-cards li > dl { grid-column: 1 / -1; }
+.lp-cards li > p { align-self: start; }
+.lp-cards li > a { justify-self: start; }
+.lp-cards h3 { margin: 0; font-size: 0.975rem; font-weight: 600; letter-spacing: -0.005em; }
+.lp-cards p { margin: 0; color: rgb(var(--fg-2)); font-size: 0.875rem; line-height: 1.5; }
+.lp-cards a { font-size: 0.8125rem; margin-top: 0.2rem; }
+/* The tools: a full-width strip under the cards, groups side by side. */
+.lp-cards .lp-tools { grid-column: 1 / -1; grid-template-rows: auto auto auto; background: transparent; border-style: dashed; border-color: rgb(var(--line-strong)); }
+.lp-tools dl { margin: 0.2rem 0; width: 100%; display: grid; gap: 0.75rem 1.5rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); }
+.lp-tools h3 { grid-column: 1 / -1; }
+.lp-tools dl div { display: grid; gap: 1px; }
+.lp-tools dt { font-size: 0.8125rem; font-weight: 600; color: rgb(var(--fg)); }
+.lp-tools dd { margin: 0; font-size: 0.8125rem; color: rgb(var(--fg-2)); }
 
-/* Closing */
-.lp-end-inner { padding-block: clamp(3.5rem, 8vw, 6rem); }
+/* Comparison */
+.lp-compare { border-bottom: 1px solid rgb(var(--line)); }
+.lp-table-wrap { overflow-x: auto; border: 1px solid rgb(var(--line)); border-radius: 12px; background: rgb(var(--surface)); }
+.lp-table-wrap:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: 2px; }
+.lp-table { width: 100%; min-width: 40rem; border-collapse: collapse; font-size: 0.875rem; }
+.lp-table th, .lp-table td { padding: 0.7rem 0.9rem; border-bottom: 1px solid rgb(var(--line)); text-align: center; vertical-align: middle; }
+.lp-table tbody tr:last-child th, .lp-table tbody tr:last-child td { border-bottom: 0; }
+.lp-table thead th { font-weight: 600; font-size: 0.8125rem; color: rgb(var(--fg)); white-space: nowrap; }
+.lp-table tbody th { text-align: left; font-size: 0.875rem; font-weight: 500; color: rgb(var(--fg)); width: 34%; }
+.lp-table td { color: rgb(var(--fg)); }
+.lp-table .lp-col-us { background: rgb(var(--accent) / 0.1); font-weight: 600; }
+.lp-table thead .lp-col-us { box-shadow: inset 0 2px 0 rgb(var(--accent)); }
+.lp-table .lp-cell-muted { color: rgb(var(--fg-2)); }
+/* The row labels stay in view while the table scrolls sideways on phones. */
+.lp-table tbody th, .lp-table thead td { position: sticky; left: 0; z-index: 1; background: rgb(var(--surface)); }
+@media (max-width: 640px) {
+  .lp-table { font-size: 0.8125rem; }
+  .lp-table tbody th { min-width: 9rem; font-size: 0.8125rem; box-shadow: 1px 0 0 rgb(var(--line)); }
+  .lp-install pre { font-size: 0.78rem; }
+}
+.lp-footnote { margin: 0.9rem 0 0; max-width: 72ch; font-size: 0.8125rem; line-height: 1.55; color: rgb(var(--fg-2)); }
+
+/* Closing: the claim, and the install commands beside it */
+.lp-end-inner { display: grid; gap: 2rem; align-items: center; padding-block: clamp(3rem, 7vw, 5rem); }
+@media (min-width: 900px) { .lp-end-inner { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3.5rem; } }
+.lp-end-copy { min-width: 0; }
+.lp-install { min-width: 0; border: 1px solid rgb(var(--line)); border-radius: 12px; background: rgb(var(--surface)); box-shadow: var(--shadow); overflow: hidden; }
+.lp-install-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.55rem 0.6rem 0.55rem 1rem; border-bottom: 1px solid rgb(var(--line)); font-size: 0.8rem; color: rgb(var(--fg-2)); }
+.lp-install pre {
+  margin: 0;
+  padding: 1rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+  line-height: 1.8;
+  color: rgb(var(--fg));
+  background: rgb(var(--canvas) / 0.6);
+}
+.lp-prompt { color: rgb(var(--accent-text)); user-select: none; }
+.lp-copy {
+  height: 1.9rem;
+  padding: 0 0.75rem;
+  border: 1px solid rgb(var(--line-strong));
+  border-radius: 6px;
+  background: rgb(var(--raised));
+  color: rgb(var(--fg));
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.lp-copy:hover { border-color: rgb(var(--accent)); }
+.lp-copy:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: 2px; }
+.lp-install-note { margin: 0; padding: 0.75rem 1rem 0.9rem; border-top: 1px solid rgb(var(--line)); font-size: 0.8125rem; line-height: 1.5; color: rgb(var(--fg-2)); }

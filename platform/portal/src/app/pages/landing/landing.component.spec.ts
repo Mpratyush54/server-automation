@@ -10,6 +10,7 @@ import { provideRouter } from '@angular/router';
 import { LandingComponent, TOPOLOGY_STEPS } from './landing.component';
 import { ClipPlayerComponent, clipTime } from './clip-player.component';
 import { FEATURE_CLIPS, MEDIA_BASE, landingFeatures } from './landing-clips';
+import { COMPARISON, LATEST_RELEASE } from './landing-content';
 
 /** Stand-in for IntersectionObserver, so tests decide what is on screen. */
 class FakeObserver {
@@ -75,6 +76,41 @@ describe('LandingComponent', () => {
       expect(article.querySelectorAll('.lp-pending li').length).toBe(FEATURE_CLIPS[i].shows.length);
     });
     expect(fixture.nativeElement.querySelector('video')).toBeNull();
+  });
+
+  it('pairs deploys, failover and backups with a small flow, and links every guide in plain words', () => {
+    const fixture = TestBed.createComponent(LandingComponent);
+    fixture.componentInstance.features = landingFeatures({});
+    fixture.detectChanges();
+    const withFlow = [...fixture.nativeElement.querySelectorAll('.lp-feature')]
+      .filter((a: HTMLElement) => a.querySelector('.lp-flow'))
+      .map((a: HTMLElement) => a.querySelector('.lp-anchor')!.id);
+    expect(withFlow).toEqual(['deploy-from-git', 'backups', 'high-availability']);
+    for (const flow of fixture.nativeElement.querySelectorAll('.lp-flow') as NodeListOf<HTMLElement>) {
+      expect(flow.querySelectorAll('li').length).toBe(4);
+      expect(flow.getAttribute('aria-label')).toBeTruthy();
+    }
+    // No separate diagrams section or journey row: the clips are the one story per feature.
+    expect(fixture.nativeElement.querySelector('app-landing-how, .hw')).toBeNull();
+    for (const link of fixture.nativeElement.querySelectorAll('a.lp-guide') as NodeListOf<HTMLElement>) {
+      expect(link.textContent!.trim()).toMatch(/^How .+ works?$/);
+    }
+  });
+
+  it('states the release, the price line and a cautious comparison', () => {
+    const fixture = TestBed.createComponent(LandingComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('.lp-release')!.textContent).toContain(LATEST_RELEASE.version);
+    expect(el.querySelector('.lp-release time')!.getAttribute('datetime')).toBe(LATEST_RELEASE.date);
+    const price = el.querySelector('.lp-price-line a')!;
+    expect(price.getAttribute('href')).toBe('/pricing');
+    expect(price.textContent).toContain('Free for personal use');
+    expect(el.querySelectorAll('h1').length).toBe(1);
+    const rows = el.querySelectorAll('.lp-table tbody tr');
+    expect(rows.length).toBe(COMPARISON.rows.length);
+    for (const row of COMPARISON.rows) expect(row.cells.length).toBe(COMPARISON.columns.length);
+    expect(el.querySelector('.lp-footnote')!.textContent).toContain('Based on public docs, November 2026');
   });
 
   it('plays the failover story, marks the failed server, and can be paused', fakeAsync(() => {
