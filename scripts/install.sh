@@ -2,7 +2,7 @@
 # Install platformctl from GitHub Releases, falling back to the GHCR copy of
 # the release when GitHub Releases is unavailable.
 # Usage:
-#   curl -fsSL https://github.com/Mpratyush54/server-automation/releases/latest/download/install.sh | bash
+#   curl -fsSL https://get.cairnpaas.dev | bash
 #   PLATFORMCTL_VERSION=v0.1.4 curl -fsSL .../install.sh | bash
 # If GitHub Releases itself is down, fetch this script from the repository:
 #   curl -fsSL https://raw.githubusercontent.com/Mpratyush54/server-automation/master/platformctl/install.sh | bash

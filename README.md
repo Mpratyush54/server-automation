@@ -36,7 +36,7 @@ minimum; 8 GB and 80 GB recommended), and a domain pointing at it — or use
 `<server-ip>.sslip.io` if you don't have one yet:
 
 ```bash
-curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
+curl -fsSL https://get.cairnpaas.dev | bash
 sudo platformctl provision
 ```
 

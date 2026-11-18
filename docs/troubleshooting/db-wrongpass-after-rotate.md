@@ -37,7 +37,7 @@ sudo grep -E '^(ADMIN|POSTGRES|REDIS)_PASSWORD=' /etc/platform/.env
 On the k3s host:
 
 ```bash
-curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
+curl -fsSL https://get.cairnpaas.dev | bash
 sudo platformctl backup
 sudo platformctl recover
 sudo platformctl update
