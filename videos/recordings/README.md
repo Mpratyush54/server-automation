@@ -52,7 +52,7 @@ Everything comes from the environment. Put it in `recording.env` (git-ignored) a
 | `BACKUP_SSH`, `BACKUP_IDENTITY_FILE`, `BACKUP_SKIP_ARCHIVE` | backups | `user@host` (key in ssh-agent); age `identity.txt`; `1` to skip taking an archive |
 | `APP_URL`, `HA_NODE`, `HA_POWEROFF_CMD`, `HA_POWERON_CMD` | high-availability | The app's public address; the server to stop as shown on the Servers tab; shell commands to stop it and start it again |
 | `MCP_PROJECT_ID`, `MCP_NAMESPACE`, `MCP_DEPLOYMENT`, `MCP_REPLICAS`, `MCP_CLIENT_CMD` | mcp | Project for the AI agents view; the demo app's namespace and Deployment; replicas to scale to (keep the current count); optional real assistant command line |
-| `RECORD_THEME`, `TYPING_MS`, `HEADED`, `RECORDINGS_OUT`, `FONT_FILE` | optional | `dark` (default) or `light`; typing pace; `1` shows the browser; output folder; font for on-screen labels |
+| `RECORD_THEME`, `TYPING_MS`, `BEAT_SCALE`, `HEADED`, `RECORDINGS_OUT`, `FONT_FILE` | optional | `dark` (default) or `light`; typing pace; multiplier for every reading pause (default 1; 0.5 for tighter cuts); `1` shows the browser; output folder; font for on-screen labels |
 
 ## Run it on a fresh disposable install
 

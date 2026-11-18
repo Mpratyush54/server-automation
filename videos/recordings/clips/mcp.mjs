@@ -25,14 +25,18 @@ import { freshTotp } from '../lib/totp.mjs';
 let lastStep = -1;
 
 /** Answer the portal's two-factor step-up dialog if it appears. */
-async function stepUp(page) {
+async function stepUp(page, rec, name) {
   const dialog = page.getByRole('dialog');
   try {
     await dialog.getByLabel('Authentication code').waitFor({ timeout: 4000 });
   } catch {
     return;
   }
-  const { code, step } = await freshTotp(env('CAIRN_TOTP_SECRET', { required: true }), lastStep);
+  // Codes are single use: when this 30 s step was already used, the wait for
+  // the next one is dead time on screen, so it is cut (and labelled).
+  const secret = env('CAIRN_TOTP_SECRET', { required: true });
+  const mustWait = Math.floor(Date.now() / 30000) <= lastStep;
+  const { code, step } = mustWait ? await rec.cut(name, () => freshTotp(secret, lastStep)) : await freshTotp(secret, lastStep);
   lastStep = step;
   await type(page, dialog.getByLabel('Authentication code'), code);
   await click(page, dialog.getByRole('button', { name: 'Verify', exact: true }));
@@ -72,17 +76,20 @@ export async function record() {
     // inputs carry no name attribute: Angular passes [name] to ngModel.)
     const scopes = form.locator('fieldset.pa-scopes label');
     await scopes.filter({ hasText: 'commands:execute' }).waitFor();
-    for (const label of await scopes.all()) {
-      const id = (await label.locator('.pa-scope-id').textContent())?.trim();
-      const wanted = id === 'commands:validate' || id === 'commands:execute';
-      const box = label.locator('input[type="checkbox"]');
-      if ((await box.isChecked()) !== wanted) await click(page, box);
-    }
+    // Unticking the default scopes one by one is slow to watch: 3x (labelled).
+    await rec.fast('untick', 3, async () => {
+      for (const label of await scopes.all()) {
+        const id = (await label.locator('.pa-scope-id').textContent())?.trim();
+        const wanted = id === 'commands:validate' || id === 'commands:execute';
+        const box = label.locator('input[type="checkbox"]');
+        if ((await box.isChecked()) !== wanted) await click(page, box);
+      }
+    });
     rec.mark('scopes');
     await beat(1200);
     const created = response(page, /\/api\/agent-tokens$/, { status: [200, 201] });
     await click(page, form.getByRole('button', { name: 'Create token', exact: true }));
-    await stepUp(page);
+    await stepUp(page, rec, 'totp-create');
     const body = await (await created).json();
     tokenId = body.id ?? body.token?.id;
     const secret = body.token?.token ?? body.token;
@@ -121,7 +128,7 @@ export async function record() {
     await beat(1500);
     const approved = response(page, /\/api\/agent\/commands\/[^/]+\/approve/);
     await click(page, row.getByTestId('agents-approve'));
-    await stepUp(page);
+    await stepUp(page, rec, 'totp-approve');
     await approved;
     await row.waitFor({ state: 'detached', timeout: 30_000 });
     rec.mark('approved');

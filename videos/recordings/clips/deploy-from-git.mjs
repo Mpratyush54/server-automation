@@ -54,14 +54,17 @@ export async function record() {
     await beat(500);
 
     // 3. Keep the defaults on the remaining steps until the review.
+    // Clicking through the optional steps plays at 3x (labelled).
     const review = page.getByRole('heading', { name: 'Review and create' });
-    for (let step = 0; step < 6 && !(await review.isVisible()); step++) {
-      const next = page.getByTestId('np-next');
-      await next.waitFor();
-      await page.waitForFunction((el) => !el.disabled, await next.elementHandle());
-      await click(page, next);
-      await beat(350);
-    }
+    await rec.fast('steps', 3, async () => {
+      for (let step = 0; step < 6 && !(await review.isVisible()); step++) {
+        const next = page.getByTestId('np-next');
+        await next.waitFor();
+        await page.waitForFunction((el) => !el.disabled, await next.elementHandle());
+        await click(page, next);
+        await beat(350);
+      }
+    });
     await review.waitFor();
     rec.mark('review');
     await beat(900);

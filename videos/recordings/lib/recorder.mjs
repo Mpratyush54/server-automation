@@ -119,7 +119,9 @@ const pointer = new WeakMap();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** A short pause so viewers can read what just changed. Never used to wait for the app. */
-export const beat = (ms = 600) => sleep(ms);
+// BEAT_SCALE (default 1) shortens or lengthens every reading pause, for tighter cuts.
+const beatScale = Number(env('BEAT_SCALE', { fallback: '1' }));
+export const beat = (ms = 600) => sleep(ms * beatScale);
 
 /** Glide the visible cursor to the middle of an element. */
 export async function moveTo(page, locator) {
