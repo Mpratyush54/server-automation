@@ -3,6 +3,7 @@ import { RouterModule } from '@angular/router';
 import { LandingFeature, landingFeatures } from './landing-clips';
 import { SiteHeaderComponent } from '../../shared/site/site-header.component';
 import { SiteFooterComponent } from '../../shared/site/site-footer.component';
+import { LandingHowComponent } from './landing-how.component';
 import { ClipPlayerComponent } from './clip-player.component';
 
 /**
@@ -36,7 +37,7 @@ export const TOPOLOGY_STEPS: TopologyStep[] = [
 @Component({
   selector: 'app-landing',
   standalone: true,
-  imports: [RouterModule, SiteHeaderComponent, SiteFooterComponent, ClipPlayerComponent],
+  imports: [RouterModule, SiteHeaderComponent, SiteFooterComponent, ClipPlayerComponent, LandingHowComponent],
   templateUrl: './landing.component.html',
   styleUrl: './landing.component.css',
 })
@@ -67,7 +68,7 @@ export class LandingComponent implements AfterViewInit, OnDestroy {
   };
   installCopied = false;
   readonly installCommand =
-    'curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash\nsudo platformctl provision';
+    'curl -fsSL https://get.cairnpaas.dev | bash\nsudo platformctl provision';
   private copyTimer?: ReturnType<typeof setTimeout>;
 
   get current(): TopologyStep {

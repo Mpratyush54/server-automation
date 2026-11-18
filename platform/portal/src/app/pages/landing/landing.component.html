@@ -20,7 +20,7 @@
           <a class="btn" routerLink="/" fragment="product">See how it works</a>
         </div>
         <div class="lp-install">
-          <pre aria-label="Install commands"><code><span class="lp-prompt">$</span> curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
+          <pre aria-label="Install commands"><code><span class="lp-prompt">$</span> curl -fsSL https://get.cairnpaas.dev | bash
 <span class="lp-prompt">$</span> sudo platformctl provision</code></pre>
           <button type="button" class="lp-copy" (click)="copyInstallCommand()" [attr.aria-label]="installCopied ? 'Copied' : 'Copy install commands'">
             {{ installCopied ? 'Copied' : 'Copy' }}
@@ -85,6 +85,9 @@
       </ul>
     </div>
   </section>
+
+  <!-- How the pieces connect: deploy flow, servers, backups. -->
+  <app-landing-how></app-landing-how>
 
   <!-- How it works: one short recording of the real product per feature. -->
   <section class="lp-features" id="product" aria-labelledby="features-title">

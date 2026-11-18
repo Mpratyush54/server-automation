@@ -1,0 +1,112 @@
+<section class="hw" aria-labelledby="how-title">
+  <div class="hw-frame">
+    <header class="hw-head">
+      <h2 id="how-title" class="hw-h2"><span>How it fits together.</span> <span class="hw-quiet">The tools above, connected.</span></h2>
+      <div class="hw-tabs" role="tablist" aria-label="Diagrams">
+        @for (t of tabs; track t.id) {
+          <button type="button" role="tab" [id]="'hw-tab-' + t.id" [attr.aria-controls]="'hw-panel-' + t.id"
+            [attr.aria-selected]="tab === t.id" [class.on]="tab === t.id" (click)="tab = t.id"><span class="hw-long">{{ t.label }}</span><span class="hw-short" aria-hidden="true">{{ t.short }}</span></button>
+        }
+      </div>
+    </header>
+
+    <div class="hw-panel" role="tabpanel" id="hw-panel-deploy" aria-labelledby="hw-tab-deploy" [hidden]="tab !== 'deploy'">
+      <ol class="hw-flow">
+        <li>
+          <svg class="hw-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="9" r="2.2"/><path d="M6 8.2v7.6M18 11.2c0 3-3 3.8-6 4.3-2.2.4-4 1-5 2"/></svg>
+          <b>You push</b><span>to the branch you picked for an environment.</span>
+        </li>
+        <li>
+          <svg class="hw-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg>
+          <b>The image is built</b><span>by your CI, for example GitHub Actions or GitLab CI.</span>
+        </li>
+        <li>
+          <svg class="hw-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 0 1-14.3 4.9M4 12a8 8 0 0 1 14.3-4.9"/><path d="M18.5 3v4.2h-4.2M5.5 21v-4.2h4.2"/></svg>
+          <b>Argo CD syncs</b><span>the Kubernetes files in your repository's <code>k8s/</code> folder.</span>
+        </li>
+        <li>
+          <svg class="hw-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>
+          <b>Live over HTTPS</b><span>ingress-nginx routes traffic; cert-manager gets a Let's Encrypt certificate.</span>
+        </li>
+        <li class="hw-flow-end">
+          <svg class="hw-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5-5 4 3 7-8"/><path d="M15 7h4v4"/></svg>
+          <b>Watched in the portal</b><span>Metrics, logs and traces, with full monitoring and the Cairn SDK.</span>
+          <span class="hw-chips"><i>Prometheus</i><i>Loki</i><i>Tempo</i></span>
+        </li>
+      </ol>
+      <div class="hw-panel-foot">
+        <p class="hw-alt"><b>Or build on your servers.</b> Turn on builds and Cairn builds the image from a Dockerfile or with Buildpacks, then deploys it by digest.</p>
+        <p class="hw-links"><a routerLink="/docs/getting-started/deploy-your-app">Deploy your app</a><a routerLink="/docs/guides/builds">Builds from source</a></p>
+      </div>
+    </div>
+
+    <div class="hw-panel" role="tabpanel" id="hw-panel-servers" aria-labelledby="hw-tab-servers" [hidden]="tab !== 'servers'">
+      <div class="hw-servers">
+        <figure class="hw-one">
+          <figcaption><b>One server</b><span>A complete install. Monitoring is optional; traces come with full monitoring.</span></figcaption>
+          <div class="hw-stack">
+            <div class="hw-layer hw-apps">Your apps</div>
+            <div class="hw-trio">
+              <div class="hw-layer hw-cairn"><b>Cairn</b><span>portal, API</span></div>
+              <div class="hw-layer"><b>Databases</b><span>PostgreSQL, MongoDB, Redis</span></div>
+              <div class="hw-layer"><b>Monitoring</b><span>Prometheus, Grafana, Loki, Tempo</span></div>
+            </div>
+            <div class="hw-layer hw-k8s">Kubernetes (k3s)</div>
+            <div class="hw-layer hw-os">Ubuntu</div>
+          </div>
+        </figure>
+
+        <figure class="hw-three">
+          <figcaption><b>Three servers</b><span>High availability: one can fail.</span></figcaption>
+          <div class="hw-band">Portal and API: two copies each. Apps move to healthy servers.</div>
+          <div class="hw-nodes">
+            <div class="hw-node">
+              <p class="hw-node-name"><i class="hw-led"></i>server 1</p>
+              <ul><li class="hw-promoted">PostgreSQL primary <em>promoted</em></li><li>MongoDB member</li><li>Redis + Sentinel</li><li>etcd</li></ul>
+            </div>
+            <div class="hw-node hw-node-down">
+              <p class="hw-node-name"><i class="hw-led"></i>server 2 <em>switched off</em></p>
+              <ul><li>PostgreSQL <span>was primary</span></li><li>MongoDB member</li><li>Redis + Sentinel</li><li>etcd</li></ul>
+            </div>
+            <div class="hw-node">
+              <p class="hw-node-name"><i class="hw-led"></i>server 3</p>
+              <ul><li>PostgreSQL standby</li><li>MongoDB member</li><li>Redis + Sentinel</li><li>etcd</li></ul>
+            </div>
+          </div>
+          <p class="hw-note">A few seconds of errors at most. Apps restart on the other servers in about a minute and a half; PostgreSQL writes resume in about a minute.</p>
+        </figure>
+      </div>
+      <div class="hw-panel-foot">
+        <p class="hw-alt">Kubernetes state, volumes and databases are copied across all three servers.</p>
+        <p class="hw-links"><a routerLink="/docs/operations/ha">High availability</a></p>
+      </div>
+    </div>
+
+    <div class="hw-panel" role="tabpanel" id="hw-panel-backups" aria-labelledby="hw-tab-backups" [hidden]="tab !== 'backups'">
+      <ol class="hw-flow hw-flow-4">
+        <li>
+          <svg class="hw-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="7" rx="2"/><rect x="4" y="13" width="16" height="7" rx="2"/><path d="M8 7.5h.01M8 16.5h.01"/></svg>
+          <b>Your servers</b><span>Settings and passwords, PostgreSQL, MongoDB, Redis, uploaded files and the cluster state.</span>
+        </li>
+        <li>
+          <svg class="hw-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>
+          <b>Encrypted archive</b><span>every night, with age. Only your public key is on the server.</span>
+          <span class="hw-chips"><i>+ PostgreSQL changes, at least every 5 min</i></span>
+        </li>
+        <li>
+          <svg class="hw-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16l-1.6 12.2a2 2 0 0 1-2 1.8H7.6a2 2 0 0 1-2-1.8L4 7Z"/><path d="M3 7c0-1.1 4-2.5 9-2.5S21 5.9 21 7"/></svg>
+          <b>Your bucket</b><span>Any S3-compatible storage you choose.</span>
+          <span class="hw-chips"><i>AWS S3</i><i>R2</i><i>B2</i><i>MinIO</i></span>
+        </li>
+        <li class="hw-flow-end">
+          <svg class="hw-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v4h-4"/><path d="M9 12l2 2 4-4"/></svg>
+          <b>Restore test</b><span>Restores the backups into scratch databases to prove they work.</span>
+        </li>
+      </ol>
+      <div class="hw-panel-foot">
+        <p class="hw-alt">Restore PostgreSQL to a moment in time, or rebuild a lost server from the archive.</p>
+        <p class="hw-links"><a routerLink="/docs/operations/backups">Backups</a></p>
+      </div>
+    </div>
+  </div>
+</section>
