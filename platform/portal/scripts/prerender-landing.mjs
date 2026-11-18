@@ -64,7 +64,7 @@ const PAGES = {
     component: 'AboutComponent',
     state: {},
     title: 'About Cairn',
-    description: 'Why Cairn exists, what it holds itself to and how it is built: a self-hosted platform for teams that run their own servers.',
+    description: 'What Cairn is and what it holds itself to: a self-hosted platform for teams that run their own servers and keep their data.',
     extraHead: '',
     jsonLd: [],
   },
