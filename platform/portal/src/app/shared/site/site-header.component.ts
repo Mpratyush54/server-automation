@@ -21,8 +21,8 @@ import { ThemeService } from '../../services/theme.service';
         </a>
         <nav class="sh-nav" aria-label="Site">
           <a routerLink="/" fragment="product" [class.on]="current === 'home'">Product</a>
-          <a routerLink="/docs">Docs</a>
           <a routerLink="/pricing" [class.on]="current === 'pricing'">Pricing</a>
+          <a routerLink="/docs">Docs</a>
           <a routerLink="/about" [class.on]="current === 'about'">About</a>
         </nav>
         <div class="sh-actions">
@@ -43,8 +43,8 @@ import { ThemeService } from '../../services/theme.service';
       @if (menuOpen) {
         <nav id="sh-mobile" class="sh-mobile" aria-label="Site" (click)="menuOpen = false">
           <a routerLink="/" fragment="product">Product</a>
-          <a routerLink="/docs">Docs</a>
           <a routerLink="/pricing">Pricing</a>
+          <a routerLink="/docs">Docs</a>
           <a routerLink="/about">About</a>
           <a routerLink="/account">Account</a>
         </nav>
