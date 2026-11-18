@@ -337,6 +337,11 @@ rules:
 - apiGroups: ["apps"]
   resources: ["deployments"]
   verbs: ["get"]
+# Release finalize (injectRelease): projects may ship StatefulSets via Argo CD;
+# read, list and replace them in project namespaces only. No create, delete or patch.
+- apiGroups: ["apps"]
+  resources: ["statefulsets"]
+  verbs: ["get", "list", "update"]
 - apiGroups: [""]
   resources: ["services"]
   verbs: ["get"]

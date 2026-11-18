@@ -190,6 +190,7 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 		{`["networking.k8s.io"]`, `["ingresses"]`, "", `["update"]`},
 		{`["apps"]`, `["deployments/scale"]`, "", `["patch"]`},
 		{`["apps"]`, `["deployments"]`, "", `["get"]`},
+		{`["apps"]`, `["statefulsets"]`, "", `["get", "list", "update"]`}, // release finalize (injectRelease)
 		{`[""]`, `["services"]`, "", `["get"]`},
 		{`[""]`, `["secrets"]`, `["source-registry"]`, `["get", "update"]`},
 		{`[""]`, `["secrets"]`, "", `["create"]`},

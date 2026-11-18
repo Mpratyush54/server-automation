@@ -145,6 +145,7 @@ Enforcement is blocked while current pods have security or resource warnings. It
 | `rolebindings` | cluster (ClusterRole `platform-api`) | get, create, update | create the baseline RoleBinding in each namespace |
 | `clusterroles/platform-namespace-baseline` | that one role | bind | reference the baseline role from that RoleBinding |
 | `networkpolicies`, `resourcequotas`, `limitranges` | each project namespace (RoleBinding to ClusterRole `platform-namespace-baseline`) | get, list, create, update | apply the baseline, status, backfill report |
+| `statefulsets` | each project namespace (same RoleBinding) | get, list, update | add the release environment variables when a deploy finalizes |
 
 No delete, patch, watch, escalate or clusterrolebindings rights are granted. Two fail-closed ValidatingAdmissionPolicies limit the cluster-wide verbs:
 
