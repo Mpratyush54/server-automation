@@ -41,6 +41,7 @@ async function load(deploymentId: string) {
   if (!dep) throw new Error('Deployment not found');
   const project = await ds.getRepository(Project).findOne({ where: { id: dep.projectId } });
   if (!project) throw new Error('Project not found');
+  if (project.isActive === false || project.deletedAt) throw new Error('Project is deleted or being deleted');
   const env = dep.environmentId
     ? await ds.getRepository(Environment).findOne({ where: { id: dep.environmentId, projectId: dep.projectId } })
     : null;

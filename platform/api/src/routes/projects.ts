@@ -8,7 +8,9 @@ import { Environment, EnvironmentName } from '../entities/Environment';
 import { SdkCredential, SDK_TOKEN_KINDS, isSdkTokenKind, normalizeSdkTokenKind } from '../entities/SdkCredential';
 import { User } from '../entities/User';
 import { ProjectMember, ProjectAccessRole } from '../entities/ProjectMember';
-import { expressAuthenticate, expressRequireRole, logAudit, AuthenticatedRequest } from '../middleware/auth';
+import { expressAuthenticate, expressRequireRole, requireRecentMfa, logAudit, AuthenticatedRequest } from '../middleware/auth';
+import { ProjectDeleteConflict, deletionView, latestProjectDelete, startProjectDelete } from '../lib/project-delete';
+import { LockBusyError, lockBusyBody } from '../lib/locks';
 import { UserRole } from '../entities/User';
 import { argoAppName } from '../lib/k8s';
 import { fetchRepoBranches, fetchBranchCommits, fetchRepoReleases } from '../lib/git-remote';
@@ -257,32 +259,51 @@ router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
   }
 });
 
-router.delete('/projects/:id', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+/**
+ * DELETE /projects/:id — really delete a project (lib/project-delete.ts): back up its
+ * databases, then remove its apps, namespaces, monitoring, credentials and data, and free its
+ * name. Body: { confirmName: "<exact project name>", deleteDatabases?: boolean }.
+ * Needs the devops role, project owner access and a recent MFA step-up. Runs in the
+ * background (202 + operationId); calling it again after a failure retries from where it stopped.
+ */
+router.delete('/projects/:id', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), requireRecentMfa(), async (req: Request, res: Response) => {
   try {
-    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.id, ProjectAccessRole.OWNER);
+    const authReq = req as AuthenticatedRequest;
+    const access = await requireProjectAccess(authReq, req.params.id, ProjectAccessRole.OWNER);
     if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const ds = await getDb();
-    const repo = ds.getRepository(Project);
-
-    const project = await repo.findOne({ where: { id: req.params.id } });
+    const project = await ds.getRepository(Project).findOne({ where: { id: req.params.id } });
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
-
-    project.deletedAt = new Date();
-    project.isActive = false;
-    await repo.save(project);
-
-    await logAudit({
-      userId: (req as AuthenticatedRequest).user?.id,
-      action: 'project.deleted',
-      targetType: 'Project',
-      targetId: project.id,
-      ip: req.ip,
+    const { confirmName, deleteDatabases } = req.body || {};
+    if (typeof confirmName !== 'string' || confirmName !== project.name) {
+      return res.status(400).json({ error: 'Type the exact project name to confirm', code: 'confirm_name_mismatch' });
+    }
+    if (deleteDatabases !== undefined && typeof deleteDatabases !== 'boolean') {
+      return res.status(400).json({ error: 'deleteDatabases must be true or false' });
+    }
+    const started = await startProjectDelete({ project, deleteDatabases: deleteDatabases === true, actorUserId: authReq.user?.id ?? null });
+    return res.status(202).json({
+      operationId: started.operationId,
+      status: 'running',
+      resumed: started.resumed,
+      alreadyRunning: started.alreadyRunning,
+      message: started.alreadyRunning ? 'This project is already being deleted' : 'Deleting the project',
     });
+  } catch (err: any) {
+    if (err instanceof ProjectDeleteConflict) return res.status(err.status).json({ error: err.message, code: err.code });
+    if (err instanceof LockBusyError) return res.status(409).json(lockBusyBody(err));
+    return res.status(400).json({ error: err.message });
+  }
+});
 
-    requestTelemetryOriginsSync();
-    return res.json({ message: 'Project soft-deleted' });
+/** GET /projects/:id/deletion — progress of the project's deletion (per step), or status "none". */
+router.get('/projects/:id/deletion', expressAuthenticate, async (req: Request, res: Response) => {
+  try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.id, ProjectAccessRole.VIEWER);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
+    return res.json(deletionView(await latestProjectDelete(req.params.id)));
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
