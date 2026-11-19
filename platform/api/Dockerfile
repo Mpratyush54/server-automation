@@ -57,7 +57,12 @@ ENV NODE_ENV=production
 # Apply Alpine security fixes released after the base image was built, and
 # drop npm/npx/corepack: the runtime only runs `node` (server and migrate
 # Job), and npm's bundled dependencies were the image's only HIGH findings.
+# postgresql18-client: pg_dump/pg_restore for database backups, restores and the
+# backups taken before a project is deleted (lib/database-service.ts spawns
+# them). Its major must be >= the server's (CNPGPostgresImage, 18.x; a unit
+# test keeps them in step); newer clients also dump older servers.
 RUN apk upgrade --no-cache \
+  && apk add --no-cache postgresql18-client \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
             /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 COPY --from=kubectl /usr/local/bin/kubectl /usr/local/bin/kubectl
