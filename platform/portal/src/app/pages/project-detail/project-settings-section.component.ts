@@ -44,6 +44,10 @@ export class ProjectSettingsSectionComponent {
   @Output() revokeToken = new EventEmitter<string>();
   @Output() clearGeneratedToken = new EventEmitter<void>();
 
+  // Delete project
+  @Input() canDeleteProject = false;
+  @Output() deleteProject = new EventEmitter<void>();
+
   setKeyName(v: string) { this.newKeyName = v; this.newKeyNameChange.emit(v); }
   setKeyKind(v: 'server' | 'browser') { this.newKeyKind = v; this.newKeyKindChange.emit(v); }
 }

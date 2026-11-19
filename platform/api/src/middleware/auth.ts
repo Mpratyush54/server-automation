@@ -516,7 +516,8 @@ export async function sdkTokenAuth(req: Request, res: Response, next: NextFuncti
       return res.status(401).json({ error: 'Unauthorized: Invalid or revoked SDK token' });
     }
     const project = await ds.getRepository(Project).findOne({ where: { id: credential.projectId } });
-    if (!project || project.id !== credential.projectId) {
+    // A deleted project (or one being deleted) accepts no SDK calls, even before its tokens are revoked.
+    if (!project || project.id !== credential.projectId || project.isActive === false || project.deletedAt) {
       return res.status(401).json({ error: 'Unauthorized: SDK token project no longer exists' });
     }
     projectId = project.id;

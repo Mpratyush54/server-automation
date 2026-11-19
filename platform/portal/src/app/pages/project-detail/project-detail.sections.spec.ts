@@ -61,9 +61,11 @@ describe('Project detail sections (#185)', () => {
     fixture.destroy();
   });
 
-  it('shows Archived only for projects the API marks inactive', async () => {
+  it('shows Being deleted, with a way to the progress, for projects the API marks inactive', async () => {
     const fixture = await render('devops', (c) => (c.project.isActive = false));
-    expect(fixture.nativeElement.querySelector('[data-testid="project-status"]').textContent.trim()).toBe('Archived');
+    expect(fixture.nativeElement.querySelector('[data-testid="project-status"]').textContent.trim()).toBe('Being deleted');
+    (fixture.nativeElement.querySelector('[data-testid="project-deleting-progress"]') as HTMLButtonElement).click();
+    expect(fixture.componentInstance.deleteDialogProject).toEqual({ id: fixture.componentInstance.project.id, name: fixture.componentInstance.project.name });
     fixture.destroy();
   });
 

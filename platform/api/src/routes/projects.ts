@@ -8,7 +8,9 @@ import { Environment, EnvironmentName } from '../entities/Environment';
 import { SdkCredential, SDK_TOKEN_KINDS, isSdkTokenKind, normalizeSdkTokenKind } from '../entities/SdkCredential';
 import { User } from '../entities/User';
 import { ProjectMember, ProjectAccessRole } from '../entities/ProjectMember';
-import { expressAuthenticate, expressRequireRole, logAudit, AuthenticatedRequest } from '../middleware/auth';
+import { expressAuthenticate, expressRequireRole, requireRecentMfa, logAudit, AuthenticatedRequest } from '../middleware/auth';
+import { ProjectDeleteConflict, deletionView, latestProjectDelete, startProjectDelete } from '../lib/project-delete';
+import { LockBusyError, lockBusyBody } from '../lib/locks';
 import { UserRole } from '../entities/User';
 import { argoAppName } from '../lib/k8s';
 import { fetchRepoBranches, fetchBranchCommits, fetchRepoReleases } from '../lib/git-remote';
@@ -25,7 +27,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { loadKubeConfig } from '../lib/kube-config';
 import { requestTelemetryOriginsSync } from '../lib/telemetry-origins';
 import { RepositoryInUseError, isRepositoryConflict, repositoryKey, setProjectRepository } from '../lib/repository-binding';
-import { Not } from 'typeorm';
+import { IsNull, Not } from 'typeorm';
+
+/** Unique violation of the active-name index (a concurrent create or rename won the name). */
+function isProjectNameConflict(err: any): boolean {
+  return err?.code === '23505' && err?.constraint === 'projects_name_active';
+}
 
 /** Rejects a repository that another active project already links (409 for the caller). */
 async function assertRepositoryFree(url: unknown, exceptProjectId?: string): Promise<void> {
@@ -48,15 +55,17 @@ router.get('/projects', expressAuthenticate, async (req: Request, res: Response)
     }
     const ids = await listAccessibleProjectIds(authReq.user, authReq.agentToken);
     const repo = ds.getRepository(Project);
+    // Deleted projects are left out; one still being deleted is listed with `deleting: true` so
+    // its progress (or a failed delete to retry) stays reachable.
     const projects = ids === null
-      ? await repo.find({ where: { isActive: true }, relations: ['environments', 'deployments'] })
+      ? await repo.find({ where: { deletedAt: IsNull() }, relations: ['environments', 'deployments'] })
       : ids.length === 0
         ? []
         : await repo.find({
-            where: { id: In(ids), isActive: true },
+            where: { id: In(ids), deletedAt: IsNull() },
             relations: ['environments', 'deployments'],
           });
-    return res.json(projects);
+    return res.json(projects.map((p) => (p.isActive === false ? { ...p, deleting: true } : p)));
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
@@ -82,9 +91,12 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
       return res.status(400).json({ error: `stack must be one of: ${validStacks.join('|')}` });
     }
 
-    const existing = await ds.getRepository(Project).findOne({ where: { name: body.name } });
+    // Deleted projects free their name; a project still being deleted keeps it until it is gone.
+    const existing = await ds.getRepository(Project).findOne({ where: { name: body.name, deletedAt: IsNull() } });
     if (existing) {
-      return res.status(409).json({ error: 'Project name already exists', code: 'project_name_taken' });
+      return existing.isActive
+        ? res.status(409).json({ error: 'Project name already exists', code: 'project_name_taken' })
+        : res.status(409).json({ error: 'A project with this name is still being deleted. Try again when it is gone.', code: 'project_name_deleting' });
     }
 
     if (body.repositoryUrl !== undefined && body.repositoryUrl !== null && typeof body.repositoryUrl !== 'string') {
@@ -137,6 +149,7 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
     return res.status(201).json(withRelations || saved);
   } catch (err: any) {
     if (err instanceof RepositoryInUseError || isRepositoryConflict(err)) return res.status(409).json({ error: new RepositoryInUseError().message, code: 'repository_in_use' });
+    if (isProjectNameConflict(err)) return res.status(409).json({ error: 'Project name already exists', code: 'project_name_taken' });
     return res.status(400).json({ error: err.message });
   }
 });
@@ -183,6 +196,9 @@ router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
+    if (project.isActive === false || project.deletedAt) {
+      return res.status(409).json({ error: 'This project is deleted or being deleted', code: 'project_deleting' });
+    }
 
     if (body.gitRevision !== undefined) project.gitRevision = explicitRevision(body.gitRevision) || null;
     if (body.repositoryUrl !== undefined) {
@@ -198,6 +214,13 @@ router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
       }
       if (body.repositoryUrl !== project.repositoryUrl) project.defaultBranch = null;
       setProjectRepository(project, body.repositoryUrl);
+    }
+    if (body.name !== undefined && body.name !== project.name) {
+      if (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 100) {
+        return res.status(400).json({ error: 'name must be 1-100 characters' });
+      }
+      const taken = await repo.findOne({ where: { name: body.name, deletedAt: IsNull(), id: Not(project.id) } });
+      if (taken) return res.status(409).json({ error: 'Project name already exists', code: 'project_name_taken' });
     }
     const allowedFields = ['name', 'stack', 'description', 'domain', 'clickupListId'];
     const domainChanged = body.domain !== undefined && body.domain !== project.domain;
@@ -233,36 +256,56 @@ router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
     return res.json(fresh || updated);
   } catch (err: any) {
     if (err instanceof RepositoryInUseError || isRepositoryConflict(err)) return res.status(409).json({ error: new RepositoryInUseError().message, code: 'repository_in_use' });
+    if (isProjectNameConflict(err)) return res.status(409).json({ error: 'Project name already exists', code: 'project_name_taken' });
     return res.status(400).json({ error: err.message });
   }
 });
 
-router.delete('/projects/:id', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), async (req: Request, res: Response) => {
+/**
+ * DELETE /projects/:id — really delete a project (lib/project-delete.ts): back up its
+ * databases, then remove its apps, namespaces, monitoring, credentials and data, and free its
+ * name. Body: { confirmName: "<exact project name>", deleteDatabases?: boolean }.
+ * Needs the devops role, project owner access and a recent MFA step-up. Runs in the
+ * background (202 + operationId); calling it again after a failure retries from where it stopped.
+ */
+router.delete('/projects/:id', expressAuthenticate, expressRequireRole([UserRole.DEVOPS]), requireRecentMfa(), async (req: Request, res: Response) => {
   try {
-    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.id, ProjectAccessRole.OWNER);
+    const authReq = req as AuthenticatedRequest;
+    const access = await requireProjectAccess(authReq, req.params.id, ProjectAccessRole.OWNER);
     if (access.ok === false) return res.status(access.status).json({ error: access.error });
     const ds = await getDb();
-    const repo = ds.getRepository(Project);
-
-    const project = await repo.findOne({ where: { id: req.params.id } });
+    const project = await ds.getRepository(Project).findOne({ where: { id: req.params.id } });
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
-
-    project.deletedAt = new Date();
-    project.isActive = false;
-    await repo.save(project);
-
-    await logAudit({
-      userId: (req as AuthenticatedRequest).user?.id,
-      action: 'project.deleted',
-      targetType: 'Project',
-      targetId: project.id,
-      ip: req.ip,
+    const { confirmName, deleteDatabases } = req.body || {};
+    if (typeof confirmName !== 'string' || confirmName !== project.name) {
+      return res.status(400).json({ error: 'Type the exact project name to confirm', code: 'confirm_name_mismatch' });
+    }
+    if (deleteDatabases !== undefined && typeof deleteDatabases !== 'boolean') {
+      return res.status(400).json({ error: 'deleteDatabases must be true or false' });
+    }
+    const started = await startProjectDelete({ project, deleteDatabases: deleteDatabases === true, actorUserId: authReq.user?.id ?? null });
+    return res.status(202).json({
+      operationId: started.operationId,
+      status: 'running',
+      resumed: started.resumed,
+      alreadyRunning: started.alreadyRunning,
+      message: started.alreadyRunning ? 'This project is already being deleted' : 'Deleting the project',
     });
+  } catch (err: any) {
+    if (err instanceof ProjectDeleteConflict) return res.status(err.status).json({ error: err.message, code: err.code });
+    if (err instanceof LockBusyError) return res.status(409).json(lockBusyBody(err));
+    return res.status(400).json({ error: err.message });
+  }
+});
 
-    requestTelemetryOriginsSync();
-    return res.json({ message: 'Project soft-deleted' });
+/** GET /projects/:id/deletion — progress of the project's deletion (per step), or status "none". */
+router.get('/projects/:id/deletion', expressAuthenticate, async (req: Request, res: Response) => {
+  try {
+    const access = await requireProjectAccess(req as AuthenticatedRequest, req.params.id, ProjectAccessRole.VIEWER);
+    if (access.ok === false) return res.status(access.status).json({ error: access.error });
+    return res.json(deletionView(await latestProjectDelete(req.params.id)));
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }

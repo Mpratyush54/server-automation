@@ -33,6 +33,12 @@
       <button type="button" class="btn btn-primary" (click)="openDeployForm()">Deploy</button>
     </div>
   </header>
+  @if (project.isActive === false && !project.deletedAt) {
+    <div class="card deleting-banner" role="status" data-testid="project-deleting">
+      <span>This project is being deleted, or its delete stopped and needs another try.</span>
+      <button type="button" class="btn btn-sm" (click)="openDeleteProject()" data-testid="project-deleting-progress">See progress</button>
+    </div>
+  }
 } @else if (loaded) {
   <div class="card empty-state"><strong>Project not found</strong>It may have been deleted, or you no longer have access to it.</div>
 }
@@ -829,8 +835,12 @@
     [generatedKeyKind]="generatedKeyKind"
     (createToken)="createToken()"
     (revokeToken)="revokeToken($event)"
-    (clearGeneratedToken)="clearGeneratedToken()" />
+    (clearGeneratedToken)="clearGeneratedToken()"
+    [canDeleteProject]="canDeleteProject"
+    (deleteProject)="openDeleteProject()" />
 }
+
+<app-delete-project-dialog [project]="deleteDialogProject" (closed)="onDeleteProjectClosed($event)" />
 
 <!-- Pod logs dialog (opened from the topology graph) -->
 @if (showLogsModal) {

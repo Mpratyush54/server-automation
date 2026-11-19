@@ -26,6 +26,8 @@ export interface AppRow {
   lastAt: string | null;
   lastBy: string | null;
   envs: AppEnv[];
+  /** The project is being deleted (or a delete stopped and can be retried). */
+  deleting?: boolean;
 }
 
 export interface ActivityItem {
@@ -96,6 +98,7 @@ export function buildApps(projects: any[]): AppRow[] {
     if (projectFailed || envs.some((e) => e.tone === 'down')) { tone = 'down'; status = 'Needs attention'; }
     else if (envs.some((e) => e.tone === 'warn')) { tone = 'warn'; status = 'Deploying'; }
     else if (envs.some((e) => e.tone === 'ok') || (!deps.length && p.isActive !== false && p.status === 'active')) { tone = 'ok'; status = 'Running'; }
+    if (p.deleting) { tone = 'warn'; status = 'Being deleted'; }
     return {
       id: p.id,
       name: p.name,
@@ -106,6 +109,7 @@ export function buildApps(projects: any[]): AppRow[] {
       lastAt: last ? (last.deployedAt || last.createdAt || null) : null,
       lastBy: last ? who(last) : null,
       envs,
+      ...(p.deleting ? { deleting: true } : {}),
     };
   }).sort((a, b) => rank(a.tone) - rank(b.tone) || a.name.localeCompare(b.name));
 }

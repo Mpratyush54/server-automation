@@ -208,7 +208,9 @@ it('grants exactly the verbs the baseline uses, namespaced only, with no broad R
   expect(baseline.rules.filter((r: any) => r.resources.includes('secrets')).flatMap((r: any) => r.verbs)).not.toContain('list');
   const api = docs.find(d => d.kind === 'ClusterRole' && d.metadata.name === 'platform-api');
   const rule = (resource: string) => api.rules.find((r: any) => r.resources.includes(resource));
-  expect(rule('namespaces').verbs).toEqual(['get', 'list', 'create', 'update']);
+  // delete: project deletion only, behind the platform-project-namespace-delete admission policy.
+  expect(rule('namespaces').verbs).toEqual(['get', 'list', 'create', 'update', 'delete']);
+  expect(docs.some(d => d.kind === 'ValidatingAdmissionPolicy' && d.metadata.name === 'platform-project-namespace-delete')).toBe(true);
   expect(rule('rolebindings').verbs).toEqual(['get', 'create', 'update']);
   expect(rule('customresourcedefinitions')).toEqual({ apiGroups: ['apiextensions.k8s.io'], resources: ['customresourcedefinitions'], resourceNames: ['scaledobjects.keda.sh', 'httpscaledobjects.http.keda.sh'], verbs: ['get'] });
   expect(rule('clusterroles')).toEqual({ apiGroups: ['rbac.authorization.k8s.io'], resources: ['clusterroles'], resourceNames: ['platform-namespace-baseline'], verbs: ['bind'] });

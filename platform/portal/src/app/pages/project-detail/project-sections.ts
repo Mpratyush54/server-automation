@@ -84,12 +84,13 @@ export function statusClass(tone: StatusTone): string {
 }
 
 /**
- * Project lifecycle from the API (Project entity): `isActive` defaults to true
- * and `deletedAt` marks a soft delete. A missing `isActive` is not "archived".
+ * Project lifecycle from the API (Project entity): `isActive` defaults to true and `deletedAt`
+ * marks a finished delete. `isActive: false` without `deletedAt` means a delete is running or
+ * stopped and can be retried. A missing `isActive` is not "being deleted".
  */
 export function projectStatus(project: any): StatusView {
   if (project?.deletedAt) return { label: 'Deleted', tone: 'down' };
-  if (project?.isActive === false) return { label: 'Archived', tone: 'neutral' };
+  if (project?.isActive === false) return { label: 'Being deleted', tone: 'warn' };
   return { label: 'Active', tone: 'ok' };
 }
 

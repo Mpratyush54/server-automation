@@ -19,6 +19,7 @@ const mockUser = { id: 'u', role: 'devops' };
 jest.mock('../../../src/middleware/auth', () => ({
   expressAuthenticate: (req: any, _res: any, next: any) => { req.user = { ...mockUser }; next(); },
   expressRequireRole: () => (_req: any, _res: any, next: any) => next(),
+  requireRecentMfa: () => (_req: any, _res: any, next: any) => next(),
   logAudit: jest.fn(async () => undefined),
 }));
 jest.mock('../../../src/lib/project-access', () => ({

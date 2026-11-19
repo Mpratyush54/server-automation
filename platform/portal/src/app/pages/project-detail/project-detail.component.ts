@@ -14,6 +14,7 @@ import { OperationProgressComponent } from '../../shared/operation-progress.comp
 import { EnvironmentTabComponent } from './environment-tab/environment-tab.component';
 import { TopologyGraphComponent } from './topology/topology-graph.component';
 import { ProjectOverviewComponent } from './project-overview.component';
+import { DeleteProjectDialogComponent, DeleteDialogResult } from './delete-project-dialog.component';
 import { ProjectSettingsSectionComponent } from './project-settings-section.component';
 import {
   PROJECT_SECTIONS, ProjectSection, StatusView, anchorForTab, currentDeployment, deploymentStatus,
@@ -37,7 +38,7 @@ const MONITORING_PARAMS = ['view', 'issue', 'check', 'trace', 'logTrace', 'servi
   selector: 'app-project-detail',
   standalone: true,
   imports: [AutoscalingComponent, BuildsPanelComponent, DatabaseInsightsPanelComponent, ReleasesPanelComponent, CommonModule, FormsModule, RouterModule, OperationProgressComponent, EnvironmentTabComponent, TopologyGraphComponent, ArgocdPanelComponent, ProjectOverviewComponent, ProjectSettingsSectionComponent,
-    ObsProjectComponent, ErrorsComponent, ReplaysComponent, HeatmapsComponent, SyntheticsComponent, StatusPageEditorComponent, ProjectAgentsComponent, ProjectUsageComponent],
+    ObsProjectComponent, ErrorsComponent, ReplaysComponent, HeatmapsComponent, SyntheticsComponent, StatusPageEditorComponent, ProjectAgentsComponent, ProjectUsageComponent, DeleteProjectDialogComponent],
   templateUrl: './project-detail.component.html',
   styleUrls: ['./project-section-shared.css', './project-detail.component.css']
 })
@@ -120,6 +121,9 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
   memberBusy = false;
   memberError = '';
   canManageAccess = false;
+  /** Deleting needs the devops (or admin) role; the API also asks for a recent step-up. */
+  canDeleteProject = false;
+  deleteDialogProject: { id: string; name: string } | null = null;
   newFileCategoryRoute = { category: '', provider: 'local' };
   searchLogQuery = { level: '', search: '' };
 
@@ -186,6 +190,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
   async ngOnInit() {
     this.role = (this.auth.getRole() || 'developer').toLowerCase();
     this.canManageAccess = this.role === 'admin' || this.role === 'devops' || this.auth.canManageUsers?.() === true;
+    this.canDeleteProject = this.role === 'admin' || this.role === 'devops';
     this.applyTabParam();
     this.api.getObservabilityStatus?.()?.subscribe({
       next: (s: any) => { this.observabilityEnabled = !!s?.enabled; this.observabilityChecked = true; },
@@ -541,6 +546,15 @@ export class ProjectDetailComponent implements OnInit, OnDestroy, AfterViewInit 
     } catch (err: any) {
       this.toast.error('Restart did not start: ' + errorText(err));
     }
+  }
+
+  openDeleteProject() {
+    if (this.project) this.deleteDialogProject = { id: this.project.id, name: this.project.name };
+  }
+
+  onDeleteProjectClosed(result: DeleteDialogResult) {
+    this.deleteDialogProject = null;
+    if (result === 'deleted' || result === 'left') this.router.navigate(['/projects']);
   }
 
   async deleteFile(fileId: string) {

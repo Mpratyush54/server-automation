@@ -441,16 +441,16 @@ describe('Projects API', () => {
   });
 
   describe('DELETE /api/projects/:id', () => {
-    it('200 — devops soft-deletes project (project becomes isActive=false)', async () => {
+    it('401 — deleting needs a recent MFA step-up (the full flow is in project-delete.test.ts)', async () => {
       projectRepo.findOne.mockResolvedValue(seedProject);
-      projectRepo.save.mockImplementation((p: any) => Promise.resolve({ ...p, isActive: false, deletedAt: new Date().toISOString() }));
       const r = await request(app)
         .delete(`/api/projects/${PROJ_ID}`)
-        .set('Authorization', `Bearer ${T.devops}`);
-      expect([200, 204]).toContain(r.status);
-      // Verify save was called with deletedAt set
-      const saved = projectRepo.save.mock.calls[0]?.[0];
-      if (saved) expect(saved.deletedAt).toBeTruthy();
+        .set('Authorization', `Bearer ${T.devops}`)
+        .send({ confirmName: seedProject.name });
+      expect(r.status).toBe(401);
+      expect(r.body.error).toBe('step_up_required');
+      expect(projectRepo.save).not.toHaveBeenCalled();
+      expect(projectRepo.update).not.toHaveBeenCalled();
     });
 
     it('403 — tech_lead cannot delete project', async () => {
@@ -469,9 +469,11 @@ describe('Projects API', () => {
 
     it('404 — deleting non-existent project', async () => {
       projectRepo.findOne.mockResolvedValue(null);
+      const stepped = jwt.sign({ id: 'uid-devops', email: 'devops@@caps.io', name: 'devops', role: 'devops', amr: ['pwd', 'otp', 'mfa'], auth_time: Math.floor(Date.now() / 1000) }, JWT_SECRET, { expiresIn: '2h' });
       const r = await request(app)
         .delete('/api/projects/00000000-0000-0000-0000-000000000000')
-        .set('Authorization', `Bearer ${T.devops}`);
+        .set('Authorization', `Bearer ${stepped}`)
+        .send({ confirmName: 'x' });
       expect(r.status).toBe(404);
     });
   });

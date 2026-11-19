@@ -23,7 +23,7 @@ import { postComment } from '../lib/clickup';
 import { resolveProjectRef } from '../lib/project-resolve';
 import { ensureProjectIngress } from '../lib/k8s';
 import { gitUrlsMatch, normalizeGitUrl } from '../lib/git-url';
-import { assignedNamespace, assignedEnvHost, projectSlug as makeProjectSlug } from '../lib/project-namespace';
+import { assignedNamespace, projectSlug as makeProjectSlug } from '../lib/project-namespace';
 import { loadKubeConfig } from '../lib/kube-config';
 
 const router = Router();
@@ -170,10 +170,12 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
     const envRepo = ds.getRepository(Environment);
     const envName = body.environmentName || 'development';
     const baseDomain = project.domain || body.domain || process.env.DOMAIN || 'sslip.io';
-    const ns = assignedNamespace(project.name, envName);
-    const host = assignedEnvHost(project.name, envName, baseDomain);
-
     let env = await envRepo.findOne({ where: { projectId: project.id, name: envName as any } });
+    // The namespace is keyed by the immutable project id, never by its (reusable) name. An
+    // environment that already has a server-assigned namespace keeps it, so existing projects,
+    // including ones that got a name-based namespace from older releases, keep working.
+    const ns = env?.namespace || assignedNamespace(project.name, envName, project.id);
+    const host = `${ns}.${baseDomain}`;
     if (!env) {
       env = envRepo.create({
         name: envName as any,
@@ -183,12 +185,8 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       });
       env = await envRepo.save(env);
     } else {
-      // Force server-owned namespace/domain (ignore any client override)
+      // Force server-owned domain (ignore any client override)
       let envDirty = false;
-      if (env.namespace !== ns) {
-        env.namespace = ns;
-        envDirty = true;
-      }
       if (!env.domain || env.domain.includes('example.com') || env.domain !== host) {
         env.domain = host;
         envDirty = true;
@@ -325,6 +323,8 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
             labels: {
               'app.kubernetes.io/managed-by': 'platform-sdk',
               'platform.project': slug,
+              // Ownership is recorded by id: a later project may reuse the name.
+              'platform.io/project': project.id,
             },
           },
           spec: {
@@ -374,7 +374,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
         // Wire HTTPS Ingress for the environment host (Let's Encrypt, incl. sslip.io)
         try {
           const { ensureProjectIngress } = await import('../lib/k8s');
-          const host = env.domain || assignedEnvHost(project.name, env.name, project.domain || process.env.DOMAIN || 'sslip.io');
+          const host = env.domain || `${env.namespace}.${project.domain || process.env.DOMAIN || 'sslip.io'}`;
           const serviceName = body.serviceName || body.ingressServiceName || 'sdk-node-api';
           const servicePort = Number(body.servicePort || body.ingressServicePort || 80);
           const ingress = await ensureProjectIngress({

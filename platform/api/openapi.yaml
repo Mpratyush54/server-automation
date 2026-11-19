@@ -441,6 +441,65 @@ paths:
           description: Project viewer membership or projects:read agent scope required
         '404':
           description: Project or environment not found
+  /projects/{projectId}:
+    delete:
+      tags: [Projects]
+      summary: Delete a project and everything it created, and free its name
+      description: >-
+        Runs in the background. Every project database is backed up to the configured backup target first; if a
+        backup fails nothing is deleted and the project is restored. Then the Argo CD Applications (cascade),
+        namespaces, previews, monitoring, SDK tokens, secrets, telemetry data, files and registry images are removed.
+        With deleteDatabases the databases are dropped after the backup; otherwise they are kept with logins disabled
+        and their location is written to the audit log. Calling it again after a failure retries from where it stopped.
+        Needs the devops role, project owner access and a recent MFA step-up (401 step_up_required otherwise).
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmName]
+              properties:
+                confirmName: { type: string, description: The exact project name }
+                deleteDatabases: { type: boolean, default: false }
+      responses:
+        '202':
+          description: Deletion started (or already running); poll GET /projects/{projectId}/deletion
+        '400':
+          description: confirmName does not match (code confirm_name_mismatch) or invalid deleteDatabases
+        '401':
+          description: Not authenticated, or step_up_required
+        '403':
+          description: Devops role and project owner access required (agent tokens are refused)
+        '404':
+          description: Project not found
+        '409':
+          description: Already deleted (code project_already_deleted) or another delete holds the lock
+  /projects/{projectId}/deletion:
+    get:
+      tags: [Projects]
+      summary: Progress of a project's deletion
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: >-
+            status is none, running, failed (removal started; call DELETE again to retry), aborted (nothing was deleted)
+            or deleted, with the operation and its steps.
+        '403':
+          description: Project viewer access required
   /health:
     get:
       tags: [Health]
