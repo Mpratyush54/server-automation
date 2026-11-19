@@ -86,7 +86,7 @@ sudo platformctl upgrade --to <target> --yes
 
 Replace `<target>` with a published release tag that has the `upgrade` command. The installer replaces the command line tool; `upgrade` changes the cluster.
 
-On these older installs, also run `sudo platformctl update` once first, so images are pinned to exact versions and a rollback can restore them. Development builds (version `dev` or empty) must be replaced with a release binary.
+On these older installs the API and portal run images by tag only; `upgrade` pins the rollback target to the exact digest the running pods report, so no separate `platformctl update` is needed. If the pods disagree (for example during a rollout), it stops and asks you to run `sudo platformctl update` first. Development builds (version `dev` or empty) must be replaced with a release binary.
 
 ## Backup settings that name an mc alias
 
@@ -131,7 +131,7 @@ Each API pod has its own folder; a file exists only on the pod that received it.
 - Active operations are counted by querying the `platform` database directly in the PostgreSQL pod (`kubectl -n databases exec` and `psql`). The password is read inside the container from `POSTGRES_PASSWORD` or `POSTGRES_PASSWORD_FILE`. No API token is needed.
 - It counts `pending`, `running` and `compensating` operations. A refusal shows the count and the five newest operations. Older installs without the operations table count as zero. Connection, permission and other query errors stop the upgrade.
 - The installer lock keeps other installer and backup runs out, but it does not block new API operations. That is why you should pause portal changes.
-- Existing images must already be pinned by digest, so rollback can restore the exact images.
+- Existing images must be pinned by digest, so rollback can restore the exact images. Images that run by tag only (installs from v1.2.0 and earlier) are pinned to the digest their running pods report, when every pod of the deployment reports the same one.
 
 ### The upgrade itself
 

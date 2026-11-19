@@ -229,3 +229,64 @@ func TestUnreleasedRollbackImageRepository(t *testing.T) {
 		}
 	}
 }
+
+// v1.2.0 installs run tag-only images: a release upgrade pins the rollback
+// target to the digest the running pods report instead of refusing.
+func TestUpgradePlanPinsTagOnlyImagesToTheRunningDigest(t *testing.T) {
+	old := upgradeRun
+	defer func() { upgradeRun = old }()
+	d1 := "sha256:" + strings.Repeat("c", 64)
+	d2 := "sha256:" + strings.Repeat("d", 64)
+	target := "ghcr.io/test/platform-api:2.0.0@sha256:" + strings.Repeat("e", 64)
+	var podIDs string
+	upgradeRun = func(name string, args ...string) (string, error) {
+		if name == "helm" {
+			return "[]", nil
+		}
+		if len(args) > 3 && args[2] == "get" && args[3] == "pods" {
+			return podIDs, nil
+		}
+		if strings.Contains(strings.Join(args, " "), "platform-portal") {
+			return "ghcr.io/test/platform-portal:1.2.0", nil
+		}
+		return "ghcr.io/test/platform-api:1.2.0", nil
+	}
+	plan := func(ids string) (upgrade.Plan, error) {
+		podIDs = ids
+		return upgradePlan(target, target)
+	}
+
+	// Every pod reports the same digest of the same repository (api and portal queries share the stub).
+	p, e := plan("ghcr.io/test/platform-api@" + d1 + "\nghcr.io/test/platform-api@" + d1 + "\n")
+	if e == nil {
+		t.Fatalf("portal pods report the api repository; must refuse: %+v", p)
+	}
+	upgradeRun2 := upgradeRun
+	upgradeRun = func(name string, args ...string) (string, error) {
+		if name == "kubectl" && len(args) > 5 && args[3] == "pods" {
+			if strings.Contains(args[5], "platform-portal") {
+				return "docker-pullable://ghcr.io/test/platform-portal@" + d2 + "\n", nil
+			}
+			return podIDs, nil
+		}
+		return upgradeRun2(name, args...)
+	}
+	p, e = plan("ghcr.io/test/platform-api@" + d1 + "\nghcr.io/test/platform-api@" + d1 + "\n")
+	if e != nil {
+		t.Fatal(e)
+	}
+	if p.Images[0].Before != "ghcr.io/test/platform-api:1.2.0@"+d1 || p.Images[1].Before != "ghcr.io/test/platform-portal:1.2.0@"+d2 {
+		t.Fatalf("rollback targets = %+v", p.Images)
+	}
+
+	for name, ids := range map[string]string{
+		"pods disagree (mid-rollout)": "ghcr.io/test/platform-api@" + d1 + "\nghcr.io/test/platform-api@" + d2,
+		"another repository":          "ghcr.io/evil/platform-api@" + d1,
+		"no digest":                   "ghcr.io/test/platform-api:1.2.0",
+		"no pods":                     "",
+	} {
+		if _, e := plan(ids); e == nil || !strings.Contains(e.Error(), "platformctl update") {
+			t.Fatalf("%s: want the pin-first error, got %v", name, e)
+		}
+	}
+}
