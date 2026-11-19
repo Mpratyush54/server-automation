@@ -38,6 +38,36 @@ clear_helm_lock() {
 }
 `
 
+// helmLockClear returns shell that clears the lock an interrupted run left on
+// release in ns (a pending-install/upgrade/rollback release secret). Every
+// `helm upgrade --install` runs it first: a provision killed mid-step (SIGTERM,
+// power loss, an API reset while servers join) otherwise fails every later run
+// with "another operation (install/upgrade/rollback) is in progress". The
+// installer holds its global lock, so no live Helm operation owns the release.
+func helmLockClear(release, ns string) string {
+	return helmLockHelper + fmt.Sprintf("if kubectl get namespace %s >/dev/null 2>&1; then clear_helm_lock %s %s; fi\n",
+		shellQuote(ns), shellQuote(release), shellQuote(ns))
+}
+
+// clearStuckHelmRelease is helmLockClear for installs that run helm directly
+// (an argv, not a script). A variable so tests can record the calls.
+var clearStuckHelmRelease = func(release, ns string) {
+	_ = shell.RunBash(helmLockClear(release, ns))
+}
+
+// monitoringLockClear clears interrupted Loki and kube-prometheus releases; both
+// install concurrently in one script.
+func monitoringLockClear() string {
+	return helmLockClear("loki", "monitoring") + helmLockClear("kube-prometheus", "monitoring")
+}
+
+// certManagerInstallScript installs or repairs the cert-manager release.
+func certManagerInstallScript() string {
+	return helmLockClear("cert-manager", "cert-manager") + `helm upgrade --install cert-manager ` + chart("cert-manager") + ` \
+			--namespace cert-manager --create-namespace \
+			--set installCRDs=true --wait --timeout 5m`
+}
+
 type Component struct {
 	Name        string
 	Description string
@@ -174,9 +204,7 @@ func InstallCertManager(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing cert-manager...")
-	if err := shell.RunBash(`helm upgrade --install cert-manager ` + chart("cert-manager") + ` \
-			--namespace cert-manager --create-namespace \
-			--set installCRDs=true --wait --timeout 5m`); err != nil {
+	if err := shell.RunBash(certManagerInstallScript()); err != nil {
 		return err
 	}
 	// Let's Encrypt + internal-CA fallback issuers; an unusable contact email
@@ -424,7 +452,7 @@ func InstallMonitoring(cfg *config.Config) error {
 		return err
 	}
 	defer cleanup()
-	err = shell.RunBash(fmt.Sprintf(`
+	err = shell.RunBash(monitoringLockClear() + fmt.Sprintf(`
 		set -uo pipefail
 		# Loki is independent of kube-prometheus-stack: install both concurrently.
 		# No --wait: nothing later needs the monitoring pods ready (routing only
@@ -449,7 +477,7 @@ func InstallMonitoring(cfg *config.Config) error {
 		rc=$?
 		wait "$loki_pid" || { echo "WARN: loki install failed (non-fatal):"; tail -20 /tmp/platformctl-loki.log; }
 		exit $rc
-	`, tmpFile, shellQuote(secretFile), chart("loki-stack"), chart("kube-prometheus-stack")))
+	`, shellQuote(tmpFile), shellQuote(secretFile), chart("loki-stack"), chart("kube-prometheus-stack")))
 	if err != nil {
 		return err
 	}

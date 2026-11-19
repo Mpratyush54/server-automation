@@ -150,7 +150,7 @@ func InstallTelemetry(c *config.Config) error {
 			err = closeErr
 		}
 		if err == nil {
-			err = shell.RunBash(fmt.Sprintf("set -euo pipefail\nhelm upgrade --install %s %s -n monitoring --create-namespace -f %s --wait --timeout 10m", name, chart(name), shellQuote(path)))
+			err = shell.RunBash(telemetryHelmScript(name, path))
 		}
 		os.Remove(path)
 		if err != nil {
@@ -330,6 +330,13 @@ func minioInstallValues(c *config.Config) map[string]any {
 		values["pdb"] = map[string]any{"create": true, "maxUnavailable": 1}
 	}
 	return values
+}
+
+// telemetryHelmScript installs or repairs one telemetry release, clearing the
+// lock an interrupted run left first (helmLockClear).
+func telemetryHelmScript(name, valuesPath string) string {
+	return "set -euo pipefail\n" + helmLockClear(name, "monitoring") +
+		fmt.Sprintf("helm upgrade --install %s %s -n monitoring --create-namespace -f %s --wait --timeout 10m", name, chart(name), shellQuote(valuesPath))
 }
 
 // #49 can discover healthy collector endpoints without enabling SDKs merely
