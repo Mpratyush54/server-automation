@@ -13,11 +13,13 @@ export enum StackType {
 
 @Entity('projects')
 @Index('projects_repository_key_active', ['repositoryKey'], { unique: true, where: 'is_active AND repository_key IS NOT NULL' })
+// A deleted project frees its name; one still being deleted (deleted_at not yet set) keeps it.
+@Index('projects_name_active', ['name'], { unique: true, where: 'deleted_at IS NULL' })
 export class Project {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'varchar', length: 100, unique: true })
+  @Column({ type: 'varchar', length: 100 })
   name: string;
 
   @Column({ type: 'enum', enum: StackType })

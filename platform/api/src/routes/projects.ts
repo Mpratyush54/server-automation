@@ -25,7 +25,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { loadKubeConfig } from '../lib/kube-config';
 import { requestTelemetryOriginsSync } from '../lib/telemetry-origins';
 import { RepositoryInUseError, isRepositoryConflict, repositoryKey, setProjectRepository } from '../lib/repository-binding';
-import { Not } from 'typeorm';
+import { IsNull, Not } from 'typeorm';
+
+/** Unique violation of the active-name index (a concurrent create or rename won the name). */
+function isProjectNameConflict(err: any): boolean {
+  return err?.code === '23505' && err?.constraint === 'projects_name_active';
+}
 
 /** Rejects a repository that another active project already links (409 for the caller). */
 async function assertRepositoryFree(url: unknown, exceptProjectId?: string): Promise<void> {
@@ -82,9 +87,12 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
       return res.status(400).json({ error: `stack must be one of: ${validStacks.join('|')}` });
     }
 
-    const existing = await ds.getRepository(Project).findOne({ where: { name: body.name } });
+    // Deleted projects free their name; a project still being deleted keeps it until it is gone.
+    const existing = await ds.getRepository(Project).findOne({ where: { name: body.name, deletedAt: IsNull() } });
     if (existing) {
-      return res.status(409).json({ error: 'Project name already exists', code: 'project_name_taken' });
+      return existing.isActive
+        ? res.status(409).json({ error: 'Project name already exists', code: 'project_name_taken' })
+        : res.status(409).json({ error: 'A project with this name is still being deleted. Try again when it is gone.', code: 'project_name_deleting' });
     }
 
     if (body.repositoryUrl !== undefined && body.repositoryUrl !== null && typeof body.repositoryUrl !== 'string') {
@@ -137,6 +145,7 @@ router.post('/projects', expressAuthenticate, expressRequireRole([UserRole.ADMIN
     return res.status(201).json(withRelations || saved);
   } catch (err: any) {
     if (err instanceof RepositoryInUseError || isRepositoryConflict(err)) return res.status(409).json({ error: new RepositoryInUseError().message, code: 'repository_in_use' });
+    if (isProjectNameConflict(err)) return res.status(409).json({ error: 'Project name already exists', code: 'project_name_taken' });
     return res.status(400).json({ error: err.message });
   }
 });
@@ -183,6 +192,9 @@ router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
+    if (project.isActive === false || project.deletedAt) {
+      return res.status(409).json({ error: 'This project is deleted or being deleted', code: 'project_deleting' });
+    }
 
     if (body.gitRevision !== undefined) project.gitRevision = explicitRevision(body.gitRevision) || null;
     if (body.repositoryUrl !== undefined) {
@@ -198,6 +210,13 @@ router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
       }
       if (body.repositoryUrl !== project.repositoryUrl) project.defaultBranch = null;
       setProjectRepository(project, body.repositoryUrl);
+    }
+    if (body.name !== undefined && body.name !== project.name) {
+      if (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 100) {
+        return res.status(400).json({ error: 'name must be 1-100 characters' });
+      }
+      const taken = await repo.findOne({ where: { name: body.name, deletedAt: IsNull(), id: Not(project.id) } });
+      if (taken) return res.status(409).json({ error: 'Project name already exists', code: 'project_name_taken' });
     }
     const allowedFields = ['name', 'stack', 'description', 'domain', 'clickupListId'];
     const domainChanged = body.domain !== undefined && body.domain !== project.domain;
@@ -233,6 +252,7 @@ router.put('/projects/:id', expressAuthenticate, async (req: Request, res: Respo
     return res.json(fresh || updated);
   } catch (err: any) {
     if (err instanceof RepositoryInUseError || isRepositoryConflict(err)) return res.status(409).json({ error: new RepositoryInUseError().message, code: 'repository_in_use' });
+    if (isProjectNameConflict(err)) return res.status(409).json({ error: 'Project name already exists', code: 'project_name_taken' });
     return res.status(400).json({ error: err.message });
   }
 });
