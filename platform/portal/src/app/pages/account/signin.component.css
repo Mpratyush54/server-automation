@@ -1,0 +1,16 @@
+/* Sign-in page. Shared frame, hero grid and form styles live in site-page.css. */
+.si-hero .sp-frame { padding-block: clamp(2rem, 6vw, 4.5rem); }
+.si-grid { display: grid; gap: 32px; align-items: center; }
+@media (min-width: 900px) { .si-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 26rem); gap: 64px; } }
+.si-kicker { margin: 0 0 0.5rem; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: rgb(var(--fg-3)); }
+.si-points { margin: 1.5rem 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.si-points li { display: grid; grid-template-columns: 18px 1fr; gap: 10px; align-items: start; color: rgb(var(--fg-2)); line-height: 1.5; font-size: 0.9375rem; }
+.si-points svg { width: 18px; height: 18px; margin-top: 2px; fill: none; stroke: rgb(var(--accent-text)); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 599px) { .si-points { display: none; } }
+.si-card { border: 1px solid rgb(var(--line)); border-radius: 16px; background: rgb(var(--surface)); padding: 28px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+@media (max-width: 599px) { .si-card { padding: 20px; } }
+.si-title { margin: 0; font-size: 1.125rem; font-weight: 600; }
+.si-submit { width: 100%; justify-content: center; }
+.si-note { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; border: 1px solid rgb(var(--warn) / 0.45); border-radius: 8px; background: rgb(var(--warn) / 0.08); }
+.si-alt { margin: 0; padding-top: 16px; border-top: 1px solid rgb(var(--line)); font-size: 0.9375rem; color: rgb(var(--fg-2)); }
+.si-legal { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: rgb(var(--fg-3)); }
