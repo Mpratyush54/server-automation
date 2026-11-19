@@ -187,6 +187,8 @@ router.post('/projects/:projectId/databases/backups/:backupId/restore', expressA
     const backup = await ds.getRepository(DbBackup).findOne({ where: { id: req.params.backupId, projectId: req.params.projectId } });
     if (!backup) return res.status(404).json({ error: 'Backup not found' });
     if (backup.status !== BackupStatus.COMPLETED) return res.status(400).json({ error: 'Backup is not in completed state' });
+    // MongoDB / Redis exports written when a project is deleted are not pg_dump archives.
+    if (/^(mongo|redis):/.test(backup.dbName)) return res.status(400).json({ error: 'This backup is a MongoDB or Redis export; restore it manually' });
 
     await ds.getRepository(DbBackup).update(backup.id, { status: BackupStatus.RESTORING });
 
