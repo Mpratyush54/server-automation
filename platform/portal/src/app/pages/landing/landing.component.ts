@@ -1,14 +1,12 @@
-import {
-  AfterViewInit,
-  Component,
-  ElementRef,
-  OnDestroy,
-  ViewChild,
-} from '@angular/core';
+import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild } from '@angular/core';
 import { RouterModule } from '@angular/router';
-import { landingMedia } from './landing-media';
+import { LandingFeature, landingFeatures } from './landing-clips';
 import { SiteHeaderComponent } from '../../shared/site/site-header.component';
 import { SiteFooterComponent } from '../../shared/site/site-footer.component';
+import { ClipPlayerComponent } from './clip-player.component';
+import {
+  COMPARISON, FEATURE_EXTRAS, FeatureExtra, INCLUDED, LATEST_RELEASE, PROOF_FACTS, REPO_URL, TOOL_GROUPS,
+} from './landing-content';
 
 /**
  * One step of the hero's failover story. The timings and figures come from
@@ -32,7 +30,7 @@ export const TOPOLOGY_STEPS: TopologyStep[] = [
     log: { time: '18:06:06', text: 'node-2 stopped responding', tone: 'down' } },
   { down: 1, durationMs: 3200, caption: 'The others take over its work: the database moves its primary to a healthy server.',
     log: { time: '18:07:16', text: 'postgres primary promoted on node-1', tone: 'warn' } },
-  { down: 1, durationMs: 4200, caption: 'Traffic flows through the remaining servers. Every confirmed write is kept.',
+  { down: 1, durationMs: 4200, caption: 'Traffic flows through the remaining servers. In this test, no confirmed write was lost.',
     log: { time: '18:08:46', text: 'writes resumed, 0 confirmed writes lost', tone: 'ok' } },
   { down: -1, durationMs: 4200, caption: 'When the server comes back, it rejoins on its own.',
     log: { time: '18:15:02', text: 'node-2 rejoined the cluster', tone: 'ok' } },
@@ -41,44 +39,46 @@ export const TOPOLOGY_STEPS: TopologyStep[] = [
 @Component({
   selector: 'app-landing',
   standalone: true,
-  imports: [RouterModule, SiteHeaderComponent, SiteFooterComponent],
+  imports: [RouterModule, SiteHeaderComponent, SiteFooterComponent, ClipPlayerComponent],
   templateUrl: './landing.component.html',
   styleUrl: './landing.component.css',
 })
 export class LandingComponent implements AfterViewInit, OnDestroy {
   @ViewChild('topologyElement') private topologyElement?: ElementRef<HTMLElement>;
-  @ViewChild('landscapeVideo')
-  private landscapeVideo?: ElementRef<HTMLVideoElement>;
-  @ViewChild('portraitVideo')
-  private portraitVideo?: ElementRef<HTMLVideoElement>;
-  readonly media = landingMedia;
   readonly steps = TOPOLOGY_STEPS;
   readonly nodes = [
     { name: 'node-1', ip: '10.0.0.11' },
     { name: 'node-2', ip: '10.0.0.12' },
     { name: 'node-3', ip: '10.0.0.13' },
   ];
+  readonly release = LATEST_RELEASE;
+  readonly repoUrl = REPO_URL;
+  readonly issuesUrl = `${REPO_URL}/issues`;
+  readonly releaseUrl = `${REPO_URL}/releases/tag/${LATEST_RELEASE.version}`;
+  readonly facts = PROOF_FACTS;
+  readonly included = INCLUDED;
+  readonly toolGroups = TOOL_GROUPS;
+  readonly comparison = COMPARISON;
+  /** The feature clips, published or still to be recorded. */
+  features: LandingFeature[] = landingFeatures();
   step = 0;
   paused = false;
   visible = true;
-  landscapeStarted = false;
-  portraitStarted = false;
-  videoError = '';
+  /**
+   * Clips load only when they come near the viewport, with the custom player.
+   * The prerendered page sets this to false, so visitors without JavaScript
+   * get every published clip with its poster and native controls.
+   */
+  lazyClips = true;
   private timer?: ReturnType<typeof setTimeout>;
   private observer?: IntersectionObserver;
   private motionPreference?: MediaQueryList;
-  private portraitPreference?: MediaQueryList;
   private readonly onMotionChange = (event: MediaQueryListEvent) => {
     if (event.matches) this.pause();
   };
-  private readonly onOrientationChange = () => {
-    if (this.portraitPreference?.matches)
-      this.landscapeVideo?.nativeElement.pause();
-    else this.portraitVideo?.nativeElement.pause();
-  };
   installCopied = false;
   readonly installCommand =
-    'curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash\nsudo platformctl provision';
+    'curl -fsSL https://get.cairnpaas.dev | bash\nsudo platformctl provision';
   private copyTimer?: ReturnType<typeof setTimeout>;
 
   get current(): TopologyStep {
@@ -94,13 +94,19 @@ export class LandingComponent implements AfterViewInit, OnDestroy {
     return this.current.down === index;
   }
 
+  /** The guide link wording and "how it works" flow for one feature. */
+  extra(id: string): FeatureExtra {
+    return FEATURE_EXTRAS[id] ?? { more: 'Read the guide', flow: null };
+  }
+
+  /** How many clips are recorded and published. */
+  get publishedClips(): number {
+    return this.features.filter((f) => f.media !== null).length;
+  }
+
   ngAfterViewInit() {
     this.motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.motionPreference.addEventListener('change', this.onMotionChange);
-    this.portraitPreference = window.matchMedia(
-      '(max-width: 760px), (orientation: portrait) and (max-width: 1050px)',
-    );
-    this.portraitPreference.addEventListener('change', this.onOrientationChange);
     if (typeof IntersectionObserver !== 'undefined' && this.topologyElement) {
       this.observer = new IntersectionObserver(([entry]) => {
         this.visible = entry.isIntersecting;
@@ -142,27 +148,6 @@ export class LandingComponent implements AfterViewInit, OnDestroy {
     this.paused = true;
   }
 
-  onVideoPlay(format: 'landscape' | 'portrait') {
-    this.videoError = '';
-    if (format === 'landscape') {
-      this.landscapeStarted = true;
-      this.portraitVideo?.nativeElement.pause();
-    } else {
-      this.portraitStarted = true;
-      this.landscapeVideo?.nativeElement.pause();
-    }
-  }
-
-  async playVideo(video: HTMLVideoElement, format: 'landscape' | 'portrait') {
-    this.videoError = '';
-    try {
-      await video.play();
-      this.onVideoPlay(format);
-    } catch {
-      this.videoError = 'The video could not start. Press play to try again.';
-    }
-  }
-
   async copyInstallCommand() {
     const done = () => {
       this.installCopied = true;
@@ -194,6 +179,6 @@ export class LandingComponent implements AfterViewInit, OnDestroy {
     if (this.timer) clearTimeout(this.timer);
     this.observer?.disconnect();
     this.motionPreference?.removeEventListener('change', this.onMotionChange);
-    this.portraitPreference?.removeEventListener('change', this.onOrientationChange);
   }
 }
+

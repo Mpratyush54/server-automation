@@ -1,0 +1,10 @@
+{
+  "title": "Backups and a restore test",
+  "cues": [
+    { "from": "start", "to": "target-ok", "text": "Backups go to your own S3-compatible bucket. Check it works." },
+    { "from": "archive", "to": "archive-done", "text": "Take an encrypted archive of the platform's data." },
+    { "from": "restore-test", "to": "restore-passed", "text": "Restore the latest archive into a scratch database and check it." },
+    { "from": "restore-passed", "to": "portal", "text": "Passed. The scratch database is dropped afterwards." },
+    { "from": "portal", "text": "The portal shows each backup and restore test, and when it ran." }
+  ]
+}

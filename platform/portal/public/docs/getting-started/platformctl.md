@@ -9,7 +9,7 @@ Run it as root or with `sudo`. It uses pre-built images, so nothing is compiled 
 Run this on the server:
 
 ```bash
-curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
+curl -fsSL https://get.cairnpaas.dev | bash
 sudo platformctl provision
 ```
 

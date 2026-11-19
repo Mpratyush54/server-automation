@@ -159,7 +159,7 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 		{`["apiextensions.k8s.io"]`, `["customresourcedefinitions"]`, `["scaledobjects.keda.sh","httpscaledobjects.http.keda.sh"]`, `["get"]`},
 	})
 	expect("Role", "platform-api", "platform", []rbacRule{
-		{`[""]`, `["configmaps"]`, `["platform-backup-backup","platform-backup-restore-test","platform-backup-target"]`, `["get"]`}, // #21, #186
+		{`[""]`, `["configmaps"]`, `["platform-backup-backup","platform-backup-restore-test","platform-backup-target","platform-license-status"]`, `["get"]`}, // #21, #186
 		{`[""]`, `["secrets"]`, `["platform-env","platform-rotate-pending"]`, `["get", "update"]`},
 		{`[""]`, `["secrets"]`, `["platform-backup-target"]`, `["get"]`}, // off-site target for pre-delete backups
 		{`[""]`, `["secrets"]`, `["platform-credentials","platform-oidc-signing-key"]`, `["get", "update"]`}, // #20

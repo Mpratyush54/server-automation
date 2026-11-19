@@ -14,6 +14,7 @@ import (
 var (
 	refreshKubeVIP   = func() (bool, error) { return ingressha.Default().RefreshManifest(cfg) }
 	clusterInstalled = func() bool { return state.IsDone("platform") }
+	licenseGate      = licenseUpgrade
 	updateImages     = func() error {
 		// Move host state into Secrets and drop the hostPath before rolling (#20).
 		if err := components.PrepareUpdate(cfg); err != nil {
@@ -47,6 +48,9 @@ func runUpdate(out io.Writer) error {
 	if role := joinedRole(); role != "" && !clusterInstalled() {
 		fmt.Fprintf(out, "This node joined the cluster as a %s: its local files are up to date. Run `sudo platformctl update` on the first server to roll the platform images.\n", role)
 		return nil
+	}
+	if err := licenseGate(out); err != nil {
+		return err
 	}
 	return updateImages()
 }

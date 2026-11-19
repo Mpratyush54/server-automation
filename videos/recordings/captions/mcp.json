@@ -1,0 +1,10 @@
+{
+  "title": "Let an AI assistant help",
+  "cues": [
+    { "from": "start", "to": "scopes", "text": "Create an agent token that may only check and run allowed commands." },
+    { "from": "scopes", "to": "client", "text": "The token is shown once. Here it is blurred." },
+    { "from": "client", "to": "held", "text": "The assistant connects over MCP and lists the app's pods." },
+    { "from": "held", "to": "approved", "text": "Scaling changes the app, so it waits for a person to approve." },
+    { "from": "approved", "text": "Approved in the portal. Now the command runs." }
+  ]
+}

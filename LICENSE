@@ -1,0 +1,49 @@
+Cairn Source-Available License 1.0
+
+Copyright (c) 2026 Pratyush. All rights reserved.
+
+This license covers the source code, documentation, builds and container
+images in this repository ("the Software").
+
+1. What you may do
+
+   a. View and read the source code of the Software.
+   b. Submit contributions (for example issues, patches and pull requests)
+      to the official repository. By submitting a contribution you grant
+      the copyright holder a perpetual, worldwide, royalty-free,
+      irrevocable license to use, modify, sublicense and distribute it as
+      part of the Software.
+
+2. License key required
+
+   Running, deploying, hosting or otherwise using the Software in any
+   environment, including development, testing and production, requires a
+   valid Cairn license key obtained from https://cairnpaas.dev and use
+   within the terms of that key.
+
+3. What you may not do
+
+   a. Remove, disable, bypass or otherwise circumvent any license check or
+      license key mechanism in the Software.
+   b. Redistribute the Software, whether modified or unmodified, including
+      builds, binaries, packages and container images.
+   c. Offer the Software, or a modified version of it, as a hosted or
+      managed service to others without a license key that permits it.
+   d. Remove or change any copyright or license notices.
+
+4. No warranty
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+   IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES
+   OR OTHER LIABILITY ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+   SOFTWARE OR ITS USE.
+
+5. Termination
+
+   Any use outside these terms ends your rights under this license
+   automatically.
+
+Other licensing arrangements are available on request through
+https://cairnpaas.dev/pricing.

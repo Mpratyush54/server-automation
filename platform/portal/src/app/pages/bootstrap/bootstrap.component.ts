@@ -29,7 +29,7 @@ export class BootstrapComponent implements OnInit {
   statusServices: any[] = [];
   platformUrl = window.location.origin.replace(':4200', ':3000');
 
-  installCmd = `curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
+  installCmd = `curl -fsSL https://get.cairnpaas.dev | bash
 sudo platformctl provision`;
 
   integrations: IntegrationItem[] = [

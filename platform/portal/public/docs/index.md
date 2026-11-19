@@ -11,7 +11,7 @@ You install it with one command. You then get a web portal where you create proj
 3. [Deploy an app](getting-started/deploy-your-app.md) from your Git repository.
 
 ```bash
-curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
+curl -fsSL https://get.cairnpaas.dev | bash
 sudo platformctl provision
 ```
 

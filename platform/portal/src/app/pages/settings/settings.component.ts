@@ -1,5 +1,6 @@
 import { StorageSettingsComponent } from './storage-settings.component';
 import { UsageSettingsComponent } from './usage-settings.component';
+import { LicenseSettingsComponent } from './license-settings.component';
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -16,7 +17,7 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, OperationProgressComponent, GitConnectComponent, StorageSettingsComponent, UsageSettingsComponent],
+  imports: [CommonModule, FormsModule, OperationProgressComponent, GitConnectComponent, StorageSettingsComponent, UsageSettingsComponent, LicenseSettingsComponent],
   styleUrl: './settings.component.css',
   template: `
 <div class="page-header">
@@ -37,6 +38,9 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
     <button type="button" [class.active]="activeTab === 'usage'" [attr.aria-current]="activeTab === 'usage' ? 'page' : null" (click)="activeTab = 'usage'">Usage and costs</button>
     <button type="button" [class.active]="activeTab === 'rotate'" [attr.aria-current]="activeTab === 'rotate' ? 'page' : null" (click)="activeTab = 'rotate'">Rotate passwords</button>
     <button type="button" [class.active]="activeTab === 'security'" [attr.aria-current]="activeTab === 'security' ? 'page' : null" (click)="activeTab = 'security'">Security</button>
+  }
+  @if (isAdmin) {
+    <button type="button" [class.active]="activeTab === 'license'" [attr.aria-current]="activeTab === 'license' ? 'page' : null" (click)="activeTab = 'license'">License</button>
   }
 </nav>
 
@@ -252,6 +256,8 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
 @if (activeTab === 'storage' && isDevOps) { <app-storage-settings /> }
 
 @if (activeTab === 'usage' && isDevOps) { <app-usage-settings /> }
+
+@if (activeTab === 'license' && isAdmin) { <app-license-settings /> }
 
 <!-- Git access -->
 @if (activeTab === 'integrations') {
@@ -665,7 +671,7 @@ export class SettingsComponent implements OnInit {
     // Deep link from global search: /settings?tab=<activeTab>, only tabs this role can see.
     this.route?.queryParamMap.subscribe((q) => {
       const tab = q.get('tab');
-      if (tab && (tab === 'integrations' || (this.isDevOps && ['login', 'smtp', 'storage', 'usage', 'rotate', 'security'].includes(tab)))) {
+      if (tab && (tab === 'integrations' || (this.isDevOps && ['login', 'smtp', 'storage', 'usage', 'rotate', 'security'].includes(tab)) || (this.isAdmin && tab === 'license'))) {
         this.activeTab = tab;
       }
     });

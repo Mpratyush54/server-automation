@@ -1,4 +1,4 @@
-// Prerenders the public landing page (/) and About page (/about) from their
+// Prerenders the public landing page (/), About (/about) and Pricing (/pricing) from their
 // Angular components, so crawlers, link previews and visitors without
 // JavaScript get the real content. Angular replaces it when it boots.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -10,15 +10,18 @@ import { assertNoAngularSyntax, loadTypeScriptModule, renderComponent } from './
 const portal = fileURLToPath(new URL('../', import.meta.url));
 const pages = join(portal, 'src/app/pages');
 
-/** The state the static landing HTML shows: the story at its first step, playing, nothing copied, no video started. */
+/**
+ * The state the static landing HTML shows: the story at its first step,
+ * playing, nothing copied. Published clips render at once with the browser's
+ * own controls instead of the custom player, so they work without
+ * JavaScript; Angular swaps in the player when it starts.
+ */
 export const LANDING_INITIAL_STATE = {
   step: 0,
   paused: false,
   visible: true,
   installCopied: false,
-  landscapeStarted: false,
-  portraitStarted: false,
-  videoError: '',
+  lazyClips: false,
 };
 
 const PAGES = {
@@ -27,10 +30,9 @@ const PAGES = {
     module: 'landing/landing.component.ts',
     component: 'LandingComponent',
     state: LANDING_INITIAL_STATE,
-    title: 'Cairn — run your apps on your own servers',
-    description: 'Cairn installs Git deployments, databases, backups, monitoring and alerts on Ubuntu servers you control. Start on one server, add more for high availability.',
-    // Without JavaScript the cover button cannot start playback; show the native controls instead.
-    extraHead: '<noscript><style>.lp-play { display: none !important; }</style></noscript>',
+    title: 'Cairn — a self-hosted platform for your apps, on your own servers',
+    description: 'Cairn installs Git deployments, databases, logs, metrics and traces, off-site backups and high availability on Ubuntu servers you control.',
+    extraHead: '',
     jsonLd: [{
       '@context': 'https://schema.org',
       '@graph': [
@@ -62,7 +64,17 @@ const PAGES = {
     component: 'AboutComponent',
     state: {},
     title: 'About Cairn',
-    description: 'Why Cairn exists, what it holds itself to and how it is built: a self-hosted platform for teams that run their own servers.',
+    description: 'What Cairn is and what it holds itself to: a self-hosted platform for teams that run their own servers and keep their data.',
+    extraHead: '',
+    jsonLd: [],
+  },
+  pricing: {
+    path: '/pricing',
+    module: 'account/pricing.component.ts',
+    component: 'PricingComponent',
+    state: {},
+    title: 'Pricing · Cairn',
+    description: 'Cairn is free for personal use. Enterprise starts at $9 per server per month, billed annually, with monitoring, logs, traces and support.',
     extraHead: '',
     jsonLd: [],
   },
@@ -85,15 +97,18 @@ export async function prerenderPublicPages({ outputDir = join(portal, 'dist/port
   if (!shell.includes('<app-root></app-root>')) throw new Error('Build the portal before prerendering the public pages');
   const home = renderPublicPage('landing', shell);
   const about = renderPublicPage('about', shell);
-  // nginx serves /about from /prerender/about/index.html, like docs pages.
-  const aboutFile = join(outputDir, 'prerender', 'about', 'index.html');
-  await mkdir(dirname(aboutFile), { recursive: true });
-  await writeFile(aboutFile, about);
+  const pricing = renderPublicPage('pricing', shell);
+  // nginx serves /about and /pricing from /prerender/<page>/index.html, like docs pages.
+  for (const [name, html] of [['about', about], ['pricing', pricing]]) {
+    const file = join(outputDir, 'prerender', name, 'index.html');
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, html);
+  }
   await writeFile(join(outputDir, 'index.html'), home);
-  return { home, about };
+  return { home, about, pricing };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await prerenderPublicPages();
-  console.log('Prerendered / and /about from their Angular components with per-page metadata.');
+  console.log('Prerendered /, /about and /pricing from their Angular components with per-page metadata.');
 }

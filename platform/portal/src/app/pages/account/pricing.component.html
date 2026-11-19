@@ -1,0 +1,148 @@
+<app-site-header current="pricing"></app-site-header>
+<main class="sp" id="main">
+  <section class="sp-hero">
+    <div class="sp-frame">
+      <h1 class="sp-display">Pricing</h1>
+      <p class="sp-lede">Free for personal use, with every feature. Companies, and anyone offering Cairn to others, pay per server.</p>
+    </div>
+  </section>
+
+  <section class="pr-plans-section" aria-label="Plans">
+    <div class="sp-frame pr-plans">
+      <article class="pr-plan" aria-labelledby="plan-personal">
+        <header class="pr-plan-head">
+          <h2 id="plan-personal">Personal</h2>
+          <p class="pr-for">For homelabs, learning, side projects and personal websites.</p>
+        </header>
+        <div class="pr-price"><span class="pr-amount">Free</span><span class="pr-unit">for personal use</span></div>
+        <a class="btn pr-cta" routerLink="/signup">Get a free key</a>
+        <p class="pr-plus">What you get:</p>
+        <ul class="pr-list">
+          <li><svg class="pr-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span>Up to 3 servers per install</span></li>
+          <li><svg class="pr-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span>Up to 2 installs</span></li>
+          <li><svg class="pr-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span>Every feature included: deploys, databases, backups, monitoring and high availability</span></li>
+          <li><svg class="pr-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span>Companies can evaluate Cairn for 60 days</span></li>
+        </ul>
+      </article>
+
+      <article class="pr-plan pr-plan-on" aria-labelledby="plan-enterprise">
+        <header class="pr-plan-head">
+          <h2 id="plan-enterprise">Enterprise</h2>
+          <p class="pr-for">For companies and organisations, and for anyone offering Cairn to others.</p>
+        </header>
+        <div class="pr-price"><span class="pr-amount">From $9</span><span class="pr-unit">per server per month, billed annually</span></div>
+        <a class="btn btn-primary pr-cta" routerLink="/pricing" fragment="enterprise">Contact sales</a>
+        <p class="pr-plus">Everything in Personal, plus:</p>
+        <ul class="pr-list">
+          <li><svg class="pr-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span>Servers and installs sized to your fleet</span></li>
+          <li><svg class="pr-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span>Use in a company, or to offer Cairn to others</span></li>
+          <li><svg class="pr-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span>Support</span></li>
+          <li><svg class="pr-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span>Volume pricing by quote</span></li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section class="sp-section" aria-labelledby="pr-compare">
+    <div class="sp-frame">
+      <h2 class="pr-h2" id="pr-compare">Compare plans</h2>
+      <table class="pr-table">
+        <caption class="pr-sr">Personal and Enterprise plans compared</caption>
+        <thead>
+          <tr><td class="pr-corner"></td><th scope="col">Personal</th><th scope="col" class="pr-col-on">Enterprise</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Price</th><td>Free</td><td class="pr-col-on">From $9 per server per month</td></tr>
+          <tr><th scope="row">Billing</th><td>No billing</td><td class="pr-col-on">Annually, volume pricing by quote</td></tr>
+          <tr><th scope="row">Servers per install</th><td>Up to 3</td><td class="pr-col-on">Sized to your fleet</td></tr>
+          <tr><th scope="row">Installs</th><td>Up to 2</td><td class="pr-col-on">Sized to your fleet</td></tr>
+          <tr><th scope="row">Features</th><td>Every feature, including monitoring, logs and traces</td><td class="pr-col-on">Every feature, including monitoring, logs and traces</td></tr>
+          <tr><th scope="row">Evaluation period</th><td>60 days, for companies</td><td class="pr-col-on"><svg class="pr-no" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 8h7"/></svg><span class="pr-sr">Not applicable</span></td></tr>
+          <tr><th scope="row">Use in a company</th><td>During the evaluation</td><td class="pr-col-on"><svg class="pr-yes" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="pr-sr">Yes</span></td></tr>
+          <tr><th scope="row">Offer Cairn to others</th><td><svg class="pr-no" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 8h7"/></svg><span class="pr-sr">No</span></td><td class="pr-col-on"><svg class="pr-yes" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="pr-sr">Yes</span></td></tr>
+          <tr><th scope="row">Support</th><td>Docs and GitHub issues</td><td class="pr-col-on">Included</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="sp-section pr-contact" id="enterprise" aria-labelledby="pr-contact-title">
+    <div class="sp-frame pr-contact-grid">
+      <div class="pr-contact-copy">
+        <h2 class="pr-h2" id="pr-contact-title">Get an Enterprise quote</h2>
+        <p class="sp-text">Tell us how many servers you run and what you need. We'll reply within one business day.</p>
+        <dl class="pr-facts">
+          <div><dt>Starting price</dt><dd>$9 per server per month, billed annually</dd></div>
+          <div><dt>Larger fleets</dt><dd>Volume pricing by quote</dd></div>
+          <div><dt>Prefer email</dt><dd><a href="mailto:sales@cairnpaas.dev">sales&#64;cairnpaas.dev</a></dd></div>
+        </dl>
+      </div>
+      <div class="pr-form-panel">
+        @if (sent) {
+          <p class="sp-msg sp-ok pr-sent" role="status" data-testid="quote-sent">Thanks, we'll reply within one business day.</p>
+        } @else {
+          <form class="sp-form sp-form-grid" novalidate (submit)="send($event)" data-testid="quote-form">
+            <div class="sp-field">
+              <label for="q-company">Company</label>
+              <input id="q-company" name="company" required maxlength="200" autocomplete="organization" [attr.aria-invalid]="errors.company ? 'true' : null">
+              @if (errors.company) { <span class="sp-msg sp-err">{{ errors.company }}</span> }
+            </div>
+            <div class="sp-field">
+              <label for="q-name">Name</label>
+              <input id="q-name" name="name" required maxlength="200" autocomplete="name" [attr.aria-invalid]="errors.name ? 'true' : null">
+              @if (errors.name) { <span class="sp-msg sp-err">{{ errors.name }}</span> }
+            </div>
+            <div class="sp-field">
+              <label for="q-email">Work email</label>
+              <input id="q-email" name="email" type="email" required maxlength="254" autocomplete="email" [attr.aria-invalid]="errors.email ? 'true' : null">
+              @if (errors.email) { <span class="sp-msg sp-err">{{ errors.email }}</span> }
+            </div>
+            <div class="sp-field">
+              <label for="q-servers">Number of servers</label>
+              <input id="q-servers" name="servers" type="number" min="1" step="1" required inputmode="numeric" [attr.aria-invalid]="errors.servers ? 'true' : null">
+              @if (errors.servers) { <span class="sp-msg sp-err">{{ errors.servers }}</span> }
+            </div>
+            <div class="sp-field sp-wide">
+              <label for="q-message">Message <span class="sp-muted">(optional)</span></label>
+              <textarea id="q-message" name="message" maxlength="2000" rows="4" [attr.aria-invalid]="errors.message ? 'true' : null"></textarea>
+              @if (errors.message) { <span class="sp-msg sp-err">{{ errors.message }}</span> }
+            </div>
+            <div class="sp-hp" aria-hidden="true">
+              <label for="q-website">Website</label>
+              <input id="q-website" name="website" tabindex="-1" autocomplete="off">
+            </div>
+            @if (formError) { <p class="sp-msg sp-err sp-wide" role="alert" data-testid="quote-error">{{ formError }}</p> }
+            <div class="sp-actions sp-wide">
+              <button type="submit" class="btn btn-primary" [disabled]="busy">{{ busy ? 'Sending…' : 'Contact sales' }}</button>
+            </div>
+          </form>
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="sp-section" aria-labelledby="pr-faq">
+    <div class="sp-frame pr-faq-grid">
+      <h2 class="pr-h2" id="pr-faq">Questions</h2>
+      <div class="pr-faq">
+        <details>
+          <summary>Is anything held back on the free plan?</summary>
+          <p>No. Personal includes every feature, including monitoring, logs, traces, backups and high availability. The limits are 3 servers per install and 2 installs.</p>
+        </details>
+        <details>
+          <summary>What counts as personal use?</summary>
+          <p>Homelabs, learning, side projects and personal websites. Running Cairn for a company or organisation, or offering it to others, needs Enterprise.</p>
+        </details>
+        <details>
+          <summary>Can my company try Cairn first?</summary>
+          <p>Yes. Companies can evaluate Cairn for 60 days.</p>
+        </details>
+        <details>
+          <summary>How is Enterprise billed?</summary>
+          <p>Per server per month, billed annually, from $9 per server. Larger fleets get volume pricing by quote.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+</main>
+<app-site-footer></app-site-footer>

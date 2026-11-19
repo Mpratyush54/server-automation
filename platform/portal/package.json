@@ -5,14 +5,14 @@
     "ng": "ng",
     "start": "node scripts/build-docs-search.mjs && ng serve",
     "build": "node scripts/build-docs-search.mjs && ng build",
-    "build:public": "node scripts/build-docs-search.mjs && node scripts/version-public-media.mjs && ng build && node scripts/prerender-docs.mjs && node scripts/prerender-landing.mjs",
+    "build:public": "node scripts/build-docs-search.mjs && ng build && node scripts/prerender-docs.mjs && node scripts/prerender-landing.mjs",
     "watch": "node scripts/build-docs-search.mjs && ng build --watch --configuration development",
     "test": "ng test",
     "test:docs": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.docs-spec.json --include=src/app/guards/docs.matcher.spec.ts --include=src/app/pages/docs/docs.component.spec.ts",
     "test:security": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.security-spec.json --include=src/app/pages/docs/docs-sanitize.spec.ts --include=src/app/services/auth.interceptor.spec.ts --include=src/app/guards/public-domain.guard.spec.ts --include=src/app/pages/iframe-view/iframe-view.component.spec.ts && node --test scripts/nginx-headers.test.mjs scripts/prerender-docs.test.mjs",
     "test:scripts": "node --test scripts/nginx-headers.test.mjs scripts/prerender-docs.test.mjs scripts/prerender-landing.test.mjs scripts/docs-links.test.mjs scripts/prerender-output.test.mjs",
     "check:docs-links": "node scripts/check-docs-links.mjs",
-    "test:public": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.docs-spec.json --include=src/app/guards/home.guard.spec.ts --include=src/app/guards/docs.matcher.spec.ts --include=src/app/pages/docs/docs.component.spec.ts --include=src/app/pages/docs/docs-sanitize.spec.ts --include=src/app/pages/docs/docs-search.spec.ts --include=src/app/pages/docs/docs-search.component.spec.ts --include=src/app/pages/landing/landing.component.spec.ts"
+    "test:public": "ng test --watch=false --browsers=ChromeHeadless --ts-config=tsconfig.docs-spec.json --include=src/app/guards/home.guard.spec.ts --include=src/app/guards/docs.matcher.spec.ts --include=src/app/pages/docs/docs.component.spec.ts --include=src/app/pages/docs/docs-sanitize.spec.ts --include=src/app/pages/docs/docs-search.spec.ts --include=src/app/pages/docs/docs-search.component.spec.ts --include=src/app/pages/landing/landing.component.spec.ts --include=src/app/pages/account/account-pages.spec.ts"
   },
   "private": true,
   "dependencies": {

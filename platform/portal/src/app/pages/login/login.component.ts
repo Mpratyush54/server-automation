@@ -5,11 +5,12 @@ import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { AuthService, safeReturnUrl } from '../../services/auth.service';
 import { ApiService } from '../../services/api.service';
+import { CairnMarkComponent } from '../../shared/site/cairn-mark.component';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [FormsModule, RouterModule],
+  imports: [FormsModule, RouterModule, CairnMarkComponent],
   templateUrl: './login.component.html',
   styleUrl: './login.component.css'
 })

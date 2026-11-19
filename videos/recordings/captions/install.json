@@ -1,0 +1,10 @@
+{
+  "title": "Install with one command",
+  "cues": [
+    { "from": "start", "to": "banner", "text": "One command on a fresh Ubuntu server." },
+    { "from": "preflight", "to": "components", "text": "It checks the server and your backup bucket first." },
+    { "from": "components", "to": "done", "text": "Then installs each component and waits for it to be ready." },
+    { "from": "done", "to": "portal", "text": "Done. It prints the portal address and how to sign in." },
+    { "from": "portal", "text": "The portal, ready for your first project." }
+  ]
+}

@@ -2,34 +2,26 @@
 <app-site-header current="home"></app-site-header>
 
 <main id="main" class="lp">
-  <!-- Hero: the failover story drawn on a server grid. -->
+  <!-- Hero: one claim, and the failover story drawn on a server grid. -->
   <section class="lp-hero" aria-labelledby="hero-title">
     <div class="lp-frame lp-hero-inner">
       <div class="lp-hero-copy">
-        <h1 id="hero-title" class="lp-display">
-          <span>Run your apps on your own servers.</span>
-          <span class="lp-quiet">Keep them running when one fails.</span>
-        </h1>
+        <h1 id="hero-title" class="lp-display">Run your apps on your own servers.</h1>
         <p class="lp-lede">
-          Cairn installs everything an app needs on Ubuntu servers you control: deployments from Git,
-          databases, backups, monitoring and alerts, in one dashboard. Start on one server, add more for high availability.
+          Deploy from Git and get databases, monitoring, encrypted backups and failover when a server goes down.
         </p>
         <div class="lp-cta">
           <a class="btn btn-primary" routerLink="/docs/getting-started/installation">Install on Ubuntu</a>
-          <a class="btn" routerLink="/docs">Read the docs</a>
+          <a class="btn" routerLink="/" fragment="product">See how it works</a>
         </div>
-        <div class="lp-install">
-          <pre aria-label="Install commands"><code><span class="lp-prompt">$</span> curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
-<span class="lp-prompt">$</span> sudo platformctl provision</code></pre>
-          <button type="button" class="lp-copy" (click)="copyInstallCommand()" [attr.aria-label]="installCopied ? 'Copied' : 'Copy install commands'">
-            {{ installCopied ? 'Copied' : 'Copy' }}
-          </button>
-        </div>
+        <p class="lp-price-line">
+          <a routerLink="/pricing"><span>Free for personal use</span> · <span>Enterprise from $9 per server a month</span></a>
+        </p>
       </div>
 
       <figure class="lp-topology" #topologyElement aria-labelledby="topology-caption">
         <div class="lp-topology-head">
-          <span>Live cluster</span>
+          <span>Failover test, replayed</span>
           <button type="button" class="lp-topology-play" (click)="togglePlayback()" [attr.aria-label]="paused ? 'Play the failover story' : 'Pause the failover story'">
             {{ paused ? 'Play' : 'Pause' }}
           </button>
@@ -38,7 +30,7 @@
           <!-- paths from each server to the ingress point, then to the app -->
           @for (n of nodes; track n.name; let i = $index) {
             <path class="lp-link" [class.lp-link-down]="isDown(i)" [attr.d]="'M150 ' + (45 + i * 80) + ' C 225 ' + (45 + i * 80) + ', 215 125, 268 125'"></path>
-            @if (!isDown(i)) {
+            @if (!isDown(i) && !paused) {
               <circle class="lp-packet" r="3.2">
                 <animateMotion [attr.dur]="(1.6 + i * 0.25) + 's'" repeatCount="indefinite" [attr.path]="'M150 ' + (45 + i * 80) + ' C 225 ' + (45 + i * 80) + ', 215 125, 268 125'"></animateMotion>
               </circle>
@@ -50,13 +42,13 @@
               <rect width="138" height="46" rx="8"></rect>
               <circle class="lp-led" cx="18" cy="23" r="4.5"></circle>
               <text x="32" y="20" class="lp-node-name">{{ n.name }}</text>
-              <text x="32" y="35" class="lp-node-ip">{{ isDown(i) ? 'not responding' : n.ip }}</text>
+              <text x="32" y="36" class="lp-node-ip">{{ isDown(i) ? 'no response' : n.ip }}</text>
             </g>
           }
           <g class="lp-app" transform="translate(296 98)">
             <rect width="134" height="54" rx="9"></rect>
             <text x="14" y="24" class="lp-node-name">your app</text>
-            <text x="14" y="40" class="lp-node-ip">shop.example.com</text>
+            <text x="14" y="41" class="lp-node-ip">shop.example.com</text>
           </g>
         </svg>
         <figcaption id="topology-caption" class="lp-caption" aria-live="polite">{{ current.caption }}</figcaption>
@@ -74,224 +66,190 @@
     </div>
   </section>
 
-  <!-- What gets installed: the stack, named. -->
-  <section class="lp-stack" aria-labelledby="stack-title">
+  <!-- Things a visitor can check: the latest release, the public tracker, and how it is tested. -->
+  <section class="lp-proof" aria-label="What you can check">
     <div class="lp-frame">
-      <h2 id="stack-title" class="lp-stack-title">Installs and connects the open-source tools you would otherwise wire up yourself</h2>
-      <ul class="lp-chips">
-        <li>Kubernetes (k3s)</li><li>Argo CD</li><li>ingress-nginx</li><li>cert-manager</li><li>PostgreSQL</li><li>MongoDB</li>
-        <li>Redis</li><li>MinIO</li><li>Prometheus</li><li>Grafana</li><li>Loki</li><li>Tempo</li><li>Pyroscope</li><li>Longhorn</li>
+      <p class="lp-release">
+        <span class="lp-release-tag">Latest release</span>
+        <a class="lp-release-version" [href]="releaseUrl" target="_blank" rel="noopener">{{ release.version }}</a>
+        <time [attr.datetime]="release.date">{{ release.dateLabel }}</time>
+        <span class="lp-release-links">
+          <a routerLink="/docs/changelog">Changelog</a>
+          <a [href]="issuesUrl" target="_blank" rel="noopener">Open roadmap and issues</a>
+          <a [href]="repoUrl" target="_blank" rel="noopener">GitHub</a>
+        </span>
+      </p>
+      <ul class="lp-facts">
+        @for (fact of facts; track fact.path) {
+          <li>
+            <svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true">
+              @switch (fact.icon) {
+                @case ('power') { <path d="M12 3v8M7.05 6.05a7 7 0 1 0 9.9 0"></path> }
+                @case ('lock') { <rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path> }
+                @case ('key') { <circle cx="8" cy="15" r="4"></circle><path d="M11 12l8-8M16 7l2 2M14 9l2 2"></path> }
+                @default { <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z"></path><path d="M9 12l2 2 4-4"></path> }
+              }
+            </svg>
+            <p>{{ fact.text }}. <a [routerLink]="fact.path">{{ fact.link }}</a></p>
+          </li>
+        }
       </ul>
     </div>
   </section>
 
-  <!-- Feature rows: claim on the left, plain explanation on the right, then the product. -->
-  <div id="product">
-    <section class="lp-row" aria-labelledby="f-deploy">
-      <div class="lp-frame">
-        <header class="lp-row-head">
-          <h2 id="f-deploy" class="lp-h2"><span>Push code, it goes live.</span> <span class="lp-quiet">Every change tracked.</span></h2>
-          <div class="lp-row-copy">
-            <p>Connect your repository and pick a branch for each environment. Every push is deployed and kept in sync, and each deployment, its commit and its health show on the project page.</p>
-            <a routerLink="/docs/getting-started/deploy-your-app">Deploy your first app</a>
-          </div>
-        </header>
-        <div class="lp-shot" aria-hidden="true">
-          <div class="mock-bar"><span class="mock-title">shop</span><span class="mock-tabs"><b>production</b><i>staging</i><i>preview-142</i></span></div>
-          <table class="mock-table">
-            <tr><td><span class="status status-ok">Live</span></td><td class="mono">a41f9c2</td><td>Add order export</td><td class="muted">main</td><td class="muted">2 min ago</td></tr>
-            <tr><td><span class="status">Replaced</span></td><td class="mono">9be0d17</td><td>Fix checkout tax rounding</td><td class="muted">main</td><td class="muted">yesterday</td></tr>
-            <tr><td><span class="status status-down">Rolled back</span></td><td class="mono">5c2a8e0</td><td>Upgrade payment client</td><td class="muted">main</td><td class="muted">3 days ago</td></tr>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <section class="lp-row" aria-labelledby="f-data">
-      <div class="lp-frame">
-        <header class="lp-row-head">
-          <h2 id="f-data" class="lp-h2"><span>Databases included.</span> <span class="lp-quiet">Restore to the second.</span></h2>
-          <div class="lp-row-copy">
-            <p>PostgreSQL, MongoDB and Redis for each project, with credentials delivered to your app by the SDKs. On multi-server installs PostgreSQL archives every change to S3-compatible storage, so you can restore to any point in the last 14 days.</p>
-            <a routerLink="/docs/operations/ha">How backups work</a>
-          </div>
-        </header>
-        <div class="lp-shot lp-shot-split" aria-hidden="true">
-          <dl class="facts">
-            <dt>PostgreSQL</dt><dd>3 instances, primary on node-1</dd>
-            <dt>Archiving</dt><dd><span class="status status-ok">Working</span></dd>
-            <dt>Recovery window</dt><dd>14 days, last base backup 03:00</dd>
-            <dt>Stored in</dt><dd class="mono">s3://backups/postgresql/</dd>
-          </dl>
-          <pre class="mock-term"><code><span class="lp-prompt">$</span> sudo platformctl restore --pitr 2026-11-14T17:09:27Z --confirm
-PostgreSQL recovered. Rows written after 17:09:27 are gone.</code></pre>
-        </div>
-      </div>
-    </section>
-
-    <section class="lp-row" aria-labelledby="f-observe">
-      <div class="lp-frame">
-        <header class="lp-row-head">
-          <h2 id="f-observe" class="lp-h2"><span>See what your app is doing.</span> <span class="lp-quiet">Logs to replays.</span></h2>
-          <div class="lp-row-copy">
-            <p>Logs, metrics, traces and profiles through Grafana's open-source stack, plus error tracking, session replay and heatmaps from the browser SDKs, all scoped to the project.</p>
-            <a routerLink="/docs/operations/telemetry">Explore observability</a>
-          </div>
-        </header>
-        <div class="lp-shot lp-shot-split" aria-hidden="true">
-          <div class="mock-chart">
-            <span class="mock-label">Requests per second</span>
-            <svg viewBox="0 0 300 90" preserveAspectRatio="none"><path class="mock-area" d="M0 70 L25 62 L50 66 L75 48 L100 52 L125 35 L150 40 L175 28 L200 34 L225 22 L250 30 L275 18 L300 24 L300 90 L0 90Z"></path><path class="mock-line" d="M0 70 L25 62 L50 66 L75 48 L100 52 L125 35 L150 40 L175 28 L200 34 L225 22 L250 30 L275 18 L300 24"></path></svg>
-          </div>
-          <ol class="mock-logs">
-            <li><time>17:21:04</time><span class="lv-info">info</span> GET /api/orders 200 38ms</li>
-            <li><time>17:21:05</time><span class="lv-info">info</span> POST /api/checkout 201 112ms</li>
-            <li><time>17:21:07</time><span class="lv-warn">warn</span> payment retry 1/3 order=8841</li>
-            <li><time>17:21:08</time><span class="lv-info">info</span> GET /api/products 200 21ms</li>
-          </ol>
-        </div>
-      </div>
-    </section>
-
-    <section class="lp-row" aria-labelledby="f-alerts">
-      <div class="lp-frame">
-        <header class="lp-row-head">
-          <h2 id="f-alerts" class="lp-h2"><span>Know before your users do.</span> <span class="lp-quiet">Alerts and status pages.</span></h2>
-          <div class="lp-row-copy">
-            <p>Uptime checks, alert rules and on-call escalation to email, Slack, Discord, PagerDuty or a webhook, and a public status page for each project.</p>
-            <a routerLink="/docs/operations/alerting">Set up alerts</a>
-          </div>
-        </header>
-        <div class="lp-shot" aria-hidden="true">
-          <ol class="mock-timeline">
-            <li><span class="status status-down">Down</span><b>Checkout API failing health check</b><span class="muted">17:02, paged on-call: Asha</span></li>
-            <li><span class="status status-warn">Acknowledged</span><b>Asha is investigating</b><span class="muted">17:04</span></li>
-            <li><span class="status status-ok">Resolved</span><b>Rolled back to 9be0d17</b><span class="muted">17:11, status page updated</span></li>
-          </ol>
-        </div>
-      </div>
-    </section>
-
-    <section class="lp-row" id="high-availability" aria-labelledby="f-ha">
-      <div class="lp-frame">
-        <header class="lp-row-head">
-          <h2 id="f-ha" class="lp-h2"><span>Add servers when it matters.</span> <span class="lp-quiet">Lose one, keep running.</span></h2>
-          <div class="lp-row-copy">
-            <p>Start on one server. Join two more and the platform spreads apps, databases and storage across them. When a server fails the others take over, and it rejoins on its own when it returns.</p>
-            <a routerLink="/docs/operations/ha">High availability guide</a>
-          </div>
-        </header>
-        <div class="lp-shot" aria-hidden="true">
-          <table class="mock-table">
-            <tr class="mock-th"><td>Server</td><td>Address</td><td>Role</td><td>Status</td></tr>
-            <tr><td>node-1</td><td class="mono">10.0.0.11</td><td class="muted">control plane, database primary</td><td><span class="status status-ok">Ready</span></td></tr>
-            <tr><td>node-2</td><td class="mono">10.0.0.12</td><td class="muted">control plane, replica</td><td><span class="status status-ok">Ready</span></td></tr>
-            <tr><td>node-3</td><td class="mono">10.0.0.13</td><td class="muted">control plane, replica</td><td><span class="status status-ok">Ready</span></td></tr>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <section class="lp-row" aria-labelledby="f-security">
-      <div class="lp-frame">
-        <header class="lp-row-head">
-          <h2 id="f-security" class="lp-h2"><span>Secure by default.</span> <span class="lp-quiet">Sign-in, roles, audit.</span></h2>
-          <div class="lp-row-copy">
-            <p>Two-factor sign-in, single sign-on into Grafana, Argo CD and Portainer, per-project roles and an audit log of every change. Every server gets a firewall and automatic security updates.</p>
-            <a routerLink="/docs/guides/host-hardening">Security details</a>
-          </div>
-        </header>
-        <div class="lp-shot" aria-hidden="true">
-          <table class="mock-table">
-            <tr><td class="muted">17:30</td><td>asha&#64;example.com</td><td>Changed role of ben&#64;example.com to viewer</td><td class="muted">shop</td></tr>
-            <tr><td class="muted">17:12</td><td>ben&#64;example.com</td><td>Signed in with authenticator code</td><td class="muted">portal</td></tr>
-            <tr><td class="muted">16:58</td><td>asha&#64;example.com</td><td>Rotated database password</td><td class="muted">shop</td></tr>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <section class="lp-row" aria-labelledby="f-agents">
-      <div class="lp-frame">
-        <header class="lp-row-head">
-          <h2 id="f-agents" class="lp-h2"><span>Let AI agents help.</span> <span class="lp-quiet">With a person approving.</span></h2>
-          <div class="lp-row-copy">
-            <p>Coding assistants connect through the built-in MCP server with scoped agent tokens. They can read status and logs; commands that change things wait for a person to approve them.</p>
-            <a routerLink="/docs/mcp/overview">Connect an agent</a>
-          </div>
-        </header>
-        <div class="lp-shot lp-shot-split" aria-hidden="true">
-          <pre class="mock-term"><code><span class="muted">agent</span>  Deploy shop to production
-<span class="muted">tool</span>   platform.deploy(project: "shop", environment: "production")
-<span class="lp-warn-text">Waiting for approval from a project owner</span></code></pre>
-          <div class="mock-approve">
-            <b>Approve agent command?</b>
-            <span class="muted">Deploy a41f9c2 to production, requested by the coding agent token "ci-helper"</span>
-            <span class="mock-approve-actions"><span class="btn btn-sm">Reject</span><span class="btn btn-sm btn-primary">Approve</span></span>
-          </div>
-        </div>
-      </div>
-    </section>
-  </div>
-
-  <!-- A real sequence, so the rail is numbered. -->
-  <section class="lp-rail-section" aria-labelledby="rail-title">
-    <div class="lp-frame lp-rail-grid">
-      <h2 id="rail-title" class="lp-h2"><span>From one server to many.</span> <span class="lp-quiet">In five steps.</span></h2>
-      <ol class="lp-rail">
-        <li><b>Install on an Ubuntu server</b><span>One command sets up Kubernetes and the services you pick.</span><code>sudo platformctl provision</code></li>
-        <li><b>Connect your repository</b><span>Choose a branch for each environment.</span></li>
-        <li><b>Deploy and watch it run</b><span>Pushes deploy through Argo CD; logs, metrics and errors appear on the project.</span></li>
-        <li><b>Add servers for high availability</b><span>Join two more servers with a one-time token.</span><code>sudo platformctl --auto join --role server ...</code></li>
-        <li><b>Recover from anything</b><span>Restore a database to a point in time, or rebuild a lost server from backups.</span><code>sudo platformctl restore --pitr &lt;time&gt; --confirm</code></li>
-      </ol>
-    </div>
-  </section>
-
-  <!-- Walkthrough videos: user-started, captioned. -->
-  <section class="lp-watch" aria-labelledby="watch-title">
+  <!-- How it works: one short recording of the real product per feature, the single main proof. -->
+  <section class="lp-features" id="product" aria-labelledby="features-title">
     <div class="lp-frame">
-      <header class="lp-row-head">
-        <h2 id="watch-title" class="lp-h2"><span>Watch it work.</span> <span class="lp-quiet">One minute.</span></h2>
-        <div class="lp-row-copy"><p>A short walkthrough from a fresh server to a deployed app with data and monitoring.</p></div>
+      <header class="lp-section-head">
+        <h2 id="features-title" class="lp-h2"><span>See how it works.</span> <span class="lp-quiet">Short recordings of a real install.</span></h2>
+        @if (publishedClips > 0) {
+          <p>Each clip is a screen recording of Cairn on real servers, not an animation. Long waits are shortened, and the clip says so.</p>
+        } @else {
+          <p>One short screen recording per workflow, made on a real install. Until each is published, its section lists what the clip will show.</p>
+        }
       </header>
-      <div class="lp-player landscape-player">
-        <video #landscapeVideo controls [controls]="landscapeStarted" controlslist="nodownload" playsinline preload="none"
-          [poster]="media.overviewPoster" width="1920" height="1080" aria-label="Cairn product overview"
-          (play)="onVideoPlay('landscape')" (ended)="landscapeStarted = false">
-          <source [src]="media.overview" type="video/mp4" />
-          <track [src]="media.overviewCaptions" kind="captions" srclang="en" label="English" />
-          Your browser does not support embedded video.
-        </video>
-        <button type="button" class="lp-play" [hidden]="landscapeStarted" (click)="playVideo(landscapeVideo, 'landscape')" aria-label="Play the one-minute Cairn walkthrough">
-          <span class="lp-play-icon" aria-hidden="true"></span><span>Play the walkthrough, 1:00</span>
-        </button>
-      </div>
-      <div class="lp-player portrait-player">
-        <video #portraitVideo controls [controls]="portraitStarted" controlslist="nodownload" playsinline preload="none"
-          [poster]="media.portraitPoster" width="1080" height="1920" aria-label="Cairn portrait overview"
-          (play)="onVideoPlay('portrait')" (ended)="portraitStarted = false">
-          <source [src]="media.portrait" type="video/mp4" />
-          <track [src]="media.portraitCaptions" kind="captions" srclang="en" label="English" />
-          Your browser does not support embedded video.
-        </video>
-        <button type="button" class="lp-play" [hidden]="portraitStarted" (click)="playVideo(portraitVideo, 'portrait')" aria-label="Play the 22-second Cairn overview">
-          <span class="lp-play-icon" aria-hidden="true"></span><span>Play the overview, 0:22</span>
-        </button>
-      </div>
-      <p class="video-error" role="alert" [hidden]="!videoError">{{ videoError }}</p>
+      <nav class="lp-index" aria-label="Features">
+        <ol>
+          @for (f of features; track f.id; let i = $index) {
+            <li><a routerLink="/" [fragment]="f.id"><span class="lp-index-n">{{ i + 1 }}</span>{{ f.label }}</a></li>
+          }
+        </ol>
+      </nav>
+      @for (f of features; track f.id; let i = $index) {
+        <article class="lp-feature" [attr.aria-labelledby]="'f-' + f.id">
+          <!-- The link target sits above the section, clear of the sticky header. -->
+          <span class="lp-anchor" [id]="f.id"></span>
+          <div class="lp-feature-copy">
+            <p class="lp-eyebrow"><span class="lp-index-n">{{ i + 1 }}</span>{{ f.label }}</p>
+            <h3 [id]="'f-' + f.id" class="lp-h3"><span>{{ f.title }}</span> <span class="lp-quiet">{{ f.subtitle }}</span></h3>
+            <p>{{ f.copy }}</p>
+            @if (extra(f.id).flow; as flow) {
+              <div class="lp-how">
+                <p class="lp-how-label">How it works</p>
+                <ol class="lp-flow" [attr.aria-label]="flow.label">
+                  @for (s of flow.steps; track s.name) {
+                    <li><b>{{ s.name }}</b><span>{{ s.detail }}</span></li>
+                  }
+                </ol>
+              </div>
+            }
+            <a class="lp-guide" [routerLink]="f.guide.path">{{ extra(f.id).more }}</a>
+          </div>
+          <figure class="lp-clip" [attr.data-clip]="f.id" [class.lp-clip-pending]="!f.media">
+            @if (f.media) {
+              <app-clip-player [feature]="f" [staticPage]="!lazyClips"></app-clip-player>
+            } @else {
+              <div class="lp-pending">
+                <p class="lp-pending-label">Recording coming soon</p>
+                <p class="lp-pending-lead">This clip will show:</p>
+                <ol>
+                  @for (s of f.shows; track s) {
+                    <li>{{ s }}</li>
+                  }
+                </ol>
+              </div>
+            }
+          </figure>
+        </article>
+      }
     </div>
   </section>
 
+  <!-- Everything else that comes with it, in plain words, then the tools underneath. -->
+  <section class="lp-more" aria-labelledby="more-title">
+    <div class="lp-frame">
+      <header class="lp-section-head lp-section-head-tight">
+        <h2 id="more-title" class="lp-h2"><span>Also included.</span> <span class="lp-quiet">On the same servers.</span></h2>
+      </header>
+      <ul class="lp-cards">
+        @for (card of included; track card.path) {
+          <li>
+            <svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true">
+              @switch (card.icon) {
+                @case ('db') { <ellipse cx="12" cy="6" rx="7" ry="2.8"></ellipse><path d="M5 6v12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8V6M5 12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8"></path> }
+                @case ('bell') { <path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0"></path> }
+                @case ('status') { <circle cx="12" cy="12" r="8.5"></circle><path d="M8 12.5l2.5 2.5L16 9.5"></path> }
+                @case ('bug') { <rect x="7.5" y="8" width="9" height="12" rx="4.5"></rect><path d="M12 12v8M4 13h3.5M16.5 13H20M5 8l2.5 2M19 8l-2.5 2M9.5 5.5l1 2M14.5 5.5l-1 2"></path> }
+                @case ('branch') { <circle cx="7" cy="5.5" r="2"></circle><circle cx="7" cy="18.5" r="2"></circle><circle cx="17" cy="9" r="2"></circle><path d="M7 7.5v9M17 11c0 3.5-6 3-9.2 6"></path> }
+                @default { <path d="M4 8l8-4 8 4-8 4zM4 8v8l8 4 8-4V8M12 12v8"></path> }
+              }
+            </svg>
+            <h3>{{ card.title }}</h3>
+            <p>{{ card.copy }}</p>
+            <a [routerLink]="card.path">{{ card.link }}</a>
+          </li>
+        }
+        <li class="lp-tools">
+          <h3>Built on open-source tools</h3>
+          <dl>
+            @for (g of toolGroups; track g.label) {
+              <div><dt>{{ g.label }}</dt><dd>{{ g.tools }}</dd></div>
+            }
+          </dl>
+          <a routerLink="/docs/architecture/k8s-infrastructure">Every component and version</a>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- A compact, cautious comparison: only rows we can check in public docs. -->
+  <section class="lp-compare" aria-labelledby="compare-title">
+    <div class="lp-frame">
+      <header class="lp-section-head lp-section-head-tight">
+        <h2 id="compare-title" class="lp-h2"><span>How Cairn compares.</span> <span class="lp-quiet">Self-hosted tools and hosted platforms.</span></h2>
+      </header>
+      <div class="lp-table-wrap" role="region" aria-label="Comparison table" tabindex="0">
+        <table class="lp-table">
+          <thead>
+            <tr>
+              <td></td>
+              @for (c of comparison.columns; track c; let ci = $index) {
+                <th scope="col" [class.lp-col-us]="ci === 0">{{ c }}</th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of comparison.rows; track row.label) {
+              <tr>
+                <th scope="row">{{ row.label }}</th>
+                @for (cell of row.cells; track $index; let ci = $index) {
+                  <td [class.lp-col-us]="ci === 0" [class.lp-cell-muted]="cell === '—' || cell === 'No'">{{ cell }}</td>
+                }
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="lp-footnote">
+        Based on public docs, November 2026; <a [href]="issuesUrl" target="_blank" rel="noopener">tell us if something changed</a>.
+        “Partial” means some of it, or only with extra setup; a dash means we could not confirm it in their docs.
+      </p>
+    </div>
+  </section>
+
+  <!-- Closing: the claim on the left, the two install commands on the right. -->
   <section class="lp-end" aria-labelledby="end-title">
     <div class="lp-frame lp-end-inner">
-      <h2 id="end-title" class="lp-display lp-display-sm">
-        <span>Your servers, your data.</span>
-        <span class="lp-quiet">Set up in an afternoon.</span>
-      </h2>
-      <div class="lp-cta">
-        <a class="btn btn-primary" routerLink="/docs/getting-started/installation">Install on Ubuntu</a>
-        <a class="btn" routerLink="/about">Why we built it</a>
+      <div class="lp-end-copy">
+        <h2 id="end-title" class="lp-display lp-display-sm">
+          <span>Your servers, your data.</span>
+          <span class="lp-quiet">Start with one Ubuntu server.</span>
+        </h2>
+        <div class="lp-cta">
+          <a class="btn btn-primary" routerLink="/docs/getting-started/installation">Install on Ubuntu</a>
+          <a class="btn" routerLink="/about">Why we built it</a>
+        </div>
+      </div>
+      <div class="lp-install">
+        <div class="lp-install-head">
+          <span>On a fresh Ubuntu server</span>
+          <button type="button" class="lp-copy" (click)="copyInstallCommand()" [attr.aria-label]="installCopied ? 'Copied' : 'Copy install commands'">
+            {{ installCopied ? 'Copied' : 'Copy' }}
+          </button>
+        </div>
+        <pre aria-label="Install commands"><code><span class="lp-prompt">$</span> curl -fsSL https://get.cairnpaas.dev | bash
+<span class="lp-prompt">$</span> sudo platformctl provision</code></pre>
+        <p class="lp-install-note">It asks for your domain, an admin email and where backups go, then prints the address to sign in.</p>
       </div>
     </div>
   </section>

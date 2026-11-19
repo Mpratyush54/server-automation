@@ -8,7 +8,7 @@ What goes there:
 - encrypted nightly archives of the settings and passwords, PostgreSQL, MongoDB, Redis, uploaded files and the cluster state;
 - on the `ha` profile, etcd snapshots and Longhorn volume backups.
 
-The portal shows where backups go, when each kind last ran and how far back you can restore, at the top of **Settings** under **Disaster recovery backups** (DevOps role).
+The portal shows where backups go, when each kind last ran and how far back you can restore, in **Settings** → **Security** under **Recovery backups** (DevOps role).
 
 ## Choose where backups go
 

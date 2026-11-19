@@ -1,13 +1,15 @@
 # Platform product films
 
-Two finished videos accompany the public landing page:
+> The landing page no longer uses these films. It shows short screen recordings of the real product instead. They are made by the pipeline in [`recordings/`](recordings/README.md) and served from `https://media.cairnpaas.dev/v1/`. The HyperFrames sources below are kept for reference only. Their rendered MP4s, posters and captions were removed from `platform/portal/public/media/`.
+
+Two wireframe films were made for the public landing page:
 
 - `platform-explainer` — landscape, 1920 × 1080, 60 seconds; four scenes follow an app from its server to deployment, operations, and scoped MCP access.
 - `platform-short` — portrait, 1080 × 1920, approximately 22 seconds; two scenes composed for a phone rather than cropped from the landscape film.
 
 Both films close with “Build on your terms” and the product homepage. The tone is clear, friendly, and lightly playful. These are explanatory wireframe illustrations, not recordings of the dashboard. Product statements come from this repository's docs and implementation. There are no customer quotes, invented adoption numbers, performance claims, or distributed-tracing promises.
 
-The published MP4s, poster, and English WebVTT captions live in `../platform/portal/public/media/`. Each project contains its editable HyperFrames composition, brief, storyboard, script, local fonts, narration, score, and audio mix. CLI scripts pin HyperFrames 0.8.167. Video runs at 24 fps. Motion illustrates request/response flows, application deployment, and command validation; all activity is conceptual.
+Each project contains its editable HyperFrames composition, brief, storyboard, script, local fonts, narration, score, and audio mix. CLI scripts pin HyperFrames 0.8.167. Video runs at 24 fps. Motion illustrates request/response flows, application deployment, and command validation; all activity is conceptual.
 
 ## Re-render an existing film
 

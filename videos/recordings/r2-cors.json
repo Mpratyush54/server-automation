@@ -1,0 +1,9 @@
+[
+  {
+    "AllowedOrigins": ["https://cairnpaas.dev", "https://platform.pratyushes.dev"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["Range"],
+    "ExposeHeaders": ["Content-Length", "Content-Range", "Accept-Ranges", "ETag"],
+    "MaxAgeSeconds": 86400
+  }
+]

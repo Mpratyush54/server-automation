@@ -41,6 +41,10 @@ type Config struct {
 
 	ImageRegistry string
 	ImageTag      string
+	// LicenseEnforce is PLATFORM_LICENSE_ENFORCE.
+	LicenseEnforce bool
+	// Diagnostics is false when PLATFORM_DIAGNOSTICS=off.
+	Diagnostics bool
 
 	// ImageTagSource is where ImageTag came from: ImageTagFromEnv (the
 	// process environment), ImageTagSaved (/etc/platform/.env) or "" (the
@@ -167,6 +171,12 @@ const (
 	IngressHAModeExternal = "external"
 )
 
+// Image registries.
+const (
+	DefaultImageRegistry  = "ghcr.io/mpratyush54"
+	LicensedImageRegistry = "registry.cairnpaas.dev/cairn"
+)
+
 func Load() *Config {
 	tagDefault := DefaultImageTag
 	if tagDefault == "" {
@@ -184,7 +194,9 @@ func Load() *Config {
 		TelemetryLokiDatasourceUID:  getEnv("TELEMETRY_LOKI_DATASOURCE_UID", "loki"),
 		TelemetryRetentionDays:      getEnv("TELEMETRY_RETENTION_DAYS", "30"),
 		PlatformName:                getEnv("PLATFORM_NAME", "Platform"),
-		ImageRegistry:               getEnv("PLATFORM_IMAGE_REGISTRY", "ghcr.io/mpratyush54"),
+		ImageRegistry:               getEnv("PLATFORM_IMAGE_REGISTRY", DefaultImageRegistry),
+		LicenseEnforce:              getEnvBool("PLATFORM_LICENSE_ENFORCE", false),
+		Diagnostics:                 diagnosticsEnabled(os.Getenv("PLATFORM_DIAGNOSTICS")),
 		ImageTag:                    getEnv("PLATFORM_IMAGE_TAG", tagDefault),
 		RepoURL:                     getEnv("PLATFORM_REPO_URL", "https://github.com/Mpratyush54/SERVER-automation"),
 		GitHubToken:                 getEnv("GITHUB_TOKEN", ""),
@@ -667,6 +679,18 @@ func (c *Config) SaveEnvFile(path string) error {
 	b.WriteString(fmt.Sprintf("AUTO_UPDATE=%t\n", c.AutoUpdate))
 	b.WriteString(fmt.Sprintf("AUTO_UPGRADE=%t\n", c.AutoUpgrade))
 	b.WriteString(fmt.Sprintf("PLATFORM_HARDEN=%t\nPLATFORM_WAF=%t\n", !c.SkipHardening, c.WAF))
+	if c.LicenseEnforce {
+		b.WriteString("PLATFORM_LICENSE_ENFORCE=true\n")
+	}
+	if !c.Diagnostics {
+		b.WriteString("PLATFORM_DIAGNOSTICS=off\n")
+	}
+	if c.ImageRegistry == LicensedImageRegistry {
+		b.WriteString(fmt.Sprintf("PLATFORM_IMAGE_REGISTRY=%s\n", c.ImageRegistry))
+	}
+	if k := dotenvLoaded["CAIRN_LICENSE_KEY"]; k != "" && !strings.ContainsAny(k, "\r\n") {
+		b.WriteString(fmt.Sprintf("CAIRN_LICENSE_KEY=%s\n", k))
+	}
 	b.WriteString(fmt.Sprintf("PLATFORM_NGINX_AUTH_JAIL=%t\n", c.NginxAuthJail))
 	b.WriteString(fmt.Sprintf("INGRESS_IP_RATE_LIMIT=%d\n", c.IngressIPRateLimit))
 	b.WriteString(fmt.Sprintf("INGRESS_IP_BURST=%d\n", c.IngressIPBurst))
@@ -1070,4 +1094,12 @@ func normalizeProfile(name string) string {
 
 func parseBool(v string) bool {
 	return v == "y" || v == "yes" || v == "true" || v == "1"
+}
+
+func diagnosticsEnabled(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "off", "false", "no", "0":
+		return false
+	}
+	return true
 }

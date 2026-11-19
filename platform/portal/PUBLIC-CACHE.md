@@ -2,15 +2,15 @@
 
 `nginx.public.conf` is the origin configuration for `cairnpaas.dev`.
 It sends `no-store` for HTML and legacy homepage redirects, gives content-named Angular bundles a one-year
-immutable lifetime, and gives public media a one-hour browser / one-week
-Cloudflare lifetime. Byte ranges, `Content-Length`, and origin ETags remain
-available for MP4 seeking. Failed asset requests do not inherit cache headers.
+immutable lifetime, and gives the link-preview images in `/media/` a one-hour
+browser / one-week Cloudflare lifetime. Failed asset requests do not inherit
+cache headers.
 
-`npm run build:public` computes a SHA-256 version for every player asset.
-The player uses those versions in its query strings, so new videos, posters,
-and captions get new cache keys without a purge. Preserve the query string in
-Cloudflare's cache key. Desktop and portrait media have separate URLs; the
-origin does not vary a single video URL by user agent.
+The landing page's feature clips are not served from this origin. They live in
+a Cloudflare R2 bucket behind `https://media.cairnpaas.dev/v1/` (see
+`videos/recordings/README.md`), and the page asks for them with a content
+version in the query string (`landing-clip-versions.ts`), so a new cut gets a
+new cache key without a purge. The CSP allows that host in `media-src`.
 
 ## HTML and the canonical homepage
 
@@ -62,9 +62,9 @@ and [Cache Rule ordering](https://developers.cloudflare.com/cache/how-to/cache-r
 
 ## Cloudflare zone setup
 
-The DNS record must be proxied through Cloudflare. MP4, JPEG, JS, and CSS are
-cacheable file extensions by default. To include captions and explicitly enable
-the whole public media directory, create this Cache Rule:
+The DNS record must be proxied through Cloudflare. JPEG, PNG, JS, and CSS are
+cacheable file extensions by default. To explicitly enable the public media
+directory, create this Cache Rule:
 
 ```text
 http.host eq "cairnpaas.dev"
@@ -75,7 +75,6 @@ and starts_with(http.request.uri.path, "/media/")
 - Edge TTL: respect origin cache-control headers.
 - Browser TTL: respect existing headers.
 - Preserve the full query string in the cache key.
-- Enable **Respect Strong ETags** for video range requests.
 
 Apply the rule only to the marketing host's media directory. No dashboard or
 API response needs to become cacheable. Existing cache rules can override origin
@@ -83,11 +82,9 @@ headers, so inspect their order if a response stays `BYPASS` or `DYNAMIC`.
 
 Origin configuration is checked by the repository's nginx tests. A live
 Cloudflare cache hit can be verified only after deploying the public portal:
-request a versioned MP4 URL twice from the same client and inspect
-`CF-Cache-Status`, `Age`, `Content-Length`, `Accept-Ranges`, and a `206` response
-to `Range: bytes=0-1023`. No Cloudflare account configuration is changed by the
-build or the nginx configuration.
+request `/media/cairn-social.png` twice from the same client and inspect
+`CF-Cache-Status` and `Age`. No Cloudflare account configuration is changed by
+the build or the nginx configuration.
 
 References: [CDN-Cache-Control](https://developers.cloudflare.com/cache/concepts/cdn-cache-control/),
-[default cache behavior](https://developers.cloudflare.com/cache/concepts/default-cache-behavior/),
-[strong ETags](https://developers.cloudflare.com/cache/how-to/cache-rules/settings/#respect-strong-etags).
+[default cache behavior](https://developers.cloudflare.com/cache/concepts/default-cache-behavior/).

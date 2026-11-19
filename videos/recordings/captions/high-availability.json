@@ -1,0 +1,11 @@
+{
+  "title": "Turn a server off",
+  "cues": [
+    { "from": "start", "to": "poweroff", "text": "Three servers ready. On the right, requests to the app every half second." },
+    { "from": "poweroff", "to": "detect:fast-start+3", "text": "One server loses power." },
+    { "from": "detect:fast-start+3", "to": "notready", "text": "The others notice within a minute. Watch the requests meanwhile." },
+    { "from": "notready", "to": "poweron", "text": "The server is marked not ready. Its apps run on the other two." },
+    { "from": "poweron", "to": "rejoined", "text": "Power it back on." },
+    { "from": "rejoined", "text": "It rejoins on its own." }
+  ]
+}

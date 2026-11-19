@@ -67,7 +67,7 @@ If a bad migration or a wrong command changed or deleted data, put PostgreSQL ba
 sudo platformctl restore --pitr 2026-11-12T10:00:00Z --confirm
 ```
 
-Stop your apps' writes first. All PostgreSQL databases return to that moment; MongoDB, Redis and files are not changed. The moment must be inside the window shown under **Settings** → **Disaster recovery backups** or in `sudo platformctl status`. If the server still runs the older PostgreSQL setup, `platformctl` tells you to run `sudo platformctl postgres migrate --confirm` first.
+Stop your apps' writes first. All PostgreSQL databases return to that moment; MongoDB, Redis and files are not changed. The moment must be inside the window shown under **Settings** → **Security** → **Recovery backups** or in `sudo platformctl status`. If the server still runs the older PostgreSQL setup, `platformctl` tells you to run `sudo platformctl postgres migrate --confirm` first.
 
 ## Rebuild from the backup target
 

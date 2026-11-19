@@ -36,7 +36,7 @@ minimum; 8 GB and 80 GB recommended), and a domain pointing at it — or use
 `<server-ip>.sslip.io` if you don't have one yet:
 
 ```bash
-curl -fsSL https://github.com/Mpratyush54/SERVER-automation/releases/latest/download/install.sh | bash
+curl -fsSL https://get.cairnpaas.dev | bash
 sudo platformctl provision
 ```
 
@@ -115,3 +115,9 @@ Bug reports and ideas are welcome in [Issues](https://github.com/Mpratyush54/SER
 Please report security problems privately through
 [GitHub security advisories](https://github.com/Mpratyush54/SERVER-automation/security/advisories/new),
 not in public issues. Commits follow Conventional Commits (`feat:`, `fix:`, `docs:`).
+
+## License
+
+Cairn is source-available under the [Cairn Source-Available License](LICENSE). Running it
+needs a license key from <https://cairnpaas.dev>; a free Personal key is available at
+<https://cairnpaas.dev/signup>.

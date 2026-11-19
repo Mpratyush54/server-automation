@@ -63,6 +63,9 @@ func (p Paths) K3sScript() string { return filepath.Join(p.Staging, "k3s-install
 // HelmBinary is where the offline bundle (not the stack) stages Helm.
 func (p Paths) HelmBinary() string { return filepath.Join(p.Staging, "helm") }
 
+// LicenseClient is where the offline bundle stages the license client.
+func (p Paths) LicenseClient() string { return filepath.Join(p.Staging, "cairn-license") }
+
 // Tag returns the tag for a PLATFORM_STACK choice: "" or a channel name
 // ("stable", "edge") → "<channel>-<arch>"; a version ("2026.11.08-3") →
 // "<version>-<arch>". It returns "" for "off".

@@ -1,0 +1,10 @@
+{
+  "title": "Logs, metrics and traces",
+  "cues": [
+    { "from": "start", "to": "logs", "text": "Requests, errors and latency for this project." },
+    { "from": "logs", "to": "logs-found", "text": "Search the app's logs." },
+    { "from": "logs-found", "to": "trace", "text": "Each request's log lines link to its trace." },
+    { "from": "trace", "to": "trace-logs", "text": "Every step of the request, and how long it took." },
+    { "from": "trace-logs", "text": "Back to all the log lines of that one request." }
+  ]
+}

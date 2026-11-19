@@ -7,6 +7,7 @@ on:
       - "platform/portal/**"
       - "docs/**"
       - "scripts/tests/public-portal-routing.test.mjs"
+      - "scripts/tests/public-site-links.test.mjs"
       - ".github/workflows/deploy-public-portal.yml"
   workflow_dispatch:
 
@@ -47,7 +48,7 @@ jobs:
             echo "::warning::platform/portal has no package-lock.json; using npm install"
             npm install --prefix platform/portal --no-audit --no-fund
           fi
-          node --test scripts/tests/public-portal-routing.test.mjs
+          node --test scripts/tests/public-portal-routing.test.mjs scripts/tests/public-site-links.test.mjs
 
       - name: Check docs navigation and landing page
         working-directory: platform/portal

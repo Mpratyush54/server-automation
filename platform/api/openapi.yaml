@@ -605,6 +605,34 @@ paths:
           description: Per-token rate limit exceeded (Retry-After)
         '503':
           description: Signing key temporarily unavailable
+  /license:
+    get:
+      tags: [Health]
+      summary: License status of this install (admin)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Cached status; `available` is false when none has been recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available: { type: boolean }
+                  status: { type: string, nullable: true }
+                  state: { type: string, enum: [valid, attention, invalid, unknown] }
+                  plan: { type: string, nullable: true, example: personal }
+                  org: { type: string, nullable: true }
+                  maxNodes: { type: integer, nullable: true }
+                  maxInstalls: { type: integer, nullable: true }
+                  expiresAt: { type: string, format: date-time, nullable: true }
+                  updatedAt: { type: string, format: date-time, nullable: true }
+                  enforce: { type: boolean }
+        '401':
+          description: Not signed in
+        '403':
+          description: Not an admin
   /openapi.json:
     get:
       tags: [Health]

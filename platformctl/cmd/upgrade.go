@@ -13,6 +13,7 @@ import (
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/backup"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/diagnostics"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/helm"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
@@ -23,6 +24,9 @@ import (
 
 var upgradeTo, applyFrom string
 var upgradeYes, upgradeDry, upgradeHistory, upgradePatch, upgradeRestore, upgradeUnreleased bool
+
+// upgradeDelegated is set when the run is handed to the target release binary.
+var upgradeDelegated bool
 
 const upgradeState = "/var/lib/platformctl/state/upgrade-history.json"
 
@@ -41,7 +45,13 @@ var upgradeRun = func(name string, args ...string) (string, error) {
 func uk(args ...string) (string, error) { return upgradeRun("kubectl", args...) }
 
 func init() {
-	c := &cobra.Command{Use: "upgrade", Short: "Upgrade a release with backup, health gates and rollback", Args: cobra.NoArgs, RunE: runUpgrade}
+	c := &cobra.Command{Use: "upgrade", Short: "Upgrade a release with backup, health gates and rollback", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		err := runUpgrade(cmd, args)
+		if !upgradeDelegated && !upgradeHistory && !upgradeDry {
+			sendDiagnostics(diagnostics.KindUpgrade, err)
+		}
+		return err
+	}}
 	c.Flags().StringVar(&upgradeTo, "to", "", "target release (default latest stable)")
 	c.Flags().StringVar(&applyFrom, "apply-from", "", "internal target-binary handoff")
 	_ = c.Flags().MarkHidden("apply-from")
@@ -50,6 +60,7 @@ func init() {
 	c.Flags().BoolVar(&upgradePatch, "patch-only", false, "allow stable patches in the installed minor only")
 	c.Flags().BoolVar(&upgradeHistory, "history", false, "print local upgrade history")
 	c.Flags().BoolVar(&upgradeUnreleased, "allow-unreleased", false, "accept a --to release that is not published (testing a local build whose binary and images are on this host)")
+	c.Flags().StringVar(&licenseKeyFile, "license-key-file", "", "file holding the Cairn license key (or set CAIRN_LICENSE_KEY)")
 	c.Flags().BoolVar(&upgradeRestore, "restore-failed-migration", false, "explicitly permit restoring configured PostgreSQL backup after an irreversible migration fails; age identity on stdin")
 	rootCmd.AddCommand(c)
 }
@@ -123,6 +134,10 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		if upgradeUnreleased {
 			args = append(args, "--allow-unreleased")
 		}
+		if licenseKeyFile != "" {
+			args = append(args, "--license-key-file", licenseKeyFile)
+		}
+		upgradeDelegated = true
 		child := exec.Command(binary, args...)
 		child.Stdin = cmd.InOrStdin()
 		child.Stdout = cmd.OutOrStdout()
@@ -139,6 +154,11 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	defer unlock()
 	if e = upgradePreflight(); e != nil {
 		return fmt.Errorf("preflight refused upgrade: %w", e)
+	}
+	if !upgradeDry {
+		if e = licenseGate(cmd.OutOrStdout()); e != nil {
+			return e
+		}
 	}
 	if e = components.SyncCredentialsFromCluster(cfg); e != nil {
 		return fmt.Errorf("read current cluster credentials before taking database backup: %w", e)

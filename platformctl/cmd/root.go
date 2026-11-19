@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/components"
+	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/diagnostics"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/state"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/versions"
@@ -34,7 +35,9 @@ var provisionCmd = &cobra.Command{
 	Use:   "provision",
 	Short: "Full server bootstrap from pre-built images",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runProvision()
+		err := runProvision()
+		sendDiagnostics(diagnostics.KindProvision, err)
+		return err
 	},
 }
 
@@ -60,6 +63,9 @@ var statusCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		color.Cyan("\n  ■ Platform Health Check\n")
 		printHardeningStatus()
+		if joinedRole() == "" {
+			printLicenseStatus(os.Stdout)
+		}
 		if joinedRole() == "agent" {
 			return agentStatus(os.Stdout)
 		}
@@ -125,7 +131,9 @@ deployments. After an upgrade, run it on every server: k3s applies each
 server's own kube-vip manifest when it starts there. On a node that joined
 the cluster it only refreshes the local files.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runUpdate(cmd.OutOrStdout())
+		err := runUpdate(cmd.OutOrStdout())
+		sendDiagnostics(diagnostics.KindUpdate, err)
+		return err
 	},
 }
 
@@ -220,6 +228,11 @@ var chartsCmd = &cobra.Command{
 				"chartMirror":  versions.ChartMirror,
 				"k3sMirror":    versions.K3sMirror,
 				"staticImages": versions.StaticImages(),
+				"licenseClient": map[string]any{
+					"version": versions.LicenseClientVersion,
+					"baseUrl": versions.LicenseClientBaseURL,
+					"sha256":  versions.LicenseClientSHA256,
+				},
 			})
 		}
 		fmt.Printf("k3s  %s\nhelm %s\n", versions.K3sVersion, versions.HelmVersion)

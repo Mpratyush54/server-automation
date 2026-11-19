@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const buildRegistrySettingsPath = "/etc/rancher/k3s/cairn-build-registry.json"
+var buildRegistrySettingsPath = "/etc/rancher/k3s/cairn-build-registry.json"
 
 // BuildRegistrySettings routes the build registry's public image name to the
 // registry's in-cluster Service. Nothing is published through ingress: the
@@ -24,11 +24,7 @@ type BuildRegistrySettings struct {
 // BuildRegistriesYAML keeps credentials in Kubernetes imagePullSecrets (per
 // project, pull-only). The containerd mirror only supplies routing.
 func BuildRegistriesYAML(githubToken string, settings BuildRegistrySettings) string {
-	content := RegistriesYAML(githubToken)
-	if settings.Host == "" || settings.Endpoint == "" {
-		return content
-	}
-	return content + fmt.Sprintf("mirrors:\n  %q:\n    endpoint: [%q]\n", settings.Host, settings.Endpoint)
+	return renderRegistries(githubToken, settings, nil)
 }
 
 // ValidBuildRegistryEndpoint accepts only http://<cluster IP>:5000.

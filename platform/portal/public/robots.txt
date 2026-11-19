@@ -2,6 +2,7 @@
 User-agent: *
 Allow: /
 Allow: /about
+Allow: /pricing
 Allow: /docs
 Allow: /docs/
 Allow: /llms.txt
@@ -18,5 +19,7 @@ Disallow: /login
 Disallow: /projects
 Disallow: /settings
 Disallow: /oauth/
+Disallow: /account
+Disallow: /verify-email
 
 Sitemap: https://cairnpaas.dev/sitemap.xml

@@ -2,6 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://cairnpaas.dev/</loc></url>
   <url><loc>https://cairnpaas.dev/about</loc></url>
+  <url><loc>https://cairnpaas.dev/pricing</loc></url>
   <url><loc>https://cairnpaas.dev/docs/api-reference/configuration/environment-variables</loc></url>
   <url><loc>https://cairnpaas.dev/docs/api-reference/configuration/permissions</loc></url>
   <url><loc>https://cairnpaas.dev/docs/api-reference/configuration/secrets-encryption</loc></url>

@@ -1,0 +1,151 @@
+/*
+ * Feature clip player. The frame (border, radius, 16:10 shape) belongs to the
+ * landing page; this fills it. The overlays sit on the recording itself, so
+ * they use a fixed dark scrim and light text in both themes.
+ */
+:host { display: block; width: 100%; height: 100%; }
+
+:host video { display: block; width: 100%; height: 100%; object-fit: cover; background: rgb(var(--canvas)); }
+
+.cp { position: relative; width: 100%; height: 100%; outline: none; color: #fff; }
+.cp:focus-visible { box-shadow: inset 0 0 0 2px rgb(var(--focus)); }
+.cp video { cursor: pointer; }
+.cp-fullscreen { background: #000; }
+.cp-fullscreen video { object-fit: contain; background: #000; }
+
+/* Captions: a small lower-third, only once the clip plays. */
+.cp-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.9rem;
+  margin: 0;
+  display: flex;
+  justify-content: center;
+  padding: 0 1rem;
+  pointer-events: none;
+  transition: bottom 160ms ease;
+}
+.cp-caption span {
+  max-width: min(36rem, 100%);
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  background: rgb(16 18 20 / 0.8);
+  font-size: clamp(0.75rem, 1.45vw, 0.9rem);
+  line-height: 1.4;
+  text-align: center;
+  white-space: pre-line;
+}
+.cp-fullscreen .cp-caption { bottom: 2rem; }
+.cp-fullscreen .cp-caption span { font-size: clamp(0.9rem, 1.8vw, 1.35rem); }
+
+/* Control bar: on hover or focus, while paused, and always on touch screens. */
+.cp-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 2rem 0.5rem 0.4rem;
+  background: linear-gradient(to bottom, transparent, rgb(10 11 13 / 0.55) 45%, rgb(10 11 13 / 0.8));
+  opacity: 0;
+  transform: translateY(0.35rem);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.cp:hover .cp-bar, .cp:focus-within .cp-bar, .cp-paused .cp-bar, .cp-seeking .cp-bar { opacity: 1; transform: none; }
+.cp:hover .cp-caption, .cp:focus-within .cp-caption, .cp-paused .cp-caption, .cp-seeking .cp-caption { bottom: 3.1rem; }
+@media (hover: none) {
+  .cp-bar { opacity: 1; transform: none; }
+  .cp-caption { bottom: 3.1rem; }
+}
+
+.cp-btn {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+.cp-btn:hover { background: rgb(255 255 255 / 0.14); }
+.cp-btn:focus-visible, .cp-seek:focus-visible, .cp-play:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: 1px; }
+.cp-btn svg { width: 18px; height: 18px; fill: currentColor; }
+.cp-btn svg.cp-stroke { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.cp-cc[aria-pressed='false'] { color: rgb(255 255 255 / 0.55); }
+.cp-cc[aria-pressed='true']::after { content: ''; position: absolute; width: 0.9rem; height: 2px; margin-top: 1.45rem; border-radius: 1px; background: rgb(var(--accent)); }
+.cp-cc { position: relative; }
+@media (hover: none) { .cp-btn { width: 2.5rem; height: 2.5rem; } }
+
+/* Seek: a thin line in a 24px hit area. */
+.cp-seek { position: relative; flex: 1; min-width: 3rem; height: 1.5rem; margin: 0 0.4rem; cursor: pointer; touch-action: none; border-radius: 4px; }
+.cp-track { position: absolute; left: 0; right: 0; top: 50%; height: 3px; margin-top: -1.5px; border-radius: 2px; background: rgb(255 255 255 / 0.3); overflow: hidden; transition: height 120ms ease, margin-top 120ms ease; }
+.cp-fill { position: absolute; inset: 0; background: rgb(var(--accent)); transform-origin: left center; transform: scaleX(0); transition: transform 250ms linear; }
+.cp-thumb { position: absolute; top: 50%; width: 0.75rem; height: 0.75rem; margin: -0.375rem 0 0 -0.375rem; border-radius: 50%; background: rgb(var(--accent)); opacity: 0; transition: opacity 120ms ease; }
+.cp-seek:hover .cp-track, .cp-seek:focus-visible .cp-track, .cp-seeking .cp-track { height: 5px; margin-top: -2.5px; }
+.cp-seek:hover .cp-thumb, .cp-seek:focus-visible .cp-thumb, .cp-seeking .cp-thumb { opacity: 1; }
+.cp-seeking .cp-fill { transition: none; }
+@media (hover: none) { .cp-thumb { opacity: 1; } }
+
+.cp-time { flex: none; padding: 0 0.35rem; font-size: 0.75rem; font-variant-numeric: tabular-nums; color: rgb(255 255 255 / 0.85); }
+@media (max-width: 420px) { .cp-time { display: none; } }
+
+/* Play button over the poster, when the clip does not play by itself. */
+.cp-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin: -1.75rem 0 0 -1.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(var(--accent));
+  color: rgb(var(--accent-ink));
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+.cp-play:hover { transform: scale(1.05); }
+.cp-play svg { width: 22px; height: 22px; margin-left: 3px; fill: currentColor; }
+
+/* Loading: a small ring, shown after a short delay so quick starts do not flash. */
+.cp-loading {
+  position: absolute;
+  right: 0.75rem;
+  top: 0.75rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  border: 2px solid rgb(255 255 255 / 0.35);
+  border-top-color: rgb(var(--accent));
+  opacity: 0;
+  animation: cp-spin 0.9s linear infinite, cp-appear 160ms ease 400ms forwards;
+}
+@keyframes cp-spin { to { transform: rotate(360deg); } }
+@keyframes cp-appear { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .cp-loading { animation: cp-appear 160ms ease 400ms forwards; }
+  .cp-bar, .cp-caption, .cp-fill, .cp-play { transition: none; }
+}
+
+.cp-error {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  background: rgb(var(--surface));
+  color: rgb(var(--down));
+  font-size: 0.85rem;
+}
