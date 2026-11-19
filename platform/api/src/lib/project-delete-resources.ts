@@ -119,6 +119,8 @@ export async function listProjectDatabases(project: Pick<Project, 'id' | 'databa
 
 // ── Postgres ─────────────────────────────────────────────────────────────────
 
+export const PG_CONNECT_TIMEOUT_MS = 10_000;
+
 function pgAdmin(): Pool {
   return new Pool({
     host: process.env.POSTGRES_HOST || 'localhost',
@@ -127,6 +129,9 @@ function pgAdmin(): Pool {
     password: process.env.POSTGRES_PASSWORD || 'postgres',
     database: 'postgres',
     max: 1,
+    // An unreachable server must fail the step in seconds, not after the OS TCP timeout
+    // (about two minutes per call), so an aborted delete gives the project back quickly.
+    connectionTimeoutMillis: PG_CONNECT_TIMEOUT_MS,
   });
 }
 
@@ -242,14 +247,47 @@ export async function unlockDatabase(db: ProjectDatabase): Promise<void> {
 
 // ── backup (the same target and db_backups records as manual backups) ───────
 
-async function backupTarget() {
+/**
+ * Where a pre-delete backup goes. These backups must survive the cluster, so:
+ *  1. a storage provider an administrator chose as default (not the bundled MinIO);
+ *  2. else the off-site target from `platformctl backup target`;
+ *  3. else the bundled MinIO / built-in default (no off-site target configured).
+ * `key` maps the object name to where it is stored and `fileId` to what db_backups records.
+ */
+export async function backupTarget(): Promise<{
+  adapter: import('./storage-service').StorageAdapter;
+  providerType: string;
+  providerId: string | null;
+  key: (name: string) => string;
+  fileId: (stored: string) => string;
+  offsite: boolean;
+}> {
   const ds = await getDb();
   const provider = await ds.getRepository(StorageProvider).findOne({ where: { isDefault: true } });
   const storage = await import('./storage-service');
-  const adapter = provider
-    ? storage.createAdapter(provider.providerType, provider.credentials || {}, provider.bucketName || undefined, provider.endpointUrl || undefined)
-    : storage.createDefaultBackupAdapter();
-  return { adapter, providerType: (provider?.providerType as string) || storage.defaultBackupProviderType(), providerId: provider?.id || null };
+  const { BUNDLED_STORAGE_ID } = await import('./storage-providers');
+  const same = (s: string) => s;
+  if (provider && provider.id !== BUNDLED_STORAGE_ID) {
+    return {
+      adapter: storage.createAdapter(provider.providerType, provider.credentials || {}, provider.bucketName || undefined, provider.endpointUrl || undefined),
+      providerType: provider.providerType, providerId: provider.id, key: same, fileId: same, offsite: false,
+    };
+  }
+  const offsite = await import('./offsite-backup');
+  const target = await offsite.readOffsiteTarget();
+  if (target) {
+    return {
+      adapter: offsite.offsiteAdapter(target), providerType: 's3', providerId: null,
+      key: (name) => offsite.offsiteKey(target, name), fileId: (stored) => `${offsite.OFFSITE_FILE_PREFIX}${stored}`, offsite: true,
+    };
+  }
+  return {
+    adapter: provider
+      ? storage.createAdapter(provider.providerType, provider.credentials || {}, provider.bucketName || undefined, provider.endpointUrl || undefined)
+      : storage.createDefaultBackupAdapter(),
+    providerType: (provider?.providerType as string) || storage.defaultBackupProviderType(),
+    providerId: provider?.id || null, key: same, fileId: same, offsite: false,
+  };
 }
 
 /** Write a MongoDB database as gzipped extended-JSON lines: one {c: collection, d: document} per line. */
@@ -326,9 +364,10 @@ export async function backupDatabase(projectId: string, db: ProjectDatabase, ope
     const { computeFileChecksum } = await import('./database-service');
     const checksum = await computeFileChecksum(tmp);
     const size = fs.statSync(tmp).size;
-    const uploaded = await target.adapter.upload(tmp, `backups/${projectId}/project-delete-${operationId}/${row.id}.${ext}`);
-    await repo.update(row.id, { status: BackupStatus.COMPLETED, fileId: uploaded.fileId, fileSizeBytes: size, checksum });
-    return { ...base, backupId: row.id, status: items === 0 ? 'empty' : 'completed', fileId: uploaded.fileId, providerType: target.providerType, sizeBytes: size };
+    const uploaded = await target.adapter.upload(tmp, target.key(`backups/${projectId}/project-delete-${operationId}/${row.id}.${ext}`));
+    const fileId = target.fileId(uploaded.fileId);
+    await repo.update(row.id, { status: BackupStatus.COMPLETED, fileId, fileSizeBytes: size, checksum });
+    return { ...base, backupId: row.id, status: items === 0 ? 'empty' : 'completed', fileId, providerType: target.offsite ? 'offsite' : target.providerType, sizeBytes: size };
   } catch (err: any) {
     await repo.update(row.id, { status: BackupStatus.FAILED, errorMessage: String(err?.message || err).slice(0, 2000) }).catch(() => {});
     throw err;

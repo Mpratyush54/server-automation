@@ -201,7 +201,15 @@ router.post('/projects/:projectId/databases/backups/:backupId/restore', expressA
         if (!backup.fileId) throw new Error('Backup has no stored dump');
         const { createAdapter, createDefaultBackupAdapter, defaultBackupProviderType } = await import('../lib/storage-service');
         let adapter;
-        if (backup.providerId) {
+        let fileId = backup.fileId;
+        const offsite = await import('../lib/offsite-backup');
+        if (fileId.startsWith(offsite.OFFSITE_FILE_PREFIX)) {
+          // Taken before a project was deleted, stored on the off-site target.
+          const target = await offsite.readOffsiteTarget();
+          if (!target) throw new Error('This backup is on the off-site backup target, which is no longer configured');
+          adapter = offsite.offsiteAdapter(target);
+          fileId = fileId.slice(offsite.OFFSITE_FILE_PREFIX.length);
+        } else if (backup.providerId) {
           const provider = await restoreDs.getRepository(StorageProvider).findOne({ where: { id: backup.providerId } });
           if (!provider) throw new Error('Original backup storage provider is unavailable');
           adapter = createAdapter(provider.providerType, provider.credentials || {}, provider.bucketName || undefined, provider.endpointUrl || undefined);
@@ -213,7 +221,7 @@ router.post('/projects/:projectId/databases/backups/:backupId/restore', expressA
         } else {
           throw new Error('Backup storage provider identity is missing; administrator migration required');
         }
-        await adapter.download(backup.fileId, tmpFile);
+        await adapter.download(fileId, tmpFile);
         const { restoreDatabase, computeFileChecksum } = await import('../lib/database-service');
         if (!backup.checksum || await computeFileChecksum(tmpFile) !== backup.checksum) throw new Error('Backup checksum mismatch');
         const result = await restoreDatabase(backup.dbName, tmpFile);

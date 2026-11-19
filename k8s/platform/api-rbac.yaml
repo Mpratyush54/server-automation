@@ -240,6 +240,12 @@ rules:
   resources: ["secrets"]
   resourceNames: ["platform-env","platform-rotate-pending"]
   verbs: ["get", "update"]
+# The off-site backup target (platformctl backup target): read when a project
+# is deleted, so its database backups are stored off the cluster.
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["platform-backup-target"]
+  verbs: ["get"]
 # The API's own configuration Secrets (issue #20): read at boot, updated on
 # secret rotation and OIDC signing-key rotation (KubeSecretStore does
 # read + replace with resourceVersion, so no patch). Creation (first boot

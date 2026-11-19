@@ -161,6 +161,7 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 	expect("Role", "platform-api", "platform", []rbacRule{
 		{`[""]`, `["configmaps"]`, `["platform-backup-backup","platform-backup-restore-test","platform-backup-target"]`, `["get"]`}, // #21, #186
 		{`[""]`, `["secrets"]`, `["platform-env","platform-rotate-pending"]`, `["get", "update"]`},
+		{`[""]`, `["secrets"]`, `["platform-backup-target"]`, `["get"]`}, // off-site target for pre-delete backups
 		{`[""]`, `["secrets"]`, `["platform-credentials","platform-oidc-signing-key"]`, `["get", "update"]`}, // #20
 		{`[""]`, `["secrets"]`, `["platform-rotate-pending"]`, `["delete"]`},
 		{`[""]`, `["secrets"]`, `["registry-token-signer"]`, `["get"]`}, // #55
