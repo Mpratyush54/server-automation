@@ -9,3 +9,5 @@ import './secret-rotate';
 import './storage-migrate-op';
 
 import './build-op';
+
+import './project-delete';

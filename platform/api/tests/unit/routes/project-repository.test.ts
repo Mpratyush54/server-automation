@@ -19,6 +19,7 @@ const mockUser = { id: 'u', role: 'devops' };
 jest.mock('../../../src/middleware/auth', () => ({
   expressAuthenticate: (req: any, _res: any, next: any) => { req.user = { ...mockUser }; next(); },
   expressRequireRole: () => (_req: any, _res: any, next: any) => next(),
+  requireRecentMfa: () => (_req: any, _res: any, next: any) => next(),
   logAudit: jest.fn(async () => undefined),
 }));
 jest.mock('../../../src/lib/project-access', () => ({
@@ -42,6 +43,7 @@ beforeEach(() => {
 it('refuses to link a repository that another active project already links', async () => {
   const created = await request(app).post('/projects').send({ name: 'b', stack: 'nodejs', repositoryUrl: 'https://GitHub.com/Acme/App/' });
   expect(created.status).toBe(409); expect(created.body.error).toBe('This repository is already linked to another project');
+  expect(created.body.code).toBe('repository_in_use');
   mockProjects.push({ id: 'b', name: 'b', isActive: true, repositoryUrl: null, repositoryKey: null, environments: [] });
   const updated = await request(app).put('/projects/b').send({ repositoryUrl: 'git@github.com:acme/app.git' });
   expect(updated.status).toBe(409);

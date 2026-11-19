@@ -43,7 +43,9 @@ func InstallKEDA(c *config.Config) error {
 		return nil
 	}
 	for _, http := range []bool{false, true} {
-		if err := shell.Run("helm", kedaInstallArgs(http)...); err != nil {
+		args := kedaInstallArgs(http)
+		clearStuckHelmRelease(args[2], "keda") // args: upgrade --install <release> ...
+		if err := shell.Run("helm", args...); err != nil {
 			return fmt.Errorf("install autoscaling: %w", err)
 		}
 	}

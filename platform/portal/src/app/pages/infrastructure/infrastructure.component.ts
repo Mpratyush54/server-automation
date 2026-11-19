@@ -14,6 +14,15 @@ export interface NodeMetricRow {
   memoryCapacityBytes: number;
 }
 
+/** One cluster read: answered, API says the cluster is unreachable, or no answer from the API. */
+export type PollResult = 'ok' | 'down' | 'noanswer';
+
+/** Two reads of one poll: ok if either answered; down only if the API reported it. */
+export function combinePolls(a: PollResult, b: PollResult): PollResult {
+  if (a === 'ok' || b === 'ok') return 'ok';
+  return a === 'down' || b === 'down' ? 'down' : 'noanswer';
+}
+
 @Component({
   selector: 'app-infrastructure',
   standalone: true,
@@ -24,18 +33,33 @@ export interface NodeMetricRow {
 export class InfrastructureComponent implements OnInit, OnDestroy {
   activeTab = 'nodes'; // nodes, namespaces, pods, bootstrap, metrics
 
-  // Real cluster state
+  // Real cluster state. A single failed poll (for example while one server of an HA cluster
+  // dies and the API's request lands on it) does not blank the page: the last data stays,
+  // marked "Reconnecting", until CLUSTER_FAILURES_BEFORE_DOWN polls in a row fail.
+  static readonly CLUSTER_FAILURES_BEFORE_DOWN = 3;
   k8sConnected = false;
+  // False until the first poll has been recorded: the page then says "Checking"
+  // instead of flashing "Can't reach the cluster" on every visit.
+  clusterChecked = false;
+  clusterReconnecting = false;
+  // The last poll got no answer from Cairn's API itself (timeout, 502/503): the
+  // cluster may be fine, e.g. while the API's database fails over.
+  apiNoAnswer = false;
+  lastClusterOkAt: Date | null = null;
+  private clusterFailures = 0;
+  private podsLoadedFor: string | null = null;
   nodes: any[] = [];
   namespaces: any[] = [];
   pods: any[] = [];
   bootstrapHistory: any[] = [];
 
   // System Health state
+  // Unknown until the first status answer (not "disconnected": the page loads
+  // before the API has answered, and a healthy cluster must not look down).
   systemStatus = {
-    postgres: 'disconnected',
-    mongodb: 'disconnected',
-    k8s: 'disconnected',
+    postgres: 'unknown',
+    mongodb: 'unknown',
+    k8s: 'unknown',
     services: {
       loki: 'offline',
       prometheus: 'offline',
@@ -96,54 +120,102 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
   }
 
   async refreshAllData() {
-    await Promise.allSettled([
+    const [, nodesOk, , podsOk] = await Promise.all([
       this.loadSystemStatus(),
       this.loadNodes(),
       this.loadNamespaces(),
-      this.loadPods(),
+      this.loadPods(false),
       this.loadBootstrapHistory()
     ]);
+    // One poll = one observation: the cluster answered if either cluster read succeeded;
+    // it is down only if the API answered that it is.
+    this.noteCluster(combinePolls(nodesOk, podsOk));
+  }
+
+  /** Records one cluster poll result; keeps the last data through short outages. */
+  noteCluster(result: boolean | PollResult) {
+    const r: PollResult = result === true ? 'ok' : result === false ? 'down' : result;
+    this.clusterChecked = true;
+    if (r === 'ok') {
+      this.clusterFailures = 0;
+      this.k8sConnected = true;
+      this.clusterReconnecting = false;
+      this.apiNoAnswer = false;
+      this.lastClusterOkAt = new Date();
+      return;
+    }
+    this.apiNoAnswer = r === 'noanswer';
+    // No answer from the API says nothing about the cluster: keep the last data
+    // as "Reconnecting" instead of reporting a cluster outage (a database failover
+    // made both API pods unready for ~30 s on a 3-server cluster).
+    if (r === 'noanswer' && this.lastClusterOkAt) {
+      this.clusterReconnecting = true;
+      return;
+    }
+    this.clusterFailures++;
+    if (this.lastClusterOkAt && this.clusterFailures < InfrastructureComponent.CLUSTER_FAILURES_BEFORE_DOWN) {
+      this.clusterReconnecting = true;
+      return;
+    }
+    this.k8sConnected = false;
+    this.clusterReconnecting = false;
   }
 
   async loadSystemStatus() {
     try {
       this.systemStatus = await firstValueFrom(this.api.getBootstrapStatus());
     } catch {
-      this.systemStatus.postgres = 'disconnected';
+      // No answer from Cairn's API says nothing about its databases: with the
+      // API scaled away the page showed PostgreSQL "Disconnected" next to a
+      // stale MongoDB "Running". Both are unknown until the API answers.
+      this.systemStatus.postgres = 'unknown';
+      this.systemStatus.mongodb = 'unknown';
       this.systemStatus.k8s = 'disconnected';
     }
   }
 
-  async loadNodes() {
+  /** Returns whether the cluster answered; keeps the last servers list when it did not. */
+  async loadNodes(): Promise<PollResult> {
     try {
       const res = await firstValueFrom(this.api.getNodes());
-      this.nodes = res.k8sConnected ? res.nodes || [] : [];
-      this.k8sConnected = res.k8sConnected;
+      if (!res.k8sConnected) return 'down';
+      this.nodes = res.nodes || [];
+      return 'ok';
     } catch {
-      this.nodes = [];
-      this.k8sConnected = false;
+      return 'noanswer';
     }
   }
 
   async loadNamespaces() {
     try {
       const res = await firstValueFrom(this.api.getNamespaces());
+      // An empty answer from an unreachable cluster must not wipe the list.
+      if (res.k8sConnected === false && this.namespaces.length) return;
       this.namespaces = res.namespaces || [];
     } catch {
-      this.namespaces = [];
+      // keep the last list
     }
   }
 
-  async loadPods() {
+  /** Returns whether the cluster answered. `report` records the result when called on its own. */
+  async loadPods(report = true): Promise<PollResult> {
+    const requested = this.selectedNamespace;
+    let result: PollResult = 'down';
     try {
-      const ns = this.selectedNamespace === 'all' ? undefined : this.selectedNamespace;
+      const ns = requested === 'all' ? undefined : requested;
       const res = await firstValueFrom(this.api.getPods(ns));
-      this.pods = res.k8sConnected ? res.pods || [] : [];
-      this.k8sConnected = res.k8sConnected;
+      if (res.k8sConnected) {
+        this.pods = res.pods || [];
+        this.podsLoadedFor = requested;
+        result = 'ok';
+      }
     } catch {
-      this.pods = [];
-      this.k8sConnected = false;
+      result = 'noanswer';
     }
+    // Last data is only kept for the same filter; never show another namespace's pods.
+    if (result !== 'ok' && this.podsLoadedFor !== requested) this.pods = [];
+    if (report) this.noteCluster(result);
+    return result;
   }
 
   async loadBootstrapHistory() {
@@ -158,7 +230,8 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
     this.metricsLoading = true;
     try {
       const res = await firstValueFrom(this.api.getNodeMetrics());
-      this.k8sConnected = !!res.k8sConnected;
+      // The main poll owns outage detection; a metrics answer only confirms reachability.
+      if (res.k8sConnected) this.noteCluster(true);
       this.metricsAvailable = !!res.metricsAvailable;
       this.nodeMetrics = Array.isArray(res.nodes) ? res.nodes : [];
     } catch {
@@ -180,6 +253,29 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
     if (this.metricsInterval) {
       clearInterval(this.metricsInterval);
       this.metricsInterval = undefined;
+    }
+  }
+
+  /**
+   * Dot colour for a dependency status from GET /bootstrap/status ("running", "degraded",
+   * "offline", "unknown"; older APIs said "connected"/"disconnected").
+   */
+  serviceStatusClass(status: string | null | undefined): string {
+    switch ((status || '').toLowerCase()) {
+      case 'running':
+      case 'connected':
+      case 'healthy':
+        return 'status-ok';
+      case 'degraded':
+      case 'pending':
+        return 'status-warn';
+      case 'offline':
+      case 'disconnected':
+      case 'down':
+      case 'error':
+        return 'status-down';
+      default:
+        return '';
     }
   }
 

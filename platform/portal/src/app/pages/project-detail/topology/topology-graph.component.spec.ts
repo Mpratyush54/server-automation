@@ -71,6 +71,15 @@ describe('TopologyGraphComponent', () => {
     fixture.detectChanges();
   }
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  // The next poll, however long a loaded CI browser takes to fire the timer (up to 2 s).
+  async function nextPoll() {
+    for (let i = 0; i < 40; i++) {
+      const pending = http.match(URL);
+      if (pending.length) return pending[0];
+      await wait(50);
+    }
+    return http.expectOne(URL); // fails with the usual message
+  }
 
   const el = () => fixture.nativeElement as HTMLElement;
 
@@ -141,15 +150,17 @@ describe('TopologyGraphComponent', () => {
   });
 
   it('polls only while the document is visible', async () => {
+    // The test owns visibility: in a long karma run the real tab can report
+    // "hidden", and the component (rightly) skips polls then.
+    const vis = spyOnProperty(document, 'visibilityState', 'get').and.returnValue('visible');
     comp.refreshMs = 200;
     init();
     http.expectOne(URL).flush(graph());
     await settle();
-    await wait(300);
-    http.expectOne(URL).flush(graph());
+    (await nextPoll()).flush(graph());
     await settle();
 
-    const vis = spyOnProperty(document, 'visibilityState', 'get').and.returnValue('hidden');
+    vis.and.returnValue('hidden');
     document.dispatchEvent(new Event('visibilitychange'));
     await wait(400);
     expect(http.match(URL)).toEqual([]);

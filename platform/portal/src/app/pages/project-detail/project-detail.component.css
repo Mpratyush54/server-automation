@@ -120,3 +120,5 @@
   background: rgb(var(--raised) / 0.35);
 }
 @media (max-width: 720px) { .cfg-row { grid-template-columns: 1fr; gap: 10px; } }
+
+.deleting-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; margin-bottom: 16px; font-size: 0.875rem; }

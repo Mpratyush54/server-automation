@@ -1,0 +1,54 @@
+name: SDK Demo Image
+
+# Builds the Node SDK demo (examples/sdk-apps/node-api) from the packed SDK, the
+# way users install it. The build fails on an unresolvable OpenTelemetry version
+# set (npm ERESOLVE) or when the SDK cannot see the app's OpenTelemetry packages,
+# which is how a demo that silently sent no traces shipped before.
+
+on:
+  pull_request:
+    branches: [ "master" ]
+    paths:
+      - "sdk-node/**"
+      - "examples/sdk-apps/node-api/**"
+      - ".github/workflows/sdk-demo-image.yml"
+  push:
+    branches: [ "master" ]
+    paths:
+      - "sdk-node/**"
+      - "examples/sdk-apps/node-api/**"
+      - ".github/workflows/sdk-demo-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the demo image
+        run: docker build -f examples/sdk-apps/node-api/Dockerfile -t sdk-node-api:ci .
+
+      - name: SDK telemetry modules load inside the image
+        run: |
+          docker run --rm --entrypoint node sdk-node-api:ci -e "
+            const sdk = require.resolve('@mpratyush54/sdk-node');
+            for (const m of ['@opentelemetry/sdk-node', '@opentelemetry/auto-instrumentations-node',
+                             '@opentelemetry/exporter-trace-otlp-http', '@opentelemetry/resources']) {
+              require(require.resolve(m, { paths: [sdk] }));
+            }
+            console.log('telemetry modules load from the SDK');
+          "
+
+      # The modules loading is not enough: the app must actually export. Runs the
+      # image against a stub Cairn API and HTTPS OTLP collector and requires a
+      # POST /v1/traces after one HTTP request.
+      - name: Traces reach an OTLP collector
+        run: examples/sdk-apps/node-api/ci/trace-check.sh sdk-node-api:ci

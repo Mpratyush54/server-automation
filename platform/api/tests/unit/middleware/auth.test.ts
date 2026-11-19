@@ -14,6 +14,8 @@ import {
   sdkTokenAuth,
   sdkOrUserAuthenticate,
   sdkProjectMatches,
+  requirePermission,
+  clearPermissionCache,
 } from '../../../src/middleware/auth';
 import { UserRole } from '../../../src/entities/User';
 
@@ -50,6 +52,7 @@ describe('Auth Middleware (real implementation)', () => {
     res = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
     };
     next = jest.fn();
     process.env.JWT_SECRET = JWT_SECRET;
@@ -165,6 +168,75 @@ describe('Auth Middleware (real implementation)', () => {
       expect(sdkProjectMatches(a, 'other')).toBe(false);
       expect(sdkProjectMatches(a, ['demo'])).toBe(false);
       expect(sdkProjectMatches({} as AuthenticatedRequest, PROJECT_ID)).toBe(false);
+    });
+  });
+
+  // A database outage must never look like a bad credential: the portal signs the user out on 401.
+  describe('infrastructure errors answer 503, not 401', () => {
+    const dbDown = () => getDb.mockRejectedValue(new Error('getaddrinfo EAI_AGAIN postgresql.databases'));
+
+    it('JWT path: valid token + database failure -> 503 auth_unavailable', async () => {
+      const token = jwt.sign({ id: 'user-1' }, JWT_SECRET, { expiresIn: '1h' });
+      req.headers = { authorization: `Bearer ${token}` };
+      dbDown();
+      await expressAuthenticate(req as Request, res as Response, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.set).toHaveBeenCalledWith('Retry-After', '5');
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'auth_unavailable' }));
+    });
+
+    it('JWT path: a user lookup that rejects (timeout) -> 503', async () => {
+      const token = jwt.sign({ id: 'user-1' }, JWT_SECRET, { expiresIn: '1h' });
+      req.headers = { authorization: `Bearer ${token}` };
+      getDb.mockResolvedValue({ getRepository: () => ({ findOne: jest.fn().mockRejectedValue(new Error('Query read timeout')) }) });
+      await expressAuthenticate(req as Request, res as Response, next);
+      expect(res.status).toHaveBeenCalledWith(503);
+    });
+
+    it('JWT path: a bad signature is still 401 even while the database is down', async () => {
+      const token = jwt.sign({ id: 'user-1' }, 'some-other-secret-0123456789abcdef', { expiresIn: '1h' });
+      req.headers = { authorization: `Bearer ${token}` };
+      dbDown();
+      await expressAuthenticate(req as Request, res as Response, next);
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it('an error thrown by the next handler is not turned into an auth failure', async () => {
+      const token = jwt.sign({ id: 'user-1' }, JWT_SECRET, { expiresIn: '1h' });
+      req.headers = { authorization: `Bearer ${token}` };
+      const boom = jest.fn(() => { throw new Error('handler bug'); });
+      await expect(expressAuthenticate(req as Request, res as Response, boom)).rejects.toThrow('handler bug');
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it('agent token path: database failure -> 503', async () => {
+      req.headers = { authorization: 'Bearer plat_agent_0123456789abcdefghijklmnop' };
+      dbDown();
+      await expressAuthenticate(req as Request, res as Response, next);
+      expect(res.status).toHaveBeenCalledWith(503);
+    });
+
+    it('SDK token path: database failure -> 503', async () => {
+      req.headers = { authorization: `Bearer ${SDK_TOKEN}` };
+      dbDown();
+      await sdkTokenAuth(req as Request, res as Response, next);
+      expect(res.status).toHaveBeenCalledWith(503);
+    });
+
+    it('requirePermission: custom-role lookup failure -> 503 and the reduced set is not cached', async () => {
+      clearPermissionCache();
+      (req as AuthenticatedRequest).user = { id: 'u-custom', role: UserRole.DEVELOPER, roleId: 'r1', name: 'x', email: 'x@x' } as any;
+      dbDown();
+      await requirePermission('projects:delete' as any)(req as Request, res as Response, next);
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(next).not.toHaveBeenCalled();
+
+      // Database back: the custom role's permission is honoured at once (no stale cache entry).
+      getDb.mockResolvedValue({ getRepository: () => ({ findOne: jest.fn().mockResolvedValue({ id: 'r1', permissions: ['projects:delete'] }) }) });
+      (res.status as jest.Mock).mockClear();
+      await requirePermission('projects:delete' as any)(req as Request, res as Response, next);
+      expect(next).toHaveBeenCalled();
     });
   });
 

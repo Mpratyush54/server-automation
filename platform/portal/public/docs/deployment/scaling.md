@@ -155,7 +155,7 @@ To get notified, create an alert in **Alerts** in the portal. See [Get alerts wh
 | PostgreSQL (single server) | chart default | chart default | | | 10Gi |
 | MongoDB (single server) | chart default | chart default | | | 10Gi |
 | Redis (single server) | chart default | chart default | | | 5Gi, plus one read replica |
-| MinIO | chart default | chart default | | | 50Gi (4 x 25Gi on `ha`) |
+| MinIO | chart default | chart default | | | 50Gi; on `ha` 4 drives sized from the disk (14Gi each on 80 GB servers, 8-50Gi) |
 
 Prometheus keeps metrics for 30 days. On the `ha` profile the databases have their own sizes; see [Run Cairn on several servers](../operations/ha.md#datastores). The portal runs 1 copy, 2 on `ha`.
 

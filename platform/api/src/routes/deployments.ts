@@ -73,6 +73,7 @@ router.post('/deploy', expressAuthenticate, expressRequireRole([UserRole.DEVOPS,
     // Verify project and environment
     const project = await ds.getRepository(Project).findOne({ where: { id: body.projectId } });
     if (!project) return res.status(404).json({ error: 'Project not found' });
+    if (project.isActive === false || project.deletedAt) return res.status(409).json({ error: 'This project is deleted or being deleted', code: 'project_deleting' });
 
     let env = body.environmentId
       ? await ds.getRepository(Environment).findOne({ where: { id: body.environmentId, projectId: project.id } })

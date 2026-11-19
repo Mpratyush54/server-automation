@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,6 +42,10 @@ var (
 		out, _ := shell.Output("journalctl", "_PID="+pid, "-o", "cat", "--no-pager")
 		return out
 	}
+	// importCached reports whether k3s's conditional-import cache
+	// (agent/images/.cache.json, see k3s.EnableImageImportCache) lists the
+	// archive unchanged: k3s then skips it silently, with no "Imported" line.
+	importCached        = archiveInImportCache
 	bundleImportTimeout = 20 * time.Minute
 	bundleImportPoll    = 10 * time.Second
 	bundleImportNow     = time.Now
@@ -51,11 +56,31 @@ var (
 func pendingImports(archives []string, log string) []string {
 	var pending []string
 	for _, a := range archives {
-		if !strings.Contains(log, "images from "+a+" in ") {
+		if !strings.Contains(log, "images from "+a+" in ") && !importCached(a) {
 			pending = append(pending, filepath.Base(a))
 		}
 	}
 	return pending
+}
+
+// archiveInImportCache reads k3s's import cache: an entry with the archive's
+// size and an mtime not older than the file's means k3s imported this file.
+func archiveInImportCache(archive string) bool {
+	b, err := os.ReadFile(filepath.Join(filepath.Dir(archive), ".cache.json"))
+	if err != nil || len(b) == 0 {
+		return false
+	}
+	var cache map[string]struct {
+		Size    int64     `json:"size"`
+		ModTime time.Time `json:"modTime"`
+		Images  []string  `json:"images"`
+	}
+	if json.Unmarshal(b, &cache) != nil {
+		return false
+	}
+	e, ok := cache[archive]
+	fi, err := os.Stat(archive)
+	return ok && err == nil && e.Images != nil && e.Size == fi.Size() && !fi.ModTime().After(e.ModTime)
 }
 
 // waitBundleImports waits until k3s has imported every staged archive, or the

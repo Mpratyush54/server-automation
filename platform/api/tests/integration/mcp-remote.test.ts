@@ -623,6 +623,12 @@ describe('MCP over Streamable HTTP', () => {
     const ran = await mcp(t.access_token, rpc('tools/call', { name: 'platform_run_command', arguments: { command: 'kubectl delete pod web-1 -n demo', confirm: true, reason: 'test', approvalId: approval.id } }));
     expect(ran.body.result.isError).toBeUndefined();
     expect(toolText(ran).phase).toBe('execution');
+    // Executing with an approvalId must not open another approval: a stale
+    // pending copy of a command that already ran would be approvable again.
+    const rows = mockRepo('AgentCommandApproval').rows;
+    expect(rows.filter((row: any) => row.status === 'pending')).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('executed');
   });
 });
 

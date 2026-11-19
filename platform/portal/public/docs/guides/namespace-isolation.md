@@ -141,14 +141,18 @@ Enforcement is blocked while current pods have security or resource warnings. It
 
 | Grant | Scope | Verbs | Used for |
 |---|---|---|---|
-| `namespaces` | cluster (ClusterRole `platform-api`) | get, list, create, update | read, create and label project namespaces |
+| `namespaces` | cluster (ClusterRole `platform-api`) | get, list, create, update, delete | read, create and label project namespaces; delete them when the project is deleted |
+| `applications.argoproj.io` | `argocd` namespace (Role `platform-api`) | get, list, create, update, patch, delete | create and sync project apps; delete them when the project is deleted |
 | `rolebindings` | cluster (ClusterRole `platform-api`) | get, create, update | create the baseline RoleBinding in each namespace |
 | `clusterroles/platform-namespace-baseline` | that one role | bind | reference the baseline role from that RoleBinding |
 | `networkpolicies`, `resourcequotas`, `limitranges` | each project namespace (RoleBinding to ClusterRole `platform-namespace-baseline`) | get, list, create, update | apply the baseline, status, backfill report |
+| `statefulsets` | each project namespace (same RoleBinding) | get, list, update | add the release environment variables when a deploy finalizes |
 
-No delete, patch, watch, escalate or clusterrolebindings rights are granted. Two fail-closed ValidatingAdmissionPolicies limit the cluster-wide verbs:
+No patch, watch, escalate or clusterrolebindings rights are granted. The only delete rights are for project deletion. Fail-closed ValidatingAdmissionPolicies limit these verbs:
 
 - `platform-project-namespaces` lets the API create or update only non-reserved namespaces that carry `platform.io/project` and `platform.io/env` labels, and never change an existing owner label.
+- `platform-project-namespace-delete` lets it delete only such labelled, non-reserved namespaces. The API also checks that the label holds the deleted project's own id.
+- `platform-argocd-application-delete` lets it delete only Argo CD applications it created (`app.kubernetes.io/managed-by` is `platform` or `platform-sdk`).
 - `platform-baseline-bindings` lets it create or update only the exact baseline RoleBinding, for the exact role and the Cairn API service account, in such namespaces.
 
 A new RoleBinding reaches the authorizer with a delay, so the first baseline write retries briefly on 403. The baseline ClusterRole has no ClusterRoleBinding, and no policy, quota or limit rights exist in system or platform namespaces. Creating and labelling namespaces stays a trusted API permission, because RBAC cannot filter namespaces by label. Install the admission guards before granting bootstrap rights. Cluster administrators and GitOps permissions stay trusted and must not let tenants rewrite namespace ownership or baseline policies.

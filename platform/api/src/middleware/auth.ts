@@ -22,6 +22,22 @@ export const AGENT_TOKEN_PREFIX = 'plat_agent_';
 export const AGENT_TOKEN_LOOKUP_LEN = 20;
 
 /**
+ * Credentials could not be checked because a dependency (usually the database) failed.
+ * That says nothing about the credential, so it is answered 503, never 401: clients treat a
+ * 401 as "signed out" and would drop a valid session during a brief outage.
+ */
+export const AUTH_UNAVAILABLE = {
+  error: 'auth_unavailable',
+  message: 'Sign-in could not be checked right now. Retry in a few seconds.',
+} as const;
+
+export function sendAuthUnavailable(res: Response, err?: unknown) {
+  if (err) console.warn('[auth] credential check failed:', err instanceof Error ? err.message : String(err));
+  res.set('Retry-After', '5');
+  return res.status(503).json(AUTH_UNAVAILABLE);
+}
+
+/**
  * A non-human caller: a stored agent token (`plat_agent_*`), or an AI assistant connected through
  * the remote MCP endpoint (`kind: 'mcp_grant'`). A connected assistant acts for the person who
  * approved it (`delegatedUser`): its scopes are capped by that person's role and it only sees
@@ -121,14 +137,14 @@ export async function getUserPermissions(user: { id: string; role: UserRole; rol
   }
 
   // If user has a custom role, merge its permissions
+  // A lookup failure propagates: caching the preset-only set would silently strip a custom
+  // role's permissions for the whole cache TTL after a brief database outage.
   if (user.roleId) {
-    try {
-      const ds = await getDb();
-      const role = await ds.getRepository(Role).findOne({ where: { id: user.roleId } });
-      if (role && role.permissions) {
-        for (const p of role.permissions) perms.add(p);
-      }
-    } catch {}
+    const ds = await getDb();
+    const role = await ds.getRepository(Role).findOne({ where: { id: user.roleId } });
+    if (role && role.permissions) {
+      for (const p of role.permissions) perms.add(p);
+    }
   }
 
   if (useCache) permCache.set(user.id, { permissions: perms, expiresAt: Date.now() + PERMISSION_CACHE_TTL_MS });
@@ -145,7 +161,9 @@ export function clearPermissionCache(userId?: string) {
  * Validate a raw `plat_agent_*` token (prefix lookup + bcrypt) and record its use.
  * Shared by the API's bearer auth and the remote MCP endpoint's bearer fallback.
  */
-export async function verifyAgentToken(rawToken: string): Promise<{ ok: true; agent: AgentPrincipal } | { ok: false; error: string }> {
+export async function verifyAgentToken(
+  rawToken: string,
+): Promise<{ ok: true; agent: AgentPrincipal } | { ok: false; error: string; unavailable?: boolean }> {
   const prefix = rawToken.slice(0, AGENT_TOKEN_LOOKUP_LEN);
   if (prefix.length < AGENT_TOKEN_LOOKUP_LEN) {
     return { ok: false, error: 'Unauthorized: Invalid agent token' };
@@ -176,14 +194,16 @@ export async function verifyAgentToken(rawToken: string): Promise<{ ok: true; ag
         kind: 'agent_token',
       },
     };
-  } catch {
-    return { ok: false, error: 'Unauthorized: Could not validate agent token' };
+  } catch (err) {
+    console.warn('[auth] agent token check failed:', err instanceof Error ? err.message : String(err));
+    return { ok: false, error: 'Could not validate agent token', unavailable: true };
   }
 }
 
 async function authenticateAgentToken(rawToken: string, req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const result = await verifyAgentToken(rawToken);
   if (result.ok === false) {
+    if (result.unavailable) return sendAuthUnavailable(res);
     return res.status(401).json({ error: result.error });
   }
   req.agentToken = result.agent;
@@ -213,8 +233,8 @@ async function authenticateMcpAccessToken(rawToken: string, req: AuthenticatedRe
       delegatedUser: principal.user,
     };
     return next();
-  } catch {
-    return res.status(401).json({ error: 'Unauthorized: Could not validate connection' });
+  } catch (err) {
+    return sendAuthUnavailable(res, err);
   }
 }
 
@@ -234,8 +254,13 @@ export async function expressAuthenticate(req: Request, res: Response, next: Nex
 
   // SDK credentials are NOT accepted on human endpoints — they are only valid on
   // routes that explicitly use sdkTokenAuth / sdkOrUserAuthenticate.
+  let decoded: any;
   try {
-    const decoded = jwt.verify(token, getJwtSecret()) as any;
+    decoded = jwt.verify(token, getJwtSecret());
+  } catch {
+    return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
+  }
+  try {
     // Only session tokens: MFA challenge tokens (typ/aud) and anything without a user id are refused.
     if (!decoded || typeof decoded !== 'object' || typeof decoded.id !== 'string' || !decoded.id || decoded.typ || decoded.aud) {
       return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
@@ -269,10 +294,10 @@ export async function expressAuthenticate(req: Request, res: Response, next: Nex
       authTime: typeof decoded.auth_time === 'number' ? decoded.auth_time : null,
       mfaEnroll: decoded.mfa_enroll === true,
     };
-    next();
-  } catch (err: any) {
-    return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
+  } catch (err) {
+    return sendAuthUnavailable(res, err);
   }
+  next();
 }
 
 export function expressRequireRole(roles: UserRole[]) {
@@ -344,19 +369,19 @@ export function requirePermission(...permissions: Permission[]) {
       return res.status(401).json({ error: 'Unauthorized: Not authenticated' });
     }
 
+    let userPerms: Set<string>;
     try {
-      const userPerms = await getUserPermissions(user);
-      const hasAll = permissions.every((p) => userPerms.has(p));
-      if (!hasAll) {
-        return res.status(403).json({
-          error: 'Forbidden: Insufficient permissions',
-          required: permissions,
-        });
-      }
-      next();
-    } catch {
-      return res.status(403).json({ error: 'Forbidden: Could not verify permissions' });
+      userPerms = await getUserPermissions(user);
+    } catch (err) {
+      return sendAuthUnavailable(res, err);
     }
+    if (!permissions.every((p) => userPerms.has(p))) {
+      return res.status(403).json({
+        error: 'Forbidden: Insufficient permissions',
+        required: permissions,
+      });
+    }
+    next();
   };
 }
 
@@ -491,14 +516,15 @@ export async function sdkTokenAuth(req: Request, res: Response, next: NextFuncti
       return res.status(401).json({ error: 'Unauthorized: Invalid or revoked SDK token' });
     }
     const project = await ds.getRepository(Project).findOne({ where: { id: credential.projectId } });
-    if (!project || project.id !== credential.projectId) {
+    // A deleted project (or one being deleted) accepts no SDK calls, even before its tokens are revoked.
+    if (!project || project.id !== credential.projectId || project.isActive === false || project.deletedAt) {
       return res.status(401).json({ error: 'Unauthorized: SDK token project no longer exists' });
     }
     projectId = project.id;
     projectName = project.name;
     kind = normalizeSdkTokenKind(credential.kind);
-  } catch {
-    return res.status(401).json({ error: 'Unauthorized: Could not validate SDK token' });
+  } catch (err) {
+    return sendAuthUnavailable(res, err);
   }
 
   if (kind === 'browser' && !(req as AuthenticatedRequest).browserSdkTokenAllowed) {

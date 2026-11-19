@@ -64,6 +64,70 @@ spec:
   policyName: platform-project-namespaces
   validationActions: [Deny]
 ---
+# Project deletion: the API may delete a namespace only when it is a dedicated,
+# labeled project namespace (the same rule as create/update). The API also
+# checks that the label carries the project's own id before deleting.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: platform-project-namespace-delete
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["DELETE"]
+      resources: ["namespaces"]
+  matchConditions:
+  - name: platform-api-only
+    expression: "request.userInfo.username == 'system:serviceaccount:platform:platform-api'"
+  validations:
+  - expression: "oldObject != null && !(oldObject.metadata.name in ['default', 'platform', 'databases', 'preview', 'ingress-nginx', 'argocd', 'cert-manager', 'monitoring', 'oauth2-proxy', 'portainer', 'storage', 'keda', 'builds', 'registry']) && !oldObject.metadata.name.startsWith('kube-')"
+    message: "The platform API may only delete dedicated project namespaces"
+  - expression: "has(oldObject.metadata.labels) && 'platform.io/project' in oldObject.metadata.labels && 'platform.io/env' in oldObject.metadata.labels"
+    message: "Only labeled project namespaces can be deleted"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: platform-project-namespace-delete
+spec:
+  policyName: platform-project-namespace-delete
+  validationActions: [Deny]
+---
+# Project deletion: the API may delete only the Argo CD Applications it created
+# (managed-by platform or platform-sdk), never ones an operator manages.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: platform-argocd-application-delete
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: argocd
+    resourceRules:
+    - apiGroups: ["argoproj.io"]
+      apiVersions: ["v1alpha1"]
+      operations: ["DELETE"]
+      resources: ["applications"]
+  matchConditions:
+  - name: platform-api-only
+    expression: "request.userInfo.username == 'system:serviceaccount:platform:platform-api'"
+  validations:
+  - expression: "oldObject != null && has(oldObject.metadata.labels) && 'app.kubernetes.io/managed-by' in oldObject.metadata.labels && oldObject.metadata.labels['app.kubernetes.io/managed-by'] in ['platform', 'platform-sdk']"
+    message: "The platform API may only delete Argo CD Applications it created"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: platform-argocd-application-delete
+spec:
+  policyName: platform-argocd-application-delete
+  validationActions: [Deny]
+---
 # Source builds (#55): RBAC cannot restrict the name of a created object, so
 # the baseline "secrets: create" grant is confined here to the single image-pull
 # Secret the API writes in project namespaces (pull-only, per project).
@@ -110,9 +174,10 @@ kind: ClusterRole
 metadata:
   name: platform-api
 rules:
+# delete: project deletion, guarded by platform-project-namespace-delete.
 - apiGroups: [""]
   resources: ["namespaces"]
-  verbs: ["get", "list", "create", "update"]
+  verbs: ["get", "list", "create", "update", "delete"]
 - apiGroups: [""]
   resources: ["nodes"]
   verbs: ["list"]
@@ -134,7 +199,8 @@ rules:
 # Namespace baseline (#22): get/update label project namespaces (guarded by
 # platform-project-namespaces); rolebinding create/update + bind on the single
 # baseline ClusterRole bootstrap per-namespace rights (guarded by
-# platform-baseline-bindings). No delete/patch/escalate and no cluster-wide bindings.
+# platform-baseline-bindings). No patch/escalate and no cluster-wide bindings;
+# namespace delete (above) is guarded by platform-project-namespace-delete.
 - apiGroups: ["rbac.authorization.k8s.io"]
   resources: ["rolebindings"]
   verbs: ["get", "create", "update"]
@@ -174,6 +240,12 @@ rules:
   resources: ["secrets"]
   resourceNames: ["platform-env","platform-rotate-pending"]
   verbs: ["get", "update"]
+# The off-site backup target (platformctl backup target): read when a project
+# is deleted, so its database backups are stored off the cluster.
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["platform-backup-target"]
+  verbs: ["get"]
 # The API's own configuration Secrets (issue #20): read at boot, updated on
 # secret rotation and OIDC signing-key rotation (KubeSecretStore does
 # read + replace with resourceVersion, so no patch). Creation (first boot
@@ -266,9 +338,10 @@ rules:
   resources: ["secrets"]
   resourceNames: ["argocd-secret","argocd-initial-admin-secret"]
   verbs: ["get", "update"]
+# list/delete: project deletion; delete is guarded by platform-argocd-application-delete.
 - apiGroups: ["argoproj.io"]
   resources: ["applications"]
-  verbs: ["get", "create", "update", "patch"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -337,6 +410,11 @@ rules:
 - apiGroups: ["apps"]
   resources: ["deployments"]
   verbs: ["get"]
+# Release finalize (injectRelease): projects may ship StatefulSets via Argo CD;
+# read, list and replace them in project namespaces only. No create, delete or patch.
+- apiGroups: ["apps"]
+  resources: ["statefulsets"]
+  verbs: ["get", "list", "update"]
 - apiGroups: [""]
   resources: ["services"]
   verbs: ["get"]

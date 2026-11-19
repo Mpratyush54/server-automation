@@ -611,7 +611,13 @@ export function registerTools(api: PlatformApi, options: RegisterToolsOptions = 
       },
       handler: wrap(async (args) => {
         const command = String(args.command);
-        const validation = await api.validateCommand(command);
+        // A call that carries a human approval only executes. Validating again
+        // would open a second pending approval for the same command (validate
+        // does that for destructive commands), left in the portal's list after
+        // the command ran and approvable a second time. The execute endpoint
+        // validates the command and checks the approval itself.
+        const approved = Boolean(args.confirm && args.approvalId);
+        const validation = approved ? undefined : await api.validateCommand(command);
         if (!args.confirm) {
           return {
             phase: 'validation',

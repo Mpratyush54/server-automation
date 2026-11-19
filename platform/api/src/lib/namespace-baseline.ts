@@ -218,8 +218,13 @@ export async function namespaceBaselineStatus(projectId: string, env: NamespaceE
 async function readBaselineStatus(projectId: string, env: NamespaceEnvironment, clients?: ReturnType<typeof baselineClients>) {
   try {
     const { core, network } = clients || baselineClients();
-    const [ns, policies, quota, limits] = await Promise.all([
-      core.readNamespace({ name: env.namespace }), network.listNamespacedNetworkPolicy({ namespace: env.namespace }),
+    // The namespace first: the API's rights inside a project namespace come from a
+    // RoleBinding in that namespace, so for an environment that was never deployed
+    // the reads below are refused (403) and Promise.all reported "unavailable"
+    // instead of "not applied".
+    const ns = await core.readNamespace({ name: env.namespace });
+    const [policies, quota, limits] = await Promise.all([
+      network.listNamespacedNetworkPolicy({ namespace: env.namespace }),
       core.readNamespacedResourceQuota({ namespace: env.namespace, name: 'project-quota' }),
       core.readNamespacedLimitRange({ namespace: env.namespace, name: 'project-defaults' }),
     ]);

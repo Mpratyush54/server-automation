@@ -1,11 +1,17 @@
 package cmd
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestPendingImports(t *testing.T) {
+	oc := importCached
+	t.Cleanup(func() { importCached = oc })
+	importCached = func(string) bool { return false }
 	dir := "/var/lib/rancher/k3s/agent/images/"
 	archives := []string{dir + "k3s-airgap-images-amd64.tar.zst", dir + "cairn-images-amd64.tar.zst", dir + "platform-images-amd64.tar.zst"}
 	// The offline test's log when the node was Ready: the big archive was still importing.
@@ -25,10 +31,11 @@ Importing images from ` + dir + `platform-images-amd64.tar.zst`
 
 func stubImportWait(t *testing.T, archives []string, logs []string) *int {
 	t.Helper()
-	oa, ol, ot, op, on, os := bundleImportArchives, k3sImportLog, bundleImportTimeout, bundleImportPoll, bundleImportNow, bundleImportSleep
+	oa, ol, ot, op, on, osl, oc := bundleImportArchives, k3sImportLog, bundleImportTimeout, bundleImportPoll, bundleImportNow, bundleImportSleep, importCached
 	t.Cleanup(func() {
-		bundleImportArchives, k3sImportLog, bundleImportTimeout, bundleImportPoll, bundleImportNow, bundleImportSleep = oa, ol, ot, op, on, os
+		bundleImportArchives, k3sImportLog, bundleImportTimeout, bundleImportPoll, bundleImportNow, bundleImportSleep, importCached = oa, ol, ot, op, on, osl, oc
 	})
+	importCached = func(string) bool { return false }
 	now := time.Unix(0, 0)
 	calls := 0
 	bundleImportArchives = func() []string { return archives }
@@ -68,5 +75,54 @@ func TestWaitBundleImportsWithoutArchives(t *testing.T) {
 	waitBundleImports()
 	if *calls != 0 {
 		t.Fatal("no archives: nothing to wait for")
+	}
+}
+
+// With k3s's import cache enabled, unchanged archives are skipped on a k3s
+// restart without any log line: the cache entry counts as imported.
+func TestArchiveInImportCache(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "platform-images-amd64-1.tar.zst")
+	if err := os.WriteFile(a, []byte("12345"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mt := time.Date(2026, 11, 19, 4, 46, 3, 0, time.UTC)
+	if err := os.Chtimes(a, mt, mt); err != nil {
+		t.Fatal(err)
+	}
+	write := func(s string) {
+		if err := os.WriteFile(filepath.Join(dir, ".cache.json"), []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if archiveInImportCache(a) {
+		t.Fatal("no cache file: not imported")
+	}
+	write("")
+	if archiveInImportCache(a) {
+		t.Fatal("empty cache (just enabled): not imported")
+	}
+	key, _ := json.Marshal(a)
+	write(`{` + string(key) + `:{"size":5,"modTime":"2026-11-19T04:46:03Z","images":["a"]}}`)
+	if !archiveInImportCache(a) {
+		t.Fatal("cache entry with the same size and mtime: imported")
+	}
+	write(`{` + string(key) + `:{"size":4,"modTime":"2026-11-19T04:46:03Z","images":["a"]}}`)
+	if archiveInImportCache(a) {
+		t.Fatal("size changed: k3s re-imports it")
+	}
+	write(`{` + string(key) + `:{"size":5,"modTime":"2026-11-19T04:46:02Z","images":["a"]}}`)
+	if archiveInImportCache(a) {
+		t.Fatal("file newer than the cache entry: k3s re-imports it")
+	}
+}
+
+func TestPendingImportsCountsCachedArchives(t *testing.T) {
+	oc := importCached
+	t.Cleanup(func() { importCached = oc })
+	importCached = func(a string) bool { return a == "/i/cached.tar.zst" }
+	got := pendingImports([]string{"/i/cached.tar.zst", "/i/new.tar.zst"}, "")
+	if len(got) != 1 || got[0] != "new.tar.zst" {
+		t.Fatalf("pending=%v", got)
 	}
 }

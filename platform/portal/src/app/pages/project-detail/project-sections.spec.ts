@@ -31,10 +31,10 @@ describe('project sections (#185)', () => {
     expect(anchorForTab(null)).toBeNull();
   });
 
-  it('projectStatus: active unless explicitly archived or deleted', () => {
+  it('projectStatus: active unless being deleted or deleted', () => {
     expect(projectStatus({ isActive: true })).toEqual({ label: 'Active', tone: 'ok' });
     expect(projectStatus({})).toEqual({ label: 'Active', tone: 'ok' });
-    expect(projectStatus({ isActive: false })).toEqual({ label: 'Archived', tone: 'neutral' });
+    expect(projectStatus({ isActive: false })).toEqual({ label: 'Being deleted', tone: 'warn' });
     expect(projectStatus({ isActive: true, deletedAt: '2026-01-01' }).label).toBe('Deleted');
   });
 

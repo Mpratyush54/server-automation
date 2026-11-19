@@ -23,7 +23,7 @@ import { postComment } from '../lib/clickup';
 import { resolveProjectRef } from '../lib/project-resolve';
 import { ensureProjectIngress } from '../lib/k8s';
 import { gitUrlsMatch, normalizeGitUrl } from '../lib/git-url';
-import { assignedNamespace, assignedEnvHost, projectSlug as makeProjectSlug } from '../lib/project-namespace';
+import { assignedNamespace, projectSlug as makeProjectSlug } from '../lib/project-namespace';
 import { loadKubeConfig } from '../lib/kube-config';
 
 const router = Router();
@@ -124,6 +124,30 @@ function withoutPlatformCredentials(result: Record<string, any>): Record<string,
   return out;
 }
 
+/**
+ * A database that is unreachable (a server is down, a pod is restarting) is a
+ * temporary outage, not a bad request: answer 503 so SDKs and the portal
+ * retry, and keep internal host names out of the response. During the ha
+ * force-stop test, GET /sdk/api-metrics answered 400 "getaddrinfo ENOTFOUND
+ * mongodb-1.mongodb-headless.databases.svc.cluster.local".
+ */
+const UNAVAILABLE_CODES = new Set(['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EHOSTUNREACH']);
+export function isStoreUnavailable(err: any): boolean {
+  for (let e = err, depth = 0; e && depth < 5; e = e.cause, depth++) {
+    if (UNAVAILABLE_CODES.has(e.code)) return true;
+    if (/^Mongo(Network|ServerSelection|NotConnected|Timeout|TopologyClosed|PoolCleared)/.test(String(e.name || ''))) return true;
+    if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|EHOSTUNREACH|connection timed out|Connection terminated/.test(String(e.message || ''))) return true;
+  }
+  return false;
+}
+function sdkFailure(res: Response, err: any) {
+  if (isStoreUnavailable(err)) {
+    res.setHeader('Retry-After', '5');
+    return res.status(503).json({ error: 'Temporarily unavailable. Try again in a moment.' });
+  }
+  return res.status(400).json({ error: err.message });
+}
+
 router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) => {
   try {
     const body = req.body;
@@ -170,10 +194,12 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
     const envRepo = ds.getRepository(Environment);
     const envName = body.environmentName || 'development';
     const baseDomain = project.domain || body.domain || process.env.DOMAIN || 'sslip.io';
-    const ns = assignedNamespace(project.name, envName);
-    const host = assignedEnvHost(project.name, envName, baseDomain);
-
     let env = await envRepo.findOne({ where: { projectId: project.id, name: envName as any } });
+    // The namespace is keyed by the immutable project id, never by its (reusable) name. An
+    // environment that already has a server-assigned namespace keeps it, so existing projects,
+    // including ones that got a name-based namespace from older releases, keep working.
+    const ns = env?.namespace || assignedNamespace(project.name, envName, project.id);
+    const host = `${ns}.${baseDomain}`;
     if (!env) {
       env = envRepo.create({
         name: envName as any,
@@ -183,12 +209,8 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       });
       env = await envRepo.save(env);
     } else {
-      // Force server-owned namespace/domain (ignore any client override)
+      // Force server-owned domain (ignore any client override)
       let envDirty = false;
-      if (env.namespace !== ns) {
-        env.namespace = ns;
-        envDirty = true;
-      }
       if (!env.domain || env.domain.includes('example.com') || env.domain !== host) {
         env.domain = host;
         envDirty = true;
@@ -325,6 +347,8 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
             labels: {
               'app.kubernetes.io/managed-by': 'platform-sdk',
               'platform.project': slug,
+              // Ownership is recorded by id: a later project may reuse the name.
+              'platform.io/project': project.id,
             },
           },
           spec: {
@@ -374,7 +398,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
         // Wire HTTPS Ingress for the environment host (Let's Encrypt, incl. sslip.io)
         try {
           const { ensureProjectIngress } = await import('../lib/k8s');
-          const host = env.domain || assignedEnvHost(project.name, env.name, project.domain || process.env.DOMAIN || 'sslip.io');
+          const host = env.domain || `${env.namespace}.${project.domain || process.env.DOMAIN || 'sslip.io'}`;
           const serviceName = body.serviceName || body.ingressServiceName || 'sdk-node-api';
           const servicePort = Number(body.servicePort || body.ingressServicePort || 80);
           const ingress = await ensureProjectIngress({
@@ -403,92 +427,9 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
       }
     }
 
-    // Legacy fallback: direct Deployment only when NOT using GitOps from GitHub.
-    // (Avoids ImagePullBackOff on "{project}:latest" while Argo owns the real deploy.)
-    if (!useGitops) {
-    const serviceName = body.serviceName || project.name;
-    try {
-      const kc = new k8s.KubeConfig();
-      loadKubeConfig(kc);
-      const appsV1 = kc.makeApiClient(k8s.AppsV1Api);
-      const coreV1 = kc.makeApiClient(k8s.CoreV1Api);
-      const networkV1 = kc.makeApiClient(k8s.NetworkingV1Api);
-      // Project namespace only — never the platform's own namespace (SDK tokens are project-scoped).
-      const ns = destNamespace;
-      const deployName = `${project.name}-${body.serviceName || 'app'}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
-      // Client-supplied images are not accepted: an SDK token must not choose what runs in the cluster.
-      const image = `${project.name}:latest`;
-      await ensureProjectNamespace(project.id, env);
-
-      // Deployment
-      const deployment = {
-        metadata: { name: deployName, namespace: ns, labels: { app: deployName, project: project.name } },
-        spec: {
-          replicas: 1,
-          selector: { matchLabels: { app: deployName } },
-          template: {
-            metadata: { labels: { app: deployName, project: project.name } },
-            spec: {
-              automountServiceAccountToken: false,
-              securityContext: { runAsNonRoot: true, seccompProfile: { type: 'RuntimeDefault' } },
-              containers: [{
-                name: 'app',
-                image,
-                securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } },
-                ports: [{ containerPort: 3001 }],
-              }],
-            },
-          },
-        },
-      };
-      try { await appsV1.createNamespacedDeployment({ namespace: ns, body: deployment as any }); }
-      catch { try { await appsV1.replaceNamespacedDeployment({ name: deployName, namespace: ns, body: deployment as any }); } catch {} }
-
-      // Service
-      const service = {
-        metadata: { name: deployName, namespace: ns },
-        spec: {
-          selector: { app: deployName },
-          ports: [{ port: 80, targetPort: 3001 }],
-        },
-      };
-      try { await coreV1.createNamespacedService({ namespace: ns, body: service as any }); }
-      catch { try { await coreV1.replaceNamespacedService({ name: deployName, namespace: ns, body: service as any }); } catch {} }
-
-      // Ingress with Let's Encrypt TLS (sslip.io included — HTTP-01 works per-host)
-      const domain = project.domain || process.env.DOMAIN || 'sslip.io';
-      const host = `${deployName}.${domain}`;
-      const ingress: any = {
-        metadata: {
-          name: deployName,
-          namespace: ns,
-          annotations: {
-            'kubernetes.io/ingress.class': 'nginx',
-            'cert-manager.io/cluster-issuer': 'letsencrypt-prod',
-            'nginx.ingress.kubernetes.io/ssl-redirect': 'true',
-          },
-        },
-        spec: {
-          ingressClassName: 'nginx',
-          tls: [{ hosts: [host], secretName: `${deployName}-tls` }],
-          rules: [{
-            host,
-            http: {
-              paths: [{
-                path: '/',
-                pathType: 'Prefix',
-                backend: { service: { name: deployName, port: { number: 80 } } },
-              }],
-            },
-          }],
-        },
-      };
-      try { await networkV1.createNamespacedIngress({ namespace: ns, body: ingress as any }); }
-      catch { try { await networkV1.replaceNamespacedIngress({ name: deployName, namespace: ns, body: ingress as any }); } catch {} }
-    } catch (e) {
-      console.warn('[sdk/register] Failed to create K8s resources:', (e as Error).message);
-    }
-    }
+    // Without a linked repository, registering only records the service. The API never creates a
+    // workload here: it has no image to run (a guessed "<project>:latest" never exists and stayed in
+    // ErrImagePull). Deploys come from Git (Argo CD) or source builds.
 
     return res.status(201).json({
       ...saved,
@@ -504,7 +445,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
         : [],
     });
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sdkFailure(res, err);
   }
 });
 
@@ -525,7 +466,7 @@ router.post('/sdk/deregister', sdkTokenAuth, async (req: Request, res: Response)
     }
     return res.json({ success: true });
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sdkFailure(res, err);
   }
 });
 
@@ -557,7 +498,7 @@ async function acceptTelemetry(
     if (err instanceof TelemetryPayloadTooLargeError) {
       return res.status(413).json({ error: err.message });
     }
-    return res.status(400).json({ error: err.message });
+    return sdkFailure(res, err);
   }
 }
 
@@ -675,7 +616,7 @@ router.get('/sdk/config', sdkTokenAuth, async (req: Request, res: Response) => {
     const telemetry = await buildTelemetryBlock({ ds, projectId: resolvedProjectId, environmentRef, configValues: result });
     return res.json({ ...result, telemetry });
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sdkFailure(res, err);
   }
 });
 
@@ -706,7 +647,7 @@ router.get('/sdk/db-credentials', sdkTokenAuth, async (req: Request, res: Respon
     const result = await resolveProjectDbCredentials(project.id, project.name, envName, types);
     return res.json(withoutPlatformCredentials(result));
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sdkFailure(res, err);
   }
 });
 
@@ -777,7 +718,7 @@ router.get('/sdk/api-metrics', expressAuthenticate, async (req: Request, res: Re
 
     return res.json({ metrics: agg });
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sdkFailure(res, err);
   }
 });
 
@@ -812,7 +753,7 @@ router.post('/sdk/bug-report', allowBrowserSdkToken, sdkTokenAuth, async (req: R
     })();
     return res.status(201).json({ id: report._id, message: 'Bug report submitted' });
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sdkFailure(res, err);
   }
 });
 

@@ -2,6 +2,7 @@ package versions
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -126,5 +127,26 @@ func TestLicenseClientPin(t *testing.T) {
 	}
 	if !strings.HasPrefix(LicenseClientBaseURL, "https://") {
 		t.Fatal("base URL must be https")
+	}
+}
+
+// TestAPIKubectlMatchesK3sMinor keeps the kubectl baked into the API image
+// (agent/MCP platform_run_command) on the same minor as the pinned k3s.
+func TestAPIKubectlMatchesK3sMinor(t *testing.T) {
+	data, err := os.ReadFile("../../../platform/api/Dockerfile")
+	if err != nil {
+		t.Skipf("API Dockerfile not available: %v", err)
+	}
+	m := regexp.MustCompile(`(?m)^ARG KUBECTL_VERSION=(v\d+\.\d+)\.\d+\s*$`).FindStringSubmatch(string(data))
+	if m == nil {
+		t.Fatal("platform/api/Dockerfile must pin ARG KUBECTL_VERSION=vX.Y.Z")
+	}
+	if !strings.HasPrefix(K3sVersion, m[1]+".") {
+		t.Fatalf("API kubectl %s does not match k3s %s minor", m[1], K3sVersion)
+	}
+	for _, arch := range []string{"AMD64", "ARM64"} {
+		if !regexp.MustCompile(`(?m)^ARG KUBECTL_SHA256_` + arch + `=[0-9a-f]{64}\s*$`).Match(data) {
+			t.Errorf("platform/api/Dockerfile must pin a sha256 for kubectl %s", arch)
+		}
 	}
 }

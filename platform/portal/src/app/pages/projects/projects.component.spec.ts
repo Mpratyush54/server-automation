@@ -65,7 +65,7 @@ describe('ProjectsComponent', () => {
 
   beforeEach(async () => {
     try { localStorage.removeItem(VIEW_KEY); } catch { /* ignore */ }
-    api = jasmine.createSpyObj('ApiService', ['getProjects', 'deleteProject']);
+    api = jasmine.createSpyObj('ApiService', ['getProjects', 'deleteProject', 'getProjectDeletion']);
     dialog = jasmine.createSpyObj('DialogService', ['confirm']);
     toast = jasmine.createSpyObj('ToastService', ['ok', 'error']);
     await TestBed.configureTestingModule({
@@ -80,6 +80,7 @@ describe('ProjectsComponent', () => {
       ],
     }).compileComponents();
     api.getProjects.and.returnValue(of(sample()));
+    api.getProjectDeletion.and.returnValue(of({ status: 'none', operation: null }));
   });
 
   async function render() {
@@ -128,34 +129,46 @@ describe('ProjectsComponent', () => {
     expect(again.componentInstance.view).toBe('grid');
   });
 
-  it('asks to type the project name before deleting', async () => {
-    dialog.confirm.and.resolveTo(true);
-    api.deleteProject.and.returnValue(of({}));
+  it('opens the delete dialog for the project from the actions menu', async () => {
     const fixture = await render();
-    await fixture.componentInstance.delete({ id: 'p-shop', name: 'shop' });
-    const opts = dialog.confirm.calls.mostRecent().args[0];
-    expect(opts.danger).toBeTrue();
-    expect(opts.typeToConfirm).toBe('shop');
-    expect(api.deleteProject).toHaveBeenCalledWith('p-shop');
-    expect(fixture.componentInstance.rows.length).toBe(3);
-    expect(toast.ok).toHaveBeenCalled();
-  });
-
-  it('does not delete when the dialog is cancelled', async () => {
-    dialog.confirm.and.resolveTo(false);
-    const fixture = await render();
-    await fixture.componentInstance.delete({ id: 'p-shop', name: 'shop' });
+    fixture.componentInstance.delete({ id: 'p-shop', name: 'shop' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.deleting).toEqual({ id: 'p-shop', name: 'shop' });
+    const dlg: HTMLElement = fixture.nativeElement.querySelector('[data-testid="delete-project-dialog"]');
+    expect(dlg).toBeTruthy();
+    expect(dlg.textContent).toContain('Delete shop?');
+    expect(api.getProjectDeletion).toHaveBeenCalledWith('p-shop');
     expect(api.deleteProject).not.toHaveBeenCalled();
-    expect(fixture.componentInstance.rows.length).toBe(4);
   });
 
-  it('keeps the project and says why when delete fails', async () => {
-    dialog.confirm.and.resolveTo(true);
-    api.deleteProject.and.returnValue(throwError(() => ({ status: 403, error: { error: 'Forbidden' } })));
+  it('removes the row once the dialog reports the project deleted', async () => {
     const fixture = await render();
-    await fixture.componentInstance.delete({ id: 'p-shop', name: 'shop' });
+    fixture.componentInstance.delete({ id: 'p-shop', name: 'shop' });
+    await fixture.componentInstance.onDeleteClosed('deleted');
+    expect(fixture.componentInstance.deleting).toBeNull();
+    expect(fixture.componentInstance.rows.length).toBe(3);
+    expect(toast.ok).toHaveBeenCalledWith('Deleted shop');
+  });
+
+  it('keeps the row when the dialog is cancelled', async () => {
+    const fixture = await render();
+    fixture.componentInstance.delete({ id: 'p-shop', name: 'shop' });
+    await fixture.componentInstance.onDeleteClosed('cancelled');
     expect(fixture.componentInstance.rows.length).toBe(4);
-    expect(toast.error).toHaveBeenCalledWith(jasmine.stringContaining('Forbidden'));
+    expect(api.getProjects).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads the list when the dialog is closed while deleting goes on', async () => {
+    const fixture = await render();
+    fixture.componentInstance.delete({ id: 'p-shop', name: 'shop' });
+    api.getProjects.and.returnValue(of(sample().map((p: any) => (p.id === 'p-shop' ? { ...p, isActive: false, deleting: true } : p))));
+    await fixture.componentInstance.onDeleteClosed('left');
+    expect(api.getProjects).toHaveBeenCalledTimes(2);
+    const row = fixture.componentInstance.rows.find((r) => r.id === 'p-shop')!;
+    expect(row.status).toBe('Being deleted');
+    expect(row.deleting).toBeTrue();
   });
 
   it('opens the actions menu and moves focus with the arrow keys', async () => {

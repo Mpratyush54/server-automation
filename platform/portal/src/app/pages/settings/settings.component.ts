@@ -486,7 +486,13 @@ import { ToastService, DialogService, errorText } from '../../shared/feedback/fe
             @if (item.status) {
               <span class="status" [ngClass]="item.status.success ? 'status-ok' : 'status-down'">{{ item.status.success ? 'Passed' : 'Failed' }}</span>
               <span class="secondary">{{ item.status.finishedAt | date:'medium' }}</span>
-              <span class="muted">{{ formatBytes(item.status.bytes) }} in {{ item.status.durationSeconds | number:'1.0-0' }} s</span>
+              <!-- Older restore tests published no size (0): show the duration only. -->
+              <span class="muted" data-testid="backup-size">
+                @if (item.status.bytes > 0) {
+                  {{ formatBytes(item.status.bytes) }} in
+                }
+                {{ item.status.durationSeconds | number:'1.0-0' }} s
+              </span>
             } @else {
               <span class="muted">No result yet</span>
             }

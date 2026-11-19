@@ -98,6 +98,9 @@ func InstallWith(domain, githubToken string, o ServerOptions) error {
 	if err := TuneHost(); err != nil {
 		color.Yellow("  ⚠ kernel limits not applied: %v", err)
 	}
+	if err := EnableImageImportCache(); err != nil {
+		color.Yellow("  ⚠ k3s image import cache not enabled (every k3s restart re-imports the images): %v", err)
+	}
 
 	changed, err := WriteRegistries(githubToken)
 	if err != nil {

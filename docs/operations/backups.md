@@ -65,7 +65,7 @@ The database change log and snapshots start by themselves. The nightly archive o
    sudo platformctl backup schedule
    ```
 
-   The archives go to the backup target. Passing `--backup-recipient age1...` to `provision` does this step for you.
+   The archives go to the backup target. Passing `--backup-recipient age1...` to `provision` does this step for you. `backup --all` prints one line per component and then the backup ID; add `--verbose` to see the raw database tool output, which is also shown when a component fails.
 
 4. From your computer, check that the newest archive can be restored. This does not touch live data:
 
@@ -146,7 +146,7 @@ cat identity.txt | ssh you@server \
 
 Run this drill on a test server every few months, so a real restore is routine. It never touches the production server.
 
-1. **Point in time.** On a test server with its own backup prefix: create a project, note the time, delete the project, then run `sudo platformctl restore --pitr <noted time> --confirm`. The project is back.
+1. **Point in time.** On a test server with its own backup prefix: create a project, note the time, delete the project, then run `sudo platformctl restore --pitr <noted time> --confirm`. The project and its PostgreSQL database are back; deploy it again to bring back its apps, which the delete removed from the cluster.
 2. **Full rebuild.** Create a fresh VM and follow [Rebuild everything on a new server](#rebuild-everything-on-a-new-server) with the production target settings, the newest archive and `--source-server` set to the production archive name. Then sign in and check projects, secrets and files.
 
    The rebuilt server takes over the production domain, even if you give `provision` a different one. The archive puts back the old `/etc/platform/.env`, the `platform-env` Secret and the Argo CD Applications, and they all name the production domain. So pass the production `DOMAIN`, and keep the drill server out of reach of your users:

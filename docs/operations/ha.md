@@ -570,7 +570,7 @@ The portal rotates the platform Redis password live on every data node and Senti
 |---|---|
 | Mode | MinIO `distributed`, 4 pods with one drive each (`minio-0..3`) |
 | Erasure coding | Default parity EC:2: reads survive losing 2 drives, writes need 3 of 4 |
-| Volume | 25Gi per drive on `longhorn-minio` (100Gi of drives, about 50Gi usable) |
+| Volume | per drive on `longhorn-minio`: 35% of the cluster's schedulable Longhorn space, split over 4 drives x 2 replicas, 8-50Gi (14Gi on three 80 GB servers: 56Gi of drives, about 28Gi usable). An installed MinIO keeps its size. |
 | Placement | Soft pod anti-affinity; a PodDisruptionBudget allows one pod down at a time |
 | Endpoint | unchanged: `http://minio.storage:9000` (Service `minio`) |
 
