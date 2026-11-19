@@ -155,6 +155,24 @@
     </div>
   </section>
 
+  <!-- Servers with no internet access: the offline bundle and the offline license. -->
+  <section class="lp-airgap" id="air-gapped" aria-labelledby="airgap-title">
+    <div class="lp-frame lp-airgap-grid">
+      <header class="lp-airgap-copy">
+        <h2 id="airgap-title" class="lp-h2"><span>Works without internet.</span> <span class="lp-quiet">For air-gapped and restricted networks.</span></h2>
+        <p class="lp-airgap-lede">Each release ships one bundle with everything an install needs. Carry it across, install with nothing downloaded, and license the servers offline. Once running, nothing leaves your network.</p>
+        <ul class="lp-airgap-points">
+          <li>Every file checked against the bundle's checksums before it is used</li>
+          <li>k3s, Helm, charts, images and Ubuntu 22.04 / 24.04 packages included</li>
+          <li>Offline license from your account; no check-ins or diagnostics afterwards</li>
+          <li>More servers join from the same bundle</li>
+        </ul>
+        <a class="lp-guide" routerLink="/docs/getting-started/platformctl" fragment="offline-bundle">Read the offline install guide</a>
+      </header>
+      <app-airgap-story></app-airgap-story>
+    </div>
+  </section>
+
   <!-- Everything else that comes with it, in plain words, then the tools underneath. -->
   <section class="lp-more" aria-labelledby="more-title">
     <div class="lp-frame">

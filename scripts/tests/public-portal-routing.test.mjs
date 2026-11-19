@@ -283,7 +283,15 @@ test('the homepage explains the product and links to real docs without JavaScrip
   assert.equal([...document.matchAll(/<li class="lp-log-[a-z]*"><time>/g)].length, 1);
   assert.match(document, /<li class="lp-log-ok"><time>18:05:40<\/time><span>all 3 servers healthy<\/span><\/li>/);
   assert.equal([...document.matchAll(/<button class="on" type="button" aria-label="Show step 1 of 5" aria-pressed="true">/g)].length, 1);
-  assert.equal([...document.matchAll(/aria-pressed="false"/g)].length, 4);
+  const hero = document.slice(document.indexOf('<figure class="lp-topology"'), document.indexOf('</figure>', document.indexOf('<figure class="lp-topology"')));
+  assert.equal([...hero.matchAll(/aria-pressed="false"/g)].length, 4);
+  // The air-gapped install story, at its first step, with the real commands.
+  const airgap = document.slice(document.indexOf('<figure class="ag"'), document.indexOf('</figure>', document.indexOf('<figure class="ag"')));
+  assert.match(document, /<h2 id="airgap-title"[^>]*><span>Works without internet\.<\/span>/);
+  assert.match(airgap, /sha256sum -c platform-bundle-/);
+  assert.equal([...airgap.matchAll(/aria-pressed="true"/g)].length, 1);
+  assert.equal([...airgap.matchAll(/aria-pressed="false"/g)].length, 5);
+  assert.match(document, /href="\/docs\/getting-started\/platformctl#offline-bundle"/);
   assert.match(document, /aria-label="Pause the failover story">\s*Pause\s*</);
   assert.match(document, /aria-label="Copy install commands">\s*Copy\s*</);
   assert.equal([...document.matchAll(/<g class="lp-node" transform="translate\(12 \d+\)">/g)].length, 3);
