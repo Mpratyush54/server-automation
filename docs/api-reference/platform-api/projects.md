@@ -149,7 +149,7 @@ Deletes a project and everything it created, then frees its name for a new proje
 **What happens, in order:**
 
 1. The project is hidden, and new deploys, builds and SDK calls are refused.
-2. Connections to the project's databases are paused, and every database (PostgreSQL, MongoDB, Redis) is backed up to the configured backup target. The backups are listed under the project's database backups. **If any backup fails, nothing is deleted**: the project comes back as it was and the error says which backup failed and why.
+2. Connections to the project's databases are paused, and every database (PostgreSQL, MongoDB, Redis) is backed up. The backups go to the default storage provider if an administrator chose one, otherwise to the off-site backup target (`platformctl backup target`, stored under `<prefix>/backups/<project id>/`), and to the built-in MinIO only when neither is set up. If the off-site target is set up but cannot be read, the backup fails rather than falling back to storage on the cluster. The backups are listed under the project's database backups, and PostgreSQL ones can be restored from there. **If any backup fails, nothing is deleted**: the project comes back as it was and the error says which backup failed and why.
 3. The Argo CD applications (with the apps they created), previews, running builds and built images are removed.
 4. The project's namespaces are removed, with everything in them: workloads, web addresses, certificates, secrets and ConfigMaps.
 5. Synthetic checks, alert rules and the status page are removed.
