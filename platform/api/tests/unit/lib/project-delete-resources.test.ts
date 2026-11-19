@@ -50,14 +50,17 @@ it('deletes only namespaces labelled with the project id, never reserved ones', 
 });
 
 it('deletes Argo CD Applications that target the project namespaces, with the cascade finalizer', async () => {
+  const managed = (by = 'platform') => ({ 'app.kubernetes.io/managed-by': by });
   mockCustom.listNamespacedCustomObject.mockResolvedValue({ items: [
-    { metadata: { name: 'shop-prod-1' }, spec: { destination: { namespace: 'shop-prod-1' } } },
-    { metadata: { name: 'shop-staging' }, spec: { destination: { namespace: 'shop-staging' } } },
-    { metadata: { name: 'unrelated' }, spec: { destination: { namespace: 'other' } } },
-    { metadata: { name: 'old-app' }, spec: { destination: { namespace: 'already-gone' } } },
+    { metadata: { name: 'shop-prod-1', labels: managed() }, spec: { destination: { namespace: 'shop-prod-1' } } },
+    { metadata: { name: 'shop-staging', labels: managed() }, spec: { destination: { namespace: 'shop-staging' } } },
+    { metadata: { name: 'unrelated', labels: managed() }, spec: { destination: { namespace: 'other' } } },
+    { metadata: { name: 'old-app', labels: managed('platform-sdk') }, spec: { destination: { namespace: 'already-gone' } } },
+    // An operator-managed app aimed at a project namespace is never deleted by the API.
+    { metadata: { name: 'ops-app', labels: managed('argocd') }, spec: { destination: { namespace: 'shop-prod-1' } } },
   ] });
   const out = await removeArgoApplications(P, ['shop-prod-1', 'shop-staging', 'already-gone']);
-  expect(out).toEqual({ 'shop-prod-1': 'deleted', 'shop-staging': 'not-owned', 'old-app': 'deleted' });
+  expect(out).toEqual({ 'shop-prod-1': 'deleted', 'shop-staging': 'not-owned', 'old-app': 'deleted', 'ops-app': 'not-owned' });
   const replaced = mockCustom.replaceNamespacedCustomObject.mock.calls.map((c: any) => c[0]);
   expect(replaced.map((r: any) => r.name)).toEqual(['shop-prod-1', 'old-app']);
   expect(replaced[0].body.metadata.finalizers).toContain('resources-finalizer.argocd.argoproj.io');
@@ -86,4 +89,23 @@ it('lists only id-derived MongoDB / Redis identities and never the platform Post
     `mongo:production:plat_${id}_${env}`, `postgres:production:plat_${id}_${env}`, `redis:production:plat_${id}_${env}`,
   ].sort());
   expect(dbs.find((d) => d.kind === 'redis')!.keyPrefix).toBe(`plat:${id}:${env}:`);
+});
+
+it('guards namespace and Argo CD Application deletes with fail-closed admission policies', () => {
+  const { readFileSync } = require('fs');
+  const { join } = require('path');
+  const { parseAllDocuments } = require('yaml');
+  const { reservedNamespaces } = require('../../../src/lib/namespace-baseline');
+  const docs = parseAllDocuments(readFileSync(join(__dirname, '../../../../../platformctl/internal/manifests/data/platform-api-rbac.yaml'), 'utf8')).map((d: any) => d.toJS());
+  const nsDelete = docs.find((d: any) => d.kind === 'ValidatingAdmissionPolicy' && d.metadata.name === 'platform-project-namespace-delete');
+  expect(nsDelete.spec.failurePolicy).toBe('Fail');
+  expect(nsDelete.spec.matchConstraints.resourceRules[0]).toMatchObject({ operations: ['DELETE'], resources: ['namespaces'] });
+  expect(nsDelete.spec.validations[0].expression).toContain(`[${reservedNamespaces.map((n: string) => `'${n}'`).join(', ')}]`);
+  expect(nsDelete.spec.validations[1].expression).toContain("'platform.io/project' in oldObject.metadata.labels");
+  const appDelete = docs.find((d: any) => d.kind === 'ValidatingAdmissionPolicy' && d.metadata.name === 'platform-argocd-application-delete');
+  expect(appDelete.spec.failurePolicy).toBe('Fail');
+  expect(appDelete.spec.validations[0].expression).toContain("['platform', 'platform-sdk']");
+  for (const name of ['platform-project-namespace-delete', 'platform-argocd-application-delete']) {
+    expect(docs.find((d: any) => d.kind === 'ValidatingAdmissionPolicyBinding' && d.metadata.name === name).spec.validationActions).toEqual(['Deny']);
+  }
 });

@@ -378,6 +378,7 @@ export type RemoveOutcome = 'deleted' | 'absent' | 'not-owned' | 'reserved';
 
 const ARGO = { group: 'argoproj.io', version: 'v1alpha1', namespace: 'argocd', plural: 'applications' };
 const ARGO_CASCADE_FINALIZER = 'resources-finalizer.argocd.argoproj.io';
+const ARGO_MANAGERS = ['platform', 'platform-sdk'];
 
 /**
  * Delete every Argo CD Application whose destination is one of the project's namespaces, with
@@ -410,7 +411,9 @@ export async function removeArgoApplications(projectId: string, namespaces: stri
     const name = app?.metadata?.name;
     const dest = app?.spec?.destination?.namespace;
     if (!name || !dest || !namespaces.includes(dest)) continue;
-    if (!owned.has(dest)) { out[name] = 'not-owned'; continue; }
+    // Only Applications the platform created (admission enforces the same rule on delete).
+    const managedBy = app?.metadata?.labels?.['app.kubernetes.io/managed-by'];
+    if (!owned.has(dest) || !ARGO_MANAGERS.includes(managedBy)) { out[name] = 'not-owned'; continue; }
     try {
       const finalizers: string[] = app.metadata.finalizers || [];
       if (!finalizers.includes(ARGO_CASCADE_FINALIZER) && !app.metadata.deletionTimestamp) {
@@ -440,7 +443,13 @@ export async function removeNamespaces(projectId: string, namespaces: string[]):
   return out;
 }
 
-/** Previews created before per-project preview namespaces live in the shared `preview` namespace. */
+const forbidden = (e: any) => Number(e?.code ?? e?.statusCode ?? e?.response?.statusCode ?? e?.body?.code) === 403;
+
+/**
+ * Previews created before per-project preview namespaces live in the shared `preview` namespace.
+ * The API has no list/delete rights there on current installs (that namespace is reserved), so a
+ * refusal is reported as -1 ("remove by hand") instead of failing the delete.
+ */
 export async function removeLegacyPreviews(projectId: string): Promise<number> {
   if (!UUID_RE.test(projectId)) return 0;
   const { apps, core, net } = kube();
@@ -455,9 +464,14 @@ export async function removeLegacyPreviews(projectId: string): Promise<number> {
       try { await del(item.metadata.name); removed++; } catch (e) { if (!notFound(e)) throw e; }
     }
   };
-  await each(() => apps.listNamespacedDeployment({ namespace, labelSelector }), (name) => apps.deleteNamespacedDeployment({ name, namespace }));
-  await each(() => core.listNamespacedService({ namespace, labelSelector }), (name) => core.deleteNamespacedService({ name, namespace }));
-  await each(() => net.listNamespacedIngress({ namespace, labelSelector }), (name) => net.deleteNamespacedIngress({ name, namespace }));
+  try {
+    await each(() => apps.listNamespacedDeployment({ namespace, labelSelector }), (name) => apps.deleteNamespacedDeployment({ name, namespace }));
+    await each(() => core.listNamespacedService({ namespace, labelSelector }), (name) => core.deleteNamespacedService({ name, namespace }));
+    await each(() => net.listNamespacedIngress({ namespace, labelSelector }), (name) => net.deleteNamespacedIngress({ name, namespace }));
+  } catch (e) {
+    if (forbidden(e)) return -1;
+    throw e;
+  }
   return removed;
 }
 
