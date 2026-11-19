@@ -16,7 +16,7 @@
   </div>
   <div class="in-health-item">
     <span class="in-label" title="Kubernetes (k3s) runs your apps">Cluster</span>
-    <span class="status" data-testid="status-cluster" [ngClass]="k8sConnected && !clusterReconnecting ? 'status-ok' : 'status-warn'">{{ k8sConnected ? (clusterReconnecting ? 'Reconnecting' : 'Connected') : 'Not connected' }}</span>
+    <span class="status" data-testid="status-cluster" [ngClass]="!clusterChecked ? '' : k8sConnected && !clusterReconnecting ? 'status-ok' : 'status-warn'">{{ !clusterChecked ? 'Checking…' : k8sConnected ? (clusterReconnecting ? 'Reconnecting' : 'Connected') : 'Not connected' }}</span>
   </div>
 </section>
 
@@ -30,7 +30,7 @@
   </section>
 }
 
-@if (!k8sConnected) {
+@if (clusterChecked && !k8sConnected) {
   <section class="card in-notice" role="status" aria-label="Cluster not connected" data-testid="cluster-down">
     <strong>Can't reach the cluster</strong>
     <p>
@@ -95,7 +95,7 @@
           }
           @if (nodes.length === 0) {
             <tr class="empty-row">
-              <td colspan="6">No servers to show. They appear once the cluster is reachable.</td>
+              <td colspan="6">{{ clusterChecked ? 'No servers to show. They appear once the cluster is reachable.' : 'Loading servers…' }}</td>
             </tr>
           }
         </tbody>

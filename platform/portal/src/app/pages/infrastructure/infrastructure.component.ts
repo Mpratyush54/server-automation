@@ -29,6 +29,9 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
   // marked "Reconnecting", until CLUSTER_FAILURES_BEFORE_DOWN polls in a row fail.
   static readonly CLUSTER_FAILURES_BEFORE_DOWN = 3;
   k8sConnected = false;
+  // False until the first poll has been recorded: the page then says "Checking"
+  // instead of flashing "Can't reach the cluster" on every visit.
+  clusterChecked = false;
   clusterReconnecting = false;
   lastClusterOkAt: Date | null = null;
   private clusterFailures = 0;
@@ -39,10 +42,12 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
   bootstrapHistory: any[] = [];
 
   // System Health state
+  // Unknown until the first status answer (not "disconnected": the page loads
+  // before the API has answered, and a healthy cluster must not look down).
   systemStatus = {
-    postgres: 'disconnected',
-    mongodb: 'disconnected',
-    k8s: 'disconnected',
+    postgres: 'unknown',
+    mongodb: 'unknown',
+    k8s: 'unknown',
     services: {
       loki: 'offline',
       prometheus: 'offline',
@@ -116,6 +121,7 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
 
   /** Records one cluster poll result; keeps the last data through short outages. */
   noteCluster(ok: boolean) {
+    this.clusterChecked = true;
     if (ok) {
       this.clusterFailures = 0;
       this.k8sConnected = true;

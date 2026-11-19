@@ -118,6 +118,20 @@ describe('InfrastructureComponent metrics', () => {
     expect(cmp.serviceStatusClass("unknown")).toBe("");
   });
 
+  it("does not report an outage before the first poll has answered", () => {
+    // A healthy cluster flashed "Can't reach the cluster" and Disconnected
+    // databases on every visit: the page rendered before the first poll.
+    const fixture = TestBed.createComponent(InfrastructureComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector("[data-testid=\"cluster-down\"]")).toBeNull();
+    expect(el.querySelector("[data-testid=\"status-cluster\"]")?.textContent).toContain("Checking");
+    for (const id of ["status-postgres", "status-mongodb"]) {
+      expect(el.querySelector(`[data-testid="${id}"]`)?.textContent?.trim()).toBe("Unknown");
+    }
+    expect(el.textContent).not.toContain("Disconnected");
+  });
+
   it("keeps the last servers while one poll fails, then reports the outage after repeated failures", async () => {
     const nodes = [{ name: "srv-1", ip: "10.0.0.1", role: "master", status: "Ready", cpu: "2 Core", memory: "4Gi" },
       { name: "srv-2", ip: "10.0.0.2", role: "master", status: "NotReady", cpu: "2 Core", memory: "4Gi" }];
