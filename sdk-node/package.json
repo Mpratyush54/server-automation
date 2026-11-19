@@ -18,8 +18,8 @@
     "build": "tsc",
     "prepublishOnly": "npm run build",
     "test": "jest --forceExit --detectOpenHandles",
-    "test:unit": "jest --forceExit --detectOpenHandles --testPathPattern=tests/unit",
-    "test:integration": "jest --forceExit --detectOpenHandles --testPathPattern=tests/integration",
+    "test:unit": "jest --forceExit --detectOpenHandles --testPathPatterns=tests/unit",
+    "test:integration": "jest --forceExit --detectOpenHandles --testPathPatterns=tests/integration",
     "test:coverage": "jest --coverage --forceExit --detectOpenHandles",
     "test:telemetry-smoke": "node --experimental-vm-modules tests/telemetry-smoke.cjs"
   },

@@ -46,3 +46,9 @@ jobs:
             }
             console.log('telemetry modules load from the SDK');
           "
+
+      # The modules loading is not enough: the app must actually export. Runs the
+      # image against a stub Cairn API and HTTPS OTLP collector and requires a
+      # POST /v1/traces after one HTTP request.
+      - name: Traces reach an OTLP collector
+        run: examples/sdk-apps/node-api/ci/trace-check.sh sdk-node-api:ci
