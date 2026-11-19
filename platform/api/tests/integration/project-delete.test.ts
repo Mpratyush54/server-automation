@@ -263,6 +263,27 @@ describe('delete', () => {
     expect((await request(app).post('/api/projects').set(auth()).send({ name: 'shop', stack: 'nodejs' })).status).toBe(409);
   });
 
+  it('stops at the first failed backup and unlocks the databases in parallel', async () => {
+    const id = await createProject();
+    deps.backupDatabase.mockImplementation(async () => { throw new Error('connection timeout'); });
+    let inFlight = 0;
+    let maxInFlight = 0;
+    deps.unlockDatabase.mockImplementation(async () => {
+      inFlight++; maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 20));
+      inFlight--;
+    });
+    const res = await del(id, { confirmName: 'shop' });
+    const op = await waitDone(res.body.operationId);
+    expect(op.status).toBe('failed');
+    expect(deps.backupDatabase).toHaveBeenCalledTimes(1);
+    expect(deps.unlockDatabase).toHaveBeenCalledTimes(3);
+    expect(maxInFlight).toBe(3);
+    // onFailed restores the project just after the operation is marked failed.
+    for (let i = 0; i < 50 && !(await repo('Project').findOne({ where: { id } }))!.isActive; i++) await new Promise((r) => setTimeout(r, 20));
+    expect((await repo('Project').findOne({ where: { id } }))!.isActive).toBe(true);
+  });
+
   it('retries a delete that failed mid-way without repeating backups or restoring anything', async () => {
     const id = await createProject();
     deps.removeNamespaces.mockRejectedValueOnce(new Error('cluster API timed out'));

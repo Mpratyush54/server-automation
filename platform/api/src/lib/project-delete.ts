@@ -184,13 +184,15 @@ export const projectDeleteOperation = defineOperation<ProjectDeleteState>({
       await audit(s, 'project.delete.failed', { operationId: ctx.operationId, error });
       return;
     }
-    // Nothing was removed: give the project back, unlocked, exactly as it was.
-    for (const db of s.databases || []) {
-      if (!(s.locked || []).includes(resources.dbKey(db))) continue;
-      try { await deps.unlockDatabase(db); } catch (err: any) {
-        console.warn(`[project-delete] could not unlock ${where(db)}: ${err?.message || err}`);
-      }
-    }
+    // Nothing was removed: give the project back, unlocked, exactly as it was. In parallel, so
+    // an unreachable database server costs one connect timeout, not one per database.
+    await Promise.all((s.databases || [])
+      .filter((db) => (s.locked || []).includes(resources.dbKey(db)))
+      .map(async (db) => {
+        try { await deps.unlockDatabase(db); } catch (err: any) {
+          console.warn(`[project-delete] could not unlock ${where(db)}: ${err?.message || err}`);
+        }
+      }));
     if (s.wasActive) {
       await (await getDb()).getRepository(Project).update({ id: s.projectId }, { isActive: true });
       const { requestTelemetryOriginsSync } = await import('./telemetry-origins');
@@ -242,6 +244,9 @@ export const projectDeleteOperation = defineOperation<ProjectDeleteState>({
             s.backups[key] = await deps.backupDatabase(s.projectId, db, ctx.operationId);
           } catch (err: any) {
             failures.push(`${where(db)}: ${String(err?.message || err).slice(0, 300)}`);
+            // One failed backup aborts the delete: the rest would be discarded, and against an
+            // unreachable server each would wait for its own timeout before the project comes back.
+            break;
           }
         }
         ctx.setOutput({ backups: Object.keys(s.backups).length, failed: failures.length });
