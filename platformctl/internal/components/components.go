@@ -778,6 +778,27 @@ func apiAffinityYAML(cfg *config.Config) string {
 	return spreadAffinityYAML(cfg, "platform-api")
 }
 
+// rolloutStrategy for the API and portal Deployments. One replica surges (a
+// new pod is ready before the old one stops). With two or more, one old pod
+// stops first and its replacement starts in the space it freed: the spread
+// constraint below counts each ReplicaSet revision separately
+// (pod-template-hash), so on 2-vCPU ha servers (90%+ of CPU requested) the
+// surge pod found no node and the rollout hung with the old pod still running
+// (seen on a 3-server cluster). One ready replica keeps serving throughout,
+// behind the preStop drain and the readiness gate.
+func rolloutStrategy(replicas int) map[string]any {
+	if replicas >= 2 {
+		return map[string]any{"type": "RollingUpdate", "rollingUpdate": map[string]any{"maxUnavailable": 1, "maxSurge": 0}}
+	}
+	return map[string]any{"type": "RollingUpdate", "rollingUpdate": map[string]any{"maxUnavailable": 0, "maxSurge": 1}}
+}
+
+// rolloutStrategyYAML is rolloutStrategy as Deployment spec lines (2-space indent).
+func rolloutStrategyYAML(replicas int) string {
+	ru := rolloutStrategy(replicas)["rollingUpdate"].(map[string]any)
+	return fmt.Sprintf("  strategy:\n    type: RollingUpdate\n    rollingUpdate:\n      maxUnavailable: %d\n      maxSurge: %d\n", ru["maxUnavailable"], ru["maxSurge"])
+}
+
 // spreadAffinityYAML spreads the app's pods across nodes on ha. A topology
 // spread constraint with DoNotSchedule never stacks two replicas on one node
 // while another node is schedulable, yet still schedules everything on a
@@ -830,7 +851,7 @@ EOF`
 }
 
 // apiRolloutPatch is a strategic-merge patch carrying the #18 rollout settings
-// of the InstallPlatform manifest (replicas, surge-only strategy, drain grace,
+// of the InstallPlatform manifest (replicas, rollout strategy, drain grace,
 // preStop, readiness on /api/health/ready, liveness on /api/health). `update`
 // applies it after the new image is rolled, so an existing install converges
 // to the same Deployment as a fresh provision. Never before: an image older
@@ -845,7 +866,7 @@ func apiRolloutPatch(replicas int) string {
 	}
 	patch := map[string]any{"spec": map[string]any{
 		"replicas": replicas,
-		"strategy": map[string]any{"type": "RollingUpdate", "rollingUpdate": map[string]any{"maxUnavailable": 0, "maxSurge": 1}},
+		"strategy": rolloutStrategy(replicas),
 		"template": map[string]any{"spec": map[string]any{
 			"terminationGracePeriodSeconds": 45,
 			"containers": []any{map[string]any{
@@ -975,14 +996,8 @@ metadata:
     app: platform-api
 spec:
   replicas: %[3]d
-  # Zero-downtime rollouts: start a new pod and wait for readiness before
-  # removing an old one.
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
-  selector:
+  # Zero-downtime rollouts (rolloutStrategyYAML): one ready pod always serves.
+%[8]s  selector:
     matchLabels:
       app: platform-api
   template:
@@ -1086,7 +1101,7 @@ metadata:
     app: platform-portal
 spec:
   replicas: %[6]d
-  selector:
+%[9]s  selector:
     matchLabels:
       app: platform-portal
   template:
@@ -1137,6 +1152,7 @@ kubectl wait --for=condition=Available deployment/platform-api -n platform --tim
 kubectl wait --for=condition=Available deployment/platform-portal -n platform --timeout=180s
 `, strconv.Quote(apiImg), strconv.Quote(portalImg), apiReplicas(cfg), apiPDBScript(apiReplicas(cfg)),
 		apiAffinityYAML(cfg), portalReplicas(cfg), spreadAffinityYAML(cfg, "platform-portal"),
+		rolloutStrategyYAML(apiReplicas(cfg)), rolloutStrategyYAML(portalReplicas(cfg)),
 	))
 	if err != nil {
 		return err
