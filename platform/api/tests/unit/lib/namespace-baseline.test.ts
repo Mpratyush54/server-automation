@@ -160,6 +160,20 @@ it('reports matching manifests, quota usage and policy drift', async () => {
   c.core.readNamespace.mockRejectedValue({ code: 403 });
   expect(await namespaceBaselineStatus('project-a', env, c)).toMatchObject({ policyApplied: false, error: 'Baseline status unavailable' });
 });
+
+// An environment that was never deployed has no namespace, so no RoleBinding for
+// the API inside it: the namespaced reads are refused (403) while the namespace
+// read says 404. That is "not applied", not "unavailable" (seen on a live cluster
+// for every undeployed staging/development environment).
+it('reports a missing namespace as not applied even when namespaced reads are forbidden', async () => {
+  const c = clients();
+  c.core.readNamespace.mockRejectedValue({ code: 404 });
+  c.network.listNamespacedNetworkPolicy.mockRejectedValue({ code: 403 });
+  c.core.readNamespacedResourceQuota.mockRejectedValue({ code: 403 });
+  c.core.readNamespacedLimitRange.mockRejectedValue({ code: 403 });
+  expect(await namespaceBaselineStatus('project-a', env, c)).toMatchObject({ policyApplied: false, error: 'Baseline not applied' });
+  expect(c.network.listNamespacedNetworkPolicy).not.toHaveBeenCalled();
+});
 it('loads operator settings from a temp file with environment overrides', () => {
   const root = mkdtempSync(join(tmpdir(), 'namespace-settings-'));
   const previous = process.env.NAMESPACE_BASELINE_SETTINGS_FILE;
