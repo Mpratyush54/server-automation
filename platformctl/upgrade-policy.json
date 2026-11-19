@@ -1,5 +1,5 @@
 {
-  "minimumSource": "",
-  "breakingNotes": "",
-  "irreversibleMigrations": false
+  "minimumSource": "v1.2.0",
+  "breakingNotes": "Cairn 2.0 is licensed under the Cairn Source-Available License and needs a license key (free Personal key at https://cairnpaas.dev/signup). Release builds send anonymous install diagnostics; set PLATFORM_DIAGNOSTICS=off to stop them. DELETE /api/projects/:id now really deletes a project. The API answers 503 instead of 401 when sign-in cannot be checked. See https://cairnpaas.dev/docs/changelog",
+  "irreversibleMigrations": true
 }
