@@ -261,10 +261,7 @@ func InstallMinIO(cfg *config.Config) error {
 	}
 	defer os.Remove(tmpFile)
 
-	persistSize := "50Gi"
-	if cfg.IsHA() {
-		persistSize = "25Gi"
-	}
+	persistSize := minioPersistSize(cfg)
 	err = helmValues("minio", "minio", "storage", minioInstallValues(cfg), minioHelmArgs(cfg, tmpFile, persistSize)...)
 	if err != nil {
 		return err
@@ -601,12 +598,13 @@ func InstallPortainer(cfg *config.Config) error {
 			--set service.type=ClusterIP \
 			--set ingress.enabled=false \
 			--set adminPassword.existingSecret=portainer-admin-password \
+			--set persistence.size=%[4]s \
 			--set 'feature.flags[0]=--no-setup-token' \
 			--wait --timeout 5m
 		}
 		helm_install_portainer
 		kubectl rollout status deploy/portainer -n portainer --timeout=180s
-	`, helmLockHelper, tmpFile, chart("portainer"))); err != nil {
+	`, helmLockHelper, tmpFile, chart("portainer"), shellQuote(portainerPersistSize()))); err != nil {
 		return err
 	}
 
