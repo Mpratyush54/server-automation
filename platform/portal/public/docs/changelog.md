@@ -1,8 +1,28 @@
 # Changelog
 
-## Unreleased — Phase 4: observability, session replay, heatmaps, status pages
+## v2.0.0 (2026-11-19)
 
-### New
+Cairn 2.0 is the first release under the Cairn name and the Cairn Source-Available License. It brings high availability across servers, full observability, project deletion, and the public site at [cairnpaas.dev](https://cairnpaas.dev).
+
+### Breaking changes
+- **License.** Cairn is now distributed under the Cairn Source-Available License (see `LICENSE`). Running it needs a license key; the free Personal key covers personal use (up to 3 servers per install, 2 installs), and companies may evaluate it for 60 days. Earlier releases had no license file. See [cairnpaas.dev/pricing](https://cairnpaas.dev/pricing) and the [Terms of Service](https://cairnpaas.dev/terms).
+- **Install diagnostics.** Release builds of platformctl send anonymous install diagnostics after provision, upgrade and join; set `PLATFORM_DIAGNOSTICS=off` to stop them. What is sent is listed in the [Privacy Policy](https://cairnpaas.dev/privacy#diagnostics).
+- **Project delete really deletes.** `DELETE /api/projects/:id` now backs up every database, removes the project's apps, namespaces, monitoring, tokens and data, and frees the name. It needs the devops role, project owner access, a recent MFA step-up and `{ "confirmName": "<project name>" }`, and returns `202` with an operation id; databases are dropped only with `deleteDatabases: true`. See [api-reference/platform-api/projects.md](api-reference/platform-api/projects.md).
+- **Auth errors.** When credentials cannot be checked (for example while the database fails over), the API answers `503` with `Retry-After` instead of `401`. Clients should retry on `503` rather than sign the user out.
+- **nginx images** move to the `nginx/nginx-unprivileged` repository (1.30.7); apps built from the Cairn templates pick it up on their next build.
+
+### Also in this release
+- Pre-delete database backups go to the off-site backup target when one is configured; an aborted delete returns the project within seconds.
+- Failover hardening found by forced server stops on a 3-server cluster: no sign-outs during database failover, k3s no longer re-imports unchanged image archives on restart (recovery in seconds instead of minutes), stuck Helm locks are cleared before every release, HA MinIO drives are sized from the disk, joining servers wait for the API before hardening.
+- Node SDK demo pins OpenTelemetry 1.x and CI checks that traces reach a collector.
+- Public site: feature clips, pricing, About, Terms of Service, Privacy Policy, structured data and llms.txt facts for search and AI assistants.
+- `SECURITY.md`: report vulnerabilities privately through GitHub advisories or legal@cairnpaas.dev.
+
+The sections below list everything since v1.0.0 in detail.
+
+### Phase 4: observability, session replay, heatmaps, status pages
+
+#### New
 - **High availability (`ha` profile):** multi-node k3s with embedded etcd, `platformctl join --role server|agent`, join token create/rotate/install, cluster firewall limited to `PLATFORM_CLUSTER_NODES`, etcd snapshots to S3 (#53); Longhorn replicated storage as the default StorageClass with S3 backups and volume alerts (#50); ingress HA with a kube-vip ARP VIP (`INGRESS_HA_MODE=vip`) or external LB/DNS failover (`external`), ingress-nginx DaemonSet with client-IP preservation, optional `API_VIP` for joins (#54). `join` prepares Longhorn prerequisites on every node and the storage skip file and ingress HA k3s fragment on servers; MongoDB replica set, Redis Sentinel (API and SDKs discover the master through Sentinel) and distributed MinIO on a `longhorn-minio` StorageClass whose replica count follows the node count (#52); PostgreSQL HA with CloudNativePG, continuous WAL archiving, daily base backups and point-in-time recovery (#51). See [operations/ha.md](operations/ha.md).
 - **Session replay** (opt-in, consent-based) for the React and Angular SDKs: rrweb recording with input masking, unload delivery via `sendBeacon` / keepalive, portal player with error/navigation/network markers, audited access (`replay.view`, `replay.chunk_view`, `replay.snapshot_view`); agent tokens need the `replays:read` scope. See [guides/frontend-rum.md](guides/frontend-rum.md).
 - **Heatmaps**: per-page click and scroll-depth aggregates with the newest replay snapshot of each page as the background; buffered, exact aggregation. See [guides/heatmaps.md](guides/heatmaps.md).
@@ -12,7 +32,7 @@
 - **Dashboard** shows live data instead of placeholders.
 - **GDPR delete** also removes error-tracking events, replay objects/sessions and submits Loki delete requests. See [operations/telemetry-privacy.md](operations/telemetry-privacy.md).
 
-### Fixed (found by full-profile VM testing)
+#### Fixed (found by full-profile VM testing)
 - **ha PostgreSQL failover after a server loss:** on the 3-server power-off test, writes resumed 5m16s after the power-off with the bundled MinIO as the WAL archive, and 107 s with an external one. Two causes, both fixed: (1) the CloudNativePG operator does not reconcile, or fail over, a Cluster whose Barman Cloud plugin it cannot reach, and the plugin ran one replica, so failover waited until Kubernetes replaced a plugin pod on the failed server; the plugin now runs two spread replicas (a leader and a hot standby), and `install longhorn` and `install postgresql` spread both the operator and the plugin when all replicas share one node. (2) PostgreSQL acts on a promote request only between two WAL fetches from the archive, and a fetch from an object store that hangs (the bundled MinIO after losing quorum) waited 60 s, five times; WAL fetches now give up after 5 s and use standard retries (about 19 s at most). Measured after the fix: a new primary after 57.5 s and writes again after 61 s, with the primary, the active plugin and half of MinIO on the powered-off server. The client side was not involved: kube-proxy on every server watches its local API server, and the client node's rules followed the new endpoint within a second. Upgrading restarts each PostgreSQL instance once (the plugin sidecar's environment changes), with a switchover for the primary.
 - **Offline Portainer:** the Portainer chart pulls its image on every start (`pullPolicy: Always`), so on a server without internet Portainer stayed in ImagePullBackOff although the bundle had imported the pinned image, and `provision --bundle` failed at the portainer step. It now uses `IfNotPresent`.
 - **Offline bundle image names:** k3s marks the node Ready before it finishes importing the bundle's large image archive, so `provision --bundle` / `join --bundle` named the digest-pinned images too early and reported the ingress-nginx controller and admission images as "not in the bundle" (ImagePullBackOff offline). They now wait until k3s reports every staged archive imported (up to 20 minutes).
@@ -37,13 +57,13 @@
 - **Error grouping (#156):** the same browser error is grouped into one issue across engines and builds (normalised v2 fingerprint; existing issues keep receiving events).
 - **Firewall status (#157):** `platformctl` marks `harden-firewall` done after hardening instead of reporting it as in progress.
 
-## Unreleased — end-to-end VM suite and release gate
+### End-to-end VM suite and release gate
 
 - **Release gate:** every tag is now published as a GitHub pre-release. A stable `vX.Y.Z` becomes the Latest release (what `install.sh` and `releases/latest` install, and the GHCR `platformctl:latest` copy) only after the e2e VM suite passes on the `minimal` and `full` profiles. Until then stable installs keep the previous release. See [operations/e2e-ci.md](operations/e2e-ci.md).
 - **e2e CI:** nightly and on every tag, a fresh Ubuntu 24.04 EC2 VM is provisioned and checked (TLS, API, SDK, per-engine DB credentials, SSO to Grafana/Argo CD/Portainer, Argo CD sync, backup + restore test, tenant isolation, security probes), then destroyed. An hourly janitor removes leftovers.
 - `platformctl provision` also writes the step timings as JSON to `/var/log/platformctl/timings.json`.
 
-## Unreleased — faster `platformctl provision`
+### Faster `platformctl provision`
 
 - **Parallel install:** cluster components install as a dependency graph, up to 4 at a time (`--parallel N`, `PLATFORMCTL_PARALLEL`; `--parallel 1` keeps the old serial, live-output behaviour). Each step logs to `/var/log/platformctl/<step>.log`.
 - **Step timings:** provision prints a per-step timing table and saves it to `/var/log/platformctl/timings.txt`.
