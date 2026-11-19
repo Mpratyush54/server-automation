@@ -112,6 +112,7 @@
               <input id="q-website" name="website" tabindex="-1" autocomplete="off">
             </div>
             @if (formError) { <p class="sp-msg sp-err sp-wide" role="alert" data-testid="quote-error">{{ formError }}</p> }
+            <p class="sp-muted sp-wide" data-testid="quote-privacy">We use these details only to reply and prepare your quote. See the <a routerLink="/privacy" fragment="sales">Privacy Policy</a>.</p>
             <div class="sp-actions sp-wide">
               <button type="submit" class="btn btn-primary" [disabled]="busy">{{ busy ? 'Sending…' : 'Contact sales' }}</button>
             </div>

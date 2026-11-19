@@ -43,9 +43,22 @@ Full agent index: ${base}/llms-full.txt
 Sitemap: ${base}/sitemap.xml
 Source: https://github.com/Mpratyush54/server-automation
 
+## Facts
+
+- What: Cairn is a self-hosted platform (PaaS) that turns one or more Ubuntu servers into a place to deploy apps from Git, run PostgreSQL, MongoDB and Redis, keep off-site backups, and watch logs, metrics, traces and alerts. It is built on k3s (Kubernetes).
+- Where data lives: on your own servers. Cairn does not host your apps or receive their data.
+- High availability: 3 or more servers keep running when one fails.
+- AI access: a built-in MCP server gives AI assistants scoped access, with risky commands held for human approval.
+- Install: \`curl -fsSL https://get.cairnpaas.dev | bash\` on Ubuntu.
+- Pricing: free Personal plan for personal use (up to 3 servers per install, 2 installs, every feature); Enterprise from $9 per server per month, billed annually. Details: ${base}/pricing
+- License: Cairn Source-Available License (source on GitHub, a license key is needed to run it). Not open source.
+- Made by: Neural Nexus, India. Contact: legal@cairnpaas.dev
+
 ## Start here
 
 - [Home](${base}/): product overview
+- [Pricing](${base}/pricing): plans, limits and FAQ
+- [About](${base}/about): why Cairn exists and how it is built
 - [Docs home](${base}/docs): documentation index ([Markdown](${base}/docs/index.md))
 - [Installation](${base}/docs/getting-started/installation): install Cairn ([Markdown](${base}/docs/getting-started/installation.md))
 - [Recover](${base}/docs/operations/recover): fix a broken install ([Markdown](${base}/docs/operations/recover.md))

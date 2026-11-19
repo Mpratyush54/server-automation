@@ -26,6 +26,8 @@ const pages = {
   '/': new JSDOM(renderPublicPage('landing', shell)).window.document,
   '/about': new JSDOM(renderPublicPage('about', shell)).window.document,
   '/pricing': new JSDOM(renderPublicPage('pricing', shell)).window.document,
+  '/terms': new JSDOM(renderPublicPage('terms', shell)).window.document,
+  '/privacy': new JSDOM(renderPublicPage('privacy', shell)).window.document,
 };
 
 /**

@@ -362,14 +362,16 @@ test('every public page has its own title, description, canonical and social tag
   }
 });
 
-test('robots.txt and the sitemap list the About and Pricing pages', async () => {
+test('robots.txt and the sitemap list the About, Pricing and legal pages', async () => {
   const robots = await readFile(join(root, 'robots.txt'), 'utf8');
   assert.match(robots, /^Allow: \/about$/m);
   assert.match(robots, /^Allow: \/pricing$/m);
+  assert.match(robots, /^Allow: \/terms$/m);
+  assert.match(robots, /^Allow: \/privacy$/m);
   assert.match(robots, /^Sitemap: https:\/\/cairnpaas.dev\/sitemap\.xml$/m);
   for (const sitemap of [await readFile(join(root, 'sitemap.xml'), 'utf8'), await readFile(join(repo, 'platform/portal/public/sitemap.xml'), 'utf8')]) {
     const urls = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1]);
-    assert.deepEqual(urls.slice(0, 3), ['https://cairnpaas.dev/', 'https://cairnpaas.dev/about', 'https://cairnpaas.dev/pricing']);
-    assert.deepEqual(urls.slice(3), pages, 'Regenerate public/sitemap.xml: node platform/portal/scripts/prerender-docs.mjs --sitemap-only');
+    assert.deepEqual(urls.slice(0, 5), ['https://cairnpaas.dev/', 'https://cairnpaas.dev/about', 'https://cairnpaas.dev/pricing', 'https://cairnpaas.dev/terms', 'https://cairnpaas.dev/privacy']);
+    assert.deepEqual(urls.slice(5), pages, 'Regenerate public/sitemap.xml: node platform/portal/scripts/prerender-docs.mjs --sitemap-only');
   }
 });

@@ -2,7 +2,7 @@
 export const origin = 'https://cairnpaas.dev';
 
 /** Public pages other than docs, in sitemap order. */
-export const PUBLIC_PAGES = ['/', '/about', '/pricing'];
+export const PUBLIC_PAGES = ['/', '/about', '/pricing', '/terms', '/privacy'];
 
 export const escapeHtml = value => String(value)
   .replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');

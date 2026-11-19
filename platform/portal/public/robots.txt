@@ -1,8 +1,12 @@
 # cairnpaas.dev — marketing + docs only
+# Search engines and AI assistants (GPTBot, ClaudeBot, PerplexityBot, Google-Extended, ...) are welcome
+# to read and cite the marketing pages and docs; one group keeps the rules below for every crawler.
 User-agent: *
 Allow: /
 Allow: /about
 Allow: /pricing
+Allow: /terms
+Allow: /privacy
 Allow: /docs
 Allow: /docs/
 Allow: /llms.txt
@@ -21,5 +25,6 @@ Disallow: /settings
 Disallow: /oauth/
 Disallow: /account
 Disallow: /verify-email
+Disallow: /signin
 
 Sitemap: https://cairnpaas.dev/sitemap.xml
