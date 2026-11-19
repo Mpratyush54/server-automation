@@ -162,9 +162,13 @@ export class NewProjectComponent implements OnInit {
     if (!this.draft.name && !this.touched.has('app')) return null;
     return nameProblem(this.draft.name, this.existingNames);
   }
-  get repoError() { return repoProblem(this.draft.repositoryUrl); }
+  // Address fields are checked once the person leaves the field (or presses Next), not on every
+  // keystroke: a half-typed URL is not a mistake. Once shown, the message updates live.
+  blurred = new Set<'repo' | 'domain'>();
+  private shows(field: 'repo' | 'domain', step: StepId) { return this.blurred.has(field) || this.touched.has(step); }
+  get repoError() { return this.shows('repo', 'code') ? repoProblem(this.draft.repositoryUrl) : null; }
   get revisionError() { return revisionProblem(this.draft.gitRevision); }
-  get domainError() { return domainProblem(this.draft.domain); }
+  get domainError() { return this.shows('domain', 'environments') ? domainProblem(this.draft.domain) : null; }
   get repoInfo() { return parseRepo(this.draft.repositoryUrl); }
   get varErrors() { return varProblems(this.draft.variables); }
   get memberErrors() { return memberProblems(this.draft.members, this.selfId); }

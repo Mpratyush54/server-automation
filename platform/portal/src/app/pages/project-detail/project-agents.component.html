@@ -316,7 +316,7 @@
             <tbody>
               @for (a of pending; track a.id) {
                 <tr>
-                  <td>
+                  <td class="pa-command-cell">
                     <span class="mono pa-command">{{ a.command }}</span>
                     @if (a.reason) { <span class="cell-sub">{{ a.reason }}</span> }
                   </td>
