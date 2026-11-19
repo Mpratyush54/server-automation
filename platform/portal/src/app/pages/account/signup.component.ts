@@ -30,7 +30,10 @@ import { LicenseAccountService } from './license-account.service';
                 <input id="su-password" name="password" type="password" [(ngModel)]="password" required minlength="12" autocomplete="new-password">
                 <span class="sp-muted">At least 12 characters.</span>
               </div>
-              <p class="sp-muted">Privacy notice: coming soon.</p>
+              <label class="sp-check">
+                <input type="checkbox" name="terms" [(ngModel)]="acceptTerms" required data-testid="signup-terms">
+                <span>I agree to the <a routerLink="/terms" target="_blank">Terms of Service</a> and have read the <a routerLink="/privacy" target="_blank">Privacy Policy</a>.</span>
+              </label>
               <div class="sp-actions">
                 <button type="submit" class="btn btn-primary" [disabled]="!f.valid || busy">{{ busy ? 'Creating account…' : 'Create account' }}</button>
                 <a routerLink="/signin">I already have an account</a>
@@ -48,6 +51,7 @@ export class SignupComponent {
   private api = inject(LicenseAccountService);
   email = '';
   password = '';
+  acceptTerms = false;
   busy = false;
   sent = false;
   error = '';

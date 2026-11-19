@@ -196,6 +196,8 @@ sitemap.xml: https://cairnpaas.dev/sitemap.xml
   html: https://cairnpaas.dev/docs/operations/image-signing
 - https://cairnpaas.dev/docs/operations/platform-stack.md
   html: https://cairnpaas.dev/docs/operations/platform-stack
+- https://cairnpaas.dev/docs/operations/postgres-replication.md
+  html: https://cairnpaas.dev/docs/operations/postgres-replication
 - https://cairnpaas.dev/docs/operations/recover.md
   html: https://cairnpaas.dev/docs/operations/recover
 - https://cairnpaas.dev/docs/operations/storage-providers.md

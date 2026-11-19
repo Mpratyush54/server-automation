@@ -42,3 +42,5 @@
 .sp-price-line { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
 /* Short fields in pairs on wider cards; the message and actions span both columns. */
 @media (min-width: 600px) { .sp-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; } .sp-form-grid .sp-wide { grid-column: 1 / -1; } }
+.sp-check { display: flex; gap: 10px; align-items: flex-start; font-size: 0.875rem; color: rgb(var(--fg-2)); line-height: 1.5; }
+.sp-check input { margin-top: 3px; flex: none; }

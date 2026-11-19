@@ -1,0 +1,64 @@
+<app-site-header></app-site-header>
+<main class="lg" id="main">
+  <section class="lg-hero">
+    <div class="lg-frame">
+      <p class="lg-kicker">Legal</p>
+      <h1 class="lg-display">{{ doc.title }}</h1>
+      <p class="lg-updated">Last updated <time [attr.datetime]="doc.updated">{{ doc.updatedLabel }}</time></p>
+      <nav class="lg-switch" aria-label="Legal documents">
+        <a routerLink="/terms" [class.on]="doc.path === '/terms'">Terms of Service</a>
+        <a routerLink="/privacy" [class.on]="doc.path === '/privacy'">Privacy Policy</a>
+        <a href="https://github.com/Mpratyush54/server-automation/blob/master/LICENSE" target="_blank" rel="noopener">Software license</a>
+        <a href="https://github.com/Mpratyush54/server-automation/security/policy" target="_blank" rel="noopener">Security</a>
+      </nav>
+    </div>
+  </section>
+
+  <div class="lg-frame lg-body">
+    <aside class="lg-toc" aria-label="On this page">
+      <p class="lg-toc-title">On this page</p>
+      <ol>
+        @for (s of doc.sections; track s.id) {
+          <li><a [routerLink]="doc.path" [fragment]="s.id">{{ s.heading }}</a></li>
+        }
+      </ol>
+    </aside>
+
+    <article class="lg-article">
+      <section class="lg-summary" aria-labelledby="lg-summary-title">
+        <h2 id="lg-summary-title">In short</h2>
+        <ul>
+          @for (line of doc.summary; track line) { <li>{{ line }}</li> }
+        </ul>
+        <p class="lg-note">This summary helps you read the document; the full text below is what applies.</p>
+      </section>
+
+      @for (s of doc.sections; track s.id; let i = $index) {
+        <section class="lg-section" [id]="s.id" [attr.aria-labelledby]="s.id + '-h'">
+          <h2 [id]="s.id + '-h'"><span class="lg-num">{{ i + 1 }}.</span> {{ s.heading }}</h2>
+          @for (b of s.blocks; track $index) {
+            @if (b.p) { <p>{{ b.p }}</p> }
+            @if (b.list) {
+              <ul>
+                @for (item of b.list; track item) { <li>{{ item }}</li> }
+              </ul>
+            }
+            @if (b.rows) {
+              <dl class="lg-rows">
+                @for (r of b.rows; track r.label) {
+                  <div><dt>{{ r.label }}</dt><dd>{{ r.text }}</dd></div>
+                }
+              </dl>
+            }
+          }
+        </section>
+      }
+
+      <section class="lg-contact" aria-labelledby="lg-contact-title">
+        <h2 id="lg-contact-title">Contact</h2>
+        <p>Legal questions: <a [href]="legalMailto">{{ legalEmail }}</a>. Privacy requests and grievances: <a [href]="privacyMailto">{{ privacyEmail }}</a>. {{ operator }} replies within 30 days.</p>
+      </section>
+    </article>
+  </div>
+</main>
+<app-site-footer></app-site-footer>

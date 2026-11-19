@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { LANDING_INITIAL_STATE, renderPublicPage } from './prerender-landing.mjs';
@@ -13,7 +14,7 @@ const shell = (await readFile(fileURLToPath(new URL('../src/index.html', import.
 // If this test fails, the landing or About template gained a binding, block or
 // expression the prerender does not understand. Teach scripts/prerender-template.mjs
 // to render it (or change the template); never let it through unrendered.
-for (const page of ['landing', 'about', 'pricing']) {
+for (const page of ['landing', 'about', 'pricing', 'terms', 'privacy']) {
   test(`the current ${page} template prerenders completely`, () => {
     const html = renderPublicPage(page, shell);
     const body = html.slice(html.indexOf('<app-root>'));
@@ -43,15 +44,24 @@ test('the landing hero is rendered from TOPOLOGY_STEPS at step 0', () => {
   assert.deepEqual([...document.querySelectorAll('.lp-node-ip')].map(node => node.textContent), ['10.0.0.11', '10.0.0.12', '10.0.0.13', 'shop.example.com']);
   assert.equal(document.querySelector('.lp-copy').textContent.trim(), 'Copy');
   assert.equal(document.querySelector('.lp-topology-play').textContent.trim(), 'Pause');
-  // Clips that are not recorded yet say so and list what they will show; no video, no drawn UI.
+  // Published clips (landing-clip-versions.ts) render a video; the others say they are coming and
+  // list what they will show, with no drawn UI.
+  const published = new Set([...readFileSync(fileURLToPath(new URL('../src/app/pages/landing/landing-clip-versions.ts', import.meta.url)), 'utf8')
+    .matchAll(/^\s*"([a-z-]+)": "[0-9a-f]+"/gm)].map(m => m[1]));
   const features = [...document.querySelectorAll('.lp-feature')];
   assert.equal(features.length, 6);
   assert.ok(document.querySelector('article.lp-feature #high-availability'));
   for (const feature of features) {
-    assert.equal(feature.querySelector('.lp-pending-label').textContent, 'Recording coming soon');
+    const id = feature.querySelector('.lp-anchor').id;
+    if (published.has(id)) {
+      assert.equal(feature.querySelectorAll('video').length, 1, id);
+      assert.equal(feature.querySelector('.lp-pending-label'), null, id);
+    } else {
+      assert.equal(feature.querySelector('.lp-pending-label').textContent, 'Recording coming soon');
+    }
     assert.match(feature.querySelector('a.lp-guide').getAttribute('href'), /^\/docs\/[a-z0-9/-]+$/);
   }
-  assert.equal(document.querySelectorAll('video').length, 0);
+  assert.equal(document.querySelectorAll('video').length, published.size);
   assert.deepEqual([...document.querySelectorAll('.lp-index a')].map(a => a.getAttribute('href')),
     features.map(feature => `/#${feature.querySelector('.lp-anchor').id}`));
 });

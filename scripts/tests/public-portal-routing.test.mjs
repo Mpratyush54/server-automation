@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -297,7 +298,12 @@ test('the homepage explains the product and links to real docs without JavaScrip
   assert.equal([...document.matchAll(/<article class="lp-feature"/g)].length, 6);
   assert.equal([...document.matchAll(/<span class="lp-anchor" id="[a-z-]+"><\/span>/g)].length, 6);
   assert.match(document, /<span class="lp-anchor" id="high-availability">/);
-  assert.match(document, /Recording coming soon/);
+  // Published clips (landing-clip-versions.ts) play from the media host; the rest say they are coming.
+  const published = [...readFileSync(join(repo, 'platform/portal/src/app/pages/landing/landing-clip-versions.ts'), 'utf8')
+    .matchAll(/^\s*"([a-z-]+)": "[0-9a-f]+"/gm)].map(m => m[1]);
+  assert.equal([...document.matchAll(/<video [^>]*>/g)].length, published.length);
+  for (const id of published) assert.match(document, new RegExp(`https://media\\.cairnpaas\\.dev/v1/${id}\\.mp4\\?v=[0-9a-f]+`));
+  assert.equal([...document.matchAll(/Recording coming soon/g)].length, 6 - published.length);
   for (const link of document.matchAll(/href="(\/docs[^"]*)"/g)) {
     const url = link[1].split('#')[0];
     assert.ok(rendered.has(url), `Landing-page docs link has no generated page: ${url}`);
@@ -362,14 +368,16 @@ test('every public page has its own title, description, canonical and social tag
   }
 });
 
-test('robots.txt and the sitemap list the About and Pricing pages', async () => {
+test('robots.txt and the sitemap list the About, Pricing and legal pages', async () => {
   const robots = await readFile(join(root, 'robots.txt'), 'utf8');
   assert.match(robots, /^Allow: \/about$/m);
   assert.match(robots, /^Allow: \/pricing$/m);
+  assert.match(robots, /^Allow: \/terms$/m);
+  assert.match(robots, /^Allow: \/privacy$/m);
   assert.match(robots, /^Sitemap: https:\/\/cairnpaas.dev\/sitemap\.xml$/m);
   for (const sitemap of [await readFile(join(root, 'sitemap.xml'), 'utf8'), await readFile(join(repo, 'platform/portal/public/sitemap.xml'), 'utf8')]) {
     const urls = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1]);
-    assert.deepEqual(urls.slice(0, 3), ['https://cairnpaas.dev/', 'https://cairnpaas.dev/about', 'https://cairnpaas.dev/pricing']);
-    assert.deepEqual(urls.slice(3), pages, 'Regenerate public/sitemap.xml: node platform/portal/scripts/prerender-docs.mjs --sitemap-only');
+    assert.deepEqual(urls.slice(0, 5), ['https://cairnpaas.dev/', 'https://cairnpaas.dev/about', 'https://cairnpaas.dev/pricing', 'https://cairnpaas.dev/terms', 'https://cairnpaas.dev/privacy']);
+    assert.deepEqual(urls.slice(5), pages, 'Regenerate public/sitemap.xml: node platform/portal/scripts/prerender-docs.mjs --sitemap-only');
   }
 });

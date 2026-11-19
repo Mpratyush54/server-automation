@@ -39,8 +39,18 @@ import { CairnMarkComponent } from './cairn-mark.component';
               <a href="https://github.com/Mpratyush54/server-automation" target="_blank" rel="noopener">GitHub</a>
               <a routerLink="/docs/contribution-guide">Contribute</a>
             </div>
+            <div>
+              <span>Legal</span>
+              <a routerLink="/terms">Terms</a>
+              <a routerLink="/privacy">Privacy</a>
+              <a href="https://github.com/Mpratyush54/server-automation/blob/master/LICENSE" target="_blank" rel="noopener">License</a>
+              <a href="https://github.com/Mpratyush54/server-automation/security/policy" target="_blank" rel="noopener">Security</a>
+            </div>
           </nav>
         </div>
+
+        <p class="sf-legal"><span>© {{ year }} Neural Nexus. Cairn is source-available software.</span>
+          <a [href]="legalMailto">{{ legalEmail }}</a></p>
 
         <div class="sf-hero" aria-hidden="true">
           <div class="sf-word">
@@ -60,7 +70,10 @@ import { CairnMarkComponent } from './cairn-mark.component';
     @media (min-width: 800px) { .sf-top { grid-template-columns: 1fr 1.3fr; } }
     .sf-brand strong { font-size: 1rem; font-weight: 600; }
     .sf-brand p { margin: 0.4rem 0 0; max-width: 36ch; color: rgb(var(--fg-2)); font-size: 0.875rem; line-height: 1.55; }
-    .sf-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25rem; }
+    .sf-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
+    @media (min-width: 560px) { .sf-cols { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+    .sf-legal { margin: 1.75rem 0 0; font-size: 0.8125rem; color: rgb(var(--fg-3)); display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; }
+    .sf-legal a { color: rgb(var(--fg-2)); }
     .sf-cols div { display: flex; flex-direction: column; gap: 0.45rem; min-width: 0; }
     .sf-cols span { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: rgb(var(--fg-3)); margin-bottom: 0.2rem; }
     .sf-cols a { color: rgb(var(--fg-2)); text-decoration: none; font-size: 0.875rem; }
@@ -93,4 +106,8 @@ import { CairnMarkComponent } from './cairn-mark.component';
 
   `],
 })
-export class SiteFooterComponent {}
+export class SiteFooterComponent {
+  year = new Date().getFullYear();
+  legalEmail = 'legal@cairnpaas.dev';
+  legalMailto = 'mailto:legal@cairnpaas.dev';
+}
