@@ -80,7 +80,7 @@ updates:
         update-types: [ "version-update:semver-major" ]
       # nginx odd minors (1.31, 1.33, ...) are mainline. Stay on the stable line
       # (1.30) and take its patches; move to the next stable line on purpose.
-      - dependency-name: "nginxinc/nginx-unprivileged"
+      - dependency-name: "nginx/nginx-unprivileged"
         update-types: [ "version-update:semver-minor" ]
 
   - package-ecosystem: "docker-compose"

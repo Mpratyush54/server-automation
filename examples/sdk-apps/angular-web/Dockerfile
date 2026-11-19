@@ -19,7 +19,7 @@ COPY examples/sdk-apps/angular-web/ ./
 ENV NG_CLI_ANALYTICS=false
 RUN npm run build
 
-FROM nginxinc/nginx-unprivileged:1.30.7-alpine3.24
+FROM nginx/nginx-unprivileged:1.30.7-alpine3.24
 USER root
 COPY examples/sdk-apps/angular-web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /src/examples/sdk-apps/angular-web/dist /usr/share/nginx/html
