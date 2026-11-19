@@ -150,6 +150,36 @@ var listNodes = func() (string, error) {
 	return shell.Output("kubectl", "get", "nodes", "-o", "name", "--request-timeout=10s")
 }
 
+// A server that just joined has its kubelet up before its API server answers
+// (k3s may still be importing staged images), so the first node listing can
+// fail for a minute or more. Retry instead of failing the whole join.
+var (
+	hardenNodesWait     = 4 * time.Minute
+	hardenNodesInterval = 5 * time.Second
+)
+
+func listNodesRetry(timeout, interval time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
+	announced := false
+	for {
+		out, err := listNodes()
+		if err == nil && strings.TrimSpace(out) != "" {
+			return out, nil
+		}
+		if err == nil {
+			err = fmt.Errorf("the cluster lists no nodes yet")
+		}
+		if !time.Now().Add(interval).Before(deadline) {
+			return "", fmt.Errorf("%w (waited %s for the Kubernetes API on this server)", err, timeout)
+		}
+		if !announced {
+			fmt.Println("  Waiting for the Kubernetes API on this server before hardening...")
+			announced = true
+		}
+		time.Sleep(interval)
+	}
+}
+
 // checkHardenNodes guards the firewall against cutting a cluster apart. The
 // baseline closes node API/overlay ports to everything but the configured
 // peers, so a multi-node cluster is only hardened in the ha profile with
@@ -166,7 +196,7 @@ func checkHardenNodes() error {
 		}
 		return nil
 	}
-	nodes, err := listNodes()
+	nodes, err := listNodesRetry(hardenNodesWait, hardenNodesInterval)
 	if err != nil {
 		return fmt.Errorf("verify cluster nodes before hardening: %w", err)
 	}
