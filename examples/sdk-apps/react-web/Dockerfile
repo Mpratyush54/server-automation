@@ -2,7 +2,7 @@
 # Build from repo root:
 #   docker build -f examples/sdk-apps/react-web/Dockerfile --build-arg VITE_API_URL=https://... -t sdk-react-web:local .
 # RUM (optional, at run time): RUM_FARO_ENDPOINT, RUM_BROWSER_TOKEN, RUM_SAMPLING_RATIO.
-FROM node:22.23.4-alpine3.24 AS build
+FROM node:22.23.5-alpine3.24 AS build
 # The demo consumes the SDK from this repo (file:../../../sdk-react), built first.
 WORKDIR /src/sdk-react
 COPY sdk-react/package*.json ./
