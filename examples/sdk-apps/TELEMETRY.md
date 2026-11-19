@@ -19,14 +19,16 @@ npm run build
 # Install the compatible optional peer set into the example application:
 cd ../examples/sdk-apps/node-api
 npm install
-npm install @opentelemetry/sdk-node@^0.57.2 @opentelemetry/auto-instrumentations-node@^0.57.0 \
-  @opentelemetry/api@^1.9.0 @opentelemetry/api-logs@^0.57.2 \
-  @opentelemetry/resources@^1.30.1 @opentelemetry/core@^1.30.1 \
-  @opentelemetry/sdk-trace-base@^1.30.1 @opentelemetry/context-async-hooks@^1.30.1 \
-  @opentelemetry/sdk-metrics@^1.30.1 @opentelemetry/sdk-logs@^0.57.2 \
-  @opentelemetry/exporter-trace-otlp-http@^0.57.2 \
-  @opentelemetry/exporter-metrics-otlp-http@^0.57.2 \
-  @opentelemetry/exporter-logs-otlp-http@^0.57.2 @pyroscope/nodejs@^0.4.0
+# The OpenTelemetry 1.x line this SDK supports (its peerDependencies); the 2.x
+# packages (auto-instrumentations-node 0.57+) are not compatible.
+npm install @opentelemetry/sdk-node@0.57.2 @opentelemetry/auto-instrumentations-node@0.56.1 \
+  @opentelemetry/api@1.9.1 @opentelemetry/api-logs@0.57.2 \
+  @opentelemetry/resources@1.30.1 @opentelemetry/core@1.30.1 \
+  @opentelemetry/sdk-trace-base@1.30.1 @opentelemetry/context-async-hooks@1.30.1 \
+  @opentelemetry/sdk-metrics@1.30.1 @opentelemetry/sdk-logs@0.57.2 \
+  @opentelemetry/exporter-trace-otlp-http@0.57.2 \
+  @opentelemetry/exporter-metrics-otlp-http@0.57.2 \
+  @opentelemetry/exporter-logs-otlp-http@0.57.2 @pyroscope/nodejs@^0.4.0
 npm start
 ```
 

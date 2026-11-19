@@ -58,8 +58,22 @@ export function warnMissingPeer(err: unknown): boolean {
   if (missingPeerWarned) return true;
   missingPeerWarned = true;
   console.warn(`[platform-sdk] Telemetry is enabled but the OpenTelemetry peer dependency ${missing} is not installed; ` +
-    `traces and OTLP logs are off. Install the telemetry peers: npm install ${TELEMETRY_PEERS.join(' ')}`);
+    `traces and OTLP logs are off. Install the telemetry peers: ${telemetryInstallCommand()}`);
   return true;
+}
+
+/**
+ * The install command for the telemetry peers, each pinned to the range this SDK
+ * supports (its peerDependencies). Bare names would install the newest
+ * OpenTelemetry release, whose 2.x packages this SDK cannot use.
+ */
+export function telemetryInstallCommand(): string {
+  let ranges: Record<string, string> = {};
+  try {
+    // src/ and dist/ both sit next to package.json.
+    ranges = require('../package.json').peerDependencies || {};
+  } catch { /* fall back to bare names */ }
+  return 'npm install ' + TELEMETRY_PEERS.map((name) => (ranges[name] ? `'${name}@${ranges[name]}'` : name)).join(' ');
 }
 
 /** One process owns the global OTel providers. Optional modules are loaded only after opt-in. */

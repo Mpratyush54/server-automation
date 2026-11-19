@@ -121,6 +121,9 @@ describe('telemetry lifecycle without network', () => {
       const message = String(warn.mock.calls[0][0]);
       expect(message).toContain('@opentelemetry/sdk-node');
       expect(message).toContain('npm install');
+      // Each peer carries the supported range: bare names would install OpenTelemetry 2.x.
+      expect(message).toContain("'@opentelemetry/auto-instrumentations-node@~0.56.1'");
+      expect(message).toContain("'@opentelemetry/api@>=1.4.1 <1.10.0'");
       expect(message).not.toContain('plat_ingest_test');
       expect(message).not.toContain('otel.example.test');
     } finally {
