@@ -4,7 +4,6 @@ import { LandingFeature, landingFeatures } from './landing-clips';
 import { SiteHeaderComponent } from '../../shared/site/site-header.component';
 import { SiteFooterComponent } from '../../shared/site/site-footer.component';
 import { ClipPlayerComponent } from './clip-player.component';
-import { AirgapStoryComponent } from './airgap-story.component';
 import {
   COMPARISON, FEATURE_EXTRAS, FeatureExtra, INCLUDED, LATEST_RELEASE, PROOF_FACTS, REPO_URL, TOOL_GROUPS,
 } from './landing-content';
@@ -40,7 +39,7 @@ export const TOPOLOGY_STEPS: TopologyStep[] = [
 @Component({
   selector: 'app-landing',
   standalone: true,
-  imports: [RouterModule, SiteHeaderComponent, SiteFooterComponent, ClipPlayerComponent, AirgapStoryComponent],
+  imports: [RouterModule, SiteHeaderComponent, SiteFooterComponent, ClipPlayerComponent],
   templateUrl: './landing.component.html',
   styleUrl: './landing.component.css',
 })

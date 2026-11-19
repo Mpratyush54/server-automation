@@ -327,12 +327,3 @@
 .lp-copy:hover { border-color: rgb(var(--accent)); }
 .lp-copy:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: 2px; }
 .lp-install-note { margin: 0; padding: 0.75rem 1rem 0.9rem; border-top: 1px solid rgb(var(--line)); font-size: 0.8125rem; line-height: 1.5; color: rgb(var(--fg-2)); }
-
-/* Air-gapped installs: copy on the left, the animated story on the right. */
-.lp-airgap { border-bottom: 1px solid rgb(var(--line)); }
-.lp-airgap > .lp-frame { padding-block: clamp(2.5rem, 5vw, 4rem); }
-.lp-airgap-grid { display: grid; gap: 1.75rem; align-items: start; }
-@media (min-width: 960px) { .lp-airgap-grid { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 3rem; } }
-.lp-airgap-lede { margin: 0.9rem 0 0; max-width: 46ch; color: rgb(var(--fg-2)); line-height: 1.6; }
-.lp-airgap-points { margin: 1.1rem 0 1.25rem; padding: 0; list-style: none; display: grid; gap: 0.5rem; color: rgb(var(--fg-2)); font-size: 0.9375rem; }
-.lp-airgap-points li { padding-left: 1rem; border-left: 2px solid rgb(var(--line-strong)); line-height: 1.5; }
