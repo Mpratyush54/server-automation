@@ -124,6 +124,30 @@ function withoutPlatformCredentials(result: Record<string, any>): Record<string,
   return out;
 }
 
+/**
+ * A database that is unreachable (a server is down, a pod is restarting) is a
+ * temporary outage, not a bad request: answer 503 so SDKs and the portal
+ * retry, and keep internal host names out of the response. During the ha
+ * force-stop test, GET /sdk/api-metrics answered 400 "getaddrinfo ENOTFOUND
+ * mongodb-1.mongodb-headless.databases.svc.cluster.local".
+ */
+const UNAVAILABLE_CODES = new Set(['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EHOSTUNREACH']);
+export function isStoreUnavailable(err: any): boolean {
+  for (let e = err, depth = 0; e && depth < 5; e = e.cause, depth++) {
+    if (UNAVAILABLE_CODES.has(e.code)) return true;
+    if (/^Mongo(Network|ServerSelection|NotConnected|Timeout|TopologyClosed|PoolCleared)/.test(String(e.name || ''))) return true;
+    if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|EHOSTUNREACH|connection timed out|Connection terminated/.test(String(e.message || ''))) return true;
+  }
+  return false;
+}
+function sdkFailure(res: Response, err: any) {
+  if (isStoreUnavailable(err)) {
+    res.setHeader('Retry-After', '5');
+    return res.status(503).json({ error: 'Temporarily unavailable. Try again in a moment.' });
+  }
+  return res.status(400).json({ error: err.message });
+}
+
 router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) => {
   try {
     const body = req.body;
@@ -421,7 +445,7 @@ router.post('/sdk/register', sdkTokenAuth, async (req: Request, res: Response) =
         : [],
     });
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sdkFailure(res, err);
   }
 });
 
@@ -442,7 +466,7 @@ router.post('/sdk/deregister', sdkTokenAuth, async (req: Request, res: Response)
     }
     return res.json({ success: true });
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sdkFailure(res, err);
   }
 });
 
@@ -474,7 +498,7 @@ async function acceptTelemetry(
     if (err instanceof TelemetryPayloadTooLargeError) {
       return res.status(413).json({ error: err.message });
     }
-    return res.status(400).json({ error: err.message });
+    return sdkFailure(res, err);
   }
 }
 
@@ -592,7 +616,7 @@ router.get('/sdk/config', sdkTokenAuth, async (req: Request, res: Response) => {
     const telemetry = await buildTelemetryBlock({ ds, projectId: resolvedProjectId, environmentRef, configValues: result });
     return res.json({ ...result, telemetry });
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sdkFailure(res, err);
   }
 });
 
@@ -623,7 +647,7 @@ router.get('/sdk/db-credentials', sdkTokenAuth, async (req: Request, res: Respon
     const result = await resolveProjectDbCredentials(project.id, project.name, envName, types);
     return res.json(withoutPlatformCredentials(result));
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sdkFailure(res, err);
   }
 });
 
@@ -694,7 +718,7 @@ router.get('/sdk/api-metrics', expressAuthenticate, async (req: Request, res: Re
 
     return res.json({ metrics: agg });
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sdkFailure(res, err);
   }
 });
 
@@ -729,7 +753,7 @@ router.post('/sdk/bug-report', allowBrowserSdkToken, sdkTokenAuth, async (req: R
     })();
     return res.status(201).json({ id: report._id, message: 'Bug report submitted' });
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    return sdkFailure(res, err);
   }
 });
 
