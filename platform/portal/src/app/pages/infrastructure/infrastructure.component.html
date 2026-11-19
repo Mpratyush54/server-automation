@@ -22,17 +22,21 @@
 
 @if (clusterReconnecting) {
   <section class="card in-notice" role="status" aria-label="Reconnecting to the cluster" data-testid="cluster-reconnecting">
-    <strong>Reconnecting to the cluster</strong>
+    <strong>{{ apiNoAnswer ? 'Reconnecting to Cairn' : 'Reconnecting to the cluster' }}</strong>
     <p>
-      The last request didn't get an answer, which happens for a few seconds when a server goes down. Showing the data from
-      {{ lastClusterOkAt | date:'mediumTime' }}; this page retries every few seconds.
+      @if (apiNoAnswer) {
+        Cairn's API isn't answering right now, which happens for a short while when a server goes down and its database fails over.
+      } @else {
+        The last request didn't get an answer, which happens for a few seconds when a server goes down.
+      }
+      Showing the data from {{ lastClusterOkAt | date:'mediumTime' }}; this page retries every few seconds.
     </p>
   </section>
 }
 
 @if (clusterChecked && !k8sConnected) {
   <section class="card in-notice" role="status" aria-label="Cluster not connected" data-testid="cluster-down">
-    <strong>Can't reach the cluster</strong>
+    <strong>{{ apiNoAnswer ? "Can't reach Cairn's API" : "Can't reach the cluster" }}</strong>
     <p>
       @if (lastClusterOkAt) {
         Showing the last data, from {{ lastClusterOkAt | date:'mediumTime' }}. It may be out of date, and restarts and logs won't work.

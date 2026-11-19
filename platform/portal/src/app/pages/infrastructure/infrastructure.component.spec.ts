@@ -118,6 +118,32 @@ describe('InfrastructureComponent metrics', () => {
     expect(cmp.serviceStatusClass("unknown")).toBe("");
   });
 
+  it("keeps showing Reconnecting, not a cluster outage, while Cairn's API itself does not answer", async () => {
+    // A force-stopped database primary made both API pods unready for ~30 s on a
+    // 3-server cluster: every request timed out or got 503, the cluster was fine.
+    const nodes = [{ name: "srv-1", ip: "10.0.0.1", role: "master", status: "Ready", cpu: "2 Core", memory: "4Gi" }];
+    api.getNodes.and.returnValue(of({ k8sConnected: true, nodes }));
+    const fixture = TestBed.createComponent(InfrastructureComponent);
+    const cmp = fixture.componentInstance;
+    await cmp.refreshAllData();
+    api.getNodes.and.returnValue(throwError(() => ({ status: 503 })));
+    api.getPods.and.returnValue(throwError(() => ({ status: 0 })));
+    for (let i = 0; i < 5; i++) await cmp.refreshAllData();
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(cmp.k8sConnected).toBe(true);
+    expect(cmp.clusterReconnecting).toBe(true);
+    expect(cmp.apiNoAnswer).toBe(true);
+    expect(el.querySelector("[data-testid=\"cluster-down\"]")).toBeNull();
+    expect(el.querySelector("[data-testid=\"cluster-reconnecting\"]")?.textContent).toContain("Cairn's API isn't answering");
+    expect(el.textContent).toContain("srv-1");
+
+    api.getNodes.and.returnValue(of({ k8sConnected: true, nodes }));
+    await cmp.refreshAllData();
+    expect(cmp.clusterReconnecting).toBe(false);
+    expect(cmp.apiNoAnswer).toBe(false);
+  });
+
   it("does not report an outage before the first poll has answered", () => {
     // A healthy cluster flashed "Can't reach the cluster" and Disconnected
     // databases on every visit: the page rendered before the first poll.

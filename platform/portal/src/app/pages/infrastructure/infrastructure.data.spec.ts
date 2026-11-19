@@ -16,7 +16,7 @@ describe('Infrastructure cluster data', () => {
   it('takes an empty connected answer as empty, and never shows data from an unreachable cluster it never reached', async () => {
     api.getNodes.and.returnValue(of({ k8sConnected: false, nodes: [] }));
     api.getPods.and.returnValue(of({ k8sConnected: false, pods: [] }));
-    expect(await component.loadNodes()).toBeFalse();
+    expect(await component.loadNodes()).toBe('down');
     await component.loadPods();
     expect(component.nodes).toEqual([]);
     expect(component.pods).toEqual([]);
@@ -26,7 +26,7 @@ describe('Infrastructure cluster data', () => {
     component.pods = [{ name: 'old-pod' }];
     api.getNodes.and.returnValue(of({ k8sConnected: true, nodes: [] }));
     api.getPods.and.returnValue(of({ k8sConnected: true, pods: [] }));
-    expect(await component.loadNodes()).toBeTrue();
+    expect(await component.loadNodes()).toBe('ok');
     await component.loadPods();
     expect(component.nodes).toEqual([]);
     expect(component.pods).toEqual([]);

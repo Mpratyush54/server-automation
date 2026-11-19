@@ -14,6 +14,15 @@ export interface NodeMetricRow {
   memoryCapacityBytes: number;
 }
 
+/** One cluster read: answered, API says the cluster is unreachable, or no answer from the API. */
+export type PollResult = 'ok' | 'down' | 'noanswer';
+
+/** Two reads of one poll: ok if either answered; down only if the API reported it. */
+export function combinePolls(a: PollResult, b: PollResult): PollResult {
+  if (a === 'ok' || b === 'ok') return 'ok';
+  return a === 'down' || b === 'down' ? 'down' : 'noanswer';
+}
+
 @Component({
   selector: 'app-infrastructure',
   standalone: true,
@@ -33,6 +42,9 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
   // instead of flashing "Can't reach the cluster" on every visit.
   clusterChecked = false;
   clusterReconnecting = false;
+  // The last poll got no answer from Cairn's API itself (timeout, 502/503): the
+  // cluster may be fine, e.g. while the API's database fails over.
+  apiNoAnswer = false;
   lastClusterOkAt: Date | null = null;
   private clusterFailures = 0;
   private podsLoadedFor: string | null = null;
@@ -115,18 +127,29 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
       this.loadPods(false),
       this.loadBootstrapHistory()
     ]);
-    // One poll = one observation: the cluster answered if either cluster read succeeded.
-    this.noteCluster(nodesOk || podsOk);
+    // One poll = one observation: the cluster answered if either cluster read succeeded;
+    // it is down only if the API answered that it is.
+    this.noteCluster(combinePolls(nodesOk, podsOk));
   }
 
   /** Records one cluster poll result; keeps the last data through short outages. */
-  noteCluster(ok: boolean) {
+  noteCluster(result: boolean | PollResult) {
+    const r: PollResult = result === true ? 'ok' : result === false ? 'down' : result;
     this.clusterChecked = true;
-    if (ok) {
+    if (r === 'ok') {
       this.clusterFailures = 0;
       this.k8sConnected = true;
       this.clusterReconnecting = false;
+      this.apiNoAnswer = false;
       this.lastClusterOkAt = new Date();
+      return;
+    }
+    this.apiNoAnswer = r === 'noanswer';
+    // No answer from the API says nothing about the cluster: keep the last data
+    // as "Reconnecting" instead of reporting a cluster outage (a database failover
+    // made both API pods unready for ~30 s on a 3-server cluster).
+    if (r === 'noanswer' && this.lastClusterOkAt) {
+      this.clusterReconnecting = true;
       return;
     }
     this.clusterFailures++;
@@ -148,14 +171,14 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
   }
 
   /** Returns whether the cluster answered; keeps the last servers list when it did not. */
-  async loadNodes(): Promise<boolean> {
+  async loadNodes(): Promise<PollResult> {
     try {
       const res = await firstValueFrom(this.api.getNodes());
-      if (!res.k8sConnected) return false;
+      if (!res.k8sConnected) return 'down';
       this.nodes = res.nodes || [];
-      return true;
+      return 'ok';
     } catch {
-      return false;
+      return 'noanswer';
     }
   }
 
@@ -171,24 +194,24 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
   }
 
   /** Returns whether the cluster answered. `report` records the result when called on its own. */
-  async loadPods(report = true): Promise<boolean> {
+  async loadPods(report = true): Promise<PollResult> {
     const requested = this.selectedNamespace;
-    let ok = false;
+    let result: PollResult = 'down';
     try {
       const ns = requested === 'all' ? undefined : requested;
       const res = await firstValueFrom(this.api.getPods(ns));
       if (res.k8sConnected) {
         this.pods = res.pods || [];
         this.podsLoadedFor = requested;
-        ok = true;
+        result = 'ok';
       }
     } catch {
-      ok = false;
+      result = 'noanswer';
     }
     // Last data is only kept for the same filter; never show another namespace's pods.
-    if (!ok && this.podsLoadedFor !== requested) this.pods = [];
-    if (report) this.noteCluster(ok);
-    return ok;
+    if (result !== 'ok' && this.podsLoadedFor !== requested) this.pods = [];
+    if (report) this.noteCluster(result);
+    return result;
   }
 
   async loadBootstrapHistory() {
