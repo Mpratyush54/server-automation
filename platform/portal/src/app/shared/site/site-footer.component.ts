@@ -49,7 +49,7 @@ import { CairnMarkComponent } from './cairn-mark.component';
           </nav>
         </div>
 
-        <p class="sf-legal"><span>© {{ year }} Neural Nexus. Cairn is source-available software.</span>
+        <p class="sf-legal"><span>Â© {{ year }} Neural Nexus. Cairn is source-available software.</span>
           <a [href]="legalMailto">{{ legalEmail }}</a></p>
 
         <div class="sf-hero" aria-hidden="true">
