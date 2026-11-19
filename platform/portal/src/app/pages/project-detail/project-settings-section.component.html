@@ -212,7 +212,8 @@
       <div class="card-header"><h2 id="set-delete-title">Delete this project</h2></div>
       <div class="panel-body">
         <p class="hint">Removes the apps, previews, monitoring, tokens and data of this project. Its databases are backed up first, and you choose whether to keep them.</p>
-        <button type="button" class="btn btn-danger btn-sm" (click)="deleteProject.emit()" data-testid="delete-project-open">Delete project…</button>
+        <!-- Disabled until the project has loaded: the dialog needs its id and name. -->
+        <button type="button" class="btn btn-danger btn-sm" (click)="deleteProject.emit()" [disabled]="!project?.id" data-testid="delete-project-open">{{ project?.id ? 'Delete project…' : 'Loading project…' }}</button>
       </div>
     </section>
   }
