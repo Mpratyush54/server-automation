@@ -34,3 +34,17 @@ export interface LegalDoc {
 export const OPERATOR = 'Neural Nexus';
 export const LEGAL_EMAIL = 'legal@cairnpaas.dev';
 export const PRIVACY_EMAIL = 'privacy@cairnpaas.dev';
+
+/**
+ * Give every block all three fields (null when unused). The prerenderer, like strict
+ * templates, rejects reading a property an object does not have.
+ */
+export function normalizeDoc(doc: LegalDoc): LegalDoc {
+  return {
+    ...doc,
+    sections: doc.sections.map(s => ({
+      ...s,
+      blocks: s.blocks.map(b => ({ p: b.p ?? null, list: b.list ?? null, rows: b.rows ?? null }) as unknown as LegalBlock),
+    })),
+  };
+}

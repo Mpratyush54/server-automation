@@ -97,14 +97,23 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    permissions: {}
+    permissions:
+      contents: read
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: platform/portal/public
+
       - name: Submit sitemap URLs to IndexNow
         continue-on-error: true
         env:
           SITE: https://cairnpaas.dev
-          INDEXNOW_KEY: d4095d71ecad9e42ea35620752b8409c
         run: |
+          # The key is the name of the public key file: platform/portal/public/<32 hex>.txt
+          INDEXNOW_KEY=$(ls platform/portal/public | grep -E '^[0-9a-f]{32}\.txt$' | head -1 | cut -d. -f1)
+          [ -n "$INDEXNOW_KEY" ] || { echo "no IndexNow key file"; exit 0; }
           for i in $(seq 1 50); do
             if [ "$(curl -fsS "$SITE/$INDEXNOW_KEY.txt" 2>/dev/null)" = "$INDEXNOW_KEY" ]; then break; fi
             echo "waiting for the deploy to serve the key file ($i/50)"; sleep 30

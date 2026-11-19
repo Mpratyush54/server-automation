@@ -1,0 +1,34 @@
+# Rolls out each new ghcr.io/mpratyush54/platform-portal-public:latest build
+# (pushed by .github/workflows/deploy-public-portal.yml) to cairnpaas.dev.
+#
+# Argo CD Image Updater v1 only acts on ImageUpdater resources; it ignores the
+# argocd-image-updater.argoproj.io/* annotations older versions read, which is
+# why the site stopped updating. The digest strategy follows the moving
+# `latest` tag and writes the pinned digest to the public-portal Application
+# as a kustomize image override.
+#
+# Not synced by an Argo CD app (k8s/argo is outside the public-portal
+# kustomization). Apply once on the Oracle server:
+#   kubectl apply -f k8s/argo/public-portal-image-updater.yaml
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: public-portal
+  namespace: argocd
+spec:
+  applicationRefs:
+    - namePattern: public-portal
+      useAnnotations: false
+      images:
+        - alias: platform-portal-public
+          imageName: ghcr.io/mpratyush54/platform-portal-public:latest
+          commonUpdateSettings:
+            updateStrategy: digest
+            forceUpdate: false
+            platforms:
+              - linux/arm64
+          manifestTargets:
+            kustomize:
+              name: ghcr.io/mpratyush54/platform-portal-public
+  writeBackConfig:
+    method: argocd

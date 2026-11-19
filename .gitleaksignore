@@ -9,3 +9,5 @@ f8e0eaa583fa24d3f176cd0b3c5703c10ceb9891:scripts/tests/e2e-redact.test.mjs:gener
 633f25777a72d0d6333c0187ac42ec4b3243f2f4:platform/api/src/lib/error-sourcemaps.ts:generic-api-key:45
 # RFC 6238 TOTP test vector (public, not a credential) in the video recorder tests.
 b6569e8b6cf5c10bf5b60b6ac29f5bd8b3b8b510:videos/recordings/test/pipeline.test.mjs:generic-api-key:17
+# IndexNow key (public by design; served at https://cairnpaas.dev/<key>.txt), in the first version of the deploy workflow.
+4a2ad717c0e07f7607674fefa4ebf536cd1db67b:.github/workflows/deploy-public-portal.yml:generic-api-key:106

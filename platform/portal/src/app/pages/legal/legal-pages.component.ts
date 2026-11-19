@@ -2,7 +2,7 @@ import { Component } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { SiteHeaderComponent } from '../../shared/site/site-header.component';
 import { SiteFooterComponent } from '../../shared/site/site-footer.component';
-import { LEGAL_EMAIL, LegalDoc, OPERATOR, PRIVACY_EMAIL } from './legal-doc';
+import { LEGAL_EMAIL, LegalDoc, normalizeDoc, OPERATOR, PRIVACY_EMAIL } from './legal-doc';
 import { TERMS } from './terms.content';
 import { PRIVACY } from './privacy.content';
 
@@ -25,7 +25,7 @@ abstract class LegalPage {
   styleUrl: './legal-page.css',
 })
 export class TermsComponent extends LegalPage {
-  doc = TERMS;
+  doc = normalizeDoc(TERMS);
 }
 
 /** Public Privacy Policy (/privacy), prerendered for crawlers. */
@@ -37,5 +37,5 @@ export class TermsComponent extends LegalPage {
   styleUrl: './legal-page.css',
 })
 export class PrivacyComponent extends LegalPage {
-  doc = PRIVACY;
+  doc = normalizeDoc(PRIVACY);
 }
