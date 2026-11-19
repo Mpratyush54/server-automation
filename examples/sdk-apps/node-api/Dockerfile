@@ -2,7 +2,7 @@
 # Build from repo root:
 #   docker build -f examples/sdk-apps/node-api/Dockerfile -t sdk-node-api:local .
 
-FROM node:22.23.4-alpine3.24 AS sdk
+FROM node:22.23.5-alpine3.24 AS sdk
 WORKDIR /src
 COPY sdk-node/package*.json ./sdk-node/
 # Reproducible install when a lockfile is committed; fall back until it is.
@@ -20,7 +20,7 @@ COPY sdk-node ./sdk-node
 # from its real path and never finds the app's OpenTelemetry packages.)
 RUN cd sdk-node && npm run build && npm pack --pack-destination /src
 
-FROM node:22.23.4-alpine3.24
+FROM node:22.23.5-alpine3.24
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=sdk /src/mpratyush54-sdk-node-*.tgz /tmp/sdk/
