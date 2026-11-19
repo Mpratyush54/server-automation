@@ -55,15 +55,17 @@ router.get('/projects', expressAuthenticate, async (req: Request, res: Response)
     }
     const ids = await listAccessibleProjectIds(authReq.user, authReq.agentToken);
     const repo = ds.getRepository(Project);
+    // Deleted projects are left out; one still being deleted is listed with `deleting: true` so
+    // its progress (or a failed delete to retry) stays reachable.
     const projects = ids === null
-      ? await repo.find({ where: { isActive: true }, relations: ['environments', 'deployments'] })
+      ? await repo.find({ where: { deletedAt: IsNull() }, relations: ['environments', 'deployments'] })
       : ids.length === 0
         ? []
         : await repo.find({
-            where: { id: In(ids), isActive: true },
+            where: { id: In(ids), deletedAt: IsNull() },
             relations: ['environments', 'deployments'],
           });
-    return res.json(projects);
+    return res.json(projects.map((p) => (p.isActive === false ? { ...p, deleting: true } : p)));
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }

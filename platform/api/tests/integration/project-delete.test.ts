@@ -218,6 +218,8 @@ describe('delete', () => {
       expect(assignedNamespace('shop', env, again.body.id)).not.toBe(assignedNamespace('shop', env, id));
       expect(projectDbIdentity(again.body.id, env).id).not.toBe(projectDbIdentity(id, env).id);
     }
+    // A deleted project is no longer listed.
+    expect((await request(app).get('/api/projects').set(auth())).body.map((p: any) => p.id)).not.toContain(id);
     // Deleting again is refused: it is already gone.
     expect((await del(id, { confirmName: 'shop' })).body.code).toBe('project_already_deleted');
   });
@@ -279,6 +281,9 @@ describe('delete', () => {
     expect(blocked.status).toBe(409);
     expect(blocked.body.code).toBe('project_name_deleting');
     expect((await request(app).get(`/api/projects/${id}/deletion`).set(auth())).body.status).toBe('failed');
+    // Still listed (flagged) so the failed delete can be found and retried.
+    const listed = await request(app).get('/api/projects').set(auth());
+    expect(listed.body.find((p: any) => p.id === id)).toMatchObject({ deleting: true });
 
     await new Promise((r) => setTimeout(r, 5)); // distinct createdAt for the retry
     const retry = await del(id, { confirmName: 'shop' });
