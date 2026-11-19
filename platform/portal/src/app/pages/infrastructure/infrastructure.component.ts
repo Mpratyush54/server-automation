@@ -165,7 +165,11 @@ export class InfrastructureComponent implements OnInit, OnDestroy {
     try {
       this.systemStatus = await firstValueFrom(this.api.getBootstrapStatus());
     } catch {
-      this.systemStatus.postgres = 'disconnected';
+      // No answer from Cairn's API says nothing about its databases: with the
+      // API scaled away the page showed PostgreSQL "Disconnected" next to a
+      // stale MongoDB "Running". Both are unknown until the API answers.
+      this.systemStatus.postgres = 'unknown';
+      this.systemStatus.mongodb = 'unknown';
       this.systemStatus.k8s = 'disconnected';
     }
   }

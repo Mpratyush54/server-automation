@@ -144,6 +144,20 @@ describe('InfrastructureComponent metrics', () => {
     expect(cmp.apiNoAnswer).toBe(false);
   });
 
+  it("shows the databases as unknown, not disconnected, while the API does not answer", async () => {
+    const fixture = TestBed.createComponent(InfrastructureComponent);
+    const cmp = fixture.componentInstance;
+    await cmp.refreshAllData();
+    api.getBootstrapStatus.and.returnValue(throwError(() => ({ status: 503 })));
+    await cmp.refreshAllData();
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    for (const id of ["status-postgres", "status-mongodb"]) {
+      expect(el.querySelector(`[data-testid="${id}"]`)?.textContent?.trim()).toBe("Unknown");
+    }
+    expect(el.textContent).not.toContain("Disconnected");
+  });
+
   it("does not report an outage before the first poll has answered", () => {
     // A healthy cluster flashed "Can't reach the cluster" and Disconnected
     // databases on every visit: the page rendered before the first poll.
