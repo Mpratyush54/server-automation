@@ -8,7 +8,7 @@ import { FeedbackHostComponent } from './shared/feedback/feedback-host.component
 import { filter } from 'rxjs';
 
 /** Public-site pages, shown with their own header and footer instead of the app shell. */
-const MARKETING_SEGMENTS = new Set(['', 'landing', 'about', 'pricing', 'signup', 'signin', 'verify-email', 'account']);
+export const MARKETING_SEGMENTS = new Set(['', 'landing', 'about', 'pricing', 'terms', 'privacy', 'signup', 'signin', 'verify-email', 'account']);
 
 @Component({
   selector: 'app-root',
