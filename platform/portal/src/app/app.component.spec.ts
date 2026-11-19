@@ -2,9 +2,18 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideHttpClient } from '@angular/common/http';
-import { AppComponent } from './app.component';
+import { AppComponent, MARKETING_SEGMENTS } from './app.component';
+import { routes } from './app.routes';
+import { marketingOnlyGuard } from './guards/public-domain.guard';
 
 describe('AppComponent', () => {
+  it('shows every public-site route without the app shell', () => {
+    // A marketing route missing from MARKETING_SEGMENTS renders inside the app sidebar.
+    const marketing = routes.filter(r => (r.canActivate ?? []).includes(marketingOnlyGuard)).map(r => r.path ?? '');
+    expect(marketing.length).toBeGreaterThan(5);
+    for (const path of marketing) expect(MARKETING_SEGMENTS.has(path)).withContext(path).toBeTrue();
+  });
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [AppComponent],
