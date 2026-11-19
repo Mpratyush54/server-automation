@@ -335,7 +335,9 @@ test('the About page is prerendered with its own content and metadata', async ()
   assert.equal(meta.title, 'About Cairn');
   assert.deepEqual(meta.canonical, ['https://cairnpaas.dev/about']);
   assert.equal(meta.ogUrl, 'https://cairnpaas.dev/about');
-  assert.equal(meta.jsonLd.length, 0);
+  // Only its own AboutPage node, not the landing page's WebSite/SoftwareApplication graph.
+  assert.deepEqual(meta.jsonLd.map(item => item['@type']), ['AboutPage']);
+  assert.equal(meta.jsonLd[0].url, 'https://cairnpaas.dev/about');
 });
 
 test('every public page has its own title, description, canonical and social tags', () => {
