@@ -15,7 +15,11 @@ export class ApiService {
   getProject(id: string): Observable<any> { return this.http.get(`${this.base}/projects/${id}`); }
   createProject(data: any): Observable<any> { return this.http.post(`${this.base}/projects`, data); }
   updateProject(id: string, data: any): Observable<any> { return this.http.put(`${this.base}/projects/${id}`, data); }
-  deleteProject(id: string): Observable<any> { return this.http.delete(`${this.base}/projects/${id}`); }
+  /** Starts deleting the project in the background (needs the exact name and a recent step-up). */
+  deleteProject(id: string, body: { confirmName: string; deleteDatabases?: boolean }): Observable<any> {
+    return this.http.delete(`${this.base}/projects/${id}`, { body });
+  }
+  getProjectDeletion(id: string): Observable<any> { return this.http.get(`${this.base}/projects/${id}/deletion`); }
   getProjectMembers(projectId: string): Observable<any> { return this.http.get(`${this.base}/projects/${projectId}/members`); }
   addProjectMember(projectId: string, data: { email?: string; userId?: string; role: string }): Observable<any> {
     return this.http.post(`${this.base}/projects/${projectId}/members`, data);

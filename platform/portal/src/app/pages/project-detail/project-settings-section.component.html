@@ -206,4 +206,14 @@
       }
     </section>
   }
+
+  @if (canDeleteProject) {
+    <section id="delete-project" class="card card-flush" aria-labelledby="set-delete-title" data-testid="delete-project-card">
+      <div class="card-header"><h2 id="set-delete-title">Delete this project</h2></div>
+      <div class="panel-body">
+        <p class="hint">Removes the apps, previews, monitoring, tokens and data of this project. Its databases are backed up first, and you choose whether to keep them.</p>
+        <button type="button" class="btn btn-danger btn-sm" (click)="deleteProject.emit()" data-testid="delete-project-open">Delete project…</button>
+      </div>
+    </section>
+  }
 </div>

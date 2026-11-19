@@ -4,9 +4,10 @@ import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api.service';
-import { DialogService, ToastService, errorText } from '../../shared/feedback/feedback.service';
+import { ToastService, errorText } from '../../shared/feedback/feedback.service';
 import { AppRow, Tone, buildApps, timeAgo } from '../dashboard/dashboard-model';
 import { parseRepo } from '../new-project/new-project-model';
+import { DeleteProjectDialogComponent, DeleteDialogResult } from '../project-detail/delete-project-dialog.component';
 
 export type StatusFilter = 'all' | 'attention' | 'running' | 'idle';
 export type SortKey = 'recent' | 'name' | 'status';
@@ -78,14 +79,13 @@ export function filterRows<T extends ProjectRow>(rows: T[], query: string, f: St
 @Component({
   selector: 'app-projects',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule],
+  imports: [CommonModule, RouterModule, FormsModule, DeleteProjectDialogComponent],
   templateUrl: './projects.component.html',
   styleUrl: './projects.component.css'
 })
 export class ProjectsComponent implements OnInit {
   private api = inject(ApiService);
   private toast = inject(ToastService);
-  private dialog = inject(DialogService);
 
   projects: any[] = [];
   rows: ProjectRow[] = [];
@@ -201,22 +201,24 @@ export class ProjectsComponent implements OnInit {
     this.menuFor = null;
   }
 
-  async delete(row: { id: string; name: string }) {
+  /** Project the delete dialog is open for. */
+  deleting: { id: string; name: string } | null = null;
+
+  delete(row: { id: string; name: string }) {
     this.menuFor = null;
-    const ok = await this.dialog.confirm({
-      title: `Delete ${row.name}?`,
-      message: 'The project, its environments and deployment history are removed from Cairn. Apps and databases already running in the cluster are not stopped. This cannot be undone from the portal.',
-      confirmLabel: 'Delete project',
-      danger: true,
-      typeToConfirm: row.name,
-    });
-    if (!ok) return;
-    try {
-      await firstValueFrom(this.api.deleteProject(row.id));
+    this.deleting = { id: row.id, name: row.name };
+  }
+
+  async onDeleteClosed(result: DeleteDialogResult) {
+    const row = this.deleting;
+    this.deleting = null;
+    if (!row) return;
+    if (result === 'deleted') {
       this.setProjects(this.projects.filter((p) => p.id !== row.id));
       this.toast.ok(`Deleted ${row.name}`);
-    } catch (err) {
-      this.toast.error(`${row.name} was not deleted: ${errorText(err)}`);
+    } else if (result === 'left') {
+      // Still being deleted (or stopped with an error): show its current state.
+      await this.load();
     }
   }
 }

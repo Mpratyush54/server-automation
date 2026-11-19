@@ -170,8 +170,10 @@
           <a role="menuitem" tabindex="-1" [href]="r.url" target="_blank" rel="noopener">Open app</a>
         }
         <a role="menuitem" tabindex="-1" [routerLink]="['/projects', r.id]" [queryParams]="{ tab: 'settings' }">Settings</a>
-        <button type="button" role="menuitem" tabindex="-1" class="pj-danger" (click)="delete(r)" data-testid="pj-delete">Delete project</button>
+        <button type="button" role="menuitem" tabindex="-1" class="pj-danger" (click)="delete(r)" data-testid="pj-delete">{{ r.deleting ? 'Deletion progress' : 'Delete project' }}</button>
       </div>
     }
   </div>
 </ng-template>
+
+<app-delete-project-dialog [project]="deleting" (closed)="onDeleteClosed($event)" />
