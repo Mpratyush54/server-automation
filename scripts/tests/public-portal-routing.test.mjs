@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -297,7 +298,12 @@ test('the homepage explains the product and links to real docs without JavaScrip
   assert.equal([...document.matchAll(/<article class="lp-feature"/g)].length, 6);
   assert.equal([...document.matchAll(/<span class="lp-anchor" id="[a-z-]+"><\/span>/g)].length, 6);
   assert.match(document, /<span class="lp-anchor" id="high-availability">/);
-  assert.match(document, /Recording coming soon/);
+  // Published clips (landing-clip-versions.ts) play from the media host; the rest say they are coming.
+  const published = [...readFileSync(join(repo, 'platform/portal/src/app/pages/landing/landing-clip-versions.ts'), 'utf8')
+    .matchAll(/^\s*"([a-z-]+)": "[0-9a-f]+"/gm)].map(m => m[1]);
+  assert.equal([...document.matchAll(/<video [^>]*>/g)].length, published.length);
+  for (const id of published) assert.match(document, new RegExp(`https://media\\.cairnpaas\\.dev/v1/${id}\\.mp4\\?v=[0-9a-f]+`));
+  assert.equal([...document.matchAll(/Recording coming soon/g)].length, 6 - published.length);
   for (const link of document.matchAll(/href="(\/docs[^"]*)"/g)) {
     const url = link[1].split('#')[0];
     assert.ok(rendered.has(url), `Landing-page docs link has no generated page: ${url}`);
