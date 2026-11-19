@@ -3,10 +3,12 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/config"
 	"github.com/Mpratyush54/SERVER-automation/platformctl/internal/k3s"
@@ -344,5 +346,34 @@ func TestJoinEnvStripsLineBreaks(t *testing.T) {
 	env := joinEnv(&config.Config{Cluster: config.Cluster{NodeIP: "10.0.0.1\nX=1"}})
 	if strings.ContainsAny(env["PLATFORM_NODE_IP"], "\r\n") {
 		t.Fatalf("line break kept: %q", env["PLATFORM_NODE_IP"])
+	}
+}
+
+func TestListNodesRetryWaitsForAPIServer(t *testing.T) {
+	old := listNodes
+	t.Cleanup(func() { listNodes = old })
+	calls := 0
+	listNodes = func() (string, error) {
+		calls++
+		switch calls {
+		case 1:
+			return "", fmt.Errorf("The connection to the server 127.0.0.1:6443 was refused")
+		case 2:
+			return "", nil // API up, node not registered yet
+		}
+		return "node/a node/b", nil
+	}
+	out, err := listNodesRetry(time.Second, time.Millisecond)
+	if err != nil || calls != 3 || len(strings.Fields(out)) != 2 {
+		t.Fatalf("out=%q err=%v calls=%d", out, err, calls)
+	}
+}
+
+func TestListNodesRetryGivesUp(t *testing.T) {
+	old := listNodes
+	t.Cleanup(func() { listNodes = old })
+	listNodes = func() (string, error) { return "", fmt.Errorf("refused") }
+	if _, err := listNodesRetry(20*time.Millisecond, 5*time.Millisecond); err == nil || !strings.Contains(err.Error(), "refused") {
+		t.Fatalf("want refused error, got %v", err)
 	}
 }

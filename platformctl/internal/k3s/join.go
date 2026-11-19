@@ -13,6 +13,7 @@ import (
 var (
 	joinWriteToken      = WriteTokenFile
 	joinTuneHost        = TuneHost
+	joinImageCache      = EnableImageImportCache
 	joinWriteConfig     = WriteConfig
 	joinWriteRegistries = WriteRegistries
 	joinInstall         = installK3s
@@ -107,6 +108,9 @@ func Join(role Role, serverURL, token, githubToken string, o ServerOptions) (err
 	}
 	if err := joinTuneHost(); err != nil {
 		return err
+	}
+	if err := joinImageCache(); err != nil {
+		return fmt.Errorf("enable the k3s image import cache: %w", err)
 	}
 	if !joinIsInstalled() {
 		if err := installJoinK3s(exec, o.Offline); err != nil {

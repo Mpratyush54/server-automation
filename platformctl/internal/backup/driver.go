@@ -3,10 +3,12 @@ package backup
 import (
 	_ "embed"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 //go:embed common.sh
@@ -20,32 +22,94 @@ var restoreScript string
 
 // HostDriver runs only on the k3s server. Secrets are read inside the database
 // containers, not placed in command arguments or printed in command logs.
-type HostDriver struct{ MinioAlias string }
+//
+// Quiet captures the component scripts' raw kubectl/mongodump/etcd output and
+// prints one progress line per component to Progress instead; the captured
+// output is shown only when a component fails. The zero value streams the raw
+// output (restore, upgrade and migration callers).
+type HostDriver struct {
+	MinioAlias string
+	Quiet      bool
+	Progress   io.Writer
+}
 
-func runScript(script, component, dir string) error {
+// maxCapturedOutput bounds the output kept for a failing component.
+const maxCapturedOutput = 64 << 10
+
+// tailBuffer keeps the last max bytes written to it.
+type tailBuffer struct {
+	max int
+	buf []byte
+}
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.buf = append(t.buf, p...)
+	if over := len(t.buf) - t.max; over > 0 {
+		t.buf = append(t.buf[:0], t.buf[over:]...)
+	}
+	return len(p), nil
+}
+
+var runBash = func(body string, args []string, stdout, stderr io.Writer) error {
+	c := exec.Command("bash", append([]string{"-c", body}, args...)...)
+	c.Env = append(os.Environ(), "KUBECONFIG=/etc/rancher/k3s/k3s.yaml")
+	c.Stdout = stdout
+	c.Stderr = stderr
+	return c.Run()
+}
+
+func runScript(script, component, dir string, quiet bool, errOut io.Writer) error {
 	// Normalise line endings: a Windows (autocrlf) checkout must not embed CRLF.
 	body := strings.ReplaceAll(commonScript+"\n"+script, "\r\n", "\n")
-	c := exec.Command("bash", "-c", body, "platform-backup", component, dir)
-	c.Env = append(os.Environ(), "KUBECONFIG=/etc/rancher/k3s/k3s.yaml")
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
-	if e := c.Run(); e != nil {
+	args := []string{"platform-backup", component, dir}
+	if !quiet {
+		if e := runBash(body, args, os.Stdout, os.Stderr); e != nil {
+			return fmt.Errorf("component operation failed: %w", e)
+		}
+		return nil
+	}
+	out := &tailBuffer{max: maxCapturedOutput}
+	if e := runBash(body, args, out, out); e != nil {
+		if len(out.buf) > 0 {
+			fmt.Fprintf(errOut, "--- %s output ---\n%s", component, out.buf)
+			if out.buf[len(out.buf)-1] != '\n' {
+				fmt.Fprintln(errOut)
+			}
+			fmt.Fprintf(errOut, "--- end of %s output ---\n", component)
+		}
 		return fmt.Errorf("component operation failed: %w", e)
 	}
 	return nil
 }
 
-func (d HostDriver) Capture(component, dir string) error {
-	if component == "minio" {
-		return captureMinioBuckets(dir, d.MinioAlias)
+func (d HostDriver) progress() io.Writer {
+	if d.Progress != nil {
+		return d.Progress
 	}
-	return runScript(captureScript, component, dir)
+	return os.Stdout
+}
+
+func (d HostDriver) Capture(component, dir string) error {
+	start := time.Now()
+	if d.Quiet {
+		fmt.Fprintf(d.progress(), "  - Backing up %s...\n", component)
+	}
+	var e error
+	if component == "minio" {
+		e = captureMinioBuckets(dir, d.MinioAlias)
+	} else {
+		e = runScript(captureScript, component, dir, d.Quiet, os.Stderr)
+	}
+	if d.Quiet && e == nil {
+		fmt.Fprintf(d.progress(), "    %s done (%s)\n", component, time.Since(start).Round(100*time.Millisecond))
+	}
+	return e
 }
 func (d HostDriver) Restore(component, dir string) error {
 	if component == "minio" {
 		return restoreMinioBuckets(dir, d.MinioAlias)
 	}
-	return runScript(restoreScript, component, dir)
+	return runScript(restoreScript, component, dir, d.Quiet, os.Stderr)
 }
 
 func kubectl(args ...string) (string, error) {

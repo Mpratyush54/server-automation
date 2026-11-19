@@ -44,7 +44,9 @@ interface McpCaller {
   clientId?: string;
 }
 
-type CallerResult = { ok: true; caller: McpCaller } | { ok: false; presented: boolean };
+type CallerResult =
+  | { ok: true; caller: McpCaller }
+  | { ok: false; presented: boolean; unavailable?: boolean };
 
 async function authenticateCaller(req: Request): Promise<CallerResult> {
   const header = req.headers.authorization;
@@ -53,7 +55,13 @@ async function authenticateCaller(req: Request): Promise<CallerResult> {
   if (!token || token.length > 300) return { ok: false, presented: true };
 
   if (token.startsWith(ACCESS_TOKEN_PREFIX)) {
-    const principal = await verifyAccessToken(token).catch(() => null);
+    let principal: Awaited<ReturnType<typeof verifyAccessToken>>;
+    try {
+      principal = await verifyAccessToken(token);
+    } catch (err) {
+      console.warn('[mcp] access token check failed:', err instanceof Error ? err.message : String(err));
+      return { ok: false, presented: true, unavailable: true };
+    }
     if (!principal) return { ok: false, presented: true };
     return {
       ok: true,
@@ -69,7 +77,7 @@ async function authenticateCaller(req: Request): Promise<CallerResult> {
   }
   if (token.startsWith(AGENT_TOKEN_PREFIX)) {
     const result = await verifyAgentToken(token);
-    if (result.ok === false) return { ok: false, presented: true };
+    if (result.ok === false) return { ok: false, presented: true, unavailable: result.unavailable };
     return { ok: true, caller: { token, kind: 'agent_token', id: result.agent.id, name: result.agent.name } };
   }
   // Portal session JWTs and other credentials are not accepted here.
@@ -115,6 +123,11 @@ async function handleMcp(req: Request, res: Response) {
 
   const auth = await authenticateCaller(req);
   if (auth.ok === false) {
+    // A database blip is not a bad token: 401 would make the assistant drop its connection.
+    if (auth.unavailable) {
+      res.set('Retry-After', '5');
+      return jsonRpcError(res, 503, -32000, 'Cairn could not check this connection right now. Retry shortly.');
+    }
     const parts = [`Bearer resource_metadata="${metadataUrl}"`];
     if (auth.presented) parts.push('error="invalid_token"', 'error_description="The access token is invalid, expired or revoked"');
     res.set('WWW-Authenticate', parts.join(', '));

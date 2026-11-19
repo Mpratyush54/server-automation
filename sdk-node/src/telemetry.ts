@@ -34,6 +34,48 @@ export function resourceAttributes(options: PlatformOptions, config: TelemetryCo
   return attrs;
 }
 
+/** The optional peers tracing and OTLP logs need (see peerDependencies in package.json). */
+export const TELEMETRY_PEERS = [
+  '@opentelemetry/api', '@opentelemetry/api-logs', '@opentelemetry/auto-instrumentations-node',
+  '@opentelemetry/core', '@opentelemetry/exporter-logs-otlp-http', '@opentelemetry/exporter-metrics-otlp-http',
+  '@opentelemetry/exporter-trace-otlp-http', '@opentelemetry/resources', '@opentelemetry/sdk-logs',
+  '@opentelemetry/sdk-metrics', '@opentelemetry/sdk-node', '@opentelemetry/sdk-trace-base',
+];
+
+let missingPeerWarned = false;
+/** Test hook: allow the one-time warning to fire again. */
+export function resetMissingPeerWarning(): void { missingPeerWarned = false; }
+
+/**
+ * Telemetry fails open, but a missing optional peer is a setup mistake the user must see:
+ * warn once per process, naming the package (never endpoints or tokens).
+ */
+export function warnMissingPeer(err: unknown): boolean {
+  const e = err as { code?: string; message?: string } | undefined;
+  if (e?.code !== 'MODULE_NOT_FOUND') return false;
+  const missing = /Cannot find module '([^']+)'/.exec(e.message || '')?.[1];
+  if (!missing || !missing.startsWith('@opentelemetry/')) return false;
+  if (missingPeerWarned) return true;
+  missingPeerWarned = true;
+  console.warn(`[platform-sdk] Telemetry is enabled but the OpenTelemetry peer dependency ${missing} is not installed; ` +
+    `traces and OTLP logs are off. Install the telemetry peers: ${telemetryInstallCommand()}`);
+  return true;
+}
+
+/**
+ * The install command for the telemetry peers, each pinned to the range this SDK
+ * supports (its peerDependencies). Bare names would install the newest
+ * OpenTelemetry release, whose 2.x packages this SDK cannot use.
+ */
+export function telemetryInstallCommand(): string {
+  let ranges: Record<string, string> = {};
+  try {
+    // src/ and dist/ both sit next to package.json.
+    ranges = require('../package.json').peerDependencies || {};
+  } catch { /* fall back to bare names */ }
+  return 'npm install ' + TELEMETRY_PEERS.map((name) => (ranges[name] ? `'${name}@${ranges[name]}'` : name)).join(' ');
+}
+
 /** One process owns the global OTel providers. Optional modules are loaded only after opt-in. */
 export class Telemetry {
   private sdk: any;
@@ -138,7 +180,8 @@ export class Telemetry {
         log.emit({ context, body, severityText: level, severityNumber: severity[level], attributes });
       });
       this.schedule();
-    } catch {
+    } catch (err) {
+      warnMissingPeer(err);
       await this.shutdown(); // Fail open, never log endpoints or bearer tokens.
     }
   }

@@ -26,7 +26,9 @@ func TestAPIRBACIsDedicatedAndResourceScoped(t *testing.T) {
 	}
 	for _, required := range []string{"kind: ServiceAccount", "name: platform-api", "resourceNames:", "platform-env", "platform-rotate-pending", "platform-credentials", "platform-oidc-signing-key", "namespace: databases", "namespace: argocd", "name: platform-namespace-baseline", "kind: ValidatingAdmissionPolicy", "name: platform-project-namespaces", "failurePolicy: Fail",
 		// #55: the project-namespace "secrets: create" grant is limited to the named pull Secret.
-		"name: platform-project-secrets", "object.metadata.name == 'source-registry'", "object.type == 'kubernetes.io/dockerconfigjson'", "key: platform.io/project, operator: Exists"} {
+		"name: platform-project-secrets", "object.metadata.name == 'source-registry'", "object.type == 'kubernetes.io/dockerconfigjson'", "key: platform.io/project, operator: Exists",
+		// Project deletion: namespace and Argo CD Application deletes are confined by admission.
+		"name: platform-project-namespace-delete", "operations: [\"DELETE\"]", "name: platform-argocd-application-delete", "['platform', 'platform-sdk']"} {
 		if !strings.Contains(rbac, required) {
 			t.Fatalf("missing scoped permission %s", required)
 		}
@@ -145,7 +147,7 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 		}
 	}
 	expect("ClusterRole", "platform-api", "", []rbacRule{
-		{`[""]`, `["namespaces"]`, "", `["get", "list", "create", "update"]`}, // #22 labels/PSA on project namespaces
+		{`[""]`, `["namespaces"]`, "", `["get", "list", "create", "update", "delete"]`}, // #22 labels/PSA; delete: project deletion (admission-guarded)
 		{`[""]`, `["nodes"]`, "", `["list"]`},
 		{`[""]`, `["pods"]`, "", `["list", "delete"]`},
 		{`[""]`, `["pods/log"]`, "", `["get"]`},
@@ -159,6 +161,7 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 	expect("Role", "platform-api", "platform", []rbacRule{
 		{`[""]`, `["configmaps"]`, `["platform-backup-backup","platform-backup-restore-test","platform-backup-target"]`, `["get"]`}, // #21, #186
 		{`[""]`, `["secrets"]`, `["platform-env","platform-rotate-pending"]`, `["get", "update"]`},
+		{`[""]`, `["secrets"]`, `["platform-backup-target"]`, `["get"]`}, // off-site target for pre-delete backups
 		{`[""]`, `["secrets"]`, `["platform-credentials","platform-oidc-signing-key"]`, `["get", "update"]`}, // #20
 		{`[""]`, `["secrets"]`, `["platform-rotate-pending"]`, `["delete"]`},
 		{`[""]`, `["secrets"]`, `["registry-token-signer"]`, `["get"]`}, // #55
@@ -174,7 +177,7 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 	})
 	expect("Role", "platform-api", "argocd", []rbacRule{
 		{`[""]`, `["secrets"]`, `["argocd-secret","argocd-initial-admin-secret"]`, `["get", "update"]`},
-		{`["argoproj.io"]`, `["applications"]`, "", `["get", "create", "update", "patch"]`},
+		{`["argoproj.io"]`, `["applications"]`, "", `["get", "list", "create", "update", "patch", "delete"]`}, // list/delete: project deletion (admission-guarded)
 	})
 	expect("ClusterRole", "platform-namespace-baseline", "", []rbacRule{
 		{`["networking.k8s.io"]`, `["networkpolicies"]`, "", `["get", "list", "create", "update"]`},
@@ -190,6 +193,7 @@ func TestAPIRBACIsExactlyTheWaveOneUnion(t *testing.T) {
 		{`["networking.k8s.io"]`, `["ingresses"]`, "", `["update"]`},
 		{`["apps"]`, `["deployments/scale"]`, "", `["patch"]`},
 		{`["apps"]`, `["deployments"]`, "", `["get"]`},
+		{`["apps"]`, `["statefulsets"]`, "", `["get", "list", "update"]`}, // release finalize (injectRelease)
 		{`[""]`, `["services"]`, "", `["get"]`},
 		{`[""]`, `["secrets"]`, `["source-registry"]`, `["get", "update"]`},
 		{`[""]`, `["secrets"]`, "", `["create"]`},

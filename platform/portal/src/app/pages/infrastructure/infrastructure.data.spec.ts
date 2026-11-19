@@ -13,18 +13,34 @@ describe('Infrastructure cluster data', () => {
     component = TestBed.runInInjectionContext(() => new InfrastructureComponent(api));
   });
 
-  it('clears nodes and pods for disconnected and empty responses', async () => {
-    for (const k8sConnected of [false, true]) {
-      component.nodes = [{ name: 'old-node' }];
-      component.pods = [{ name: 'old-pod' }];
-      api.getNodes.and.returnValue(of({ k8sConnected, nodes: k8sConnected ? [] : component.nodes }));
-      api.getPods.and.returnValue(of({ k8sConnected, pods: k8sConnected ? [] : component.pods }));
-      await component.loadNodes();
-      await component.loadPods();
-      expect(component.nodes).toEqual([]);
-      expect(component.pods).toEqual([]);
-      expect(component.k8sConnected).toBe(k8sConnected);
-    }
+  it('takes an empty connected answer as empty, and never shows data from an unreachable cluster it never reached', async () => {
+    api.getNodes.and.returnValue(of({ k8sConnected: false, nodes: [] }));
+    api.getPods.and.returnValue(of({ k8sConnected: false, pods: [] }));
+    expect(await component.loadNodes()).toBe('down');
+    await component.loadPods();
+    expect(component.nodes).toEqual([]);
+    expect(component.pods).toEqual([]);
+    expect(component.k8sConnected).toBeFalse();
+
+    component.nodes = [{ name: 'old-node' }];
+    component.pods = [{ name: 'old-pod' }];
+    api.getNodes.and.returnValue(of({ k8sConnected: true, nodes: [] }));
+    api.getPods.and.returnValue(of({ k8sConnected: true, pods: [] }));
+    expect(await component.loadNodes()).toBe('ok');
+    await component.loadPods();
+    expect(component.nodes).toEqual([]);
+    expect(component.pods).toEqual([]);
+    expect(component.k8sConnected).toBeTrue();
+  });
+
+  it('keeps the last data for one disconnected answer after the cluster was reachable', async () => {
+    api.getPods.and.returnValue(of({ k8sConnected: true, pods: [{ name: 'pod-1' }] }));
+    await component.loadPods();
+    api.getPods.and.returnValue(of({ k8sConnected: false, pods: [] }));
+    await component.loadPods();
+    expect(component.pods).toEqual([{ name: 'pod-1' }]);
+    expect(component.k8sConnected).toBeTrue();
+    expect(component.clusterReconnecting).toBeTrue();
   });
 
   it('keeps connected data and forwards the selected namespace', async () => {

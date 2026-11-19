@@ -60,8 +60,7 @@ func TestPlatformAPIManifestRolloutSettings(t *testing.T) {
 	manifest := s[start : start+end]
 	for _, want := range []string{
 		"replicas: %[3]d",
-		"maxUnavailable: 0",
-		"maxSurge: 1",
+		"%[8]s  selector:", // rolloutStrategyYAML(apiReplicas), see TestRolloutStrategyNeedsNoSpareNodeWithTwoReplicas
 		"terminationGracePeriodSeconds: 45",
 		`command: ["sleep", "10"]`,
 		"path: /api/health/ready",
@@ -117,7 +116,9 @@ func TestAPIRolloutPatchMatchesProvisionManifest(t *testing.T) {
 	}
 	s := patch.Spec
 	c := s.Template.Spec.Containers
-	if s.Replicas != 2 || s.Strategy.RollingUpdate.MaxUnavailable != 0 || s.Strategy.RollingUpdate.MaxSurge != 1 ||
+	// Two replicas: replace one at a time (maxUnavailable 1, no surge), so a
+	// rollout never needs CPU for a third pod on full ha servers.
+	if s.Replicas != 2 || s.Strategy.RollingUpdate.MaxUnavailable != 1 || s.Strategy.RollingUpdate.MaxSurge != 0 ||
 		s.Template.Spec.Grace != 45 || len(c) != 1 || c[0].Name != "api" ||
 		strings.Join(c[0].Lifecycle.PreStop.Exec.Command, " ") != "sleep 10" ||
 		c[0].Readiness.HTTPGet.Path != "/api/health/ready" || c[0].Liveness.HTTPGet.Path != "/api/health" {
@@ -149,5 +150,26 @@ func TestUpdateImagesMigratesThenRollsThenReconcilesRollout(t *testing.T) {
 	}
 	if dump < 0 || roll < 0 || rollout < 0 || !(dump < roll && roll < rollout) {
 		t.Fatalf("wrong update order: dump=%d roll=%d rollout=%d", dump, roll, rollout)
+	}
+}
+
+// A single replica surges (no downtime); two or more replace one at a time.
+// With surge, a 3-server ha cluster at 90%+ requested CPU hung mid-rollout:
+// the spread constraint counts each revision separately and no node had room
+// for the extra pod, while the old pod kept its CPU.
+func TestRolloutStrategyNeedsNoSpareNodeWithTwoReplicas(t *testing.T) {
+	one := rolloutStrategy(1)["rollingUpdate"].(map[string]any)
+	if one["maxSurge"] != 1 || one["maxUnavailable"] != 0 {
+		t.Fatalf("1 replica: %v, want surge 1 / unavailable 0", one)
+	}
+	for _, n := range []int{2, 3} {
+		ru := rolloutStrategy(n)["rollingUpdate"].(map[string]any)
+		if ru["maxSurge"] != 0 || ru["maxUnavailable"] != 1 {
+			t.Fatalf("%d replicas: %v, want surge 0 / unavailable 1", n, ru)
+		}
+	}
+	y := rolloutStrategyYAML(2)
+	if !strings.Contains(y, "      maxUnavailable: 1\n      maxSurge: 0\n") || !strings.HasPrefix(y, "  strategy:\n") {
+		t.Fatalf("unexpected strategy YAML:\n%s", y)
 	}
 }

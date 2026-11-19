@@ -22,6 +22,9 @@ func tokenPaths(t *testing.T) {
 	oldTune := joinTuneHost
 	t.Cleanup(func() { joinTuneHost = oldTune })
 	joinTuneHost = func() error { return nil }
+	oldCache := ImageImportCache
+	t.Cleanup(func() { ImageImportCache = oldCache })
+	ImageImportCache = filepath.Join(dir, "images", ".cache.json")
 }
 
 func TestHAConfig(t *testing.T) {

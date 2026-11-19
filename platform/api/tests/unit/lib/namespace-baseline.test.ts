@@ -160,6 +160,20 @@ it('reports matching manifests, quota usage and policy drift', async () => {
   c.core.readNamespace.mockRejectedValue({ code: 403 });
   expect(await namespaceBaselineStatus('project-a', env, c)).toMatchObject({ policyApplied: false, error: 'Baseline status unavailable' });
 });
+
+// An environment that was never deployed has no namespace, so no RoleBinding for
+// the API inside it: the namespaced reads are refused (403) while the namespace
+// read says 404. That is "not applied", not "unavailable" (seen on a live cluster
+// for every undeployed staging/development environment).
+it('reports a missing namespace as not applied even when namespaced reads are forbidden', async () => {
+  const c = clients();
+  c.core.readNamespace.mockRejectedValue({ code: 404 });
+  c.network.listNamespacedNetworkPolicy.mockRejectedValue({ code: 403 });
+  c.core.readNamespacedResourceQuota.mockRejectedValue({ code: 403 });
+  c.core.readNamespacedLimitRange.mockRejectedValue({ code: 403 });
+  expect(await namespaceBaselineStatus('project-a', env, c)).toMatchObject({ policyApplied: false, error: 'Baseline not applied' });
+  expect(c.network.listNamespacedNetworkPolicy).not.toHaveBeenCalled();
+});
 it('loads operator settings from a temp file with environment overrides', () => {
   const root = mkdtempSync(join(tmpdir(), 'namespace-settings-'));
   const previous = process.env.NAMESPACE_BASELINE_SETTINGS_FILE;
@@ -198,6 +212,7 @@ it('grants exactly the verbs the baseline uses, namespaced only, with no broad R
     { apiGroups: ['apps'], resources: ['deployments/scale'], verbs: ['patch'] },
     // #55 source deployments: workload reads and one managed pull Secret.
     { apiGroups: ['apps'], resources: ['deployments'], verbs: ['get'] },
+    { apiGroups: ['apps'], resources: ['statefulsets'], verbs: ['get', 'list', 'update'] }, // release finalize (injectRelease)
     { apiGroups: [''], resources: ['services'], verbs: ['get'] },
     { apiGroups: [''], resources: ['secrets'], resourceNames: ['source-registry'], verbs: ['get', 'update'] },
     { apiGroups: [''], resources: ['secrets'], verbs: ['create'] },
@@ -207,7 +222,9 @@ it('grants exactly the verbs the baseline uses, namespaced only, with no broad R
   expect(baseline.rules.filter((r: any) => r.resources.includes('secrets')).flatMap((r: any) => r.verbs)).not.toContain('list');
   const api = docs.find(d => d.kind === 'ClusterRole' && d.metadata.name === 'platform-api');
   const rule = (resource: string) => api.rules.find((r: any) => r.resources.includes(resource));
-  expect(rule('namespaces').verbs).toEqual(['get', 'list', 'create', 'update']);
+  // delete: project deletion only, behind the platform-project-namespace-delete admission policy.
+  expect(rule('namespaces').verbs).toEqual(['get', 'list', 'create', 'update', 'delete']);
+  expect(docs.some(d => d.kind === 'ValidatingAdmissionPolicy' && d.metadata.name === 'platform-project-namespace-delete')).toBe(true);
   expect(rule('rolebindings').verbs).toEqual(['get', 'create', 'update']);
   expect(rule('customresourcedefinitions')).toEqual({ apiGroups: ['apiextensions.k8s.io'], resources: ['customresourcedefinitions'], resourceNames: ['scaledobjects.keda.sh', 'httpscaledobjects.http.keda.sh'], verbs: ['get'] });
   expect(rule('clusterroles')).toEqual({ apiGroups: ['rbac.authorization.k8s.io'], resources: ['clusterroles'], resourceNames: ['platform-namespace-baseline'], verbs: ['bind'] });

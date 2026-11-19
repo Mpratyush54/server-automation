@@ -40,7 +40,7 @@ export const RECENT_LIMIT = 5;
 export const GROUP_LIMIT = 8;
 const PROJECTS_MAX_AGE_MS = 60_000;
 /** Same public docs site the sidebar links to. */
-export const DOCS_ORIGIN = 'https://platform.pratyushes.dev';
+export const DOCS_ORIGIN = 'https://cairnpaas.dev';
 
 const GROUP_LABELS: Record<SearchGroupId, string> = {
   recent: 'Recent',

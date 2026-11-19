@@ -25,9 +25,39 @@ const appsApi  = kc.makeApiClient(k8s.AppsV1Api);
 // ──────────────────────────────────────────────────────────────────────────────
 // Connection check
 // ──────────────────────────────────────────────────────────────────────────────
+const CLUSTER_READ_TIMEOUT_MS = Number(process.env.K8S_READ_TIMEOUT_MS) || 4000;
+
+/**
+ * A bounded, retried cluster read for status pages. On an HA cluster the in-cluster Service
+ * (kubernetes.default) still lists a server that just died until its endpoint expires, so one
+ * request can fail or hang on that server while the others answer. A second attempt opens a
+ * new connection, which kube-proxy normally sends to a healthy server. Client errors (4xx,
+ * e.g. RBAC) are not retried.
+ */
+export async function clusterRead<T>(fn: () => Promise<T>, attempts = 2, timeoutMs = CLUSTER_READ_TIMEOUT_MS): Promise<T> {
+  let last: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Kubernetes API request timed out')), timeoutMs);
+        timer.unref?.();
+      });
+      return await Promise.race([fn(), timeout]);
+    } catch (err: any) {
+      last = err;
+      const code = Number(err?.code ?? err?.statusCode);
+      if (code >= 400 && code < 500) break;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  throw last;
+}
+
 export async function checkK8sConnection(): Promise<boolean> {
   try {
-    await coreApi.listNamespace();
+    await clusterRead(() => coreApi.listNamespace({ limit: 1 }));
     return true;
   } catch {
     return false;
@@ -39,7 +69,7 @@ export async function checkK8sConnection(): Promise<boolean> {
 // ──────────────────────────────────────────────────────────────────────────────
 export async function getK8sNodes(): Promise<any[]> {
   try {
-    const res = await coreApi.listNode();
+    const res = await clusterRead(() => coreApi.listNode());
     return (res.items || []).map((node: any) => {
       const addresses = node.status?.addresses || [];
       const internalIp = addresses.find((a: any) => a.type === 'InternalIP')?.address || '—';
@@ -91,7 +121,7 @@ export async function getK8sNodeMetrics(
 // ──────────────────────────────────────────────────────────────────────────────
 export async function getK8sNamespaces(): Promise<any[]> {
   try {
-    const res = await coreApi.listNamespace();
+    const res = await clusterRead(() => coreApi.listNamespace());
     return (res.items || []).map((ns: any) => {
       const created = new Date(ns.metadata?.creationTimestamp);
       const ageDays = Math.floor((Date.now() - created.getTime()) / 86_400_000);
@@ -112,9 +142,9 @@ export async function getK8sNamespaces(): Promise<any[]> {
 // ──────────────────────────────────────────────────────────────────────────────
 export async function getK8sPods(namespace?: string): Promise<any[]> {
   try {
-    const res = namespace
-      ? await coreApi.listNamespacedPod({ namespace })
-      : await coreApi.listPodForAllNamespaces();
+    const res = await clusterRead(() => namespace
+      ? coreApi.listNamespacedPod({ namespace })
+      : coreApi.listPodForAllNamespaces());
 
     return (res.items || []).map((pod: any) => {
       const containerStatuses = pod.status?.containerStatuses || [];

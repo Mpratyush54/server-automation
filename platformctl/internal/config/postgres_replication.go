@@ -20,7 +20,7 @@ const (
 )
 
 // PostgresReplicationDocsURL explains the choice in plain language.
-const PostgresReplicationDocsURL = "https://platform.pratyushes.dev/docs/operations/postgres-replication"
+const PostgresReplicationDocsURL = "https://cairnpaas.dev/docs/operations/postgres-replication"
 
 // NormalizePostgresReplication lower-cases and trims a mode; empty means sync.
 func NormalizePostgresReplication(mode string) string {

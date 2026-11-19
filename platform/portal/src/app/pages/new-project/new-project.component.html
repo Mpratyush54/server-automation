@@ -114,7 +114,7 @@
 
             <div class="form-group">
               <label for="np-repo">Repository address</label>
-              <input id="np-repo" data-testid="np-repo" [(ngModel)]="draft.repositoryUrl" placeholder="https://github.com/acme/shop" autocomplete="off" spellcheck="false"
+              <input id="np-repo" data-testid="np-repo" [(ngModel)]="draft.repositoryUrl" (blur)="blurred.add('repo')" placeholder="https://github.com/acme/shop" autocomplete="off" spellcheck="false"
                 [attr.aria-invalid]="repoError ? 'true' : null">
               @if (repoError) { <span class="np-error">{{ repoError }}</span> }
               @else if (repoInfo) { <span class="form-hint">{{ repoInfo.provider }} repository <span class="mono">{{ repoInfo.ownerRepo }}</span></span> }
@@ -137,7 +137,7 @@
 
             <div class="form-group">
               <label for="np-domain">Base domain</label>
-              <input id="np-domain" data-testid="np-domain" [(ngModel)]="draft.domain" placeholder="example.com" autocomplete="off" spellcheck="false"
+              <input id="np-domain" data-testid="np-domain" [(ngModel)]="draft.domain" (blur)="blurred.add('domain')" placeholder="example.com" autocomplete="off" spellcheck="false"
                 [attr.aria-invalid]="domainError ? 'true' : null">
               @if (domainError) { <span class="np-error">{{ domainError }}</span> }
               @else { <span class="form-hint">Point a wildcard DNS record (*.example.com) at your server. No domain yet? Use your server's IP with sslip.io, for example <span class="mono">203.0.113.7.sslip.io</span>. Leave empty to use the server's default domain.</span> }

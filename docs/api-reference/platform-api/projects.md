@@ -132,14 +132,62 @@ Updates a project's settings. Requires DEVOPS or TECH_LEAD role. Audit-logged.
 
 ## `DELETE` /api/projects/:id
 
-Soft-deletes a project by setting `deletedAt` and `isActive = false`. Requires DEVOPS role. Audit-logged.
+Deletes a project and everything it created, then frees its name for a new project. It runs in the background; the call returns at once.
 
-**Auth:** Bearer token (DEVOPS)
+**Auth:** Bearer token (DEVOPS role and project owner access), with a recent two-factor confirmation. Without one the API answers `401 { "error": "step_up_required" }`: confirm with `POST /api/auth/mfa/step-up`, then retry. Agent tokens cannot delete projects.
 
-**Response `200`:**
+**Request:**
 ```json
-{ "message": "Project soft-deleted" }
+{ "confirmName": "my-app", "deleteDatabases": false }
 ```
+
+| Field | Required | Meaning |
+|-------|----------|---------|
+| `confirmName` | Yes | The exact project name. Anything else returns `400` with code `confirm_name_mismatch`. |
+| `deleteDatabases` | No (default `false`) | `true` drops the project's databases after they are backed up. `false` keeps them, with logins turned off, and writes where they are to the audit log. |
+
+**What happens, in order:**
+
+1. The project is hidden, and new deploys, builds and SDK calls are refused.
+2. Connections to the project's databases are paused, and every database (PostgreSQL, MongoDB, Redis) is backed up. The backups go to the default storage provider if an administrator chose one, otherwise to the off-site backup target (`platformctl backup target`, stored under `<prefix>/backups/<project id>/`), and to the built-in MinIO only when neither is set up. If the off-site target is set up but cannot be read, the backup fails rather than falling back to storage on the cluster. The backups are listed under the project's database backups, and PostgreSQL ones can be restored from there. **If any backup fails, nothing is deleted**: the project comes back as it was and the error says which backup failed and why.
+3. The Argo CD applications (with the apps they created), previews, running builds and built images are removed.
+4. The project's namespaces are removed, with everything in them: workloads, web addresses, certificates, secrets and ConfigMaps.
+5. Synthetic checks, alert rules and the status page are removed.
+6. SDK tokens are revoked, and secrets and variables are deleted.
+7. The databases are dropped (`deleteDatabases: true`) or kept, locked.
+8. Logs, errors, replays, heatmaps, usage data and uploaded files are deleted.
+9. The project is marked deleted. Its row, deployment history and the audit log stay.
+
+Each step that removes something writes an audit log entry (`project.delete.*`, then `project.deleted`).
+
+A namespace or Argo CD application is only removed when it carries this project's id; anything else is reported and left alone.
+
+**Response `202`:**
+```json
+{ "operationId": "uuid", "status": "running", "resumed": false, "alreadyRunning": false }
+```
+
+**If a step fails** after removal has started, the project stays hidden and keeps its name. Call `DELETE` again to retry: it continues from where it stopped and does not repeat the backups. Calling it while a delete is running returns that delete.
+
+**Other responses:** `404` project not found, `409` with code `project_already_deleted`.
+
+### `GET` /api/projects/:id/deletion
+
+Progress of the project's deletion. **Auth:** project viewer.
+
+```json
+{
+  "status": "running",
+  "deleteDatabases": false,
+  "operation": { "id": "uuid", "status": "running", "steps": [{ "name": "back-up-databases", "status": "succeeded" }] }
+}
+```
+
+`status` is `none`, `running`, `failed` (call `DELETE` again), `aborted` (stopped before anything was deleted) or `deleted`.
+
+### Reusing a name
+
+A deleted project frees its name. A new project with that name gets its own namespaces, Argo CD applications, preview addresses and databases, all named from its own id, so it never takes over anything the old project left. While a delete is still running or has failed, the name stays taken (`409` with code `project_name_deleting`).
 
 ---
 

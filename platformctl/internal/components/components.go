@@ -38,6 +38,36 @@ clear_helm_lock() {
 }
 `
 
+// helmLockClear returns shell that clears the lock an interrupted run left on
+// release in ns (a pending-install/upgrade/rollback release secret). Every
+// `helm upgrade --install` runs it first: a provision killed mid-step (SIGTERM,
+// power loss, an API reset while servers join) otherwise fails every later run
+// with "another operation (install/upgrade/rollback) is in progress". The
+// installer holds its global lock, so no live Helm operation owns the release.
+func helmLockClear(release, ns string) string {
+	return helmLockHelper + fmt.Sprintf("if kubectl get namespace %s >/dev/null 2>&1; then clear_helm_lock %s %s; fi\n",
+		shellQuote(ns), shellQuote(release), shellQuote(ns))
+}
+
+// clearStuckHelmRelease is helmLockClear for installs that run helm directly
+// (an argv, not a script). A variable so tests can record the calls.
+var clearStuckHelmRelease = func(release, ns string) {
+	_ = shell.RunBash(helmLockClear(release, ns))
+}
+
+// monitoringLockClear clears interrupted Loki and kube-prometheus releases; both
+// install concurrently in one script.
+func monitoringLockClear() string {
+	return helmLockClear("loki", "monitoring") + helmLockClear("kube-prometheus", "monitoring")
+}
+
+// certManagerInstallScript installs or repairs the cert-manager release.
+func certManagerInstallScript() string {
+	return helmLockClear("cert-manager", "cert-manager") + `helm upgrade --install cert-manager ` + chart("cert-manager") + ` \
+			--namespace cert-manager --create-namespace \
+			--set installCRDs=true --wait --timeout 5m`
+}
+
 type Component struct {
 	Name        string
 	Description string
@@ -174,9 +204,7 @@ func InstallCertManager(cfg *config.Config) error {
 		return nil
 	}
 	color.Cyan("\n  ■ Installing cert-manager...")
-	if err := shell.RunBash(`helm upgrade --install cert-manager ` + chart("cert-manager") + ` \
-			--namespace cert-manager --create-namespace \
-			--set installCRDs=true --wait --timeout 5m`); err != nil {
+	if err := shell.RunBash(certManagerInstallScript()); err != nil {
 		return err
 	}
 	// Let's Encrypt + internal-CA fallback issuers; an unusable contact email
@@ -233,10 +261,7 @@ func InstallMinIO(cfg *config.Config) error {
 	}
 	defer os.Remove(tmpFile)
 
-	persistSize := "50Gi"
-	if cfg.IsHA() {
-		persistSize = "25Gi"
-	}
+	persistSize := minioPersistSize(cfg)
 	err = helmValues("minio", "minio", "storage", minioInstallValues(cfg), minioHelmArgs(cfg, tmpFile, persistSize)...)
 	if err != nil {
 		return err
@@ -270,10 +295,28 @@ func InstallArgoCD(cfg *config.Config) error {
 	}
 	defer os.Remove(tmpFile)
 
-	err = shell.RunBash(fmt.Sprintf(`
+	err = shell.RunBash(argocdInstallScript(tmpFile, chart("argo-cd")))
+	if err != nil {
+		return err
+	}
+	_ = patchArgoCDSubpath(cfg)
+	color.Green("  ✓ ArgoCD installed (/argocd subpath)")
+	_ = state.MarkDone("argocd")
+	return nil
+}
+
+// argocdInstallScript installs or repairs the Argo CD release. A provision
+// interrupted during the Helm step (for example when servers join mid-install
+// and the API server briefly resets) can leave the release pending-install or
+// pending-upgrade; the lock is cleared first, as for the other Helm steps, so a
+// re-run continues instead of failing with "another operation is in progress".
+func argocdInstallScript(valuesFile, chartRef string) string {
+	return fmt.Sprintf(`
 		set -euo pipefail
 		export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 		ARGO_CHART="%[2]s"
+`+helmLockHelper+`
+		if kubectl get namespace argocd >/dev/null 2>&1; then clear_helm_lock argocd argocd; fi
 
 		reset_argocd() {
 		  echo "Resetting ArgoCD for clean Helm install..."
@@ -354,14 +397,7 @@ json.dump(d,sys.stdout)
 		  helm_install_argocd
 		fi
 		argocd_healthy
-	`, tmpFile, chart("argo-cd")))
-	if err != nil {
-		return err
-	}
-	_ = patchArgoCDSubpath(cfg)
-	color.Green("  ✓ ArgoCD installed (/argocd subpath)")
-	_ = state.MarkDone("argocd")
-	return nil
+	`, valuesFile, chartRef)
 }
 
 func argocdLooksHealthy() bool {
@@ -413,7 +449,7 @@ func InstallMonitoring(cfg *config.Config) error {
 		return err
 	}
 	defer cleanup()
-	err = shell.RunBash(fmt.Sprintf(`
+	err = shell.RunBash(monitoringLockClear() + fmt.Sprintf(`
 		set -uo pipefail
 		# Loki is independent of kube-prometheus-stack: install both concurrently.
 		# No --wait: nothing later needs the monitoring pods ready (routing only
@@ -438,7 +474,7 @@ func InstallMonitoring(cfg *config.Config) error {
 		rc=$?
 		wait "$loki_pid" || { echo "WARN: loki install failed (non-fatal):"; tail -20 /tmp/platformctl-loki.log; }
 		exit $rc
-	`, tmpFile, shellQuote(secretFile), chart("loki-stack"), chart("kube-prometheus-stack")))
+	`, shellQuote(tmpFile), shellQuote(secretFile), chart("loki-stack"), chart("kube-prometheus-stack")))
 	if err != nil {
 		return err
 	}
@@ -562,12 +598,13 @@ func InstallPortainer(cfg *config.Config) error {
 			--set service.type=ClusterIP \
 			--set ingress.enabled=false \
 			--set adminPassword.existingSecret=portainer-admin-password \
+			--set persistence.size=%[4]s \
 			--set 'feature.flags[0]=--no-setup-token' \
 			--wait --timeout 5m
 		}
 		helm_install_portainer
 		kubectl rollout status deploy/portainer -n portainer --timeout=180s
-	`, helmLockHelper, tmpFile, chart("portainer"))); err != nil {
+	`, helmLockHelper, tmpFile, chart("portainer"), shellQuote(portainerPersistSize()))); err != nil {
 		return err
 	}
 
@@ -741,6 +778,27 @@ func apiAffinityYAML(cfg *config.Config) string {
 	return spreadAffinityYAML(cfg, "platform-api")
 }
 
+// rolloutStrategy for the API and portal Deployments. One replica surges (a
+// new pod is ready before the old one stops). With two or more, one old pod
+// stops first and its replacement starts in the space it freed: the spread
+// constraint below counts each ReplicaSet revision separately
+// (pod-template-hash), so on 2-vCPU ha servers (90%+ of CPU requested) the
+// surge pod found no node and the rollout hung with the old pod still running
+// (seen on a 3-server cluster). One ready replica keeps serving throughout,
+// behind the preStop drain and the readiness gate.
+func rolloutStrategy(replicas int) map[string]any {
+	if replicas >= 2 {
+		return map[string]any{"type": "RollingUpdate", "rollingUpdate": map[string]any{"maxUnavailable": 1, "maxSurge": 0}}
+	}
+	return map[string]any{"type": "RollingUpdate", "rollingUpdate": map[string]any{"maxUnavailable": 0, "maxSurge": 1}}
+}
+
+// rolloutStrategyYAML is rolloutStrategy as Deployment spec lines (2-space indent).
+func rolloutStrategyYAML(replicas int) string {
+	ru := rolloutStrategy(replicas)["rollingUpdate"].(map[string]any)
+	return fmt.Sprintf("  strategy:\n    type: RollingUpdate\n    rollingUpdate:\n      maxUnavailable: %d\n      maxSurge: %d\n", ru["maxUnavailable"], ru["maxSurge"])
+}
+
 // spreadAffinityYAML spreads the app's pods across nodes on ha. A topology
 // spread constraint with DoNotSchedule never stacks two replicas on one node
 // while another node is schedulable, yet still schedules everything on a
@@ -793,7 +851,7 @@ EOF`
 }
 
 // apiRolloutPatch is a strategic-merge patch carrying the #18 rollout settings
-// of the InstallPlatform manifest (replicas, surge-only strategy, drain grace,
+// of the InstallPlatform manifest (replicas, rollout strategy, drain grace,
 // preStop, readiness on /api/health/ready, liveness on /api/health). `update`
 // applies it after the new image is rolled, so an existing install converges
 // to the same Deployment as a fresh provision. Never before: an image older
@@ -808,7 +866,7 @@ func apiRolloutPatch(replicas int) string {
 	}
 	patch := map[string]any{"spec": map[string]any{
 		"replicas": replicas,
-		"strategy": map[string]any{"type": "RollingUpdate", "rollingUpdate": map[string]any{"maxUnavailable": 0, "maxSurge": 1}},
+		"strategy": rolloutStrategy(replicas),
 		"template": map[string]any{"spec": map[string]any{
 			"terminationGracePeriodSeconds": 45,
 			"containers": []any{map[string]any{
@@ -938,14 +996,8 @@ metadata:
     app: platform-api
 spec:
   replicas: %[3]d
-  # Zero-downtime rollouts: start a new pod and wait for readiness before
-  # removing an old one.
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
-  selector:
+  # Zero-downtime rollouts (rolloutStrategyYAML): one ready pod always serves.
+%[8]s  selector:
     matchLabels:
       app: platform-api
   template:
@@ -1049,7 +1101,7 @@ metadata:
     app: platform-portal
 spec:
   replicas: %[6]d
-  selector:
+%[9]s  selector:
     matchLabels:
       app: platform-portal
   template:
@@ -1100,6 +1152,7 @@ kubectl wait --for=condition=Available deployment/platform-api -n platform --tim
 kubectl wait --for=condition=Available deployment/platform-portal -n platform --timeout=180s
 `, strconv.Quote(apiImg), strconv.Quote(portalImg), apiReplicas(cfg), apiPDBScript(apiReplicas(cfg)),
 		apiAffinityYAML(cfg), portalReplicas(cfg), spreadAffinityYAML(cfg, "platform-portal"),
+		rolloutStrategyYAML(apiReplicas(cfg)), rolloutStrategyYAML(portalReplicas(cfg)),
 	))
 	if err != nil {
 		return err
@@ -1570,7 +1623,7 @@ func ProvisionComplete(cfg *config.Config) {
 	fmt.Printf("    Password: %s\n", cfg.AdminPassword)
 	fmt.Printf("    (also stored in /etc/platform/.env as ADMIN_PASSWORD)\n")
 	color.Cyan("\n  Docs / landing site:")
-	fmt.Printf("    https://platform.pratyushes.dev\n")
+	fmt.Printf("    https://cairnpaas.dev\n")
 	color.Cyan("\n  Auto-update:")
 	if cfg.AutoUpdate {
 		fmt.Printf("    Enabled (CronJob every 15m + Argo Image Updater). Manual: platformctl update\n")

@@ -5,7 +5,7 @@
       <h2 id="set-access-title">Who has access</h2>
     </div>
     <div class="panel-body">
-      <p class="hint">Each person's role decides what they can change here. Admins can always manage every project. <a href="https://platform.pratyushes.dev/docs/api-reference/configuration/permissions" target="_blank" rel="noopener">Learn more</a></p>
+      <p class="hint">Each person's role decides what they can change here. Admins can always manage every project. <a href="https://cairnpaas.dev/docs/api-reference/configuration/permissions" target="_blank" rel="noopener">Learn more</a></p>
       @if (canManageAccess) {
         <div class="inline-form">
           <div class="form-group grow">
@@ -79,7 +79,7 @@
       <section class="card card-flush" aria-labelledby="set-token-new-title">
         <div class="card-header"><h2 id="set-token-new-title">Generate SDK token</h2></div>
         <div class="panel-body">
-          <p class="hint">A token lets your app talk to Cairn through the SDK. <a href="https://platform.pratyushes.dev/docs/getting-started/sdk-examples" target="_blank" rel="noopener">Learn more</a></p>
+          <p class="hint">A token lets your app talk to Cairn through the SDK. <a href="https://cairnpaas.dev/docs/getting-started/sdk-examples" target="_blank" rel="noopener">Learn more</a></p>
           <div class="form-group">
             <label for="sdk-token-name">Name</label>
             <input id="sdk-token-name" [ngModel]="newKeyName" (ngModelChange)="setKeyName($event)" placeholder="e.g. Production service key">
@@ -162,7 +162,7 @@
     <section id="namespace-isolation" class="card card-flush" aria-label="Namespace isolation">
       <div class="card-header">
         <h2>Isolation</h2>
-        <span class="muted text-sm">Keeps each environment walled off from other projects. <a href="https://platform.pratyushes.dev/docs/guides/namespace-isolation" target="_blank" rel="noopener">Learn more</a></span>
+        <span class="muted text-sm">Keeps each environment walled off from other projects. <a href="https://cairnpaas.dev/docs/guides/namespace-isolation" target="_blank" rel="noopener">Learn more</a></span>
       </div>
       @for (baseline of project.namespaceBaselines; track baseline.namespace) {
         <div class="ns-block">
@@ -204,6 +204,17 @@
           }
         </div>
       }
+    </section>
+  }
+
+  @if (canDeleteProject) {
+    <section id="delete-project" class="card card-flush" aria-labelledby="set-delete-title" data-testid="delete-project-card">
+      <div class="card-header"><h2 id="set-delete-title">Delete this project</h2></div>
+      <div class="panel-body">
+        <p class="hint">Removes the apps, previews, monitoring, tokens and data of this project. Its databases are backed up first, and you choose whether to keep them.</p>
+        <!-- Disabled until the project has loaded: the dialog needs its id and name. -->
+        <button type="button" class="btn btn-danger btn-sm" (click)="deleteProject.emit()" [disabled]="!project?.id" data-testid="delete-project-open">{{ project?.id ? 'Delete project…' : 'Loading project…' }}</button>
+      </div>
     </section>
   }
 </div>

@@ -53,6 +53,7 @@ func helmValues(release, chartName, namespace string, values any, args ...string
 		argv = append(argv, "--version", c.Version)
 	}
 	argv = append(argv, "--namespace", namespace, "--create-namespace", "-f", path)
+	clearStuckHelmRelease(release, namespace)
 	return shell.Run("helm", append(argv, args...)...)
 }
 func applySecret(namespace, name string, values map[string]string) error {

@@ -1,4 +1,4 @@
-# platform.pratyushes.dev — marketing + docs only
+# cairnpaas.dev — marketing + docs only
 User-agent: *
 Allow: /
 Allow: /about
@@ -19,4 +19,4 @@ Disallow: /projects
 Disallow: /settings
 Disallow: /oauth/
 
-Sitemap: https://platform.pratyushes.dev/sitemap.xml
+Sitemap: https://cairnpaas.dev/sitemap.xml

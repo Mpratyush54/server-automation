@@ -10,8 +10,18 @@ import (
 
 // TestPostgres restores each custom-format dump into a uniquely named scratch
 // database, without applying globals, owners, ACLs or touching source databases.
-func TestPostgres(target, id string, key []byte) error {
-	return WithRestore(target, id, "postgres", key, func(m Manifest, dirs map[string]string) error {
+// TestPostgres also returns the tested part of the backup's manifest (the
+// postgres artifact), so the published status reports the size restored.
+func TestPostgres(target, id string, key []byte) (Manifest, error) {
+	var tested Manifest
+	e := WithRestore(target, id, "postgres", key, func(m Manifest, dirs map[string]string) error {
+		tested = m
+		tested.Artifacts = nil
+		for _, a := range m.Artifacts {
+			if a.Component == "postgres" {
+				tested.Artifacts = append(tested.Artifacts, a)
+			}
+		}
 		name := fmt.Sprintf("platform_restore_test_%d", time.Now().UnixNano())
 		cmd := exec.Command("kubectl", "-n", "databases", "get", "pods", "-l", "cnpg.io/cluster=postgresql,cnpg.io/instanceRole=primary", "-o", "jsonpath={.items[0].metadata.name}")
 		b, e := cmd.Output()
@@ -68,4 +78,5 @@ test "$tested" = 1
 `
 		return run("bash", "-ec", script, "--", remote, name)
 	})
+	return tested, e
 }

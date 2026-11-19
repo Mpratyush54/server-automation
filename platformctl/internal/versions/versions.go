@@ -16,7 +16,9 @@ import (
 	"sort"
 )
 
-// K3sVersion is passed to get.k3s.io as INSTALL_K3S_VERSION.
+// K3sVersion is passed to get.k3s.io as INSTALL_K3S_VERSION. When the minor
+// changes, bump KUBECTL_VERSION and its checksums in platform/api/Dockerfile
+// too (TestAPIKubectlMatchesK3sMinor).
 const K3sVersion = "v1.37.2+k3s1"
 
 // Mirrors on GHCR, published by .github/workflows/mirror-artifacts.yml. They

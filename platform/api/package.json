@@ -14,8 +14,8 @@
     "migration:show": "npm run build && typeorm migration:show -d dist/config/data-source.js",
     "migration:check": "npm run build && typeorm migration:generate --dryrun --check -d dist/config/data-source.js src/migrations/Drift",
     "test": "jest --forceExit --detectOpenHandles",
-    "test:unit": "jest --forceExit --detectOpenHandles --testPathPattern=tests/unit",
-    "test:integration": "jest --forceExit --detectOpenHandles --testPathPattern=tests/integration",
+    "test:unit": "jest --forceExit --detectOpenHandles --testPathPatterns=tests/unit",
+    "test:integration": "jest --forceExit --detectOpenHandles --testPathPatterns=tests/integration",
     "test:coverage": "jest --coverage --forceExit --detectOpenHandles"
   },
   "dependencies": {

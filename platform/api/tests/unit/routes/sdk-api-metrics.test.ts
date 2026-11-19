@@ -59,3 +59,37 @@ it.each([
   expect(res.status).toBe(200);
   expect(res.body.metrics).toEqual([{ p50: expected[0], p95: expected[1], p99: expected[2] }]);
 });
+
+it('answers 503 without internal host names when the telemetry store is unreachable', async () => {
+  const dns = Object.assign(new Error('getaddrinfo ENOTFOUND mongodb-1.mongodb-headless.databases.svc.cluster.local'), { code: 'ENOTFOUND' });
+  (ApiMetricModel.aggregate as jest.Mock).mockRejectedValueOnce(dns);
+  const app = express();
+  app.use(sdkRouter);
+  const res = await request(app).get('/sdk/api-metrics?projectId=project-1');
+  expect(res.status).toBe(503);
+  expect(res.headers['retry-after']).toBe('5');
+  expect(JSON.stringify(res.body)).not.toContain('mongodb-1');
+});
+
+it('keeps 400 for other errors', async () => {
+  (ApiMetricModel.aggregate as jest.Mock).mockRejectedValueOnce(new Error('Invalid time value'));
+  const app = express();
+  app.use(sdkRouter);
+  const res = await request(app).get('/sdk/api-metrics?projectId=project-1&from=x');
+  expect(res.status).toBe(400);
+});
+
+describe('isStoreUnavailable', () => {
+  const { isStoreUnavailable } = jest.requireActual('../../../src/routes/sdk');
+  it.each([
+    [{ code: 'ECONNREFUSED' }, true],
+    [{ name: 'MongoServerSelectionError', message: 'x' }, true],
+    [{ name: 'MongoNetworkError', message: 'x' }, true],
+    [{ message: 'wrapped', cause: { code: 'EAI_AGAIN' } }, true],
+    [{ message: 'Connection terminated due to connection timeout' }, true],
+    [{ name: 'ValidationError', message: 'projectId required' }, false],
+    [{ name: 'MongoServerError', message: 'E11000 duplicate key' }, false],
+  ])('%j -> %s', (err, want) => {
+    expect(isStoreUnavailable(err)).toBe(want);
+  });
+});

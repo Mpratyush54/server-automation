@@ -58,11 +58,19 @@ describe('ApiService', () => {
       req.flush({});
     });
 
-    it('should delete project', () => {
-      service.deleteProject('p1').subscribe();
+    it('should delete project with the confirmation body', () => {
+      service.deleteProject('p1', { confirmName: 'shop', deleteDatabases: true }).subscribe();
       const req = httpMock.expectOne('/api/projects/p1');
       expect(req.request.method).toBe('DELETE');
+      expect(req.request.body).toEqual({ confirmName: 'shop', deleteDatabases: true });
       req.flush({});
+    });
+
+    it('should read the deletion status', () => {
+      service.getProjectDeletion('p1').subscribe();
+      const req = httpMock.expectOne('/api/projects/p1/deletion');
+      expect(req.request.method).toBe('GET');
+      req.flush({ status: 'none' });
     });
   });
 

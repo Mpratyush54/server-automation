@@ -8,25 +8,43 @@
 <section class="card in-health" aria-label="Connections">
   <div class="in-health-item">
     <span class="in-label">Main database (PostgreSQL)</span>
-    <span class="status" [ngClass]="systemStatus.postgres === 'connected' ? 'status-ok' : systemStatus.postgres ? 'status-down' : ''">{{ (systemStatus.postgres || 'unknown') | titlecase }}</span>
+    <span class="status" data-testid="status-postgres" [ngClass]="serviceStatusClass(systemStatus.postgres)">{{ (systemStatus.postgres || 'unknown') | titlecase }}</span>
   </div>
   <div class="in-health-item">
     <span class="in-label">Event store (MongoDB)</span>
-    <span class="status" [ngClass]="systemStatus.mongodb === 'connected' ? 'status-ok' : systemStatus.mongodb ? 'status-down' : ''">{{ (systemStatus.mongodb || 'unknown') | titlecase }}</span>
+    <span class="status" data-testid="status-mongodb" [ngClass]="serviceStatusClass(systemStatus.mongodb)">{{ (systemStatus.mongodb || 'unknown') | titlecase }}</span>
   </div>
   <div class="in-health-item">
     <span class="in-label" title="Kubernetes (k3s) runs your apps">Cluster</span>
-    <span class="status" [ngClass]="k8sConnected ? 'status-ok' : 'status-warn'">{{ k8sConnected ? 'Connected' : 'Not connected' }}</span>
+    <span class="status" data-testid="status-cluster" [ngClass]="!clusterChecked ? '' : k8sConnected && !clusterReconnecting ? 'status-ok' : 'status-warn'">{{ !clusterChecked ? 'Checking…' : k8sConnected ? (clusterReconnecting ? 'Reconnecting' : 'Connected') : 'Not connected' }}</span>
   </div>
 </section>
 
-@if (!k8sConnected) {
-  <section class="card in-notice" role="status" aria-label="Cluster not connected">
-    <strong>Can't reach the cluster</strong>
+@if (clusterReconnecting) {
+  <section class="card in-notice" role="status" aria-label="Reconnecting to the cluster" data-testid="cluster-reconnecting">
+    <strong>{{ apiNoAnswer ? 'Reconnecting to Cairn' : 'Reconnecting to the cluster' }}</strong>
     <p>
-      Server and container data may be missing, and restarts and logs won't work. On the server, check
-      <code>sudo systemctl status k3s</code>; this page retries every few seconds.
-      <a class="in-link" href="https://platform.pratyushes.dev/docs/troubleshooting/README" target="_blank" rel="noopener">Troubleshooting</a>
+      @if (apiNoAnswer) {
+        Cairn's API isn't answering right now, which happens for a short while when a server goes down and its database fails over.
+      } @else {
+        The last request didn't get an answer, which happens for a few seconds when a server goes down.
+      }
+      Showing the data from {{ lastClusterOkAt | date:'mediumTime' }}; this page retries every few seconds.
+    </p>
+  </section>
+}
+
+@if (clusterChecked && !k8sConnected) {
+  <section class="card in-notice" role="status" aria-label="Cluster not connected" data-testid="cluster-down">
+    <strong>{{ apiNoAnswer ? "Can't reach Cairn's API" : "Can't reach the cluster" }}</strong>
+    <p>
+      @if (lastClusterOkAt) {
+        Showing the last data, from {{ lastClusterOkAt | date:'mediumTime' }}. It may be out of date, and restarts and logs won't work.
+      } @else {
+        Server and container data may be missing, and restarts and logs won't work.
+      }
+      On the server, check <code>sudo systemctl status k3s</code>; this page retries every few seconds.
+      <a class="in-link" href="https://cairnpaas.dev/docs/troubleshooting/README" target="_blank" rel="noopener">Troubleshooting</a>
     </p>
   </section>
 }
@@ -81,7 +99,7 @@
           }
           @if (nodes.length === 0) {
             <tr class="empty-row">
-              <td colspan="6">No servers to show. They appear once the cluster is reachable.</td>
+              <td colspan="6">{{ clusterChecked ? 'No servers to show. They appear once the cluster is reachable.' : 'Loading servers…' }}</td>
             </tr>
           }
         </tbody>
@@ -220,7 +238,7 @@
     <h2 id="in-join">Add a server</h2>
     <p class="secondary in-lead">
       Run these two commands in a terminal. The join token stays on your servers and never passes through the browser.
-      <a class="in-link" href="https://platform.pratyushes.dev/docs/operations/ha" target="_blank" rel="noopener">Learn more</a>
+      <a class="in-link" href="https://cairnpaas.dev/docs/operations/ha" target="_blank" rel="noopener">Learn more</a>
     </p>
     <ol class="in-steps">
       <li>

@@ -59,6 +59,9 @@
 
 .pa-scope-list { display: flex; flex-wrap: wrap; gap: 4px; max-width: 22rem; }
 .pa-nowrap { white-space: nowrap; }
+/* overflow-wrap: anywhere lets the column's minimum width collapse to one character, so a
+   long command used to wrap into a sliver. Give it a real minimum; .table-scroll scrolls on phones. */
+.pa-command-cell { min-width: 18rem; }
 .pa-command { font-size: 0.8125rem; overflow-wrap: anywhere; }
 .pa-row-actions { justify-content: flex-end; flex-wrap: nowrap; }
 

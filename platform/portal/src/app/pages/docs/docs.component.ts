@@ -125,7 +125,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.updateMetadata(
       'Cairn — run your apps on your own servers',
       'Turn your Ubuntu server into a self-hosted developer platform. Deploy with GitOps, connect databases, manage secrets, and inspect logs with scoped MCP tools.',
-      'https://platform.pratyushes.dev/'
+      'https://cairnpaas.dev/'
     );
   }
 
@@ -338,7 +338,7 @@ export class DocsComponent implements OnInit, OnDestroy, AfterViewChecked {
             const heading = text.match(/^#\s+(.+)$/m)?.[1].replace(/[*`]/g, '').trim() || 'Documentation';
             const title = `${heading} | Cairn Docs`;
             const description = `Read ${heading} in the Platform documentation. Guides and reference for the self-hosted Platform control plane.`;
-            const canonical = 'https://platform.pratyushes.dev' + (path === '/docs/index.md' ? '/docs' : path.replace(/\.md$/, ''));
+            const canonical = 'https://cairnpaas.dev' + (path === '/docs/index.md' ? '/docs' : path.replace(/\.md$/, ''));
             this.updateMetadata(title, description, canonical);
             let html = prepareDocsHtml(await marked.parse(text), path, window.location.origin);
             html = this.enhanceApiDocs(html);

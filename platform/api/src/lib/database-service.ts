@@ -79,7 +79,8 @@ export async function dumpDatabase(
     const user = process.env.POSTGRES_USER || 'postgres';
     const password = process.env.POSTGRES_PASSWORD || 'postgres';
 
-    const env = { ...process.env, PGPASSWORD: password };
+    // Fail fast when the server is unreachable instead of waiting for the OS TCP timeout.
+    const env = { PGCONNECT_TIMEOUT: '10', ...process.env, PGPASSWORD: password };
     const pgdump = spawn('pg_dump', [
       '-Fc',
       '-h', host,

@@ -9,6 +9,7 @@ jest.mock('../../src/middleware/auth', () => ({
   expressAuthenticate: (req: any, res: any, next: any) => { if (req.path.startsWith('/webhooks/') && !req.get('authorization')) return res.status(401).json({ error: 'Bearer token required' }); req.user = { id: 'caller', role: req.get('x-role') || 'developer' }; next(); },
   expressRequireRole: () => (_req: any, _res: any, next: any) => next(),
   requireAgentScopeOrRole: () => (_req: any, _res: any, next: any) => next(),
+  requireRecentMfa: () => (_req: any, _res: any, next: any) => next(),
   logAudit: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('@kubernetes/client-node', () => ({ KubeConfig: class {} }));

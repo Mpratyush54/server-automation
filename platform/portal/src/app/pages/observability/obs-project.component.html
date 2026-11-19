@@ -51,7 +51,7 @@
 }
 
 @if (embedded && enabled === false && needsTelemetry()) {
-  <p class="obs-quiet" data-testid="telemetry-disabled">These charts need full monitoring on the server (<span class="obs-code">platformctl provision --profile full</span>) and the Cairn SDK in your services. <a href="https://platform.pratyushes.dev/docs/operations/telemetry" target="_blank" rel="noopener">Learn more</a></p>
+  <p class="obs-quiet" data-testid="telemetry-disabled">These charts need full monitoring on the server (<span class="obs-code">platformctl provision --profile full</span>) and the Cairn SDK in your services. <a href="https://cairnpaas.dev/docs/operations/telemetry" target="_blank" rel="noopener">Learn more</a></p>
 } @else if (!embedded && enabled === false && tab !== 'errors' && tab !== 'synthetics' && tab !== 'sessions') {
   <div class="obs-banner" data-testid="telemetry-disabled">
     <strong>Telemetry is not enabled on this platform.</strong>

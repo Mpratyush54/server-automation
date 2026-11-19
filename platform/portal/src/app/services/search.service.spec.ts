@@ -106,7 +106,7 @@ describe('docItems', () => {
       ],
     });
     expect(items.map((i) => i.label)).toEqual(['Secrets', 'Overview']);
-    expect(items[0].href).toBe('https://platform.pratyushes.dev/docs/guides/secrets');
+    expect(items[0].href).toBe('https://cairnpaas.dev/docs/guides/secrets');
   });
 });
 
