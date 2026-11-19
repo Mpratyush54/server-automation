@@ -2,7 +2,7 @@
 # Node 22 LTS, pinned in every FROM (literal tags so Dependabot can bump them).
 
 # ── build: full dependency tree (incl. devDependencies) + tsc ───────────────
-FROM node:22.23.4-alpine3.24 AS build
+FROM node:22.23.5-alpine3.24 AS build
 WORKDIR /app
 COPY package*.json ./
 # Reproducible install when a lockfile is committed; fall back until it is.
@@ -17,7 +17,7 @@ COPY src ./src
 RUN npm run build
 
 # ── deps: production dependencies only ──────────────────────────────────────
-FROM node:22.23.4-alpine3.24 AS deps
+FROM node:22.23.5-alpine3.24 AS deps
 WORKDIR /app
 COPY package*.json ./
 RUN if [ -f package-lock.json ]; then \
@@ -34,7 +34,7 @@ RUN if [ -f package-lock.json ]; then \
 # (platformctl/internal/versions K3sVersion; a Go test keeps them in step).
 # Bump the version and both checksums together, from
 # https://dl.k8s.io/release/<version>/bin/linux/<arch>/kubectl.sha256
-FROM node:22.23.4-alpine3.24 AS kubectl
+FROM node:22.23.5-alpine3.24 AS kubectl
 ARG TARGETARCH
 ARG KUBECTL_VERSION=v1.37.2
 ARG KUBECTL_SHA256_AMD64=c04487523e7aa7d1493f7808174c899db93d7a9cf57531420cd76b9bd415f8f4
@@ -52,7 +52,7 @@ RUN set -eu; \
     /usr/local/bin/kubectl version --client >/dev/null
 
 # ── runtime: non-root, compiled output + prod deps only ─────────────────────
-FROM node:22.23.4-alpine3.24 AS runtime
+FROM node:22.23.5-alpine3.24 AS runtime
 ENV NODE_ENV=production
 # Apply Alpine security fixes released after the base image was built, and
 # drop npm/npx/corepack: the runtime only runs `node` (server and migrate
