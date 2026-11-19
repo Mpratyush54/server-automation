@@ -27,7 +27,7 @@ RUN sed -i -E 's/^([[:space:]]*)listen[[:space:]]+80;/\1listen 8080;/' nginx.con
     && grep -q 'listen 8080;' nginx.conf
 
 # Runtime: nginx as UID 101, listening on 8080.
-FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24
+FROM nginxinc/nginx-unprivileged:1.30.7-alpine3.24
 COPY --from=build /src/examples/sdk-apps/react-web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /src/examples/sdk-apps/react-web/dist /usr/share/nginx/html
 # The image entrypoint runs /docker-entrypoint.d/*.sh before nginx: write rum-config.json.
