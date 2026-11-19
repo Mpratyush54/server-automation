@@ -60,7 +60,7 @@ services:
       - miniodata:/bitnami/minio/data
 
   loki:
-    image: grafana/loki:3.7.9
+    image: grafana/loki:3.7.10
     ports:
       - "127.0.0.1:3100:3100"
     command: -config.file=/etc/loki/local-config.yaml
