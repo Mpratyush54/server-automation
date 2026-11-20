@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -455,6 +456,14 @@ func upgradePlan(api, portal string) (upgrade.Plan, error) {
 		if old == "" {
 			return upgrade.Plan{}, fmt.Errorf("missing %s image", x.d)
 		}
+		if !strings.Contains(old, "@sha256:") && !upgrade.AllowUnreleased {
+			// Installs from v1.2.0 and earlier run tag-only images. The pods report
+			// the exact digest they run; pin the rollback target to it instead of
+			// asking for a separate `platformctl update` first.
+			if pinned, ok := runningDigest(x.d, x.c, old); ok {
+				old = pinned
+			}
+		}
 		if !strings.Contains(old, "@sha256:") && !unreleasedRollbackImage(old, x.target) {
 			if upgrade.AllowUnreleased {
 				return upgrade.Plan{}, fmt.Errorf("%s uses the mutable tag %s; with --allow-unreleased it must be in the same repository as %s and present on this node so a rollback can restore it", x.d, old, x.target)
@@ -464,6 +473,45 @@ func upgradePlan(api, portal string) (upgrade.Plan, error) {
 		images = append(images, upgrade.Image{Deployment: x.d, Container: x.c, Before: old, After: x.target})
 	}
 	return upgrade.Compute(installed, pins, images), nil
+}
+
+var sha256Digest = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+// runningDigest returns image pinned to the digest its running pods report
+// (status.containerStatuses[].imageID), e.g. ghcr.io/x/platform-api:1.2.0 ->
+// ghcr.io/x/platform-api:1.2.0@sha256:…. It succeeds only when every pod of
+// the deployment reports the same digest from the same repository, so a
+// rollback restores exactly what ran.
+func runningDigest(deployment, container, image string) (string, bool) {
+	out, e := uk("-n", "platform", "get", "pods", "-l", "app="+deployment, "-o",
+		`jsonpath={range .items[*]}{.status.containerStatuses[?(@.name=='`+container+`')].imageID}{"\n"}{end}`)
+	if e != nil {
+		return "", false
+	}
+	repo := func(ref string) string {
+		ref, _, _ = strings.Cut(ref, "@")
+		if i := strings.LastIndex(ref, ":"); i > strings.LastIndex(ref, "/") {
+			ref = ref[:i]
+		}
+		return ref
+	}
+	digest := ""
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		id := strings.TrimPrefix(strings.TrimSpace(line), "docker-pullable://")
+		if id == "" {
+			continue
+		}
+		r, d, ok := strings.Cut(id, "@")
+		if !ok || !sha256Digest.MatchString(d) || r != repo(image) || (digest != "" && d != digest) {
+			return "", false
+		}
+		digest = d
+	}
+	if digest == "" {
+		return "", false
+	}
+	base, _, _ := strings.Cut(image, "@")
+	return base + "@" + digest, true
 }
 
 // upgradeImageOnNode is swapped in tests.
