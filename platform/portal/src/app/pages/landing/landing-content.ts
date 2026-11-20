@@ -11,10 +11,10 @@ export const REPO_URL = 'https://github.com/Mpratyush54/server-automation';
  * new stable release (not a release candidate) becomes Latest.
  */
 export const LATEST_RELEASE = {
-  version: 'v2.0.1',
+  version: 'v2.0.2',
   /** ISO date for <time datetime>. */
-  date: '2026-11-20',
-  dateLabel: '20 November 2026',
+  date: '2026-11-21',
+  dateLabel: '21 November 2026',
 };
 
 /** One step of a "how it works" flow, drawn left to right (top to bottom on narrow screens). */
