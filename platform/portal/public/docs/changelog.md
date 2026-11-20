@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.2 (2026-11-21)
+
+Same product as v2.0.1. The release's end-to-end test retries a request when ingress-nginx closes an idle connection during a configuration reload, so the release can pass its checks and be promoted.
+
 ## v2.0.1 (2026-11-20)
 
 ### Fixed

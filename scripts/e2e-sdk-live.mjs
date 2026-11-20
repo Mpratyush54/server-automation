@@ -44,11 +44,24 @@ async function api(method, urlPath, { token, sdkToken, body } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (sdkToken) headers.Authorization = `Bearer ${sdkToken}`;
-  const res = await fetch(`${API}${urlPath}`, {
+  const send = () => fetch(`${API}${urlPath}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
   });
+  let res;
+  try {
+    res = await send();
+  } catch (err) {
+    // Registering an app adds an Ingress, and ingress-nginx reloads: the old
+    // workers close idle keep-alive connections, so a request sent on a reused
+    // socket can fail with "other side closed" before it reaches the API.
+    // Retry idempotent requests once on a fresh connection.
+    const code = err?.cause?.code;
+    const idempotent = ['GET', 'HEAD', 'PUT', 'DELETE'].includes(method);
+    if (!idempotent || !['UND_ERR_SOCKET', 'ECONNRESET'].includes(code)) throw err;
+    res = await send();
+  }
   const text = await res.text();
   let json = null;
   try {
