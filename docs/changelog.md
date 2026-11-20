@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.0.1 (2026-11-20)
+
+### Fixed
+- **Upgrading from 2.0.0 or 1.x.** `platformctl upgrade` no longer stops with a "mutable tag" error when an install runs images by tag. It now pins each image to the digest the running pods report, so the upgrade can be rolled back exactly. See [operations/upgrades.md](operations/upgrades.md).
+- **Browser synthetic checks.** The runner image moves to Playwright 1.64.1 on a patched Ubuntu base, and npm is removed from the final image, to clear vulnerabilities reported against the old image.
+
 ## v2.0.0 (2026-11-19)
 
 Cairn 2.0 is the first release under the Cairn name and the Cairn Source-Available License. It brings high availability across servers, full observability, project deletion, and the public site at [cairnpaas.dev](https://cairnpaas.dev).
