@@ -119,6 +119,9 @@ jobs:
           output: trivy-${{ env.IMAGE }}.sarif
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          # Without this the SARIF holds every severity, fixed or not, despite the
+          # filter above (about 1,300 medium/low/unfixable Code Scanning alerts).
+          limit-severities-for-sarif: true
           exit-code: "0"
 
       - name: Upload scan results

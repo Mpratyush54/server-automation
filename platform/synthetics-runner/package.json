@@ -8,6 +8,6 @@
     "test": "node --test runner.test.mjs"
   },
   "dependencies": {
-    "playwright-core": "1.49.1"
+    "playwright-core": "1.64.1"
   }
 }
