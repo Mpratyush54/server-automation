@@ -1,0 +1,330 @@
+<app-site-header></app-site-header>
+<main class="sp" id="main">
+  <section class="sp-hero">
+    <div class="sp-frame ac-hero">
+      <div>
+        <p class="ac-kicker">Account</p>
+        <h1 class="sp-display">Your account</h1>
+        <p class="sp-lede">Your license keys, your installations, and everything the license service stores about you.</p>
+      </div>
+      @if (email) {
+        <div class="ac-who">
+          <span class="ac-who-email" data-testid="account-email">{{ email }}</span>
+          <button type="button" class="btn btn-sm" (click)="signout()">Sign out</button>
+        </div>
+      }
+    </div>
+  </section>
+
+  @if (loading) {
+    <section class="sp-section"><div class="sp-frame"><p class="sp-text" role="status">Loading your account…</p></div></section>
+  } @else if (!email && error) {
+    <section class="sp-section">
+      <div class="sp-frame">
+        <div class="sp-card sp-danger">
+          <h2>Your account could not be loaded</h2>
+          <p class="sp-msg sp-err" role="alert">{{ error }}</p>
+          <div class="sp-actions"><button type="button" class="btn" (click)="ngOnInit()">Try again</button></div>
+        </div>
+      </div>
+    </section>
+  } @else {
+    <!-- Overview -->
+    <section class="ac-overview-section" aria-label="Overview">
+      <div class="sp-frame">
+        <dl class="ac-overview" data-testid="overview">
+          <div><dt>Email</dt><dd class="ac-break">{{ email }}</dd></div>
+          <div><dt>Member since</dt><dd>{{ account.created_at ? (account.created_at | date:'mediumDate') : '—' }}</dd></div>
+          <div>
+            <dt>Email confirmed</dt>
+            <dd>
+              @if (account.email_verified_at) { <span class="status status-ok">{{ account.email_verified_at | date:'mediumDate' }}</span> }
+              @else if (account.email_verified) { <span class="status status-ok">Confirmed</span> }
+              @else { <span class="status status-warn">Not confirmed</span> }
+            </dd>
+          </div>
+          <div><dt>Keys and installs</dt><dd>{{ activeKeys.length }} active {{ activeKeys.length === 1 ? 'key' : 'keys' }} · {{ activeInstalls.length }} active {{ activeInstalls.length === 1 ? 'install' : 'installs' }}</dd></div>
+        </dl>
+        <nav class="sp-subnav ac-nav" aria-label="Account sections">
+          @for (s of sections; track s.id) { <a routerLink="/account" [fragment]="s.id">{{ s.label }}</a> }
+        </nav>
+        @if (error) { <p class="sp-msg sp-err" role="alert">{{ error }}</p> }
+        @if (newKey) {
+          <div class="sp-card ac-newkey" data-testid="new-key">
+            <h2>Your new key</h2>
+            <p class="sp-text">Copy it now: it is shown only once.</p>
+            <div class="sp-secret">{{ newKey }}</div>
+            <div class="sp-actions">
+              <button type="button" class="btn btn-primary" (click)="copy(newKey)">Copy key</button>
+              <button type="button" class="btn" (click)="newKey = ''">Done</button>
+            </div>
+          </div>
+        }
+      </div>
+    </section>
+
+    <!-- Keys -->
+    <section class="sp-section ac-section" id="keys" aria-labelledby="h-keys">
+      <div class="sp-frame">
+        <h2 class="sp-h2" id="h-keys">License keys</h2>
+        @if (!keys.length) {
+          <div class="sp-card">
+            <p class="sp-text">You have no license key yet.</p>
+            <div class="sp-actions"><button type="button" class="btn btn-primary" (click)="createKey()" [disabled]="busy">Create a Personal key</button></div>
+          </div>
+        } @else {
+          <ul class="sp-rows ac-panel" data-testid="keys">
+            @for (k of keys; track k.id) {
+              <li>
+                <div class="sp-row-main">
+                  <strong>{{ planName(k) }}@if (k.org) { · {{ k.org }} }</strong>
+                  <span class="sp-mono">{{ k.hint || k.id }}</span>
+                  <span class="sp-muted">{{ limits(k) }}@if (k.created_at) { · created {{ k.created_at | date:'mediumDate' }} }@if (k.expires_at) { · expires {{ k.expires_at | date:'mediumDate' }} }@if (k.revoked_at) { · revoked {{ k.revoked_at | date:'mediumDate' }} }</span>
+                </div>
+                <div class="sp-actions">
+                  @if (k.revoked) {
+                    <span class="status status-down">Revoked</span>
+                  } @else {
+                    <span class="status status-ok">Active</span>
+                    <button type="button" class="btn btn-sm" (click)="rotate(k)" [disabled]="busy">Rotate</button>
+                    <button type="button" class="btn btn-sm btn-danger" (click)="revoke(k)" [disabled]="busy">Revoke</button>
+                  }
+                </div>
+              </li>
+            }
+          </ul>
+        }
+        <p class="sp-muted ac-after">Need more servers or installs? <a routerLink="/pricing" fragment="enterprise">Get an Enterprise quote</a>.</p>
+      </div>
+    </section>
+
+    <!-- Installs -->
+    <section class="sp-section ac-section" id="installs" aria-labelledby="h-installs">
+      <div class="sp-frame">
+        <h2 class="sp-h2" id="h-installs">Installs</h2>
+        @if (!installs.length) {
+          <div class="sp-card"><p class="sp-text">No installs use your keys yet. An install appears here after <span class="sp-mono">platformctl provision</span> activates your key.</p></div>
+        } @else {
+          <ul class="sp-rows ac-panel" data-testid="installs">
+            @for (i of installs; track i.id) {
+              <li>
+                <div class="sp-row-main">
+                  <strong>{{ i.profile || 'Install' }}@if (i.version) { · {{ i.version }} }@if (i.activated_at) { · added {{ i.activated_at | date:'mediumDate' }} }</strong>
+                  <span class="sp-mono">{{ i.id }}</span>
+                  <span class="sp-muted">{{ servers(i.node_count) }}@if (i.last_seen_at) { · last seen {{ i.last_seen_at | date:'medium' }} }@if (i.offline) { · air-gapped }</span>
+                </div>
+                <div class="sp-actions">
+                  @if (i.active === false) {
+                    <span class="status status-warn">Deactivated</span>
+                  } @else {
+                    <span class="status status-ok">Active</span>
+                    <button type="button" class="btn btn-sm btn-danger" (click)="deactivate(i)" [disabled]="busy">Deactivate</button>
+                  }
+                </div>
+              </li>
+            }
+          </ul>
+        }
+      </div>
+    </section>
+
+    <!-- Servers without internet access -->
+    <section class="sp-section ac-section" id="offline" aria-labelledby="h-offline">
+      <div class="sp-frame ac-split">
+        <div class="ac-split-main">
+          <h2 class="sp-h2" id="h-offline">Servers without internet access</h2>
+          <p class="sp-text">Install Cairn from the offline bundle, then license the server with a file from this page. See <a routerLink="/docs/getting-started/platformctl" fragment="offline-bundle">the offline bundle guide</a>.</p>
+          @if (!activeKeys.length) {
+            <p class="sp-text">You need an active key to create a license file.</p>
+          } @else {
+            <form class="sp-form" (ngSubmit)="offline()" #of="ngForm">
+              <ol class="ac-steps">
+                <li>On the server, run <span class="sp-mono">sudo platformctl license request-offline</span> and paste its output below.</li>
+                <li>Download the license file and copy it to the server.</li>
+                <li>Run <span class="sp-mono">sudo platformctl license install-offline --file FILE</span>.</li>
+              </ol>
+              <div class="sp-field">
+                <label for="off-key">Key</label>
+                <select id="off-key" name="key" [(ngModel)]="offlineKey" required>
+                  @for (k of activeKeys; track k.id) { <option [value]="k.id">{{ planName(k) }} · {{ k.hint || k.id }}</option> }
+                </select>
+              </div>
+              <div class="sp-field">
+                <label for="off-request">Request</label>
+                <textarea id="off-request" name="request" [(ngModel)]="offlineRequest" required spellcheck="false"></textarea>
+              </div>
+              <div class="sp-actions"><button type="submit" class="btn btn-primary" [disabled]="!of.valid || busy">Download license file</button></div>
+            </form>
+          }
+        </div>
+        <div class="ac-split-aside">
+          <app-airgap-story></app-airgap-story>
+        </div>
+      </div>
+    </section>
+
+    <!-- Your data -->
+    <section class="sp-section ac-section" id="data" aria-labelledby="h-data">
+      <div class="sp-frame">
+        <div class="ac-data-head">
+          <div>
+            <h2 class="sp-h2" id="h-data">Your data</h2>
+            <p class="sp-text">Everything the license service stores about you, as described in our <a routerLink="/privacy">Privacy Policy</a>. Download it all as one file, or read it below.</p>
+          </div>
+          <button type="button" class="btn btn-primary" (click)="exportData()" [disabled]="exporting" data-testid="export">{{ exporting ? 'Preparing…' : 'Download my data (JSON)' }}</button>
+        </div>
+
+        <div class="ac-data">
+          <article class="ac-block" aria-labelledby="h-data-account">
+            <header class="ac-block-head">
+              <h3 id="h-data-account">Account</h3>
+              <a routerLink="/privacy" fragment="accounts">Privacy Policy: accounts</a>
+            </header>
+            <dl class="ac-fields">
+              <div><dt>Email address</dt><dd class="ac-break">{{ email }}</dd></div>
+              <div><dt>Password</dt><dd>Stored only as a one-way hash (argon2id). Nobody can read it, including us.</dd></div>
+              <div><dt>Signed up</dt><dd>{{ account.created_at ? (account.created_at | date:'medium') : '—' }}</dd></div>
+              <div><dt>Email confirmed</dt><dd>{{ account.email_verified_at ? (account.email_verified_at | date:'medium') : (account.email_verified ? 'Yes' : 'Not yet') }}</dd></div>
+              <div><dt>License keys</dt><dd>{{ keys.length }} ({{ activeKeys.length }} active). The keys themselves are stored only as hashes; you see a hint such as <span class="sp-mono">{{ keys[0]?.hint || 'cairn_…' }}</span>.</dd></div>
+              <div><dt>Sign-in cookie</dt><dd>One strictly necessary cookie while you are signed in, for up to 7 days or until you sign out.</dd></div>
+            </dl>
+          </article>
+
+          <article class="ac-block" aria-labelledby="h-data-installs">
+            <header class="ac-block-head">
+              <h3 id="h-data-installs">Installations and their diagnostics</h3>
+              <span class="ac-links">
+                <a routerLink="/privacy" fragment="installations">Privacy Policy: installations</a>
+                <a routerLink="/privacy" fragment="diagnostics">Privacy Policy: diagnostics</a>
+              </span>
+            </header>
+            @if (!installs.length) {
+              <p class="sp-text" data-testid="data-no-installs">No installations are stored for your account.</p>
+            }
+            @for (i of installs; track i.id) {
+              <section class="ac-install" [attr.aria-label]="'Installation ' + i.id" data-testid="data-install">
+                <h4 class="sp-mono">{{ i.id }}</h4>
+                <dl class="ac-fields">
+                  <div><dt>Key</dt><dd>{{ keyLabel(i.key_id) }}</dd></div>
+                  <div><dt>Machine ID</dt><dd>Stored only as a salted hash; the machine ID itself is never sent.@if (i.fingerprint_prefix) { Starts with <span class="sp-mono">{{ i.fingerprint_prefix }}</span>. }</dd></div>
+                  <div><dt>Cairn version</dt><dd>{{ i.version || '—' }}</dd></div>
+                  <div><dt>Profile</dt><dd>{{ i.profile || '—' }}</dd></div>
+                  <div><dt>Servers</dt><dd>{{ i.node_count || 1 }}</dd></div>
+                  <div><dt>License type</dt><dd>{{ i.offline ? 'Offline license file' : 'Online, weekly check-in' }}</dd></div>
+                  <div><dt>First activated</dt><dd>{{ i.activated_at ? (i.activated_at | date:'medium') : '—' }}</dd></div>
+                  <div><dt>Last check-in</dt><dd>{{ i.last_seen_at ? (i.last_seen_at | date:'medium') : '—' }}</dd></div>
+                  <div><dt>Status</dt><dd>@if (i.active === false) { Deactivated@if (i.deactivated_at) { on {{ i.deactivated_at | date:'mediumDate' }} } } @else { Active }</dd></div>
+                </dl>
+
+                <div class="ac-reports">
+                  @switch (reports[i.id]?.status) {
+                    @case ('ready') {
+                      @if (!reports[i.id].reports.length) {
+                        <p class="sp-muted" data-testid="no-reports">No diagnostics reports are stored for this installation.</p>
+                      } @else {
+                        <p class="ac-reports-title">Diagnostics reports ({{ reports[i.id].reports.length }}{{ reports[i.id].truncated ? ' newest' : '' }})</p>
+                        <div class="ac-report-list" data-testid="reports">
+                          @for (r of reports[i.id].reports; track r.id) {
+                            <details class="ac-report">
+                              <summary>
+                                <span class="ac-report-kind">{{ kindLabel(r.kind) }}</span>
+                                <span class="sp-muted">{{ r.received_at | date:'medium' }}@if (r.version) { · {{ r.version }} }</span>
+                                @if (r.failed) { <span class="status status-down">Failed</span> } @else { <span class="status status-ok">OK</span> }
+                              </summary>
+                              <div class="ac-report-body">
+                                @if (r.payload; as p) {
+                                  <dl class="ac-fields ac-fields-tight">
+                                    <div><dt>Received</dt><dd>{{ r.received_at | date:'medium' }}@if (p.generated_at) { (created {{ p.generated_at | date:'medium' }}) }</dd></div>
+                                    @if (p.platform; as pl) {
+                                      <div><dt>Cairn</dt><dd>{{ pl.version || '—' }}, profile {{ pl.profile || '—' }}, {{ servers(pl.node_count) }}</dd></div>
+                                      <div><dt>System</dt><dd>{{ pl.os_release || '—' }} · {{ pl.arch || '—' }} · Kubernetes {{ pl.k8s_version || '—' }}</dd></div>
+                                    }
+                                    @if (p.uptime_seconds != null) { <div><dt>Uptime</dt><dd>{{ duration(p.uptime_seconds) }}</dd></div> }
+                                    @if (p.counts; as c) {
+                                      <div><dt>Counts</dt><dd>{{ c.projects ?? 0 }} projects · {{ c.environments ?? 0 }} environments · {{ c.deployments ?? 0 }} deployments · {{ c.users ?? 0 }} users</dd></div>
+                                    }
+                                  </dl>
+                                  @if (p.steps?.length) {
+                                    <div class="ac-table-wrap">
+                                      <table class="ac-table">
+                                        <caption>Install steps</caption>
+                                        <thead><tr><th scope="col">Step</th><th scope="col">Time</th><th scope="col">Result</th></tr></thead>
+                                        <tbody>
+                                          @for (s of p.steps; track $index) {
+                                            <tr><td class="sp-mono">{{ s.step }}</td><td>{{ duration(s.seconds) }}</td><td>{{ s.status }}</td></tr>
+                                          }
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  }
+                                  @if (p.failures?.length) {
+                                    <p class="ac-sub">Errors (redacted on your server)</p>
+                                    <ul class="ac-failures">
+                                      @for (f of p.failures; track $index) { <li><span class="sp-mono">{{ f.step }}</span>: {{ f.error }}</li> }
+                                    </ul>
+                                  }
+                                  @if (p.components?.length) {
+                                    <p class="ac-sub">Component health</p>
+                                    <ul class="ac-components">
+                                      @for (c of p.components; track $index) { <li><span [class]="'status ' + componentStatus(c.status)">{{ c.name }}: {{ c.status }}</span></li> }
+                                    </ul>
+                                  }
+                                } @else {
+                                  <p class="sp-muted">This report has no readable content.</p>
+                                }
+                                <details class="ac-raw">
+                                  <summary>Exactly what was received (JSON)</summary>
+                                  <pre class="ac-json" data-testid="raw-json">{{ rawJson(r) }}</pre>
+                                </details>
+                              </div>
+                            </details>
+                          }
+                        </div>
+                        @if (reports[i.id].truncated) { <p class="sp-muted">Older reports are included in the download.</p> }
+                      }
+                    }
+                    @case ('error') {
+                      <p class="sp-msg sp-err" role="alert">Diagnostics reports could not be loaded: {{ reports[i.id].error }}
+                        <button type="button" class="btn btn-sm" (click)="loadInstallReports(i.id)">Try again</button></p>
+                    }
+                    @default { <p class="sp-muted" role="status">Loading diagnostics reports…</p> }
+                  }
+                </div>
+              </section>
+            }
+          </article>
+
+          <article class="ac-block" aria-labelledby="h-data-control">
+            <header class="ac-block-head"><h3 id="h-data-control">Your choices</h3></header>
+            <dl class="ac-fields">
+              <div><dt>Turn diagnostics off</dt><dd>Set <span class="sp-mono">PLATFORM_DIAGNOSTICS=off</span> in the environment before running platformctl on the server. It is saved for later runs, and nothing more is sent.</dd></div>
+              <div><dt>How long we keep it</dt><dd>Diagnostics reports: 180 days. Installations: deleted after 12 months without a check-in. Account and keys: until you delete your account.</dd></div>
+              <div><dt>Not stored</dt><dd>IP addresses are not stored with your account or installations. Diagnostics never contain app data, logs, host names or secrets.</dd></div>
+              <div><dt>Quote requests and emails</dt><dd>Quote requests and messages are not linked to your account. For a copy, a correction or deletion, write to <a [href]="'mailto:' + privacyEmail">{{ privacyEmail }}</a>.</dd></div>
+            </dl>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Delete -->
+    <section class="sp-section ac-section" id="delete" aria-labelledby="h-delete">
+      <div class="sp-frame">
+        <form class="sp-card sp-danger sp-form ac-delete" (ngSubmit)="deleteAccount()" #df="ngForm">
+          <h2 id="h-delete">Delete account</h2>
+          <p class="sp-text">Deleting your account removes, immediately:</p>
+          <ul class="sp-list" data-testid="delete-scope">
+            <li>your account: email address, password hash, sign-up and confirmation times;</li>
+            <li>your sign-in sessions;</li>
+            <li>your license keys;</li>
+            <li>your installation records and all their diagnostics reports.</li>
+          </ul>
+          <p class="sp-muted">Copies in our daily database backups are gone within 30 days. Quote requests and emails are not linked to your account: ask <a [href]="'mailto:' + privacyEmail">{{ privacyEmail }}</a> to delete those. Download your data first if you want a copy. This cannot be undone.</p>
+          <div class="sp-field ac-narrow"><label for="del-password">Password</label><input id="del-password" name="password" type="password" [(ngModel)]="deletePassword" required autocomplete="current-password"></div>
+          <div class="sp-actions"><button type="submit" class="btn btn-danger" [disabled]="!df.valid || busy">Delete account</button></div>
+        </form>
+      </div>
+    </section>
+  }
+</main>
+<app-site-footer></app-site-footer>

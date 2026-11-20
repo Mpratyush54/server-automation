@@ -1,155 +1,88 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { SiteHeaderComponent } from '../../shared/site/site-header.component';
 import { SiteFooterComponent } from '../../shared/site/site-footer.component';
 import { DialogService, ToastService } from '../../shared/feedback/feedback.service';
-import { AccountInstall, AccountKey, LicenseAccountService } from './license-account.service';
+import { AirgapStoryComponent } from './airgap-story.component';
+import {
+  AccountInfo, AccountInstall, AccountKey, DiagnosticsReport, LicenseAccountService, PRIVACY_EMAIL,
+} from './license-account.service';
 
-export type AccountTab = 'keys' | 'installs' | 'offline' | 'delete';
+/** In-page sections, in order (ids are URL fragments). */
+export const ACCOUNT_SECTIONS = [
+  { id: 'keys', label: 'Keys' },
+  { id: 'installs', label: 'Installs' },
+  { id: 'offline', label: 'Without internet' },
+  { id: 'data', label: 'Your data' },
+  { id: 'delete', label: 'Delete account' },
+] as const;
+
+/** Diagnostics reports of one install, as shown under "Your data". */
+export interface ReportsState {
+  status: 'loading' | 'ready' | 'error';
+  reports: DiagnosticsReport[];
+  truncated: boolean;
+  error: string;
+}
+
+const KIND_LABELS: Record<string, string> = {
+  provision: 'Installation',
+  update: 'Update',
+  upgrade: 'Upgrade',
+  join: 'Server joined',
+  periodic: 'Weekly check-in',
+  error: 'Install step failed',
+};
+
+const COMPONENT_STATUS: Record<string, string> = { healthy: 'status-ok', degraded: 'status-warn', down: 'status-down' };
+
+/** Human label for a diagnostics report kind. */
+export function reportKindLabel(kind: string | undefined): string {
+  if (!kind) return 'Report';
+  return KIND_LABELS[kind] || kind.charAt(0).toUpperCase() + kind.slice(1);
+}
+
+/** Short duration such as "42 s", "3 min 5 s" or "2 h 10 min". */
+export function formatDuration(seconds: number | undefined | null): string {
+  if (seconds == null || !isFinite(seconds) || seconds < 0) return '';
+  if (seconds < 60) return `${Math.round(seconds * 10) / 10} s`;
+  const m = Math.floor(seconds / 60);
+  if (m < 60) return `${m} min ${Math.round(seconds % 60)} s`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h} h ${m % 60} min`;
+  return `${Math.floor(h / 24)} days ${h % 24} h`;
+}
 
 @Component({
   selector: 'app-account',
   standalone: true,
-  imports: [DatePipe, FormsModule, RouterModule, SiteHeaderComponent, SiteFooterComponent],
-  styleUrl: './site-page.css',
-  template: `
-    <app-site-header></app-site-header>
-    <main class="sp" id="main">
-      <section class="sp-section">
-        <div class="sp-frame">
-          <div class="sp-card-head">
-            <h1 class="sp-display">Account</h1>
-            @if (email) {
-              <span class="sp-actions"><span class="sp-muted">{{ email }}</span><button type="button" class="btn btn-sm" (click)="signout()">Sign out</button></span>
-            }
-          </div>
-          @if (loading) {
-            <p class="sp-lede">Loading…</p>
-          } @else {
-            <nav class="sp-subnav" aria-label="Account sections">
-              <button type="button" [class.active]="tab === 'keys'" [attr.aria-current]="tab === 'keys' ? 'page' : null" (click)="tab = 'keys'">Keys</button>
-              <button type="button" [class.active]="tab === 'installs'" [attr.aria-current]="tab === 'installs' ? 'page' : null" (click)="tab = 'installs'">Installs</button>
-              <button type="button" [class.active]="tab === 'offline'" [attr.aria-current]="tab === 'offline' ? 'page' : null" (click)="tab = 'offline'">Air-gapped servers</button>
-              <button type="button" [class.active]="tab === 'delete'" [attr.aria-current]="tab === 'delete' ? 'page' : null" (click)="tab = 'delete'">Delete account</button>
-            </nav>
-            @if (error) { <p class="sp-msg sp-err" role="alert">{{ error }}</p> }
-
-            @if (newKey) {
-              <div class="sp-card" data-testid="new-key">
-                <h2>Your new key</h2>
-                <p class="sp-text">Copy it now: it is shown only once.</p>
-                <div class="sp-secret">{{ newKey }}</div>
-                <div class="sp-actions">
-                  <button type="button" class="btn btn-primary" (click)="copy(newKey)">Copy key</button>
-                  <button type="button" class="btn" (click)="newKey = ''">Done</button>
-                </div>
-              </div>
-            }
-
-            @if (tab === 'keys') {
-              @if (!keys.length) {
-                <div class="sp-card">
-                  <p class="sp-text">You have no license key yet.</p>
-                  <div class="sp-actions"><button type="button" class="btn btn-primary" (click)="createKey()" [disabled]="busy">Create a Personal key</button></div>
-                </div>
-              } @else {
-                <ul class="sp-rows" data-testid="keys">
-                  @for (k of keys; track k.id) {
-                    <li>
-                      <div class="sp-row-main">
-                        <strong>{{ planName(k) }}@if (k.org) { · {{ k.org }} }</strong>
-                        <span class="sp-mono">{{ k.hint || k.id }}</span>
-                        <span class="sp-muted">{{ limits(k) }}@if (k.expires_at) { · expires {{ k.expires_at | date:'mediumDate' }} }</span>
-                      </div>
-                      <div class="sp-actions">
-                        @if (k.revoked) {
-                          <span class="status status-down">Revoked</span>
-                        } @else {
-                          <span class="status status-ok">Active</span>
-                          <button type="button" class="btn btn-sm" (click)="rotate(k)" [disabled]="busy">Rotate</button>
-                          <button type="button" class="btn btn-sm btn-danger" (click)="revoke(k)" [disabled]="busy">Revoke</button>
-                        }
-                      </div>
-                    </li>
-                  }
-                </ul>
-              }
-              <p class="sp-muted">Need more servers or installs? <a routerLink="/pricing" fragment="enterprise">Get an Enterprise quote</a>.</p>
-            }
-
-            @if (tab === 'installs') {
-              @if (!installs.length) {
-                <p class="sp-text">No installs use your keys yet.</p>
-              } @else {
-                <ul class="sp-rows" data-testid="installs">
-                  @for (i of installs; track i.id) {
-                    <li>
-                      <div class="sp-row-main">
-                        <strong>{{ i.profile || 'Install' }}@if (i.version) { · {{ i.version }} }@if (i.activated_at) { · added {{ i.activated_at | date:'mediumDate' }} }</strong>
-                        <span class="sp-mono">{{ i.id }}</span>
-                        <span class="sp-muted">{{ i.node_count || 1 }} {{ (i.node_count || 1) === 1 ? 'server' : 'servers' }}@if (i.last_seen_at) { · last seen {{ i.last_seen_at | date:'medium' }} }@if (i.offline) { · air-gapped }</span>
-                      </div>
-                      <div class="sp-actions">
-                        @if (i.active === false) {
-                          <span class="status status-warn">Deactivated</span>
-                        } @else {
-                          <span class="status status-ok">Active</span>
-                          <button type="button" class="btn btn-sm btn-danger" (click)="deactivate(i)" [disabled]="busy">Deactivate</button>
-                        }
-                      </div>
-                    </li>
-                  }
-                </ul>
-              }
-            }
-
-            @if (tab === 'offline') {
-              <form class="sp-form sp-narrow" (ngSubmit)="offline()" #of="ngForm">
-                <p class="sp-text">Run <span class="sp-mono">sudo platformctl license request-offline</span> on the server, paste its output here, then run <span class="sp-mono">sudo platformctl license install-offline --file FILE</span> with the downloaded file.</p>
-                <div class="sp-field">
-                  <label for="off-key">Key</label>
-                  <select id="off-key" name="key" [(ngModel)]="offlineKey" required>
-                    @for (k of activeKeys; track k.id) { <option [value]="k.id">{{ planName(k) }} · {{ k.hint || k.id }}</option> }
-                  </select>
-                </div>
-                <div class="sp-field">
-                  <label for="off-request">Request</label>
-                  <textarea id="off-request" name="request" [(ngModel)]="offlineRequest" required spellcheck="false"></textarea>
-                </div>
-                <div class="sp-actions"><button type="submit" class="btn btn-primary" [disabled]="!of.valid || busy">Download license file</button></div>
-              </form>
-            }
-
-            @if (tab === 'delete') {
-              <form class="sp-card sp-danger sp-form sp-narrow" (ngSubmit)="deleteAccount()" #df="ngForm">
-                <h2>Delete account</h2>
-                <p class="sp-text">Deletes your account, keys and installs. This cannot be undone.</p>
-                <div class="sp-field"><label for="del-password">Password</label><input id="del-password" name="password" type="password" [(ngModel)]="deletePassword" required autocomplete="current-password"></div>
-                <div class="sp-actions"><button type="submit" class="btn btn-danger" [disabled]="!df.valid || busy">Delete account</button></div>
-              </form>
-            }
-          }
-        </div>
-      </section>
-    </main>
-    <app-site-footer></app-site-footer>
-  `,
+  imports: [DatePipe, FormsModule, RouterModule, SiteHeaderComponent, SiteFooterComponent, AirgapStoryComponent],
+  styleUrls: ['./site-page.css', './account.component.css'],
+  templateUrl: './account.component.html',
 })
 export class AccountComponent implements OnInit {
   private api = inject(LicenseAccountService);
   private router = inject(Router);
   private dialog = inject(DialogService);
   private toast = inject(ToastService);
+  private cdr = inject(ChangeDetectorRef);
 
-  tab: AccountTab = 'keys';
+  readonly privacyEmail = PRIVACY_EMAIL;
+  readonly kindLabel = reportKindLabel;
+  readonly duration = formatDuration;
+  readonly sections = ACCOUNT_SECTIONS;
   loading = true;
   busy = false;
+  exporting = false;
   error = '';
-  email = '';
+  account: AccountInfo = {};
   keys: AccountKey[] = [];
   installs: AccountInstall[] = [];
+  reports: Record<string, ReportsState> = {};
+  /** Settles when the diagnostics reports requested by the last refresh have loaded. */
+  reportsLoaded: Promise<void> = Promise.resolve();
   newKey = '';
   offlineKey = '';
   offlineRequest = '';
@@ -164,12 +97,14 @@ export class AccountComponent implements OnInit {
     URL.revokeObjectURL(url);
   };
 
+  get email() { return this.account.email || ''; }
   get activeKeys() { return this.keys.filter(k => !k.revoked); }
+  get activeInstalls() { return this.installs.filter(i => i.active !== false); }
 
   async ngOnInit() {
     try {
       const res = await this.api.account();
-      this.email = res?.account?.email || '';
+      this.account = res?.account || {};
       await this.refresh();
     } catch (e: any) {
       if (e?.status === 401) {
@@ -187,6 +122,32 @@ export class AccountComponent implements OnInit {
     this.keys = k?.keys || [];
     this.installs = i?.installs || [];
     if (!this.offlineKey && this.activeKeys.length) this.offlineKey = this.activeKeys[0].id;
+    // Installs may have changed: reload their reports in the background.
+    this.reports = {};
+    this.reportsLoaded = this.loadReports();
+  }
+
+  /** Loads the diagnostics reports of every install not loaded yet (or that failed). */
+  async loadReports() {
+    const todo = this.installs.filter(i => !this.reports[i.id] || this.reports[i.id].status === 'error');
+    await Promise.all(todo.map(i => this.loadInstallReports(i.id)));
+  }
+
+  async loadInstallReports(id: string) {
+    this.reports[id] = { status: 'loading', reports: [], truncated: false, error: '' };
+    try {
+      const res = await this.api.installReports(id);
+      this.reports[id] = { status: 'ready', reports: res?.reports || [], truncated: !!res?.truncated, error: '' };
+    } catch (e: any) {
+      this.reports[id] = { status: 'error', reports: [], truncated: false, error: e?.message || 'Could not load the reports.' };
+    }
+    // Reports arrive after the first render; make sure the view picks them up.
+    this.cdr.markForCheck();
+  }
+
+  keyLabel(id: string | undefined) {
+    const k = this.keys.find(x => x.id === id);
+    return k ? `${this.planName(k)} · ${k.hint || k.id}` : (id || '');
   }
 
   planName(k: AccountKey) {
@@ -200,6 +161,19 @@ export class AccountComponent implements OnInit {
     return `${nodes}, ${installs}`;
   }
 
+  servers(n: number | undefined) {
+    const v = n || 1;
+    return `${v} ${v === 1 ? 'server' : 'servers'}`;
+  }
+
+  componentStatus(status: string | undefined) {
+    return COMPONENT_STATUS[status || ''] || 'status-info';
+  }
+
+  rawJson(r: DiagnosticsReport) {
+    return JSON.stringify(r.payload, null, 2);
+  }
+
   private async run(fn: () => Promise<void>, failure: string) {
     this.busy = true;
     this.error = '';
@@ -209,6 +183,19 @@ export class AccountComponent implements OnInit {
       this.error = e?.message || failure;
     } finally {
       this.busy = false;
+    }
+  }
+
+  async exportData() {
+    this.exporting = true;
+    try {
+      const res = await this.api.exportData();
+      this.download(res.filename, res.content);
+      this.toast.show('Your data was downloaded', 'ok');
+    } catch (e: any) {
+      this.toast.error(e?.status === 429 ? 'Too many downloads. Try again in a minute.' : (e?.message || 'Could not download your data.'));
+    } finally {
+      this.exporting = false;
     }
   }
 
@@ -264,7 +251,8 @@ export class AccountComponent implements OnInit {
 
   async deleteAccount() {
     const ok = await this.dialog.confirm({
-      title: 'Delete your account?', message: 'Your account, keys and installs are deleted. This cannot be undone.',
+      title: 'Delete your account?',
+      message: 'Your account, sign-in sessions, keys, installations and their diagnostics reports are deleted now. This cannot be undone.',
       confirmLabel: 'Delete account', danger: true, typeToConfirm: 'DELETE',
     });
     if (!ok) return;
